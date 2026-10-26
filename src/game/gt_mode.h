@@ -68,11 +68,11 @@ public:
     std::vector<Demo> demos;          // gcf section 12, attract mode
     std::vector<std::string> race_songs; // bgm/ads.inf race_* files ("race_a01.ads"), index order
     int title_idle_seconds = 20;      // gcf section 0, first word: title idle time before attract mode
-    std::map<std::string, std::string> name_chars;
-    // Units of the menus' figures: the NTSC-U release shows miles, HP and ft-lb
-    // (the original picks them by region; this data set is the US one).
-    bool imperial = true; // name entry page: item -> character (menu/US/name_entry1.pmb)
-    int region = 1;       // the game's region index (0 JP, 1 US, 2 EU, other): this data set is US
+    std::map<std::string, std::string> name_chars; // name entry page: item -> character (menu/US/name_entry1.pmb)
+    // Units of the menus' figures: the NTSC-U release shows miles, HP and ft-lb, the
+    // others metric (picked by the loaded database's region at load).
+    bool imperial = true;
+    int region = 1;       // the game's region index (0 JP, 1 US, 2 EU, other): the loaded database's
     // The program's built-in record names (time-trial seeds, three per challenge: 30), read
     // from the disc's CORE.GT3 at load (empty when the program or its table is not found).
     std::vector<std::string> builtin_names;

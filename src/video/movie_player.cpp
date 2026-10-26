@@ -224,8 +224,11 @@ void MoviePlayer::draw(SDL_Renderer* renderer, const SDL_FRect& display) const {
 }
 
 SDL_FRect MoviePlayer::fit_4_3(float x, float y, float w, float h) const {
-    // PS2 movies fill a 4:3 TV picture; 640x448 has a pixel aspect of 448/480.
-    float aspect = info_.height > 0 ? float(info_.width) / float(info_.height) * (448.0f / 480.0f) : 4.0f / 3.0f;
+    // PS2 movies fill a 4:3 TV picture; 640x448 has a pixel aspect of 448/480,
+    // PAL's 640x512 (25 fps) one of 512/480.
+    const bool pal = info_.frame_rate > 0 && info_.frame_rate < 26.0;
+    float aspect = info_.height > 0 ? float(info_.width) / float(info_.height) * ((pal ? 512.0f : 448.0f) / 480.0f)
+                                    : 4.0f / 3.0f;
     float dw = w, dh = w / aspect;
     if (dh > h) {
         dh = h;

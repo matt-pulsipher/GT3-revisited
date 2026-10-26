@@ -47,8 +47,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
     reset_session_best(); // a new visit: the runs and retries that follow share it
     qm_items_ = {};       // ... and its quick menus' item switches (menus §11)
     // Speed unit: the game data's rule (GtData::imperial: the NTSC-U data set shows mph,
-    // like its menus; mph when no GT-mode session exists); [race] units = kmh | mph overrides.
-    imperial_ = true;
+    // like its menus; without a GT-mode session, mph on NTSC-U discs); [race] units = kmh | mph overrides.
+    imperial_ = Disc::current_db_suffix() == "_us";
     if (game::GtModeSession* gs = game::gt_mode_session()) imperial_ = gs->gt().data().imperial;
     if (auto u = app.config().get("race", "units")) imperial_ = *u != "kmh";
     env_cube_on_ = app.config().get("video", "car_reflections").value_or("on") != "off";

@@ -11,6 +11,7 @@
 // four bytes of the record.
 
 #include "formats/db/gt_db.h"
+#include "disc/disc.h"
 
 #include <array>
 #include <deque>
@@ -281,13 +282,14 @@ struct ModMaker {
 };
 
 // The whole database. `suffix` selects the regional set: "_us" (what
-// CORE.GT3 on PBPX-955.03 loads), "_eu", or "" (Japanese).
+// CORE.GT3 on PBPX-955.03 loads), "_eu" (PAL), or "" (Japanese); by default
+// the one of the open disc (Disc::current_db_suffix).
 class CarDatabase {
 public:
     using Reader = std::function<std::optional<Bytes>(const std::string&)>;
-    bool load(const Reader& read, const std::string& suffix = "_us");
-    bool load(const Vfs& vfs, const std::string& suffix = "_us");
-    bool load(const Volume& vol, const std::string& suffix = "_us");
+    bool load(const Reader& read, const std::string& suffix = Disc::current_db_suffix());
+    bool load(const Vfs& vfs, const std::string& suffix = Disc::current_db_suffix());
+    bool load(const Volume& vol, const std::string& suffix = Disc::current_db_suffix());
     const std::string& error() const { return error_; }
     // The region of the loaded set, as the game's region word: 0 JP (""), 1 US ("_us"), 2 EU ("_eu").
     int region() const { return region_; }

@@ -7,7 +7,7 @@ Images not in this list run with a warning until someone verifies them.
 |---|---|---|---|
 | `PBPX_955.03` | 1.10 | NTSC-U/C (menus for BR/FR/GR/IT/JP/SP/UK/US present on disc) | ✅ verified |
 | `SCUS_971.02` | 1.00 | NTSC-U retail. Same game as 1.10: CORE.GT3 and GT3.VOL are byte-identical; only the boot files' product code (SYSTEM.CNF, boot ELF string) and the disc headers differ | ✅ verified |
-| `SCES_502.94` | — | PAL | ❓ untested |
+| `SCES_502.94` | 2.00 | PAL (Europe, Australia; En/Fr/De/Es/It). Loads the `_eu` database and `product_eu.gcf`, metric units; movies 640x512 at 25 fps | ✅ boots, races, GT Mode menus (disc tests tuned to NTSC-U data still differ) |
 | `PAPX_…` / `SCPS_…` | — | NTSC-J | ❓ untested |
 
 To verify a new version, run `gt3tool info`, `gt3tool bgm` and a few

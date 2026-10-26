@@ -90,7 +90,7 @@ const data::CarDatabase* database(const menu::flow::FileReader& read) {
     p.list = text;
     if (text.empty()) return nullptr;
     auto db = std::make_shared<data::CarDatabase>();
-    if (!db->load(read, "_us")) return nullptr;
+    if (!db->load(read)) return nullptr;
     p.db = db;
     return p.db.get();
 }

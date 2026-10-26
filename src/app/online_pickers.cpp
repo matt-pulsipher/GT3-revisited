@@ -833,7 +833,7 @@ void CarPicker::render_cars(App& app, Ui& ui) {
         // Power as the game's menus show it: a garage car's computed peak (parts and
         // condition), else the catalogue figure; truncated, HP on NTSC-U data.
         game::GtModeSession* gs = game::gt_mode_session();
-        const bool imperial = !gs || gs->gt().data().imperial;
+        const bool imperial = gs ? gs->gt().data().imperial : Disc::current_db_suffix() == "_us";
         const std::string unit = std::string(" ") + game::power_unit(imperial);
         if (c.garage >= 0 && gs && c.garage < int(gs->gt().state().garage.size())) {
             game::PowerPeak p = gs->gt().power_peak(gs->gt().state().garage[size_t(c.garage)]);

@@ -18,9 +18,14 @@ struct KnownDisc {
 constexpr KnownDisc kKnownDiscs[] = {
     {"PBPX_955.03", "1.10", "Gran Turismo 3 A-Spec (NTSC-U/C)"},
     {"SCUS_971.02", "1.00", "Gran Turismo 3 A-Spec (NTSC-U/C)"}, // same CORE.GT3 and GT3.VOL as 1.10
+    {"SCES_502.94", "2.00", "Gran Turismo 3 A-Spec (PAL)"},
 };
 
+std::string g_db_suffix = "_us";
+
 } // namespace
+
+const std::string& Disc::current_db_suffix() { return g_db_suffix; }
 
 std::unique_ptr<Disc> Disc::open(const std::string& path) {
     std::unique_ptr<Disc> disc(new Disc());
@@ -47,6 +52,13 @@ std::unique_ptr<Disc> Disc::open(const std::string& path) {
     auto vol = iso.find("GT3.VOL");
     if (!core || !vol)
         throw FormatError("This does not look like a Gran Turismo 3 disc image (CORE.GT3 / GT3.VOL missing).");
+
+    // PAL (SCES/SLES, VMODE PAL) loads the _eu set, NTSC-J the unsuffixed one.
+    if (info.video == "PAL" || info.serial.rfind("SCES", 0) == 0 || info.serial.rfind("SLES", 0) == 0)
+        info.db_suffix = "_eu";
+    else if (info.serial.rfind("SCPS", 0) == 0 || info.serial.rfind("PAPX", 0) == 0 || info.serial.rfind("SLPS", 0) == 0)
+        info.db_suffix = "";
+    g_db_suffix = info.db_suffix;
 
     for (const KnownDisc& k : kKnownDiscs) {
         if (info.serial == k.serial && info.version == k.version) {

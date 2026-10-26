@@ -230,7 +230,7 @@ std::vector<std::string> find_builtin_names(ByteSpan core_gt3) {
 
 bool GtData::load(const Reader& read) {
     try {
-        if (!db.load(read, "_us")) {
+        if (!db.load(read)) {
             error_ = "database: " + db.error();
             return false;
         }
@@ -239,7 +239,12 @@ bool GtData::load(const Reader& read) {
             if (!b) throw FormatError(p + " not found");
             return std::move(*b);
         };
-        gcf = Gcf::parse(need("gameconf/product.gcf"));
+        // The regional set's game config (PAL: product_eu.gcf); product.gcf otherwise.
+        region = db.region();
+        imperial = region == 1;
+        std::optional<Bytes> regional;
+        if (region == 2) regional = read("gameconf/product_eu.gcf");
+        gcf = Gcf::parse(regional ? std::move(*regional) : need("gameconf/product.gcf"));
         if (auto c = read("database/carcolor.db")) {
             colors_.parse(*c);
             // Colour names: the definitions {u32 id, u32 name, u32 name (alternate), u32 rgb}

@@ -73,7 +73,10 @@ bool CarDatabase::load(const Volume& vol, const std::string& suffix) {
         suffix);
 }
 
-bool CarDatabase::load(const Reader& read, const std::string& suffix) {
+bool CarDatabase::load(const Reader& read, const std::string& requested) {
+    // A data set without the requested regional files (synthetic test worlds) uses the US one.
+    const std::string suffix =
+        requested != "_us" && !read("database/paramdb" + requested + ".db") ? std::string("_us") : requested;
     auto need = [&](const std::string& path) {
         auto b = read(path);
         if (!b) throw FormatError(path + " not found");

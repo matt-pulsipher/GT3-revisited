@@ -24,7 +24,7 @@ const data::CarDatabase* database() {
 
 bool imperial() {
     GtModeSession* s = gt_mode_session();
-    return !s || s->gt().data().imperial;
+    return s ? s->gt().data().imperial : Disc::current_db_suffix() == "_us";
 }
 
 std::string course_name(const data::CarDatabase* db, const std::string& label) {
