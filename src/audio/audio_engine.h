@@ -38,6 +38,8 @@ public:
 
     // Streams an .ads file through the VFS (mods may replace it) at request level `volume`.
     bool play_music(Vfs& vfs, const std::string& path, bool loop, float volume = 1.0f);
+    // Plays a user-provided MP3 file.
+    bool play_external_music(const std::string& path, float volume = 1.0f);
     // Plays sequence `index` of music/music.seq with music/music.ins (loaded
     // on first use through the VFS) at request level `volume`. Sequences loop forever.
     bool play_sequence(Vfs& vfs, int index, float volume = 1.0f);
@@ -93,6 +95,9 @@ private:
     mutable std::mutex mutex_;
     std::unique_ptr<AdsStream> music_;
     std::shared_ptr<Bytes> music_data_; // backing store when not streamed from disc
+    std::shared_ptr<std::vector<s16>> external_music_; // decoded user track, stereo 44.1 kHz
+    size_t external_music_pos_ = 0;
+    int external_music_rate_ = 44100;
     double music_length_ = 0.0;
     float music_volume_ = 0.8f;
     float stream_level_ = 1.0f; // the current stream request's level

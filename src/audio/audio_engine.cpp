@@ -5,7 +5,12 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
+#include <limits>
 #include <vector>
+
+#define MINIMP3_IMPLEMENTATION
+#include "minimp3.h"
 
 namespace gt3r {
 
@@ -162,6 +167,8 @@ bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float
         music_length_ = double(h.total_frames()) / h.sample_rate;
         music_ = std::move(stream);
         music_data_ = std::move(data);
+        external_music_.reset();
+        external_music_pos_ = 0;
         music_finished_ = false;
         stream_level_ = volume;
     }
@@ -175,6 +182,77 @@ bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float
     return true;
 }
 
+bool AudioEngine::play_external_music(const std::string& path, float volume) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        LOG_ERROR("Cannot open user music %s", path.c_str());
+        return false;
+    }
+    const auto file_size = file.tellg();
+    if (file_size <= 0 || file_size > std::numeric_limits<int>::max()) {
+        LOG_ERROR("Unsupported MP3 size in %s", path.c_str());
+        return false;
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(file_size));
+    file.seekg(0);
+    if (!file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) {
+        LOG_ERROR("Cannot read user music %s", path.c_str());
+        return false;
+    }
+    // Decode MP3 frames to stereo PCM; SDL converts the sample rate to the device rate.
+    auto decoded = std::make_shared<std::vector<s16>>();
+    decoded->reserve(bytes.size() * 4);
+    mp3dec_t decoder{};
+    mp3dec_init(&decoder);
+    mp3dec_frame_info_t info{};
+    std::vector<mp3d_sample_t> frame(MINIMP3_MAX_SAMPLES_PER_FRAME);
+    int sample_rate = 0;
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        const int remaining = static_cast<int>(bytes.size() - offset);
+        const int samples = mp3dec_decode_frame(&decoder, bytes.data() + offset, remaining, frame.data(), &info);
+        if (info.frame_bytes <= 0) break;
+        offset += static_cast<size_t>(info.frame_bytes);
+        if (samples <= 0 || info.channels < 1 || info.channels > 2 || info.hz <= 0) continue;
+        if (sample_rate == 0) sample_rate = info.hz;
+        if (info.hz != sample_rate) {
+            LOG_ERROR("MP3 changes sample rate in %s", path.c_str());
+            return false;
+        }
+        for (int i = 0; i < samples; ++i) {
+            const s16 left = static_cast<s16>(frame[static_cast<size_t>(i) * info.channels]);
+            const s16 right = info.channels == 2 ? static_cast<s16>(frame[static_cast<size_t>(i) * 2 + 1]) : left;
+            decoded->push_back(left);
+            decoded->push_back(right);
+        }
+    }
+    if (decoded->empty() || sample_rate == 0) {
+        LOG_ERROR("No decodable MP3 audio in %s", path.c_str());
+        return false;
+    }
+    sequencer_.stop(voices_);
+    SDL_AudioSpec in{SDL_AUDIO_S16, 2, sample_rate};
+    SDL_LockAudioStream(music_stream_);
+    {
+        std::lock_guard lock(mutex_);
+        SDL_ClearAudioStream(music_stream_);
+        SDL_SetAudioStreamFormat(music_stream_, &in, nullptr);
+        music_.reset();
+        music_data_.reset();
+        external_music_ = std::move(decoded);
+        external_music_pos_ = 0;
+        external_music_rate_ = sample_rate;
+        music_length_ = double(decoded->size() / 2) / sample_rate;
+        music_finished_ = false;
+        stream_level_ = volume;
+    }
+    SDL_UnlockAudioStream(music_stream_);
+    SDL_SetAudioStreamGain(music_stream_, stream_output_gain(volume, music_volume_));
+    SDL_ResumeAudioStreamDevice(music_stream_);
+    LOG_INFO("Playing user music %s", path.c_str());
+    return true;
+}
+
 void AudioEngine::stop_stream() {
     // Same lock order as play_stream(): stream, then mutex_, and the device call unlocked.
     if (music_stream_) SDL_LockAudioStream(music_stream_);
@@ -182,6 +260,8 @@ void AudioEngine::stop_stream() {
         std::lock_guard lock(mutex_);
         music_.reset();
         music_data_.reset();
+        external_music_.reset();
+        external_music_pos_ = 0;
         if (music_stream_) SDL_ClearAudioStream(music_stream_);
     }
     if (music_stream_) {
@@ -206,12 +286,13 @@ void AudioEngine::resume_music() {
 bool AudioEngine::music_playing() const {
     if (sequencer_.active()) return true;
     std::lock_guard lock(mutex_);
-    return music_ && !music_finished_;
+    return (music_ || external_music_) && !music_finished_;
 }
 
 double AudioEngine::music_position() const {
     if (sequencer_.active()) return double(sequencer_.updates()) / sequencer_.update_rate();
     std::lock_guard lock(mutex_);
+    if (external_music_) return double(external_music_pos_) / std::max(external_music_rate_, 1);
     return music_ ? music_->position_seconds() : 0.0;
 }
 
@@ -250,6 +331,7 @@ double AudioEngine::music_length() const {
     if (int cur = sequencer_.current(); cur >= 0 && size_t(cur) < seq_loop_seconds_.size())
         return seq_loop_seconds_[size_t(cur)];
     std::lock_guard lock(mutex_);
+    if (external_music_) return double(external_music_->size() / 2) / std::max(external_music_rate_, 1);
     return music_ ? music_length_ : 0.0;
 }
 
@@ -267,6 +349,17 @@ void AudioEngine::set_music_volume(float v) {
 void SDLCALL AudioEngine::feed(void* user, SDL_AudioStream* stream, int additional, int) {
     auto* self = static_cast<AudioEngine*>(user);
     std::lock_guard lock(self->mutex_);
+    if (self->external_music_) {
+        if (self->music_finished_ || additional <= 0) return;
+        size_t frames = size_t(additional) / 4 + 1;
+        size_t left = self->external_music_->size() / 2 - self->external_music_pos_;
+        size_t take = std::min(frames, left);
+        if (take == 0) { self->music_finished_ = true; return; }
+        const s16* data = self->external_music_->data() + self->external_music_pos_ * 2;
+        SDL_PutAudioStreamData(stream, data, int(take * 2 * sizeof(s16)));
+        self->external_music_pos_ += take;
+        return;
+    }
     if (!self->music_ || self->music_finished_ || additional <= 0) return;
     const u32 ch = self->music_->header().channels;
     size_t frames = size_t(additional) / (2 * ch) + 1;

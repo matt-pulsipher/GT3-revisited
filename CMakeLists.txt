@@ -33,6 +33,7 @@ file(GLOB_RECURSE GT3R_ENGINE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/
 list(FILTER GT3R_ENGINE_SOURCES EXCLUDE REGEX "/src/app/")
 add_library(gt3r_engine STATIC ${GT3R_ENGINE_SOURCES})
 target_include_directories(gt3r_engine PUBLIC src)
+target_include_directories(gt3r_engine PRIVATE third_party/minimp3)
 target_link_libraries(gt3r_engine PUBLIC SDL3::SDL3 ZLIB::ZLIB)
 if(APPLE)
   target_link_libraries(gt3r_engine PUBLIC objc) # platform/mac_layer.cpp

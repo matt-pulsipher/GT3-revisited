@@ -265,6 +265,12 @@ Start there to open it). A mod can replace any file of the game, add music,
 or add cars, defined in small text files, that appear at the dealers, in the
 arcade and online. See [MODDING](docs/MODDING.md).
 
+Custom race music can also be added as MP3 files in `music/` beside the game
+executable. In a race, press **Select** to open the action menu directly and
+choose **Previous song** or **Next song**; while driving, hold R1/RB and press
+the D-pad left or right.
+MP3 decoding is built into the game; no separate audio decoder package is needed.
+
 ## Differences from the original
 
 - **Saves** are files on your computer instead of memory-card slots; the

@@ -4,15 +4,73 @@
 
 #include "app/screen_race_impl.h"
 
+#include <SDL3/SDL_filesystem.h>
+
+#include <algorithm>
+#include <cctype>
+
 namespace gt3r::race_screen {
 
 std::vector<std::string> RaceScreen::pause_items() const {
     const char* exit = from_menu_ ? "Exit to menu" : "Exit to selection";
-    if (replaying_) return {"Resume replay", "Restart replay", "Camera", "Save replay", "Stop replay (drive)", exit};
+    if (replaying_) return {"Resume replay", "Restart replay", "Camera", "Save replay", "Previous song", "Next song", "Stop replay (drive)", exit};
     // Online the race goes on behind the menu: nothing that restarts, replays or leaves the
     // race's time (retiring returns to the lobby).
-    if (online_) return {"Resume", "Camera", "Gearbox", "Retire (back to lobby)"};
-    return {"Resume", "Restart", "Watch replay", "Save replay", "Camera", "Gearbox", exit};
+    if (online_) return {"Resume", "Camera", "Gearbox", "Previous song", "Next song", "Retire (back to lobby)"};
+    return {"Resume", "Restart", "Watch replay", "Save replay", "Camera", "Gearbox", "Previous song", "Next song", exit};
+}
+
+void RaceScreen::scan_user_music(App& app) {
+    user_music_files_.clear();
+    race_music_files_ = app.audio().bgm().files(*app.vfs(), bgm::kRace);
+    const char* base = SDL_GetBasePath();
+    if (!base) return;
+    std::string dir = std::string(base) + "music";
+    SDL_CreateDirectory(dir.c_str());
+    SDL_EnumerateDirectory(dir.c_str(), [](void* data, const char*, const char* name) {
+        std::string file(name ? name : "");
+        if (file.size() > 4) {
+            std::string ext = file.substr(file.size() - 4);
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+            if (ext == ".mp3") static_cast<std::vector<std::string>*>(data)->push_back(file);
+        }
+        return SDL_ENUM_CONTINUE;
+    }, &user_music_files_);
+    std::sort(user_music_files_.begin(), user_music_files_.end());
+    if (user_music_index_ >= int(race_music_files_.size() + user_music_files_.size())) user_music_index_ = -1;
+}
+
+void RaceScreen::change_user_music(App& app, int delta) {
+    if (race_music_files_.empty() && user_music_files_.empty()) scan_user_music(app);
+    const int total = int(race_music_files_.size() + user_music_files_.size());
+    if (!total) { toast("No race music or MP3 files found"); return; }
+    if (user_music_index_ < 0) user_music_index_ = delta < 0 ? 0 : -1;
+    user_music_index_ = (user_music_index_ + delta + total) % total;
+    if (user_music_index_ < int(race_music_files_.size())) {
+        const int index = user_music_index_;
+        if (!app.audio().bgm().play(app.audio(), *app.vfs(), bgm::kRace, index, false, 0.5f)) {
+            toast("Could not play race music");
+            return;
+        }
+        if (paused_) app.audio().pause_music();
+        std::string title = race_music_files_[size_t(index)];
+        size_t slash = title.find_last_of("/\\");
+        if (slash != std::string::npos) title.erase(0, slash + 1);
+        size_t dot = title.find_last_of('.');
+        if (dot != std::string::npos) title.resize(dot);
+        toast("Music: " + title);
+        return;
+    }
+    const size_t custom_index = size_t(user_music_index_ - int(race_music_files_.size()));
+    const char* base = SDL_GetBasePath();
+    if (!base) return;
+    std::string path = std::string(base) + "music/" + user_music_files_[custom_index];
+    if (app.audio().play_external_music(path, 0.5f)) {
+        if (paused_) app.audio().pause_music();
+        std::string title = user_music_files_[custom_index];
+        title.resize(title.size() - 4);
+        toast("Music: " + title);
+    } else toast("Could not play MP3");
 }
 
 // GT3's pause window for this run (presentation §E): time trials,
@@ -29,6 +87,7 @@ void RaceScreen::open_pause(App& app) {
     paused_ = true;
     pause_sel_ = 0;
     pause_more_ = false;
+    scan_user_music(app);
     if (!pause_loaded_) pause_loaded_ = true, pause_menu_.load(*app.vfs(), app.renderer(), hud_.fonts());
     // A run that set a record keeps RETRY greyed out until the next run (presentation §E3).
     pause_menu_.set_retry_enabled(!retry_locked_);
@@ -117,6 +176,10 @@ void RaceScreen::update_pause(App& app, double dt) {
         next_view(camera_, 0);
     } else if (it == "Gearbox") {
         controls_.config().automatic = !controls_.config().automatic;
+    } else if (it == "Previous song") {
+        change_user_music(app, -1);
+    } else if (it == "Next song") {
+        change_user_music(app, 1);
     } else if (it == "Stop replay (drive)") {
         stop_playback();
     } else if (it == "Exit to selection" || it == "Exit to menu" || it == "Retire (back to lobby)") {

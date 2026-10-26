@@ -654,12 +654,31 @@ void RaceScreen::update_drive(App& app, double dt) {
     const u16 race_pressed = u16(pad.buttons & ~race_prev_);
     race_prev_ = pad.buttons;
     auto rpressed = [&](PadButton b) { return (race_pressed & (1u << unsigned(b))) != 0; };
+    // The shortcut follows the normal controller profile, not the race profile: modern
+    // racing controls may map R1 to a face button, while the user's RB/R1 is the menu pad's R1.
+    const PadState& music_pad = app.input().pad(0);
+    const bool chord_left = music_pad.down(PadButton::R1) && music_pad.down(PadButton::Left);
+    const bool chord_right = music_pad.down(PadButton::R1) && music_pad.down(PadButton::Right);
+    const u16 chord_now = u16((chord_left ? 1 : 0) | (chord_right ? 2 : 0));
+    const bool music_chord = chord_now != 0;
+    if (chord_now && chord_now != music_chord_prev_) change_user_music(app, chord_right ? 1 : -1);
+    music_chord_prev_ = chord_now;
     // (Replays too: only Start opens their pause, presentation §G; nothing else skips one.)
     if (!paused_ && (m.pressed(PadButton::Start) || rpressed(PadButton::Start))) {
         open_pause(app);
         return;
     } else if (paused_ && !replay_opts_open_ && (m.pressed(PadButton::Start) || rpressed(PadButton::Start))) {
         paused_ = false; // (ours: Start also continues)
+        return;
+    }
+    // Select opens the in-race action menu directly. Start still opens GT3's normal pause
+    // window; from there Select also enters this menu.
+    if (!paused_ && !theater_ && m.pressed(PadButton::Select)) {
+        open_pause(app);
+        pause_more_ = true;
+        const std::vector<std::string> items = pause_items();
+        auto next_song = std::find(items.begin(), items.end(), "Next song");
+        pause_sel_ = next_song == items.end() ? 0 : int(next_song - items.begin());
         return;
     }
     if (paused_) {
@@ -688,7 +707,7 @@ void RaceScreen::update_drive(App& app, double dt) {
         replay_pad(m);
         camera_.set_look_back(false);
     } else {
-        if (rpressed(PadButton::R1)) next_view(camera_, 0);
+        if (rpressed(PadButton::R1) && !music_chord) next_view(camera_, 0);
         camera_.set_look_back(pad.down(PadButton::L1));
     }
     // Never online: a respawn there would skip track (respawn is offline only).
@@ -702,7 +721,12 @@ void RaceScreen::update_drive(App& app, double dt) {
     int n = step_.advance(dt);
     if (online_) n = online_ticks(n);
     Uint64 h_t0 = SDL_GetTicksNS();
-    for (int i = 0; i < n; ++i) tick(app, pad);
+    PadState drive_pad = pad;
+    if (music_chord) {
+        drive_pad.buttons &= u16(~((1u << unsigned(PadButton::Left)) | (1u << unsigned(PadButton::Right))));
+        drive_pad.pressure[size_t(PadButton::Left)] = drive_pad.pressure[size_t(PadButton::Right)] = 0;
+    }
+    for (int i = 0; i < n; ++i) tick(app, drive_pad);
     hitch::ticks = n, hitch::ticks_ms = double(SDL_GetTicksNS() - h_t0) / 1e6;
     hitch::smoke = int(smoke_.live()), hitch::x = render_state_.position.x, hitch::z = render_state_.position.z;
     hitch::race_t = float(race_time_);

@@ -427,6 +427,8 @@ private:
     PauseMenu::Kind pause_kind() const;
     void open_pause(App& app);
     void update_pause(App& app, double dt);
+    void scan_user_music(App& app);
+    void change_user_music(App& app, int delta);
     void online_pause_note(Ui& ui);
     void render_pause(Ui& ui);
 
@@ -716,6 +718,10 @@ private:
     std::vector<CarEntry> cars_;
     int course_sel_ = 0, car_sel_ = 0, column_ = 0, pause_sel_ = 0;
     bool pause_more_ = false;
+    std::vector<std::string> user_music_files_;
+    std::vector<std::string> race_music_files_;
+    int user_music_index_ = -1;
+    u16 music_chord_prev_ = 0;
     int scripted_kind_ = 0;
     race::TitleClock title_clock_;
     race::ReplayMarkTimer mark_timer_;
