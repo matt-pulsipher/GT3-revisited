@@ -232,6 +232,7 @@ bool AudioEngine::play_external_music(const std::string& path, float volume) {
     }
     sequencer_.stop(voices_);
     SDL_AudioSpec in{SDL_AUDIO_S16, 2, sample_rate};
+    const double decoded_length = double(decoded->size() / 2) / sample_rate;
     SDL_LockAudioStream(music_stream_);
     {
         std::lock_guard lock(mutex_);
@@ -242,7 +243,7 @@ bool AudioEngine::play_external_music(const std::string& path, float volume) {
         external_music_ = std::move(decoded);
         external_music_pos_ = 0;
         external_music_rate_ = sample_rate;
-        music_length_ = double(decoded->size() / 2) / sample_rate;
+        music_length_ = decoded_length;
         music_finished_ = false;
         stream_level_ = volume;
     }
