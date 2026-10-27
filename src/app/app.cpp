@@ -474,6 +474,7 @@ SDL_AppResult App::iterate() {
         }
     }
 
+    audio_->update();
     updates().poll(*this);
     apply_screen_changes();
     Screen* top = screens_.empty() ? nullptr : screens_.back().get();

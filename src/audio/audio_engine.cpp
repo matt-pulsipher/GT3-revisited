@@ -22,6 +22,8 @@ AudioEngine::AudioEngine() {
     // The sequencer runs inside the mixer at the game's 60 Hz, sample-exact.
     voices_.set_tick_hook([this] { sequencer_.update(voices_); }, sequencer_.samples_per_update());
 
+    external_decode_thread_ = std::thread(&AudioEngine::decode_external_music, this);
+
     // The stream's input format is set per track; output adapts to the device.
     SDL_AudioSpec spec{SDL_AUDIO_S16, 2, 44100};
     music_stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, &AudioEngine::feed, this);
@@ -42,6 +44,13 @@ AudioEngine::AudioEngine() {
 }
 
 AudioEngine::~AudioEngine() {
+    {
+        std::lock_guard lock(external_decode_mutex_);
+        external_decode_stopping_ = true;
+        external_decode_request_.reset();
+    }
+    external_decode_cv_.notify_one();
+    if (external_decode_thread_.joinable()) external_decode_thread_.join();
     if (sfx_stream_) SDL_DestroyAudioStream(sfx_stream_);
     if (music_stream_) SDL_DestroyAudioStream(music_stream_);
     voices_.set_tick_hook({}, 0);
@@ -83,6 +92,7 @@ const std::vector<sound::MusicEntry>& AudioEngine::music_index(Vfs& vfs) {
 }
 
 bool AudioEngine::play_sequence(Vfs& vfs, int index, float volume) {
+    invalidate_external_decode();
     if (!load_sequences(vfs)) return false;
     stop_stream();
     // The request's level is the sequencer's music volume (music §6).
@@ -124,6 +134,7 @@ void SDLCALL AudioEngine::feed_voices(void* user, SDL_AudioStream* stream, int a
 }
 
 bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float volume) {
+    invalidate_external_decode();
     if (!music_stream_) return false;
     sequencer_.stop(voices_);
     std::unique_ptr<AdsStream> stream;
@@ -183,56 +194,121 @@ bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float
 }
 
 bool AudioEngine::play_external_music(const std::string& path, float volume) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        LOG_ERROR("Cannot open user music %s", path.c_str());
-        return false;
+    if (!music_stream_) return false;
+    {
+        std::lock_guard lock(external_decode_mutex_);
+        ++external_decode_generation_;
+        external_decode_request_ = ExternalMusicRequest{path, volume, external_decode_generation_};
+        external_decode_result_.reset();
     }
-    const auto file_size = file.tellg();
-    if (file_size <= 0 || file_size > std::numeric_limits<int>::max()) {
-        LOG_ERROR("Unsupported MP3 size in %s", path.c_str());
-        return false;
-    }
-    std::vector<uint8_t> bytes(static_cast<size_t>(file_size));
-    file.seekg(0);
-    if (!file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) {
-        LOG_ERROR("Cannot read user music %s", path.c_str());
-        return false;
-    }
-    // Decode MP3 frames to stereo PCM; SDL converts the sample rate to the device rate.
-    auto decoded = std::make_shared<std::vector<s16>>();
-    decoded->reserve(bytes.size() * 4);
-    mp3dec_t decoder{};
-    mp3dec_init(&decoder);
-    mp3dec_frame_info_t info{};
-    std::vector<mp3d_sample_t> frame(MINIMP3_MAX_SAMPLES_PER_FRAME);
-    int sample_rate = 0;
-    size_t offset = 0;
-    while (offset < bytes.size()) {
-        const int remaining = static_cast<int>(bytes.size() - offset);
-        const int samples = mp3dec_decode_frame(&decoder, bytes.data() + offset, remaining, frame.data(), &info);
-        if (info.frame_bytes <= 0) break;
-        offset += static_cast<size_t>(info.frame_bytes);
-        if (samples <= 0 || info.channels < 1 || info.channels > 2 || info.hz <= 0) continue;
-        if (sample_rate == 0) sample_rate = info.hz;
-        if (info.hz != sample_rate) {
-            LOG_ERROR("MP3 changes sample rate in %s", path.c_str());
-            return false;
+    external_decode_cv_.notify_one();
+    return true;
+}
+
+void AudioEngine::invalidate_external_decode() {
+    std::lock_guard lock(external_decode_mutex_);
+    ++external_decode_generation_;
+    external_decode_request_.reset();
+    external_decode_result_.reset();
+}
+
+void AudioEngine::decode_external_music() {
+    for (;;) {
+        ExternalMusicRequest request;
+        {
+            std::unique_lock lock(external_decode_mutex_);
+            external_decode_cv_.wait(lock, [this] {
+                return external_decode_stopping_ || external_decode_request_.has_value();
+            });
+            if (external_decode_stopping_) return;
+            request = std::move(*external_decode_request_);
+            external_decode_request_.reset();
         }
-        for (int i = 0; i < samples; ++i) {
-            const s16 left = static_cast<s16>(frame[static_cast<size_t>(i) * info.channels]);
-            const s16 right = info.channels == 2 ? static_cast<s16>(frame[static_cast<size_t>(i) * 2 + 1]) : left;
-            decoded->push_back(left);
-            decoded->push_back(right);
+
+        ExternalMusicResult result;
+        result.path = request.path;
+        result.volume = request.volume;
+        result.generation = request.generation;
+        std::ifstream file(request.path, std::ios::binary | std::ios::ate);
+        if (!file) {
+            LOG_ERROR("Cannot open user music %s", request.path.c_str());
+            continue;
+        }
+        const auto file_size = file.tellg();
+        if (file_size <= 0 || file_size > std::numeric_limits<int>::max()) {
+            LOG_ERROR("Unsupported MP3 size in %s", request.path.c_str());
+            continue;
+        }
+        std::vector<uint8_t> bytes(static_cast<size_t>(file_size));
+        file.seekg(0);
+        if (!file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) {
+            LOG_ERROR("Cannot read user music %s", request.path.c_str());
+            continue;
+        }
+
+        auto decoded = std::make_shared<std::vector<s16>>();
+        decoded->reserve(bytes.size() * 4);
+        mp3dec_t decoder{};
+        mp3dec_init(&decoder);
+        mp3dec_frame_info_t info{};
+        std::vector<mp3d_sample_t> frame(MINIMP3_MAX_SAMPLES_PER_FRAME);
+        size_t offset = 0;
+        bool cancelled = false;
+        while (offset < bytes.size()) {
+            {
+                std::lock_guard lock(external_decode_mutex_);
+                if (request.generation != external_decode_generation_) {
+                    cancelled = true;
+                    break;
+                }
+            }
+            const int remaining = static_cast<int>(bytes.size() - offset);
+            const int samples = mp3dec_decode_frame(&decoder, bytes.data() + offset, remaining, frame.data(), &info);
+            if (info.frame_bytes <= 0) break;
+            offset += static_cast<size_t>(info.frame_bytes);
+            if (samples <= 0 || info.channels < 1 || info.channels > 2 || info.hz <= 0) continue;
+            if (result.sample_rate == 0) result.sample_rate = info.hz;
+            if (info.hz != result.sample_rate) {
+                LOG_ERROR("MP3 changes sample rate in %s", request.path.c_str());
+                decoded->clear();
+                break;
+            }
+            for (int i = 0; i < samples; ++i) {
+                const s16 left = static_cast<s16>(frame[static_cast<size_t>(i) * info.channels]);
+                const s16 right = info.channels == 2 ? static_cast<s16>(frame[static_cast<size_t>(i) * 2 + 1]) : left;
+                decoded->push_back(left);
+                decoded->push_back(right);
+            }
+        }
+        if (cancelled) continue;
+        if (decoded->empty() || result.sample_rate == 0) {
+            LOG_ERROR("No decodable MP3 audio in %s", request.path.c_str());
+            continue;
+        }
+        result.samples = std::move(decoded);
+        {
+            std::lock_guard lock(external_decode_mutex_);
+            if (external_decode_stopping_) return;
+            if (request.generation == external_decode_generation_) external_decode_result_ = std::move(result);
         }
     }
-    if (decoded->empty() || sample_rate == 0) {
-        LOG_ERROR("No decodable MP3 audio in %s", path.c_str());
-        return false;
+}
+
+void AudioEngine::update() {
+    std::optional<ExternalMusicResult> result;
+    {
+        std::lock_guard lock(external_decode_mutex_);
+        if (external_decode_result_ && external_decode_result_->generation == external_decode_generation_) {
+            result = std::move(external_decode_result_);
+            external_decode_result_.reset();
+        }
     }
+    if (!result || !music_stream_) return;
+
+    // Only the main game thread changes sequencer state; decoding never blocks it.
     sequencer_.stop(voices_);
-    SDL_AudioSpec in{SDL_AUDIO_S16, 2, sample_rate};
-    const double decoded_length = double(decoded->size() / 2) / sample_rate;
+    SDL_AudioSpec in{SDL_AUDIO_S16, 2, result->sample_rate};
+    const double decoded_length = double(result->samples->size() / 2) / result->sample_rate;
     SDL_LockAudioStream(music_stream_);
     {
         std::lock_guard lock(mutex_);
@@ -240,21 +316,21 @@ bool AudioEngine::play_external_music(const std::string& path, float volume) {
         SDL_SetAudioStreamFormat(music_stream_, &in, nullptr);
         music_.reset();
         music_data_.reset();
-        external_music_ = std::move(decoded);
+        external_music_ = std::move(result->samples);
         external_music_pos_ = 0;
-        external_music_rate_ = sample_rate;
+        external_music_rate_ = result->sample_rate;
         music_length_ = decoded_length;
         music_finished_ = false;
-        stream_level_ = volume;
+        stream_level_ = result->volume;
     }
     SDL_UnlockAudioStream(music_stream_);
-    SDL_SetAudioStreamGain(music_stream_, stream_output_gain(volume, music_volume_));
+    SDL_SetAudioStreamGain(music_stream_, stream_output_gain(result->volume, music_volume_));
     SDL_ResumeAudioStreamDevice(music_stream_);
-    LOG_INFO("Playing user music %s", path.c_str());
-    return true;
+    LOG_INFO("Playing user music %s", result->path.c_str());
 }
 
 void AudioEngine::stop_stream() {
+    invalidate_external_decode();
     // Same lock order as play_stream(): stream, then mutex_, and the device call unlocked.
     if (music_stream_) SDL_LockAudioStream(music_stream_);
     {
