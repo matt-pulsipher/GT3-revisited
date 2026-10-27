@@ -97,6 +97,10 @@ void RumbleModel::update(const sim::VehicleState& s, const Events& ev, const sim
     float large = impact_level_;
     if (ev.offroad && speed > 3) large = std::max(large, 0.18f + std::min(0.2f, speed / 150.0f));
     large = std::max(large, 0.25f * spin_amt);
+    // The same per-wheel slip intensity drives the game's tyre squeal loops. Let a
+    // pronounced squeal add a gentle low-motor rumble, while ordinary cornering stays quiet.
+    float grip_loss = std::clamp((ev.tire_slip - 0.35f) / 0.9f, 0.0f, 1.0f);
+    large = std::max(large, 0.35f * grip_loss);
     // Kerbs: the small (on/off) motor, pulsed at a rate that follows the speed.
     bool kerb_pulse = ev.kerb && speed > 2 && std::fmod(clock_ * (4.0 + speed * 0.4), 1.0) < 0.5;
     rumble_.small = kerb_pulse;

@@ -71,6 +71,7 @@ public:
         bool kerb = false;          // a wheel is on a kerb / rumble strip
         bool offroad = false;       // on grass/gravel/dirt
         float impact = 0;           // collision delta-v this tick (m/s), 0 = none
+        float tire_slip = 0;        // strongest grounded wheel's squeal intensity (telemetry §8.3)
     };
 
     void update(const sim::VehicleState& s, const Events& ev, const sim::ControlInputs& in, double dt);
