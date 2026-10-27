@@ -313,9 +313,6 @@ void RaceScreen::tick(App& app, const PadState& pad) {
             if (w.grounded && track_->is_kerb(w.surface)) ev2.kerb = true;
         ev2.offroad = track_->is_offroad(track_->query().probe(s2.position.x, s2.position.z, s2.position.y + 2.0f));
         ev2.impact = field_->second_impact();
-        if (const sim::Vehicle* sv2 = field_->second_vehicle())
-            for (size_t i = 0; i < s2.wheels.size(); ++i)
-                if (s2.wheels[i].grounded) ev2.tire_slip = std::max(ev2.tire_slip, sv2->telemetry().smoke[i]);
         rumble2_.update(s2, ev2, last_in2_, dt);
         if (!finished2_ && field_->second_finish() >= 0) { // the field's finish rule (race::finishes_at_line)
             finished2_ = true;
@@ -500,9 +497,6 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     sim::SurfaceHit h = track_->query().probe(s.position.x, s.position.z, s.position.y + 2.0f);
     ev.offroad = track_->is_offroad(h);
     ev.impact = vehicle_->last_impact();
-    if (const sim::Vehicle* sv = vehicle_->sim_vehicle())
-        for (size_t i = 0; i < s.wheels.size(); ++i)
-            if (s.wheels[i].grounded) ev.tire_slip = std::max(ev.tire_slip, sv->telemetry().smoke[i]);
     rumble_.update(s, ev, in, dt);
     {
         if (se_on()) update_tyre_sounds(app, s);
