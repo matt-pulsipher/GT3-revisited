@@ -9,6 +9,7 @@ on:
 # Desktop: build the game, gt3tool and the unit tests on all three desktop
 # platforms and run the tests that need no disc image.
 # Android: build the debug APK (arm64-v8a + x86_64) with the pinned NDK.
+# iOS: build the app for devices, unsigned (each builder signs their own copy).
 #
 # SDL 3.4.12 and zlib are fetched by CMake (cmake/Dependencies.cmake) when the
 # runner has no system package. Shaders are compiled offline and committed
@@ -65,6 +66,17 @@ jobs:
         with:
           name: gt3r-android-debug
           path: android/app/build/outputs/apk/debug/*.apk
+
+  # iOS (docs/dev/PLATFORMS.md "iOS"): no signing without GT3R_IOS_TEAM, so no artifact either
+  # (an unsigned app installs nowhere).
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0
+      - name: Build app (unsigned)
+        run: cmake --build build-ios --config Release --target gt3r -- -quiet
 
   package:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'

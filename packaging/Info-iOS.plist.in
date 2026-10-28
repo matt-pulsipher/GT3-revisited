@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+	<key>CFBundleIdentifier</key>
+	<string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleDisplayName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+	<key>CFBundleVersion</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.racing-games</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>metal</string>
+	</array>
+	<!-- Without a launch screen iOS runs the app at an old, smaller screen size -->
+	<key>UILaunchScreen</key>
+	<dict/>
+	<!-- Racing is landscape (SDL_HINT_ORIENTATIONS in app.cpp); full screen, also on iPad -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>UIStatusBarHidden</key>
+	<true/>
+	<!-- Every refresh of 120 Hz (ProMotion) displays, as on other platforms (Settings → Display →
+	     Limit to 60 fps halves it) -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>GCSupportsControllerUserInteraction</key>
+	<true/>
+</dict>
+</plist>

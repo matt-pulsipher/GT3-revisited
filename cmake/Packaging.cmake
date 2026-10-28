@@ -8,7 +8,23 @@
 
 set(GT3R_PACKAGING_DIR ${CMAKE_SOURCE_DIR}/packaging)
 
-if(TARGET gt3r AND APPLE)
+if(TARGET gt3r AND IOS)
+  # An asset catalog with the single 1024 px icon (Xcode makes every size from it). It is a
+  # directory source, so it is written at configure time; Xcode's actool compiles it.
+  set(_xcassets ${CMAKE_BINARY_DIR}/gt3r-ios.xcassets)
+  configure_file(${GT3R_PACKAGING_DIR}/icon.png ${_xcassets}/AppIcon.appiconset/icon.png COPYONLY)
+  file(WRITE ${_xcassets}/Contents.json "{\"info\": {\"author\": \"xcode\", \"version\": 1}}\n")
+  file(WRITE ${_xcassets}/AppIcon.appiconset/Contents.json
+    "{\"images\": [{\"filename\": \"icon.png\", \"idiom\": \"universal\", \"platform\": \"ios\",\n"
+    "  \"size\": \"1024x1024\"}],\n"
+    " \"info\": {\"author\": \"xcode\", \"version\": 1}}\n")
+  target_sources(gt3r PRIVATE ${_xcassets})
+  set_source_files_properties(${_xcassets} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  set_target_properties(gt3r PROPERTIES
+    MACOSX_BUNDLE_INFO_PLIST ${GT3R_PACKAGING_DIR}/Info-iOS.plist.in
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME AppIcon)
+elseif(TARGET gt3r AND APPLE)
   # .icns generated from packaging/icon.png with the macOS tools.
   set(_iconset ${CMAKE_BINARY_DIR}/gt3r.iconset)
   set(_icns ${CMAKE_BINARY_DIR}/gt3r.icns)
@@ -35,7 +51,7 @@ elseif(TARGET gt3r AND WIN32)
   target_sources(gt3r PRIVATE ${GT3R_PACKAGING_DIR}/gt3r.rc)
 endif()
 
-if(ANDROID)
+if(ANDROID OR IOS) # (packaged by Gradle, or installed from Xcode by each builder)
   return()
 endif()
 

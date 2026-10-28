@@ -4,7 +4,7 @@ Status of each target, how to build and test it, and known issues. "Verified"
 means built *and* run here; "built" means compiled and unit-tested but not
 run interactively; "unverified" means neither.
 
-## Status (2026-10-23)
+## Status (2026-10-28)
 
 | Target | Compiler | Status | Evidence |
 |---|---|---|---|
@@ -19,7 +19,8 @@ run interactively; "unverified" means neither.
 | Android x86_64 | NDK 27 clang | ✅ built | Part of the same APK; not run |
 | Android real device | NDK 27 clang | ✅ verified | Galaxy A15 5G (Mali-G57 MC2, Android 16, 4 GB), the low-end baseline: menus, car select (~75 fps), Arcade races (35–55 fps). Races also on a Moto G Power 2024 (Imagination BXM), a Hiby R4 and a Galaxy S26 |
 | Meta Quest 3 (VR) | NDK 27 clang | ✅ verified | The Quest APK (`-Pquest`, SDL 3.6 development branch): menus on a virtual screen, stereo races at a steady 90 fps; see [VR](VR.md) |
-| iOS | | ❌ not started | SDL supports it; touch controls are already platform-neutral |
+| iOS real device | Apple clang 21 (Xcode 27.1) | ✅ verified (start only) | iPhone 15 Pro (A17 Pro, iOS 26): starts to the setup screen with the 3D renderer (SDL_GPU Metal, MSAA 2x, 72 pipelines warmed in 8 ms); landscape both ways, taps, home and back. No disc image picker yet (SDL has no file dialog on iOS), so no menus or races yet |
+| iOS simulator (arm64) | Apple clang 21 (Xcode 27.1) | ⚠️ built | Warning-free (no unit tests on iOS); starts to the setup screen with the 2D renderer only (SDL_GPU does not accept the simulator's GPU) |
 
 ## Building and testing
 
@@ -142,6 +143,51 @@ Useful checks: `adb emu sensor set acceleration x:y:z` for tilt steering,
 for orientation, `logcat --pid=$(pidof org.gt3revisited.gt3r)` for the
 engine log ("Race perf" lines every 3 s while racing).
 
+### iOS
+
+CMake's own iOS support with the Xcode generator (needed: it signs the app and compiles its
+icon catalog); no Xcode project is kept in the repository. SDL is always built from source
+(an installed one is a macOS build), and the MSL shaders are the ones macOS uses. iOS 16 or
+later, iPhone and iPad, landscape. The tools and tests are not built, as on Android.
+
+```bash
+cmake -S . -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+      -DGT3R_IOS_TEAM=<team ID> -DGT3R_IOS_BUNDLE_ID=<your.own.identifier>
+open build-ios/GT3Revisited.xcodeproj   # scheme gt3r, pick the device, Run
+```
+
+Signing is never committed. `GT3R_IOS_TEAM` is your Apple developer team ID; Xcode then
+signs automatically. A free Apple ID is enough: signed in under Xcode → Settings → Accounts, it
+has a personal team, whose ID is the `OU` of its certificate
+(`security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject`); a paid
+membership shows it on developer.apple.com → Account → Membership details. With a free account
+the installed app stops opening after 7 days (installing it again renews it; the user data
+stays), and the iPhone needs Developer Mode (Settings → Privacy & Security) and the developer
+trusted once (Settings → General → VPN & Device Management). A bundle identifier belongs to
+the first team that registers it, so a signed build needs one of your own
+(`GT3R_IOS_BUNDLE_ID`); the project's `org.gt3revisited.gt3r` is used only for unsigned builds. Without `GT3R_IOS_TEAM` the build is unsigned (CI), which no device installs.
+
+From the command line, after configuring with your team:
+
+```bash
+cmake --build build-ios --config RelWithDebInfo --target gt3r -- -allowProvisioningUpdates
+xcrun devicectl list devices
+xcrun devicectl device install app --device <device> build-ios/RelWithDebInfo-iphoneos/gt3r.app
+```
+
+The simulator needs its own build tree (the SDK is chosen at configure time):
+
+```bash
+cmake -S . -B build-ios-sim -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+      -DCMAKE_OSX_SYSROOT=iphonesimulator -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build build-ios-sim --config RelWithDebInfo --target gt3r
+xcrun simctl install booted build-ios-sim/RelWithDebInfo-iphonesimulator/gt3r.app
+xcrun simctl launch --console-pty booted org.gt3revisited.gt3r   # the engine log on the terminal
+```
+
+There it runs with the 2D renderer only (SDL_GPU rejects the simulator's GPU), and its virtual
+gamepad keeps the touch controls hidden until the screen is touched.
+
 ### Pointer scripts
 
 `GT3R_POINTER_SCRIPT` feeds a screen scripted pointer events, in UI units (640 × 360),
@@ -176,6 +222,8 @@ GT3R_SHOT_FRAME=120 GT3R_ONLINE="host" ./build/gt3r.app/Contents/MacOS/gt3r disc
   `gt3r gt3tool gt3r_tests`, run ctest (tests that need a disc skip).
 - **android**: JDK 21, installs NDK 27.0.12077973 + CMake 3.22.1 with
   sdkmanager, fetches SDL, `assembleDebug`, uploads the APK.
+- **ios** (macos-14): configures with the Xcode generator and builds the app for devices,
+  unsigned (no artifact: an unsigned app installs nowhere).
 
 Validated locally with `actionlint`. GitHub Actions runs it on every push and
 pull request; `v*` tags also run the package jobs and `release` (below).

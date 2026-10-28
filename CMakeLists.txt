@@ -14,6 +14,15 @@ option(GT3R_BUILD_TOOLS "Build the gt3tool command line utility" ON)
 option(GT3R_BUILD_TESTS "Build unit tests" ON)
 option(GT3R_PROGRAM_TOOLS "Developer-only gt3tool commands" OFF)
 
+if(IOS)
+  # The warnings are the flags below, as on every platform, not Xcode's iOS defaults on top
+  # (-Wshorten-64-to-32).
+  set(CMAKE_XCODE_ATTRIBUTE_GCC_WARN_64_TO_32_BIT_CONVERSION NO)
+  # libtool notes every file that compiles to nothing without its option (src/xr without
+  # GT3R_XR, SDL's other platforms); the static libraries pass this (gt3r_engine, SDL3-static).
+  set(GT3R_LIBTOOL_QUIET -no_warning_for_no_symbols)
+endif()
+
 include(cmake/Dependencies.cmake)
 
 if(MSVC)
@@ -34,6 +43,9 @@ list(FILTER GT3R_ENGINE_SOURCES EXCLUDE REGEX "/src/app/")
 add_library(gt3r_engine STATIC ${GT3R_ENGINE_SOURCES})
 target_include_directories(gt3r_engine PUBLIC src)
 target_link_libraries(gt3r_engine PUBLIC SDL3::SDL3 ZLIB::ZLIB)
+if(GT3R_LIBTOOL_QUIET)
+  set_target_properties(gt3r_engine PROPERTIES STATIC_LIBRARY_OPTIONS ${GT3R_LIBTOOL_QUIET})
+endif()
 if(APPLE)
   target_link_libraries(gt3r_engine PUBLIC objc) # platform/mac_layer.cpp, mac_dialog.cpp
 endif()
@@ -75,7 +87,35 @@ if(ANDROID)
 else()
   add_executable(gt3r ${GT3R_APP_SOURCES})
   set(GT3R_APP_TARGET gt3r)
-  if(APPLE)
+  if(IOS)
+    # iPhone and iPad (docs/dev/PLATFORMS.md "iOS"), with the Xcode generator. Signing is never
+    # committed: a device build gets the builder's own team and bundle identifier at configure time.
+    # A bundle identifier belongs to the first team that registers it, so the project's own
+    # (org.gt3revisited.gt3r) is only used unsigned (CI), never registered by accident.
+    set(GT3R_IOS_TEAM "" CACHE STRING "Apple development team ID that signs the iOS app (empty: unsigned)")
+    set(GT3R_IOS_BUNDLE_ID "" CACHE STRING "Bundle identifier of a signed iOS build, e.g. com.example.gt3r")
+    if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+      message(FATAL_ERROR "iOS builds need the Xcode generator (-G Xcode): it signs the app and compiles its icon")
+    endif()
+    if(GT3R_IOS_TEAM STREQUAL "")
+      set(_ios_bundle_id org.gt3revisited.gt3r)
+      set_target_properties(gt3r PROPERTIES XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED NO)
+    elseif(GT3R_IOS_BUNDLE_ID STREQUAL "")
+      message(FATAL_ERROR "GT3R_IOS_TEAM is set: also set GT3R_IOS_BUNDLE_ID to an identifier of your own")
+    else()
+      set(_ios_bundle_id ${GT3R_IOS_BUNDLE_ID})
+      set_target_properties(gt3r PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
+        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ${GT3R_IOS_TEAM})
+    endif()
+    set_target_properties(gt3r PROPERTIES
+      MACOSX_BUNDLE TRUE
+      MACOSX_BUNDLE_GUI_IDENTIFIER ${_ios_bundle_id}
+      MACOSX_BUNDLE_BUNDLE_NAME "GT3 Revisited"
+      MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER ${_ios_bundle_id}
+      XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2") # iPhone, iPad
+  elseif(APPLE)
     set_target_properties(gt3r PROPERTIES
       MACOSX_BUNDLE TRUE
       MACOSX_BUNDLE_GUI_IDENTIFIER org.gt3revisited.gt3r
@@ -104,7 +144,7 @@ add_custom_command(OUTPUT ${GT3R_UI_FONT_SRC}
 target_sources(${GT3R_APP_TARGET} PRIVATE ${GT3R_UI_FONT_SRC})
 target_include_directories(${GT3R_APP_TARGET} SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party/stb)
 
-if(GT3R_BUILD_TOOLS AND NOT ANDROID)
+if(GT3R_BUILD_TOOLS AND NOT ANDROID AND NOT IOS)
   # The online relay server (also builds on its own: tools/gt3r-relay/CMakeLists.txt).
   add_executable(gt3r-relay tools/gt3r-relay/main.cpp src/net/socket.cpp src/net/protocol.cpp
                  src/net/rendezvous.cpp src/net/relay_server.cpp src/net/geoip.cpp)
@@ -123,14 +163,14 @@ endif()
 # Optional developer tools that are not part of every checkout: any
 # tools/<name>/devtool.cmake is included (none of them is needed to build or
 # test the game).
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT IOS)
   file(GLOB GT3R_DEVTOOL_SCRIPTS ${CMAKE_SOURCE_DIR}/tools/*/devtool.cmake)
   foreach(_devtool ${GT3R_DEVTOOL_SCRIPTS})
     include(${_devtool})
   endforeach()
 endif()
 
-if(GT3R_BUILD_TESTS AND NOT ANDROID)
+if(GT3R_BUILD_TESTS AND NOT ANDROID AND NOT IOS)
   enable_testing()
   file(GLOB GT3R_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/*.cpp)
   add_executable(gt3r_tests ${GT3R_TEST_SOURCES})
@@ -144,7 +184,7 @@ endif()
 # Configure a separate tree with -fsanitize=address,undefined (see the file's header).
 option(GT3R_FUZZ "Build the gt3r_fuzz targets" OFF)
 option(GT3R_LIBFUZZER "Link gt3r_fuzz with clang's libFuzzer (coverage guided)" OFF)
-if(GT3R_FUZZ AND NOT ANDROID)
+if(GT3R_FUZZ AND NOT ANDROID AND NOT IOS)
   add_executable(gt3r_fuzz tests/fuzz/fuzz.cpp)
   target_link_libraries(gt3r_fuzz PRIVATE gt3r_engine)
   if(GT3R_LIBFUZZER)
