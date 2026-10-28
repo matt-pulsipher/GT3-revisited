@@ -67,3 +67,18 @@ TEST(recent_discs_path_candidates) {
     CHECK(disc_file_name("/a/b/GT3 (US).iso") == "GT3 (US).iso");
     CHECK(disc_file_name("content://p/document/primary%3AGames%2FGT3.iso") == "GT3.iso");
 }
+
+TEST(recent_discs_rebase_app_container) {
+    const std::string now = "/var/mobile/Containers/Data/Application/BBBB-2222/Documents/";
+    // An earlier install's folder (as the system reports it, with /private): this install's.
+    CHECK(rebase_app_container_path("/private/var/mobile/Containers/Data/Application/AAAA-1111/Documents/GT3.iso", now) ==
+          "/var/mobile/Containers/Data/Application/BBBB-2222/Documents/GT3.iso");
+    CHECK(rebase_app_container_path("/var/mobile/Containers/Data/Application/BBBB-2222/Documents/a/GT3.iso", now) ==
+          "/var/mobile/Containers/Data/Application/BBBB-2222/Documents/a/GT3.iso");
+    // Outside any app folder (iCloud Drive, another provider), or not on iOS: unchanged.
+    const std::string icloud = "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/GT3.iso";
+    CHECK(rebase_app_container_path(icloud, now) == icloud);
+    CHECK(rebase_app_container_path("/Users/me/GT3.iso", "/Users/me/Library/Application Support/GT3Revisited/") ==
+          "/Users/me/GT3.iso");
+    CHECK(rebase_app_container_path("/x/Containers/Data/Application/", now) == "/x/Containers/Data/Application/");
+}

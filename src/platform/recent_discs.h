@@ -48,4 +48,10 @@ std::vector<std::string> disc_path_candidates(const std::string& saved, const st
 // File name part of a path ("GT3.iso" for "C:\Games\GT3.iso").
 std::string disc_file_name(std::string_view path);
 
+// iOS: `path` moved into the app folder of `data_dir`. Each install of an iOS app gets its own
+// folder (/var/mobile/Containers/Data/Application/<UUID>/), so a path saved by an earlier install
+// names a folder that no longer exists; the rest of it (Documents/GT3.iso) is the same file now.
+// `path` unchanged when either is not in such a folder, or both are in the same one.
+std::string rebase_app_container_path(std::string_view path, std::string_view data_dir);
+
 } // namespace gt3r::platform

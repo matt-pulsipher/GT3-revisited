@@ -19,7 +19,7 @@ run interactively; "unverified" means neither.
 | Android x86_64 | NDK 27 clang | ✅ built | Part of the same APK; not run |
 | Android real device | NDK 27 clang | ✅ verified | Galaxy A15 5G (Mali-G57 MC2, Android 16, 4 GB), the low-end baseline: menus, car select (~75 fps), Arcade races (35–55 fps). Races also on a Moto G Power 2024 (Imagination BXM), a Hiby R4 and a Galaxy S26 |
 | Meta Quest 3 (VR) | NDK 27 clang | ✅ verified | The Quest APK (`-Pquest`, SDL 3.6 development branch): menus on a virtual screen, stereo races at a steady 90 fps; see [VR](VR.md) |
-| iOS real device | Apple clang 21 (Xcode 27.1) | ✅ verified (start only) | iPhone 15 Pro (A17 Pro, iOS 26): starts to the setup screen with the 3D renderer (SDL_GPU Metal, MSAA 2x, 72 pipelines warmed in 8 ms); landscape both ways, taps, home and back. No disc image picker yet (SDL has no file dialog on iOS), so no menus or races yet |
+| iOS real device | Apple clang 21 (Xcode 27.1) | ✅ verified (disc and menus) | iPhone 15 Pro (A17 Pro, iOS 26): 3D renderer (SDL_GPU Metal, MSAA 2x, 72 pipelines warmed in 8 ms); the document picker opens a disc image in place from an SMB share (Files app), the game boots to GT Mode, and the next start reopens it by itself; the user data folder shows in Files. Landscape both ways, taps, home and back. Races, controllers and tilt not tried yet |
 | iOS simulator (arm64) | Apple clang 21 (Xcode 27.1) | ⚠️ built | Warning-free (no unit tests on iOS); starts to the setup screen with the 2D renderer only (SDL_GPU does not accept the simulator's GPU) |
 
 ## Building and testing
@@ -174,6 +174,16 @@ cmake --build build-ios --config RelWithDebInfo --target gt3r -- -allowProvision
 xcrun devicectl list devices
 xcrun devicectl device install app --device <device> build-ios/RelWithDebInfo-iphoneos/gt3r.app
 ```
+
+The user data folder (config, saves, mods, screenshots) is the app's Documents, which the
+Files app shows as On My iPhone › GT3 Revisited and Finder lists under the iPhone's Files
+(`UIFileSharingEnabled`). SDL has no file dialog on iOS, so **Open disc image** shows the
+system's document picker (`platform/ios_files.h`): the image is read where it is, never copied
+(iCloud Drive, On My iPhone, other providers), and a bookmark of it in the app's user defaults
+opens it again at the next start. An image copied into the GT3 Revisited folder needs no
+bookmark; its saved path is moved into the next install's folder, which iOS names anew
+(`rebase_app_container_path`). No document type is declared: opening an image from the Files
+app would copy it into the app.
 
 The simulator needs its own build tree (the SDK is chosen at configure time):
 

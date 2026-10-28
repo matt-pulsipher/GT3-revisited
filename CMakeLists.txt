@@ -47,7 +47,10 @@ if(GT3R_LIBTOOL_QUIET)
   set_target_properties(gt3r_engine PROPERTIES STATIC_LIBRARY_OPTIONS ${GT3R_LIBTOOL_QUIET})
 endif()
 if(APPLE)
-  target_link_libraries(gt3r_engine PUBLIC objc) # platform/mac_layer.cpp, mac_dialog.cpp
+  target_link_libraries(gt3r_engine PUBLIC objc) # platform/mac_layer.cpp, mac_dialog.cpp, ios_files.cpp
+endif()
+if(IOS)
+  target_link_libraries(gt3r_engine PUBLIC "-framework UniformTypeIdentifiers") # ios_files.cpp (UTType)
 endif()
 # VR headsets (src/xr, docs/dev/VR.md). The code compiles to nothing without GT3R_XR.
 if(GT3R_XR)

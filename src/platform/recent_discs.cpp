@@ -100,4 +100,21 @@ std::string disc_file_name(std::string_view path) {
     return std::string(name);
 }
 
+std::string rebase_app_container_path(std::string_view path, std::string_view data_dir) {
+    // Up to the end of the <UUID> part (/private/var/... and /var/... alike: the system reports
+    // either; the current folder is written the way data_dir has it).
+    auto container_end = [](std::string_view p) -> size_t {
+        static constexpr std::string_view kMarker = "/Containers/Data/Application/";
+        size_t at = p.find(kMarker);
+        if (at == std::string_view::npos) return std::string_view::npos;
+        size_t end = p.find('/', at + kMarker.size());
+        return end == std::string_view::npos || end == at + kMarker.size() ? std::string_view::npos : end;
+    };
+    const size_t pe = container_end(path), de = container_end(data_dir);
+    if (pe == std::string_view::npos || de == std::string_view::npos) return std::string(path);
+    std::string out(data_dir.substr(0, de));
+    out += path.substr(pe);
+    return out;
+}
+
 } // namespace gt3r::platform

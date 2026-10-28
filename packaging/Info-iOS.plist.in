@@ -47,5 +47,12 @@
 	<true/>
 	<key>GCSupportsControllerUserInteraction</key>
 	<true/>
+	<!-- The user data folder (Documents) in the Files app ("On My iPhone > GT3 Revisited") and in
+	     Finder's file sharing: the disc image can be copied there, mods and saves in and out
+	     (platform/ios_files.h). No document types: an image opened from Files would be copied in. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

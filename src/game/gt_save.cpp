@@ -612,6 +612,12 @@ std::string user_data_dir() {
         if (dir.back() != '/' && dir.back() != '\\') dir += '/';
         return dir;
     }
+#if defined(SDL_PLATFORM_IOS)
+    // iOS: the app's Documents, which the Files app and Finder show as GT3 Revisited
+    // (UIFileSharingEnabled): mods and the disc image go in, screenshots and saves come out, as
+    // with Android's documents provider. SDL_GetPrefPath's Library folder is hidden from both.
+    if (const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) return docs;
+#endif
     const char* base = SDL_GetBasePath();
     if (base && host_path_exists(std::string(base) + "portable.ini")) {
         dir = base;

@@ -10,6 +10,7 @@
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
 #include "menu/menu_scene.h"
+#include "platform/ios_files.h"
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
 #include "platform/mac_layer.h"
@@ -70,6 +71,9 @@ bool App::init(int argc, char** argv) {
     SDL_CreateDirectory(mods_dir().c_str());
     config_path_ = data_dir_ + "config.ini";
     if (auto cfg = IniDocument::load(config_path_)) config_ = std::move(*cfg);
+    // iOS: the remembered disc images readable again (another install's folder, picked files).
+    if (platform::restore_disc_access(config_, data_dir_) && !config_.save(config_path_))
+        LOG_WARN("Could not save %s", config_path_.c_str());
     LOG_INFO("User data: %s", data_dir_.c_str());
     set_speed_unit(parse_speed_unit(config_.get("race", "units").value_or(""))); // menus and races
 
@@ -461,6 +465,11 @@ void App::close_disc() {
 }
 
 void App::show_open_dialog() {
+    // iOS: SDL has no file dialog there; the system's document picker opens the image in place.
+    if (platform::show_document_picker(window_, kDiscFilters, SDL_arraysize(kDiscFilters), [this](std::string path) {
+            if (!path.empty()) set_dialog_result(std::move(path));
+        }))
+        return;
     SDL_ShowOpenFileDialog(on_dialog, this, window_, kDiscFilters, SDL_arraysize(kDiscFilters), nullptr, false);
 }
 
