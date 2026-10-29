@@ -32,8 +32,8 @@ generic HID joysticks, wheels and pedals. Devices hot-plug at any time.
 
 | Feature | How it is used |
 |---|---|
-| Rumble | DS2 large motor → low-frequency motor, small motor → high-frequency motor. In races the motors follow GT3's own vibration: each step's level (suspension movement, curbs under the front wheels, the front tires' drive and brake forces, wall hits) on the large motor as GT3 sends it (at most half strength), never the small motor; a car the AI drives, as after the finish, does not vibrate |
-| Phone vibration (Android, off by default) | `[player1] phone_vibration = on` (Settings → Controls → Phone vibration): player 1's rumble on the device's own motor, only while the controls driving them have no rumble motor (built-in handheld controls, touch, a controller without motors). A controller that rumbles keeps it; the phone stays still |
+| Rumble | DS2 large motor → low-frequency motor, small motor → high-frequency motor. In races, each player's **Rumble** (Settings → Rumble & feedback, `[playerN] rumble`) picks how the motors run: **GT3 original** (`gt3`) follows GT3's own vibration: each step's level (suspension movement, curbs under the front wheels, the front tires' drive and brake forces, wall hits) on the large motor as GT3 sends it (at most half strength), never the small motor; most controllers play its low levels much stronger than a DualShock 2, so it runs all the time there. **Modern** (`modern`) rumbles for what the car meets: a wall or car hit pulses the large motor for 0.25 s by its speed change, off-road, wheelspin and a slide (the tire squeal) hold it, and curbs pulse the small motor at a rate that follows the speed. **Auto** (`auto`, the default) is GT3 original on a DualSense and Modern on every other controller. Either way, a car the AI drives, as after the finish, does not vibrate |
+| Phone vibration (Android, off by default) | `[player1] phone_vibration = on` (Settings → Rumble & feedback → Phone vibration): player 1's rumble on the device's own motor, only while the controls driving them have no rumble motor (built-in handheld controls, touch, a controller without motors). A controller that rumbles keeps it; the phone stays still |
 | Impulse triggers (Xbox One/Series) | `InputManager::set_trigger_rumble`, for brake/ABS feedback |
 | Player LEDs / light bars | Set to the player number |
 | Button labels | The UI shows Cross/Circle on PlayStation pads and A/B on Xbox pads |
@@ -111,9 +111,9 @@ In Settings, choices, switches and sliders change only with Left/Right or a
 tap on their arrows, switch or track; Cross never changes a setting (it runs
 actions and starts a rebind).
 
-**Settings → Controls** holds every control setting, for player 1 and player 2
-(split screen) alike: under each player's **Controller**, **Race controls**,
-**Keyboard** and **Test rumble** rows come their bindings, inline:
+**Settings → Controls** holds the controllers and their bindings, for player 1
+and player 2 (split screen) alike: under each player's **Controller**, **Race
+controls** and **Keyboard** rows come their bindings, inline:
 
 - **Player N race controls**: the race actions in driving order (Accelerate,
   Brake, Shift up, Shift down, Handbrake, Reverse, Change view, Look back,
@@ -186,8 +186,8 @@ button and they show as **Right paddle**, **Left paddle** (and **Right paddle
 an action (Reverse, say) takes it off the one it had (shift); clearing Shift up
 or down, or rebinding it to another button, takes shift off the paddle.
 
-The **Settings** screen (Controls, Force feedback and Touch pages) edits the
-`[playerN]` controller/keyboard/race keys and bindings (and `[player1]
+The **Settings** screen (Controls, Rumble & feedback and Touch pages) edits the
+`[playerN]` controller/keyboard/race/rumble keys and bindings (and `[player1]
 phone_vibration` on Android), every `[ffb]` key and every `[touch]` key
 described below, and applies them immediately.
 
@@ -207,6 +207,7 @@ back to the game; the layout editor's **Done** returns to Settings.
 controller = auto      ; auto, part of a device name ("DualSense", "G29"), or keyboard (only)
 keyboard = on
 race = modern          ; race layout (modern | gt3), used when there is no [player1.race]
+rumble = auto          ; race rumble: auto (GT3 original on a DualSense, else modern) | modern | gt3 (see Native features)
 phone_vibration = off  ; Android, player 1 only: rumble on the device's own motor (see Native features)
 
 [player1.bindings]     ; the menu pad, a gamepad's inputs ([player1.wheel.bindings], [player1.joystick.bindings])
@@ -330,6 +331,10 @@ Triangle or Square leave at once as its EXIT, except in championships
 (presentation §C2).
 
 ## Force feedback (`ffb`)
+
+**Settings → Rumble & feedback** holds each player's **Rumble**, **Phone
+vibration** (Android, player 1) and **Test rumble**, then these effects for all
+players under **Triggers and wheels**.
 
 Beyond DS2 rumble, the race sends a per-frame driving state
 (`InputManager::set_force_feedback`: speed, brake, ABS active, steering

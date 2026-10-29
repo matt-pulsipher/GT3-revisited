@@ -89,6 +89,10 @@ public:
     // Always 16:9 in VR (the headset's virtual screen).
     platform::Aspect aspect() const;
     void set_aspect(platform::Aspect a);
+    // [video] full_car_detail = on | off (default on, off on phones and tablets): every car with its
+    // full-detail model and textures at any distance; off: GT3's simpler models in the distance
+    // (race::car_lod). Read when a race starts.
+    bool full_car_detail() const;
     // [video] dynamic_resolution = on | off (default on phones and tablets): the 3D resolution
     // drops (to 50% at most) when the GPU cannot keep up and climbs while it does, up to [video]
     // render_scale, or with auto the screen's full resolution (render::DynamicScale). Fixed for

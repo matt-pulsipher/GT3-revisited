@@ -169,6 +169,7 @@ are only there:
 | `[video] anisotropy` | `1` `2` `4` `8` `16` | anisotropic texture filtering (`1` = off); default 4 |
 | `[video] render_scale` | `auto`, `0.5`..`4.0` | 3D resolution vs. the screen; above `1.0` the 3D views render larger and are scaled down (supersampling), up to 16384 pixels a side |
 | `[video] dynamic_resolution` | `on` / `off` | lower the 3D resolution (to 50% at most) when the GPU can't keep up and raise it while it keeps up, up to `render_scale`; with `auto`, up to the screen's full resolution (at most 1440 lines), starting where the last race ended (kept in `dynamic_start`). Default on for phones and tablets |
+| `[video] full_car_detail` | `on` / `off` | every car in full detail at any distance; `off`: distant cars switch to GT3's simpler models. Default on, off for phones and tablets |
 | `[video] gpu` | `1` / `0` | SDL_GPU 3D renderer; `0` = 2D-only (restart required) |
 | `[video] original_res` | `on` / `off` | *(file)* races at the PS2's 640×448 in a 4:3 frame |
 | `[video] original_filter` | `nearest` / `bilinear` | *(file)* upscaling filter for `original_res` |
@@ -181,7 +182,7 @@ are only there:
 | `[race] units` | `kmh` / `mph` | speed unit in races and menus (absent: the disc's, mph on the North American disc, km/h on the European and Japanese ones) |
 | `[race] split` | `auto` / `horizontal` / `vertical` | *(file)* 2P split (default: as GT3) |
 | `[race] analog_response` | `linear` / `original` | sticks, triggers, wheels, touch and tilt: a linear response (default) or GT3's DualShock 2 curves (Settings → Controls) |
-| `[player1]`, `[player2]` | `controller` (auto, a device name, or keyboard), `keyboard`, `race`; `phone_vibration` (player 1, Android) | see [INPUT](docs/INPUT.md#controller) |
+| `[player1]`, `[player2]` | `controller` (auto, a device name, or keyboard), `keyboard`, `race`, `rumble` (auto, modern, gt3); `phone_vibration` (player 1, Android) | see [INPUT](docs/INPUT.md#controller) |
 | `[ffb]` | see [INPUT](docs/INPUT.md) | DualSense/Xbox triggers and wheel force feedback |
 | `[touch]` | see [INPUT](docs/INPUT.md#touch-controls-phones-and-tablets) | on-screen controls on phones and tablets; Customize layout moves, resizes and hides each one |
 | `[online] server` | host name | relay server (default `gt3r.gameversions.com`; set in the lobby) |

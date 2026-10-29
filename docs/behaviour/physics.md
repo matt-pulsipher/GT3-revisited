@@ -180,7 +180,8 @@ most 127:
 
 After every step the race sends the level of a car the pad drives to its controller's large
 motor as it is (so at most about half strength); the small motor never runs. A car the AI
-drives (a run-up, after the finish) sends nothing, and its controller's motors stop. The
+drives (a run-up, after the finish) sends nothing, and its controller's motors stop. This is
+the Rumble setting's GT3 original (Auto plays it on a DualSense); its Modern rumble and the
 triggers' ABS and wheelspin effects are the engine's own (`docs/INPUT.md`).
 
 ### §1.3 State, frames and the ground query
@@ -2448,7 +2449,7 @@ below; those marked (disc) need the disc.
 | `exact_replay_round_trip` (disc) | a race with a seeded engine condition replays to the same end (§10.3) |
 | `exact_replay_ghost` (disc) | a time trial's whole-run ghost drives the earlier run again step for step and takes no part in the player's (walls-only) collision step (§5.3) |
 | `net_exact_posed_car_contact` (disc) | an online player's posed car driving into ours: our car is pushed, and the hit reported for its owner pushes the posed car back (§5.3) |
-| `race_rumble` | a step's vibration level goes to the large motor as it is (100, 127), the small motor stays off, and the motors stop for a car the AI drives or a step without telemetry (§1.2) |
+| `race_rumble` | GT3 original: a step's vibration level goes to the large motor as it is (100, 127) and the small motor stays off; Modern: hits, curbs, off-road, slides and wheelspin; both stop for a car the AI drives or a step without telemetry (§1.2) |
 | `exact_game_exit_as_finish` (disc) | a car the pad drives sends vibration through a lap; after the finish, the AI driving it, it sends none (§1.2) |
 | `race_pylons_disc` (disc) | the license pylons are knocked about by a car's box and every touch is reported (§11) |
 

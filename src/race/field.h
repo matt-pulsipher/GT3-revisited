@@ -226,6 +226,7 @@ public:
     virtual float second_brake() const = 0;
     virtual float second_wall_impulse() const = 0;
     virtual float second_car_impulse() const = 0;
+    virtual float second_impact() const { return 0; } // RaceVehicle::last_impact
     struct LapInfo {
         int laps = 0;
         bool started = false, wrong_way = false;

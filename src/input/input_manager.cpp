@@ -105,6 +105,7 @@ void InputManager::load(const IniDocument& cfg) {
                          : preset == "wheel" && device != "auto" ? device : "";
         if (auto kb = cfg.get(sec, "keyboard")) p.keyboard = to_lower(*kb) == "on" || *kb == "1";
         if (i == 0) set_phone_vibration(to_lower(cfg.get(sec, "phone_vibration").value_or("off")) == "on");
+        p.rumble_mode = to_lower(cfg.get(sec, "rumble").value_or("auto"));
     }
     assign_devices();
 }
@@ -123,6 +124,7 @@ void InputManager::save(IniDocument& cfg) const {
         cfg.set(sec, "device", kb_only ? "auto" : p.device_filter);
         cfg.set(sec, "keyboard", p.keyboard ? "on" : "off");
         if (i == 0) cfg.set(sec, "phone_vibration", phone_vibration_ ? "on" : "off");
+        cfg.set(sec, "rumble", p.rumble_mode);
         cfg.set(sec, "race", p.bindings.race_layout);
         p.bindings.save(cfg, sec);
     }
@@ -229,6 +231,7 @@ void InputManager::add_device(SDL_JoystickID id) {
     const char* name = d.gamepad ? SDL_GetGamepadName(d.gamepad) : SDL_GetJoystickName(d.joystick);
     d.name = name ? name : "Unknown device";
     d.wheel = SDL_GetJoystickTypeForID(id) == SDL_JOYSTICK_TYPE_WHEEL;
+    d.dualsense = d.gamepad && SDL_GetGamepadType(d.gamepad) == SDL_GAMEPAD_TYPE_PS5;
     if (const char* serial = SDL_GetJoystickSerial(d.joystick)) d.serial = serial;
     if (const char* path = SDL_GetJoystickPath(d.joystick)) d.path = path;
     LOG_INFO("Input device connected: %s (%s)", d.name.c_str(), d.gamepad ? "gamepad" : "joystick");
@@ -699,6 +702,17 @@ bool use_phone_vibrator(bool enabled, int player, bool device_rumbles) {
 }
 
 float phone_vibration_strength(const PadRumble& r) { return std::max(r.large / 255.0f, r.small ? 0.6f : 0.0f); }
+
+bool gt3_rumble(std::string_view mode, bool dualsense) {
+    if (mode == "gt3") return true;
+    if (mode == "modern") return false;
+    return dualsense;
+}
+
+bool InputManager::dualsense(int player) const {
+    const Device* d = find_device(players_[player].device);
+    return d && d->dualsense;
+}
 
 std::vector<bool> reserved_devices(const std::vector<DeviceId>& devices, const std::vector<std::string>& tags) {
     std::vector<bool> out(devices.size(), false);

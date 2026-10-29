@@ -80,6 +80,10 @@ public:
     // Player's race distance (laps * length + distance), for positions.
     virtual double race_distance() const = 0;
 
+    // Surface classes for the Modern rumble (race::RumbleModel).
+    virtual bool is_kerb(u32 surface) const = 0;
+    virtual bool is_offroad(const sim::SurfaceHit& hit) const = 0;
+
     // Lap timing for the player's car.
     virtual void lap_reset(double time) = 0;
     virtual bool lap_update(const sim::Vec3& p, double time) = 0; // true when a lap was completed
@@ -166,6 +170,8 @@ public:
     virtual float wall_impulse() const { return 0; }
     // Strongest car-to-car contact impulse of the last step involving this car (N*s).
     virtual float car_impulse() const { return 0; }
+    // The speed change of the last step's strongest wall or car hit (m/s), for the Modern rumble.
+    virtual float last_impact() const { return 0; }
 };
 
 // The course's track runtime; throws FormatError when the course file has none.

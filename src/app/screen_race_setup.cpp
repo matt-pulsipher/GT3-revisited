@@ -25,6 +25,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     env_cube_on_ = app.config().get("video", "car_reflections").value_or("on") != "off";
     if (SDL_getenv("GT3R_NO_ENV")) env_cube_on_ = false;
     shadows_on_ = app.config().get("video", "car_shadows").value_or("on") != "off";
+    full_car_detail_ = app.full_car_detail();
     // [video] original_res = on: the 3D scene at the PS2's 640x448 in a 4:3 frame,
     // upscaled with [video] original_filter = nearest (default) | bilinear.
     original_res_ = app.config().get("video", "original_res").value_or("off") == "on";
@@ -105,6 +106,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         if (!wheel_file && !body_mod.wheel.empty()) wheel_file = app.vfs()->read("wheel/" + body_mod.wheel);
         car_visual_ = std::make_unique<CarVisual>(*app.gpu(), *car_file, model, car_.wheels, preset_.paint,
                                                   wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod);
+        car_visual_->set_full_detail(full_car_detail_);
         course_name_ = ce.name;
         // The start title shows the course table's name as it is: licence sections have their
         // own ("Grand Valley Test Section"), and a course without one shows no title.
@@ -636,9 +638,11 @@ bool RaceScreen::build_vehicle(App& app) {
                     CarBodyMod bm2 = body_mod_for_car(db_, car2, paint2);
                     if (!wheel2.empty()) bm2.wheel = wheel2;
                     std::optional<Bytes> w2 = bm2.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm2.wheel);
-                    if (f2 && !f2->empty())
+                    if (f2 && !f2->empty()) {
                         car2_visual_ = std::make_unique<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
                                                                    w2 ? ByteSpan(*w2) : ByteSpan{}, bm2);
+                        car2_visual_->set_full_detail(full_car_detail_);
+                    }
                 }
             }
             field_->set_laps(race_laps_);
@@ -683,8 +687,10 @@ bool RaceScreen::build_vehicle(App& app) {
                     if (auto w = wheel_spec_from_database(db_, model)) ws = *w;
                     std::optional<Bytes> wf = bm.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm.wheel);
                     try {
-                        if (f && !f->empty())
+                        if (f && !f->empty()) {
                             v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm);
+                            v->set_full_detail(full_car_detail_);
+                        }
                     } catch (const std::exception& e) {
                         LOG_WARN("Race: opponent model %s: %s", model.c_str(), e.what());
                     }

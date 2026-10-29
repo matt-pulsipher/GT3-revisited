@@ -397,6 +397,10 @@ void App::set_aspect(platform::Aspect a) {
     save_config();
 }
 
+bool App::full_car_detail() const {
+    return to_lower(config_.get("video", "full_car_detail").value_or(platform::is_mobile() ? "off" : "on")) == "on";
+}
+
 bool App::dynamic_resolution() const {
     return to_lower(config_.get("video", "dynamic_resolution").value_or(platform::is_mobile() ? "on" : "off")) == "on";
 }

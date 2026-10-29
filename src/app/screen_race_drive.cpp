@@ -174,7 +174,12 @@ void RaceScreen::tick(App& app, const PadState& pad) {
             extra2_.step(CarExtraSounds::step_inputs(*t2, field_->second_facts().value_or(CarFacts{}).turbo));
     if (p2) {
         const sim::VehicleState& s2 = field_->second_state();
-        rumble2_.update(s2, field_->second_telemetry(), last_in2_, dt);
+        RumbleModel::Events ev2;
+        for (const sim::WheelState& w : s2.wheels)
+            if (w.grounded && track_->is_kerb(w.surface)) ev2.kerb = true;
+        ev2.offroad = track_->is_offroad(track_->query().probe(s2.position.x, s2.position.z, s2.position.y + 2.0f));
+        ev2.impact = field_->second_impact();
+        rumble2_.update(s2, field_->second_telemetry(), ev2, last_in2_, dt);
         if (!finished2_ && field_->second_finish() >= 0) { // the race's finish
             finished2_ = true;
             finish_position2_ = field_->second_position();
@@ -290,8 +295,15 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     // The medal's animation runs from the frame its model starts to fade in.
     if (prize_ && finished_ && result_frame() >= LicenseResultOverlay::model_start(shown_medal_)) prize_->tick(dt);
 
-    rumble_.update(s, vehicle_->telemetry(), in, dt);
-    const sim::SurfaceHit h = track_->query().probe(s.position.x, s.position.z, s.position.y + 2.0f); // the ambience's ground
+    const sim::SurfaceHit h = track_->query().probe(s.position.x, s.position.z, s.position.y + 2.0f); // rumble, ambience
+    {
+        RumbleModel::Events ev;
+        for (const sim::WheelState& w : s.wheels)
+            if (w.grounded && track_->is_kerb(w.surface)) ev.kerb = true;
+        ev.offroad = track_->is_offroad(h);
+        ev.impact = vehicle_->last_impact();
+        rumble_.update(s, vehicle_->telemetry(), ev, in, dt);
+    }
     {
         if (se_on()) update_tyre_sounds(app, s);
         // Force feedback is sent once per frame: keep the strongest hits of the frame's steps.
@@ -549,7 +561,7 @@ void RaceScreen::update_drive(App& app, double dt) {
         camera2_.set_track_distance(track_->distance_of(render_state2_.position));
         camera2_.set_lap(field_->second_laps().laps);
         camera2_.update(render_state2_, field_->second_setup(), pad2, dt);
-        app.input().set_rumble(1, rumble2_on_ && !replaying_ ? rumble2_.rumble() : PadRumble{});
+        app.input().set_rumble(1, rumble2_on_ && !replaying_ ? rumble2_.rumble(app.input().gt3_rumble(1)) : PadRumble{});
         if (rumble2_on_ && !replaying_) app.input().set_trigger_rumble(1, rumble2_.trigger_left(), rumble2_.trigger_right());
         else app.input().set_trigger_rumble(1, 0, 0);
         if (se_on() && engine2_.loaded()) {
@@ -599,7 +611,7 @@ void RaceScreen::update_drive(App& app, double dt) {
     if (const float d = director_.take_dissolve(); d > 0) start_dissolve(d); // a course record's own
 
     bool feel = rumble_on_ && !replaying_ && !demo_;
-    app.input().set_rumble(0, feel ? rumble_.rumble() : PadRumble{});
+    app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0)) : PadRumble{});
     if (!feel) app.input().set_trigger_rumble(0, 0, 0);
     else app.input().set_trigger_rumble(0, rumble_.trigger_left(), rumble_.trigger_right());
     if (field_ && field_->opponents() > 0) {

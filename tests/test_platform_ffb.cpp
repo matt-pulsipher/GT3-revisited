@@ -103,3 +103,22 @@ TEST(phone_vibration_only_without_controller_rumble) {
     fresh.save(def);
     CHECK(def.get("player1", "phone_vibration") == "off");
 }
+
+TEST(race_rumble_mode) {
+    // Auto: GT3 original on a DualSense, Modern on anything else; gt3 / modern whatever the device.
+    CHECK(gt3_rumble("auto", true) && !gt3_rumble("auto", false));
+    CHECK(gt3_rumble("gt3", false) && gt3_rumble("gt3", true));
+    CHECK(!gt3_rumble("modern", true) && !gt3_rumble("modern", false));
+    CHECK(!gt3_rumble("", false) && gt3_rumble("", true)); // an unknown value reads as auto
+    // Per player, auto by default; no device is no DualSense.
+    InputManager input;
+    CHECK(input.rumble_mode(0) == "auto" && input.rumble_mode(1) == "auto");
+    CHECK(!input.dualsense(0) && !input.gt3_rumble(0));
+    input.load(IniDocument::parse("[player1]\nrumble = GT3\n[player2]\nrumble = modern\n"));
+    CHECK(input.rumble_mode(0) == "gt3" && input.gt3_rumble(0));
+    CHECK(input.rumble_mode(1) == "modern" && !input.gt3_rumble(1));
+    input.set_rumble_mode(1, "auto");
+    IniDocument out;
+    input.save(out);
+    CHECK(out.get("player1", "rumble") == "gt3" && out.get("player2", "rumble") == "auto");
+}

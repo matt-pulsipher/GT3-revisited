@@ -47,6 +47,12 @@ public:
     }
     sim::Vec3 point_at(float s, float lateral) const override { return t_->point_at(s, lateral); }
     float distance_of(const sim::Vec3& p) const override { return t_->locate(p).distance; }
+    bool is_kerb(u32 surface) const override { return track::surface_type(surface) == track::Surface::Kerb; }
+    bool is_offroad(const sim::SurfaceHit& hit) const override {
+        track::Surface s = track::surface_type(hit.surface);
+        return hit.segment < 0 || s == track::Surface::Grass || s == track::Surface::Gravel ||
+               s == track::Surface::OffRoad;
+    }
     void set_lap_source(const LapSource* src) override { src_ = src; }
     // (The track's lap timer runs on with a lap source: its distance still places the cameras.)
     void lap_reset(double t) override { lap_.reset(t); }
