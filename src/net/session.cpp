@@ -11,6 +11,10 @@
 #include <cstring>
 #include <random>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 namespace gt3r::net {
 
 const GameVersion& this_game_version() {
@@ -28,6 +32,8 @@ RvPlatform this_platform() {
     return RvPlatform::Android;
 #elif defined(_WIN32)
     return RvPlatform::Windows;
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+    return RvPlatform::Other; // iOS: no value of its own in the protocol (as update_check.cpp has it)
 #elif defined(__APPLE__)
     return RvPlatform::MacOS;
 #elif defined(__linux__)
