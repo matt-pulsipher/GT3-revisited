@@ -112,9 +112,15 @@ void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
         w.x += ox, w.y += oy, w.origin_x += ox, w.origin_y += oy, w.knob_x += ox;
         const Color fg = with_alpha(w.active ? kHot : Color{240, 242, 246}, ink);
         switch (w.kind) {
-        case Widget::Kind::Button:
-            body(ui, w, a, std::min(w.w, w.h) / 2);
-            if (w.shape == Widget::Shape::Rect) {
+        case Widget::Kind::Button: {
+            // The steering buttons: rounded like the pedals, with an arrow their way.
+            const bool steer = w.button == PadButton::Left || w.button == PadButton::Right;
+            body(ui, w, a, steer ? std::min(10.0f, w.w * 0.18f) : std::min(w.w, w.h) / 2);
+            if (steer) {
+                const float d = w.button == PadButton::Left ? -1.0f : 1.0f, k = std::min(w.w, w.h) * 0.2f;
+                const float cx = w.x + w.w / 2, cy = w.y + w.h / 2;
+                triangle(r, cx + d * k, cy, cx - d * k * 0.7f, cy - k, cx - d * k * 0.7f, cy + k, fg);
+            } else if (w.shape == Widget::Shape::Rect) {
                 label(ui, w.x + w.w / 2, w.y + w.h / 2, w.label, fg);
             } else if (w.label.empty()) {
                 face_symbol(ui, w.button, w.x, w.y, w.w * 0.42f, ink);
@@ -129,6 +135,7 @@ void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
                 label(ui, w.x, w.y, w.label, fg);
             }
             break;
+        }
         case Widget::Kind::Pedal: {
             const bool gas = w.button == PadButton::Cross;
             const Color tint = gas ? kGas : kBrake;

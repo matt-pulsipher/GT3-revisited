@@ -24,7 +24,7 @@ struct ControlName {
 constexpr ControlName kNames[] = {
     {"drive.gas", "Gas pedal"},       {"drive.brake", "Brake pedal"},   {"drive.up", "Shift up"},
     {"drive.down", "Shift down"},     {"drive.handbrake", "Handbrake"}, {"drive.pause", "Pause"},
-    {"drive.camera", "Camera"},       {"menu.dpad", "D-pad"},
+    {"drive.camera", "Camera"},       {"drive.steer", "Steering"},      {"menu.dpad", "D-pad"},
     {"menu.buttons", "Face buttons"}, {"menu.l1", "L1"},                {"menu.r1", "R1"},
     {"menu.select", "Select"},        {"menu.start", "Start"},
 };

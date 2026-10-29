@@ -380,12 +380,12 @@ Each screen picks a layout:
 | Layout | Controls |
 |---|---|
 | Menu (default) | D-pad (slide between directions), Cross / Circle / Square / Triangle, L1, R1, Select, Start. Taps away from the controls go to the screen underneath |
-| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, handbrake (Circle), and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls) |
+| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). With `steering = buttons`, Left and Right buttons in the bottom corner instead (a thumb can rock from one to the other): they press the race pad's D-pad, so the car steers as GT3 steers with a DualShock 2's D-pad (full lock, turned in at its slow digital rate and let back faster). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, handbrake (Circle), and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls) |
 
 ```ini
 [touch]
 mode = auto            ; auto | on | off
-steering = drag        ; drag | tilt (roll the device like a wheel, ±45° = full lock)
+steering = drag        ; drag | tilt (roll the device like a wheel, ±45° = full lock) | buttons (Left / Right)
 pedals = position      ; position | area (touch pressure/size, where the screen reports it) | full
 pedal_min = 0.35       ; pressure at the bottom of a pedal (position mode)
 steer_range = 0.14     ; drag distance for full lock, fraction of the screen width
@@ -408,7 +408,8 @@ saved at once; Done or the back key leaves. The toolbar hides while a control
 is dragged, then takes the free spot nearest the middle (when there is none,
 it covers as little as it can and never most of a control); drag its
 background to put it somewhere else. The four face buttons move and
-resize together. Hidden controls are not drawn and take no touches; a
+resize together, and so do the two steering buttons (left-handed, they keep
+Left on the left). Hidden controls are not drawn and take no touches; a
 control placed over the steering zone takes its touches first.
 
 Each changed control is one `[touch]` key, `drive.<control>` or
@@ -416,7 +417,7 @@ Each changed control is one `[touch]` key, `drive.<control>` or
 
 | Layout | Controls |
 |---|---|
-| `drive.` | `gas`, `brake`, `up`, `down`, `handbrake`, `pause`, `camera` |
+| `drive.` | `gas`, `brake`, `up`, `down`, `handbrake`, `pause`, `camera`, `steer` (the steering buttons) |
 | `menu.` | `dpad`, `buttons` (Cross, Circle, Square, Triangle), `l1`, `r1`, `select`, `start` |
 
 The value is `[left|center|right <x> top|bottom <y>] [size <s>] [hidden]`:

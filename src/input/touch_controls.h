@@ -20,7 +20,8 @@ class IniDocument;
 //
 // Configuration, [touch] in config.ini (see docs/INPUT.md):
 //   mode       = auto      ; auto: shown after a touch, hidden on pad/keyboard input; on; off
-//   steering   = drag      ; drag (left half of the screen) or tilt (device accelerometer)
+//   steering   = drag      ; drag (left half of the screen), tilt (device accelerometer) or
+//                          ; buttons (Left / Right: the race pad's d-pad, GT3's digital steering)
 //   pedals     = position  ; position: higher on the pedal = more pressure; area: touch
 //                          ; pressure/size from the screen; full: always 100 %
 //   pedal_min  = 0.35      ; pressure at the bottom of a pedal (position mode)
@@ -65,7 +66,7 @@ struct TouchPlacement {
 
 struct TouchConfig {
     enum class Mode : u8 { Auto, On, Off };
-    enum class Steering : u8 { Drag, Tilt };
+    enum class Steering : u8 { Drag, Tilt, Buttons };
     enum class Pedals : u8 { Position, Area, Full };
 
     Mode mode = Mode::Auto;

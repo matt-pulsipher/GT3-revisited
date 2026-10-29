@@ -6,6 +6,7 @@
 #include "base/config.h"
 #include "input/input_manager.h"
 #include "input/touch_controls.h"
+#include "sim/exact/pad_read.h"
 
 #include <algorithm>
 #include <cmath>
@@ -152,6 +153,61 @@ TEST(touch_tilt_steering) {
     t.finger_down(1, 100, 300, 1.0f);
     t.update(0.016, 0.0f);
     CHECK(t.pad().axis(PadAxis::LX) == 128);
+}
+
+// Button steering: Left / Right press the race pad's d-pad at full pressure, which GT3's pad read
+// turns into its digital steering (kind 3, full lock).
+TEST(touch_button_steering) {
+    TouchConfig cfg;
+    cfg.steering = TouchConfig::Steering::Buttons;
+    TouchControls t = driving(cfg);
+    CHECK(find_widget(t, Widget::Kind::Steering) == nullptr); // no drag zone
+    const Widget left = *find_widget(t, Widget::Kind::Button, PadButton::Left);
+    const Widget right = *find_widget(t, Widget::Kind::Button, PadButton::Right);
+    CHECK(left.x + left.w <= right.x && right.x + right.w < 320 && left.y + left.h > 300); // side by side, bottom left
+    CHECK(!t.finger_down(9, 160, 120, 1.0f)); // the rest of the left half isn't a control
+    CHECK(t.finger_down(1, left.x + left.w / 2, left.y + left.h / 2, 1.0f));
+    t.update(0.016, 0.5f); // tilt is ignored
+    CHECK(t.pad().down(PadButton::Left) && t.pad().press(PadButton::Left) == 255);
+    CHECK(!t.pad().down(PadButton::Right) && t.pad().axis(PadAxis::LX) == 128);
+
+    InputManager input;
+    input.set_overlay(0, t.pad());
+    input.update(0.016);
+    const PadState& race = input.race_pad(0);
+    CHECK(race.down(PadButton::Left) && race.press(PadButton::Left) == 255 && race.axis(PadAxis::LX) == 128);
+    namespace ex = gt3r::sim::exact;
+    ex::PadReading r;
+    r.channel[5] = race.press(PadButton::Left), r.channel[4] = race.press(PadButton::Right);
+    ex::PadFrame f;
+    ex::pad_dpad_pressure(f, r);
+    CHECK(f.kind == 3 && f.steer == 4096 && (f.flags & 1)); // full lock to the left
+
+    // The thumb rocks over to Right, then lets go.
+    t.finger_move(1, right.x + right.w / 2, right.y + right.h / 2, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.pad().down(PadButton::Right) && !t.pad().down(PadButton::Left));
+    t.finger_up(1);
+    t.update(0.016, 0);
+    CHECK(t.pad().buttons == 0);
+
+    // Left-handed: on the right, Left still on the left; one placement moves both.
+    cfg.left_handed = true;
+    TouchControls m = driving(cfg);
+    const Widget ml = *find_widget(m, Widget::Kind::Button, PadButton::Left);
+    const Widget mr = *find_widget(m, Widget::Kind::Button, PadButton::Right);
+    CHECK(ml.x > 320 && ml.x + ml.w <= mr.x && mr.x == 640 - left.x - left.w); // mirrored, the pair swapped
+    cfg.left_handed = false;
+    cfg.set_placement("drive.steer", TouchPlacement::parse("center 0 bottom 60 size 1.5"));
+    TouchControls p = driving(cfg);
+    const TouchRect b = p.group_bounds("drive.steer");
+    CHECK(std::fabs(b.x + b.w / 2 - 320) < 0.5f && std::fabs(b.w - (left.w * 2 + 10) * 1.5f) < 0.5f);
+
+    IniDocument ini;
+    cfg.save(ini);
+    CHECK(ini.get("touch", "steering") == std::optional<std::string>("buttons"));
+    CHECK(TouchConfig::load(ini).steering == TouchConfig::Steering::Buttons);
+    CHECK(TouchConfig::load(ini).placement("drive.steer").scale == 1.5f);
 }
 
 TEST(touch_layout_switch_releases) {

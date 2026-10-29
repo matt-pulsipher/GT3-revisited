@@ -1221,7 +1221,8 @@ private:
                    n.mode = TouchConfig::Mode(i);
                    apply(n);
                });
-        choice("Steering", "Drag: finger on the left half. Tilt: turn the device.", {"Drag", "Tilt"}, int(c.steering),
+        choice("Steering", "Drag: finger on the left half. Tilt: turn the device. Buttons: hold left / right (D-pad).",
+               {"Drag", "Tilt", "Buttons"}, int(c.steering),
                [apply, c](int i) {
                    TouchConfig n = c;
                    n.steering = TouchConfig::Steering(i);

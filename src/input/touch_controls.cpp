@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <utility>
 
 namespace gt3r {
 
@@ -34,7 +35,7 @@ std::string format_float(float v) {
 
 // Placement keys (TouchConfig::placements) of each layout's controls, in config.ini order.
 constexpr const char* kDriveKeys[] = {"drive.gas",       "drive.brake", "drive.up",     "drive.down",
-                                      "drive.handbrake", "drive.pause", "drive.camera"};
+                                      "drive.handbrake", "drive.pause", "drive.camera", "drive.steer"};
 constexpr const char* kMenuKeys[] = {"menu.dpad", "menu.buttons", "menu.l1", "menu.r1", "menu.select", "menu.start"};
 
 std::string_view layout_prefix(TouchLayout layout) {
@@ -167,7 +168,10 @@ TouchConfig TouchConfig::load(const IniDocument& ini) {
         std::string m = to_lower(*v);
         c.mode = m == "on" || m == "1" ? Mode::On : m == "off" || m == "0" ? Mode::Off : Mode::Auto;
     }
-    if (auto v = get("steering")) c.steering = to_lower(*v) == "tilt" ? Steering::Tilt : Steering::Drag;
+    if (auto v = get("steering")) {
+        std::string m = to_lower(*v);
+        c.steering = m == "tilt" ? Steering::Tilt : m == "buttons" ? Steering::Buttons : Steering::Drag;
+    }
     if (auto v = get("pedals")) {
         std::string m = to_lower(*v);
         c.pedals = m == "area" ? Pedals::Area : m == "full" ? Pedals::Full : Pedals::Position;
@@ -189,7 +193,7 @@ TouchConfig TouchConfig::load(const IniDocument& ini) {
 
 void TouchConfig::save(IniDocument& ini) const {
     ini.set("touch", "mode", mode == Mode::On ? "on" : mode == Mode::Off ? "off" : "auto");
-    ini.set("touch", "steering", steering == Steering::Tilt ? "tilt" : "drag");
+    ini.set("touch", "steering", steering == Steering::Tilt ? "tilt" : steering == Steering::Buttons ? "buttons" : "drag");
     ini.set("touch", "pedals", pedals == Pedals::Area ? "area" : pedals == Pedals::Full ? "full" : "position");
     ini.set("touch", "pedal_min", format_float(pedal_min));
     ini.set("touch", "steer_range", format_float(steer_range));
@@ -267,12 +271,20 @@ void TouchControls::build_layout() {
     };
 
     if (layout_ == TouchLayout::Driving) {
-        // Steering zone first: everything after it takes priority in widget_at.
-        Widget steer;
-        steer.kind = Widget::Kind::Steering;
-        steer.shape = Widget::Shape::Rect;
-        steer.x = L, steer.y = kH * 0.22f, steer.w = cx_mid - L, steer.h = B - steer.y;
-        add(steer, "");
+        if (cfg_.steering == TouchConfig::Steering::Buttons) {
+            // Left / Right press the race pad's d-pad, which the race reads as GT3 does a DualShock 2's: full lock,
+            // turned in at GT3's digital rate (race/controls.h, physics §4.4).
+            const float bw = 84 * s, bh = 96 * s;
+            add(rect_button(mL, mB - bh, bw, bh, PadButton::Left, ""), "drive.steer");
+            add(rect_button(mL + bw + kGap, mB - bh, bw, bh, PadButton::Right, ""), "drive.steer");
+        } else {
+            // Steering zone first: everything after it takes priority in widget_at.
+            Widget steer;
+            steer.kind = Widget::Kind::Steering;
+            steer.shape = Widget::Shape::Rect;
+            steer.x = L, steer.y = kH * 0.22f, steer.w = cx_mid - L, steer.h = B - steer.y;
+            add(steer, "");
+        }
 
         const float pw = 62 * s, ph = 132 * s;
         Widget gas;
@@ -320,8 +332,15 @@ void TouchControls::build_layout() {
         add(rect_button(cx_mid + 4, mT, bw, bh, PadButton::Start, "START"), "menu.start");
     }
     apply_placements(A);
-    if (cfg_.left_handed)
+    if (cfg_.left_handed) {
         for (Widget& w : widgets_) w.x = w.shape == Widget::Shape::Circle ? A.L + A.R - w.x : A.L + A.R - w.x - w.w;
+        // The steering buttons trade places, so Left stays on the left.
+        Widget* left = nullptr;
+        Widget* right = nullptr;
+        for (Widget& w : widgets_)
+            if (std::string_view(w.key) == "drive.steer") (w.button == PadButton::Left ? left : right) = &w;
+        if (left && right) std::swap(left->x, right->x);
+    }
 }
 
 void TouchControls::apply_placements(const Area& a) {
