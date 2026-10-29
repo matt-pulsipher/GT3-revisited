@@ -8,6 +8,12 @@
 #include "input/touch_controls.h"
 #include "sim/exact/pad_read.h"
 
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_joystick.h>
+#include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_video.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -943,6 +949,70 @@ TEST(input_settings_menu_any_device) {
     custom.set_overlay(0, ov);
     custom.update(0.016);
     CHECK(custom.any_device_pad().down(PadButton::Circle));
+}
+
+// [input] background: off by default, read and saved. With the game's window unfocused a
+// controller's press reaches the game only while it is on, or held on (a macOS file dialog);
+// with the focus it always does. SDL's dummy video driver gives a shown window the focus and a
+// hidden one none.
+TEST(input_background_controllers) {
+    IniDocument out;
+    InputManager off;
+    off.load(IniDocument::parse("[player1]\ncontroller = auto\n"));
+    off.save(out);
+    CHECK(!off.background() && out.get("input", "background") == "off");
+    InputManager on;
+    on.load(IniDocument::parse("[input]\nbackground = on\n"));
+    on.save(out);
+    CHECK(on.background() && out.get("input", "background") == "on");
+    on.set_background(false); // SDL's default again
+#if GT3R_XR
+    SKIP("VR builds always read controllers in the background");
+#endif
+
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    const bool init = SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
+    SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+    if (!init) SKIP("no SDL dummy video driver");
+    SDL_Window* window = SDL_CreateWindow("unfocused", 64, 64, SDL_WINDOW_HIDDEN);
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    desc.nbuttons = 1;
+    const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+    SDL_Joystick* pad = id ? SDL_OpenJoystick(id) : nullptr;
+    CHECK(window && pad && !SDL_GetKeyboardFocus());
+    if (window && pad) {
+        auto press = [pad] { // the button's state after a press, released again
+            SDL_SetJoystickVirtualButton(pad, 0, true);
+            SDL_UpdateJoysticks();
+            const bool down = SDL_GetJoystickButton(pad, 0);
+            SDL_SetJoystickVirtualButton(pad, 0, false);
+            SDL_UpdateJoysticks();
+            return down;
+        };
+        InputManager in;
+        CHECK(!press());
+        in.set_background(true);
+        CHECK(press());
+        in.set_background(false);
+        CHECK(!press());
+        in.hold_background(true); // the dialog's hold, the setting off
+        CHECK(press());
+        in.hold_background(false);
+        CHECK(!press());
+        in.set_background(true); // the setting on: the hold's end keeps it
+        in.hold_background(true);
+        in.hold_background(false);
+        CHECK(press());
+        in.set_background(false);
+        SDL_ShowWindow(window); // the window in front
+        CHECK(SDL_GetKeyboardFocus() == window && press());
+    }
+    if (pad) SDL_CloseJoystick(pad);
+    if (id) SDL_DetachVirtualJoystick(id);
+    if (window) SDL_DestroyWindow(window);
+    SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
 }
 
 TEST(touch_tap_shorter_than_a_frame) {

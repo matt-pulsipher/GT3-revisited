@@ -4,6 +4,7 @@
 #include "base/log.h"
 #include "platform/device_tilt.h"
 
+#include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_joystick.h>
 #include <SDL3/SDL_keyboard.h>
@@ -107,6 +108,7 @@ void InputManager::load(const IniDocument& cfg) {
         if (i == 0) set_phone_vibration(to_lower(cfg.get(sec, "phone_vibration").value_or("off")) == "on");
         p.rumble_mode = to_lower(cfg.get(sec, "rumble").value_or("auto"));
     }
+    set_background(to_lower(cfg.get("input", "background").value_or("off")) == "on");
     assign_devices();
 }
 
@@ -128,6 +130,7 @@ void InputManager::save(IniDocument& cfg) const {
         cfg.set(sec, "race", p.bindings.race_layout);
         p.bindings.save(cfg, sec);
     }
+    cfg.set("input", "background", background_ ? "on" : "off");
 }
 
 bool InputManager::is_custom(int player) const {
@@ -801,6 +804,23 @@ bool InputManager::phone_vibration_available() {
 void InputManager::set_phone_vibration(bool on) {
     if (!on) vibrate_phone(0);
     phone_vibration_ = on;
+}
+
+void InputManager::set_background(bool on) {
+    background_ = on;
+    apply_background();
+}
+
+void InputManager::hold_background(bool on) {
+    background_held_ = on;
+    apply_background();
+}
+
+void InputManager::apply_background() const {
+#if !GT3R_XR // (always on there: App::init)
+    if (background_ || background_held_) SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    else SDL_ResetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS);
+#endif
 }
 
 void InputManager::vibrate_phone(float strength) {

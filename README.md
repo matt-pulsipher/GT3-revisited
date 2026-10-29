@@ -182,6 +182,7 @@ are only there:
 | `[race] units` | `kmh` / `mph` | speed unit in races and menus (absent: the disc's, mph on the North American disc, km/h on the European and Japanese ones) |
 | `[race] split` | `auto` / `horizontal` / `vertical` | *(file)* 2P split (default: as GT3) |
 | `[race] analog_response` | `linear` / `original` | sticks, triggers, wheels, touch and tilt: a linear response (default) or GT3's DualShock 2 curves (Settings → Controls) |
+| `[input] background` | `on` / `off` | desktop: controllers and wheels keep driving the game while another window is in front, e.g. on a second monitor (default off; Settings → Controls). The keyboard works only in the game's window |
 | `[player1]`, `[player2]` | `controller` (auto, a device name, or keyboard), `keyboard`, `race`, `rumble` (auto, modern, gt3); `phone_vibration` (player 1, Android) | see [INPUT](docs/INPUT.md#controller) |
 | `[ffb]` | see [INPUT](docs/INPUT.md) | DualSense/Xbox triggers and wheel force feedback |
 | `[touch]` | see [INPUT](docs/INPUT.md#touch-controls-phones-and-tablets) | on-screen controls on phones and tablets; Customize layout moves, resizes and hides each one |

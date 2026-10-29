@@ -23,7 +23,6 @@
 
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_filesystem.h>
-#include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_stdinc.h>
 
 #include <cstdint>
@@ -63,20 +62,20 @@ void SDLCALL on_dialog(void* ticket, const char* const* files, int) {
 // macOS: while the dialog's sheet is up the game's window has no keyboard focus, and SDL drops
 // a pad's presses without it. They are let through until the dialog ends, so the page's
 // CANCEL works from the pad (the sheet takes the keyboard and the mouse itself).
-void pad_during_dialog(bool on) {
+void pad_during_dialog(InputManager& input, bool on) {
 #if defined(SDL_PLATFORM_MACOS)
-    if (on) SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
-    else SDL_ResetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS);
+    input.hold_background(on);
 #else
-    (void)on;
+    (void)input, (void)on;
 #endif
 }
 
 // The system's dialog is over (answered, or closed by the page): the pad needs the window's
-// focus again, and on macOS the window gets it back (the sheet leaves no key window).
-void dialog_over(SDL_Window* window) {
+// focus again (unless Controls -> background says otherwise), and on macOS the window gets it
+// back (the sheet leaves no key window).
+void dialog_over(SDL_Window* window, InputManager& input) {
     if (!std::exchange(g_native, false)) return;
-    pad_during_dialog(false);
+    pad_during_dialog(input, false);
     platform::refocus_after_dialog(window);
 }
 
@@ -85,7 +84,8 @@ void dialog_over(SDL_Window* window) {
 void install_save_dialogs(App& app) {
     menu::flow::FileDialogs d;
     SDL_Window* window = app.window();
-    d.show = [window](menu::flow::FileDialogs::Kind kind, const std::string& name) {
+    InputManager* input = &app.input();
+    d.show = [window, input](menu::flow::FileDialogs::Kind kind, const std::string& name) {
         std::uintptr_t ticket = 0;
         {
             std::lock_guard<std::mutex> lock(g_mutex);
@@ -98,7 +98,7 @@ void install_save_dialogs(App& app) {
             return;
         }
         g_native = true;
-        pad_during_dialog(true);
+        pad_during_dialog(*input, true);
         const bool open = kind == menu::flow::FileDialogs::Kind::OpenSave;
 #if defined(SDL_PLATFORM_MACOS)
         // Our own sheet (platform/mac_dialog.h: SDL's left the game without keyboard focus).
@@ -116,26 +116,26 @@ void install_save_dialogs(App& app) {
         else
             SDL_ShowSaveFileDialog(on_dialog, user, window, nullptr, 0, name.c_str());
     };
-    d.poll = [window]() -> std::optional<std::string> {
+    d.poll = [window, input]() -> std::optional<std::string> {
         std::optional<std::string> a;
         {
             std::lock_guard<std::mutex> lock(g_mutex);
             a = std::exchange(g_answer, std::nullopt);
         }
         if (!a) return a;
-        dialog_over(window); // (a frame after SDL's callback: the sheet has gone)
+        dialog_over(window, *input); // (a frame after SDL's callback: the sheet has gone)
         if (g_export && !a->empty() && a->rfind("content://", 0) != 0)
             if (size_t sl = a->find_last_of("/\\"); sl != std::string::npos) g_export_dir = a->substr(0, sl + 1);
         return a;
     };
-    d.cancel = [window]() {
+    d.cancel = [window, input]() {
         {
             std::lock_guard<std::mutex> lock(g_mutex);
             ++g_ticket; // its answer, if one still comes, is dropped
             g_answer.reset();
         }
         platform::cancel_window_sheet(window); // (its cancel answers at once: dropped; the sheet is gone after it)
-        dialog_over(window);
+        dialog_over(window, *input);
     };
     d.name = [](const std::string& path) { return platform::picked_file_name(path); };
     menu::flow::set_file_dialogs(std::move(d));

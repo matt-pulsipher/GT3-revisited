@@ -37,6 +37,9 @@ class IniDocument;
 //   [player1.wheel.bindings] / [player1.wheel.race]        ; the same for a wheel
 //   [player1.keyboard.bindings] / [player1.keyboard.race]  ; the keyboard's, whatever the controller
 //
+//   [input]
+//   background = off         ; desktop: controllers also work while another window is in front
+//
 // The kind of device in use (DeviceKind) picks the controller's bindings (PlayerBindings). Older
 // configs chose them with `preset` (racing / classic / wheel / keyboard) and `device`; load()
 // reads them once and save() still writes them for older builds. See docs/INPUT.md.
@@ -133,6 +136,16 @@ public:
     void set_force_feedback(int player, const ForceFeedbackState& state);
     const ForceFeedbackConfig& ffb_config() const { return ffb_.config(); }
     void set_ffb_config(const ForceFeedbackConfig& c) { ffb_.configure(c); }
+
+    // [input] background (desktop, off by default): controllers, wheels and joysticks keep
+    // driving the game while none of its windows has the focus (another window in front, as on
+    // a second monitor). SDL drops their input otherwise; the keyboard and mouse need the window
+    // either way. VR builds always read them (App::init: the headset's window never has focus).
+    bool background() const { return background_; }
+    void set_background(bool on);
+    // On: controllers are read in the background whatever the setting, until held off again
+    // (macOS: a file dialog's sheet takes the window's focus while the page waits for it).
+    void hold_background(bool on);
 
     // The kind of device driving the player now; it picks the controller's bindings.
     DeviceKind kind(int player) const { return players_[player].kind; }
@@ -253,6 +266,7 @@ private:
     void update_tilt(Player& p, const Device* dev);
     int brake_trigger(const Player& p) const; // SDL trigger axis bound to the brake, or -1
     void vibrate_phone(float strength);       // 0 stops it
+    void apply_background() const;            // SDL's background hint: background_ or background_held_
 
     std::vector<Device> devices_;
     std::array<Player, kMaxPlayers> players_;
@@ -263,6 +277,8 @@ private:
     ForceFeedback ffb_;
     double time_ = 0;
     bool phone_vibration_ = false;
+    bool background_ = false;      // [input] background
+    bool background_held_ = false; // hold_background()
     SDL_Haptic* vibrator_ = nullptr; // the device's own motor, opened on first use
     bool vibrator_tried_ = false;
     float vibrator_level_ = 0;      // strength last sent (0 = stopped)

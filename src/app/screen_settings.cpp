@@ -808,6 +808,39 @@ private:
     void build_controls(App& app) {
         App* a = &app;
         InputManager& in = app.input();
+        // Settings for every player first, above the players' long binding lists.
+        heading("All players");
+        {
+            bool gt3_views = to_lower(app.config().get("race", "views").value_or("all")) == "gt3";
+            choice("Race views", "Change view cycles bumper, bumper without mirror, chase, far chase; GT3: bumper and chase.",
+                   {"All four", "GT3 original"}, gt3_views ? 1 : 0, [a](int i) {
+                       a->config().set("race", "views", i == 1 ? "gt3" : "all");
+                       a->save_config();
+                   });
+            bool original = to_lower(app.config().get("race", "analog_response").value_or("linear")) == "original";
+            choice("Analog response",
+                   "Linear: sticks, triggers, wheels, touch and tilt steer and press exactly as far as you do. "
+                   "Original: GT3's DualShock 2 curves (a dead zone in the stick's centre, pedals full from a light press).",
+                   {"Linear", "Original"}, original ? 1 : 0, [a](int i) {
+                       a->config().set("race", "analog_response", i == 1 ? "original" : "linear");
+                       a->save_config();
+                   });
+            bool shake = to_lower(app.config().get("race", "camera_shake").value_or("on")) != "off";
+            toggle("In-car camera shake", "GT3's in-car vibration: grows with tyre slip and speed.", shake, [a](bool v) {
+                a->config().set("race", "camera_shake", v ? "on" : "off");
+                a->save_config();
+            });
+            // [input] background: desktop only (phones and tablets run one app at a time; a
+            // headset always reads its controllers).
+            if (!platform::is_mobile())
+                toggle("Controllers in the background",
+                       "Controllers and wheels keep driving the game while another window is in front, as on a "
+                       "second monitor. The keyboard works only in the game's window.",
+                       in.background(), [a](bool v) {
+                           a->input().set_background(v);
+                           a->save_config();
+                       });
+        }
         for (int p = 0; p < InputManager::kMaxPlayers; ++p) {
             heading(p == 0 ? "Player 1" : "Player 2 (split screen)");
             {
@@ -876,28 +909,6 @@ private:
                            a->save_config();
                        });
             binding_rows(app, p);
-        }
-        heading("All players");
-        {
-            bool gt3_views = to_lower(app.config().get("race", "views").value_or("all")) == "gt3";
-            choice("Race views", "Change view cycles bumper, bumper without mirror, chase, far chase; GT3: bumper and chase.",
-                   {"All four", "GT3 original"}, gt3_views ? 1 : 0, [a](int i) {
-                       a->config().set("race", "views", i == 1 ? "gt3" : "all");
-                       a->save_config();
-                   });
-            bool original = to_lower(app.config().get("race", "analog_response").value_or("linear")) == "original";
-            choice("Analog response",
-                   "Linear: sticks, triggers, wheels, touch and tilt steer and press exactly as far as you do. "
-                   "Original: GT3's DualShock 2 curves (a dead zone in the stick's centre, pedals full from a light press).",
-                   {"Linear", "Original"}, original ? 1 : 0, [a](int i) {
-                       a->config().set("race", "analog_response", i == 1 ? "original" : "linear");
-                       a->save_config();
-                   });
-            bool shake = to_lower(app.config().get("race", "camera_shake").value_or("on")) != "off";
-            toggle("In-car camera shake", "GT3's in-car vibration: grows with tyre slip and speed.", shake, [a](bool v) {
-                a->config().set("race", "camera_shake", v ? "on" : "off");
-                a->save_config();
-            });
         }
     }
 

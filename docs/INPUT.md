@@ -105,15 +105,25 @@ bindings that leave player 1 without a working controller can always be changed
 back. The game's menus and races follow the player's controls only, and nothing
 else reads while a binding is being captured.
 
+**Controllers in the background** (desktop; Settings → Controls, `[input]
+background`, off by default): controllers, wheels and joysticks keep driving
+the game while another window is in front, e.g. one on a second monitor. Off,
+they only reach the game while its window is in front, so another app or a
+second copy of the game can use the same pad without the game acting on it.
+The keyboard and mouse always need the game's window. VR builds always read
+their controllers (the headset's window never has the focus).
+
 ## Remapping in the app
 
 In Settings, choices, switches and sliders change only with Left/Right or a
 tap on their arrows, switch or track; Cross never changes a setting (it runs
 actions and starts a rebind).
 
-**Settings → Controls** holds the controllers and their bindings, for player 1
-and player 2 (split screen) alike: under each player's **Controller**, **Race
-controls** and **Keyboard** rows come their bindings, inline:
+**Settings → Controls** starts with the settings for **all players** (Race
+views, Analog response, In-car camera shake, Controllers in the background),
+then holds the controllers and their bindings, for player 1 and player 2
+(split screen) alike: under each player's **Controller**, **Race controls** and
+**Keyboard** rows come their bindings, inline:
 
 - **Player N race controls**: the race actions in driving order (Accelerate,
   Brake, Shift up, Shift down, Handbrake, Reverse, Change view, Look back,
