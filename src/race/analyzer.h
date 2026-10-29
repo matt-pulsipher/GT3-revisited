@@ -51,7 +51,7 @@ struct AnalyzerTrack {
     LapTrace trace;
     GhostLap ghost;
     double hz = 60;
-    std::string title; // "TRACK A" panel's car name
+    std::string title; // "TRACK A" panel's car name (game text)
     // From the data logger's pass (logger_track): each sample's time from the lap's start and the replay frame the car
     // reached it in (ours), and the logger table's sector times (the course's logger marks; s).
     std::vector<double> times;

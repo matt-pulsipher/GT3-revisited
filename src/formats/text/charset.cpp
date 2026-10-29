@@ -227,6 +227,32 @@ std::u32string decode_game_text(ByteSpan s, const JisTable* jis) {
 
 std::string game_text_to_utf8(ByteSpan s, const JisTable* jis) { return utf8_encode(decode_game_text(s, jis)); }
 
+namespace {
+
+// The bytes of the first `chars` characters (all of them when fewer); `count` gets how many.
+size_t game_text_bytes(std::string_view s, size_t chars, size_t* count) {
+    size_t i = 0, n = 0;
+    while (n < chars && i < s.size() && s[i]) {
+        const size_t len = u8(s[i]) < 0x80 ? 1 : 2;
+        if (i + len > s.size() || (len == 2 && !s[i + 1])) break; // a truncated pair draws nothing
+        i += len, ++n;
+    }
+    if (count) *count = n;
+    return i;
+}
+
+} // namespace
+
+size_t game_text_length(std::string_view s) {
+    size_t n = 0;
+    game_text_bytes(s, s.size(), &n);
+    return n;
+}
+
+std::string game_text_prefix(std::string_view s, size_t chars) {
+    return std::string(s.substr(0, game_text_bytes(s, chars, nullptr)));
+}
+
 std::string encode_game_text(std::u32string_view s, const JisTable* jis) {
     std::string out;
     for (char32_t c : s) {

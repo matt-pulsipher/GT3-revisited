@@ -24,6 +24,10 @@ namespace gt3r {
 class Vfs;
 }
 
+namespace gt3r::text {
+class JisTable;
+}
+
 namespace gt3r::data {
 
 // One parsed definition file. Unset optional values keep the donor's.
@@ -109,18 +113,24 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
                                        std::vector<std::string>* warnings = nullptr);
 
 // Adds the car to the database (cloning the donor's records). Call
-// db.rebuild() afterwards; load_mod_car_files does.
-bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error);
+// db.rebuild() afterwards; load_mod_car_files does. The definition's display texts (UTF-8:
+// name, maker, engine texts, description, paint names) go in as game text, like the disc's
+// own (text::encode_game_text): Latin letters as the game's Latin escapes, anything else
+// through `jis` (font/jis2uni.dat) as JIS, or '?' without it.
+bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, const text::JisTable* jis = nullptr);
 
 // Loads definition files into the database (later files replace a car with the
 // same label). CarDatabase::load does this for every enabled mod, in priority
 // order, from the VFS's mod car list (Vfs::kModCarsList). Errors are logged and
 // kept in db.mod_car_errors().
-void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, const std::string& mod = {});
+void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, const std::string& mod = {},
+                        const text::JisTable* jis = nullptr);
 
 // Loads a maker definition (mods/<id>/makers/<id>.ini, docs/MODDING.md):
 //   [maker] name, region, description, icon, background, logo
-void load_mod_maker_file(CarDatabase& db, const std::string& file, const std::string& mod = {});
+// The name and description go in as game text (add_mod_car).
+void load_mod_maker_file(CarDatabase& db, const std::string& file, const std::string& mod = {},
+                         const text::JisTable* jis = nullptr);
 
 // "255/35R21" <-> the stored size. nullopt on malformed text or sizes the
 // disc format cannot hold (width and aspect must be multiples of 5).

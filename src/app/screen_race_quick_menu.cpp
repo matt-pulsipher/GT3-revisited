@@ -253,7 +253,8 @@ void RaceScreen::open_quick_menu(App& app) {
     // The live race's rows: after a replay (a GT race's own, or the 2P one) the field is the
     // replay's.
     std::vector<ResultRow> rows = latched_rows_ ? *latched_rows_ : result_menu_rows();
-    for (const ResultRow& r : rows) LOG_INFO("Race result: %-40s %s", r.name.c_str(), r.time.c_str());
+    for (const ResultRow& r : rows)
+        LOG_INFO("Race result: %-40s %s", text::game_text_to_utf8(r.name, hud_.fonts().jis()).c_str(), r.time.c_str());
     quick_menu_.set_rows(std::move(rows));
     if (!license_event_.empty()) fill_license_menu(app); // the test's name and target times
     fill_top3();

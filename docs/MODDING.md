@@ -205,6 +205,11 @@ Mods load in priority order. A later mod's car replaces an earlier one with the
 same label, but a mod car can never replace a disc car. The Mods screen lists
 each mod's cars, along with the reason any of them failed to load.
 
+Save car and maker files as UTF-8. Names, makers, display texts, descriptions
+and paint names may use accented letters: `maker = Citroën` joins the disc's
+Citroën dealer. They are drawn with the game's fonts, Japanese text included; a
+character those fonts can't draw shows as `?`.
+
 ### Dealers and makers
 
 A car for sale appears at its maker's dealer in GT Mode, at its `price` in

@@ -68,7 +68,7 @@ std::vector<RecordEntry> course_records(const std::string& dir, const std::strin
 class RecordsPanel {
 public:
     bool load(const Vfs& vfs, SDL_Renderer* r, text::GameFonts& fonts, const std::string& lang = "US");
-    // `names` = display names for rows[i].car.
+    // `names` = display names for rows[i].car (game text); `course_name` UTF-8.
     void draw(SDL_Renderer* r, text::GameFonts& fonts, const std::vector<RecordEntry>& rows,
               const std::vector<std::string>& names, const std::string& course_name, const SDL_FRect& dst);
 

@@ -102,7 +102,7 @@ public:
 // What the race scene knows about the chosen car; filled from the database.
 struct CarSetup {
     std::string label;      // database car label, e.g. "r34_gtr_v_99"
-    std::string name;       // display name
+    std::string name;       // display name: Car::latin_name, game text
     std::string model;      // car model id, e.g. "ni0137"
     float limit_rpm = 7500;    // the engine's rev limit (the HUD's speedometer scale)
     std::vector<float> ratios; // forward gears

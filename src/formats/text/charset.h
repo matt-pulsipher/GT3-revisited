@@ -74,6 +74,12 @@ inline std::string game_text_to_utf8(std::string_view s, const JisTable* jis) {
     return game_text_to_utf8(ByteSpan(reinterpret_cast<const u8*>(s.data()), s.size()), jis);
 }
 
+// Game text's characters: a byte below 0x80 is one, every other byte starts a two-byte one
+// (stops at the first NUL like the renderer). game_text_prefix keeps the first `chars`
+// characters, never half of a pair.
+size_t game_text_length(std::string_view s);
+std::string game_text_prefix(std::string_view s, size_t chars);
+
 // Encodes Unicode text back into the game's encoding: ASCII as-is, Latin as
 // {0x81, c} (ISO-8859-1) or {0x80, code} (font code), anything with a JIS code
 // as EUC-JP. Characters with no representation become '?'.

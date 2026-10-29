@@ -64,6 +64,9 @@ public:
     // Size of the text block (widest line x total height), scaled.
     SDL_FPoint measure(std::string_view utf8, const TextStyle& style = {}) const;
     SDL_FPoint measure_game(ByteSpan game_text, const TextStyle& style = {}) const;
+    SDL_FPoint measure_game(std::string_view game_text, const TextStyle& style = {}) const {
+        return measure_game(ByteSpan(reinterpret_cast<const u8*>(game_text.data()), game_text.size()), style);
+    }
     // Draws and returns the block's bounds.
     SDL_FRect draw(float x, float y, std::string_view utf8, const TextStyle& style = {});
     SDL_FRect draw_game(float x, float y, ByteSpan game_text, const TextStyle& style = {});
@@ -72,6 +75,10 @@ public:
     }
     // Pure layout (no drawing), e.g. for caret positions or custom effects.
     TextLayout layout(float x, float y, std::string_view utf8, const TextStyle& style = {}) const;
+    TextLayout layout_game(float x, float y, ByteSpan game_text, const TextStyle& style = {}) const;
+    TextLayout layout_game(float x, float y, std::string_view game_text, const TextStyle& style = {}) const {
+        return layout_game(x, y, ByteSpan(reinterpret_cast<const u8*>(game_text.data()), game_text.size()), style);
+    }
 
     // The Latin glyph atlas texture (owned by the font).
     SDL_Texture* atlas(FontVariant v) const { return atlas_[size_t(v)]; }

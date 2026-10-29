@@ -4,6 +4,7 @@
 #include "base/log.h"
 #include "game/data/mod_cars.h"
 #include "disc/volume.h"
+#include "formats/text/charset.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -144,8 +145,18 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
             names_.add(m);
         if (suffix == "_eu") us_medal_times(read);
         decode();
-        // Mod cars (game/data/mod_cars.h), listed by the VFS: "<mod id>\t<host path>" lines.
+        // Mod cars (game/data/mod_cars.h), listed by the VFS: "<mod id>\t<host path>" lines. Their
+        // texts become game text through the disc's JIS table (Japanese in a mod's names).
         if (auto list = read(Vfs::kModCarsList)) {
+            text::JisTable jis;
+            if (auto j = read("font/jis2uni.dat"); j && text::JisTable::is_utbl(*j)) {
+                try {
+                    jis = text::JisTable::parse(*j);
+                } catch (const std::exception& e) {
+                    LOG_WARN("CarDatabase: font/jis2uni.dat: %s", e.what());
+                }
+            }
+            const text::JisTable* jp = jis.empty() ? nullptr : &jis;
             std::map<std::string, std::vector<std::string>> by_mod;
             std::vector<std::string> order;
             std::string text(list->begin(), list->end());
@@ -159,10 +170,10 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
             for (const std::string& mod : order) {
                 std::vector<std::string> cars;
                 for (const std::string& f : by_mod[mod]) {
-                    if (f.find("/makers/") != std::string::npos) load_mod_maker_file(*this, f, mod);
+                    if (f.find("/makers/") != std::string::npos) load_mod_maker_file(*this, f, mod, jp);
                     else cars.push_back(f);
                 }
-                load_mod_car_files(*this, cars, mod);
+                load_mod_car_files(*this, cars, mod, jp);
             }
         }
     } catch (const std::exception& e) {

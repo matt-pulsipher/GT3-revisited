@@ -2,18 +2,27 @@
 // sound. Synthetic tests run everywhere; the end-to-end test needs $GT3R_DISC.
 
 #include "test_framework.h"
+#include "car_db_synth.h"
 
 #include "audio/motor_sound.h"
+#include "base/file.h"
+#include "disc/volume.h"
 #include "formats/model/car_model.h"
 #include "formats/ps_adpcm.h"
 #include "formats/sound/spu.h"
+#include "formats/text/charset.h"
+#include "formats/text/text_layout.h"
 #include "game/data/car_database.h"
 #include "game/data/mod_cars.h"
 #include "exact_drive.h"
 #include "race/exact_setup.h"
 #include "sim/car_spec.h"
+#include "vfs/vfs.h"
 
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <tuple>
 #include <vector>
 
 using namespace gt3r;
@@ -35,6 +44,10 @@ std::vector<float> straight_kmh(Disc& disc, const data::CarDatabase& db, const s
         if (run.field->race_time() >= at[out.size()]) out.push_back(run.field->player().state().speed_kmh);
     }
     return out;
+}
+
+bool write_file(const std::string& path, std::string_view text) {
+    return write_host_file(path, ByteSpan(reinterpret_cast<const u8*>(text.data()), text.size()));
 }
 
 const char* kMinimal = R"(
@@ -170,6 +183,105 @@ TEST(body_fit_maps_axles) {
     CHECK(std::fabs(v[0].pos[0] - 0.85f * 1900 / 1700) < 1e-4f);
     CHECK(std::fabs(v[0].pos[1] - 1.6f) < 1e-4f);
     CHECK(m.meshes[1].vertices[0].pos[2] == -1.3f); // wheels untouched
+}
+
+// A mod's texts (UTF-8 in its files) go into the database as game text, as the disc's own names: Latin letters as the
+// game's Latin escapes, so a maker spelled as the disc spells it finds that maker. INVENTED database (car_db_synth.h).
+TEST(modcar_texts_game_text) {
+    auto db = cardb::empty_database();
+    CHECK(db != nullptr);
+    if (!db) return;
+    cardb::add_car(*db, "syn_donor", 300, 75, "zz0001");
+    // A disc maker with an accent (Ë), as game text; and the drivetrain and gearbox records a donor needs.
+    const std::string disc_maker = "CITRO\x81\xCBN";
+    const ByteSpan* rec = db->record(data::TableId::Car, "syn_donor");
+    CHECK(rec != nullptr);
+    if (!rec) return;
+    Bytes car(rec->begin(), rec->end());
+    for (const auto& [t, slot, l] : {std::tuple{data::TableId::Drivetrain, 13, "dt_syn_donor"},
+                                     std::tuple{data::TableId::Gear, 18, "ge_syn_donor"}}) {
+        db->add_label(l);
+        Bytes r(0x40);
+        cardb::put64(r, 0, db::id_hash(l));
+        cardb::put64(r, 8, db::id_hash("syn_donor"));
+        db->put_record(t, r);
+        cardb::put64(car, size_t(8 + 8 * slot), db::id_hash(l));
+    }
+    cardb::put16(car, 0xE0, 77); // maker id
+    cardb::put16(car, 0x104, db->add_unistring(disc_maker));
+    db->put_record(data::TableId::Car, car);
+    db->rebuild();
+
+    std::string err;
+    auto def = data::parse_mod_car("[car]\nlabel = syn_mod\nname = Caf\xC3\xA9 \xE2\x80\x99 Racer\nmaker = CITRO\xC3\x8BN\n"
+                                   "donor = syn_donor\n[powertrain]\nlayout = Moteur \xC3\xA0 plat\n"
+                                   "[dealer]\ndescription = Tr\xC3\xA8s vite\n[paints]\nBleu \xC3\x89lectrique = #2040C0\n",
+                                   &err);
+    CHECK(def.has_value());
+    if (!def) return;
+    CHECK(def->name == "Caf\xC3\xA9 \xE2\x80\x99 Racer"); // the definition keeps its UTF-8
+    CHECK(data::add_mod_car(*db, *def, &err));
+    db->rebuild();
+    const data::Car* c = db->car("syn_mod");
+    const data::ModCar* m = db->mod_car("syn_mod");
+    CHECK(c && m);
+    if (!c || !m) return;
+    CHECK(c->name == "Caf\x81\xE9 \x80\x92 Racer"); // é Latin-1, ’ the Latin font's (Windows-1252) code
+    CHECK(c->latin_name == c->name);
+    CHECK(c->maker == disc_maker && c->maker_id == 77); // the disc's maker found
+    CHECK(m->description == "Tr\x81\xE8s vite");
+    CHECK(m->paints.size() == 1 && m->paints[0].first == "Bleu \x81\xC9lectrique");
+    auto e = db->engine(c->parts[6]);
+    CHECK(e && e->layout == "Moteur \x81\xE0 plat");
+    const ByteSpan name(reinterpret_cast<const u8*>(c->name.data()), c->name.size());
+    std::vector<text::GlyphRef> g = text::map_game_text(name);
+    CHECK(g.size() == 12 && std::none_of(g.begin(), g.end(), [](const text::GlyphRef& r) { return r.kanji; }));
+    // Bytes that are not UTF-8 (a file saved in Latin-1) draw as '?', not as stray kanji.
+    def->label = "syn_mod2";
+    def->name = "Citro\xEBn";
+    CHECK(data::add_mod_car(*db, *def, &err));
+    db->rebuild();
+    CHECK(db->car("syn_mod2") && db->car("syn_mod2")->name == "Citro?n");
+    // A maker file: its name and description as game text too (matched with the cars' makers).
+    const std::filesystem::path dir = temp_dir("modcar_texts");
+    const std::string maker_file = (dir / "citroen.ini").string();
+    CHECK(write_file(maker_file, "[maker]\nname = CITRO\xC3\x8BN\nregion = fr\ndescription = \xC3\x80 Paris\n"));
+    data::load_mod_maker_file(*db, maker_file, "test");
+    CHECK(db->mod_makers().size() == 1);
+    if (!db->mod_makers().empty()) {
+        CHECK(db->mod_makers()[0].name == disc_maker);
+        CHECK(db->mod_makers()[0].description == "\x81\xC0 Paris");
+    }
+}
+
+// Through CarDatabase::load with a mods list: the disc's JIS table (font/jis2uni.dat) encodes Japanese in a mod's names
+// as the kanji font's pairs; a maker spelled as the disc spells it ("Citroën") is that maker.
+TEST(modcar_texts_disc_jis) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("GT3R_DISC not set");
+    const std::filesystem::path dir = temp_dir("modcar_texts_jis");
+    const std::string file = (dir / "cars" / "jp_test_ev.ini").string();
+    std::filesystem::create_directories(dir / "cars");
+    CHECK(write_file(file, "[car]\nlabel = jp_test_ev\nname = \xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88 EV\n"
+                           "maker = Citro\xC3\xABn\ndonor = legacy_gtb_96\n"));
+    Volume& vol = disc->volume();
+    const std::string list = "test\t" + file + "\n";
+    data::CarDatabase db;
+    CHECK(db.load(
+        [&](const std::string& p) -> std::optional<Bytes> {
+            if (p == Vfs::kModCarsList) return Bytes(list.begin(), list.end());
+            const Volume::Entry* e = vol.find(p);
+            return e ? std::optional<Bytes>(vol.read(*e)) : std::nullopt;
+        },
+        std::string("_us")));
+    CHECK(db.mod_car_errors().empty());
+    const data::Car* c = db.car("jp_test_ev");
+    const data::Car* xsara = db.car("xsara_wrc_99");
+    CHECK(c && xsara);
+    if (!c || !xsara) return;
+    CHECK(c->name == "\xA5\xC6\xA5\xB9\xA5\xC8 EV"); // テスト: JIS 0x2546 0x2539 0x2548
+    CHECK(xsara->maker == "Citro\x81\xEBn");
+    CHECK(c->maker == xsara->maker && c->maker_id == xsara->maker_id);
 }
 
 TEST(modcar_disc_end_to_end) {

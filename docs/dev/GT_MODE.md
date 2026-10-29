@@ -92,8 +92,10 @@ its sections); this page describes the code.
   (`gt_menu::listed` → `MenuController::listed`); licence tests drive `license_car` (race launch,
   the quick race, the GT-mode request, the theater) and load `demo_replay_path`'s run.
   `Car::name` / `name_alt` and `GtData::color_name` are in the language (game text: kana in
-  Japanese, drawn by the game fonts); the app's own screens, race overlays that cut text to
-  ASCII and online descriptors use `Car::latin_name` / `color_name_latin`.
+  Japanese, drawn by the game fonts). `Car::latin_name` / `color_name_latin` are game text
+  too: the race screens draw them with the game fonts (`race::result_car_name`), the app's
+  own screens convert them to UTF-8 or cut them to ASCII, and online descriptors cut them to
+  ASCII. A mod's texts go in as game text (`data::add_mod_car`).
 - **Bridge**: `car_spec(GarageCar)` = `sim::build_car_spec(db, car, parts,
   settings)`; the engine condition is not in the spec (the race car carries it,
   above). `power_peak()` / `power_ps()` are the original's computed menu figure

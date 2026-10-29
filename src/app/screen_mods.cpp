@@ -6,6 +6,7 @@
 #include "app/app.h"
 #include "app/screen_registry.h"
 #include "base/config.h"
+#include "formats/text/charset.h"
 #include "game/data/car_database.h"
 #include "platform/user_files.h"
 #include "vfs/mod_archive.h"
@@ -557,8 +558,11 @@ private:
                 const data::Car* dc = db_.car(car->label);
                 auto sm = dc ? db_.summarize(*dc) : data::CarDatabase::Summary{};
                 char buf[200];
-                // (An electric car races with its donor's engine until GT3's physics has the EV drive.)
-                std::snprintf(buf, sizeof(buf), "%s %s %u, %s%s %.0f kW %u kg, shell %s%s", sm.maker.c_str(), sm.name.c_str(),
+                // (An electric car races with its donor's engine until GT3's physics has the EV drive. The
+                // names are game text: UTF-8 for this font.)
+                const std::string maker = text::game_text_to_utf8(sm.maker, nullptr);
+                const std::string name = text::game_text_to_utf8(sm.name, nullptr);
+                std::snprintf(buf, sizeof(buf), "%s %s %u, %s%s %.0f kW %u kg, shell %s%s", maker.c_str(), name.c_str(),
                               sm.year, sm.drive.c_str(), car->electric ? " EV" : "", sm.power_ps / 1.35962, sm.weight_kg,
                               car->donor.c_str(), car->electric ? "; races with its engine for now" : "");
                 text = buf, c = colors::kGood;

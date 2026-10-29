@@ -6,7 +6,7 @@
 
 namespace gt3r::race_screen {
 
-// The game fonts lack some database characters (the middle dot in "V-spec").
+// Game text cut to ASCII (a lead byte becomes '-'), for text drawn with the UTF-8 path.
 std::string RaceScreen::ascii(const std::string& s) {
     std::string out;
     for (unsigned char c : s)
@@ -15,29 +15,15 @@ std::string RaceScreen::ascii(const std::string& s) {
     return out;
 }
 
-// `full`: the name and its second string (car record +0xE6, "ALTO WORKS" + "SUZUKI SPORTS
-// LIMITED(J)"), as the race results overlay shows it; the quick menus show the name only
-// (the reference captures).
+// Game text (race::result_car_name): every consumer draws it with the game font.
 std::string RaceScreen::car_display_name(const std::string& label, bool full) const {
-    std::string car = db_.car(label) ? label : "";
-    if (car.empty())
-        if (const data::CarVariant* v = db_.variant(label)) car = v->car;
-    if (car.empty())
-        for (const data::CarVariant& v : db_.arcade_cars())
-            if (v.label == label) car = v.car;
-    // (The Latin-letter names: the text is cut to ASCII.)
-    const data::Car* c = db_.car(car);
-    if (!c || c->latin_name.empty()) return ascii(label);
-    std::string n = c->latin_name;
-    const std::string& alt = c->latin_name_alt;
-    if (full && !alt.empty() && alt.find_first_not_of(' ') != std::string::npos) n += " " + alt;
-    return ascii(n);
+    return race::result_car_name(db_, label, full);
 }
 
 std::vector<ResultRow> RaceScreen::result_rows(bool full_names) const {
     std::vector<ResultRow> rows;
     if (!field_) {
-        rows.push_back({ascii(car_.name), track_->best_lap_time() >= 0 ? Hud::format_time(track_->best_lap_time()) : "-'--.---",
+        rows.push_back({car_.name, track_->best_lap_time() >= 0 ? Hud::format_time(track_->best_lap_time()) : "-'--.---",
                         true});
         return rows;
     }
@@ -47,9 +33,10 @@ std::vector<ResultRow> RaceScreen::result_rows(bool full_names) const {
     for (size_t i = 0; i < st.size(); ++i) {
         const RaceField::Standing& c = st[i];
         ResultRow r;
-        if (c.car == -1) r.name = full_names && db_.car(car_.label) ? car_display_name(car_.label, true) : ascii(car_.name);
+        if (c.car == -1) r.name = full_names && db_.car(car_.label) ? car_display_name(car_.label, true) : car_.name;
         else if (c.car == -2) r.name = car_display_name(preset_.car2.empty() ? car_.label : preset_.car2, full_names);
-        else if (online_ && size_t(c.car) < net_.names.size()) r.name = net_.names[size_t(c.car)];
+        else if (online_ && size_t(c.car) < net_.names.size()) // (a player's name is UTF-8)
+            r.name = text::encode_game_text(text::utf8_decode(net_.names[size_t(c.car)]), hud_.fonts().jis());
         else r.name = car_display_name(field_->opponent_label(c.car), full_names);
         r.time = result_time_text(i == 0, c.finished, c.time, w.time, std::max(0, w.laps - c.laps));
         r.player = c.car == -1 && !two_player_;

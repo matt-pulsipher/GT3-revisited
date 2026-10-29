@@ -25,8 +25,12 @@ struct Frame {
     float sy() const { return dst.h / kMenuH; }
 };
 
+// `game`: `s` is game text (a database name: escapes and JIS pairs, drawn as the game draws them).
+constexpr bool kGameText = true;
+
 void text(text::GameFonts& fonts, const Frame& f, float mx, float my, const std::string& s, const char* font,
-          float scale, SDL_Color c, text::HAlign a = text::HAlign::Left, text::VAlign v = text::VAlign::Middle) {
+          float scale, SDL_Color c, text::HAlign a = text::HAlign::Left, text::VAlign v = text::VAlign::Middle,
+          bool game = false) {
     text::TextStyle st;
     text::GameFont* g = fonts.resolve(font, st);
     if (!g) return;
@@ -35,7 +39,8 @@ void text(text::GameFonts& fonts, const Frame& f, float mx, float my, const std:
     st.color = c;
     st.align = a;
     st.valign = v;
-    g->draw(f.x(mx), f.y(my), s, st);
+    if (game) g->draw_game(f.x(mx), f.y(my), s, st);
+    else g->draw(f.x(mx), f.y(my), s, st);
 }
 
 void fill(SDL_Renderer* r, const Frame& f, float x, float y, float w, float h, SDL_Color c) {
@@ -152,7 +157,8 @@ void RecordsPanel::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::vect
         if (i & 1) fill(r, f, 20, y - 13, 600, 26, SDL_Color{255, 255, 255, 18});
         SDL_Color c = i == 0 ? kAmber : kGrey;
         text(fonts, f, 34, y, std::to_string(i + 1), "sw_16#1", 0.8f, c, text::HAlign::Right);
-        text(fonts, f, 50, y, i < names.size() ? names[i] : rows[i].car, "sw_16#1", 0.8f, c);
+        text(fonts, f, 50, y, i < names.size() ? names[i] : rows[i].car, "sw_16#1", 0.8f, c, text::HAlign::Left,
+             text::VAlign::Middle, kGameText);
         text(fonts, f, 470, y, fmt_time(rows[i].lap), "sw_16#1", 0.8f, c, text::HAlign::Right);
         text(fonts, f, 590, y, rows[i].date, "sw_16#1", 0.7f, c, text::HAlign::Right);
     }

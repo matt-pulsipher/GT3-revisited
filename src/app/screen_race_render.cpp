@@ -472,7 +472,7 @@ HudData RaceScreen::hud_data(int player) {
         else if (!license_.rules().standing && !track_->lap_started()) d.lap_time = 0;
         else d.lap_time = std::max(0.0, race_time_ - license_clock_start_);
     }
-    d.car_name = ascii(car_.name);
+    d.car_name = car_.name;
     d.course_name = course_name_;
     d.camera = camera_mode_name(cam.mode());
     d.split = two_player_;

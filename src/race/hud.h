@@ -88,7 +88,8 @@ struct HudData {
     int total_laps = 0;     // race: laps to run (0 = time trial)
     int position = 0, cars = 0; // race: current position of `cars`
     double countdown = -1;  // race: seconds to the start (> 0), 0 = "GO", < 0 = none
-    std::string car_name, course_name;
+    std::string car_name;    // replay item: the database name as game text (Car::latin_name's bytes)
+    std::string course_name;
     std::string camera;
     // Mini-map: world x/z of the player and of the other cars.
     float player_x = 0, player_z = 0;
@@ -158,6 +159,7 @@ public:
     // `viewport` (UI coordinates): draw into that rectangle instead of the whole screen (split screen).
     void draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport = nullptr);
     text::GameFonts& fonts() { return fonts_; }
+    const text::GameFonts& fonts() const { return fonts_; }
     // Where the last draw() / draw_split() put the event display's car picture (UI units;
     // w = 0: none).
     const SDL_FRect& event_icon_rect() const { return event_icon_rect_; }
@@ -224,6 +226,13 @@ private:
     void text(SDL_Renderer* r, float x, float y, const std::string& s, const char* font, float scale, SDL_Color c,
               text::HAlign a, bool baseline = false, float spacing = 0);
     float text_width(const std::string& s, const char* font, float scale = 1, float spacing = 0);
+    // The same for game text (database names: escapes and JIS pairs, drawn as the game draws them).
+    void game_text(SDL_Renderer* r, float x, float y, const std::string& s, const char* font, float scale, SDL_Color c,
+                   text::HAlign a, bool baseline = false, float spacing = 0);
+    float game_text_width(const std::string& s, const char* font, float scale = 1, float spacing = 0);
+    void draw_text(SDL_Renderer* r, float x, float y, const std::string& s, bool game, const char* font, float scale,
+                   SDL_Color c, text::HAlign a, bool baseline, float spacing);
+    float width_of(const std::string& s, bool game, const char* font, float scale, float spacing);
     // Lamp row / glyph runs in individual colours (odometer font glyphs), pen = left baseline.
     void glyph_run(SDL_Renderer* r, float x, float y, const std::vector<std::pair<std::string, SDL_Color>>& run,
                    const char* font);

@@ -162,7 +162,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
                                       : i == -2 && preset_.car2.empty() ? car_.label
                                       : i == -2                         ? preset_.car2
                                                                         : field_->opponent_label(i);
-            const std::string name = i == -1 ? ascii(car_.name) : car_display_name(label);
+            const std::string name = i == -1 ? car_.name : car_display_name(label); // game text (the event display)
             post_info(name + " Pitting in...");
             LOG_INFO("Race: %s pitting in (t %.1f)", label.c_str(), race_time_);
         }

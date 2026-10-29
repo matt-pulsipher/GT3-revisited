@@ -2,6 +2,7 @@
 // GTM1 render-state decoding used by the course renderer, car setup.
 
 #include "test_framework.h"
+#include "car_db_synth.h"
 #include "replay_fixtures.h"
 #include "course_fixtures.h"
 
@@ -777,6 +778,64 @@ TEST(race_results_text) {
     CHECK(result_time_text(false, true, 400, 344, 1) == "+1 lap");
     CHECK(result_time_text(false, true, 400, 344, 3) == "+3 laps");
     CHECK(result_time_text(false, false, 0, 344, 0) == "Running...");
+}
+
+// The race screens' car names keep the database's game text (escapes and JIS pairs) for the game
+// font. INVENTED database (car_db_synth.h).
+TEST(race_result_car_name_game_text) {
+    auto db = test::cardb::empty_database();
+    CHECK(db != nullptr);
+    if (!db) return;
+    test::cardb::add_car(*db, "syn_car", 300);
+    test::cardb::add_arcade_car(*db, "ar_syn_car", "syn_car");
+    const std::string name = "SYN V\xA1\xA6X", alt = "CAF\x81\xC9";
+    const ByteSpan* rec = db->record(data::TableId::Car, "syn_car");
+    CHECK(rec != nullptr);
+    if (!rec) return;
+    Bytes car(rec->begin(), rec->end());
+    test::cardb::put16(car, 0xE4, db->add_unistring(name)); // the US names
+    test::cardb::put16(car, 0xE6, db->add_unistring(alt));
+    db->put_record(data::TableId::Car, car);
+    db->rebuild();
+    CHECK(result_car_name(*db, "syn_car") == name);
+    CHECK(result_car_name(*db, "syn_car", true) == name + " " + alt);
+    CHECK(result_car_name(*db, "ar_syn_car") == name); // an arcade car: its base car's name
+    CHECK(result_car_name(*db, "no_such_car") == "no_such_car");
+    CHECK(car_setup_from_database(*db, "syn_car").name == name); // the HUD's replay item, "Pitting in..."
+}
+
+// The R34 V-spec / M-spec names hold a JIS middle dot (0x2126): kept as game text, the game
+// font draws it from the kanji font, as GT3 does.
+TEST(race_result_car_name_disc) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    data::CarDatabase db;
+    CHECK(db.load(vfs));
+    const std::string dot = "\xA1\xA6";
+    for (const char* label : {"r34_gtr_v_99", "r34_gtr_m_01", "r34_gtr_v2_00"}) {
+        const std::string n = result_car_name(db, label);
+        CHECK(n.find(dot + "spec") != std::string::npos); // V-spec, M-spec, V-spec II
+        CHECK(car_setup_from_database(db, label).name == n);
+    }
+    // Laid out with sw_16 (the replay item, the results rows): the dot is the one kanji cell.
+    const auto sys_data = vfs.read("font/system.fnt"), kf_data = vfs.read("font/system.kf");
+    CHECK(sys_data && kf_data);
+    if (!sys_data || !kf_data) return;
+    const text::FontFile sys = text::FontFile::parse(*sys_data);
+    const text::KanjiFont kf = text::KanjiFont::parse(*kf_data);
+    const text::LatinFont* sw16 = nullptr;
+    for (const text::LatinFont& f : sys.fonts)
+        if (f.name == "sw_16") sw16 = &f;
+    CHECK(sw16 != nullptr);
+    if (!sw16) return;
+    const std::string n = result_car_name(db, "r34_gtr_v_99");
+    const ByteSpan bytes(reinterpret_cast<const u8*>(n.data()), n.size());
+    const text::TextLayout lay = text::layout_text(text::map_game_text(bytes), *sw16, &kf, 0, 0, {});
+    std::vector<u16> kanji;
+    for (const text::GlyphQuad& q : lay.quads)
+        if (q.kanji) kanji.push_back(q.code);
+    CHECK(kanji == std::vector<u16>{0x2126});
 }
 
 // The original's race order and finish rule (presentation.md "Race order and finish").

@@ -230,6 +230,16 @@ const Hud::Image* Hud::image(const std::string& name) const {
 
 void Hud::text(SDL_Renderer* r, float x, float y, const std::string& s, const char* font, float scale, SDL_Color c,
                text::HAlign a, bool baseline, float spacing) {
+    draw_text(r, x, y, s, false, font, scale, c, a, baseline, spacing);
+}
+
+void Hud::game_text(SDL_Renderer* r, float x, float y, const std::string& s, const char* font, float scale, SDL_Color c,
+                    text::HAlign a, bool baseline, float spacing) {
+    draw_text(r, x, y, s, true, font, scale, c, a, baseline, spacing);
+}
+
+void Hud::draw_text(SDL_Renderer* r, float x, float y, const std::string& s, bool game, const char* font, float scale,
+                    SDL_Color c, text::HAlign a, bool baseline, float spacing) {
     if (!fonts_ok_) {
         float w = float(s.size()) * 8;
         const float x0 = a == text::HAlign::Right ? x - w : a == text::HAlign::Center ? x - w / 2 : x;
@@ -252,11 +262,12 @@ void Hud::text(SDL_Renderer* r, float x, float y, const std::string& s, const ch
     st.spacing = spacing;
     if (baseline) st.valign = text::VAlign::Baseline;
     if (measuring_) {
-        const text::TextLayout lay = f->layout(x, y, s, st);
+        const text::TextLayout lay = game ? f->layout_game(x, y, s, st) : f->layout(x, y, s, st);
         blit(r, nullptr, {lay.x, lay.y, lay.width, lay.height});
         return;
     }
-    f->draw(x, y, s, st);
+    if (game) f->draw_game(x, y, s, st);
+    else f->draw(x, y, s, st);
 }
 
 void Hud::blit(SDL_Renderer* r, SDL_Texture* t, const SDL_FRect& dst) {
@@ -272,13 +283,21 @@ std::vector<SDL_FRect> Hud::measure(const std::function<void()>& block) {
 }
 
 float Hud::text_width(const std::string& s, const char* font, float scale, float spacing) {
+    return width_of(s, false, font, scale, spacing);
+}
+
+float Hud::game_text_width(const std::string& s, const char* font, float scale, float spacing) {
+    return width_of(s, true, font, scale, spacing);
+}
+
+float Hud::width_of(const std::string& s, bool game, const char* font, float scale, float spacing) {
     if (!fonts_ok_) return float(s.size()) * 8 * scale;
     text::TextStyle st;
     text::GameFont* f = fonts_.resolve(font, st);
     if (!f) return 0;
     st.scale = scale;
     st.spacing = spacing;
-    return f->measure(s, st).x;
+    return (game ? f->measure_game(s, st) : f->measure(s, st)).x;
 }
 
 void Hud::glyph_run(SDL_Renderer* r, float x, float y, const std::vector<std::pair<std::string, SDL_Color>>& run,
@@ -833,12 +852,13 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
     // Event display (presentation §D6): centred on its row's anchor, the pen on the baseline,
     // at full alpha, a text wider than the row's width (when set) squeezed to it; the gap's
     // car picture (64 x 32, centred) is drawn by the race screen. With the time item only
-    // (replays: REPLAY OPTIONS ITEM time, §D9).
+    // (replays: REPLAY OPTIONS ITEM time, §D9). The texts are game text ("Pitting in..." holds
+    // the car's database name).
     event_icon_rect_ = {0, 0, 0, 0};
     if (const HudRow* ev = event_row(d.mode, d.items, view)) {
         for (const EventDisplay::Message& m : d.events) {
             const char* font = m.large ? "sw_20" : "sw_16";
-            const float w = text_width(m.text, font);
+            const float w = game_text_width(m.text, font);
             if (ev->w > 0 && w > ev->w && fonts_ok_) {
                 text::TextStyle st;
                 if (text::GameFont* f = fonts_.resolve(font, st)) {
@@ -847,11 +867,11 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
                     st.color = SDL_Color{m.r, m.g, m.b, 255};
                     st.align = text::HAlign::Center;
                     st.valign = text::VAlign::Baseline;
-                    f->draw(ux(ev->x + m.dx), uy(ev->y + m.dy), m.text, st);
+                    f->draw_game(ux(ev->x + m.dx), uy(ev->y + m.dy), m.text, st);
                 }
             } else {
-                text(r, ux(ev->x + m.dx), uy(ev->y + m.dy), m.text, font, 1, SDL_Color{m.r, m.g, m.b, 255},
-                     text::HAlign::Center, true);
+                game_text(r, ux(ev->x + m.dx), uy(ev->y + m.dy), m.text, font, 1, SDL_Color{m.r, m.g, m.b, 255},
+                          text::HAlign::Center, true);
             }
         }
         if (d.event_icon)
@@ -875,9 +895,10 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
         g_dx = 0, g_dy = 0;
     }
     // Replay items (presentation §D9): the car's name, light grey sw_16 on its row (squeezed to
-    // the row's width); the steering and accel / brake monitors.
+    // the row's width), as game text (the JIS middle dot of "V\xA1\xA6spec" from the kanji font);
+    // the steering and accel / brake monitors.
     if (const HudRow* cn = row(HudPart::CarName); cn && (d.items & kItemCarName) && !d.car_name.empty()) {
-        const float w = text_width(d.car_name, "sw_16"), sq = cn->w > 0 && w > cn->w ? cn->w / w : 1.0f;
+        const float w = game_text_width(d.car_name, "sw_16"), sq = cn->w > 0 && w > cn->w ? cn->w / w : 1.0f;
         text::TextStyle st;
         if (fonts_ok_)
             if (text::GameFont* f = fonts_.resolve("sw_16", st)) {
@@ -885,7 +906,7 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
                 st.scale_y = vsy();
                 st.color = SDL_Color{208, 208, 208, 255};
                 st.valign = text::VAlign::Baseline;
-                f->draw(ux(anchor(cn->x, w * sq, cn->align)), uy(cn->y), d.car_name, st);
+                f->draw_game(ux(anchor(cn->x, w * sq, cn->align)), uy(cn->y), d.car_name, st);
             }
     }
     if (const HudRow* sw = row(HudPart::Steering); sw && (d.items & kItemSteering)) {

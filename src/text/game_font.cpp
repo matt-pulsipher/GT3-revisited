@@ -48,8 +48,12 @@ SDL_FPoint GameFont::measure(std::string_view utf8, const TextStyle& style) cons
     return {lay.width, lay.height};
 }
 
+TextLayout GameFont::layout_game(float x, float y, ByteSpan game_text, const TextStyle& style) const {
+    return layout_text(map_game_text(game_text), *data_, owner_->kanji(), x, y, options(style));
+}
+
 SDL_FPoint GameFont::measure_game(ByteSpan game_text, const TextStyle& style) const {
-    TextLayout lay = layout_text(map_game_text(game_text), *data_, owner_->kanji(), 0, 0, options(style));
+    TextLayout lay = layout_game(0, 0, game_text, style);
     return {lay.width, lay.height};
 }
 
@@ -58,7 +62,7 @@ SDL_FRect GameFont::draw(float x, float y, std::string_view utf8, const TextStyl
 }
 
 SDL_FRect GameFont::draw_game(float x, float y, ByteSpan game_text, const TextStyle& style) {
-    return render(layout_text(map_game_text(game_text), *data_, owner_->kanji(), x, y, options(style)), style);
+    return render(layout_game(x, y, game_text, style), style);
 }
 
 SDL_FRect GameFont::render(const TextLayout& lay, const TextStyle& style) {

@@ -43,14 +43,26 @@ namespace gt3r {
 class Vfs;
 } // namespace gt3r
 
+namespace gt3r::data {
+class CarDatabase;
+} // namespace gt3r::data
+
 namespace gt3r::race {
 
 struct ResultRow {
-    std::string name;
+    std::string name; // game text (a database name; an online player's name encoded)
     std::string time; // time column text
     bool player = false;
     int car = 0;      // -1 player, -2 second player, >= 0 opponent index (for car icons)
 };
+
+// A car's name on the race screens (results, quick menus, records, Analyzer, "Pitting in..."), as
+// game text: the database's bytes, drawn with the game font as GT3 draws them (the JIS
+// middle dot of "SKYLINE GT-R V\xA1\xA6spec(R34,J)" from the kanji font). `label` is a car, variant
+// or arcade car label; the name is its car's Car::latin_name, with `full` its second string (car
+// record +0xE6, "ALTO WORKS" + "SUZUKI SPORTS LIMITED(J)") as the race results overlay shows it;
+// the quick menus show the name only (the reference captures). The label without a name.
+std::string result_car_name(const data::CarDatabase& db, const std::string& label, bool full = false);
 
 // Time column text for a car: winner total time, "+gap" on the same lap,
 // "+N lap(s)" when lapped, "Running..." when not finished. Times in seconds.

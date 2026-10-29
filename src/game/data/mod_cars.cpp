@@ -4,6 +4,7 @@
 #include "base/config.h"
 #include "base/log.h"
 #include "formats/db/gt_db.h"
+#include "formats/text/charset.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -407,11 +408,12 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
     return d;
 }
 
-bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error) {
+bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, const text::JisTable* jis) {
     auto fail = [&](const std::string& m) {
         if (error) *error = m;
         return false;
     };
+    auto game = [jis](const std::string& utf8) { return text::encode_game_text(text::utf8_decode(utf8), jis); };
     if (db.car(def.label) && !db.mod_car(def.label)) return fail("label '" + def.label + "' is already a disc car");
     const Car* donor = db.car(def.donor);
     if (!donor) return fail("donor '" + def.donor + "' is not a car on this disc");
@@ -640,16 +642,16 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error) {
     if (def.electric) {
         put8(*en, 0x44, 0); // no idle
         put16(*en, 0x16, 0); // no sampled engine sound: the race synthesises the motor
-        put16(*en, 0x10, db.add_unistring(def.layout_text.empty() ? "Electric" : def.layout_text));
+        put16(*en, 0x10, db.add_unistring(def.layout_text.empty() ? "Electric" : game(def.layout_text)));
         put16(*en, 0x12, db.add_unistring("Motor"));
-        put16(*en, 0x14, db.add_unistring(def.aspiration_text.empty() ? "EV" : def.aspiration_text));
-        put16(*en, 0x38, db.add_string(def.displacement_text.empty() ? "-" : def.displacement_text));
+        put16(*en, 0x14, db.add_unistring(def.aspiration_text.empty() ? "EV" : game(def.aspiration_text)));
+        put16(*en, 0x38, db.add_string(def.displacement_text.empty() ? "-" : game(def.displacement_text)));
     } else {
         if (def.idle_rpm) put8(*en, 0x44, clamp8(*def.idle_rpm / 10.0f));
         if (def.sound_id) put16(*en, 0x16, *def.sound_id);
-        if (!def.layout_text.empty()) put16(*en, 0x10, db.add_unistring(def.layout_text));
-        if (!def.aspiration_text.empty()) put16(*en, 0x14, db.add_unistring(def.aspiration_text));
-        if (!def.displacement_text.empty()) put16(*en, 0x38, db.add_string(def.displacement_text));
+        if (!def.layout_text.empty()) put16(*en, 0x10, db.add_unistring(game(def.layout_text)));
+        if (!def.aspiration_text.empty()) put16(*en, 0x14, db.add_unistring(game(def.aspiration_text)));
+        if (!def.displacement_text.empty()) put16(*en, 0x38, db.add_string(game(def.displacement_text)));
     }
 
     // --- drivetrain ----------------------------------------------------------------
@@ -729,7 +731,7 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error) {
     put64(car, 0, car_code);
     for (size_t i = 0; i < parts.size(); ++i) put64(car, 8 + i * 8, parts[i]);
     u16 maker_id = donor->maker_id;
-    std::string maker = def.maker.empty() ? donor->maker : def.maker;
+    std::string maker = def.maker.empty() ? donor->maker : game(def.maker); // ("Citroën" finds the disc's)
     for (const Car& c : db.cars())
         if (!db.mod_car(c.label) && to_lower(c.maker) == to_lower(maker)) {
             maker_id = c.maker_id;
@@ -737,7 +739,7 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error) {
         }
     put16(car, 0xE0, maker_id);
     put16(car, 0xE2, maker_id);
-    u16 name = db.add_unistring(def.name);
+    u16 name = db.add_unistring(game(def.name));
     put16(car, 0xE4, name);
     put16(car, 0xE6, name);
     put16(car, 0xE8, db.add_string(def.label));
@@ -789,8 +791,9 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error) {
     m.donor = def.donor;
     m.electric = def.electric;
     m.paints = def.paints;
+    for (auto& p : m.paints) p.first = game(p.first); // (as the disc's colour names)
     m.for_sale = def.for_sale;
-    m.description = def.description;
+    m.description = game(def.description);
     {
         // Arcade class by weight / power, the game's garage-car table (weight_class.h).
         // Power: the curve's peak with the hidden output factor.
@@ -835,7 +838,8 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error) {
     return true;
 }
 
-void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, const std::string& mod) {
+void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, const std::string& mod,
+                        const text::JisTable* jis) {
     bool any = false;
     for (const std::string& f : files) {
         auto bytes = read_host_file(f);
@@ -851,7 +855,7 @@ void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, 
             def->mod = mod;
             def->file = f;
         }
-        if (!def || !add_mod_car(db, *def, &err)) {
+        if (!def || !add_mod_car(db, *def, &err, jis)) {
             LOG_WARN("Mod car %s: %s", f.c_str(), err.c_str());
             db.add_mod_car_error(f + ": " + err);
             continue;
@@ -862,7 +866,7 @@ void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, 
     if (any) db.rebuild();
 }
 
-void load_mod_maker_file(CarDatabase& db, const std::string& file, const std::string& mod) {
+void load_mod_maker_file(CarDatabase& db, const std::string& file, const std::string& mod, const text::JisTable* jis) {
     auto ini = IniDocument::load(file);
     if (!ini) {
         db.add_mod_car_error(file + ": cannot read");
@@ -889,6 +893,9 @@ void load_mod_maker_file(CarDatabase& db, const std::string& file, const std::st
         return;
     }
     LOG_INFO("Mod maker '%s' (%s, region %s) from %s", m.id.c_str(), m.name.c_str(), m.region.c_str(), mod.c_str());
+    // Game text, as the cars' maker strings it is matched with (add_mod_car) and the menus draw.
+    m.name = text::encode_game_text(text::utf8_decode(m.name), jis);
+    m.description = text::encode_game_text(text::utf8_decode(m.description), jis);
     db.add_mod_maker(std::move(m));
 }
 

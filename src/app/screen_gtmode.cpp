@@ -10,6 +10,7 @@
 #include "game/gt_save.h"
 #include "base/log.h"
 #include "formats/model/car_model.h"
+#include "formats/text/charset.h"
 #include "menu/flow/gt_mode_hooks.h"
 #include "menu/flow/menu_set.h"
 #include "platform/render_scale.h"
@@ -683,7 +684,10 @@ public:
             // Columns: name, then the figures (proportional text, so not space-padded).
             const Color col = int(i) == s.ride ? colors::kAccent : colors::kText;
             if (int(i) == s.ride) ui.text(8, y, "*", col);
-            ui.text(16, y, Ui::clip(car && !car->latin_name.empty() ? car->latin_name : c.car, 216), col);
+            // (The name is game text: UTF-8 for this font.)
+            const std::string name =
+                car && !car->latin_name.empty() ? text::game_text_to_utf8(car->latin_name, nullptr) : c.car;
+            ui.text(16, y, Ui::clip(name, 216), col);
             ui.text_right(280, y, gt_->power_text(ps, " "), col);
             std::snprintf(b, sizeof b, "%.1f km", c.cond.odometer_m / 1000.0);
             ui.text_right(350, y, b, col);

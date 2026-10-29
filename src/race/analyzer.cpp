@@ -39,8 +39,11 @@ void fill(SDL_Renderer* r, const Frame& f, float x, float y, float w, float h, S
     SDL_RenderFillRect(r, &q);
 }
 
+// `game`: `s` is game text (a database name: escapes and JIS pairs, drawn as the game draws them).
+constexpr bool kGameText = true;
+
 void text(text::GameFonts* fonts, const Frame& f, float mx, float my, const std::string& s, const char* font,
-          float scale, SDL_Color c, text::HAlign a = text::HAlign::Left) {
+          float scale, SDL_Color c, text::HAlign a = text::HAlign::Left, bool game = false) {
     if (!fonts) return;
     text::TextStyle st;
     text::GameFont* g = fonts->resolve(font, st);
@@ -50,7 +53,8 @@ void text(text::GameFonts* fonts, const Frame& f, float mx, float my, const std:
     st.color = c;
     st.align = a;
     st.valign = text::VAlign::Middle;
-    g->draw(f.x(mx), f.y(my), s, st);
+    if (game) g->draw_game(f.x(mx), f.y(my), s, st);
+    else g->draw(f.x(mx), f.y(my), s, st);
 }
 
 std::string fmt_time(double s) {
@@ -525,8 +529,9 @@ void Analyzer::draw(SDL_Renderer* r, const SDL_FRect& dst) {
             if (const menu::Element* e = find(*scene_, kInfo[k]))
                 text(fonts_, f, e->x + dx + e->w, e->y + dy + e->h / 2, vals[k], "sw_16#1", 0.9f, kGrey, text::HAlign::Right);
         if (const menu::Element* ti = find(*scene_, "r_title")) {
-            std::string name = tr.title.size() > 20 ? tr.title.substr(0, 19) + "." : tr.title;
-            text(fonts_, f, ti->x + dx + 4, ti->y + dy + ti->h / 2, name, "sw_12#1", 1, kGrey);
+            // (Cut by characters: a JIS pair is one.)
+            std::string name = text::game_text_length(tr.title) > 20 ? text::game_text_prefix(tr.title, 19) + "." : tr.title;
+            text(fonts_, f, ti->x + dx + 4, ti->y + dy + ti->h / 2, name, "sw_12#1", 1, kGrey, text::HAlign::Left, kGameText);
         }
     }
 

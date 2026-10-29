@@ -7,6 +7,7 @@
 #include "app/screen_registry.h"
 #include "formats/model/car_model.h"
 #include "formats/model/wheel_spec.h"
+#include "formats/text/charset.h"
 #include "game/data/car_database.h"
 
 #include <memory>
@@ -45,19 +46,23 @@ public:
         done_ = true;
         std::vector<std::string> ids, labels;
         if (app.vfs()) ids = read_car_list(*app.vfs());
-        // Label models with the name of a car that uses them (when the database loads).
+        // Label models with the name of a car that uses them (when the database loads; game text,
+        // UTF-8 for this font).
         auto db = std::make_shared<data::CarDatabase>();
         bool have_db = app.vfs() && db->load(*app.vfs());
+        auto name = [](const data::Car* c) {
+            return c ? text::game_text_to_utf8(c->latin_name, nullptr) : std::string();
+        };
         for (const std::string& id : ids) {
             const data::Car* car = have_db ? db->car_by_model(id) : nullptr;
-            labels.push_back(car && !car->latin_name.empty() ? id + "  " + car->latin_name : id);
+            labels.push_back(car && !car->latin_name.empty() ? id + "  " + name(car) : id);
         }
         // Mod cars: "mod:<label>", their own body, rim and paint (GT3R_VIEWER_PAINT=<n>).
         if (have_db)
             for (const data::ModCar& m : db->mod_cars()) {
                 ids.push_back("mod:" + m.label);
                 const data::Car* c = db->car(m.label);
-                labels.push_back("mod:" + m.label + "  " + (c ? c->latin_name : std::string()));
+                labels.push_back("mod:" + m.label + "  " + name(c));
             }
         app.pop();
         app.push(make_model_viewer("Car viewer", labels, [ids, db, have_db](App& a, size_t i) -> scene::Model {

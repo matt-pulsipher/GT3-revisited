@@ -2,6 +2,7 @@
 
 #include "base/log.h"
 #include "formats/menu/mbl.h"
+#include "game/data/car_database.h"
 #include "menu/menu_text.h"
 #include "race/machine_test.h"
 #include "vfs/vfs.h"
@@ -33,8 +34,12 @@ std::string fmt_time(double s) {
     return b;
 }
 
+// `game`: `s` is game text (a database name: escapes and JIS pairs, drawn as the game draws them).
+constexpr bool kGameText = true;
+
 void text(SDL_Renderer*, text::GameFonts& fonts, const Frame& f, float mx, float my, const std::string& s,
-          const char* font, float scale_x, float scale_y, SDL_Color c, text::HAlign a, text::VAlign v = text::VAlign::Top) {
+          const char* font, float scale_x, float scale_y, SDL_Color c, text::HAlign a, text::VAlign v = text::VAlign::Top,
+          bool game = false) {
     text::TextStyle st;
     text::GameFont* g = fonts.resolve(font, st);
     if (!g) return;
@@ -43,7 +48,8 @@ void text(SDL_Renderer*, text::GameFonts& fonts, const Frame& f, float mx, float
     st.color = c;
     st.align = a;
     st.valign = v;
-    g->draw(f.x(mx), f.y(my), s, st);
+    if (game) g->draw_game(f.x(mx), f.y(my), s, st);
+    else g->draw(f.x(mx), f.y(my), s, st);
 }
 
 // The element's box in menu units (pmb: x/y = bottom-left, y up) at a new top edge.
@@ -62,6 +68,21 @@ const menu::Element* find(const menu::Page& p, const std::string& name) {
 }
 
 } // namespace
+
+std::string result_car_name(const data::CarDatabase& db, const std::string& label, bool full) {
+    std::string car = db.car(label) ? label : "";
+    if (car.empty())
+        if (const data::CarVariant* v = db.variant(label)) car = v->car;
+    if (car.empty())
+        for (const data::CarVariant& v : db.arcade_cars())
+            if (v.label == label) car = v.car;
+    const data::Car* c = db.car(car);
+    if (!c || c->latin_name.empty()) return label;
+    std::string n = c->latin_name;
+    const std::string& alt = c->latin_name_alt;
+    if (full && !alt.empty() && alt.find_first_not_of(' ') != std::string::npos) n += " " + alt;
+    return n;
+}
 
 std::string result_time_text(bool winner, bool finished, double time, double winner_time, int laps_behind) {
     if (!finished) return "Running...";
@@ -157,7 +178,7 @@ void ResultsOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::ve
              text::VAlign::Middle);
         if (icons) (*icons)[i] = {f.x(66), f.y(y - 13), 58 * f.sx(), 26 * f.sy()}; // car picture at 66..124
         text(r, fonts, f, 144, y, rows[i].name, "sw_16#1", 0.87f, 1.0f, c, text::HAlign::Left,
-             text::VAlign::Middle);
+             text::VAlign::Middle, kGameText);
         text(r, fonts, f, 600, y, rows[i].time, "sw_16#1", 0.87f, 1.0f, c, text::HAlign::Right, text::VAlign::Middle);
     }
 }

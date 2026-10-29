@@ -153,7 +153,7 @@ void RaceScreen::open_session_analyzer(App& app) {
     AnalyzerTrack a, b;
     a.trace = logger_.last(), b.trace = logger_.best();
     a.hz = b.hz = 1.0 / step_.step();
-    a.title = b.title = ascii(car_.name);
+    a.title = b.title = car_.name;
     analyzer_.set_tracks(std::move(a), std::move(b));
     analyzer_.open(Analyzer::View::Graph);
 }
@@ -180,7 +180,7 @@ void RaceScreen::setup_logger(App& app) {
         }
         a = exact_logger_track(app, ra);
     }
-    a.title = ascii(car_.name);
+    a.title = car_.name;
     logger_begin_ = a.lap_begin, logger_end_ = a.lap_end;
     logger_ghost_ = analysis_ ? GhostLap{} : b.ghost; // (the Analyzer's race draws track B's car itself)
     LOG_INFO("Analyzer: track A %zu samples (%.3f s, %.0f-%.0f m), track B %zu samples", a.trace.size(), a.trace.time,

@@ -88,7 +88,7 @@ CarSetup car_setup_from_database(const data::CarDatabase& db, const std::string&
     s.label = label;
     const data::Car* car = db.car(label);
     if (!car) return s;
-    s.name = car->latin_name; // the app's own screens draw it (Car::latin_name)
+    s.name = car->latin_name; // game text: the race screen draws it with the game font
     s.model = db.model_of(*car);
     if (auto en = db.engine(part_id(*car, data::TableId::Engine))) {
         if (en->rpm_limit_x100) s.limit_rpm = en->rpm_limit_x100 * 100.0f;

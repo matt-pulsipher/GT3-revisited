@@ -391,9 +391,12 @@ Each row shows the rank number (rank font at half size, centered at x 42), a car
 picture (58 x 26 at x 66, §B8), the car's name (sw_16 at 87 % width, from x 144)
 and the time column (right edge 600). The player's row is (255, 200, 0), other
 rows (204, 204, 204). Names include the car's second name string (for example
-"ALTO WORKS SUZUKI SPORTS LIMITED(J)"); characters the game font lacks become
-"-" (`RaceScreen::ascii`). The time column (`result_time_text`, test
-`race_results_text`):
+"ALTO WORKS SUZUKI SPORTS LIMITED(J)"). A name is the database's game text, drawn
+as it is: an accented letter is the game font's, and the R34s' middle dot
+("SKYLINE GT-R V・spec(R34,J)") is the kanji font's (`race::result_car_name`, test
+`race_result_car_name_disc`). The quick menus' lists, the replay's car name (§D9),
+"<car> Pitting in..." (§D6), the records list and the Analyzer show the name the
+same way. The time column (`result_time_text`, test `race_results_text`):
 
 | Car | Text |
 |---|---|
@@ -1009,7 +1012,7 @@ REPLAY OPTIONS ITEM time (default off, §D9):
 | split time | "T<n> m'ss.mmm", the time since the lap's start | sw_16, green | the anchor | queued |
 | gap | "+m'ss.mmm" behind, the font's dash glyph and the time ahead | sw_16, red (240, 0, 0) behind (gap ≥ 0), light blue (128, 128, 255) ahead | 25 below the anchor | at once |
 | laps down | "+N Laps" (`RACEDISPLAY_LapDiffInfo`) | sw_16, red | 25 below the anchor | at once |
-| pit-in | "<car> Pitting in..." | sw_16, green | the anchor | queued |
+| pit-in | "<car> Pitting in..." (the name as on the results, §B6) | sw_16, green | the anchor | queued |
 | top speed (top-speed test replays) | "312.4km/h" / "124.3mph": the top speed so far, "%.1f" rounded, mph = km/h x 0.62139, no space (`race::machine_speed_message`) | sw_16, green | the anchor | queued |
 
 - **Queue.** A queued message starts when the messages queued before it have run
@@ -1138,7 +1141,7 @@ whatever the items say. Each part is drawn only while its item is on:
 | Item | In-car view | Outside views |
 |---|---|---|
 | easy meter | the onboard cluster (§D1-§D3) | a small cluster: a black 50 % octagon 70 x 30 (left edge 210, bottom 436), the digital speed right-aligned at x 170 (baseline 433) with its unit (sw_12) 5 units right of it, and the gear with its shift light and recommended gear (§D2) centered about (250, 420); all pushed left |
-| car name | light gray (208, 208, 208) sw_16, left edge 16 (pushed), baseline 290, squeezed to at most 300 units | the same, right edge 615 (pushed), baseline 433, at most 320 units |
+| car name | the name as on the results (§B6), light gray (208, 208, 208) sw_16, left edge 16 (pushed), baseline 290, squeezed to at most 300 units | the same, right edge 615 (pushed), baseline 433, at most 320 units |
 | time | the lap count at y 48 and the Lap line at y 84 (§D4), and the event display of the followed car (§D6) at (320, 130), squeezed to 400 units, with the gap's car picture | the same |
 | map | at (16, 16) (§D5) | the same |
 | steering | a steering monitor pivoting on (40, 350), pushed left | the same |

@@ -84,6 +84,20 @@ TEST(text_game_encoding) {
     CHECK(encode_game_text(U"dé€あ", &jis) == str({'d', 0x81, 0xE9, 0x80, 0x80, 0xA4, 0xA2}));
 }
 
+TEST(text_game_text_prefix) {
+    // ASCII, a Latin escape and an EUC-JP pair: one character each.
+    const std::string s = str({'A', 0x81, 0xE9, 0xA1, 0xA6, 'B'});
+    CHECK(game_text_length(s) == 4);
+    CHECK(game_text_prefix(s, 0).empty());
+    CHECK(game_text_prefix(s, 2) == str({'A', 0x81, 0xE9}));
+    CHECK(game_text_prefix(s, 3) == str({'A', 0x81, 0xE9, 0xA1, 0xA6}));
+    CHECK(game_text_prefix(s, 9) == s);
+    // A truncated pair and anything after a NUL are not characters (the renderer stops there).
+    CHECK(game_text_length(str({'A', 0xA1})) == 1);
+    CHECK(game_text_prefix(str({'A', 0xA1}), 2) == "A");
+    CHECK(game_text_length(std::string("AB\0C", 4)) == 2);
+}
+
 TEST(text_mltx_synthetic) {
     // 2 keys, 3 language pools of 8 bytes.
     Bytes b(0x40, 0);
