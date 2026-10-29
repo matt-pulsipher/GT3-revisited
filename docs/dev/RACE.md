@@ -122,15 +122,25 @@ Stick: 6 % deadzone, response curve `x^1.25` (fine control near the centre).
 Pedals: 8/255 bottom deadzone. Buttons held without a pressure report give
 full travel (keyboards).
 
-Rumble (`race::RumbleModel`, `InputManager::set_rumble`; physics §1.2): as GT3
-drives a DualShock 2. Each race step's vibration level (`VehicleTelemetry::pad_rumble`,
+Rumble (`race::RumbleModel`, `InputManager::set_rumble`): each step computes two
+outputs and each player's Rumble setting picks one (`InputManager::gt3_rumble`:
+`[playerN] rumble`; `auto` takes GT3 original on a DualSense, Modern on other
+controllers; `race_rumble_mode`). GT3 original (physics §1.2), as GT3 drives a
+DualShock 2: each race step's vibration level (`VehicleTelemetry::pad_rumble`,
 0-127, set in phase 12 from the front tires' drive and brake forces, the dampers and
 curbs under the front wheels, and a hit's rumble) goes to the large motor as it is, so
-at most about half strength; the small motor never runs. A car the pad does not drive
-(an AI run-up, after the finish; `VehicleTelemetry::pad_output` clear) sends nothing,
-and its motors stop. Replays and demonstrations send nothing, and the Vibration option
-(`vib1`, the quick menu's OPTIONS) turns it off. Impulse triggers (`set_trigger_rumble`,
-ours): left = ABS-style chatter when a grounded wheel locks under braking, right =
+at most about half strength; the small motor never runs. Modern (ours): a wall or car
+hit (`RaceVehicle::last_impact`, the stronger impulse over the car's mass, over
+1.5 m/s) holds the large motor for 0.25 s at speed change / 8 m/s; off-road
+(`RaceTrack::is_offroad` under the car, above 3 m/s) holds it at 0.18 plus the speed /
+150 m/s (up to 0.2 more); wheelspin under throttle at up to 0.25; a slide (the
+strongest grounded wheel's slip intensity, physics §8.3, from 0.35 to 1.25) at up to
+0.35; a wheel on a curb (`RaceTrack::is_kerb`) pulses the small motor at 4 Hz plus
+0.4 Hz per m/s. Either way a car the pad does not drive (an AI run-up, after the
+finish; `VehicleTelemetry::pad_output` clear) sends nothing, and its motors stop.
+Replays and demonstrations send nothing, and the Vibration option (`vib1`, the
+quick menu's OPTIONS) turns it off. Impulse triggers (`set_trigger_rumble`, ours):
+left = ABS-style chatter when a grounded wheel locks under braking, right =
 wheelspin under throttle (`race_rumble`).
 
 ## Rendering

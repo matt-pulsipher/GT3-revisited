@@ -165,6 +165,7 @@ public:
     sim::EngineCondition engine_condition() const override;
     float wall_impulse() const override;
     float car_impulse() const override;
+    float last_impact() const override;
 
     const PadState* pad_ = nullptr;
     bool reverse_ = false;
@@ -183,7 +184,7 @@ public:
         CarFacts facts;
         sim::VehicleState state, prev;
         sim::VehicleTelemetry tel;
-        float wall = 0, car = 0;             // this step's wall impulse, strongest car impulse
+        float wall = 0, car = 0, impact = 0; // this step's wall impulse, strongest car impulse, the stronger's speed change (m/s)
         double finish = -1;                  // race time of the finish (s)
     };
 
@@ -643,6 +644,7 @@ public:
             const ex::Car& c = race_->cars()[i];
             exact_state(c, v.setup, v.state);
             exact_telemetry(c, wear_on_, v.wall, v.tel);
+            v.impact = std::max(v.wall, v.car) * c.p.inv_mass.host();
         }
         online_after_step();
         // This step's line and sector crossings, in the race order before the step (the leader first).
@@ -760,6 +762,7 @@ public:
     float second_brake() const override { return humans_ > 1 ? race_->cars()[1].brake_pedal.host() : 0.0f; }
     float second_wall_impulse() const override { return humans_ > 1 ? cars_[1].wall : 0.0f; }
     float second_car_impulse() const override { return humans_ > 1 ? cars_[1].car : 0.0f; }
+    float second_impact() const override { return humans_ > 1 ? cars_[1].impact : 0.0f; }
     LapInfo second_laps() const override {
         LapInfo l;
         if (humans_ < 2) return l;
@@ -1082,6 +1085,7 @@ void ExactPlayer::set_engine_condition(const sim::EngineCondition& c) { f_.set_c
 sim::EngineCondition ExactPlayer::engine_condition() const { return exact_condition(f_.record(car_)); }
 float ExactPlayer::wall_impulse() const { return f_.car(car_).wall; }
 float ExactPlayer::car_impulse() const { return f_.car(car_).car; }
+float ExactPlayer::last_impact() const { return f_.car(car_).impact; }
 
 } // namespace
 

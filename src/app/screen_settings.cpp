@@ -1,5 +1,5 @@
 // Settings: every user-facing config.ini option on tabbed pages (Display,
-// Audio, Controls, Force feedback, Touch, Game disc, Online). Changes apply at once
+// Audio, Controls, Rumble & feedback, Touch, Game disc, Online). Changes apply at once
 // where the engine can (volume, vsync, speed units, MSAA, anisotropic filtering, 3D
 // resolution, bindings, force feedback, touch layout) and are saved to config.ini
 // immediately. Only keys the engine reads are offered; see README "Settings" for
@@ -33,10 +33,10 @@ namespace {
 
 #if GT3R_XR
 enum Tab { kDisplay, kAudio, kControls, kFfb, kTouch, kDisc, kOnline, kVr, kTabCount };
-const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Force feedback", "Touch", "Game disc", "Online", "VR"};
+const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Game disc", "Online", "VR"};
 #else
 enum Tab { kDisplay, kAudio, kControls, kFfb, kTouch, kDisc, kOnline, kTabCount };
-const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Force feedback", "Touch", "Game disc", "Online"};
+const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Game disc", "Online"};
 #endif
 
 struct Row {
@@ -852,18 +852,6 @@ private:
                            a->input().set_keyboard(p, v);
                            a->save_config();
                        });
-            if (p == 0 && InputManager::phone_vibration_available())
-                toggle("Phone vibration",
-                       "Rumble on this device's own motor when the controls in use have none (built-in controls, "
-                       "touch). A controller with rumble always rumbles itself.",
-                       in.phone_vibration(), [a](bool v) {
-                           a->input().set_phone_vibration(v);
-                           a->save_config();
-                       });
-            action("Test rumble", "Rumbles this player's controller for half a second.", "", [this, p] {
-                rumble_player_ = p;
-                rumble_left_ = 0.5;
-            });
             binding_rows(app, p);
         }
         heading("All players");
@@ -1113,8 +1101,41 @@ private:
 
     float key_column_x() const { return lay_.val_x + std::floor(lay_.val_w * 0.58f); }
 
+    // Each player's rumble, then the trigger and wheel effects (all players).
     void build_ffb(App& app) {
         App* a = &app;
+        InputManager& in = app.input();
+        for (int p = 0; p < InputManager::kMaxPlayers; ++p) {
+            heading(p == 0 ? "Player 1" : "Player 2 (split screen)");
+            {
+                // Auto shows what it plays on the controller in use.
+                static const char* const kModes[] = {"auto", "modern", "gt3"};
+                const std::string& mode = in.rumble_mode(p);
+                const int midx = mode == "modern" ? 1 : mode == "gt3" ? 2 : 0;
+                const char* const autos = gt3_rumble("auto", in.dualsense(p)) ? "Auto: GT3 original" : "Auto: Modern";
+                choice("Rumble",
+                       "Modern: wall and car hits, curbs, off-road, wheelspin and slides. GT3 original: GT3's own "
+                       "rumble, which most controllers play much stronger than a DualShock 2. Auto: GT3 original on a "
+                       "DualSense.",
+                       {autos, "Modern", "GT3 original"}, midx, [a, p](int i) {
+                           a->input().set_rumble_mode(p, kModes[i]);
+                           a->save_config();
+                       });
+            }
+            if (p == 0 && InputManager::phone_vibration_available())
+                toggle("Phone vibration",
+                       "Rumble on this device's own motor when the controls in use have none (built-in controls, "
+                       "touch). A controller with rumble always rumbles itself.",
+                       in.phone_vibration(), [a](bool v) {
+                           a->input().set_phone_vibration(v);
+                           a->save_config();
+                       });
+            action("Test rumble", "Rumbles this player's controller for half a second.", "", [this, p] {
+                rumble_player_ = p;
+                rumble_left_ = 0.5;
+            });
+        }
+        heading("Triggers and wheels");
         ForceFeedbackConfig c = app.input().ffb_config();
         auto apply = [a](const ForceFeedbackConfig& n) {
             a->input().set_ffb_config(n);

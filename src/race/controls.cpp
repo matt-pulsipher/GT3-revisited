@@ -69,26 +69,52 @@ sim::ControlInputs ControlMapper::update(const PadState& pad, double dt) {
 }
 
 void RumbleModel::reset() {
-    rumble_ = {};
+    gt3_ = modern_ = {};
     trig_l_ = trig_r_ = 0;
+    impact_timer_ = impact_level_ = 0;
 }
 
-void RumbleModel::update(const sim::VehicleState& s, const sim::VehicleTelemetry* t, const sim::ControlInputs& in, double dt) {
+void RumbleModel::update(const sim::VehicleState& s, const sim::VehicleTelemetry* t, const Events& ev,
+                         const sim::ControlInputs& in, double dt) {
     clock_ += dt;
-    // The pad's actuators are cleared after every send, so a step that sends nothing stops both motors.
-    rumble_ = {};
-    if (t && t->pad_output && t->pad_rumble > 0) rumble_.large = u8(std::min(t->pad_rumble, 127));
+    // Modern: a hit holds its level for 0.25 s.
+    if (ev.impact > 1.5f) {
+        impact_level_ = std::max(impact_level_, std::min(1.0f, ev.impact / 8.0f));
+        impact_timer_ = 0.25f;
+    }
+    impact_timer_ = std::max(0.0f, impact_timer_ - float(dt));
+    if (impact_timer_ == 0) impact_level_ = 0;
 
-    // Ours, the triggers. Wheel slip (sim convention: slip_ratio > 0 braking / locking, < 0 wheelspin).
-    float spin = 0, lock = 0;
-    for (const sim::WheelState& w : s.wheels) {
+    // Wheel slip (sim convention: slip_ratio > 0 braking / locking, < 0 wheelspin), and the slip intensity that
+    // drives the tyre squeal (physics §8.3: 1 in a full slide on tarmac).
+    float spin = 0, lock = 0, slide = 0;
+    for (size_t i = 0; i < s.wheels.size(); ++i) {
+        const sim::WheelState& w = s.wheels[i];
         if (!w.grounded) continue;
         spin = std::max(spin, -w.slip_ratio);
         lock = std::max(lock, w.slip_ratio);
+        if (t) slide = std::max(slide, t->smoke[i]);
     }
     float spin_amt = std::clamp((spin - 0.15f) / 0.5f, 0.0f, 1.0f) * std::min(1.0f, in.throttle * 2);
     float lock_amt = std::clamp((lock - 0.2f) / 0.5f, 0.0f, 1.0f) * std::min(1.0f, in.brake * 2);
-    // Impulse triggers: ABS chatter on the brake trigger, wheelspin buzz on the throttle trigger.
+
+    // The pad's actuators are cleared after every send, so a step that sends nothing stops both motors.
+    gt3_ = modern_ = {};
+    if (t && t->pad_output) {
+        if (t->pad_rumble > 0) gt3_.large = u8(std::min(t->pad_rumble, 127));
+        const float speed = s.speed_kmh / 3.6f;
+        float large = impact_level_;
+        if (ev.offroad && speed > 3) large = std::max(large, 0.18f + std::min(0.2f, speed / 150.0f));
+        large = std::max(large, 0.25f * spin_amt);
+        // A pronounced squeal adds a gentle low-motor rumble; ordinary cornering stays quiet.
+        const float grip_loss = std::clamp((slide - 0.35f) / 0.9f, 0.0f, 1.0f);
+        large = std::max(large, 0.35f * grip_loss);
+        modern_.large = u8(std::clamp(large, 0.0f, 1.0f) * 255.0f);
+        // Curbs: the small (on/off) motor, pulsed at a rate that follows the speed.
+        modern_.small = ev.kerb && speed > 2 && std::fmod(clock_ * (4.0 + speed * 0.4), 1.0) < 0.5;
+    }
+
+    // Ours, the triggers. Impulse triggers: ABS chatter on the brake trigger, wheelspin buzz on the throttle trigger.
     trig_l_ = lock_amt > 0 ? (std::fmod(clock_ * 15.0, 1.0) < 0.5 ? 0.6f * lock_amt + 0.2f : 0.0f) : 0.0f;
     trig_r_ = 0.5f * spin_amt;
 }

@@ -63,25 +63,42 @@ private:
     bool reverse_ = false;
 };
 
-// The controller's motors in a race, driven as GT3 drives a DualShock 2 (physics §1.2, phase 12's
-// pad vibration): each race step's vibration level (VehicleTelemetry::pad_rumble, 0..127) goes to
-// the large motor as it is, the small motor never runs, and a car the pad does not drive
-// (VehicleTelemetry::pad_output) sends nothing, so its motors stop. Ours: the adaptive triggers
-// (ABS chatter, wheelspin buzz), which a DualShock 2 does not have. Feed it after every step;
-// read rumble()/triggers() and pass them to InputManager.
+// The controller's motors in a race, two ways; each player's Rumble setting picks one
+// (InputManager::gt3_rumble: Auto takes GT3 original on a DualSense, Modern elsewhere).
+// - GT3 original, as GT3 drives a DualShock 2 (physics §1.2, phase 12's pad vibration): each race
+//   step's vibration level (VehicleTelemetry::pad_rumble, 0..127) goes to the large motor as it is
+//   and the small motor never runs. Most controllers' motors play its low levels much stronger
+//   than a DualShock 2's, so it buzzes all the time there.
+// - Modern (ours): what the car meets, each on its own: a wall or car hit pulses the large motor
+//   for 0.25 s by its speed change; off-road, wheelspin and a slide (the tyre squeal's slip
+//   intensity, physics §8.3) hold it; curbs pulse the small motor at a rate that follows the speed.
+// Either way a car the pad does not drive (VehicleTelemetry::pad_output: an AI run-up, after the
+// finish) sends nothing, so its motors stop. Ours too: the adaptive triggers (ABS chatter,
+// wheelspin buzz), which a DualShock 2 does not have. Feed it after every step; read
+// rumble()/triggers() and pass them to InputManager.
 class RumbleModel {
 public:
-    // The step's car state, its telemetry (null: none, the motors stop) and its inputs.
-    void update(const sim::VehicleState& s, const sim::VehicleTelemetry* t, const sim::ControlInputs& in, double dt);
+    // What the car met this step, for the Modern rumble.
+    struct Events {
+        bool kerb = false;    // a grounded wheel is on a curb
+        bool offroad = false; // on grass / gravel, or off the road
+        float impact = 0;     // the step's strongest wall or car hit as a speed change (m/s; RaceVehicle::last_impact)
+    };
+
+    // The step's car state, its telemetry (null: none, the motors stop), what it met and its inputs.
+    void update(const sim::VehicleState& s, const sim::VehicleTelemetry* t, const Events& ev, const sim::ControlInputs& in,
+                double dt);
     void reset();
 
-    PadRumble rumble() const { return rumble_; }
+    // The motors: GT3 original's (`gt3`) or Modern's.
+    PadRumble rumble(bool gt3) const { return gt3 ? gt3_ : modern_; }
     float trigger_left() const { return trig_l_; }  // brake trigger: ABS / lock-up
     float trigger_right() const { return trig_r_; } // throttle trigger: wheelspin
 
 private:
-    PadRumble rumble_;
+    PadRumble gt3_, modern_;
     float trig_l_ = 0, trig_r_ = 0;
+    float impact_timer_ = 0, impact_level_ = 0;
     double clock_ = 0;
 };
 
