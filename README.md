@@ -1,7 +1,7 @@
 # GT3 Revisited
 
 An open-source reimplementation of the *Gran Turismo 3 A-Spec* engine for
-modern platforms: **Windows, macOS, Linux, Android and Meta Quest (VR)**.
+modern platforms: **Windows, macOS, Linux, Android, iOS and Meta Quest (VR)**.
 
 GT3 Revisited contains **no game data or assets**. It needs a
 disc image (`.iso`) that you made from your own copy of the game. At runtime
@@ -70,6 +70,11 @@ certificate, so the first launch needs one extra step:
   SideQuest / Meta Quest Developer Hub). Copy your disc image into the
   headset's **Download** folder over USB. The game is in the library under
   **Unknown Sources**. Details: [VR](docs/dev/VR.md).
+- **iPhone and iPad** (iOS 16 or later): there is no package, because an iOS
+  app has to be signed for the device it runs on. Build it on a Mac and install
+  it with Xcode and your own Apple ID; a free account is enough
+  ([Building](#building)). With a free account the installed app stops opening
+  after 7 days: installing it again renews it, and your saves and settings stay.
 
 Direct links to the newest release, always the same:
 [gt3r-windows-x64.zip](https://github.com/matt-pulsipher/GT3-revisited/releases/latest/download/gt3r-windows-x64.zip),
@@ -97,8 +102,10 @@ gt3r "/path/to/Gran Turismo 3.iso"    # or pass it directly
 ```
 
 You can also drag the `.iso` onto the window. On Android and the Quest, choose
-**Open disc image** and pick the file ([android/README.md](android/README.md)). The path
-is remembered, with the last five discs you opened. If the remembered disc
+**Open disc image** and pick the file ([android/README.md](android/README.md)). On
+iOS, **Open disc image** shows the Files app's picker: the image can be anywhere it
+reaches (On My iPhone, a network share, another app's folder) and is read where it
+is, never copied. The path is remembered, with the last five discs you opened. If the remembered disc
 is missing at startup (moved, or on a drive that isn't connected), the first
 screen says which file failed and offers the recent discs that still exist.
 
@@ -134,6 +141,9 @@ Settings, saves, replays, mods and screenshots live in:
 - Linux: `~/.local/share/GT3Revisited/GT3Revisited/`
 - Android: the app's private storage, shown in the Files app as **GT3 Revisited**
   (the Mods screen's **Open folder** goes there)
+- iOS: the app's Documents, shown in the Files app as **On My iPhone › GT3
+  Revisited** and in Finder when the device is connected (the Mods screen's
+  **Open folder** goes there); a copy of the disc image can go there too
 
 If a `portable.ini` file sits next to the executable, all user data is kept
 beside it instead.
@@ -165,7 +175,7 @@ are only there:
 | `[video] aspect` | `16:9` / `4:3` / `fill` | the game's picture: 16:9 (default), 4:3 like on a 4:3 TV, or the whole screen (races use its full width; menus and movies stay 4:3) |
 | `[video] vsync` | `1` / `0` | wait for the display refresh |
 | `[video] limit_60fps` | `on` / `off` | on 120 Hz and faster displays, draw about 60 frames a second (every Nth refresh) |
-| `[video] msaa` | `1` `2` `4` `8` | 3D anti-aliasing (clamped to the GPU); default 4, 2 on Android (phones, tablets, Quest) |
+| `[video] msaa` | `1` `2` `4` `8` | 3D anti-aliasing (clamped to the GPU); default 4, 2 on phones, tablets and the Quest (Android, iOS) |
 | `[video] anisotropy` | `1` `2` `4` `8` `16` | anisotropic texture filtering (`1` = off); default 4 |
 | `[video] render_scale` | `auto`, `0.5`..`4.0` | 3D resolution vs. the screen; above `1.0` the 3D views render larger and are scaled down (supersampling), up to 16384 pixels a side |
 | `[video] dynamic_resolution` | `on` / `off` | lower the 3D resolution (to 50% at most) when the GPU can't keep up and raise it while it keeps up, up to `render_scale`; with `auto`, up to the screen's full resolution (at most 1440 lines), starting where the last race ended (kept in `dynamic_start`). Default on for phones and tablets |
@@ -258,7 +268,7 @@ players, each on their own machine:
 - The other players can see your IP address, as in any peer-to-peer game.
 - **Updates.** At startup the game asks the relay server whether a newer
   version exists. That is one small message with the game's version and
-  platform (Windows, macOS, Linux or Android), nothing else.
+  platform (Windows, macOS, Linux, Android or other), nothing else.
   - When a newer version exists, a dialog says so once per version:
     **Download update** downloads the package for your system, **Later**
     keeps playing, and **Release notes** opens the release page. A badge in
@@ -278,7 +288,7 @@ How it works, and how to run your own relay: [ONLINE](docs/dev/ONLINE.md).
 The **Mods** screen installs mods from a .zip (**Install from .zip**, or drop
 the .zip onto the window on a computer), turns them on and off, and removes
 them. Mods live in `mods/` in the user data folder; **Open folder** opens it
-(on Android, in the Files app). A mod can replace any file of the game, add
+(on Android and iOS, in the Files app). A mod can replace any file of the game, add
 music, or add cars, defined in small text files, that appear at the dealers,
 in the arcade and online. See [MODDING](docs/MODDING.md).
 
@@ -330,6 +340,15 @@ cmake --build build -j
   The 3D renderer uses Vulkan: install your GPU's Vulkan driver (Mesa's
   `mesa-vulkan-drivers` on AMD / Intel).
 - **Android**: see [android/README.md](android/README.md).
+- **iOS** (on a Mac with Xcode): CMake's Xcode generator, signed with your own
+  team ID and a bundle identifier of your own (a free Apple ID works):
+  ```bash
+  cmake -S . -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 -DGT3R_IOS_TEAM=<team ID> -DGT3R_IOS_BUNDLE_ID=<com.you.gt3r>
+  ```
+  Then open `build-ios/GT3Revisited.xcodeproj`, choose the `gt3r` scheme and
+  your device, and Run. Where to find the team ID, the device's Developer
+  Mode, installing from the command line and the simulator:
+  [PLATFORMS](docs/dev/PLATFORMS.md#ios).
 
 Targets: `gt3r` (the game), `gt3tool` (disc tools), `gt3r-relay` (online
 relay server) and `gt3r_tests` (unit tests). Run the unit tests with `ctest --test-dir build`; set
@@ -352,7 +371,7 @@ gt3r [disc.iso] [--hub] [--screen <id>] [--browse <vol path>] [--shot <out.png>]
 - `--browse <path>` opens the asset browser on a file in `GT3.VOL`.
 - `--shot out.png` saves a screenshot after a few frames and exits.
 
-On Android, put one argument per line in `args.txt` in the user data folder.
+On Android and iOS, put one argument per line in `args.txt` in the user data folder.
 
 ## Tools
 
