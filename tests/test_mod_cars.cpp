@@ -243,8 +243,8 @@ TEST(modcar_texts_game_text) {
     db->rebuild();
     CHECK(db->car("syn_mod2") && db->car("syn_mod2")->name == "Citro?n");
     // A maker file: its name and description as game text too (matched with the cars' makers).
-    const std::filesystem::path dir = temp_dir("modcar_texts");
-    const std::string maker_file = (dir / "citroen.ini").string();
+    // (Joined with '/', as the mod scan joins its paths: the maker's id is the file name after the last '/'.)
+    const std::string maker_file = temp_dir("modcar_texts").generic_string() + "/citroen.ini";
     CHECK(write_file(maker_file, "[maker]\nname = CITRO\xC3\x8BN\nregion = fr\ndescription = \xC3\x80 Paris\n"));
     data::load_mod_maker_file(*db, maker_file, "test");
     CHECK(db->mod_makers().size() == 1);
@@ -260,8 +260,8 @@ TEST(modcar_texts_disc_jis) {
     Disc* disc = test_disc();
     if (!disc) SKIP("GT3R_DISC not set");
     const std::filesystem::path dir = temp_dir("modcar_texts_jis");
-    const std::string file = (dir / "cars" / "jp_test_ev.ini").string();
     std::filesystem::create_directories(dir / "cars");
+    const std::string file = dir.generic_string() + "/cars/jp_test_ev.ini";
     CHECK(write_file(file, "[car]\nlabel = jp_test_ev\nname = \xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88 EV\n"
                            "maker = Citro\xC3\xABn\ndonor = legacy_gtb_96\n"));
     Volume& vol = disc->volume();
