@@ -384,6 +384,10 @@ void App::set_limit_60fps(bool on) {
     apply_frame_limit();
 }
 
+bool App::full_car_detail() const {
+    return to_lower(config_.get("video", "full_car_detail").value_or(platform::is_mobile() ? "off" : "on")) == "on";
+}
+
 bool App::dynamic_resolution() const {
     return to_lower(config_.get("video", "dynamic_resolution").value_or(platform::is_mobile() ? "on" : "off")) == "on";
 }

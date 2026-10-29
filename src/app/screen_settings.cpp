@@ -616,6 +616,16 @@ private:
         dyn.enabled = scale.enabled;
         if (!dyn.enabled) dyn.desc = msaa.desc;
 
+        Row& detail = toggle("Always show full car detail",
+                             "Every car with its sharpest model and textures, however far away. Off: distant cars "
+                             "switch to GT3's simpler models.",
+                             app.full_car_detail(), [a](bool v) {
+                                 a->config().set("video", "full_car_detail", v ? "on" : "off");
+                                 a->save_config();
+                             });
+        detail.enabled = scale.enabled;
+        if (!detail.enabled) detail.desc = msaa.desc;
+
         bool gpu_cfg = cfg.get("video", "gpu").value_or("1") != "0";
         Row& gpu = toggle("3D renderer (SDL_GPU)", "Off: 2D-only fallback for systems without a working GPU driver.",
                           gpu_cfg, [a](bool v) {

@@ -130,7 +130,7 @@ public:
               int paint = 0, ByteSpan wheel_file = {}, const CarBodyMod& body_mod = {});
 
     // Car draw items for the (interpolated) state. LOD is picked from the
-    // camera distance.
+    // camera distance (car_lod).
     void add_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s, const sim::VehicleSetup& setup,
                    const render::Vec3& eye, const CarLook& look = {}) const;
     // The wet-road reflection's mirrored car (docs/dev/RACE.md "Wet-road reflection"): body and wheels only, reflected about
@@ -140,6 +140,8 @@ public:
     // Reflection about the road plane under the car (I - 2 n n^T, through the contacts' centre).
     static bool road_mirror(const sim::VehicleState& s, render::Mat4& out);
     int lod_count() const { return lods_; }
+    // [video] full_car_detail = on: LOD 0 (the full-detail body, wheels and textures) at any distance.
+    void set_full_detail(bool on) { full_detail_ = on; }
     // The GTCI lamp lists (headlamps, tail and brake lamps) in the model frame, and the
     // model frame -> world for a state (the body as drawn).
     const CarLampSet& lamps() const { return lamps_; }
@@ -175,6 +177,7 @@ private:
     CarShadowParams shadow_params_;
     render::GpuContext* ctx_ = nullptr;
     bool shadow_set_ = false;
+    bool full_detail_ = false;
     int lods_ = 1;
 };
 
@@ -184,6 +187,10 @@ bool car_camera_points(ByteSpan car_file, render::Vec3& p0, render::Vec3& p1);
 
 // Car frame -> world matrix for a vehicle state.
 render::Mat4 car_matrix(const sim::VehicleState& s);
+
+// The car LOD at `dist` metres from the camera for a model with `lods` levels: 0 under 30 m, 1 under
+// 80 m, else 2, at most lods - 1; 0 at any distance with `full_detail` ([video] full_car_detail = on).
+int car_lod(float dist, int lods, bool full_detail = false);
 
 // The car callback's morph values for a state (gtm1::RunParams::callback): ids 1-4 the flaps,
 // 0.5 + 0.5 x (physics §8.8); id 5 the steering, 0.5 + 0.5 steer / lock (0.5 straight ahead).

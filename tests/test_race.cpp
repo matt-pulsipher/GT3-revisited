@@ -39,6 +39,7 @@
 #include "race/replay_cameras.h"
 #include "race/point_lights.h"
 #include "race/pylons.h"
+#include "race/race_scene.h"
 #include "race/road_shade.h"
 #include "race/sun_glare.h"
 #include "render/view3d.h"
@@ -205,6 +206,21 @@ TEST(race_camera_shake) {
     chase_off.set_mode(CameraMode::Chase);
     chase_off.set_shake(false);
     CHECK(diff(run(chase, 60), run(chase_off, 60)) < 1e-5f);
+}
+
+// The car LOD by camera distance (< 30 m, < 80 m, beyond; at most the model's levels), and
+// [video] full_car_detail = on: full detail at every distance.
+TEST(race_car_lod) {
+    CHECK(car_lod(5, 3) == 0);
+    CHECK(car_lod(29.9f, 3) == 0);
+    CHECK(car_lod(30, 3) == 1);
+    CHECK(car_lod(79.9f, 3) == 1);
+    CHECK(car_lod(80, 3) == 2);
+    CHECK(car_lod(500, 4) == 2);
+    CHECK(car_lod(500, 2) == 1);
+    CHECK(car_lod(500, 1) == 0);
+    CHECK(car_lod(500, 0) == 0);
+    for (float d : {0.0f, 30.0f, 80.0f, 2500.0f}) CHECK(car_lod(d, 3, true) == 0);
 }
 
 TEST(race_control_mapper) {

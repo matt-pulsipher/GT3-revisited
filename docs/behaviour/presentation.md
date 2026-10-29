@@ -2489,6 +2489,12 @@ k = 0, so no glare is drawn.
 - **Each car** is drawn after its shadows: node 1 (once per lamp on point-light
   courses, §I3), the headlamp pool (node 5), node 6, then the body and wheels,
   which cover them.
+- **Level of detail.** The body, wheels and moving parts are drawn at one of the
+  model's levels of detail. GT3 picks the level from the projected size of a 3 m
+  sphere around the car; ours approximates it by the distance from the camera:
+  full detail under 30 m, the second level under 80 m, the third beyond.
+  `[video] full_car_detail = on` (the default except on phones and tablets) draws
+  every car in full detail at any distance.
 - Ours: `DrawItem::in_order` draws an item whole at its place (its opaque
   meshes, then its blended ones in model order) before later items' opaque
   meshes: the course scenery, the wet-road frame passes and each car shadow.

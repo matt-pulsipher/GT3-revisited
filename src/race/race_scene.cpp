@@ -80,6 +80,11 @@ render::Mat4 car_matrix(const sim::VehicleState& s) {
     return render::translate({s.position.x, s.position.y, s.position.z}) * render::rotate_quat(q.w, q.x, q.y, q.z);
 }
 
+int car_lod(float dist, int lods, bool full_detail) {
+    if (full_detail) return 0;
+    return std::max(0, std::min(dist < 30 ? 0 : dist < 80 ? 1 : 2, lods - 1));
+}
+
 CourseScene::CourseScene(render::GpuContext& ctx, ByteSpan data, const std::string& name, bool sheen)
     : frame_alpha_(sheen) {
     course::CourseModelOptions o;
@@ -412,8 +417,7 @@ void CarVisual::set_shadow(const CarShadowParams& p) {
 void CarVisual::add_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s,
                           const sim::VehicleSetup& setup, const render::Vec3& eye, const CarLook& look) const {
     float dist = render::length(render::Vec3{s.position.x, s.position.y, s.position.z} - eye);
-    int lod = dist < 30 ? 0 : dist < 80 ? 1 : 2;
-    lod = std::min(lod, lods_ - 1);
+    const int lod = car_lod(dist, lods_, full_detail_);
     if (shadow_params_.enabled && (shadow_[0] || shadow_[1])) {
         // Ground frame: the plane through the four wheel contacts, the car's heading.
         sim::Vec3 c{0, 0, 0};
@@ -491,8 +495,7 @@ bool CarVisual::add_mirror_items(std::vector<render::DrawItem>& items, const sim
     render::Mat4 m;
     if (!road_mirror(s, m)) return false;
     float dist = render::length(render::Vec3{s.position.x, s.position.y, s.position.z} - eye);
-    int lod = std::min(dist < 30 ? 0 : dist < 80 ? 1 : 2, lods_ - 1);
-    add_body_items(items, s, setup, look, m, lod);
+    add_body_items(items, s, setup, look, m, car_lod(dist, lods_, full_detail_));
     return true;
 }
 

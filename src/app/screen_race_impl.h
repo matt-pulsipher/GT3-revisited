@@ -633,6 +633,7 @@ private:
     mutable std::deque<render::ItemLights> item_lights_;
     bool env_cube_on_ = true; // [video] car_reflections
     bool shadows_on_ = true;  // [video] car_shadows
+    bool full_car_detail_ = false; // [video] full_car_detail (CarVisual::set_full_detail)
     std::vector<render::DrawItem> env_items_;
     bool env_gt3_scene_ = false; // the map holds GT3's reflection scene: use GT3's lookup
     std::vector<RecordEntry> records_;

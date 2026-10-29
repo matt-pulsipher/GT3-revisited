@@ -145,9 +145,10 @@ wheelspin under throttle (`race_rumble`).
   docs/formats/course.md.
 - Car: `cars/day/<model>` (eve / night models on dusk and night courses, see "Car lamps")
   with all LODs; body LOD by camera distance
-  (< 30 m, < 80 m, beyond). The wheels are split into four models re-centred
-  on their hubs and drawn with `car * translate(hub) * rotY(-steer) *
-  rotX(-spin)`.
+  (< 30 m, < 80 m, beyond; `race::car_lod`), or LOD 0 at any distance with
+  `[video] full_car_detail = on` (Settings → Display → Always show full car
+  detail; the default except on phones and tablets). The wheels are split into four models re-centred on their hubs and
+  drawn with `car * translate(hub) * rotY(-steer) * rotX(-spin)`.
 - Car placement (as GT3 draws it): the car model's origin (wheelbase
   midpoint, y = 0 = the body's lowest point) sits at the physics body height,
   which at rest is the ride height q (the front ride height in mm x 0.001 m, both axles; physics §4.2) above
