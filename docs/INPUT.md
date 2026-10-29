@@ -37,7 +37,7 @@ generic HID joysticks, wheels and pedals. Devices hot-plug at any time.
 | Impulse triggers (Xbox One/Series) | `InputManager::set_trigger_rumble`, for brake/ABS feedback |
 | Player LEDs / light bars | Set to the player number |
 | Button labels | The UI shows Cross/Circle on PlayStation pads and A/B on Xbox pads |
-| Motion sensors | `tilt` source: steer by rolling the controller (DualSense, DS4, Switch Pro, or a phone's own accelerometer on Android) |
+| Motion sensors | `tilt` source: steer by rolling the controller (DualSense, DS4, Switch Pro, or a phone's own accelerometer on Android and iOS) |
 | Wheels and pedals | Raw joystick axes with `pedal` and `invert` options; the wheel layout |
 | Keyboard "analog" | `ramp=` smooths digital keys into analog throttle/steering |
 

@@ -59,6 +59,10 @@ bool App::init(int argc, char** argv) {
     // input without it: the controllers' virtual gamepad and Bluetooth pads alike.
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 #endif
+    // iOS: the audio session games have (the system's default for apps): silent with the Ring /
+    // Silent switch, and other apps' music paused while the game plays. SDL's own default there
+    // (Playback, mixed with others) played on with the switch on silent.
+    SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "AVAudioSessionCategorySoloAmbient");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_SENSOR)) {
         LOG_ERROR("SDL_Init failed: %s", SDL_GetError());
         return false;

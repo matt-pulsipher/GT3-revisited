@@ -8,6 +8,7 @@
 #include "base/config.h"
 #include "formats/text/charset.h"
 #include "game/data/car_database.h"
+#include "platform/ios_files.h"
 #include "platform/user_files.h"
 #include "vfs/mod_archive.h"
 
@@ -200,6 +201,8 @@ public:
         if (status.empty()) {
 #if defined(SDL_PLATFORM_ANDROID)
             status = "Mods folder: in the Files app, under GT3 Revisited > mods (Open folder takes you there).";
+#elif defined(SDL_PLATFORM_IOS)
+            status = "Mods folder: in the Files app, On My iPhone > GT3 Revisited > mods (Open folder takes you there).";
 #else
             if (can_open_folder()) status = "Mods folder: " + Ui::elide(app.mods_dir(), S.w - 16 - Ui::text_width("Mods folder: "));
 #endif
@@ -296,6 +299,8 @@ private:
         if (platform::open_user_folder(app.mods_dir(), app.data_dir())) return;
 #if defined(SDL_PLATFORM_ANDROID)
         say("No app could open the folder. Open the Files app: GT3 Revisited is listed with the other places there.", true);
+#elif defined(SDL_PLATFORM_IOS)
+        say("Could not open the Files app. The folder is there under On My iPhone > GT3 Revisited > mods.", true);
 #else
         say("Could not open " + app.mods_dir(), true);
 #endif
@@ -304,6 +309,14 @@ private:
     void pick(App& app) {
         if (!can_install() || pick_ || job_) return;
         pick_ = std::make_shared<PickSlot>();
+        // iOS: the system's document picker (SDL has no file dialog there).
+        if (platform::show_document_picker(app.window(), kZipFilters, SDL_arraysize(kZipFilters),
+                                           [slot = pick_](std::string path) {
+                                               std::lock_guard lock(slot->mutex);
+                                               slot->path = std::move(path);
+                                               slot->answered = true;
+                                           }))
+            return;
         SDL_ShowOpenFileDialog(on_pick, new std::shared_ptr<PickSlot>(pick_), app.window(), kZipFilters,
                                SDL_arraysize(kZipFilters), nullptr, false);
     }

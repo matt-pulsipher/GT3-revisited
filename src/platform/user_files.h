@@ -11,7 +11,8 @@ namespace gt3r::platform {
 
 // Shows `dir` (the user data folder or a folder in it; `data_dir` is the user data folder) in
 // the system's file manager: Finder, Explorer or the desktop's own; on Android the Files app,
-// opened at that folder when it can open folders directly, else at the GT3 Revisited entry.
+// opened at that folder when it can open folders directly, else at the GT3 Revisited entry; on
+// iOS the Files app at that folder (On My iPhone > GT3 Revisited).
 // False when nothing could open it.
 bool open_user_folder(const std::string& dir, const std::string& data_dir);
 

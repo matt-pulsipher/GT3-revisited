@@ -4,7 +4,7 @@ Status of each target, how to build and test it, and known issues. "Verified"
 means built *and* run here; "built" means compiled and unit-tested but not
 run interactively; "unverified" means neither.
 
-## Status (2026-10-28)
+## Status (2026-10-29)
 
 | Target | Compiler | Status | Evidence |
 |---|---|---|---|
@@ -19,7 +19,7 @@ run interactively; "unverified" means neither.
 | Android x86_64 | NDK 27 clang | ✅ built | Part of the same APK; not run |
 | Android real device | NDK 27 clang | ✅ verified | Galaxy A15 5G (Mali-G57 MC2, Android 16, 4 GB), the low-end baseline: menus, car select (~75 fps), Arcade races (35–55 fps). Races also on a Moto G Power 2024 (Imagination BXM), a Hiby R4 and a Galaxy S26 |
 | Meta Quest 3 (VR) | NDK 27 clang | ✅ verified | The Quest APK (`-Pquest`, SDL 3.6 development branch): menus on a virtual screen, stereo races at a steady 90 fps; see [VR](VR.md) |
-| iOS real device | Apple clang 21 (Xcode 27.1) | ✅ verified (disc and menus) | iPhone 15 Pro (A17 Pro, iOS 26): 3D renderer (SDL_GPU Metal, MSAA 2x, 72 pipelines warmed in 8 ms); the document picker opens a disc image in place from an SMB share (Files app), the game boots to GT Mode, and the next start reopens it by itself; the user data folder shows in Files. Landscape both ways, taps, home and back. Races, controllers and tilt not tried yet |
+| iOS real device | Apple clang 21 (Xcode 27.1) | ✅ verified | iPhone 15 Pro (A17 Pro, iOS 26): 3D renderer (SDL_GPU Metal, MSAA 2x); the document picker opens a disc image in place from an SMB share (Files app) and the next start reopens it; GT Mode menus; Arcade races at 120 fps (ProMotion, dynamic resolution at 100%) with touch controls, tilt (right roll steers right) and a GameSir X5 Lite controller; home and back; the Ring / Silent switch silences the game; Open folder shows the user data folder in the Files app. Mod and save pickers built, not tried |
 | iOS simulator (arm64) | Apple clang 21 (Xcode 27.1) | ⚠️ built | Warning-free (no unit tests on iOS); starts to the setup screen with the 2D renderer only (SDL_GPU does not accept the simulator's GPU) |
 
 ## Building and testing

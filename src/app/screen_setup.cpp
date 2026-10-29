@@ -18,6 +18,14 @@ namespace gt3r {
 
 namespace {
 
+// iOS apps do not quit themselves (Apple's guidelines; the app switcher closes them): no Quit
+// item there, and Triangle on these top screens stays where it is.
+#if defined(SDL_PLATFORM_IOS)
+constexpr bool kCanQuit = false;
+#else
+constexpr bool kCanQuit = true;
+#endif
+
 bool disc_available(const std::string& path) {
     return path.find("://") != std::string::npos || host_path_exists(path); // URIs can't be checked cheaply
 }
@@ -88,7 +96,7 @@ public:
             if (h > 0 && sel_ < recent_count_) sel_ = recent_count_;
         }
         if (m.pressed(PadButton::Cross) || m.pressed(PadButton::Start)) activate(app);
-        if (m.pressed(PadButton::Triangle)) app.quit();
+        if (m.pressed(PadButton::Triangle) && kCanQuit) app.quit();
     }
 
     void render(App& app, Ui& ui) override {
@@ -122,7 +130,7 @@ public:
         for (size_t i = 0; i < items_.size(); ++i) {
             const Item& it = items_[i];
             if (it.kind == Item::Browse) rects_[i] = {lx, y, lw, bh};
-            if (it.kind == Item::Settings) rects_[i] = {lx, y + bh + 8, std::floor((lw - 8) / 2), sh};
+            if (it.kind == Item::Settings) rects_[i] = {lx, y + bh + 8, kCanQuit ? std::floor((lw - 8) / 2) : lw, sh};
             if (it.kind == Item::Quit) rects_[i] = {lx + std::floor((lw - 8) / 2) + 8, y + bh + 8, std::floor((lw - 8) / 2), sh};
         }
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
@@ -186,7 +194,9 @@ public:
                 ui.button(r, it.label, focused, pressed, it.kind == Item::Browse);
             }
         }
-        if (!touch) ui.footer("Up/Down: select    Cross/Enter: choose    Triangle/Esc: quit");
+        if (!touch)
+            ui.footer(kCanQuit ? "Up/Down: select    Cross/Enter: choose    Triangle/Esc: quit"
+                               : "Up/Down: select    Cross/Enter: choose");
     }
 
     TouchLayout touch_layout() const override { return TouchLayout::None; } // buttons are tapped directly
@@ -216,7 +226,7 @@ private:
         recent_count_ = int(items_.size());
         items_.push_back({Item::Browse, "Open disc image", ""});
         items_.push_back({Item::Settings, "Settings", ""});
-        items_.push_back({Item::Quit, "Quit", ""});
+        if (kCanQuit) items_.push_back({Item::Quit, "Quit", ""});
     }
 
     void activate(App& app) {
@@ -255,7 +265,7 @@ public:
             items_.push_back({"Change disc image...", "Open a different disc image (recent discs, or browse).", Item::Disc});
             items_.push_back({"Developer options", "Viewers, test screens and other tools for working on GT3 Revisited.",
                               Item::Developer});
-            items_.push_back({"Quit", "Leave GT3 Revisited.", Item::Quit});
+            if (kCanQuit) items_.push_back({"Quit", "Leave GT3 Revisited.", Item::Quit});
         }
     }
 
@@ -306,7 +316,7 @@ public:
         if (badge_focus_) { // the title bar's update badge
             if (m.vertical() > 0) badge_focus_ = false;
             else if (m.pressed(PadButton::Cross)) updates().open_dialog();
-            if (m.pressed(PadButton::Triangle)) app.quit();
+            if (m.pressed(PadButton::Triangle) && kCanQuit) app.quit();
             return;
         }
         if (int v = m.vertical(); v < 0 && badge && sel_ < cols_) { // up from the top row
@@ -324,7 +334,7 @@ public:
         }
         if (m.pressed(PadButton::Triangle)) {
             if (developer_) app.pop();
-            else app.quit();
+            else if (kCanQuit) app.quit();
             return;
         }
         if (!m.pressed(PadButton::Cross) && !tapped_) return;

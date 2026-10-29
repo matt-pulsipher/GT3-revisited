@@ -45,6 +45,11 @@ bool open_user_folder(const std::string& dir, const std::string& data_dir) {
         env->DeleteLocalRef(s);
         return ok;
     });
+#elif defined(SDL_PLATFORM_IOS)
+    // The Files app at that folder: its shareddocuments:// scheme takes the folder's path, which
+    // it shows because the app shares its Documents (the user data folder, UIFileSharingEnabled).
+    (void)data_dir;
+    return SDL_OpenURL(("shareddocuments://" + dir).c_str());
 #else
     (void)data_dir;
     std::string url = "file://";

@@ -5,7 +5,9 @@
 // place. SDL's dialogs are asynchronous and may answer on another thread; the answer waits
 // in a mailbox the page polls. On macOS they are our own sheets on the game's window
 // (platform/mac_dialog.h), which give the window its keyboard focus back when they close; on
-// Android the system's document picker (content:// URIs).
+// Android the system's document picker (content:// URIs). iOS has no SDL dialogs: an import
+// opens the system's document picker (platform/ios_files.h), and an export goes into the user
+// data folder's exports/, which the Files app shows (On My iPhone > GT3 Revisited).
 // Each dialog has a number (its callback's userdata): the page can give one up
 // (FileDialogs::cancel, its waiting window's CANCEL), and an answer it sends later is
 // dropped. On macOS giving up also closes the sheet.
@@ -18,6 +20,7 @@
 #include "app/app.h"
 #include "base/log.h"
 #include "menu/flow/save_page.h"
+#include "platform/ios_files.h"
 #include "platform/mac_dialog.h"
 #include "platform/user_files.h"
 
@@ -85,7 +88,8 @@ void install_save_dialogs(App& app) {
     menu::flow::FileDialogs d;
     SDL_Window* window = app.window();
     InputManager* input = &app.input();
-    d.show = [window, input](menu::flow::FileDialogs::Kind kind, const std::string& name) {
+    d.show = [window, input, data_dir = app.data_dir()](menu::flow::FileDialogs::Kind kind,
+                                                         const std::string& name) {
         std::uintptr_t ticket = 0;
         {
             std::lock_guard<std::mutex> lock(g_mutex);
@@ -109,6 +113,19 @@ void install_save_dialogs(App& app) {
             if (const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) folder = docs;
         if (platform::show_file_sheet(window, !open, folder, name, [ticket](std::string path) { answer(ticket, std::move(path)); }))
             return;
+#endif
+#if defined(SDL_PLATFORM_IOS)
+        if (open && platform::show_document_picker(window, kOpenFilters, SDL_arraysize(kOpenFilters),
+                                                   [ticket](std::string path) { answer(ticket, std::move(path)); }))
+            return;
+        if (!open) {
+            const std::string dir = data_dir + "exports/";
+            SDL_CreateDirectory(dir.c_str());
+            answer(ticket, dir + name);
+            return;
+        }
+#else
+        (void)data_dir;
 #endif
         void* user = reinterpret_cast<void*>(ticket);
         if (open) // (no file types for an export: the page chose the format and the name's extension)
