@@ -10,6 +10,7 @@
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
 #include "menu/menu_scene.h"
+#include "platform/aspect.h"
 #include "platform/ios_files.h"
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
@@ -384,6 +385,18 @@ void App::set_limit_60fps(bool on) {
     apply_frame_limit();
 }
 
+platform::Aspect App::aspect() const {
+#if GT3R_XR
+    if (xr_) return platform::Aspect::Wide;
+#endif
+    return platform::parse_aspect(to_lower(config_.get("video", "aspect").value_or("16:9")));
+}
+
+void App::set_aspect(platform::Aspect a) {
+    config_.set("video", "aspect", platform::aspect_value(a));
+    save_config();
+}
+
 bool App::dynamic_resolution() const {
     return to_lower(config_.get("video", "dynamic_resolution").value_or(platform::is_mobile() ? "on" : "off")) == "on";
 }
@@ -592,7 +605,8 @@ SDL_AppResult App::iterate() {
 #if GT3R_XR
     if (xr_) SDL_SetRenderTarget(renderer_, xr_->canvas()); // the frame goes into the canvas
 #endif
-    layout_ui(!screens_.empty() && screens_.back()->adaptive_ui());
+    const Screen* shown = screens_.empty() ? nullptr : screens_.back().get(); // (after this frame's changes)
+    layout_ui(shown && shown->adaptive_ui(), shown && shown->follows_aspect());
     ui_->clear();
     Uint64 h_r0 = SDL_GetTicksNS();
     if (!screens_.empty()) screens_.back()->render(*this, *ui_);
@@ -762,7 +776,7 @@ SDL_FRect App::safe_area_window() const {
     return r;
 }
 
-void App::layout_ui(bool adaptive) {
+void App::layout_ui(bool adaptive, bool game) {
     int pw = 0, ph = 0, ww = 0, wh = 0;
     SDL_GetRenderOutputSize(renderer_, &pw, &ph);
     SDL_GetWindowSize(window_, &ww, &wh);
@@ -777,9 +791,12 @@ void App::layout_ui(bool adaptive) {
     SDL_RendererLogicalPresentation cur_mode = SDL_LOGICAL_PRESENTATION_DISABLED;
     SDL_GetRenderLogicalPresentation(renderer_, &cur_w, &cur_h, &cur_mode);
     if (!adaptive || pw < 160 || ph < 90 || ww <= 0 || wh <= 0) {
-        if (cur_w != Ui::kWidth || cur_h != Ui::kHeight || cur_mode != SDL_LOGICAL_PRESENTATION_LETTERBOX)
-            SDL_SetRenderLogicalPresentation(renderer_, Ui::kWidth, Ui::kHeight, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-        if (ui_) ui_->set_layout(Ui::kWidth, Ui::kHeight, {0, 0, Ui::kWidth, Ui::kHeight}, touch_ui_);
+        // The game area (Screen::follows_aspect): 640, 480 or the window's shape x 360.
+        const int w = game ? platform::game_width(aspect(), pw, ph) : Ui::kWidth, h = Ui::kHeight;
+        if (cur_w != w || cur_h != h || cur_mode != SDL_LOGICAL_PRESENTATION_LETTERBOX)
+            SDL_SetRenderLogicalPresentation(renderer_, w, h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        if (ui_) ui_->set_layout(float(w), float(h), {0, 0, float(w), float(h)}, touch_ui_);
+        touch_.controls().set_game_area(float(w), float(h)); // before the screen asks for its safe area
         return;
     }
     // Integer pixel scale: about the 640x360 look on desktop; on phones the

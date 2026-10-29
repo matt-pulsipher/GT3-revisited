@@ -133,29 +133,28 @@ void RaceScreen::online_pause_note(Ui& ui) {
     if (!online_) return;
     const char* note = "Online: the race goes on, your car has no input";
     float w = ui.text_width(note);
-    ui.text(Ui::kWidth / 2.0f - w / 2, 40, note, colors::kAccent);
+    ui.text(ui.width() / 2 - w / 2, 40, note, colors::kAccent);
 }
 
 void RaceScreen::render_pause(Ui& ui) {
+    const float W = ui.width(), H = ui.height();
+    const UiRect pic = ui.picture43();
     if (replay_opts_open_) {
-        float mh = float(Ui::kHeight), mw = mh * 4.0f / 3.0f;
-        SDL_FRect dst = original_res_ ? frame_rect_ : SDL_FRect{(float(Ui::kWidth) - mw) / 2, 0, mw, mh};
+        SDL_FRect dst = original_res_ ? frame_rect_ : SDL_FRect{pic.x, pic.y, pic.w, pic.h};
         Color dim{0, 0, 0, 126}; // panel_bg1 reaches past the 4:3 frame (860 wide)
-        if (dst.x > 0) ui.fill(0, 0, dst.x, float(Ui::kHeight), dim);
-        if (dst.x + dst.w < float(Ui::kWidth)) ui.fill(dst.x + dst.w, 0, float(Ui::kWidth) - dst.x - dst.w, float(Ui::kHeight), dim);
+        if (dst.x > 0) ui.fill(0, 0, dst.x, H, dim);
+        if (dst.x + dst.w < W) ui.fill(dst.x + dst.w, 0, W - dst.x - dst.w, H, dim);
         replay_opts_.draw(dst, !app_ || !split_horizontal(*app_));
         return;
     }
     if (!pause_more_) {
         if (pause_menu_.loaded(pause_menu_.kind())) {
-            float mh = float(Ui::kHeight), mw = mh * 4.0f / 3.0f;
-            SDL_FRect dst = original_res_ ? frame_rect_ : SDL_FRect{(float(Ui::kWidth) - mw) / 2, 0, mw, mh};
+            SDL_FRect dst = original_res_ ? frame_rect_ : SDL_FRect{pic.x, pic.y, pic.w, pic.h};
             // The window's full-screen dim (pmb "bg1") also covers the picture outside the
             // 4:3 frame on wide screens.
             Color dim{0, 0, 0, 126};
-            if (dst.x > 0) ui.fill(0, 0, dst.x, float(Ui::kHeight), dim);
-            if (dst.x + dst.w < float(Ui::kWidth))
-                ui.fill(dst.x + dst.w, 0, float(Ui::kWidth) - dst.x - dst.w, float(Ui::kHeight), dim);
+            if (dst.x > 0) ui.fill(0, 0, dst.x, H, dim);
+            if (dst.x + dst.w < W) ui.fill(dst.x + dst.w, 0, W - dst.x - dst.w, H, dim);
             pause_menu_.draw(ui.renderer(), dst);
             online_pause_note(ui);
         } else if (replaying_) {
@@ -166,10 +165,10 @@ void RaceScreen::render_pause(Ui& ui) {
         }
         return;
     }
-    ui.fill(0, 0, float(Ui::kWidth), float(Ui::kHeight), Color{0, 0, 0, 120});
+    ui.fill(0, 0, W, H, Color{0, 0, 0, 120});
     std::vector<std::string> items = pause_items();
     int n = int(items.size());
-    float x = Ui::kWidth / 2.0f - 100, y = 110;
+    float x = W / 2 - 100, y = 110;
     ui.fill(x - 10, y - 24, 220, 24 + float(n) * 16 + 10, Color{20, 22, 28, 230});
     ui.text(x, y - 16,
             replaying_ ? (player_.done() ? "END OF REPLAY" : "REPLAY PAUSED") : online_ ? "MENU (RACE GOES ON)" : "PAUSED",

@@ -219,8 +219,9 @@ void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
     }
 }
 
-// The letterboxed 640x360 UI's window: its corners in UI units, its cutout insets, and the
-// render scale and offset that draw UI units across all of it (letterbox bars included).
+// The letterboxed UI's window (the game area or 640x360): its corners in UI units, its cutout
+// insets, and the render scale and offset that draw UI units across all of it (letterbox bars
+// included).
 struct WindowSpace {
     bool logical = false; // a letterboxed logical presentation is set
     int lw = 0, lh = 0;
@@ -259,6 +260,7 @@ WindowSpace window_space(SDL_Renderer* r, const SDL_FRect& safe_window) {
 }
 
 void lay_out(TouchControls& c, const WindowSpace& w) {
+    if (w.logical) c.set_game_area(float(w.lw), float(w.lh));
     if (w.screen) c.set_screen(w.x0, w.y0, w.x1, w.y1);
     if (w.insets) c.set_insets(w.il, w.it, w.ir, w.ib);
 }
@@ -348,7 +350,7 @@ void TouchOverlay::update(double dt, TouchLayout layout, InputManager& input) {
 
 void TouchOverlay::render(Ui& ui) {
     if (controls_.layout() == TouchLayout::None) return; // our own screens: other layout space, no controls
-    // The UI is letterboxed to Ui::kWidth x kHeight. Work out the whole window
+    // The UI is letterboxed to its game area. Work out the whole window
     // in UI units so controls can sit in the bars, then draw with the logical
     // presentation (which clips to the game area) switched off.
     const WindowSpace w = window_space(ui.renderer(), safe_window_);
@@ -361,6 +363,10 @@ void TouchOverlay::draw_whole_window(Ui& ui, TouchControls& c, const std::functi
     const WindowSpace w = window_space(ui.renderer(), safe_window_);
     lay_out(c, w);
     with_whole_window(ui.renderer(), w, draw);
+}
+
+void TouchOverlay::draw_whole_window(Ui& ui, const std::function<void(float, float)>& draw) const {
+    with_whole_window(ui.renderer(), window_space(ui.renderer(), safe_window_), draw);
 }
 
 void TouchOverlay::draw_preview(Ui& ui, const UiRect& box, bool controls) const {

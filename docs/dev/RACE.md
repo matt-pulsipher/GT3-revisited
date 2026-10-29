@@ -511,7 +511,13 @@ research (captures of the original, `database/racedetail.db` rows,
 - **Frame.** The game lays out a 640x448 frame. Alignment 0 = left/top, 1 =
   right/bottom, 2 = centre; alignments with bit 4 (4/5) are pushed outward by
   106.667 units in the 16:9 option. We draw that 16:9 layout on our 640x360
-  UI: `x' = (x + 106.667) * 0.75`, `y' = y * 360/448`.
+  UI: `x' = (x + 106.667) * 0.75`, `y' = y * 360/448`. Other game areas
+  (`[video] aspect`, `Hud::set_screen`) keep the frame's shape in the middle and
+  push by half of what they have beyond the 4:3 frame: none at 4:3 (480x360,
+  GT3's 4:3 layout), more with `fill` on screens wider than 16:9. The
+  2P layouts keep their 16:9 width at most (a 4:3 game area squeezes them, as
+  GT3 does on a 4:3 screen); a wider half moves its middle parts by half of
+  the extra width and its right-hand parts by all of it.
 - **Meter cluster** (racedetail type 3 presets): remote view (chase/TV
   cameras) = `revb_NN` tachometer centred right at (620, 320) 160x140 with the
   digital speed (580, 385) and gear inside; onboard view (bumper/roof) =
@@ -1467,7 +1473,7 @@ preset too, which lists the course).
 ## Touch controls
 
 On phones the HUD's meter cluster and tyre gauge move inside
-`App::touch().safe_area()` (the part of the 640x360 UI no visible touch
+`App::touch().safe_area()` (the part of the game area no visible touch
 control covers; the whole area when the overlay is hidden, so desktop output
 is unchanged). `HudData::safe_area`. When the area is narrow (16:9 / 16:10
 with the right-hand pedal cluster on screen, width 446) the meter cluster is
@@ -1724,11 +1730,13 @@ screen, `screen_race_license.cpp` the flow. The rules (presentation §A):
   rendered at the PS2's 640x448 into a 4:3 frame (pillarboxed) and upscaled
   with `[video] original_filter = nearest` (default) or `bilinear`
   (`DrawOptions::fixed_width/height`, `nearest`); the HUD is drawn in the 4:3
-  frame with the original layout (no 16:9 widening, `HudData::four_three`).
-  2P split screen keeps the normal path.
+  frame with the original layout (no 16:9 widening, `HudData::four_three`),
+  in the middle of whatever game area `[video] aspect` gives (the whole of
+  it at 4:3). 2P split screen keeps the normal path.
 - Field of view is Hor+: every camera fixes the vertical FOV and the
   horizontal one follows the aspect, so 16:9 shows more at the sides than
-  4:3 and nothing is cropped vertically. (GT3's two player views, the pre-race
+  4:3 (`[video] aspect = 4:3` gives GT3's 4:3 view exactly) and nothing
+  is cropped vertically. (GT3's two player views, the pre-race
   shot and the replay cameras use the original's FOVs, see "Cameras"; our
   extra views use our own values.)
 

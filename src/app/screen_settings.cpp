@@ -501,6 +501,19 @@ private:
         else
             info("Fullscreen", "Always on this device");
 
+        // [video] aspect: the game's screens (menus, races, movies); ours keep their own layout.
+        // Not in VR: the headset's virtual screen is 16:9 and the stereo views have its own FOV.
+        bool vr = false;
+#if GT3R_XR
+        vr = app.xr() != nullptr;
+#endif
+        if (!vr)
+            choice("Aspect ratio",
+                   "The shape of the game's picture. 4:3: like on a 4:3 TV. Fill screen: races use the whole "
+                   "screen; menus and movies stay 4:3.",
+                   {"16:9", "4:3", "Fill screen"}, int(app.aspect()),
+                   [a](int i) { a->set_aspect(platform::Aspect(i)); });
+
         bool vsync = cfg.get("video", "vsync").value_or("1") != "0";
         toggle("VSync", "Wait for the display refresh: no tearing. Off: lower input latency.", vsync, [a](bool v) {
             a->config().set("video", "vsync", v ? "1" : "0");

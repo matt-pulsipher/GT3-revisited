@@ -159,11 +159,15 @@ TouchLayout RaceScreen::touch_layout() const {
     return stage_ == Stage::Drive && !paused_ && !replaying_ && !quick_ ? TouchLayout::Driving : TouchLayout::Menu;
 }
 
+bool RaceScreen::follows_aspect() const {
+    return launch_failed_ || stage_ == Stage::Drive || ((from_menu_ || online_) && error_.empty());
+}
+
 void RaceScreen::render(App& app, Ui& ui) {
     if (launch_failed_) {
-        ui.fill(0, 0, float(Ui::kWidth), float(Ui::kHeight), Color{0, 0, 0, 255});
-        ui.text_center(Ui::kHeight / 2.0f - 16, "The race cannot start.", colors::kText);
-        ui.text_center(Ui::kHeight / 2.0f, Ui::clip(error_, Ui::kWidth - 40.0f), colors::kDim);
+        ui.fill(0, 0, ui.width(), ui.height(), Color{0, 0, 0, 255});
+        ui.text_center(ui.height() / 2 - 16, "The race cannot start.", colors::kText);
+        ui.text_center(ui.height() / 2, Ui::clip(error_, ui.width() - 40.0f), colors::kDim);
         ui.footer("Press any button to return");
         return;
     }
@@ -194,14 +198,14 @@ void RaceScreen::render_loading(App& app, Ui& ui) {
     const int frames = loading_drawn_ ? menu::flow::LoadingPicture::frames_for(now - loading_ns_) : 1;
     loading_ns_ = now;
     loading_drawn_ = true;
-    ui.fill(0, 0, float(Ui::kWidth), float(Ui::kHeight), Color{0, 0, 0, 255});
+    ui.fill(0, 0, ui.width(), ui.height(), Color{0, 0, 0, 255});
     if (!loading_.valid()) return;
     SDL_Texture* prev = SDL_GetRenderTarget(r);
     SDL_SetRenderTarget(r, loading_.frame);
     for (int i = 0; i < frames; ++i) loading_.transition.draw_frame(r, SDL_FRect{0, 0, 640, 448});
     SDL_SetRenderTarget(r, prev);
-    const float h = Ui::kHeight, w = h * 4.0f / 3.0f; // the menu's 4:3 picture in the middle
-    const SDL_FRect dst{(Ui::kWidth - w) / 2, 0, w, h};
+    const UiRect pic = ui.picture43(); // the menu's 4:3 picture in the middle
+    const SDL_FRect dst{pic.x, pic.y, pic.w, pic.h};
     SDL_RenderTexture(r, loading_.frame, nullptr, &dst);
 }
 

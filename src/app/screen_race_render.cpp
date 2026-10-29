@@ -54,21 +54,22 @@ bool RaceScreen::update_env_cube() {
 // Rear-view mirror (onboard cameras; GT3: frame rect (200, 20) 240x64 with a 1 px black
 // outline, the camera's view with z flipped (looking back, mirrored), 1.3x zoom, far 120 m).
 // `p2` / `half`: player 2's camera / a 4:3 2P half (the original: 240 x 55 at (200, 16) of the
-// 640 x 224 half, measured on the captures).
+// 640 x 224 half, measured on the captures). On a screen wider than 4:3 the frame keeps its
+// shape and stays centred.
 void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const render::DrawOptions& main, bool p2,
                              bool half) {
     const CameraRig& cam = p2 ? camera2_ : camera_;
     float fx = 200, fy = 20, fw = 240, fh = 64;
     SDL_FRect mr;
-    if (half) {
-        float k = frame.w / 640.0f, ky = frame.h / 224.0f;
-        mr = {frame.x + fx * k, frame.y + 16 * ky, fw * k, 55 * ky};
+    if (half) { // as wide as on the 16:9 screen at most, like the half's HUD (Hud::draw_split)
+        float k = std::min(frame.h / 180.0f, frame.w / 640.0f), ky = frame.h / 224.0f;
+        mr = {frame.x + frame.w / 2 + (fx - 320) * k, frame.y + 16 * ky, fw * k, 55 * ky};
     } else if (original_res_) {
         float k = frame.w / 640.0f, ky = frame.h / 448.0f;
         mr = {frame.x + fx * k, frame.y + fy * ky, fw * k, fh * ky};
     } else {
-        float k = frame.w / 640.0f * 0.75f, ky = frame.h / 448.0f;
-        mr = {frame.x + (fx + 106.667f) * k, frame.y + fy * ky, fw * k, fh * ky};
+        float k = frame.h / 360.0f * 0.75f, ky = frame.h / 448.0f;
+        mr = {frame.x + frame.w / 2 + (fx - 320) * k, frame.y + fy * ky, fw * k, fh * ky};
     }
     std::unique_ptr<render::View3D>& mv = p2 ? mirror_view2_ : mirror_view_;
     if (!mv) mv = std::make_unique<render::View3D>(*app.gpu());
@@ -589,10 +590,14 @@ render::DrawOptions RaceScreen::draw_options() const {
 void RaceScreen::render_drive(App& app, Ui& ui) {
     app.note_race_scale();
     upload_course_animations(); // once per frame
-    float mh = float(Ui::kHeight), mw = mh * 4.0f / 3.0f;
-    SDL_FRect menu_dst{(float(Ui::kWidth) - mw) / 2, 0, mw, mh};
+    // The game area (App::aspect): 640 x 360 at 16:9, 480 x 360 at 4:3 (GT3's 4:3 picture),
+    // the window's shape with fill.
+    const float W = ui.width(), H = ui.height();
+    const UiRect pic = ui.picture43();
+    const SDL_FRect menu_dst{pic.x, pic.y, pic.w, pic.h};
+    hud_.set_screen({0, 0, W, H});
     if (quick_) {
-        ui.fill(0, 0, float(Ui::kWidth), float(Ui::kHeight), Color{0, 0, 0, 255});
+        ui.fill(0, 0, W, H, Color{0, 0, 0, 255});
         bool licence_box = preview_ && !license_event_.empty();
         if (panel_ == Panel::None && (backdrop_ || preview_) && (!licence_box || quick_menu_.on_root()) && app.gpu() &&
             track_ && vehicle_) {
@@ -612,8 +617,8 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         else quick_menu_.draw(ui.renderer(), menu_dst);
         if (toast_time_ > 0) {
             float w = std::ceil(Ui::text_width(toast_)) + 16;
-            ui.fill(Ui::kWidth / 2.0f - w / 2, 80, w, 18, Color{0, 0, 0, 170});
-            ui.text(Ui::kWidth / 2.0f - w / 2 + 8, 85, toast_, colors::kText);
+            ui.fill(W / 2 - w / 2, 80, w, 18, Color{0, 0, 0, 170});
+            ui.text(W / 2 - w / 2 + 8, 85, toast_, colors::kText);
         }
         return;
     }
@@ -624,11 +629,10 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     // 2P battle. Vertical (GT3's 16:9 option, our default on a 16:9 screen): side by side
     // (player 1 left), each 3D view letterboxed to (x0, H/6, W/2, 8H/11), the HUD on the
     // whole half. Horizontal (the PS2's 4:3 default): player 1 on top, player 2 below.
-    SDL_FRect rect{0, 0, float(Ui::kWidth), float(Ui::kHeight)};
+    SDL_FRect rect{0, 0, W, H};
     SDL_FRect rect2{0, 0, 0, 0}, half1{}, half2{};
     bool horizontal = split_horizontal(app);
     if (split) {
-        float W = float(Ui::kWidth), H = float(Ui::kHeight);
         if (horizontal) {
             half1 = rect = {0, 0, W, H / 2};
             half2 = rect2 = {0, H / 2, W, H / 2};
@@ -642,9 +646,8 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     }
     if (original_res_ && !split) {
         // The original's frame: 640x448 internal, 4:3, pillarboxed.
-        float H = float(Ui::kHeight), W = H * 4.0f / 3.0f;
-        ui.fill(0, 0, float(Ui::kWidth), H, Color{0, 0, 0, 255});
-        rect = {(float(Ui::kWidth) - W) / 2, 0, W, H};
+        ui.fill(0, 0, W, H, Color{0, 0, 0, 255});
+        rect = menu_dst;
         o.fixed_width = 640, o.fixed_height = 448;
         o.nearest = original_nearest_;
     }
@@ -654,7 +657,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     if (vr_stereo(app, split)) { // both eyes; the HUD and menus below go onto the panel in front
         if (update_env_cube()) o.env_cube = view_->env_cube(), o.env_gt3_lookup = env_gt3_scene_;
         render_vr_eyes(app, ui, o);
-        frame_rect_ = rect = {0, 0, float(Ui::kWidth), float(Ui::kHeight)};
+        frame_rect_ = rect = {0, 0, W, H};
     } else
 #endif
     {
@@ -716,13 +719,13 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     log_perf(false);
 
     if (logger_mode_) { // the Analyzer over the replay (or its graph over everything)
-        SDL_FRect dst = original_res_ ? frame_rect_ : SDL_FRect{(float(Ui::kWidth) - mw) / 2, 0, mw, mh};
+        SDL_FRect dst = original_res_ ? frame_rect_ : menu_dst;
         if (analyzer_.view() == Analyzer::View::Graph) {
-            ui.fill(0, 0, float(Ui::kWidth), float(Ui::kHeight), Color{0, 0, 0, 255});
+            ui.fill(0, 0, W, H, Color{0, 0, 0, 255});
         } else { // the bottom band (bg 0..212, indicator_back 0..148) across a wide screen too
             float k = dst.h / 448.0f;
-            ui.fill(0, dst.y + dst.h - 212 * k, float(Ui::kWidth), 64 * k, Color{51, 51, 51, 255});
-            ui.fill(0, dst.y + dst.h - 148 * k, float(Ui::kWidth), 148 * k, Color{0, 0, 0, 255});
+            ui.fill(0, dst.y + dst.h - 212 * k, W, 64 * k, Color{51, 51, 51, 255});
+            ui.fill(0, dst.y + dst.h - 148 * k, W, 148 * k, Color{0, 0, 0, 255});
         }
         analyzer_.draw(ui.renderer(), dst);
         return;
@@ -742,7 +745,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             draw_event_icons(app, 0);
             hud_.draw_split(ui.renderer(), hud_data(1), half2, horizontal);
             draw_event_icons(app, 1);
-            if (horizontal) ui.fill(0, half1.h - 1, float(Ui::kWidth), 2, Color{0, 0, 0, 255});
+            if (horizontal) ui.fill(0, half1.h - 1, W, 2, Color{0, 0, 0, 255});
         } else {
             // Under the results panel: all but the lap / time block, drawn over it below.
             if (results_panel_up()) d.layer = 1;
@@ -805,7 +808,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             // a 1/3 black dim, the medal model, the word and the time; or the bluish wash
             // with TIME EXPIRED / FAIL.
             int f = result_frame(), medal = presented_medal();
-            SDL_FRect full{0, 0, float(Ui::kWidth), float(Ui::kHeight)};
+            SDL_FRect full{0, 0, W, H};
             if (medal >= 0) {
                 license_overlay_.draw_dim(ui.renderer(), f, full);
                 float w = LicenseResultOverlay::model_weight(f, medal);
@@ -827,7 +830,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         } else if (tt_failed_) {
             license_overlay_.draw_fail(ui.renderer(), hud_.fonts(), result_frame(),
                                        race_text("RACEDISPLAY_TimeTrialFail", "FAIL"), -1.0,
-                                       SDL_FRect{0, 0, float(Ui::kWidth), float(Ui::kHeight)});
+                                       SDL_FRect{0, 0, W, H});
         } else {
             // Time trials: the best lap; machine tests: the time to the mark or the top speed.
             TimeTrialOverlay::Data td;
@@ -845,12 +848,12 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     if (exit_transition_ > kExitHold) { // the accumulated grey wash of the delayed fade-out (presentation §C1)
         const SDL_FColor w = menu::flow::ScreenTransition::delay_fadeout_cover(exit_transition_);
         const u8 g = u8(std::lround(255.0f * w.r));
-        ui.fill(0, 0, float(Ui::kWidth), float(Ui::kHeight), Color{g, g, g, u8(255 * w.a)});
+        ui.fill(0, 0, W, H, Color{g, g, g, u8(255 * w.a)});
     }
     if (toast_time_ > 0) {
         float w = std::ceil(Ui::text_width(toast_)) + 16;
-        ui.fill(Ui::kWidth / 2.0f - w / 2, 80, w, 18, Color{0, 0, 0, 170});
-        ui.text(Ui::kWidth / 2.0f - w / 2 + 8, 85, toast_, colors::kText);
+        ui.fill(W / 2 - w / 2, 80, w, 18, Color{0, 0, 0, 170});
+        ui.text(W / 2 - w / 2 + 8, 85, toast_, colors::kText);
     }
     if (paused_) render_pause(ui);
 }

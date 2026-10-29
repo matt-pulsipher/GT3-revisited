@@ -96,7 +96,7 @@ struct HudData {
     bool split = false;      // 2P half (racemode 7 layout)
     double finish_t = -1;    // seconds since this player finished (FINISH / PLAYER n WIN! for 4 s)
     int winner_player = 0;   // 2P: 1/2 = this half's player won
-    // Part of the 640x360 UI area no touch control covers (App::touch().safe_area()) and
+    // Part of the game area (Hud::set_screen) no touch control covers (App::touch().safe_area()) and
     // the visible controls' bounds (UI units; none while hidden). The meters and the tyre
     // gauge move inside the area; the top corner blocks (rank and map, laps and times) stay
     // in their corners unless a control would cover them there. Full area = the normal layout.
@@ -112,6 +112,7 @@ struct HudData {
     std::array<int, 4> tire_levels{};
     int layer = 0;            // 0 all, 1 all but the lap / time block, 2 that block only
     bool four_three = false;  // drawn into a 4:3 viewport (original resolution): no 16:9 widening
+                              // (a 4:3 screen has none to give anyway)
     bool auto_drive = false;  // "AUTO DRIVE" (the computer drives: pit lane, flying start run-up)
     // Odometer cluster: the car's total distance (km or miles, by `imperial`) and this race's
     // trip distance (m); indicator lamps: 0 off, 1 on, 2 acting (blinks).
@@ -142,9 +143,15 @@ public:
     void load(const Vfs& vfs, SDL_Renderer* r, const std::string& language = "US");
     // Course map (course file slot 33, "GTCM"); empty span clears it.
     void set_course_map(SDL_Renderer* r, ByteSpan gtcm);
+    // The game area (UI units): 640x360 on 16:9, 480x360 at 4:3, wider with fill (App::aspect).
+    // The draws without a viewport fill it; the 640 x 448 layouts keep their shape in the middle
+    // and the elements GT3 pushes outward in 16:9 go to its sides.
+    void set_screen(const SDL_FRect& r) { screen_ = r; }
     // 2P battle half (digital speed, bar tachometer "meter_mini", mini-map at 70 %, no round
     // meters). 16:9: racemode 8 (426.667x448 per half); horizontal: racemode 7 (640x224).
-    // `horizontal`: GT3's 4:3 top/bottom split layout (racemode 7, 640x224 per half).
+    // `horizontal`: GT3's 4:3 top/bottom split layout (racemode 7, 640x224 per half). Each
+    // layout is as wide as on the 16:9 screen at most (narrower halves squeeze it, as GT3 does
+    // on a 4:3 one); a wider half spreads its left, middle and right parts apart.
     void draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, bool horizontal = false);
     // Replays: the "GRAN TURISMO 3" mark (gt_logo_mini) at the bottom right, at `alpha`
     // (race::ReplayMarkTimer).
@@ -241,6 +248,7 @@ private:
     float map_ox_ = 0, map_oz_ = 0, map_scale_ = 1, map_rot_ = 0;
     int blink_ = 0, shift_counter_ = 0, lamp_counter_ = 0;
     SDL_FRect event_icon_rect_{0, 0, 0, 0}, pole_icon_rect_{0, 0, 0, 0};
+    SDL_FRect screen_{0, 0, 640, 360}; // set_screen
     // measure(): text() and blit() add their bounds to measured_ instead of drawing.
     bool measuring_ = false;
     std::vector<SDL_FRect> measured_;

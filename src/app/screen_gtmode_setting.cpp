@@ -112,10 +112,12 @@ public:
             return;
         }
         draw_frame(app);
-        float h = Ui::kHeight, w = h * 4.0f / 3.0f;
-        SDL_FRect dst{(Ui::kWidth - w) / 2, 0, w, h};
+        const UiRect pic = ui.picture43();
+        const SDL_FRect dst{pic.x, pic.y, pic.w, pic.h};
         if (frame_) SDL_RenderTexture(app.renderer(), frame_, nullptr, &dst);
     }
+
+    bool follows_aspect() const override { return true; } // the game's menus
 
 private:
     void init(App& app) {

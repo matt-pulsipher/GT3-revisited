@@ -122,11 +122,14 @@ public:
     // the game area is letterboxed. Controls anchor to its edges, so they sit
     // in the side bars of wide phones. Default: the game area itself.
     void set_screen(float x0, float y0, float x1, float y1);
+    // Size of the game area (UI units, from (0, 0)): 640x360, or another width with
+    // Settings -> Display -> Aspect ratio. The screen is never smaller.
+    void set_game_area(float w, float h);
     // Parts of the screen edges (UI units) that controls must stay clear of:
     // display cutouts and rounded corners. Controls keep at least their
     // normal margin from the screen edge, or this inset plus a little.
     void set_insets(float left, float top, float right, float bottom);
-    // Part of the game area (0,0)-(kWidth,kHeight) not covered by visible
+    // Part of the game area (set_game_area) not covered by visible
     // controls: HUD elements inside it stay clear of the thumbs. The full
     // area when the controls are hidden. The steering zone doesn't count.
     TouchRect safe_area() const;
@@ -199,6 +202,7 @@ private:
 
     TouchConfig cfg_;
     float screen_x0_ = 0, screen_y0_ = 0, screen_x1_ = 640, screen_y1_ = 360;
+    float game_w_ = 640, game_h_ = 360;
     float inset_l_ = 0, inset_t_ = 0, inset_r_ = 0, inset_b_ = 0;
     TouchLayout layout_ = TouchLayout::None;
     bool touch_active_ = false;

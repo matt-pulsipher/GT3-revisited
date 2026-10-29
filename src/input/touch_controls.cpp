@@ -11,7 +11,8 @@ namespace gt3r {
 
 namespace {
 
-// UI logical resolution (Ui::kWidth/kHeight; src/app is not visible here).
+// The 640x360 UI (Ui::kWidth/kHeight; src/app is not visible here): the steering range's and
+// the steering zone's scale. The game area's own size is set_game_area's.
 constexpr float kW = 640.0f;
 constexpr float kH = 360.0f;
 constexpr float kMargin = 14.0f;
@@ -391,9 +392,15 @@ TouchPlacement TouchControls::placement_at(std::string_view key, float x, float 
     return p;
 }
 
+void TouchControls::set_game_area(float w, float h) {
+    if (!(w > 0) || !(h > 0) || (w == game_w_ && h == game_h_)) return;
+    game_w_ = w, game_h_ = h;
+    set_screen(screen_x0_, screen_y0_, screen_x1_, screen_y1_);
+}
+
 void TouchControls::set_screen(float x0, float y0, float x1, float y1) {
     // Never smaller than the game area; ignore sub-unit jitter.
-    x0 = std::min(x0, 0.0f), y0 = std::min(y0, 0.0f), x1 = std::max(x1, kW), y1 = std::max(y1, kH);
+    x0 = std::min(x0, 0.0f), y0 = std::min(y0, 0.0f), x1 = std::max(x1, game_w_), y1 = std::max(y1, game_h_);
     if (std::fabs(x0 - screen_x0_) < 0.5f && std::fabs(y0 - screen_y0_) < 0.5f && std::fabs(x1 - screen_x1_) < 0.5f &&
         std::fabs(y1 - screen_y1_) < 0.5f)
         return;
@@ -420,18 +427,19 @@ std::vector<TouchRect> TouchControls::control_bounds() const {
 }
 
 TouchRect TouchControls::safe_area() const {
-    TouchRect full{0, 0, kW, kH};
+    const float W = game_w_, H = game_h_;
+    TouchRect full{0, 0, W, H};
     if (!visible()) return full;
-    float left = 0, right = kW, top = 0;
+    float left = 0, right = W, top = 0;
     for (const TouchRect& b : control_bounds()) {
         float x0 = b.x, x1 = b.x + b.w, y0 = b.y, y1 = b.y + b.h;
         float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-        if (cy < kH * 0.25f) top = std::max(top, y1);
-        else if (cx < kW / 2) left = std::max(left, x1);
+        if (cy < H * 0.25f) top = std::max(top, y1);
+        else if (cx < W / 2) left = std::max(left, x1);
         else right = std::min(right, x0);
     }
-    left = std::clamp(left, 0.0f, kW / 2), right = std::clamp(right, kW / 2, kW), top = std::clamp(top, 0.0f, kH / 2);
-    return {left, top, right - left, kH - top};
+    left = std::clamp(left, 0.0f, W / 2), right = std::clamp(right, W / 2, W), top = std::clamp(top, 0.0f, H / 2);
+    return {left, top, right - left, H - top};
 }
 
 TouchRect TouchControls::clear_above(TouchRect r) const {

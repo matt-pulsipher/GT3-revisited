@@ -6,6 +6,7 @@
 #include "base/config.h"
 #include "disc/disc.h"
 #include "input/input_manager.h"
+#include "platform/aspect.h"
 #include "platform/display_insets.h"
 #include "render/dynamic_scale.h"
 #include "render/gpu_context.h"
@@ -43,6 +44,10 @@ public:
     // vary, Ui::safe() is the area clear of display cutouts and rounded
     // corners, and Ui::touch() asks for finger-sized targets (see App::layout_ui).
     virtual bool adaptive_ui() const { return false; }
+    // The game's own screens (its menus, races, movies) lay out to the game area of Settings ->
+    // Display -> Aspect ratio (App::aspect): Ui::width() is 640 (16:9), 480 (4:3) or the
+    // window's shape, Ui::height() 360. Other screens keep the 640x360 space.
+    virtual bool follows_aspect() const { return false; }
     // The startup update dialog (app/updates.h) may open over this screen: the main menu, the
     // first-run screen and the game's title menu.
     virtual bool update_prompts() const { return false; }
@@ -80,6 +85,10 @@ public:
     // runs at 60 Hz); steadier when the computer is busy. Off (default): every display refresh.
     bool limit_60fps() const;
     void set_limit_60fps(bool on);
+    // [video] aspect = 16:9 (default) | 4:3 | fill: the game area's shape (platform/aspect.h).
+    // Always 16:9 in VR (the headset's virtual screen).
+    platform::Aspect aspect() const;
+    void set_aspect(platform::Aspect a);
     // [video] dynamic_resolution = on | off (default on phones and tablets): the 3D resolution
     // drops (to 50% at most) when the GPU cannot keep up and climbs while it does, up to [video]
     // render_scale, or with auto the screen's full resolution (render::DynamicScale). Fixed for
@@ -113,6 +122,8 @@ public:
     MenuInput& menu() { return menu_; }
     SDL_Renderer* renderer() { return renderer_; }
     SDL_Window* window() { return window_; }
+    // The UI as laid out for the frame being drawn (the last one while screens update).
+    const Ui& ui() const { return *ui_; }
     // Frames drawn so far (counted after each one).
     int frame() const { return frame_; }
     // Shared SDL_GPU device for 3D views; nullptr when running 2D-only.
@@ -152,8 +163,9 @@ public:
 private:
     void apply_screen_changes();
     void save_screenshot(const std::string& path);
-    // Sets the renderer's logical presentation and the Ui layout for the frame.
-    void layout_ui(bool adaptive);
+    // Sets the renderer's logical presentation and the Ui layout for the frame: the whole
+    // window (`adaptive`), the game area (`game`: Screen::follows_aspect) or 640x360.
+    void layout_ui(bool adaptive, bool game = false);
     // Window area (window coordinates) clear of display cutouts and, on
     // phones, the rounded screen corners.
     SDL_FRect safe_area_window() const;

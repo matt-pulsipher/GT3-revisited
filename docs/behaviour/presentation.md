@@ -27,7 +27,10 @@ a race asks for a sound or a music cue.
   `y' = y x 360 / 448`. An element whose alignment has the +4 flag is first pushed
   106.667 units outward (left-aligned ones left, right-aligned ones right). With
   `[video] original_res = on` the HUD is drawn in the 4:3 frame without the push
-  (`HudData::four_three`).
+  (`HudData::four_three`). Settings → Display → Aspect ratio changes the game
+  area: at 4:3 (480 x 360) the HUD is the game's 4:3 layout, without the
+  push; with Fill screen the area takes the window's shape and the push is half
+  of what it has beyond the 4:3 frame, so the pushed elements reach its sides.
 - **Colors.** A game color is the drawn color. "Amber" is RGB (208, 128, 24),
   "HUD red" (240, 0, 0).
 - **Ours.** Where the engine adds something the game does not have, or fills a

@@ -58,14 +58,19 @@ public:
     explicit Ui(SDL_Renderer* r);
     SDL_Renderer* renderer() const { return r_; }
 
-    // Layout of the frame being drawn. Game and tool screens get the fixed
-    // 640x360 letterboxed space. Screens with Screen::adaptive_ui() (setup,
-    // hub, settings) get the whole window at an integer pixel scale chosen
-    // for a readable text size, and lay themselves out with width()/height()
-    // and safe() (the part clear of display cutouts and rounded corners).
+    // Layout of the frame being drawn. Tool screens get the fixed 640x360
+    // letterboxed space; the game's screens (Screen::follows_aspect) the game
+    // area, 360 tall and as wide as Settings -> Display -> Aspect ratio makes
+    // it (640 at 16:9, 480 at 4:3, the window's shape with fill). Screens with
+    // Screen::adaptive_ui() (setup, hub, settings) get the whole window at an
+    // integer pixel scale chosen for a readable text size, and lay themselves
+    // out with width()/height() and safe() (the part clear of display cutouts
+    // and rounded corners).
     void set_layout(float w, float h, UiRect safe, bool touch) { w_ = w, h_ = h, safe_ = safe, touch_ = touch; }
     float width() const { return w_; }
     float height() const { return h_; }
+    // The game's 4:3 picture (its menus, movies) in the middle of the layout, full height.
+    UiRect picture43() const { return {(w_ - h_ * 4 / 3) / 2, 0, h_ * 4 / 3, h_}; }
     const UiRect& safe() const { return safe_; }
     // Finger-sized targets (phones and tablets).
     bool touch() const { return touch_; }

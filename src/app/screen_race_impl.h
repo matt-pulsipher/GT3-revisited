@@ -203,6 +203,8 @@ public:
     void on_event(App& app, const SDL_Event& e) override;
     // Phones: driving touch controls while racing, menu controls otherwise.
     TouchLayout touch_layout() const override;
+    // The game area of Settings -> Display -> Aspect ratio, except the developer race list.
+    bool follows_aspect() const override;
     void render(App& app, Ui& ui) override;
 
 private:

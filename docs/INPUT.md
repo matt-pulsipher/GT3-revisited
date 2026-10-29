@@ -418,7 +418,8 @@ The value is `[left|center|right <x> top|bottom <y>] [size <s>] [hidden]`:
 the control's centre `x` units in from the left or right edge (or from the
 screen's centre line, + = right) and `y` in from the top or bottom edge of
 the area the controls keep to (the screen less a 14-unit margin, the cutout
-and the rounded corners; the game area is 640×360 units). Measured from the
+and the rounded corners; the game area is 640×360 units, 480×360 or the
+screen's shape with Settings → Display → Aspect ratio). Measured from the
 nearest edge, a layout carries over to screens of other shapes; a control
 that would not fit is moved back inside. Positions are for the right-handed
 layout: `left_handed` mirrors a custom layout too. Controls without a key
@@ -436,8 +437,8 @@ The frontend's own screens (first-run setup, main menu, Developer options, Setti
 operated by tapping and dragging directly (tap a row, tab or button; drag a
 list to scroll; drag a slider; the Android back key goes back), so they use
 no on-screen controls (`TouchLayout::None`). `App::touch().safe_area()`
-returns the part of the 640×360 game area that the visible controls leave
-free (the whole area when they are hidden), so HUDs can inset themselves,
+returns the part of the game area (`TouchControls::set_game_area`) that
+the visible controls leave free (the whole area when they are hidden), so HUDs can inset themselves,
 `App::touch().control_bounds()` lists the visible controls' drawn bounds (the
 race HUD keeps its corner blocks in place unless one would cover them), and
 `App::touch().clear_above()` moves a screen's own button up clear of them (the

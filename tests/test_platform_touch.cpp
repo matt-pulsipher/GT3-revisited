@@ -967,6 +967,28 @@ TEST(touch_safe_area) {
     CHECK(m.x > 100 && m.x + m.w < 540);
 }
 
+TEST(touch_game_area_sizes) {
+    // Settings -> Display -> Aspect ratio: the game area 800 wide (fill on a 20:9 phone) or
+    // 480 (4:3, with the window's bars beside it).
+    TouchControls t = driving();
+    t.set_game_area(800, 360);
+    TouchRect hidden = t.safe_area();
+    CHECK(hidden.x == 0 && hidden.w == 800 && hidden.h == 360);
+    CHECK(t.screen().w == 800); // the screen is never smaller than the game area
+    t.note_touch();
+    const Widget gas = *find_widget(t, Widget::Kind::Pedal, PadButton::Cross);
+    CHECK(gas.x + gas.w > 760); // at the game area's right edge
+    TouchRect a = t.safe_area();
+    CHECK(a.x + a.w <= find_widget(t, Widget::Kind::Pedal, PadButton::Square)->x);
+    CHECK(a.x + a.w > 400 && a.y + a.h == 360);
+    // 4:3 on a 20:9 phone: the window reaches 160 units past each side; the controls sit there.
+    t.set_game_area(480, 360);
+    t.set_screen(-160, 0, 640, 360);
+    TouchRect c = t.safe_area();
+    CHECK(c.x >= 0 && c.x + c.w <= 480);
+    CHECK(c.w > 400); // the pedals are mostly in the right-hand bar
+}
+
 TEST(touch_control_bounds) {
     TouchControls t = driving();
     CHECK(t.control_bounds().empty()); // hidden

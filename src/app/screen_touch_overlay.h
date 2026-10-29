@@ -38,8 +38,8 @@ public:
     // The controls ignore the clip rect: pass `controls` = false while the
     // box is partly scrolled out of view.
     void draw_preview(Ui& ui, const UiRect& box, bool controls = true) const;
-    // Part of the 640x360 game area not covered by the touch controls (UI
-    // units); the whole area while they are hidden. HUDs inset into it.
+    // Part of the game area (0, 0)-(Ui::width(), Ui::height()) not covered by the touch
+    // controls (UI units); the whole area while they are hidden. HUDs inset into it.
     TouchRect safe_area() const { return controls_.safe_area(); }
     // The visible controls' drawn bounds (TouchControls::control_bounds).
     std::vector<TouchRect> control_bounds() const { return controls_.control_bounds(); }
@@ -50,6 +50,8 @@ public:
     // whole window, letterbox bars included: UI point (x, y) is drawn at (x + dx, y + dy).
     // Needs a letterboxed screen (Screen::adaptive_ui() false).
     void draw_whole_window(Ui& ui, TouchControls& c, const std::function<void(float dx, float dy)>& draw) const;
+    // The same without controls: a screen's own button in the window's bar beside the game area.
+    void draw_whole_window(Ui& ui, const std::function<void(float dx, float dy)>& draw) const;
 
     TouchControls& controls() { return controls_; }
 

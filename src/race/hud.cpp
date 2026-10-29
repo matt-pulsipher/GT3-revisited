@@ -16,7 +16,7 @@ namespace gt3r::race {
 namespace {
 
 constexpr float kPi = 3.14159265f;
-constexpr float kMargin = 106.667f; // 16:9 outward shift for alignments with bit 4
+constexpr float kMargin = 106.667f; // 16:9 outward shift for alignments with bit 4 (on a 16:9 screen)
 constexpr float kSx = 0.75f;          // 853.33 virtual units -> 640
 constexpr float kSy = 360.0f / 448.0f;
 
@@ -26,16 +26,25 @@ constexpr SDL_Color kAmber{208, 128, 24, 255};   // 0x801880D0
 constexpr SDL_Color kRed{240, 0, 0, 255};        // 0x800000F0
 constexpr SDL_Color kGrey{200, 205, 215, 255};
 
-// Target rectangle of the HUD in UI coordinates (the whole screen, or one
-// half in split screen); set by Hud::draw.
+// The game area (UI units, Hud::set_screen) and the HUD's target rectangle in it (the whole
+// area, or the 4:3 frame of the original-resolution picture); set by Hud::draw.
+SDL_FRect g_screen{0, 0, 640, 360};
 SDL_FRect g_vp{0, 0, 640, 360};
 // Per-block transform (touch-control safe area): the block is scaled by g_s about the
 // pivot (UI units, before the shift) and shifted by (g_dx, g_dy). Identity normally.
 float g_dx = 0, g_dy = 0, g_s = 1, g_px = 0, g_py = 0;
 // 4:3 frame (original resolution option): the 640x448 layout as is, no 16:9 widening.
 bool g_43 = false;
-float margin() { return g_43 ? 0.0f : kMargin; }
-float vsx() { return (g_43 ? 1.0f : kSx) * g_vp.w / 640.0f * g_s; }
+// The 640 x 448 frame keeps its shape (0.75 UI units across per frame unit on 360 lines) and
+// sits in the middle of the viewport. The 16:9 push is half of what the viewport has beyond
+// it: 106.667 frame units on a 16:9 screen, more on a wider one, none at 4:3.
+float margin() {
+    if (g_43 || !(g_vp.h > 0)) return 0.0f;
+    // kMargin plus half of what the viewport has beyond 16:9 (frame units): kMargin exactly on 16:9.
+    const float m = kMargin + (g_vp.w - g_vp.h * 16.0f / 9.0f) / (kSx * g_vp.h / 360.0f) / 2;
+    return m < 0.5f ? 0.0f : m; // (4:3: none)
+}
+float vsx() { return kSx * g_vp.h / 360.0f * g_s; }
 float vsy() { return kSy * g_vp.h / 360.0f * g_s; }
 float ux(float x) { return g_vp.x + (x + margin()) * vsx() + (1 - g_s) * (g_px - g_vp.x) + g_dx; }
 float uy(float y) { return g_vp.y + y * vsy() + (1 - g_s) * (g_py - g_vp.y) + g_dy; }
@@ -351,7 +360,8 @@ void Hud::draw_meter(SDL_Renderer* r, const Meter& m, float value) {
 }
 
 void Hud::draw_replay_mark(SDL_Renderer* r, float alpha, const SDL_FRect* viewport, bool four_three) {
-    g_vp = viewport ? *viewport : SDL_FRect{0, 0, 640, 360};
+    g_screen = screen_;
+    g_vp = viewport ? *viewport : screen_;
     g_43 = four_three;
     g_dx = g_dy = 0, g_s = 1;
     if (alpha <= 0) return;
@@ -365,7 +375,8 @@ void Hud::draw_replay_mark(SDL_Renderer* r, float alpha, const SDL_FRect* viewpo
 }
 
 void Hud::draw_title(SDL_Renderer*, const HudData& d, const SDL_FRect* viewport) {
-    g_vp = viewport ? *viewport : SDL_FRect{0, 0, 640, 360};
+    g_screen = screen_;
+    g_vp = viewport ? *viewport : screen_;
     g_43 = d.four_three;
     g_dx = g_dy = 0, g_s = 1;
     // The title (presentation §B3): the course name in capitals, sw_20 at 160 % in light grey,
@@ -391,7 +402,8 @@ void Hud::draw_title(SDL_Renderer*, const HudData& d, const SDL_FRect* viewport)
 }
 
 void Hud::draw_pause(SDL_Renderer* r, int selected, const SDL_FRect* viewport, bool four_three) {
-    g_vp = viewport ? *viewport : SDL_FRect{0, 0, 640, 360};
+    g_screen = screen_;
+    g_vp = viewport ? *viewport : screen_;
     g_43 = four_three;
     g_dx = g_dy = 0, g_s = 1;
     // Measured on the captures: two buttons 204..318 and 324..436 x 199..224 (frame units),
@@ -407,12 +419,13 @@ void Hud::draw_pause(SDL_Renderer* r, int selected, const SDL_FRect* viewport, b
 }
 
 void Hud::draw_replay_pause(SDL_Renderer* r, int selected, const SDL_FRect* viewport, bool four_three) {
-    g_vp = viewport ? *viewport : SDL_FRect{0, 0, 640, 360};
+    g_screen = screen_;
+    g_vp = viewport ? *viewport : screen_;
     g_43 = four_three;
     g_dx = g_dy = 0, g_s = 1;
     // Measured on the captures: the frame dimmed, a dark strip 96..536 x 183..240, buttons
     // 124..236 / 244..356 / 364..508 x 192..216 (selected light orange).
-    fill(r, ux(-200), uy(0), 2000 * vsx(), 448 * vsy(), SDL_Color{0, 0, 0, 110});
+    fill(r, g_screen.x, g_screen.y, g_screen.w, g_screen.h, SDL_Color{0, 0, 0, 110}); // (the whole screen)
     fill(r, ux(96), uy(183), 440 * vsx(), 57 * vsy(), SDL_Color{0, 0, 0, 90});
     static const char* const kLabel[3] = {"CONTINUE", "EXIT", "REPLAY OPTIONS"};
     const float x0[3] = {124, 244, 364}, x1[3] = {236, 356, 508};
@@ -716,19 +729,22 @@ void Hud::draw_rank(SDL_Renderer* r, const HudData& d, int view) {
 }
 
 void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
-    g_vp = viewport ? *viewport : SDL_FRect{0, 0, 640, 360};
+    g_screen = screen_;
+    g_vp = viewport ? *viewport : screen_;
     g_43 = d.four_three;
     ++blink_;
     pole_icon_rect_ = {0, 0, 0, 0};
     // Touch controls: the meters move inside the uncovered area, the top blocks only where a
     // control would cover them (full screen, no controls = no shift).
     const SDL_FRect& sa = d.safe_area;
-    float left = std::max(0.0f, sa.x), right = std::min(0.0f, sa.x + sa.w - 640.0f),
-          bottom = std::min(0.0f, sa.y + sa.h - 360.0f), top = std::max(0.0f, sa.y);
+    const float sr = g_screen.x + g_screen.w, sb = g_screen.y + g_screen.h;
+    float left = std::max(0.0f, sa.x), right = std::min(0.0f, sa.x + sa.w - sr),
+          bottom = std::min(0.0f, sa.y + sa.h - sb), top = std::max(0.0f, sa.y);
     // Meter cluster: bottom right of the safe area, smaller when the controls leave a
-    // narrow area (16:9 / 16:10 with the right-hand cluster on screen).
+    // narrow area (16:9 / 16:10 with the right-hand cluster on screen; a 4:3 screen is
+    // narrower without them).
     g_dx = right, g_dy = bottom;
-    g_s = std::clamp(sa.w / 560.0f, 0.7f, 1.0f), g_px = 640, g_py = 360;
+    g_s = std::clamp(sa.w / std::min(560.0f, g_screen.w - 80.0f), 0.7f, 1.0f), g_px = sr, g_py = sb;
     // d.layer: 0 everything, 1 all but the lap / time block, 2 only that block (the results
     // panel goes between them: the original draws the times over it, the rest under it).
     const bool body = d.layer != 2, times = d.layer != 1 && (d.items & kItemTimes);
@@ -862,7 +878,7 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
     // outlines dark grey.
     const HudRow* tyres = row(HudPart::Tires);
     if (tyres && (d.items & kItemTires) && d.show_tires && tire_outline_.tex) {
-        g_dx = 0, g_dy = std::min(0.0f, d.safe_area.y + d.safe_area.h - 360.0f);
+        g_dx = 0, g_dy = std::min(0.0f, d.safe_area.y + d.safe_area.h - (g_screen.y + g_screen.h));
         float x = anchor(tyres->x, 0, tyres->align), y = tyres->y - tire_outline_.h;
         SDL_FRect rc{ux(x), uy(y), tire_outline_.w * vsx(), tire_outline_.h * vsy()};
         for (int i = 0; i < 4; ++i) {
@@ -925,6 +941,7 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
 // half; racemode 8 = 16:9 vertical split, 426.667x448 per half.
 struct SplitLayout {
     float w, h;
+    float ref_w, ref_h; // a half on the 16:9 640 x 360 screen (UI units)
     float rank_x, rank_y;
     float lap_r, lap_y;
     float lines_r, line_y[3];
@@ -937,11 +954,11 @@ struct SplitLayout {
 // 4:3 top / bottom halves, measured on captures of the original's 2P battle: rank (ordinal)
 // top left, map below it, laps and times top right, speed then a dark panel (gear, AT/MT, bar
 // tachometer, shift light) at the bottom right. The rank is its row's pen (presentation §D8).
-constexpr SplitLayout kSplit43{640, 224, 24, 48, 615, 36, 615, {64, 88, 112}, 16, 52,
+constexpr SplitLayout kSplit43{640, 224, 640, 180, 24, 48, 615, 36, 615, {64, 88, 112}, 16, 52,
                                438, 208, 596, 206, 48, 18, 524, 210, 320, 120, 200};
 // 16:9 halves: the rows of the side-by-side layout; the lap count is pushed right by the 16:9
 // margin like every lap count (row x 310).
-constexpr SplitLayout kSplit169{426.667f, 448, 16, 60, 310 + kMargin, 60, 413, {96, 120, 144}, 10, 105,
+constexpr SplitLayout kSplit169{426.667f, 448, 320, 360, 16, 60, 310 + kMargin, 60, 413, {96, 120, 144}, 10, 105,
                                 220, 435, 413, 435, 65, 25, 313, 422, 213, 210, 384};
 
 void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, bool horizontal) {
@@ -949,10 +966,18 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
     g_dx = g_dy = 0, g_s = 1;
     pole_icon_rect_ = {0, 0, 0, 0};
     const SplitLayout& L = horizontal ? kSplit43 : kSplit169;
-    const float kw = half.w / L.w, kh = half.h / L.h;
-    auto X = [&](float x) { return half.x + x * kw; };
+    // Across: the layout's scale on the 16:9 screen at this height, at most the half's width
+    // (a narrower half squeezes it). What a wider half has left over goes between the layout's
+    // parts: the middle ones move by half of it, the right-hand ones by all of it.
+    const float kh = half.h / L.h, kw = std::min(L.ref_w / L.w * half.h / L.ref_h, half.w / L.w);
+    const float extra = std::max(0.0f, half.w - L.w * kw);
+    enum Side { Left, Mid, Right };
+    auto X = [&](float x, Side side) {
+        return half.x + x * kw + (side == Right ? extra : side == Mid ? extra / 2 : 0.0f);
+    };
     auto Y = [&](float y) { return half.y + y * kh; };
-    auto txt = [&](float x, float y, const std::string& s, const char* font, float sc, SDL_Color c, text::HAlign a) {
+    auto txt = [&](float x, float y, const std::string& s, const char* font, float sc, SDL_Color c, text::HAlign a,
+                   Side side) {
         if (!fonts_ok_) return;
         text::TextStyle st;
         text::GameFont* f = fonts_.resolve(font, st);
@@ -963,14 +988,14 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         st.scale_y *= kh;
         st.color = c;
         st.align = a;
-        f->draw(X(x), Y(y), s, st);
+        f->draw(X(x, side), Y(y), s, st);
     };
     char buf[64];
     // Mini-map at 70 %, north-up, with both players' dots.
     if (map_.tex) {
         constexpr float k = 0.7f;
         float mx = L.map_x, my = L.map_y;
-        SDL_FRect dst{X(mx), Y(my), map_.w * k * kw, map_.h * k * kh};
+        SDL_FRect dst{X(mx, Left), Y(my), map_.w * k * kw, map_.h * k * kh};
         SDL_RenderTexture(r, map_.tex, nullptr, &dst);
         auto dot = [&](float wx, float wz, const Image* im) {
             float dx = wx - map_ox_, dz = wz - map_oz_;
@@ -978,7 +1003,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
             float pz = map_scale_ * (std::sin(map_rot_) * dx + std::cos(map_rot_) * dz);
             float cx = mx + (map_.w / 2 + px) * k, cy = my + (map_.h / 2 + pz) * k;
             if (!im) return;
-            SDL_FRect rc{X(cx - 3.5f * k), Y(cy - 3.5f * k), 7 * k * kw, 7 * k * kh};
+            SDL_FRect rc{X(cx - 3.5f * k, Left), Y(cy - 3.5f * k), 7 * k * kw, 7 * k * kh};
             SDL_RenderTexture(r, im->tex, nullptr, &rc);
         };
         for (const auto& [ox, oz] : d.others) dot(ox, oz, image("ecar_dot"));
@@ -995,9 +1020,9 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
                 st.scale = 1.0f, st.scale_x *= kw * 0.8f, st.scale_y *= kh * 0.8f, st.spacing = 3;
                 st.valign = text::VAlign::Baseline;
                 st.color = SDL_Color{0, 0, 0, 192};
-                f->draw(X(L.rank_x + 4), Y(L.rank_y + 4), kRank[d.position - 1], st);
+                f->draw(X(L.rank_x + 4, Left), Y(L.rank_y + 4), kRank[d.position - 1], st);
                 st.color = kAmber;
-                f->draw(X(L.rank_x), Y(L.rank_y), kRank[d.position - 1], st);
+                f->draw(X(L.rank_x, Left), Y(L.rank_y), kRank[d.position - 1], st);
             }
     }
     if (horizontal) { // the dark panel behind gear, AT/MT and the bar tachometer
@@ -1008,7 +1033,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         for (size_t i = 0; i + 2 < pts.size(); ++i)
             for (size_t k = 0; k < 3; ++k) {
                 SDL_Vertex vx{};
-                vx.position = {X(pts[i + k].x), Y(pts[i + k].y)};
+                vx.position = {X(pts[i + k].x, Right), Y(pts[i + k].y)};
                 vx.color = {0, 0, 0, 0.5f};
                 v.push_back(vx);
             }
@@ -1027,7 +1052,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         st.color = kAmber;
         st.align = text::HAlign::Right;
         st.valign = text::VAlign::Baseline;
-        f->draw(X(x), Y(y), s, st);
+        f->draw(X(x, Right), Y(y), s, st);
         return f->measure(s).x;
     };
     if (d.lap > 0) {
@@ -1035,7 +1060,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         if (horizontal) {
             if (d.total_laps > 0) std::snprintf(buf, sizeof(buf), "Lap %d/%d", lap, d.total_laps);
             else std::snprintf(buf, sizeof(buf), "Lap %d", lap);
-            txt(L.lap_r, L.lap_y, buf, "sw_20", 1, kAmber, text::HAlign::Right);
+            txt(L.lap_r, L.lap_y, buf, "sw_20", 1, kAmber, text::HAlign::Right, Right);
         } else {
             if (d.total_laps > 0) std::snprintf(buf, sizeof(buf), "%d/%d", lap, d.total_laps);
             else std::snprintf(buf, sizeof(buf), "%d", lap);
@@ -1050,8 +1075,8 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
     const double times[3] = {d.session_best, d.last_lap, d.lap > 0 ? d.lap_time : -1};
     for (int i = 0; i < lines; ++i) {
         if (horizontal) { // label (small) and time (large), as on the captures
-            txt(L.lines_r, L.line_y[i] - 12, format_time(times[i]), "sw_16", 1.45f, kAmber, text::HAlign::Right);
-            txt(L.lines_r - 104, L.line_y[i] - 8, labels[i], "sw_12", 1.45f, kAmber, text::HAlign::Right);
+            txt(L.lines_r, L.line_y[i] - 12, format_time(times[i]), "sw_16", 1.45f, kAmber, text::HAlign::Right, Right);
+            txt(L.lines_r - 104, L.line_y[i] - 8, labels[i], "sw_12", 1.45f, kAmber, text::HAlign::Right, Right);
         } else {
             const float w = base(L.lines_r, L.line_y[i], format_time(times[i]), "sw_16");
             base(L.lines_r - std::max(w, 90.0f) - 10, L.line_y[i], labels[i], "sw_12");
@@ -1062,7 +1087,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         float w = L.tach_w, h = L.tach_h, x = L.tach_r - w, y = L.tach_y - h;
         int scale = tach_scale(d.rev_limit_rpm);
         float frac = std::clamp(d.rpm / float(scale), 0.0f, 1.0f);
-        SDL_FRect dst{X(x), Y(y), w * kw, h * kh};
+        SDL_FRect dst{X(x, Right), Y(y), w * kw, h * kh};
         SDL_SetTextureAlphaMod(im->tex, 70);
         SDL_RenderTexture(r, im->tex, nullptr, &dst);
         SDL_SetTextureAlphaMod(im->tex, 255);
@@ -1070,34 +1095,39 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         SDL_FRect lit{dst.x, dst.y, dst.w * frac, dst.h};
         SDL_RenderTexture(r, im->tex, &src, &lit);
         if (horizontal) {
-            txt(x + w / 2, y - 3, d.automatic ? ">" : "=", "meter#1", 1, kAmber, text::HAlign::Center);
+            txt(x + w / 2, y - 3, d.automatic ? ">" : "=", "meter#1", 1, kAmber, text::HAlign::Center, Right);
             // Shift light: a red dot at the panel's top right, lit above the shift-up rpm.
             bool shift_lit = d.rpm > d.shift_rpm && (blink_ / 3) % 2 == 0;
-            fill(r, X(x + w + 3), Y(y - 4), 3 * kw, 3 * kh, shift_lit ? kRed : SDL_Color{60, 0, 0, 200});
+            fill(r, X(x + w + 3, Right), Y(y - 4), 3 * kw, 3 * kh, shift_lit ? kRed : SDL_Color{60, 0, 0, 200});
         } else {
-            txt(x, y + 5, d.automatic ? ">" : "=", "meter#1", 1, kAmber, text::HAlign::Left);
+            txt(x, y + 5, d.automatic ? ">" : "=", "meter#1", 1, kAmber, text::HAlign::Left, Right);
         }
     }
     std::snprintf(buf, sizeof(buf), "%3d", int(d.imperial ? d.speed_kmh / 1.609344f : d.speed_kmh));
-    txt(L.speed_r, L.speed_y - (horizontal ? 21 : 28), buf, "speed", horizontal ? 1.13f : 1.0f, kAmber, text::HAlign::Right);
-    txt(L.speed_r + 3, L.speed_y - (horizontal ? 9 : 14), d.imperial ? "mph" : "km/h", "sw_12", horizontal ? 1.15f : 1.0f, kAmber, text::HAlign::Left);
+    // (The speed, gear and tachometer keep together: all on the right.)
+    txt(L.speed_r, L.speed_y - (horizontal ? 21 : 28), buf, "speed", horizontal ? 1.13f : 1.0f, kAmber,
+        text::HAlign::Right, Right);
+    txt(L.speed_r + 3, L.speed_y - (horizontal ? 9 : 14), d.imperial ? "mph" : "km/h", "sw_12",
+        horizontal ? 1.15f : 1.0f, kAmber, text::HAlign::Left, Right);
     std::string g = d.gear >= 1 ? std::to_string(std::min(d.gear, 9)) : (d.gear < 0 ? "R" : "N");
     float gs = horizontal ? 1.15f : 0.8f;
     txt(L.gear_x - 30, L.gear_y - (horizontal ? 30 : 22), g, g == "N" ? "sw_20" : "gearr#1", g == "N" ? 1.3f : gs,
-        d.gear < 0 ? kRed : kAmber, text::HAlign::Left);
-    if (horizontal) txt(L.gear_x - 8, L.gear_y - 20, ">8", "gearr#1", 0.55f, SDL_Color{0, 0, 0, 110}, text::HAlign::Left);
+        d.gear < 0 ? kRed : kAmber, text::HAlign::Left, Right);
+    if (horizontal)
+        txt(L.gear_x - 8, L.gear_y - 20, ">8", "gearr#1", 0.55f, SDL_Color{0, 0, 0, 110}, text::HAlign::Left, Right);
     if (d.countdown >= 0 && !horizontal) {
         char name[16];
         if (d.countdown > 0) std::snprintf(name, sizeof(name), "count%d", std::clamp(int(std::ceil(d.countdown)), 1, 3));
         else std::snprintf(name, sizeof(name), "start");
         if (const Image* im = image(name)) {
-            SDL_FRect rc{X(L.big_x - im->w / 2), Y(L.big_y - im->h / 2), im->w * kw, im->h * kh};
+            SDL_FRect rc{X(L.big_x - im->w / 2, Mid), Y(L.big_y - im->h / 2), im->w * kw, im->h * kh};
             SDL_RenderTexture(r, im->tex, nullptr, &rc);
         }
     }
     // (No "PLAYER n WIN!": the original shows AUTO DRIVE, then its results panel over the half.)
-    if (d.auto_drive && horizontal) txt(L.speed_r - 78, L.speed_y - 20, "AUTO DRIVE", "sw_16", 1.3f, kAmber, text::HAlign::Right);
-    if (d.wrong_way) txt(L.big_x, L.warn_y - 8, "WRONG WAY", "sw_16", 1, kRed, text::HAlign::Center);
+    if (d.auto_drive && horizontal)
+        txt(L.speed_r - 78, L.speed_y - 20, "AUTO DRIVE", "sw_16", 1.3f, kAmber, text::HAlign::Right, Right);
+    if (d.wrong_way) txt(L.big_x, L.warn_y - 8, "WRONG WAY", "sw_16", 1, kRed, text::HAlign::Center, Mid);
     // Event display (presentation §D6): the half's own, centred on (320, 75) of the 640 x 224
     // half (horizontal) or (213, 165) of the 426.667 x 448 half, at most 320 / 384 units wide
     // (wider texts are squeezed), the pen on the baseline.
@@ -1116,11 +1146,12 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
             st.color = SDL_Color{m.r, m.g, m.b, 255};
             st.align = text::HAlign::Center;
             st.valign = text::VAlign::Baseline;
-            f->draw(X(ex + m.dx), Y(ey + m.dy), m.text, st);
+            f->draw(X(ex + m.dx, Mid), Y(ey + m.dy), m.text, st);
         }
     if (d.event_icon) {
         const float k = horizontal ? 0.7f : 1.0f; // the picture with the half's text size
-        event_icon_rect_ = {X(ex + d.event_icon_dx - 32 * k), Y(ey + d.event_icon_dy - 16 * k), 64 * k * kw, 32 * k * kh};
+        event_icon_rect_ = {X(ex + d.event_icon_dx - 32 * k, Mid), Y(ey + d.event_icon_dy - 16 * k), 64 * k * kw,
+                            32 * k * kh};
     }
 }
 

@@ -273,9 +273,11 @@ public:
         if (skip || (!opt_.loop && player_.finished())) finish(app);
     }
 
+    bool follows_aspect() const override { return true; } // the game's own movies
+
     void render(App&, Ui& ui) override {
-        ui.fill(0, 0, Ui::kWidth, Ui::kHeight, Color{0, 0, 0});
-        player_.draw(ui.renderer(), player_.fit_4_3(0, 0, float(Ui::kWidth), float(Ui::kHeight)));
+        ui.fill(0, 0, ui.width(), ui.height(), Color{0, 0, 0});
+        player_.draw(ui.renderer(), player_.fit_4_3(0, 0, ui.width(), ui.height()));
     }
 
 private:

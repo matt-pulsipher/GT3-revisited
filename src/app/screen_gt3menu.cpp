@@ -130,13 +130,15 @@ public:
         }
     }
 
+    bool follows_aspect() const override { return true; }
+
     // UI point -> menu layout coordinates (640x448, y up), matching the 4:3
     // picture placement in render(). False outside the picture.
-    static bool ui_to_menu(SDL_FPoint p, float& x, float& y) {
-        const float h = Ui::kHeight, w = h * 4.0f / 3.0f, x0 = (Ui::kWidth - w) / 2;
-        if (p.x < x0 || p.x >= x0 + w || p.y < 0 || p.y >= h) return false;
-        x = (p.x - x0) * 640.0f / w;
-        y = 448.0f - p.y * 448.0f / h;
+    static bool ui_to_menu(const Ui& ui, SDL_FPoint p, float& x, float& y) {
+        const UiRect pic = ui.picture43();
+        if (p.x < pic.x || p.x >= pic.right() || p.y < 0 || p.y >= pic.h) return false;
+        x = (p.x - pic.x) * 640.0f / pic.w;
+        y = 448.0f - p.y * 448.0f / pic.h;
         return true;
     }
 
@@ -169,7 +171,7 @@ public:
             return;
         }
         if (hover_) {
-            if (float mx, my; ui_to_menu(*hover_, mx, my)) flow_->hover(mx, my);
+            if (float mx, my; ui_to_menu(app.ui(), *hover_, mx, my)) flow_->hover(mx, my);
             hover_.reset();
         }
         const bool title = on_title();
@@ -180,7 +182,7 @@ public:
                 app.pop();
                 return;
             }
-            if (float mx, my; ui_to_menu(p, mx, my)) flow_->tap(mx, my);
+            if (float mx, my; ui_to_menu(app.ui(), p, mx, my)) flow_->tap(mx, my);
         }
         taps_.clear();
         if (std::exchange(back_click_, false)) {
@@ -223,15 +225,22 @@ public:
             return;
         }
         draw_frame(app);
-        // 4:3 picture in the middle of the 16:9 UI.
-        float h = Ui::kHeight, w = h * 4.0f / 3.0f;
-        SDL_FRect dst{(Ui::kWidth - w) / 2, 0, w, h};
+        // 4:3 picture in the middle of the game area.
+        const UiRect pic = ui.picture43();
+        const SDL_FRect dst{pic.x, pic.y, pic.w, pic.h};
         if (frame_) SDL_RenderTexture(app.renderer(), frame_, nullptr, &dst);
         // Our main menu (settings, mods, online, ...), in the bar beside the title menu.
         if (on_title()) {
             const UiRect b = gt3r_menu_button(app);
-            ui.button(b, "GT3R menu", false, press_ && b.contains(press_->x, press_->y));
-            if (!ui.touch()) ui.text_center_in(b.x, b.w, b.bottom() + 4, "SELECT", colors::kDim);
+            auto draw = [&](float dx, float dy) {
+                const UiRect d{b.x + dx, b.y + dy, b.w, b.h};
+                ui.button(d, "GT3R menu", false, press_ && b.contains(press_->x, press_->y));
+                if (!ui.touch() && b.bottom() + 12 <= ui.height())
+                    ui.text_center_in(d.x, d.w, d.bottom() + 4, "SELECT", colors::kDim);
+            };
+            // Left of the game area (4:3 on a wider window): drawn across the whole window.
+            if (b.x < 0) app.touch().draw_whole_window(ui, draw);
+            else draw(0, 0);
         }
         // Developer overlay (language, page name, flow log lines): `[gt3menu] debug = on`
         // (or GT3R_GT3MENU_DEBUG=1).
@@ -245,20 +254,29 @@ public:
                 for (size_t i = 0; i < pg.size(); i += 9) ui.text(4, 18 + float(i / 9) * 10, pg.substr(i, 9), colors::kDim);
             }
         }
-        float y = Ui::kHeight - 12;
+        float y = ui.height() - 12;
         if (debug)
-            for (auto it = messages_.rbegin(); it != messages_.rend() && y > Ui::kHeight - 60; ++it, y -= 10)
+            for (auto it = messages_.rbegin(); it != messages_.rend() && y > ui.height() - 60; ++it, y -= 10)
                 ui.text(dst.x + 4, y, it->text, colors::kAccent);
     }
 
     bool update_prompts() const override { return on_title(); } // the update dialog, on the title page only
 
 private:
-    // The "GT3R menu" button, in the left bar beside the 4:3 picture (UI units); above the
-    // on-screen D-pad while the touch controls are up, so a finger reaches it.
+    // The "GT3R menu" button, in the left bar beside the 4:3 picture (UI units): the game
+    // area's, or with a 4:3 game area the window's bar left of it (negative x); over the
+    // picture's bottom left corner when the window has no bar. Above the on-screen D-pad while
+    // the touch controls are up, so a finger reaches it.
     static UiRect gt3r_menu_button(App& app) {
-        const TouchRect r =
-            app.touch().clear_above({6, Ui::kHeight - 46, (Ui::kWidth - Ui::kHeight * 4.0f / 3.0f) / 2 - 12, 22});
+        const Ui& ui = app.ui();
+        const UiRect pic = ui.picture43();
+        constexpr float kMinBar = 60;
+        float x0 = 0, y0 = 0; // the bar's left edge: the window's when the game area has no bar
+        if (pic.x < kMinBar && SDL_RenderCoordinatesFromWindow(app.renderer(), 0, 0, &x0, &y0)) x0 = std::min(x0, 0.0f);
+        else x0 = 0;
+        const UiRect b = pic.x - x0 >= kMinBar ? UiRect{x0 + 6, ui.height() - 46, std::min(pic.x - x0 - 12, 90.0f), 22}
+                                               : UiRect{pic.x + 6, ui.height() - 28, 74, 22};
+        const TouchRect r = app.touch().clear_above({b.x, b.y, b.w, b.h});
         return {r.x, r.y, r.w, r.h};
     }
 

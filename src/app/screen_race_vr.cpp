@@ -120,7 +120,7 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
     SDL_RenderClear(r);
     // The rear-view mirror where GT3 draws it, at the top of the panel.
     if (camera_.onboard() && camera_.mirror() && !camera_.look_back())
-        draw_mirror(app, ui, SDL_FRect{0, 0, float(Ui::kWidth), float(Ui::kHeight)}, o, false, false);
+        draw_mirror(app, ui, SDL_FRect{0, 0, ui.width(), ui.height()}, o, false, false);
     x.submit_stereo();
 }
 

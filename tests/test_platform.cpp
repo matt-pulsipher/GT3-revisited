@@ -2,6 +2,7 @@
 
 #include "test_framework.h"
 
+#include "platform/aspect.h"
 #include "platform/device_tilt.h"
 #include "platform/render_scale.h"
 
@@ -94,4 +95,27 @@ TEST(platform_render_scale) {
     // MSAA when the config has none: 4x on desktop, 2x on phones and tablets.
     CHECK(platform::default_msaa(false) == 4);
     CHECK(platform::default_msaa(true) == 2);
+}
+
+TEST(platform_aspect) {
+    using platform::Aspect;
+    CHECK(platform::parse_aspect("16:9") == Aspect::Wide);
+    CHECK(platform::parse_aspect(" 4:3 ") == Aspect::Classic);
+    CHECK(platform::parse_aspect("fill") == Aspect::Fill);
+    CHECK(platform::parse_aspect("") == Aspect::Wide);
+    CHECK(platform::parse_aspect("21:9") == Aspect::Wide);
+    for (Aspect a : {Aspect::Wide, Aspect::Classic, Aspect::Fill})
+        CHECK(platform::parse_aspect(platform::aspect_value(a)) == a);
+    // 16:9 and 4:3 keep their width in any window.
+    CHECK(platform::game_width(Aspect::Wide, 2400, 1080) == 640);
+    CHECK(platform::game_width(Aspect::Classic, 2400, 1080) == 480);
+    CHECK(platform::game_width(Aspect::Classic, 1024, 768) == 480);
+    // Fill: the window's shape, 360 tall; never narrower than 4:3.
+    CHECK(platform::game_width(Aspect::Fill, 3840, 2160) == 640);
+    CHECK(platform::game_width(Aspect::Fill, 2400, 1080) == 800); // 20:9 phone
+    CHECK(platform::game_width(Aspect::Fill, 3440, 1440) == 860); // 21:9 monitor
+    CHECK(platform::game_width(Aspect::Fill, 2560, 1600) == 576); // 16:10
+    CHECK(platform::game_width(Aspect::Fill, 2048, 1536) == 480); // 4:3 tablet
+    CHECK(platform::game_width(Aspect::Fill, 1080, 2400) == 480); // portrait: letterboxed 4:3
+    CHECK(platform::game_width(Aspect::Fill, 0, 0) == 640);
 }
