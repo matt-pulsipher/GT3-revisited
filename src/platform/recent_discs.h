@@ -52,6 +52,12 @@ std::string disc_file_name(std::string_view path);
 // folder (/var/mobile/Containers/Data/Application/<UUID>/), so a path saved by an earlier install
 // names a folder that no longer exists; the rest of it (Documents/GT3.iso) is the same file now.
 // `path` unchanged when either is not in such a folder, or both are in the same one.
+// Only for files of the app's own folder: another app's folder (a browser's downloads) is
+// found again through the file's bookmark, never by moving its path into this one.
 std::string rebase_app_container_path(std::string_view path, std::string_view data_dir);
+
+// iOS: `a` and `b` are in the same app's folder (/var/mobile/Containers/Data/Application/<UUID>/,
+// with or without /private in front). False when either is in no app folder.
+bool same_app_container(std::string_view a, std::string_view b);
 
 } // namespace gt3r::platform

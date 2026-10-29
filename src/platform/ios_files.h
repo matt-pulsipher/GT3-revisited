@@ -26,10 +26,10 @@ bool show_document_picker(SDL_Window* window, const SDL_DialogFileFilter* filter
                           std::function<void(std::string path)> done);
 
 // iOS: makes the remembered disc images ([game] disc and recent1..5) readable before they are
-// opened or listed: paths in an earlier install's app folder are moved to this one's
-// (rebase_app_container_path), picked files get their access back from their bookmarks, and
-// files that moved since are followed. True when a path in `cfg` changed (for the caller to
-// save). No-op elsewhere.
+// opened or listed: picked files get their access back from their bookmarks (also those in
+// other apps' folders), files that moved since are followed, and files of this app's own folder
+// from an earlier install are moved to this one's (rebase_app_container_path). True when a path
+// in `cfg` changed (for the caller to save). No-op elsewhere.
 bool restore_disc_access(IniDocument& cfg, const std::string& data_dir);
 
 } // namespace gt3r::platform

@@ -31,6 +31,21 @@ std::string normalized(std::string_view p) {
 
 std::string recent_key(int i) { return "recent" + std::to_string(i + 1); }
 
+// The iOS app folder part of `p`, "/Containers/Data/Application/<UUID>", as [begin, end); both
+// npos when `p` is in no app folder. What comes before it differs for the same folder: the
+// system reports /private/var/... and /var/... alike.
+struct AppContainer {
+    size_t begin = std::string_view::npos, end = std::string_view::npos;
+};
+AppContainer app_container(std::string_view p) {
+    static constexpr std::string_view kMarker = "/Containers/Data/Application/";
+    const size_t at = p.find(kMarker);
+    if (at == std::string_view::npos) return {};
+    const size_t end = p.find('/', at + kMarker.size());
+    if (end == std::string_view::npos || end == at + kMarker.size()) return {};
+    return {at, end};
+}
+
 } // namespace
 
 bool is_absolute_disc_path(std::string_view p) {
@@ -101,20 +116,18 @@ std::string disc_file_name(std::string_view path) {
 }
 
 std::string rebase_app_container_path(std::string_view path, std::string_view data_dir) {
-    // Up to the end of the <UUID> part (/private/var/... and /var/... alike: the system reports
-    // either; the current folder is written the way data_dir has it).
-    auto container_end = [](std::string_view p) -> size_t {
-        static constexpr std::string_view kMarker = "/Containers/Data/Application/";
-        size_t at = p.find(kMarker);
-        if (at == std::string_view::npos) return std::string_view::npos;
-        size_t end = p.find('/', at + kMarker.size());
-        return end == std::string_view::npos || end == at + kMarker.size() ? std::string_view::npos : end;
-    };
-    const size_t pe = container_end(path), de = container_end(data_dir);
-    if (pe == std::string_view::npos || de == std::string_view::npos) return std::string(path);
-    std::string out(data_dir.substr(0, de));
-    out += path.substr(pe);
+    // Up to the end of the <UUID> part; the current folder is written the way data_dir has it.
+    const AppContainer p = app_container(path), d = app_container(data_dir);
+    if (p.end == std::string_view::npos || d.end == std::string_view::npos) return std::string(path);
+    std::string out(data_dir.substr(0, d.end));
+    out += path.substr(p.end);
     return out;
+}
+
+bool same_app_container(std::string_view a, std::string_view b) {
+    const AppContainer ca = app_container(a), cb = app_container(b);
+    return ca.end != std::string_view::npos && cb.end != std::string_view::npos &&
+           a.substr(ca.begin, ca.end - ca.begin) == b.substr(cb.begin, cb.end - cb.begin);
 }
 
 } // namespace gt3r::platform

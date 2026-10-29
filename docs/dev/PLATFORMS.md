@@ -179,8 +179,9 @@ The user data folder (config, saves, mods, screenshots) is the app's Documents, 
 Files app shows as On My iPhone › GT3 Revisited and Finder lists under the iPhone's Files
 (`UIFileSharingEnabled`). SDL has no file dialog on iOS, so **Open disc image** shows the
 system's document picker (`platform/ios_files.h`): the image is read where it is, never copied
-(iCloud Drive, On My iPhone, other providers), and a bookmark of it in the app's user defaults
-opens it again at the next start. An image copied into the GT3 Revisited folder needs no
+(iCloud Drive, On My iPhone, another app's folder such as a browser's downloads, other
+providers), and a bookmark of it in the app's user defaults opens it again at the next start.
+An image copied into the GT3 Revisited folder needs no
 bookmark; its saved path is moved into the next install's folder, which iOS names anew
 (`rebase_app_container_path`). No document type is declared: opening an image from the Files
 app would copy it into the app.

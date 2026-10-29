@@ -64,12 +64,15 @@ void store_bookmark(id url, const std::string& path, const std::string& old_path
     call(dict, "release");
 }
 
-// Gives back the access to a file picked in an earlier run: its path now (it may have moved or
-// been renamed), or "" without a bookmark that still resolves.
-std::string resume_bookmark(const std::string& path) {
+// The bookmark kept for `path` (NSData), or nil.
+id bookmark_of(const std::string& path) {
     id dict = bookmarks();
-    id data = dict ? send(dict, "objectForKey:", ns_string(path)) : nullptr;
-    if (!data) return "";
+    return dict ? send(dict, "objectForKey:", ns_string(path)) : nullptr;
+}
+
+// Gives back the access to a file picked in an earlier run, from its bookmark `data`: its path
+// now (it may have moved or been renamed), or "" when the bookmark no longer resolves.
+std::string resume_bookmark(const std::string& path, id data) {
     BOOL stale = NO;
     id url = reinterpret_cast<id (*)(id, SEL, id, unsigned long, id, BOOL*, id*)>(objc_msgSend)(
         cls("NSURL"), sel_registerName("URLByResolvingBookmarkData:options:relativeToURL:bookmarkDataIsStale:error:"), data,
@@ -81,6 +84,17 @@ std::string resume_bookmark(const std::string& path) {
     if (now.empty()) return "";
     if (stale || now != path) store_bookmark(url, now, path);
     return now;
+}
+
+// Where a remembered disc image is now. A picked file has a bookmark: its access back and its
+// current path, or the saved path when it no longer resolves (gone, or on a drive that is not
+// connected). A file of the app's own folder has none, and is moved into this install's folder.
+std::string restored_path(const std::string& saved, const std::string& data_dir) {
+    if (id data = bookmark_of(saved)) {
+        std::string now = resume_bookmark(saved, data);
+        return now.empty() ? saved : now;
+    }
+    return rebase_app_container_path(saved, data_dir);
 }
 
 // The picker on screen (one at a time) and who gets its answer. The delegate lives for the whole
@@ -101,8 +115,10 @@ void did_pick(id, SEL, id, id urls) {
         // Readable only from here on, for the rest of the run (as in resume_bookmark).
         ask(url, "startAccessingSecurityScopedResource");
         path = utf8(send(url, "path"));
-        // The app's own folder needs no bookmark (rebase_app_container_path finds it again).
-        if (!path.empty() && path.find("/Containers/Data/Application/") == std::string::npos) store_bookmark(url, path);
+        // The app's own folder needs no bookmark (rebase_app_container_path finds it again);
+        // every other place does, other apps' folders too (a browser's downloads).
+        const char* own = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
+        if (!path.empty() && !same_app_container(path, own ? own : "")) store_bookmark(url, path);
     }
     picked(std::move(path));
 }
@@ -174,10 +190,8 @@ bool restore_disc_access(IniDocument& cfg, const std::string& data_dir) {
 #if defined(SDL_PLATFORM_IOS)
     std::map<std::string, std::string> resumed; // [game] disc is also recent1: one access per file
     auto restore = [&](const std::string& saved) {
-        const std::string path = rebase_app_container_path(saved, data_dir);
-        auto [it, added] = resumed.try_emplace(path, path);
-        if (added)
-            if (std::string now = resume_bookmark(path); !now.empty()) it->second = now;
+        auto [it, added] = resumed.try_emplace(saved);
+        if (added) it->second = restored_path(saved, data_dir);
         return it->second;
     };
     bool changed = false;

@@ -82,3 +82,17 @@ TEST(recent_discs_rebase_app_container) {
           "/Users/me/GT3.iso");
     CHECK(rebase_app_container_path("/x/Containers/Data/Application/", now) == "/x/Containers/Data/Application/");
 }
+
+TEST(recent_discs_same_app_container) {
+    const std::string docs = "/var/mobile/Containers/Data/Application/BBBB-2222/Documents/";
+    // This app's folder, as the system reports it (with /private) or as data_dir has it.
+    CHECK(same_app_container("/private/var/mobile/Containers/Data/Application/BBBB-2222/Documents/GT3.iso", docs));
+    CHECK(same_app_container("/var/mobile/Containers/Data/Application/BBBB-2222/Documents/a/GT3.iso", docs));
+    // Another app's folder (a browser's downloads), a longer UUID, or no app folder at all.
+    CHECK(!same_app_container("/private/var/mobile/Containers/Data/Application/CCCC-3333/Documents/Downloads/GT3.iso",
+                              docs));
+    CHECK(!same_app_container("/var/mobile/Containers/Data/Application/BBBB-22223/Documents/GT3.iso", docs));
+    CHECK(!same_app_container("/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/GT3.iso", docs));
+    CHECK(!same_app_container("/var/mobile/Containers/Data/Application/BBBB-2222/Documents/GT3.iso", ""));
+    CHECK(!same_app_container("/x/Containers/Data/Application/", "/x/Containers/Data/Application/"));
+}
