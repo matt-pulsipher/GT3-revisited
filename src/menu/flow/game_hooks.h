@@ -123,8 +123,13 @@ struct GameResult {
     std::vector<int> order;
     double car_dirt = -1;      // the car's dirt after the race (0..0.8), < 0 = not tracked
     double top_speed_kmh = -1; // machine test / any race: the player's top speed (< 0 = unknown)
-    // The player quit a championship ("exit sure"): the championship ends.
+    // The player quit a championship ("exit sure"): the championship ends (a round already
+    // run still counts).
     bool abandoned = false;
+    // The live race was started (START in the pre-race menu, or a run with no such menu); false
+    // when the player left from the pre-race menu: GT3 counts and records only a started race
+    // (gt_mode §3.4; START).
+    bool started = true;
     // License tests judged by the race: -2 = not judged (GT mode judges from
     // finished + total_time), -1 = failed / no medal, 0 gold, 1 silver, 2 bronze.
     int license_medal = -2;

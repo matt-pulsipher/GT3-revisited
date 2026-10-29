@@ -121,7 +121,7 @@ struct HudData {
     bool clutch_engaged = true; // gear digit at half brightness when false
     int hint_gear = -1;         // recommended gear ("> n" in red after the digit), -1 = none
     bool hint_blink = false;    // blinks red / black in braking zones
-    std::string intro_title;  // the course name in capitals over a run's or replay's start
+    std::string intro_title;  // the course name in capitals over a run's or replay's start (game text)
     float title_alpha = 1.0f; // its opacity (race::TitleClock)
     // The event display (presentation §D6): lap time, splits, gaps, "Pitting in...", drawn at
     // its anchor; the gap's car picture is drawn by the race screen in event_icon_rect().

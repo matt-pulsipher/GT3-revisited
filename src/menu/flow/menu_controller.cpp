@@ -797,6 +797,14 @@ float MenuController::fade_alpha(const Element& e, u32 since) const {
     return std::min(1.0f, float(frame_ - since) / kFadeInFrames);
 }
 
+float MenuController::layer_fade_alpha(int layer, const Element& e) const {
+    if (levels_.empty()) return 1.0f;
+    const Level& lv = levels_.back();
+    for (const LayerInst& li : lv.layers)
+        if (li.layer == layer && !li.dying) return fade_alpha(e, li.created);
+    return fade_alpha(e, lv.built);
+}
+
 float MenuController::dying_alpha(const Element& e, const LayerInst& li) const {
     if (!li.dying) return fade_alpha(e, li.created);
     if (!fades_out(e)) return 0.0f; // vanishes at once

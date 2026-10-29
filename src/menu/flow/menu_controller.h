@@ -156,6 +156,10 @@ public:
     // the element boxes: x, y = bottom-left), following scrolling selectors;
     // `clip` gets the selector window (or the whole page). False if no such item.
     bool item_box(int index, SDL_FRect& box, SDL_FRect* clip = nullptr) const;
+    // The fade-in alpha of an element created with a layer of the top page (code-drawn hidden
+    // art takes the same 24-frame fade as the layer's own elements): since the layer was shown
+    // (a focus layer, each time it appears), else since the page was built; 1 without a fade.
+    float layer_fade_alpha(int layer, const Element& e) const;
     // A tap at a point: on the focused item it confirms it (like Circle/Cross);
     // on another item it moves the focus there (SE "select"). Returns false when
     // nothing was hit or the menu is busy.

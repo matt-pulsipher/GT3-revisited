@@ -205,7 +205,7 @@ TEST(gtmode_synth_world_loads) {
     CHECK(d.prizes.size() == 4 && d.prize_set("Gsyn_e_0000") && d.prize_set("Gsyn_e_0000")->cars[0].car == w::kRacer);
     const game::PrizeSet* all = d.prize_set("gtmode_complete");
     CHECK(all && all->cars.size() == 1 && all->cars[0].car == w::kCoupe && all->cars[0].color_id == -1);
-    CHECK(d.race_codes.size() == 5 && d.unlock_level.at("Gsynf_s_0001") == 1);
+    CHECK(d.race_codes.size() == 6 && d.unlock_level.at("Gsynf_s_0001") == 1); // (the championship code too)
     CHECK(d.demos.size() == 2 && d.demos[1].event == "demo_syn_2" && d.demos[1].course == "syn_hill");
     CHECK(d.arcade_courses.at("SINGLE_RACE").size() == 3 && d.arcade_courses.at("SINGLE_RACE")[2].level == 1);
     CHECK(d.arcade_classes.at("CLASS_C").size() == 2 && d.arcade_classes.at("CLASS_C")[0].image() == w::kCoupe);
@@ -1151,7 +1151,7 @@ TEST(gtmode_synth_race_page_focus) {
     press(f, MenuKey::Cancel);
     press(f, MenuKey::Cancel);
     choose(f, "amateur");
-    choose(f, "Gsynch_n_0501");
+    choose(f, "Gsynch_n_0500");
     CHECK(page(f) == "r/amateur/gsynch_n" && focused() == "Gsynch_n_0501_info");
     choose(f, "Gsynch_n_0502");
     press(f, MenuKey::Cancel);
@@ -1199,10 +1199,11 @@ TEST(gtmode_synth_race_and_prizes) {
     choose(f, "r_r");
     choose(f, "beginner");
     CHECK(page(f) == "r/beginner");
-    // event_status: one frame per race of the series, 40 apart around the widget's centre.
+    // event_status: a frame per race of the series (the result slots from the item's code on),
+    // f + 8 apart, the row's left edge n (f + 4) / 2 left of the widget's centre.
     {
         auto frames = draws_named(f, "frame");
-        CHECK(frames.size() == 2 && box_is(frames[0], 225, 300, 30, 30) && box_is(frames[1], 265, 300, 30, 30));
+        CHECK(frames.size() == 2 && box_is(frames[0], 226, 300, 30, 30) && box_is(frames[1], 264, 300, 30, 30));
         CHECK(draws_named(f, "mark_1").empty() && draws_named(f, "lc_mark_b").empty());
     }
     // The pro series needs the S licence (gcf unlock level 1): disabled.
@@ -1219,10 +1220,14 @@ TEST(gtmode_synth_race_and_prizes) {
     // (First visit: the race information item; no course name for it.)
     CHECK(f.controller()->focus() == 0 && draws_named(f, "syn_ring_doc").empty());
     CHECK(f.controller()->set_focus("Gsyn_e_0001"));
-    // Each race button gets its course logo; the focused race's course name in the text bar.
+    // Each race button gets its course logo from its event_status_button widget, at the logo's
+    // layout place (4, 413) taken from the button's top-left corner, its own size, half bright
+    // off the focus (the third widget is past the list: nothing); the focused race's course name
+    // in the text bar.
     {
         auto logos = draws_named(f, "syn_ring");
-        CHECK(logos.size() == 2 && box_is(logos[0], 43, 302, 52, 36) && box_is(logos[1], 263, 302, 52, 36));
+        CHECK(logos.size() == 2 && box_is(logos[0], 44, 305, 55, 42) && box_is(logos[1], 264, 305, 55, 42));
+        CHECK(logos.size() == 2 && logos[0].brightness == 1.0f && logos[1].brightness == 0.5f);
         auto doc = draws_named(f, "syn_ring_doc");
         CHECK(doc.size() == 1 && box_is(doc[0], 0, 20, 640, 24));
         CHECK(draws_named(f, "mark_1").empty());
@@ -1290,8 +1295,10 @@ TEST(gtmode_synth_race_and_prizes) {
     press(f, MenuKey::Confirm);
     CHECK(f.control() == "gt_mode" && page(f) == "r/beginner/gsyn_e"); // the entry page's parent
     {
-        auto mark = draws_named(f, "mark_1"); // the race's best result in the button's slot
-        CHECK(mark.size() == 1 && box_is(mark[0], 202, 302, 36, 36));
+        // The race's best result in the button's round slot (mark_1 at (61, 412) from the
+        // button's top-left corner), whatever the button's width.
+        auto mark = draws_named(f, "mark_1");
+        CHECK(mark.size() == 1 && box_is(mark[0], 101, 304, 32, 32));
     }
     // Every race of the series won: the series prize car (car_get) after the cup.
     gt.state().race_best["Gsyn_e_0002"] = 0;
@@ -1453,7 +1460,7 @@ TEST(gtmode_synth_championship) {
     choose(f, "gt_mode");
     choose(f, "r_r");
     choose(f, "amateur");
-    choose(f, "Gsynch_n_0501");
+    choose(f, "Gsynch_n_0500");
     CHECK(page(f) == "r/amateur/gsynch_n");
     choose(f, "Gsynch_n_0500"); // set_race_code_champ: round 1
     CHECK(s->race_code == "Gsynch_n_0501" && s->champ);
@@ -1514,6 +1521,30 @@ TEST(gtmode_synth_championship) {
     // (On the championship item: the stored code is still the championship's.)
     CHECK(f.control() == "gt_mode" && page(f) == "r/amateur/gsynch_n");
     CHECK(f.controller()->focused()->flow->name == "Gsynch_n_0500");
+    // The championship's button (SERIES RACE) shows its own result: the champion's mark_1 in the
+    // laurel's slot, no course logo; each round's button its round's best result, the last
+    // (152 wide) in the same slot as the others.
+    {
+        auto marks = draws_named(f, "mark_1");
+        CHECK(marks.size() == 3 && box_is(marks[0], 101, 304, 32, 32) && box_is(marks[1], 201, 304, 32, 32) &&
+              box_is(marks[2], 301, 304, 32, 32));
+        CHECK(marks.size() == 3 && marks[0].brightness == 1.0f && marks[2].brightness == 0.5f);
+        auto logos = draws_named(f, "syn_ring");
+        CHECK(logos.size() == 2 && box_is(logos[0], 144, 305, 55, 42) && box_is(logos[1], 244, 305, 55, 42));
+    }
+    // The league page: the championship's frame and mark, a frame's width of gap, an arrow frame
+    // per round but the last (a plain frame), each round's mark over its disc.
+    press(f, MenuKey::Cancel);
+    CHECK(page(f) == "r/amateur" && f.controller()->focused()->flow->name == "Gsynch_n_0500");
+    {
+        auto frames = draws_named(f, "frame");
+        auto arrows = draws_named(f, "frame_arrow");
+        auto marks = draws_named(f, "mark_1");
+        CHECK(frames.size() == 2 && box_is(frames[0], 190, 300, 30, 30) && box_is(frames[1], 290, 300, 30, 30));
+        CHECK(arrows.size() == 1 && box_is(arrows[0], 250, 300, 40, 30));
+        CHECK(marks.size() == 3 && box_is(marks[0], 190, 300, 30, 30) && box_is(marks[1], 250, 300, 30, 30) &&
+              box_is(marks[2], 290, 300, 30, 30));
+    }
 }
 
 // Licences: the licence pages' checks (an earlier licence, the last test), the times and
@@ -2751,6 +2782,86 @@ TEST(gtmode_synth_hook_branches) {
 // button until then. The car is washed spinning (its turntable pushed round, car_wash_spin) and
 // shown as dirty as it came in until the wash is over; the oil gauge (drawn by code) drains and
 // refills.
+// GT3's result rules (gt_mode §3.4, §22.2, §10): a race left from its pre-race menu is not
+// one; a championship round that was run counts even when the player then retires; a round
+// left by pause EXIT scores the others by their places and the player nothing; a championship
+// won on points (its last round not won) opens the prize check, where the endings are checked;
+// a league's prize key only with a code of that league.
+TEST(gtmode_synth_result_rules) {
+    World world;
+    GameFlow f(world.read, "US");
+    game::GtModeSession* s = start_title(f);
+    CHECK(s != nullptr);
+    if (!s) return;
+    game::GtMode& gt = s->gt();
+    const GtModeHooks& h = gt_mode_hooks();
+    CHECK(gt.buy_car(w::kCoupe) == 0);
+    while (!h.take_movie().empty()) {
+    }
+    auto drain = [&] {
+        while (h.presentation()) {
+        }
+    };
+    auto race = [](const std::string& code, int position, std::vector<int> order) {
+        GameResult r;
+        r.mode = "go_race";
+        r.race_code = r.event = code;
+        r.finished = position > 0;
+        r.position = position;
+        r.order = std::move(order);
+        return r;
+    };
+    // Left from the pre-race menu: nothing (no race counted).
+    const u32 races = gt.state().races;
+    const s64 credits = gt.state().credits;
+    GameResult left = race("Gsyn_e_0001", 0, {});
+    left.started = false;
+    h.on_result(left);
+    CHECK(gt.state().races == races && gt.state().credits == credits && gt.state().best_position("Gsyn_e_0001") == game::kNoPosition);
+    // A championship round's pre-race menu left: the championship ends, nothing recorded.
+    CHECK(gt.start_championship("Gsynch_n_0501"));
+    GameResult quit = left;
+    quit.race_code = quit.event = "Gsynch_n_0501";
+    quit.abandoned = true;
+    h.on_result(quit);
+    CHECK(!gt.state().championship.active() && gt.state().races == races && gt.state().credits == credits);
+    // Retiring after a round that was run: the round keeps its place, prize and race count.
+    CHECK(gt.start_championship("Gsynch_n_0501"));
+    GameResult second = race("Gsynch_n_0501", 2, {0, -1, 1, 2, 3, 4});
+    second.abandoned = true;
+    h.on_result(second);
+    drain();
+    CHECK(!gt.state().championship.active() && gt.state().races == races + 1);
+    CHECK(gt.state().best_position("Gsynch_n_0501") == 1 && gt.state().credits == credits + 1800);
+    CHECK(gt.state().best_position("Gsynch_n_0500") == game::kNoPosition);
+    // A round left by pause EXIT (not finished, the player 2nd on the road): the cars ahead and
+    // behind keep the points of their places, the player scores none.
+    CHECK(gt.start_championship("Gsynch_n_0501"));
+    h.on_result(race("Gsynch_n_0501", 0, {0, -1, 1, 2, 3, 4}));
+    drain();
+    {
+        const game::Championship& ch = gt.state().championship;
+        CHECK(ch.active() && ch.next == 1 && ch.points.size() == 6);
+        CHECK(ch.points.size() == 6 && ch.points[0] == 0 && ch.points[1] == 10 && ch.points[2] == 4 &&
+              ch.points[3] == 3 && ch.points[4] == 2 && ch.points[5] == 1);
+    }
+    CHECK(gt.state().races == races + 2 && gt.state().best_position("Gsynch_n_0501") == 1);
+    gt.state().championship = {};
+    // Won on points with the last round 2nd (10 + 6 against 4 + 10): the title, its prize car,
+    // and the league's ending from that check.
+    CHECK(!gt.state().ending_long_seen && gt.start_championship("Gsynch_n_0501"));
+    h.on_result(race("Gsynch_n_0501", 1, {-1, 0, 1, 2, 3, 4}));
+    drain();
+    h.on_result(race("Gsynch_n_0502", 2, {1, -1, 0, 2, 3, 4}));
+    drain();
+    CHECK(gt.state().best_position("Gsynch_n_0500") == 0 && gt.state().best_position("Gsynch_n_0502") == 1);
+    CHECK(gt.state().ending_long_seen && h.take_movie() == "stream/ending_long_full.pss" && h.take_movie().empty());
+    // League keys only with a code of their league.
+    CHECK(game::GtMode::code_league("Gtt_e_0505") == "beginner" && game::GtMode::code_league("Gtt_n_0500") == "amateur");
+    CHECK(game::GtMode::code_league("Gf1_h_1000") == "pro" && game::GtMode::code_league("E24h_0001") == "end");
+    CHECK(game::GtMode::code_league("D_tahiti_0001") == "dirt" && game::GtMode::code_league("L0B0001").empty());
+}
+
 TEST(gtmode_synth_car_wash_and_touch) {
     World world;
     GameFlow f(world.read, "US");

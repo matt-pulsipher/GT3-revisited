@@ -121,20 +121,25 @@ std::vector<std::string> on_result(const GameResult& r) {
     const int place = r.finished && r.position > 0 ? r.position - 1 : -1;
     Award a;
     if (r.mode == "go_race") {
+        // Only a started race counts (gt_mode §3.4, §22.2): leaving from the pre-race menu records
+        // nothing. A championship round that was run counts even when the player then retires
+        // from the championship (its prize page has been shown); retiring ends the championship,
+        // and so does leaving a round's pre-race menu (its only way out is that EXIT).
         if (gt.state().championship.active()) {
-            if (r.abandoned) {
-                log.push_back("championship abandoned");
-                gt.state().championship = Championship{};
-            } else {
+            if (r.started) {
                 // Finishing order as entrant indices (0 = the player, i + 1 = opponent i).
                 std::vector<int> order;
                 for (int o : r.order) order.push_back(o + 1);
                 a = gt.record_round(place, order);
-                ms.round_pending = gt.state().championship.active();
                 if (a.championship_over)
                     log.push_back(a.champion ? "Champion! bonus " + cr(a.bonus) : "championship lost on points");
             }
-        } else {
+            if ((r.abandoned || !r.started) && gt.state().championship.active()) {
+                log.push_back("championship abandoned");
+                gt.state().championship = Championship{};
+            }
+            ms.round_pending = gt.state().championship.active();
+        } else if (r.started) {
             a = gt.record_race(r.event.empty() ? r.race_code : r.event, place);
         }
         if (place >= 0) log.push_back("finished " + std::to_string(place + 1) + (a.money ? ": " + cr(a.money) : ""));
@@ -162,16 +167,19 @@ std::vector<std::string> on_result(const GameResult& r) {
     // (The rankings of licence tests, machine tests and free runs went in from the race screen
     // after each run, with their name entries, as the original's drivers do (gt_mode §17);
     // nothing is recorded from the result.)
-    // Endings (gt_mode §10): Beginner league complete -> short ending, Amateur or
-    // Professional complete -> long ending, each once.
-    if (r.mode == "go_race" && place == 0) {
+    // Endings (gt_mode §10), checked whenever the result opened the prize-car check (a race
+    // won, a championship won on points whatever its last round's place, a licence all gold;
+    // after the car_get check): Beginner league complete -> the short ending, then
+    // Amateur or Professional complete -> the long ending, each once; both can play.
+    if (a.prize_check) {
         GameState& st = gt.state();
         if (!st.ending_short_seen && gt.league_complete("beginner")) {
             st.ending_short_seen = true;
-            ms.movie = "stream/ending_short_full.pss";
-        } else if (!st.ending_long_seen && (gt.league_complete("amateur") || gt.league_complete("pro"))) {
+            ms.movies.push_back("stream/ending_short_full.pss");
+        }
+        if (!st.ending_long_seen && (gt.league_complete("amateur") || gt.league_complete("pro"))) {
             st.ending_long_seen = true;
-            ms.movie = "stream/ending_long_full.pss";
+            ms.movies.push_back("stream/ending_long_full.pss");
         }
     }
     if (a.license_obtained) {

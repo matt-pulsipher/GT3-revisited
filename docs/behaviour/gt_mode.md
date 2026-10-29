@@ -207,7 +207,9 @@ disc) are disabled until the S license is held (`GtMode::series_unlocked`).
 
 ### §3.4 What a race result records
 
-`GtMode::record_race` handles a single race:
+`GtMode::record_race` handles a single race. Only a race that was started counts:
+leaving from the pre-race menu without starting it records nothing, not even the race
+count (`GameResult::started`).
 
 1. Add one to the race count. A retired car (no place) stops here.
 2. Pay the place prize, places 1–6, every time the race is run. The event's six prizes
@@ -492,14 +494,17 @@ and license, and the Altezza races refuse it on regulation but show the license 
 
 ## §10 Endings
 
-After a GT-mode race **win**, the game checks the leagues (`on_result`):
+The endings are checked whenever a result opens the prize check (§23): a race win, a
+championship title (whatever the last round's place), a license turning all gold
+(`Award::prize_check`, `on_result`):
 
 - if the short ending has not been seen and the Beginner league is complete, it plays
   `stream/ending_short_full.pss` and marks it seen;
-- otherwise, if the long ending has not been seen and the Amateur or Professional
-  league is complete, it plays `stream/ending_long_full.pss` and marks it seen.
+- then, if the long ending has not been seen and the Amateur or Professional league is
+  complete, it plays `stream/ending_long_full.pss` and marks it seen.
 
-At most one ending plays per result, after the result pages. Each plays once per save.
+Both can play after one result, the short one first, after the result pages. Each plays
+once per save. A championship lost on points, or a round won on the way, checks nothing.
 
 A league is complete (`GtMode::league_complete`) when every series of that tier is
 won. For a championship series this means the championship's own code (round code
@@ -1408,6 +1413,31 @@ After a race, the ride car takes back the engine condition the race advanced (§
 and its dirt is set from the race (§13). Before the race the pre-race menu offers a free
 practice (§22.5).
 
+**Results on the race pages** (`widget_draws`; tests `gtmode_synth_race_and_prizes`,
+`gtmode_synth_championship`). Each placed result shows its best place as one of the hidden
+`mark_1` … `mark_6` images.
+
+- A series page has one `event_status_buttonNN` widget per race button: NN counts the
+  page's buttons in order (00 is the race information), and the widget's own box is not
+  used. It shows the best place under its button's own code, and, for a race, the course
+  logo (the hidden image named after the course). Each image keeps its own size and its
+  layout position, taken as if the button's top-left corner were the page's: on the disc's
+  pages the mark lands in the button's round slot (61 units in, also on the wider last
+  round of a championship) and the logo in its dark slot. A championship's own button
+  (SERIES RACE) shows the championship's result, which is only ever place 0 (§22.2), in
+  its laurel, and no logo. Buttons without the focus draw them at half brightness; they
+  fade in with the page.
+- A league page's `event_statusN` widget belongs to the item whose focus layer is `s_N`,
+  named after the series' first code (`Gsunday_e_0001`) or the championship's own code
+  (`Gtt_e_0500`). The codes from that one on, while they are result codes, each get a slot,
+  every image at its own size centered on the widget's height. With f the hidden `frame`'s
+  width and a `frame_arrow`'s (31 and 43 on the disc) and n codes: a series of races has a
+  `frame` and its mark per race, centered at x = c − n(f + 4)/2 + f/2 + i(f + 8) for the
+  widget's center c; a championship has its own `frame` and mark at L + f/2, with
+  L = c − (2f + (n − 1)a)/2, then from L + 2f a `frame_arrow` per round (its mark f/2 in,
+  over the arrow's disc) and a plain `frame` for the last round. These fade in with the
+  focus layer.
+
 ### §22.2 Championships
 
 A championship series has a `set_race_code_champ` item named after its own code
@@ -1429,10 +1459,15 @@ A championship series has a `set_race_code_champ` item named after its own code
    - gets the prize check for that code (§23).
 4. **Saving.** A championship in progress is saved between rounds, and a round's "Save
    game" saves a copy with that round in it (§12.3). Entering GT Mode
-   resumes it with the next round. Quitting the championship from a round ends it.
-   That round is not counted; only the engine condition the round advanced goes back
-   into the car (§13.1). A round that is not finished counts as a retirement:
-   the race is counted, but with no prize and no points for the player.
+   resumes it with the next round.
+5. **Leaving.** A round left with pause EXIT still counts: the race is counted, the
+   player gets no prize and no points, and every other car takes the points of its place
+   in the order (no one moves up). Answering yes to "Retire from championship?" ends the
+   championship: a round already run keeps its place, prize and race count; leaving a
+   round's pre-race menu records nothing for that round. Only the engine condition the
+   runs advanced goes back into the car (§13.1). The standings are dropped, so the title
+   needs a new championship from round 1. After the last round EXIT is locked
+   (`gtmode_synth_result_rules`).
 
 `gtmode_disc_championship` runs the five Altezza rounds with a win and with a loss.
 The beginner Altezza title pays a 10,000 Cr bonus (log: "Champion! bonus 10,000 Cr.").
@@ -1509,7 +1544,7 @@ Every set is examined each time:
 |---|---|
 | named exactly as the code being checked: a championship, endurance race or license set | the code is won (place 0); for a license set, all 8 tests gold |
 | `<series>_0000` (a non-championship series) | every race of that series is won |
-| `gtmode_beginner/amateur/pro/dirt/enduro_complete` | that league is complete (§10) |
+| `gtmode_beginner/amateur/pro/dirt/enduro_complete` | the code being checked is of that league (a `G…` code by `_e_`, `_n_` or `_h_`; `E…` endurance; `D…` rally; `GtMode::code_league`) and the league is complete (§10) |
 | `gtmode_complete` (the whole game) | the code being checked is a GT-mode code, and every GT-mode result code (gcf section 4: 364 on this disc) is won (`all_races_won`) |
 | `achieve_half`, `achieve_3_quoter`, `achieve_complete` | completion ≥ 0.5 / 0.75 / 1.0 (§4) |
 | `arcade_compulsory_complete` | all ten time trials cleared (§16) |

@@ -370,19 +370,24 @@ void Hud::draw_title(SDL_Renderer*, const HudData& d, const SDL_FRect* viewport)
     g_dx = g_dy = 0, g_s = 1;
     // The title (presentation §B3): the course name in capitals, sw_20 at 160 % in light grey,
     // squeezed to the row's width; FINISH at the same place.
+    // The name is game text (the course table's bytes): "Côte d'Azur" holds a Latin escape and a
+    // JIS quote, both drawn by the game font as GT3 draws them.
     const HudRow* title = hud_row(d.mode, HudPart::Title, 0, d.onboard ? 0 : 1);
     if (!title || d.intro_title.empty() || d.title_alpha <= 0 || !fonts_ok_) return;
-    const float w = text_width(d.intro_title, "sw_20", 1.6f);
-    const float sq = title->w > 0 && w > title->w ? title->w / w : 1.0f;
     text::TextStyle st;
-    if (text::GameFont* f = fonts_.resolve("sw_20", st)) {
-        st.scale_x = 1.6f * sq * vsx();
-        st.scale_y = 1.6f * vsy();
-        st.color = SDL_Color{208, 208, 208, Uint8(std::lround(255.0f * std::min(d.title_alpha, 1.0f)))};
-        st.align = text::HAlign::Center;
-        st.valign = text::VAlign::Baseline;
-        f->draw(ux(title->x), uy(title->y), d.intro_title, st);
-    }
+    text::GameFont* f = fonts_.resolve("sw_20", st);
+    if (!f) return;
+    const ByteSpan name(reinterpret_cast<const u8*>(d.intro_title.data()), d.intro_title.size());
+    st.scale = 1.6f;
+    const float w = f->measure_game(name, st).x;
+    const float sq = title->w > 0 && w > title->w ? title->w / w : 1.0f;
+    st.scale = 1.0f;
+    st.scale_x = 1.6f * sq * vsx();
+    st.scale_y = 1.6f * vsy();
+    st.color = SDL_Color{208, 208, 208, Uint8(std::lround(255.0f * std::min(d.title_alpha, 1.0f)))};
+    st.align = text::HAlign::Center;
+    st.valign = text::VAlign::Baseline;
+    f->draw_game(ux(title->x), uy(title->y), name, st);
 }
 
 void Hud::draw_pause(SDL_Renderer* r, int selected, const SDL_FRect* viewport, bool four_three) {

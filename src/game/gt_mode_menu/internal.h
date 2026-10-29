@@ -135,10 +135,11 @@ struct MenuState {
     int show_serial = 0;
     // Taken by the flow: effects to play on the next frames (one per frame, on a frame the page
     // itself plays none; they never hold the page's per-frame code), the popup to open
-    // after a consumed Finish (load_warning), the ending movie to play after the result screens.
+    // after a consumed Finish (load_warning), the ending movies to play after the result screens
+    // (in turn: the short one, then the long one).
     std::vector<std::string> sounds;
     std::string popup;
-    std::string movie;
+    std::vector<std::string> movies;
     // Code-drawn lists (lists.cpp).
     MapPointer map;
     WheelPin wheel_pin;

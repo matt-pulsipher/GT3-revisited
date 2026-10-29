@@ -134,6 +134,7 @@ menu::flow::GameResult RaceScreen::build_result() const {
         }
     }(r);
     r.abandoned = abandoned_;
+    r.started = !prerace_; // left from the pre-race menu (a free session ends back in it): no race
     [&](auto& res) {
         if constexpr (requires { res.records_done; }) res.records_done = any_run_recorded_;
         if constexpr (requires { res.prize_shown; }) res.prize_shown = prize_shown_;
@@ -174,8 +175,8 @@ menu::flow::GameResult RaceScreen::build_result() const {
                          res.license_medal, res.total_time, int(res.finished), res.failure.empty() ? "" : " failure ",
                          res.failure.c_str());
         }(r);
-    LOG_INFO("Race: result to the menus: %s finished %d position %d/%d best %.3f laps %zu",
-             r.mode.c_str(), int(r.finished), r.position, r.cars, r.best_lap, r.lap_times.size());
+    LOG_INFO("Race: result to the menus: %s started %d finished %d position %d/%d best %.3f laps %zu",
+             r.mode.c_str(), int(r.started), int(r.finished), r.position, r.cars, r.best_lap, r.lap_times.size());
     return r;
 }
 

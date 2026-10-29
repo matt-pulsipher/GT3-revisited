@@ -84,7 +84,13 @@ void install_gt_mode_menu() {
     h.take_popup = []() { return std::exchange(menu_state().popup, std::string()); };
     h.name_backspace = name_backspace;
     h.name_cursor = name_cursor;
-    h.take_movie = []() { return std::exchange(menu_state().movie, std::string()); };
+    h.take_movie = []() {
+        std::vector<std::string>& q = menu_state().movies;
+        if (q.empty()) return std::string();
+        std::string mv = std::move(q.front());
+        q.erase(q.begin());
+        return mv;
+    };
     h.attract_idle_frames = attract_idle_frames;
     h.attract_demo = attract_demo;
     h.on_arcade_result = on_arcade_result;

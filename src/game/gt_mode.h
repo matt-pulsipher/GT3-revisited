@@ -213,6 +213,9 @@ struct Award {
     bool champion = false;
     bool championship_over = false;
     int trophy = -1;           // championship won: the trophy picked (0..9, menu/champ_NN.prm)
+    // The result opened the prize-car check (a race won, a championship won, a licence all gold;
+    // gt_mode §23), which is also where the endings are checked (gt_mode §10).
+    bool prize_check = false;
     std::vector<int> new_cars; // garage indices of prize cars received
     std::vector<std::string> messages;
 };
@@ -392,6 +395,9 @@ public:
     // (M4.., M1.., MM..); not arcade (A...) or anything else. Only a check with such a
     // code can award the whole-game prize set (gtmode_complete).
     static bool gt_mode_code(const std::string& code);
+    // The league a checked code belongs to for the league prize keys: a G
+    // code by "_e_" / "_n_" / "_h_" ("beginner", "amateur", "pro"), E "end", D "dirt", else "".
+    static std::string code_league(const std::string& code);
     // Every GT-mode result slot (gcf section 4: 364 on this disc) won.
     bool all_races_won() const;
     // Prize cars refused since the last call because the garage was full (the

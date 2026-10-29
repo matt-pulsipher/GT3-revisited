@@ -25,6 +25,13 @@ void widget_draws(const MenuController& ctl, const Element& w, std::vector<menu:
     const std::string& cls = *w.widget_class;
     menu::flow::MenuSet::PageRef ref = ctl.page();
     const GtMode& gt = s->gt();
+    // The page layer holding widget `w` (the fade-in clock of what it draws).
+    auto layer_of = [&](const Element& e) {
+        for (size_t li = 0; li < ref.layout().layers.size(); ++li)
+            for (const Element& x : ref.layout().layers[li].widgets)
+                if (&x == &e) return int(li);
+        return -1;
+    };
     auto put = [&](const Element* e) {
         if (!e) return;
         menu::ElementDraw d;
@@ -80,47 +87,119 @@ void widget_draws(const MenuController& ctl, const Element& w, std::vector<menu:
         if (m != Medal::None) put(hidden_element(ref.layout(), std::string("cup_") + medal_name(m)));
         return;
     }
+    // Series race pages (gt_mode §22.1): "event_status_buttonNN" belongs
+    // to item NN of the page's button list (mbl order, 00 the race information); its own box is
+    // not used, nor a widget past the list. It shows the best result under the item's own code
+    // (a round, or the championship's "…_0500", place 0 only for a champion) as mark_<place>,
+    // then the course logo of a race (the hidden element named after its course; none for the
+    // championship, which has no race record), each at its layout position taken as if the
+    // button's top-left corner were the page's; half bright on the buttons without the focus.
+    if (starts(cls, "event_status_button")) {
+        const int n = std::atoi(cls.c_str() + 19);
+        SDL_FRect box, clip;
+        if (n <= 0 || n >= int(ctl.items().size())) return;
+        const MenuController::ItemState& it = ctl.items()[size_t(n)];
+        if (!it.flow || !ctl.item_box(n, box, &clip)) return;
+        auto put_on_button = [&](const Element* e) {
+            if (!e) return;
+            menu::ElementDraw d;
+            d.scene = ref.scene;
+            d.element = e;
+            d.has_box = true;
+            d.box = {box.x + e->x, box.y + box.h + e->y - menu::kMenuHeight, e->w, e->h};
+            d.has_clip = true;
+            d.clip = clip;
+            d.brightness = n == ctl.focus() ? 1.0f : 0.5f;
+            d.alpha = ctl.layer_fade_alpha(layer_of(w), *e);
+            d.z = w.z;
+            out.push_back(d);
+        };
+        const int best = gt.state().best_position(it.flow->name);
+        if (best >= 0 && best < 6) put_on_button(hidden_element(ref.layout(), "mark_" + std::to_string(best + 1)));
+        if (const data::Event* ev = gt.db().event(it.flow->name)) put_on_button(hidden_element(ref.layout(), ev->course));
+        return;
+    }
     if (cls == "event_status" || cls == "need_license") {
-        // "event_status7" / "need_license7" belong to the item whose focus layer is "s_7".
+        // League pages (gt_mode §22.1): "event_status7" / "need_license7"
+        // belong to the item whose focus layer is "s_7", named after the series' first code
+        // ("Gsunday_e_0001", or the championship's own "Gtt_e_0500").
         const std::string layer = "s_" + w.name.substr(12);
-        const RaceSeries* series = nullptr;
+        const MblItem* item = nullptr;
         if (ref.flow)
             for (const MblItem& it : ref.flow->items)
-                if (it.str80 == layer)
-                    for (const RaceSeries& sr : gt.data().catalog.series)
-                        if (sr.page == it.link) series = &sr;
-        if (!series || series->races.empty()) return;
+                if (it.str80 == layer) item = &it;
+        if (!item || item->name.size() < 4) return;
+        const std::string& name = item->name;
+        // Each element at its own size, centred on (x, the widget's centre), fading in with
+        // the focus layer.
+        const float cx = w.x + w.w * 0.5f, cy = w.y + w.h * 0.5f;
+        auto put_centred = [&](const Element* e, float x, float dz) {
+            if (!e) return;
+            menu::ElementDraw d;
+            d.scene = ref.scene;
+            d.element = e;
+            d.has_box = true;
+            d.box = {x - e->w * 0.5f, cy - e->h * 0.5f, e->w, e->h};
+            d.alpha = ctl.layer_fade_alpha(layer_of(w), *e);
+            d.z = w.z + dz;
+            out.push_back(d);
+        };
         if (cls == "need_license") {
-            auto r = gt.rules(series->races.front());
+            // The required licence of the series' first race (a championship's: its round 1).
+            std::string code = name;
+            if (code.back() == '0') ++code.back();
+            auto r = gt.rules(code);
             if (r && r->required_license > 0) {
                 std::string l = license_menu_id(License(r->required_license - 1));
-                put(hidden_element(ref.layout(), "lc_mark_" + (l == "d" ? std::string("r") : l)));
+                put_centred(hidden_element(ref.layout(), "lc_mark_" + (l == "d" ? std::string("r") : l)), cx, 0);
             }
             return;
         }
-        // One slot per race, 40 px apart, centred on the widget (the reference league pages:
-        // a black "frame" disc per race, its best-result mark over it).
-        std::vector<int> best;
-        if (series->championship())
-            best.push_back(gt.state().best_position(series->races.front().substr(0, series->races.front().size() - 2) + "00"));
-        else
-            for (const std::string& r : series->races) best.push_back(gt.state().best_position(r));
+        // The codes from the item's on (its last two digits counting up) while they are result
+        // slots; a championship (…_0500 / _0700 / _1000) is its own code, then its rounds.
+        const std::string prefix = name.substr(0, name.size() - 2);
+        const int first = std::atoi(name.c_str() + name.size() - 2);
+        const bool champ = name[name.size() - 4] != '0' || name[name.size() - 3] != '0';
+        std::vector<std::string> codes;
+        for (int k = first; k < 100; ++k) {
+            char two[4];
+            std::snprintf(two, sizeof two, "%02d", k);
+            if (std::find(gt.data().race_codes.begin(), gt.data().race_codes.end(), prefix + two) ==
+                gt.data().race_codes.end())
+                break;
+            codes.push_back(prefix + two);
+        }
+        if (codes.empty()) return;
         const Element* frame = hidden_element(ref.layout(), "frame");
-        const float cx = w.x + w.w * 0.5f, n = float(best.size());
-        for (size_t i = 0; i < best.size(); ++i) {
-            float x = cx + (float(i) - (n - 1) * 0.5f) * 40.0f;
-            auto put_at = [&](const Element* e) {
-                if (!e) return;
-                menu::ElementDraw d;
-                d.scene = ref.scene;
-                d.element = e;
-                d.has_box = true;
-                d.box = {x - e->w * 0.5f, w.y, e->w, e->h};
-                d.z = w.z + (e == frame ? 0 : 0.01f);
-                out.push_back(d);
-            };
-            put_at(frame);
-            if (best[i] >= 0 && best[i] < 6) put_at(hidden_element(ref.layout(), "mark_" + std::to_string(best[i] + 1)));
+        const Element* arrow = hidden_element(ref.layout(), "frame_arrow");
+        const float f = frame ? frame->w : 0, a = arrow ? arrow->w : 0, n = float(codes.size());
+        auto mark = [&](const std::string& code, float x) {
+            int best = gt.state().best_position(code);
+            if (best >= 0 && best < 6) put_centred(hidden_element(ref.layout(), "mark_" + std::to_string(best + 1)), x, 0.01f);
+        };
+        if (!champ) {
+            // A series of races: a frame each, f + 8 apart, the row's left edge n (f + 4) / 2
+            // left of the centre.
+            const float left = cx - n * (f + 4) * 0.5f;
+            for (size_t i = 0; i < codes.size(); ++i) {
+                const float x = left + f * 0.5f + float(i) * (f + 8);
+                put_centred(frame, x, 0);
+                mark(codes[i], x);
+            }
+            return;
+        }
+        // A championship: its own frame and mark, a frame's width of gap, an arrow frame per
+        // round (the mark over its disc, f / 2 in), the last round a plain frame; the row
+        // 2f + (n - 1) a wide about the centre.
+        const float left = cx - (2 * f + (n - 1) * a) * 0.5f;
+        put_centred(frame, left + f * 0.5f, 0);
+        mark(codes[0], left + f * 0.5f);
+        float x = left + 2 * f;
+        for (size_t k = 1; k < codes.size(); ++k) {
+            const bool last = k + 1 == codes.size();
+            put_centred(last ? frame : arrow, x + (last ? f : a) * 0.5f, 0);
+            mark(codes[k], x + f * 0.5f);
+            x += a;
         }
         return;
     }

@@ -1161,6 +1161,7 @@ Award GtMode::record_license_medal(const std::string& code, Medal medal, double 
     if (license_all_gold(lic) && a.medal == Medal::Gold) {
         std::string set = code.substr(0, 3) + "0000";
         a.new_cars = award_prizes(set);
+        a.prize_check = true;
     }
     return a;
 }
@@ -1287,7 +1288,7 @@ Award GtMode::record_race(const std::string& code, int place) {
     if (place == 0) ++state_.wins;
     int& best = state_.race_best.try_emplace(code, kNoPosition).first->second;
     best = std::min(best, place);
-    if (place == 0) a.new_cars = award_prizes(code);
+    if (place == 0) a.new_cars = award_prizes(code), a.prize_check = true;
     return a;
 }
 
@@ -1333,8 +1334,13 @@ Award GtMode::record_round(int place, const std::vector<int>& order) {
         for (int i = 1; i < n; ++i) finish.push_back(i);
         if (place >= 0) finish.insert(finish.begin() + std::min(place, n - 1), 0);
     }
+    // A round the player left (pause EXIT, not finished) still counts: every other car takes the
+    // points of its place in the order (no one moves up), the player none; a finished round
+    // scores every car.
+    const bool player_scores = place >= 0;
     for (size_t p = 0; p < finish.size() && p < 6; ++p)
-        if (finish[p] >= 0 && finish[p] < n) ch.points[size_t(finish[p])] += kChampPoints[p];
+        if (finish[p] >= 0 && finish[p] < n && (player_scores || finish[p] != 0))
+            ch.points[size_t(finish[p])] += kChampPoints[p];
     ++ch.next;
     if (ch.next >= int(ch.races.size())) {
         a.championship_over = true;
@@ -1353,6 +1359,7 @@ Award GtMode::record_round(int place, const std::vector<int>& order) {
             // The trophy_get presentation picks its trophy before car_get rolls the prize car.
             a.trophy = pick_trophy();
             a.new_cars = award_prizes(champ);
+            a.prize_check = true;
         }
         ch = Championship{};
     }
@@ -1437,11 +1444,14 @@ std::vector<int> GtMode::award_prizes(const std::string& code) {
             for (const std::string& rc : data_->race_codes)
                 if (rc.size() == n.size() && rc.compare(0, series.size(), series) == 0 && !ends(rc, "_0000"))
                     eligible = eligible && state_.best_position(rc) == 0;
-        } else if (n == "gtmode_beginner_complete") eligible = league_complete("beginner");
-        else if (n == "gtmode_amateur_complete") eligible = league_complete("amateur");
-        else if (n == "gtmode_pro_complete") eligible = league_complete("pro");
-        else if (n == "gtmode_dirt_complete") eligible = league_complete("dirt");
-        else if (n == "gtmode_enduro_complete") eligible = league_complete("end");
+        }
+        // A league's key only with a code of that league (by the code's class; the G
+        // codes' league by "_e_" / "_n_" / "_h_"): the league is complete.
+        else if (n == "gtmode_beginner_complete") eligible = code_league(code) == "beginner" && league_complete("beginner");
+        else if (n == "gtmode_amateur_complete") eligible = code_league(code) == "amateur" && league_complete("amateur");
+        else if (n == "gtmode_pro_complete") eligible = code_league(code) == "pro" && league_complete("pro");
+        else if (n == "gtmode_dirt_complete") eligible = code_league(code) == "dirt" && league_complete("dirt");
+        else if (n == "gtmode_enduro_complete") eligible = code_league(code) == "end" && league_complete("end");
         // The whole game: checked with a GT-mode code (not arcade), every GT-mode result won.
         else if (n == "gtmode_complete") eligible = gt_mode_code(code) && all_races_won();
         // Completion at or over a program constant: 0.5, 0.75, 1.0
@@ -1487,6 +1497,20 @@ bool GtMode::gt_mode_code(const std::string& code) {
         return code.size() > 1 && (code[1] == '4' || code[1] == '1' || code[1] == 'M');
     default:
         return false;
+    }
+}
+
+std::string GtMode::code_league(const std::string& code) {
+    if (code.empty()) return {};
+    switch (code[0]) {
+    case 'G':
+        if (code.find("_e_") != std::string::npos) return "beginner";
+        if (code.find("_n_") != std::string::npos) return "amateur";
+        if (code.find("_h_") != std::string::npos) return "pro";
+        return {};
+    case 'E': return "end";
+    case 'D': return "dirt";
+    default: return {};
     }
 }
 

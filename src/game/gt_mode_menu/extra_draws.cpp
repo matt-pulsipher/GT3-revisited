@@ -150,33 +150,15 @@ void draw_prize_reason(const PageRef& ref, const std::string& page, DrawList& ou
             }
 }
 
-// Series race pages: each race button is a frame that code fills with the
-// course logo (hidden element named after the event's course) and, in its
-// round slot, the best-result mark (hidden "mark_<place>").
+// Series race pages: the focused race's course name ("<course>_doc") in the page's text bar.
+// (Each button's best-result mark and course logo are its event_status_button widget's,
+// widget_art.cpp.)
 void draw_race_buttons(const MenuController& ctl, GtModeSession& s, const PageRef& ref, const std::string& page,
                        DrawList& out) {
     if (starts(page, "r/") && ref.flow) {
         for (int i = 0; i < int(ctl.items().size()); ++i) {
             const MenuController::ItemState& it = ctl.items()[size_t(i)];
             if (!it.flow || !it.element || it.flow->action != "set_race_code") continue;
-            SDL_FRect box, clip;
-            if (!ctl.item_box(i, box, &clip)) continue;
-            auto put = [&](const Element* el, SDL_FRect b) {
-                if (!el) return;
-                menu::ElementDraw d;
-                d.scene = ref.scene;
-                d.element = el;
-                d.has_box = true;
-                d.box = b;
-                d.has_clip = true;
-                d.clip = clip;
-                d.z = it.element->z + 0.01f;
-                out.push_back(d);
-            };
-            if (auto rules = s.gt().rules(it.flow->name))
-                if (const Element* logo = hidden_element(ref.layout(), rules->course))
-                    put(logo, {box.x + 3, box.y + 2, box.h * 1.3f, box.h - 4});
-            // The focused race's course name ("<course>_doc") in the page's text bar.
             if (i == ctl.focus())
                 if (auto rules = s.gt().rules(it.flow->name))
                     if (const Element* doc = hidden_element(ref.layout(), rules->course + "_doc"))
@@ -191,10 +173,6 @@ void draw_race_buttons(const MenuController& ctl, GtModeSession& s, const PageRe
                                     d.z = bar.z + 0.01f;
                                     out.push_back(d);
                                 }
-            int best = s.gt().state().best_position(it.flow->name);
-            if (best >= 0 && best < 6)
-                if (const Element* mark = hidden_element(ref.layout(), "mark_" + std::to_string(best + 1)))
-                    put(mark, {box.x + box.w - box.h + 2, box.y + 2, box.h - 4, box.h - 4});
         }
     }
 }

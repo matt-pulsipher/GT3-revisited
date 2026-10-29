@@ -459,7 +459,9 @@ void RaceScreen::draw_panel(App& app, const SDL_FRect& dst) {
     SDL_Renderer* r = app.renderer();
     switch (panel_) {
     case Panel::Records:
-        records_panel_.draw(r, hud_.fonts(), records_, record_names_, ascii(course_name_), dst);
+        // The course table's name is game text ("C\x81\xF4te d\xA1\xC7Azur").
+        records_panel_.draw(r, hud_.fonts(), records_, record_names_,
+                            text::game_text_to_utf8(course_name_, hud_.fonts().jis()), dst);
         break;
     case Panel::Logger:
         analyzer_.draw(r, dst);

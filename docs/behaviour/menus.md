@@ -824,7 +824,7 @@ ticking until gameplay returns (`waiting_for_game`). When gameplay returns
 4. **GT Mode results** go to the result handler (prizes, medals, odometer).
    Then, in order:
    - the queued presentations, one after another (§7.6);
-   - an ending movie, if one is due;
+   - the ending movies that are due, one after the other (§10 of the GT Mode page);
    - the next championship round, which starts straight away without
      returning to the menus;
    - otherwise the page the race was started from reopens.

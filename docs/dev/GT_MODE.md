@@ -245,9 +245,12 @@ Phase 2 additions:
   its value in the hidden `info` column.
 - **Image widgets** (no parts of their own; drawn from the page's hidden
   layer into the widget's box): license cups `disp_license_cup_<lic><n>` →
-  `cup_gold/silver/bronze`; league pages `event_status<N>` → `mark_<best
-  place>` of the series behind focus layer `s_<N>`, `need_license<N>` →
-  `lc_mark_<license>`; `car_logo` → the hidden element named after the car.
+  `cup_gold/silver/bronze`; league pages `event_status<N>` → the result row of
+  the item behind focus layer `s_<N>` (`frame` / `frame_arrow` slots with their
+  `mark_<best place>`, a championship's own slot first), `need_license<N>` →
+  `lc_mark_<license>`; series pages `event_status_buttonNN` → button NN's
+  `mark_<best place>` and course logo at their layout places from the button's
+  corner (gt_mode §22.1); `car_logo` → the hidden element named after the car.
 - **3D cars**: `car_render_*` widgets (dealer, garage, shops) and the
   prize presentation's `render_model` are drawn by the app
   (`screen_gtmode.cpp`) through `GtModeWidgetDrawer`, called by the menu
@@ -513,7 +516,8 @@ Completion push, batch 1 (systematic comparison with the reference captures):
   status page, race prizes), "No Limitations" in the race information, "0mph"
   start speed, "0 %" win ratio before any race, "114HP/6500rpm" and "0.0miles" on
   the garage page, marquee tickers entering from the right.
-- League pages: one black slot per race with its best-result mark.
+- League pages: one black slot per race with its best-result mark (since replaced by GT3's
+  own row layout, gt_mode §22.1).
 - Every car render is a showroom with its own `menu/showroom_<kind>.fbi` camera and
   lights (single, split, compulsory, dealer, garage, wheel, wheelshop, carwash,
   oilchange, buycar), read from the disc (`MenuModelRenderer::showroom_camera`);

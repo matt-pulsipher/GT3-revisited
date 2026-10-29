@@ -141,7 +141,7 @@ bool begin_race_game_save(const GameResult& r) {
     apply_condition(copy, r);
     if (r.car_dirt >= 0)
         if (GarageCar* ride = copy.state().ride_car()) ride->cond.dirt = float(std::clamp(r.car_dirt, 0.0, 0.8));
-    if (r.mode == "go_race" && copy.state().championship.active() && !r.abandoned) {
+    if (r.mode == "go_race" && copy.state().championship.active() && r.started) {
         std::vector<int> order;
         for (int o : r.order) order.push_back(o + 1);
         copy.record_round(r.finished && r.position > 0 ? r.position - 1 : -1, order);

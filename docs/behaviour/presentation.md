@@ -337,7 +337,10 @@ square of the linear ramp):
 | long | runs from rest under the race rules: standing-start races, license and machine tests from rest | 1.0 s to 5.0 s | 0.3 s | the last 1.0 s |
 | short | moving starts (rolling, flying), and the time trial, free run and free practice | 0.2 s to 2.2 s | 0.1 s | the last 0.3 s |
 
-Replays draw it whatever REPLAY OPTIONS ITEM says (`Hud::draw_title`). It is drawn
+Replays draw it whatever REPLAY OPTIONS ITEM says (`Hud::draw_title`). The name is the
+table's game text: only the letters a to z are made capitals, and accented letters and
+symbols keep their own glyphs (Côte d'Azur's ô is a Latin letter of the game font, its
+apostrophe a character of the kanji font), so it reads CôTE D’AZUR. It is drawn
 in sw_20 at 160 %, light gray (208, 208, 208) at the clock's opacity, centered on
 x 320 with its baseline at the layout's title place (y 160; 150 in the free
 practice). A name wider than the layout's title width is squeezed horizontally to

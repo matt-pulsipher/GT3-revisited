@@ -617,7 +617,8 @@ inline void add_gcf(std::map<std::string, Bytes>& files) {
     g.raw(0, idle);
     // Race codes (every GT-mode result slot) and their unlock level (1 = the S licence).
     g.section(4, {GcfWriter::entry("Gsyn_e_0001", {0}), GcfWriter::entry("Gsyn_e_0002", {0}),
-                  GcfWriter::entry("Gsynch_n_0501", {0}), GcfWriter::entry("Gsynch_n_0502", {0}),
+                  GcfWriter::entry("Gsynch_n_0500", {0}), GcfWriter::entry("Gsynch_n_0501", {0}),
+                  GcfWriter::entry("Gsynch_n_0502", {0}),
                   GcfWriter::entry("Gsynf_s_0001", {1})});
     // Arcade course lists: {course, -, s16 level +6, u32 length +8}.
     auto courses = [](const std::string& list, const std::vector<std::pair<std::string, int>>& cs) {
@@ -834,22 +835,41 @@ inline void add_gt_mode_menus(std::map<std::string, Bytes>& files) {
         .hidden("mark_2", {}, 0, 0, 30, 30)
         .hidden("lc_mark_b", {}, 0, 0, 30, 30);
     // A series page as on the disc: the race information item first, then the races (the
-    // focus hook's index from the stored race code counts on that order).
+    // focus hook's index from the stored race code counts on that order); per race button an
+    // event_status_buttonNN widget (NN = the item's index; the box unused, a widget past the
+    // list draws nothing) and the course logo and marks at the disc's places on a button.
     m.page("r/beginner/gsyn_e", kCancel, "r/beginner")
         .item("Gsyn_e_0002_info", "set_race_code_info", "00cmn/race_info", 1, 260, 250, 120, 20)
         .item("Gsyn_e_0001", "set_race_code", "r/beginner/gsyn_e_entry", 0, 40, 300, 200, 40)
         .item("Gsyn_e_0002", "set_race_code", "r/beginner/gsyn_e_entry", 0, 260, 300, 200, 40)
         .el("defaultLayer", "bar_text", {}, 0, 20, 640, 24)
-        .hidden("syn_ring", {}, 0, 0, 52, 36)
+        .widget("event_status1", "event_status_button01", "-", -72, 261, 32, 32)
+        .widget("event_status2", "event_status_button02", "-", -70, 211, 32, 32)
+        .widget("event_status3", "event_status_button03", "-", -70, 161, 32, 32)
+        .hidden("syn_ring", {}, 4, 413, 55, 42)
         .hidden("syn_ring_doc", "Synthetic Ring", 0, 0, 200, 20)
-        .hidden("mark_1", {}, 0, 0, 36, 36);
+        .hidden("mark_1", {}, 61, 412, 32, 32)
+        .hidden("mark_2", {}, 61, 412, 32, 32);
     m.page("r/beginner/gsyn_e_entry", kCancel, "r/beginner/gsyn_e").item("menu1", "go_race", {}, 2);
-    m.page("r/amateur", kCancel, "r/r").item("Gsynch_n_0501", {}, "r/amateur/gsynch_n");
+    // A championship's league item is named after the championship itself (as on the disc).
+    m.page("r/amateur", kCancel, "r/r")
+        .item("Gsynch_n_0500", {}, "r/amateur/gsynch_n")
+        .focus_layer("s_1")
+        .widget("event_status1", "event_status", "-", 200, 300, 120, 30, "s_1")
+        .hidden("frame", {}, 0, 0, 30, 30)
+        .hidden("frame_arrow", {}, 0, 0, 40, 30)
+        .hidden("mark_1", {}, 0, 0, 30, 30)
+        .hidden("mark_2", {}, 0, 0, 30, 30);
     m.page("r/amateur/gsynch_n", kCancel, "r/amateur")
         .item("Gsynch_n_0501_info", "set_race_code_info", "00cmn/race_info", 1)
-        .item("Gsynch_n_0500", "set_race_code_champ", "r/amateur/gsynch_n_entry")
-        .item("Gsynch_n_0501", "set_race_code", "r/amateur/gsynch_n_entry")
-        .item("Gsynch_n_0502", "set_race_code", "r/amateur/gsynch_n_entry");
+        .item("Gsynch_n_0500", "set_race_code_champ", "r/amateur/gsynch_n_entry", 0, 40, 300, 96, 40)
+        .item("Gsynch_n_0501", "set_race_code", "r/amateur/gsynch_n_entry", 0, 140, 300, 96, 40)
+        .item("Gsynch_n_0502", "set_race_code", "r/amateur/gsynch_n_entry", 0, 240, 300, 152, 40)
+        .widget("event_status1", "event_status_button01", "-", -72, 261, 32, 32)
+        .widget("event_status2", "event_status_button02", "-", -70, 211, 32, 32)
+        .widget("event_status3", "event_status_button03", "-", -70, 161, 32, 32)
+        .hidden("syn_ring", {}, 4, 413, 55, 42)
+        .hidden("mark_1", {}, 61, 412, 32, 32);
     m.page("r/amateur/gsynch_n_entry", kCancel, "r/amateur/gsynch_n").item("menu1", "go_race", {}, 2);
     m.page("r/pro", kCancel, "r/r").item("Gsynf_s_0001", {}, "r/pro/gsynf_s");
     m.page("r/pro/gsynf_s", kCancel, "r/pro").item("Gsynf_s_0001", "set_race_code", {});
