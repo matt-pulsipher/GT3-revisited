@@ -44,15 +44,6 @@ TEST(render_mip_chain_down_to_one_texel) {
     CHECK(w == 1 && h == 1);
 }
 
-TEST(render_mali_bifrost_by_device_name) {
-    // Bifrost: no background pipeline warm-up. Valhall and later (the Galaxy A15's G57) keep it.
-    for (const char* n : {"Mali-G52", "Mali-G52 MC2", "Mali-G31", "Mali-G51", "Mali-G71", "Mali-G72", "Mali-G76 MP12"})
-        CHECK(mali_bifrost(n));
-    for (const char* n : {"Mali-G57", "Mali-G510", "Mali-G610 MC6", "Mali-G715-Immortalis MC11", "Mali-G5", "Mali-G",
-                          "Mali-T880", "Adreno (TM) 610", "PowerVR B-Series BXM-8-256", "", "Mali-G52x"})
-        CHECK(!mali_bifrost(n));
-}
-
 TEST(render_half_size_averages_each_block) {
     // Per channel, alpha too, rounded to nearest: (1 + 2 + 3 + 4 + 2) / 4 = 3.
     const u32 px[4] = {0x01FF0001u, 0x02000002u, 0x03FF0003u, 0x04000004u};

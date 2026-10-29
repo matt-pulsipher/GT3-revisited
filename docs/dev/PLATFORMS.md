@@ -143,6 +143,30 @@ Useful checks: `adb emu sensor set acceleration x:y:z` for tilt steering,
 for orientation, `logcat --pid=$(pidof org.gt3revisited.gt3r)` for the
 engine log ("Race perf" lines every 3 s while racing).
 
+GPU driver crashes on phones we don't have: Firebase Test Lab's catalogue
+(`gcloud firebase test android models list`) has older Mali phones, e.g. the
+Motorola G20 (`java`, Android 11, Mali-G52, driver r25p1, the phone of public
+issue 7), the Galaxy A10 (`a10`, Mali-G71), the Galaxy S9 (`starlte`,
+Mali-G72) and the Galaxy Tab A8 (`gta8wifi`, Mali-G52 with a newer driver).
+Start-up crashes need no disc: a Robo test of the APK reproduces them, and the
+run's results bucket holds the tombstones and the logcat (Robo relaunches a
+crashed app once).
+
+```bash
+gcloud firebase test android run --type robo --app app-debug.apk \
+    --device model=java,version=30 --timeout 120s
+```
+
+To try several variants (shaders, pipeline state) in one run, use an
+instrumentation test with the test orchestrator (`--use-orchestrator`): it
+starts the game in a fresh process for each test, so a driver crash fails only
+that test. Each test sets environment variables (`android.system.Os.setenv`),
+starts `GT3Activity` and waits for a file the game writes once it gets far
+enough. A forked child process per variant does not work: the Mali driver's
+memory is not copied into the child, which then crashes in the driver whatever
+it builds. This is how the Mali-G52 crash was traced to the `noperspective`
+qualifier ([Rendering](RENDERING.md)).
+
 ### iOS
 
 CMake's own iOS support with the Xcode generator (needed: it signs the app and compiles its

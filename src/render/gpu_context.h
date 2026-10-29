@@ -24,7 +24,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -118,13 +117,7 @@ public:
     // Creates the pipelines races and menus draw with on a background thread, ahead of their
     // first use: one takes ~65 ms on a Galaxy A15 (Mali), a stutter the first time each blend /
     // cull / write combination appears in a session.
-    // Mali Bifrost GPUs (mali_bifrost), whose shader compiler crashed in the background warm-up,
-    // build them on the render thread instead: warm_step, one after each presented frame (the
-    // menus lag for a few seconds after start-up, races don't), and finish_warming, the rest at
-    // once in a race's load. Both do nothing on other GPUs.
     void warm_pipelines();
-    void warm_step();
-    void finish_warming();
     // no_mips: the full-size image only (GS MXL 0), linear, no anisotropy.
     SDL_GPUSampler* sampler(bool clamp_u, bool clamp_v, bool no_mips = false) const {
         return samplers_[(clamp_u ? 1 : 0) | (clamp_v ? 2 : 0) | (no_mips ? 4 : 0)];
@@ -154,7 +147,6 @@ private:
     void release_samplers();
     SDL_GPUGraphicsPipeline* create_pipeline(const PipelineKey& key);
     bool build_pipeline(const PipelineKey& key); // into pipelines_ unless there; true when built
-    void warm_on_render_thread(bool all);         // warm_step (one) / finish_warming (all)
     void stop_warming();
     void release_pipelines();
 
@@ -180,11 +172,6 @@ private:
     std::thread warm_thread_;
     std::atomic<bool> warm_stop_{false};
     bool warm_ = false; // warm_pipelines was asked for (again after an MSAA change)
-    bool one_compile_thread_ = false; // pipelines only on the render thread (mali_bifrost)
-    std::vector<PipelineKey> render_thread_keys_; // its warm-up still to go through
-    size_t render_thread_next_ = 0;
-    int render_thread_made_ = 0;
-    u64 render_thread_ns_ = 0;
     struct TextureKey {
         u32 width, height;
         u64 hash[2]; // two independent 64-bit hashes of the texels
@@ -197,13 +184,6 @@ private:
     std::map<TextureKey, SDL_GPUTexture*> textures_by_key_;
     std::map<SDL_GPUTexture*, SharedTexture> shared_textures_;
 };
-
-// A Vulkan device name ("Mali-G52", "Mali-G76 MP12") of Arm's Bifrost generation: G31, G51,
-// G52, G71, G72, G76. A Mali-G52 driver (Android 11, Unisoc T610) crashed in its shader
-// compiler (a null read) building a warm-up pipeline on the second thread, likely because the
-// render thread was compiling its own at the same time, so these build pipelines on the render
-// thread only. A name this misses keeps the warm-up.
-bool mali_bifrost(std::string_view device_name);
 
 // Mip chain of a w x h texture: levels down to 1 x 1, each side halving to no less than 1.
 u32 mip_levels(u32 w, u32 h);

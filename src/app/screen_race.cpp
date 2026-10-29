@@ -296,9 +296,6 @@ void RaceScreen::init(App& app) {
 }
 
 void RaceScreen::begin(App& app) {
-    // Mali Bifrost: what the render thread's warm-up has not built yet, in the load rather than
-    // as stutters in the race.
-    if (app.gpu()) app.gpu()->finish_warming();
     if (!preset_.replay.empty()) {
         std::vector<ReplayFile> files = list_replays(replay_dir(app));
         for (const ReplayFile& f : files)

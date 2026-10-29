@@ -664,7 +664,6 @@ SDL_AppResult App::iterate() {
                                  window_);
         return SDL_APP_FAILURE;
     }
-    if (gpu_) gpu_->warm_step(); // Mali Bifrost: the warm-up, one pipeline per frame (after present_ms)
     if (dyn_on_) {
         float s = dyn_.frame(frame_s * 1000.0, present_ms);
         if (const double c = dyn_cycle_s(); c > 0) { // testing: down to 50% and back up every c seconds

@@ -181,7 +181,10 @@ As on the VU, the formula is evaluated per vertex in `model.vert` (lights and
 material in vertex uniform slot 1, `VertexLighting`), with GT3's infinite
 viewer (H from the view's z axis, not the direction to each vertex), clamped per
 vertex to 0..255/128 and interpolated across the triangle like GS Gouraud shading:
-linearly in screen space (`noperspective`). Highlights are as soft as the original's on its
+linearly in screen space (the vertex shader writes the values times the clip w and
+the fragment shader multiplies them by `gl_FragCoord.w`, which is what `noperspective`
+does: a Mali-G52 driver's shader compiler crashed on that qualifier). Highlights are as
+soft as the original's on its
 coarse meshes, and the long course strips keep the original's shading.
 
 The road sheen (`Material::specular_local`, chunk kind 4) runs GT3's specular-only
@@ -235,18 +238,23 @@ background thread at start-up (about 5 s on the A15, ~14 s on the Moto, while th
 and title play): the frame's own combinations, then the same for transparent pictures (coverage:
 car models on the race's gap pop-ups and results bar, the online pickers' cars), whose first
 mid-race pop-up otherwise stalled the Moto for 0.5 s. Others are still created on first use, and
-the log names each one ("3D pipeline built on first use"). Mali Bifrost GPUs (G31, G51, G52,
-G71, G72, G76, by Vulkan device name: `mali_bifrost`) warm up on the render thread instead: a
-Mali-G52 driver (Android 11) crashed in its shader compiler during the background warm-up,
-likely compiling on both threads at once (SDL's 2D renderer builds its own pipelines on first
-draw). `warm_step` builds one pipeline after each presented frame from start-up (the menus lag
-for a few seconds, ~0.1 s a frame), and a race's load (`finish_warming`) builds whatever is
-left, so races never compile. On Android the compiling thread is named after the key while
-the driver works ("pipe" + blend, cull, depth write, lines, coverage, alpha, "x" MSAA, e.g.
-`pipe100000x4`), so a crash report names the pipeline. The start-up log line "3D renderer: GPU
-…, driver …" gives the device name and driver version. There are eight samplers: the
-`clamp_u`/`clamp_v` combinations (otherwise repeat), each with mipmaps or without
-(`scene::Texture::no_mips`: the full-size image only, no anisotropy; the tyres).
+the log names each one ("3D pipeline built on first use"). On Android the compiling thread is
+named after the key while the driver works ("pipe" + blend, cull, depth write, lines, coverage,
+alpha, "x" MSAA, e.g. `pipe100000x4`), so a crash report names the pipeline, and the start-up
+log line "3D renderer: GPU …, driver …" gives the device name and driver version.
+
+A Mali-G52 driver (r25p1, Android 11: Moto G20, realme C21Y) crashed in its shader compiler
+(a null read in `cmpbe_v2_compile_multiple_shaders`) on the first pipeline it built, on any
+thread, at any MSAA level. Tried one by one on a Moto G20 (Firebase Test Lab, see
+[Platforms](PLATFORMS.md)): the crash needs `noperspective` varyings whose values the vertex
+shader computes (the lit colour and fog). The same shaders without the qualifier, constant
+`noperspective` outputs and the 0.2.0 shaders all compiled; optimised or inlined SPIR-V, no
+`discard`, no grade pass and 1x MSAA still crashed. The model shaders now make those values
+screen-linear by hand (above), and the background warm-up builds all 72 pipelines there.
+
+There are eight samplers: the `clamp_u`/`clamp_v` combinations (otherwise repeat), each with
+mipmaps or without (`scene::Texture::no_mips`: the full-size image only, no anisotropy; the
+tyres).
 `texture = -1` binds a 1×1 white texture.
 
 Out-of-range indices are dropped on upload. A primitive's `index_count` is

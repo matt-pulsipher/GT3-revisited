@@ -6,8 +6,12 @@ layout(location = 0) in vec3 v_normal;
 layout(location = 1) in vec2 v_uv;
 layout(location = 2) in vec4 v_color;
 layout(location = 3) in vec3 v_world;
-layout(location = 4) in noperspective vec3 v_lit; // GT3 lighting factor, per vertex (model.vert)
-layout(location = 5) in noperspective float v_fog; // GT3 fog amount, per vertex (model.vert)
+// GT3's lighting factor and fog amount per vertex, times the clip w (model.vert): with
+// gl_FragCoord.w (1 / w), interpolated linearly in screen space like the GS.
+layout(location = 4) in vec3 v_lit_w;
+layout(location = 5) in float v_fog_w;
+vec3 v_lit;
+float v_fog;
 
 layout(set = 2, binding = 0) uniform sampler2D u_tex;
 layout(set = 2, binding = 1) uniform samplerCube u_env; // car reflections (env_ground.w = 1: valid)
@@ -231,6 +235,8 @@ void shade() {
 }
 
 void main() {
+    v_lit = v_lit_w * gl_FragCoord.w;
+    v_fog = v_fog_w * gl_FragCoord.w;
     shade();
     // GT3's reflection map is a PSMCT16 frame buffer: each write keeps c8 >> 3 (read back as
     // c5 << 3).

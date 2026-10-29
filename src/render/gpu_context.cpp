@@ -89,7 +89,6 @@ bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
     const char* driver = SDL_GetStringProperty(device_props, SDL_PROP_GPU_DEVICE_DRIVER_INFO_STRING, nullptr);
     if (!driver) driver = SDL_GetStringProperty(device_props, SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING, "");
     LOG_INFO("3D renderer: GPU %s%s%s", gpu_name, *driver ? ", driver " : "", driver);
-    one_compile_thread_ = mali_bifrost(gpu_name);
     // The 2D renderer claims the window and owns the swapchain (a headset: offscreen, it draws
     // into the session's canvases and the headset sets the pace).
     SDL_Window* target = window;
@@ -307,11 +306,6 @@ std::vector<PipelineKey> warm_keys() {
 void GpuContext::warm_pipelines() {
     stop_warming();
     warm_ = true;
-    if (one_compile_thread_) { // on the render thread instead: warm_step, finish_warming
-        render_thread_keys_ = warm_keys();
-        render_thread_next_ = 0, render_thread_made_ = 0, render_thread_ns_ = 0;
-        return;
-    }
     warm_stop_ = false;
     warm_thread_ = std::thread([this, keys = warm_keys()] {
         const u64 t0 = SDL_GetTicksNS();
@@ -322,25 +316,6 @@ void GpuContext::warm_pipelines() {
         }
         LOG_INFO("3D pipelines warmed: %d in %.0f ms", made, double(SDL_GetTicksNS() - t0) / 1e6);
     });
-}
-
-void GpuContext::warm_step() { warm_on_render_thread(false); }
-
-void GpuContext::finish_warming() { warm_on_render_thread(true); }
-
-void GpuContext::warm_on_render_thread(bool all) {
-    if (render_thread_keys_.empty()) return;
-    const u64 t0 = SDL_GetTicksNS();
-    while (render_thread_next_ < render_thread_keys_.size()) {
-        const bool built = build_pipeline(render_thread_keys_[render_thread_next_++]);
-        render_thread_made_ += built;
-        if (built && !all) break; // one compile per frame (those built on first use cost nothing)
-    }
-    render_thread_ns_ += SDL_GetTicksNS() - t0;
-    if (render_thread_next_ < render_thread_keys_.size()) return;
-    LOG_INFO("3D pipelines warmed on the render thread%s: %d in %.0f ms", all ? " (race load)" : "",
-             render_thread_made_, double(render_thread_ns_) / 1e6);
-    render_thread_keys_.clear();
 }
 
 bool GpuContext::build_pipeline(const PipelineKey& key) {
@@ -590,19 +565,6 @@ SDL_GPUBuffer* Uploader::buffer(SDL_GPUBufferUsageFlags usage, const void* data,
     if (!b) return nullptr;
     pending_.push_back({b, nullptr, stage(data, size), size, 0, 0, 0, false});
     return b;
-}
-
-bool mali_bifrost(std::string_view name) {
-    constexpr std::string_view prefix = "Mali-G";
-    if (name.substr(0, prefix.size()) != prefix) return false;
-    int model = 0;
-    size_t i = prefix.size();
-    for (; i < name.size() && i < prefix.size() + 4 && name[i] >= '0' && name[i] <= '9'; ++i)
-        model = model * 10 + (name[i] - '0');
-    if (i == prefix.size() || (i < name.size() && name[i] != ' ')) return false;
-    for (int m : {31, 51, 52, 71, 72, 76})
-        if (model == m) return true;
-    return false;
 }
 
 u32 mip_levels(u32 w, u32 h) {

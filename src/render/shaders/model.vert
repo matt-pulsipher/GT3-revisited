@@ -42,12 +42,18 @@ layout(location = 0) out vec3 v_normal;
 layout(location = 1) out vec2 v_uv;
 layout(location = 2) out vec4 v_color;
 layout(location = 3) out vec3 v_world;
-// GT3 lighting factor (texel or 1 x this), per vertex. The GS interpolates Gouraud colours
-// linearly in screen space, not perspective-correct.
-layout(location = 4) out noperspective vec3 v_lit;
-// GT3's fog amount (1 - F / 255), per vertex from the view depth W like the VU's transform:
-// F = trunc(b' + 0.1 + (255 - b') min(W, A) / W), b' = 255 b; the GS interpolates it linearly.
-layout(location = 5) out noperspective float v_fog;
+// GT3's lighting factor (texel or 1 x this) and fog amount, per vertex. The GS interpolates both
+// linearly in screen space, not perspective-correct: they go out times the clip w, and
+// model.frag multiplies them by gl_FragCoord.w (1 / w), which turns the GPU's perspective-correct
+// interpolation into a linear one in screen space, clipped triangles included. That is what
+// noperspective does, but the shader compiler of a Mali-G52 driver (r25p1) crashed on it.
+layout(location = 4) out vec3 v_lit_w;
+layout(location = 5) out float v_fog_w;
+
+vec3 v_lit;
+// 1 - F / 255, from the view depth W like the VU's transform: F = trunc(b' + 0.1 +
+// (255 - b') min(W, A) / W), b' = 255 b.
+float v_fog;
 
 void main() {
     gl_Position = u.mvp * vec4(a_pos, 1.0);
@@ -119,4 +125,6 @@ void main() {
         }
         v_lit = clamp(lit * l.mat_diffuse.w, 0.0, 255.0 / 128.0) * l.mat_emission.w;
     }
+    v_lit_w = v_lit * gl_Position.w;
+    v_fog_w = v_fog * gl_Position.w;
 }
