@@ -239,6 +239,38 @@ TEST(region_disc_money_from_data) {
     CHECK(bare.prize_prefix == "\xBE\xDE\xB6\xE2");
 }
 
+// Any region's disc: the setting menu's part names (realtime text group DATABASEPARTS, 80
+// slots) in the language, else the program's built-in texts: the NTSC-J disc's file lacks 26
+// slots (its dirt tyres among them), and without the file every slot is the program's.
+TEST(region_disc_part_texts) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    const RegionData rd = vfs.region();
+    const char* const kDirt = "\xA5\xC0\xA1\xBC\xA5\xC8\xA5\xBF\xA5\xA4\xA5\xE4"; // the program's dirt tyres
+    for (Language lang : rd.languages()) {
+        vfs.set_language(lang);
+        game::GtData d;
+        CHECK(d.load([&](const std::string& p) { return vfs.read(p); }));
+        CHECK(d.part_texts.size() == 80);
+        const char* muffler = "Muffler/Sports";
+        if (lang == Language::JP) muffler = "\xA5\xB9\xA5\xDD\xA1\xBC\xA5\xC4\xA5\xDE\xA5\xD5\xA5\xE9\xA1\xBC";
+        else if (lang == Language::FR) muffler = "Silencieux/ Sport";
+        else if (lang == Language::IT) muffler = "Marmitta/Tipo Sport";
+        else if (lang == Language::SP) muffler = "Silenciador/Sport";
+        if (lang != Language::GR) CHECK(d.part_texts["PTEXT_MUFFLER_1"] == muffler);
+        if (lang == Language::JP) CHECK(d.part_texts["PTEXT_TIRE_DIRT"] == kDirt);
+        else if (lang == Language::US || lang == Language::BR) CHECK(d.part_texts["PTEXT_TIRE_DIRT"] == "Dirt Racing Tires");
+    }
+    game::GtData bare;
+    CHECK(bare.load([&](const std::string& p) -> std::optional<Bytes> {
+        if (p == "text/realtime.dat") return std::nullopt;
+        return vfs.read(p);
+    }));
+    CHECK(bare.part_texts.size() == 80 && bare.part_texts["PTEXT_TIRE_DIRT"] == kDirt);
+    CHECK(bare.part_texts["PTEXT_MUFFLER_1"] == "\xA5\xDE\xA5\xD5\xA5\xE9\xA1\xBC\xA1\xBF\xA5\xB9\xA5\xDD\xA1\xBC\xA5\xC4");
+}
+
 // A PAL disc's events carry the US database's medal times (+0x1C4 .. +0x1CF; races run at 60 Hz on every disc) and
 // otherwise the PAL database's own bytes; the other discs keep their own records (their times are the US ones already).
 TEST(region_us_medal_times) {

@@ -1370,6 +1370,47 @@ TEST(gtmode_menu_disc_settings_sliders) {
     CHECK(spec.has_value());
 }
 
+// Change Parts (public issue 86): each category's rows name the fitted parts; a part change
+// on a chg/ page shows on its row at once.
+TEST(gtmode_menu_disc_change_parts_rows) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    set_env("GT3R_GTMODE_SAVE", "/nonexistent-gt3r-test/gtmode.sav");
+    set_env("GT3R_GTMODE_NOSAVE", "1");
+    game::install_gt_mode_menu();
+    Vfs vfs(&disc->volume());
+    GameFlow title(vfs_reader(vfs), "US");
+    title.start();
+    settle(title);
+    game::GtModeSession* s = game::gt_mode_session();
+    CHECK(s != nullptr);
+    if (!s) return;
+    game::GtMode& gt = s->gt();
+    gt.state().credits = 5000000;
+    CHECK(gt.buy_car("lancer_evo6_tommi_gsr_opt_00") == 0);
+    for (int g : {38, 39, 9, 45})
+        if (gt.buy_part(g)) gt.fit_part(g);
+    CHECK(game::begin_setting(""));
+    GameFlow f(vfs_reader(vfs), "US");
+    f.start("setting", "root");
+    settle(f);
+    choose(f, "item1");
+    CHECK(f.controller()->page_name() == "change_parts");
+    CHECK(f.controller()->set_focus("item3")); // Engine
+    settle(f);
+    CHECK(widget_text(f, "parts_eng_muffler") == "Muffler/Racing" && widget_text(f, "parts_eng_computer") == "Sports");
+    CHECK(widget_text(f, "parts_eng_na_tune") == "N/A" && widget_text(f, "parts_eng_port_polish") == "Installed");
+    CHECK(widget_text(f, "parts_eng_engine_balance") == "-" && widget_text(f, "parts_eng_displacement") == "-");
+    choose(f, "item3");
+    CHECK(f.controller()->page_name() == "chg/change_eng");
+    choose(f, "status_box_eng1");
+    CHECK(f.controller()->page_name() == "chg/change_eng_muffler");
+    choose(f, "parts3"); // the owned semi-racing muffler, fitted at once
+    press(f, MenuKey::Cancel);
+    CHECK(f.controller()->page_name() == "chg/change_eng");
+    CHECK(widget_text(f, "parts_eng_muffler") == "Muffler/Semi-racing");
+}
+
 TEST(gtmode_menu_disc_attract_mode) {
     Disc* disc = test::test_disc();
     if (!disc) SKIP("needs GT3R_DISC");

@@ -861,6 +861,18 @@ it at once (§6.3) and saves. Items for goods the car does not own are disabled.
 `attach_*` marks show what is fitted. A stage-0 item also counts as fitted when the
 car has its stock part.
 
+**Part rows.** On Change Parts and the `chg/` category pages, each row names the part
+fitted in its slot, in the game's language (the part-name texts of `text/realtime.dat`;
+a name the file leaves empty or lacks falls back to the game's built-in text). Stock
+parts read "Normal", "N/A" or "-", and engine works that are done read "Installed". A
+few rows follow the car:
+
+- Turbo: "N/A" on a car without a turbo until a turbo kit is fitted.
+- Intercooler: "-" without a turbo.
+- Driveshaft: "-" on FF, MR and RR cars.
+- AYC: "Installed" when the AYC limited-slip is fitted, else "N/A".
+- Tires, on a dirt event: the dirt tires when the car owns them, else "----".
+
 **Quirks kept.** The front rebound slider is stored but has no effect on the car,
 because the physics reads the front second damper stage from the bump words. The
 drivetrain-split word is stored but ignored by the physics.

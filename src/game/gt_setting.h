@@ -39,6 +39,13 @@ bool slider_set(const GtMode& gt, const GarageCar& real, GarageCar& work, const 
 std::optional<std::string> setting_text(const GtMode& gt, const GarageCar& real, const GarageCar& work,
                                         const std::string& widget_class);
 
+// Text of a part row of the change-parts pages ("parts_eng_muffler" -> "Muffler/Sports",
+// GtData::part_texts; gt_mode §14), "----" without a car. `dirt_event`: the menu's event needs
+// dirt tyres (the tyre rows then show the dirt tyres when owned, else "----"). nullopt = not a
+// part row class.
+std::optional<std::string> setting_parts_text(const GtMode& gt, const GarageCar* car, const std::string& widget_class,
+                                              bool dirt_event);
+
 // Is the setting behind a slider item unlocked by the car's fitted parts?
 bool slider_enabled(const GtMode& gt, const GarageCar& real, const std::string& item);
 

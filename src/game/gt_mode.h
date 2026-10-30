@@ -126,6 +126,11 @@ public:
     // or the NTSC-J disc's file, which has no such key) the program's built-in default, read
     // from CORE.GT3 (the kanji for prize money in every release).
     std::string prize_prefix;
+    // The part names of the setting menu's part rows (gt_mode §14), game text by slot of the
+    // realtime text group DATABASEPARTS ("PTEXT_MUFFLER_1" -> "Muffler/Sports"): the language's
+    // text/realtime.dat value, else the program's built-in default (the NTSC-J disc's file
+    // lacks 26 of the 80 slots).
+    std::map<std::string, std::string> part_texts;
     const PrizeSet* prize_set(const std::string& name) const;
     // A prize candidate as the car_get roll sees it in the game's language (docs/dev/GT_MODE.md "Language",
     // prize_car_label): a swapped label has no fixed colour.

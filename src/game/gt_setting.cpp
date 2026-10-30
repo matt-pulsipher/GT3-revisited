@@ -304,6 +304,74 @@ std::optional<std::string> setting_text(const GtMode& gt, const GarageCar& real,
     return dash;
 }
 
+namespace {
+
+// The text slot (DATABASEPARTS "PTEXT_<name>") of each goods on the part rows: the program's
+// goods name table (the same in every release). Stage-0 goods mostly read "Normal",
+// "N/A" or "-", the engine works "Installed".
+const char* const kGoodsText[kGoodsCount] = {
+    "NORMAL", "BRAKE_SP", "NOTHING", "EQUIP", "NORMAL", "CLUTCH_1", "CLUTCH_2", "CLUTCH_3", "COMPUTER_NORMAL",
+    "COMPUTER_SPORTS", "NO_MODIFY", "MODIFY", "MODIFY", "NO_MODIFY", "EQUIP", "NORMAL", "FLYWHEEL_1", "FLYWHEEL_2",
+    "FLYWHEEL_3", "NORMAL", "GEAR_1", "GEAR_2", "GEAR_3", "NORMAL", "INTERCOOLER_1", "INTERCOOLER_2", "NO_MODIFY",
+    "STAGE_1", "STAGE_2", "STAGE_3", "NORMAL", "LSD_1", "LSD_2", "LSD_3", "LSD_4", "LSD_5", "NORMAL", "MUFFLER_1",
+    "MUFFLER_2", "MUFFLER_3", "NOTHING", "STAGE_1", "STAGE_2", "STAGE_3", "NO_MODIFY", "MODIFY", "NORMAL",
+    "PROPELLERSHAFT_1", "NO_MODIFY", "MODIFY", "NORMAL", "SUSPENSION_1", "SUSPENSION_2", "SUSPENSION_3", "NO_EQUIP",
+    "EQUIP", "TIRE_NORMAL", "TIRE_SPORTS", "TIRE_SUPER_HARD", "TIRE_HARD", "TIRE_MEDIUM_HARD", "TIRE_MEDIUM",
+    "TIRE_MEDIUM_SOFT", "TIRE_SOFT", "TIRE_SUPER_SOFT", "TIRE_CONTROL", "TIRE_DIRT", "TIRE_NORMAL", "TIRE_SPORTS",
+    "TIRE_SUPER_HARD", "TIRE_HARD", "TIRE_MEDIUM_HARD", "TIRE_MEDIUM", "TIRE_MEDIUM_SOFT", "TIRE_SOFT",
+    "TIRE_SUPER_SOFT", "TIRE_CONTROL", "TIRE_DIRT", "NORMAL", "STAGE_1", "STAGE_2", "STAGE_3", "STAGE_4", "NOTHING",
+    "EQUIP", "NORMAL", "CONTROL",
+};
+
+} // namespace
+
+std::optional<std::string> setting_parts_text(const GtMode& gt, const GarageCar* car, const std::string& cls,
+                                              bool dirt_event) {
+    // Each row's parts table (the program has one text routine per class).
+    struct R { const char* cls; int table; };
+    static const R rows[] = {
+        {"parts_sus_s_kit", 18},      {"parts_sus_b_kit", 0},          {"parts_sus_b_balance", 1},
+        {"parts_eng_muffler", 20},    {"parts_eng_computer", 10},      {"parts_eng_na_tune", 11},
+        {"parts_eng_port_polish", 7}, {"parts_eng_engine_balance", 8}, {"parts_eng_displacement", 9},
+        {"parts_eng_turbine", 12},    {"parts_eng_inter_cooler", 19},  {"parts_drv_mission", 17},
+        {"parts_drv_clutch", 15},     {"parts_drv_fly", 14},           {"parts_drv_lsd", 21},
+        {"parts_drv_shaft", 16},      {"parts_tir_f", 28},             {"parts_tir_r", 29},
+        {"parts_oth_asm_s", 23},      {"parts_oth_tcs_s", 22},         {"parts_oth_vcd_s", 13},
+        {"parts_oth_weight_r", 4},    {"parts_oth_ayc_s", 21},
+    };
+    int table = -1;
+    for (const R& r : rows)
+        if (cls == r.cls) table = r.table;
+    if (table < 0) return std::nullopt;
+    const std::string dash = "----";
+    if (!car) return dash;
+    auto text = [&](const char* slot) {
+        auto it = gt.data().part_texts.find(std::string("PTEXT_") + slot);
+        return it != gt.data().part_texts.end() ? it->second : std::string();
+    };
+    auto name = [&](int goods) { return goods >= 0 && goods < kGoodsCount ? text(kGoodsText[goods]) : std::string(); };
+    // The fitted part's goods: its record's stage (+0x10); the stock goods without a record.
+    auto fitted = [&](int t) {
+        int g = goods_id(t, b8(part_rec(gt, *car, t), 0x10));
+        return g >= 0 ? g : goods_id(t, 0);
+    };
+    // Turbo: the fitted turbine record's +0x11 (as the events' aspiration rule).
+    const bool turbo = b8(part_rec(gt, *car, 12), 0x11) != 0;
+    if (cls == "parts_oth_ayc_s") return text(fitted(21) == 35 ? "EQUIP" : "NOTHING"); // AYC = LSD stage 5
+    if (table == 12) {
+        int g = fitted(12);
+        return !turbo && g == goods_id(12, 0) ? text("NOTHING") : name(g);
+    }
+    if (table == 19) return turbo ? name(fitted(19)) : text("NO_EQUIP");
+    if (table == 16) {
+        // No driveshaft on FF, MR and RR cars (drivetrain +0x14 = 1, 3, 4).
+        int drive = b8(part_rec(gt, *car, 13), 0x14);
+        return drive == 1 || drive == 3 || drive == 4 ? text("NO_EQUIP") : name(fitted(16));
+    }
+    if ((table == 28 || table == 29) && dirt_event) return car->owned.test(66) ? name(66) : dash;
+    return name(fitted(table));
+}
+
 bool slider_enabled(const GtMode& gt, const GarageCar& real, const std::string& item) {
     return group_enabled(gt, real, group_of_slider(item));
 }
