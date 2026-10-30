@@ -30,6 +30,16 @@ bool RaceScreen::build_exact_solo(App& app) {
     FieldConfig cfg;
     cfg.event = !solo_event_.empty() ? solo_event_ : race_event_;
     cfg.max_opponents = 0;
+    // Free practice: GT3 runs it with the race's field (the race information with every entry; car 0 in its pit box,
+    // the others on the line behind, start mode 5), on the grid the race has (the event's, or the last practice's).
+    if (*kind == sim::exact::Conductor::FreePractice) {
+        cfg.opponents = race_opponents_;
+        cfg.max_opponents = int(race_opponents_.size());
+        cfg.grid_by_power = field_grid_by_power_;
+        cfg.grid_hp = app.vfs() && language_units(app.vfs()->language()).power_hp;
+        cfg.grid_slots = practice_grid_;
+        cfg.entry_best = practice_entry_best_;
+    }
     // What every race takes from the screen (the program, rules, course, the player, playback and ghost).
     ExactFieldOptions o = exact_options(app);
     o.kind = *kind;
@@ -63,6 +73,10 @@ bool RaceScreen::build_exact_solo(App& app) {
         return false;
     }
     vehicle_ = &solo_field_->player();
+    if (solo_field_->opponents() > 0) load_opponent_cars(app, *solo_field_);
+    // The P.P. line starts with its label and no picture: the display's set-up call finds no car pictures yet
+    // (returns; the original's capture shows "P.P." until the first fastest lap).
+    if (*kind == sim::exact::Conductor::FreePractice) practice_pole_car_ = kNoPoleCar, practice_ready_posted_ = false;
     track_->set_lap_source(exact_lap_source(*solo_field_)); // the exact core times the laps itself
     if (1.0 / step_.step() != solo_field_->tick_hz()) step_ = FixedStep(solo_field_->tick_hz()); // (PAL: 50 a second)
     solo_result_done_ = false;
@@ -81,6 +95,33 @@ void RaceScreen::exact_solo_step() {
     const sim::exact::RaceFlow& fl = r->flow();
     for (size_t k = 0; k < 4; ++k) exact_session_[k] = fl.session.sector[k];
     exact_session_[4] = fl.session.lap;
+    // Free practice: the race display's Information notes (green, 3 s, queued). Its set-up posts kind 4 in free
+    // practice (D+0xA474): "Qualifying starts after 1 warm-up lap". Kind 2, the car of each new fastest lap (the
+    // lap handler), any car: the P.P. line's picture and "%s in pole position". The player's own: kind 3
+    // at its first line crossing, "Start qualifying"; kind 6 out of the pit lane (the pit lane's post), the START
+    // picture and count_s. (Car k is entry k: free practice has no ghost or second player.)
+    if (r->kind() == sim::exact::Conductor::FreePractice) {
+        if (!practice_ready_posted_) { // (after the 3 s the event display is blocked at a moving start: §K3 Title)
+            practice_ready_posted_ = true;
+            EventDisplay::Message m;
+            m.text = race_text("RACEDISPLAY_ReadyQualify", "Qualifying starts after 1 warm-up lap", true);
+            event_display_[0].after(std::move(m), 3.0f);
+        }
+        for (const sim::exact::RaceEvent& e : r->events()) {
+            if (e.type != 18) continue;
+            if (e.value == 2) {
+                practice_pole_car_ = e.car - 1;
+                const std::string name = e.car == 0 ? car_.name : car_display_name(solo_field_->opponent_label(e.car - 1));
+                const std::string fmt = race_text("RACEDISPLAY_PolePosition", "%s in pole position", true);
+                const size_t at = fmt.find("%s");
+                post_info(at == std::string::npos ? fmt : fmt.substr(0, at) + name + fmt.substr(at + 2));
+            } else if (e.value == 3 && e.car == 0) {
+                post_info(race_text("RACEDISPLAY_StartQualify", "Start qualifying", true));
+            }
+        }
+        for (const sim::exact::PitEvent& p : r->pit_events())
+            if (p.type == 6 && p.car == 0) practice_pit_exit_ = true;
+    }
     if (solo_result_done_ || finished_) return;
     const sim::exact::Car& c = r->cars()[0];
     if (c.finished == 0) return;

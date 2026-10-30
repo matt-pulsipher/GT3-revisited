@@ -856,9 +856,9 @@ one, free practice is refused with the message "Free run is not available on thi
 
 **Who races.** The configured opponents, or else the event's entries, cut to the event's
 car count less one (at most 5) and to the course grid's slots less the players' cars. A car
-whose car data cannot be built is left out. Time trials, license tests, free runs, free
-practice and machine tests have no opponents (a ghost car aside), online battles none
-besides the other players' cars.
+whose car data cannot be built is left out. Time trials, license tests, free runs and
+machine tests have no opponents (a ghost car aside), online battles none besides the other
+players' cars. The free practice before a GT race runs the race's field (GT Mode page §22.5).
 
 **Grid.** The players take the slot after the opponents (or a configured slot), player 2
 the next; the opponents take the other slots in their order or, in GT mode, by a

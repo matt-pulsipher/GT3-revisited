@@ -21,6 +21,7 @@
 //
 // All three draw the 640x448 menu frame onto a 4:3 rectangle (`dst`).
 
+#include "base/bytes.h"
 #include "formats/menu/mbl.h"
 #include "menu/flow/game_hooks.h"
 #include "menu/flow/menu_controller.h"
@@ -35,6 +36,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -214,6 +216,23 @@ QmColumn quick_menu_column(const menu::Element& e, int& row);
 enum class ResultList { Other, GtRace, Championship };
 std::vector<ResultRow> result_menu_list(ResultList kind, bool finished, std::vector<ResultRow> finish,
                                         const std::optional<std::vector<ResultRow>>& grid);
+
+// The free practice before a GT race or a championship round (the pre-race menus' FREE RUN, action 5; gt_mode §22.5): every
+// car of the field runs it, and each keeps its best lap of that practice (ms; kPracticeNoTime for none). `best` is by
+// entry: 0 the player, k opponent k - 1.
+constexpr u32 kPracticeNoTime = 0x157529FF; // GT3's "no time" (359,999,999 ms)
+// Whether the practice re-grids the field (and its own test): the player set a lap.
+bool practice_regrids(std::span<const u32> best);
+// The grid after it (GT race, championship): each pair of entries with different best laps counts
+// one place against the slower (an unsigned compare, so no time is the slowest; equal times count nothing), then each
+// entry in entry order takes the slot of its count, or the next one not yet taken (equal times in entry order). Entry k's
+// new grid slot.
+std::vector<int> practice_grid(std::span<const u32> best);
+// The GT race pre-race menu's list after a free practice (with its flag 0; before the first, flag 1:
+// every time none): the rows in grid order (`rows`, by grid slot), each with its car's best lap of the practice. A
+// championship round's list is the grid with the points: its layout has no time column, and its
+// entries keep no time.
+void practice_list_times(std::vector<ResultRow>& rows, std::span<const u32> best);
 
 // The race quick menus run on the same page manager as every other menu
 // (menu::flow::MenuController over menu/<set>.mbl + menu/<LANG>/<set>1.pmb):

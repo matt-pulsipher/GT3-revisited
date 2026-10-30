@@ -1513,7 +1513,7 @@ The item actions:
 | Action | Item |
 |---|---|
 | `qm_start`, `qm_try_again` | run (again) |
-| `qm_free_run` | the free practice before a GT race: the course alone, the player's car starting in its pit box (below) |
+| `qm_free_run` | the free practice before a GT race: the race's field on the course, the player's car starting in its pit box (below); after it the grid by best lap (GT Mode page §22.5) |
 | `qm_replay` | watch the replay (§11.1) |
 | `qm_demo` | the disc's demonstration of the event plays as a recorded race; without one, the computer drives the player's car |
 | `qm_save_replay` | save the replay |

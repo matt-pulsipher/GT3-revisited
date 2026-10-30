@@ -531,6 +531,33 @@ std::vector<ResultRow> result_menu_list(ResultList kind, bool finished, std::vec
     return finish;
 }
 
+bool practice_regrids(std::span<const u32> best) {
+    return !best.empty() && best[0] < kPracticeNoTime; // (a time below GT3's "no time")
+}
+
+std::vector<int> practice_grid(std::span<const u32> best) {
+    const size_t n = best.size();
+    std::vector<int> count(n, 0), slot(n, 0);
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = i + 1; j < n; ++j)
+            if (best[i] != best[j]) ++count[best[j] < best[i] ? i : j];
+    std::vector<bool> taken(n, false);
+    for (size_t k = 0; k < n; ++k) {
+        int s = count[k];
+        while (taken[size_t(s)]) ++s;
+        slot[k] = s;
+        taken[size_t(s)] = true;
+    }
+    return slot;
+}
+
+void practice_list_times(std::vector<ResultRow>& rows, std::span<const u32> best) {
+    for (ResultRow& r : rows) {
+        const size_t e = size_t(r.car + 1); // the entry: 0 the player, k opponent k - 1
+        r.time = menu_time_text(r.car >= -1 && e < best.size() ? best[e] : kPracticeNoTime);
+    }
+}
+
 void QuickMenu::draw(SDL_Renderer*, const SDL_FRect& dst) {
     if (!ctl_ || !renderer_) return;
     std::vector<menu::ElementDraw> list = ctl_->draw_list();

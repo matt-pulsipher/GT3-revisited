@@ -121,8 +121,8 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     // Brake lamps (GT3: a 4-frame history of "brake pedal > 0" per car; lamp factor k / 4).
     brake_lamps_.push(0, vehicle_->brake_pedal());
     if (p2) brake_lamps_.push(1, field_->second_brake());
-    if (field_)
-        for (int i = 0; i < field_->opponents(); ++i) brake_lamps_.push(2 + size_t(i), field_->opponent_brake(i));
+    if (const RaceField* f = exact_field()) // (the opponents on the course: a race's, a free practice's)
+        for (int i = 0; i < f->opponents(); ++i) brake_lamps_.push(2 + size_t(i), f->opponent_brake(i));
     if (online_) online_before_step(dt);
     vehicle_->set_pad(live_pad);
     vehicle_->step(in, dt);
@@ -155,13 +155,13 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     if (replaying_ && vehicle_->driver_kind() != 0 && track_->lap_started()) replay_run_ended_ = true;
     if (online_) online_after_step();
     trace_tick();
-    if (field_)
-        for (int i : field_->take_pit_entries()) {
+    if (RaceField* f = exact_field())
+        for (int i : f->take_pit_entries()) {
             // (-1 / -2: the players' cars)
             const std::string label = i == -1                         ? car_.label
                                       : i == -2 && preset_.car2.empty() ? car_.label
                                       : i == -2                         ? preset_.car2
-                                                                        : field_->opponent_label(i);
+                                                                        : f->opponent_label(i);
             const std::string name = i == -1 ? car_.name : car_display_name(label); // game text (the event display)
             post_info(name + " Pitting in...");
             LOG_INFO("Race: %s pitting in (t %.1f)", label.c_str(), race_time_);
@@ -211,6 +211,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     }
     // A solo run: the race's clock and start hold, and its end as the race flow decides it.
     if (exact_solo()) exact_solo_step();
+    if (std::exchange(practice_pit_exit_, false)) flying_start_signal(app); // free practice: START out of the pit lane
     // The pre-race shot's cuts, and its cut to the player's view, dissolve over 1 s
     // (presentation §B3).
     if (live_view() && race::start_shot_dissolve(frames_to_signal())) start_dissolve(1.0f);
@@ -620,16 +621,16 @@ void RaceScreen::update_drive(App& app, double dt) {
     app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0)) : PadRumble{});
     if (!feel) app.input().set_trigger_rumble(0, 0, 0);
     else app.input().set_trigger_rumble(0, rumble_.trigger_left(), rumble_.trigger_right());
-    if (field_ && field_->opponents() > 0) {
+    if (const RaceField* f = exact_field(); f && f->opponents() > 0) {
         std::vector<const sim::VehicleState*> st;
-        for (int i = 0; i < field_->opponents(); ++i) st.push_back(&field_->opponent_state(i));
+        for (int i = 0; i < f->opponents(); ++i) st.push_back(&f->opponent_state(i));
         render::Vec3 e = camera_.eye();
         opp_engines_.view = camera_.onboard() ? EngineSound::View::OnboardOther
                             : replaying_ || camera_.mode() == CameraMode::Tv ? EngineSound::View::Replay
                                                                              : EngineSound::View::ChaseOther;
         std::vector<float> slip;
-        for (int i = 0; i < field_->opponents(); ++i) {
-            const sim::VehicleTelemetry* t = field_->opponent_telemetry(i);
+        for (int i = 0; i < f->opponents(); ++i) {
+            const sim::VehicleTelemetry* t = f->opponent_telemetry(i);
             slip.push_back(t ? t->slipstream : 0.0f);
         }
         if (se_on()) opp_engines_.update(app.audio().voices(), {e.x, e.y, e.z}, render_state_.velocity, cam_right(camera_),
@@ -715,10 +716,9 @@ void RaceScreen::update_pylons(double dt) {
         cars.push_back(c);
     };
     if (vehicle_) add(vehicle_->state(), vehicle_->facts()); // car 0 = the player
-    if (field_) {
-        if (field_->has_second()) add(field_->second_state(), field_->second_facts());
-        for (int i = 0; i < field_->opponents(); ++i) add(field_->opponent_state(i), field_->opponent_facts(i));
-    }
+    if (field_ && field_->has_second()) add(field_->second_state(), field_->second_facts());
+    if (const RaceField* f = exact_field())
+        for (int i = 0; i < f->opponents(); ++i) add(f->opponent_state(i), f->opponent_facts(i));
     const track::Track* rt = track_->runtime();
     unsigned hits = pylons_.step(track_->query(), cars, dt, rt ? std::span<const track::WallLine>(rt->wall_lines()) : std::span<const track::WallLine>{});
     // The conductor's hit rule for every touch (kind 2: licences and time trials fail on it). GT3 runs the
@@ -752,10 +752,9 @@ void RaceScreen::update_smoke(double dt) {
         }
     };
     if (vehicle_) car(vehicle_->state(), vehicle_->telemetry());
-    if (field_) {
-        if (field_->has_second()) car(field_->second_state(), field_->second_telemetry());
-        for (int i = 0; i < field_->opponents(); ++i) car(field_->opponent_state(i), field_->opponent_telemetry(i));
-    }
+    if (field_ && field_->has_second()) car(field_->second_state(), field_->second_telemetry());
+    if (const RaceField* f = exact_field())
+        for (int i = 0; i < f->opponents(); ++i) car(f->opponent_state(i), f->opponent_telemetry(i));
     smoke_.update(dt);
 }
 

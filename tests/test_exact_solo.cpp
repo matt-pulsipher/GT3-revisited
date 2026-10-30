@@ -13,6 +13,7 @@
 #include "race/analyzer.h"
 #include "race/license.h"
 #include "race/replay.h"
+#include "race/results.h"
 #include "sim/exact/race.h"
 #include "sim/exact/car_fields.h"
 #include "sim/exact/race_record.h"
@@ -132,7 +133,8 @@ SoloRun solo(const std::string& event, ex::Conductor kind, int max_steps, int mi
     CHECK(field != nullptr);
     if (!field) return out;
     const ex::ExactRace& r = *race::exact_race_of(*field);
-    CHECK(field->opponents() == 0); // (the free run's ghost car is not an opponent)
+    // (The free run's ghost car is not an opponent; free practice runs the event's field.)
+    CHECK(kind == ex::Conductor::FreePractice ? field->opponents() > 0 : field->opponents() == 0);
     for (int k = 0; k < max_steps; ++k) {
         field->player().step(inputs_of(line_driver(r.cars()[0], r.course())), 1.0 / 60.0);
         ++out.steps;
@@ -232,6 +234,124 @@ TEST(exact_game_solo_modes) {
     SoloRun fp = solo("Gsunday_e_0001", ex::Conductor::FreePractice, 30000, 2);
     CHECK(!fp.finished && fp.laps >= 2 && fp.best_lap != ex::kNoTime);
     CHECK(fp.replay && *fp.replay);
+}
+
+// The free practice before a GT race (gt_mode §19), as GT3 runs it: the race's field on the course (car 0 from its pit box,
+// the others flying from the line behind), every car keeping its best lap; the grid after it by those laps when the player
+// set one (race::practice_grid), which the race then starts on; a second practice starts each car's best lap from its
+// entry's of the first (entry + 0x11D8, FieldConfig::entry_best).
+TEST(exact_game_free_practice_field) {
+    // (Every region: the disc's own database, program and course files.)
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    static data::CarDatabase db;
+    static std::shared_ptr<const ex::ProgramData> data;
+    if (!data) {
+        CHECK(db.load(disc->volume()));
+        std::optional<Bytes> core = disc->volume().read_program();
+        CHECK(core.has_value());
+        if (!core) return;
+        data = std::make_shared<const ex::ProgramData>(ex::ProgramData::load(CoreImage::decode(*core)));
+    }
+    const std::string event = "Gsunday_e_0001"; // Sunday Cup race 1, Super Speedway
+    const data::Event* ev = db.event(event);
+    CHECK(ev != nullptr && !ev->entries.empty());
+    if (!ev || ev->entries.empty()) return;
+    Vfs vfs(&disc->volume());
+    const std::string path = course_file_path(vfs, ev->course);
+    std::optional<Bytes> file = path.empty() ? std::nullopt : vfs.read(path);
+    CHECK(file.has_value());
+    if (!file) return;
+    std::vector<std::string> opponents;
+    for (size_t k = 1; k < ev->entries.size() && opponents.size() < 5; ++k)
+        if (!ev->entries[k].empty() && ev->entries[k] != "-") opponents.push_back(ev->entries[k]);
+    std::unique_ptr<race::RaceTrack> track = race::make_track(vfs, *file, ev->course);
+    auto config = [&](ex::Conductor kind) {
+        race::FieldConfig cfg;
+        cfg.event = event;
+        cfg.opponents = opponents;
+        cfg.max_opponents = int(opponents.size());
+        cfg.grid_by_power = true;
+        race::ExactFieldOptions o;
+        o.data = data;
+        o.course_file = *file;
+        o.course = ev->course;
+        o.kind = kind;
+        o.laps = kind == ex::Conductor::FreePractice ? 0 : ev->laps;
+        o.player.car = {ev->entries[0]};
+        cfg.exact = o;
+        return cfg;
+    };
+    std::string err;
+    race::FieldConfig pc = config(ex::Conductor::FreePractice);
+    std::unique_ptr<race::RaceField> practice = race::RaceField::create(*track, db, pc, &err);
+    if (!practice) std::printf("  free practice: %s\n", err.c_str());
+    CHECK(practice != nullptr);
+    if (!practice) return;
+    CHECK(practice->opponents() == int(opponents.size()));
+    const ex::ExactRace& r = *race::exact_race_of(*practice);
+    for (int k = 0; k < r.size(); ++k) CHECK(r.cars()[size_t(k)].best_lap == ex::kNoTime);
+    CHECK(practice->race_time() >= 0); // no countdown (start type -1): car 0 waits only for its pit-box start
+    // The player along the line until two laps are timed; the others are driven by the AI.
+    // The player's car leaves its box after the 2 s pit start (the computer drives it out: driver kind 4), and the pit lane
+    // posts its exit (6, the START picture) for it.
+    int steps = 0, left_box = -1;
+    bool pit_exit = false;
+    for (; steps < 40000 && std::max(0, int(r.cars()[0].laps) - 1) < 2; ++steps) {
+        practice->player().step(inputs_of(line_driver(r.cars()[0], r.course())), 1.0 / 60.0);
+        if (left_box < 0 && r.cars()[0].driver_kind == 4) left_box = steps;
+        for (const ex::PitEvent& p : r.pit_events()) pit_exit = pit_exit || (p.type == 6 && p.car == 0);
+    }
+    CHECK(left_box >= 100 && left_box <= 140);
+    CHECK(pit_exit);
+    const race::ExactBestLaps b = race::exact_best_laps(*practice);
+    CHECK(b.car.size() == opponents.size() + 1 && b.entry.size() == b.car.size());
+    std::string laps;
+    int clean = 0;
+    for (size_t k = 0; k < b.car.size(); ++k) {
+        laps += " " + std::to_string(b.car[k]) + " / " + std::to_string(b.entry[k]);
+        clean += b.entry[k] != ex::kNoTime;
+    }
+    std::printf("  free practice: %d steps, best laps (car / entry)%s\n", steps, laps.c_str());
+    for (size_t k = 0; k < b.car.size(); ++k) {
+        CHECK(b.car[k] != ex::kNoTime); // every car set a lap (the AI's flying from behind the line)
+        CHECK(b.car[k] <= b.entry[k]);  // (the car's counts every lap, the entry's the clean ones)
+    }
+    CHECK(clean > 0); // (the records are on: configuration 0, a live run)
+    CHECK(race::practice_regrids(b.car));
+    const std::vector<int> grid = race::practice_grid(b.car);
+    // The race on that grid: entry k on slot grid[k].
+    race::FieldConfig rc = config(ex::Conductor::SinglePlayer);
+    rc.grid_slots = grid;
+    std::unique_ptr<race::RaceField> racef = race::RaceField::create(*track, db, rc, &err);
+    CHECK(racef != nullptr);
+    if (!racef) return;
+    std::shared_ptr<const ex::RaceRecord> rec = race::exact_recording(*racef);
+    CHECK(rec && rec->entries.size() == grid.size());
+    if (rec && rec->entries.size() == grid.size())
+        for (size_t k = 0; k < grid.size(); ++k) CHECK(rec->entries[k].grid_slot == grid[k]);
+    // The pre-race list in that order: slot 0 the fastest.
+    const std::vector<race::RaceField::Standing> st = racef->standings();
+    CHECK(st.size() == grid.size());
+    for (size_t p = 0; p < st.size(); ++p) CHECK(grid[size_t(st[p].car + 1)] == int(p));
+    // A grid that does not fit the field is not used: the event's.
+    rc.grid_slots = {0, 0, 1};
+    std::unique_ptr<race::RaceField> other = race::RaceField::create(*track, db, rc, &err);
+    CHECK(other && race::exact_recording(*other)->entries[0].grid_slot == int(opponents.size()));
+    // A second practice on that grid: each car's best lap from its entry's at the start (the restart).
+    pc.grid_slots = grid;
+    pc.entry_best = b.entry;
+    std::unique_ptr<race::RaceField> again = race::RaceField::create(*track, db, pc, &err);
+    CHECK(again != nullptr);
+    if (!again) return;
+    const ex::ExactRace& r2 = *race::exact_race_of(*again);
+    for (size_t k = 0; k < b.entry.size() && k < size_t(r2.size()); ++k) CHECK(r2.cars()[k].best_lap == b.entry[k]);
+    // Without the entries' best laps every car starts with none.
+    pc.entry_best.clear();
+    std::unique_ptr<race::RaceField> fresh = race::RaceField::create(*track, db, pc, &err);
+    CHECK(fresh != nullptr);
+    if (fresh)
+        for (const ex::Car& c : race::exact_race_of(*fresh)->cars()) CHECK(c.best_lap == ex::kNoTime);
 }
 
 // The free run's best lap and ghost stay from run to run of a visit (GT3 keeps the race object, with its best lap's store and

@@ -134,8 +134,8 @@ void RaceScreen::draw_car_icon(App& app, int car, const SDL_FRect& rc, size_t sl
                                                                           : nullptr;
     const sim::VehicleSetup* su = car == -1 ? &vehicle_->setup()
                                   : car == -2 && field_ ? &field_->second_setup()
-                                  : car >= 0 && field_ ? &field_->opponent_setup(car)
-                                                       : nullptr;
+                                  : car >= 0 && exact_field() && car < exact_field()->opponents() ? &exact_field()->opponent_setup(car)
+                                                                                                  : nullptr;
     if (!v || !su) return;
     while (icon_views_.size() <= slot) icon_views_.push_back(std::make_unique<render::View3D>(*app.gpu()));
     sim::VehicleState st;
@@ -273,17 +273,16 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
         look.lamp = brake_lamps_.factor(1); look.brake_now = brake_lamps_.now(1);
         v2->add_items(items_, render_state2_, field_->second_setup(), eye, look);
     }
-    if (field_)
-        for (int i = 0; i < field_->opponents() && size_t(i) < opp_visuals_.size(); ++i)
+    if (const RaceField* f = exact_field()) // (the opponents on the course: a race's, a free practice's)
+        for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
             if (opp_visuals_[size_t(i)] && i != hidden_opponent_)
             {
-                sim::VehicleState os =
-                    interpolate(field_->opponent_prev_state(i), field_->opponent_state(i), step_.alpha());
+                sim::VehicleState os = interpolate(f->opponent_prev_state(i), f->opponent_state(i), step_.alpha());
                 CarLook look = car_look(os, false, 2 + size_t(i));
                 look.lamp = brake_lamps_.factor(2 + size_t(i)); look.brake_now = brake_lamps_.now(2 + size_t(i));
                 size_t first = items_.size();
-                opp_visuals_[size_t(i)]->add_items(items_, os, field_->opponent_setup(i), eye, look);
-                if (field_->opponent_ghost(i)) // online: a ghosted remote car (no contact)
+                opp_visuals_[size_t(i)]->add_items(items_, os, f->opponent_setup(i), eye, look);
+                if (f->opponent_ghost(i)) // online: a ghosted remote car (no contact)
                     for (size_t k = first; k < items_.size(); ++k) items_[k].alpha = 0.5f;
             }
     // The ghost (presentation §G11), live only, while Select's switch is on: a car of the race (a whole run's ghost car:
@@ -340,9 +339,9 @@ HudData RaceScreen::hud_data(int player) {
     d.player_x = s.position.x, d.player_z = s.position.z;
     d.has_turbo = su.has_turbo;
     d.boost = p2 ? field_->second_boost() : vehicle_->boost();
+    if (const RaceField* f = exact_field())
+        for (int i = 0; i < f->opponents(); ++i) d.others.push_back({f->opponent_state(i).position.x, f->opponent_state(i).position.z});
     if (field_) {
-        for (int i = 0; i < field_->opponents(); ++i)
-            d.others.push_back({field_->opponent_state(i).position.x, field_->opponent_state(i).position.z});
         if (field_->has_second()) {
             const sim::VehicleState& o = p2 ? render_state_ : render_state2_;
             d.others.push_back({o.position.x, o.position.z});
@@ -383,6 +382,8 @@ HudData RaceScreen::hud_data(int player) {
         // A time trial stopped by a course-out / hit is not finished: its lap time runs on with
         // the clock (presentation §D4).
         d.lap_time = track_->current_lap_time(field_ ? field_->race_time() : race_time_);
+        // Free practice: 0 until the first line crossing (the warm-up lap; presentation §B1, the conductor's HUD lap time).
+        if (free_run_ && !track_->lap_started()) d.lap_time = 0;
         d.last_lap = track_->last_lap_time();
         d.best_lap = track_->best_lap_time();
         d.wrong_way = track_->wrong_way();
@@ -419,9 +420,11 @@ HudData RaceScreen::hud_data(int player) {
     if (d.lap_time < 0 && !d.finished) d.total_time = laps.count > 0 ? laps.sum : -1;
     // Record Lap / P.P. / Fastest: the session's fastest lap driven (every car's in races, the
     // player's in solo runs; dashes until the first lap, kept across retries).
+    // (Free practice: every car's allowed laps, race info + 0x8BC, which the exact core keeps.)
     d.session_best = field_ ? (session_best_ms_ >= 0 ? double(session_best_ms_) / 1000.0 : -1)
-                            : (best_splits_.best_lap() >= 0 ? double(best_splits_.best_lap()) / 1000.0 : -1);
-    d.pole_icon = d.mode == HudMode::FreePractice; // alone on the course: the player's car
+                     : free_run_ ? (exact_session_[4] != race::kPracticeNoTime ? double(exact_session_[4]) / 1000.0 : -1)
+                                 : (best_splits_.best_lap() >= 0 ? double(best_splits_.best_lap()) / 1000.0 : -1);
+    d.pole_icon = d.mode == HudMode::FreePractice && practice_pole_car_ != kNoPoleCar; // the P.P. car's picture
     // The lap count's total: the event's laps in races, the arcade time trial's one lap
     // (presentation §B7; the capture's "Lap 1/1"), none in free runs.
     d.lap_list_lines = lap_list_lines(sel.run == HudRun::Race ? race_laps_ : 0);
@@ -442,6 +445,12 @@ HudData RaceScreen::hud_data(int player) {
         // Flying start: START for 1 s from the signal at the line (presentation §B2).
         d.countdown = race_time_ - flying_go_t_ < 1.0 ? 0 : -1;
     }
+    // Free practice: the player's place among the field by best lap (the conductor's ranking, car + 0x1465).
+    if (!field_ && free_run_)
+        if (const RaceField* f = exact_field(); f && f->opponents() > 0) {
+            d.cars = f->opponents() + 1;
+            d.position = f->player_position();
+        }
     // Pit lane (the race's AI drives the car: driver kinds 2-4) / flying start run-up: AUTO DRIVE; pit-in pop-up; tyre
     // gauge when wear is on.
     const int kind = p2 ? 0 : driver_kind();
@@ -873,15 +882,13 @@ size_t RaceScreen::add_wet_road(const render::Vec3& eye, const render::Mat4& vie
         if (!v->lamps().empty()) cars.push_back({&v->lamps(), v->body_matrix(s, su), mir, brake_lamps_.factor(idx), brake_lamps_.now(idx)});
     };
     add(car_visual_.get(), render_state_, vehicle_->setup(), 0);
-    if (field_) {
-        if (field_->has_second())
-            add(car2_visual_ ? car2_visual_.get() : car_visual_.get(), render_state2_, field_->second_setup(), 1);
-        for (int i = 0; i < field_->opponents() && size_t(i) < opp_visuals_.size(); ++i)
+    if (field_ && field_->has_second())
+        add(car2_visual_ ? car2_visual_.get() : car_visual_.get(), render_state2_, field_->second_setup(), 1);
+    if (const RaceField* f = exact_field())
+        for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
             if (opp_visuals_[size_t(i)])
-                add(opp_visuals_[size_t(i)].get(),
-                    interpolate(field_->opponent_prev_state(i), field_->opponent_state(i), step_.alpha()),
-                    field_->opponent_setup(i), 2 + size_t(i));
-    }
+                add(opp_visuals_[size_t(i)].get(), interpolate(f->opponent_prev_state(i), f->opponent_state(i), step_.alpha()),
+                    f->opponent_setup(i), 2 + size_t(i));
     wet_.add_buffer_items(wet_items_, view, eye, cars);
     SDL_GPUTexture* t = wet_.render(*view_, view, proj, eye, wet_items_, o);
     // GT3 composites it after the scenery, before the cars and their shadows (presentation §K, §I7).
@@ -899,15 +906,13 @@ std::vector<CarLampGlows::Car> RaceScreen::lamp_cars() const {
         out.push_back({&v->lamps(), v->body_matrix(s, su), brake_lamps_.factor(idx), brake_lamps_.now(idx)});
     };
     add(car_visual_.get(), render_state_, vehicle_->setup(), 0);
-    if (field_) {
-        if (field_->has_second())
-            add(car2_visual_ ? car2_visual_.get() : car_visual_.get(), render_state2_, field_->second_setup(), 1);
-        for (int i = 0; i < field_->opponents() && size_t(i) < opp_visuals_.size(); ++i)
+    if (field_ && field_->has_second())
+        add(car2_visual_ ? car2_visual_.get() : car_visual_.get(), render_state2_, field_->second_setup(), 1);
+    if (const RaceField* f = exact_field())
+        for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
             if (opp_visuals_[size_t(i)])
-                add(opp_visuals_[size_t(i)].get(),
-                    interpolate(field_->opponent_prev_state(i), field_->opponent_state(i), step_.alpha()),
-                    field_->opponent_setup(i), 2 + size_t(i));
-    }
+                add(opp_visuals_[size_t(i)].get(), interpolate(f->opponent_prev_state(i), f->opponent_state(i), step_.alpha()),
+                    f->opponent_setup(i), 2 + size_t(i));
     return out;
 }
 

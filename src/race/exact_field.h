@@ -37,6 +37,13 @@ std::unique_ptr<RaceField> make_exact_field(const RaceTrack& track, const data::
 // from their pads or inputs, empty frames for the others): for tests, replays and the online code.
 const sim::exact::ExactRace* exact_race_of(const RaceField& f);
 const std::vector<sim::exact::PadFrame>* exact_frames_of(const RaceField& f);
+// Each car's best laps of the run (ms; sim::exact::kNoTime for none), player 1's first, then each opponent's (empty for another
+// field): the car's (car + 0x16C4: every lap, and in free practice its entry's at the start) and its race entry's best lap's
+// splits' (entry + 0x11D8: laps without a course-out, from none at the run's start).
+struct ExactBestLaps {
+    std::vector<u32> car, entry;
+};
+ExactBestLaps exact_best_laps(const RaceField& f);
 // Player 1's laps as the race times them, for RaceTrack::set_lap_source (nullptr for another field).
 const LapSource* exact_lap_source(const RaceField& f);
 // The race's record so far (sim/exact/race_record.h): its setup, every frame's pads and the game's changes between frames, the

@@ -182,10 +182,9 @@ void RaceScreen::lap_events(bool timer_updated) {
 void RaceScreen::draw_event_icons(App& app, int half) {
     const SDL_FRect& rc = hud_.event_icon_rect();
     if (rc.w > 0) draw_car_icon(app, event_icon_car_[size_t(half)], rc, size_t(12 + half), true);
-    // The free practice's P.P. line: the picture of the car holding the fastest lap (alone on
-    // the course: the player's).
+    // The free practice's P.P. line: the picture of the car holding the fastest lap.
     const SDL_FRect& pp = hud_.pole_icon_rect();
-    if (half == 0 && pp.w > 0) draw_car_icon(app, -1, pp, 14, true);
+    if (half == 0 && pp.w > 0) draw_car_icon(app, practice_pole_car_, pp, 14, true);
 }
 
 } // namespace gt3r::race_screen

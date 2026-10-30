@@ -578,7 +578,7 @@ research (captures of the original, `database/racedetail.db` rows,
   | endurance | Total, Best, lap-time list (3 lines from 140, sw_16 line height x 0.8 apart, numbered), Lap (216) |
   | time trial | Best (the visit's best lap), Time (the run's laps + the current one) |
   | free run | Record Lap (the session's fastest lap: dashes until a lap is done, kept across retries), Best (the visit's best lap: the same), list, Lap |
-  | free practice | P.P. (the same, with the player's car picture 99 left of the label), Best, list, Lap |
+  | free practice | P.P. (the session's fastest lap of any car, with the picture of the car that set it 99 left of the label: `practice_pole_car_`), Best, list, Lap; the place by best lap |
   | licence | Best (the visit's best judged time: the only "lap" a licence test posts), Time, the three targets (no lap count) |
   | machine tests | presentation §D4: Best, Time / Record, Best speeds (no lap count) |
   | replay (ITEM time) | the lap count, Lap |
@@ -1062,7 +1062,10 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
   GT mode's free run before a race as one race with their conductor (`ExactFieldOptions::kind`, as
   `run_kind()` tells the runs apart: the licence tests (L...) the licence's, the time attacks (AT...) and
   other time trials of set laps the time trial's, machine tests the machine test's, a time trial of no set
-  laps the free run's, GT mode's pre-race free run free practice's; no opponents), built by `build_exact_solo` in `build_vehicle_inner`'s solo path and held
+  laps the free run's, GT mode's pre-race free run free practice's; no opponents but in free practice, which runs the
+  race's field: `FieldConfig::opponents`, the grid and the entries' best laps the visit's earlier practices left,
+  `FieldConfig::grid_slots` / `entry_best`; `load_opponent_cars` draws and sounds them, and the screen's opponent loops
+  go over `exact_field()`), built by `build_exact_solo` in `build_vehicle_inner`'s solo path and held
   as `RaceScreen::solo_field_` (field_ stays null: the screen's solo paths; `exact_field()` is the field on
   the exact core either way). The race information's words: the visit's session best (race info + 0x8AC,
   carried from run to run), the event's judging times, the speed unit; the start type as the race's start-up
@@ -1086,8 +1089,11 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
   box (the start's mode 6); the pre-race menu offers it only where there is one (QuickMenuItems::visit: not on
   a dirt course, as GT3's; every course of GT mode's races without a stop line is a dirt course, checked
   in the start's checks; `start_free_run` refuses a course whose stop line has no box for it, none of GT
-  mode's).
-  Check: `exact_game_solo_modes` (disc).
+  mode's). At its end (`end_free_run`) every car's best lap (`exact_best_laps`) sets the grid when the player set one
+  (`race::practice_grid`) and fills the GT race's pre-race list (`race::practice_list_times`); gt_mode §22.5. It has
+  no countdown (`race::demo_start_type`: -1), and `exact_solo_step` posts the race display's notes (the warm-up lap, START
+  out of the pit lane through `flying_start_signal`, start qualifying, pole position) and keeps the P.P. car.
+  Check: `exact_game_solo_modes`, `exact_game_free_practice_field` (disc); `race_practice_grid` (no disc).
 - **Online races** (docs/dev/ONLINE.md): the i.LINK
   battle's conductor (`Conductor::BattleMP`, start type 1), our car stepped, the other players' cars posed
   from their owners' states (`FieldConfig::remote` with each car's `ExactCarSource` from its online
