@@ -64,6 +64,32 @@ TEST(region_data_files) {
     CHECK(!region_from_key("uk"));
 }
 
+// Each release runs in its own languages only, though its disc has every language's menu
+// folders (issue 63: a US disc kept in Spanish or Japanese by the config).
+TEST(region_playable_languages) {
+    const RegionData jp{Region::Japan}, us{Region::America}, eu{Region::Europe};
+    auto all = [](Language) { return true; };
+    CHECK(playable_languages(us, all) == std::vector<Language>{Language::US});
+    CHECK(playable_languages(jp, all) == std::vector<Language>{Language::JP});
+    CHECK(playable_languages(eu, all) == eu.languages());
+    // A disc with none of its release's menus (another game on this engine): all it has, US first.
+    auto jp_br = [](Language l) { return l == Language::JP || l == Language::BR; };
+    CHECK(playable_languages(us, jp_br) == (std::vector<Language>{Language::JP, Language::BR}));
+    CHECK(playable_languages(eu, jp_br) == std::vector<Language>{Language::BR});
+    CHECK(playable_languages(us, [](Language) { return false; }).empty());
+
+    // The config's choice only when the disc runs in it, else the release's own.
+    const std::vector<Language> us_only = playable_languages(us, all), eu_all = playable_languages(eu, all);
+    CHECK(choose_language(us, us_only, Language::SP) == Language::US);
+    CHECK(choose_language(us, us_only, Language::JP) == Language::US);
+    CHECK(choose_language(us, us_only, std::nullopt) == Language::US);
+    CHECK(choose_language(eu, eu_all, Language::IT) == Language::IT);
+    CHECK(choose_language(eu, eu_all, Language::US) == Language::BR);
+    CHECK(choose_language(eu, eu_all, std::nullopt) == Language::BR);
+    CHECK(choose_language(us, {Language::JP, Language::BR}, std::nullopt) == Language::JP);
+    CHECK(choose_language(us, {}, Language::SP) == Language::US);
+}
+
 // The course folder follows the language (the NTSC-J disc has one folder for all).
 TEST(region_course_folder_by_language) {
     const RegionData jp{Region::Japan}, us{Region::America}, eu{Region::Europe};

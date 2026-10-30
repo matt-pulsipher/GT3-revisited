@@ -102,6 +102,23 @@ std::string RegionData::course_path(std::string_view label, Language lang) const
     return dir + std::string(label);
 }
 
+std::vector<Language> playable_languages(const RegionData& rd, const std::function<bool(Language)>& has_menus) {
+    std::vector<Language> out;
+    for (Language l : rd.languages())
+        if (has_menus(l)) out.push_back(l);
+    if (out.empty())
+        for (Language l : {Language::US, Language::JP, Language::BR, Language::FR, Language::GR, Language::IT, Language::SP})
+            if (has_menus(l)) out.push_back(l);
+    return out;
+}
+
+Language choose_language(const RegionData& rd, const std::vector<Language>& playable, std::optional<Language> wanted) {
+    auto has = [&](Language l) { return std::find(playable.begin(), playable.end(), l) != playable.end(); };
+    if (wanted && has(*wanted)) return *wanted;
+    if (has(rd.default_language()) || playable.empty()) return rd.default_language();
+    return playable.front();
+}
+
 Units language_units(Language lang) {
     Units u;
     switch (lang) {

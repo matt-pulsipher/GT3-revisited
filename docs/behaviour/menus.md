@@ -2014,17 +2014,21 @@ game's menus.
   leave the page. If the menu language was
   changed in Settings meanwhile, the menus start again from the title in the
   new language.
-- **Language.** The menus use the language folder `[gt3menu] lang`
-  (default US), or the first language on the disc if that one is missing.
+- **Language.** The menus use the game's language (docs/COMPATIBILITY.md,
+  Regions): US English on an NTSC-U disc and Japanese on an NTSC-J disc,
+  though both discs also carry other languages' menu folders; on a PAL disc
+  the one chosen at the first start (`[gt3menu] lang_eu`). A language kept in
+  `config.ini` that the disc does not run in (`[gt3menu] lang = SP` on an
+  NTSC-U disc, from an older version or the Language page tool) is ignored.
 - **Debug overlay** (`[gt3menu] debug = on` or `GT3R_GT3MENU_DEBUG=1`). It
   shows the language, the page name and the flow's log lines, and Select then
-  cycles the menu language among the folders on the disc.
+  cycles the menu language among the disc's languages (PAL's five).
 
 Development aids:
 
 | Variable | Effect |
 |---|---|
-| `GT3R_LANG` | the menu language folder |
+| `GT3R_LANG` | the game's language, any the disc has menu folders for (`JP` on an NTSC-U disc, say) |
 | `GT3R_GT3MENU_OPEN=<set>:<page>` | opens a page directly |
 | `GT3R_GT3MENU_SCRIPT` | runs keys at start-up, one frame each plus a release frame, after 30 frames to let the first page settle. Example: `down,cross,wait:40` |
 | `GT3R_GT3MENU_FREEZE` | stops the menu clock after the script |

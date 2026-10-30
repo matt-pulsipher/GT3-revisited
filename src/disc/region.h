@@ -20,6 +20,7 @@
 #include "base/bytes.h"
 #include "formats/text/mltx.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -58,6 +59,19 @@ struct RegionData {
     // courses/JP, courses/US, courses/UK (BR) or courses/EU (FR, GR, IT, SP).
     std::string course_path(std::string_view label, Language lang) const;
 };
+
+// --- Choosing the language ---
+
+// The languages a disc runs in: its release's (RegionData::languages) that it has menus for
+// (`has_menus`: menu/<code>/ on the disc), in that order. NTSC-U and NTSC-J discs also carry
+// other languages' menu folders, which their program never reads (on NTSC-U most of their
+// text is missing): those are left out. Only a disc with none of its release's menus (another
+// game on this engine) runs in every language it has menus for, US first.
+std::vector<Language> playable_languages(const RegionData& rd, const std::function<bool(Language)>& has_menus);
+// The language to start in: `wanted` (the player's choice, from the config) when it is one of
+// `playable`; else the release's own when it is; else the first playable one; with none, the
+// release's own.
+Language choose_language(const RegionData& rd, const std::vector<Language>& playable, std::optional<Language> wanted);
 
 // --- What the language decides ---
 

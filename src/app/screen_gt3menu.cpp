@@ -196,8 +196,9 @@ public:
         held_over_ &= keys; // keys held since another screen was on top: ignored until released
         keys &= MenuKeys(~held_over_);
         flow_->set_player2_keys(keys_from_pad(app.input().pad(1))); // 2 Player car page
-        // Select: next language available on the disc (development aid, only with the debug
-        // overlay on: a stray Select / Tab must not switch a player's game to another language).
+        // Select: next language the disc runs in (App::languages; a PAL disc's five), a
+        // development aid, only with the debug overlay on: a stray Select / Tab must not switch a
+        // player's game to another language.
         const char* dbg_env = std::getenv("GT3R_GT3MENU_DEBUG");
         const bool debug = (dbg_env && *dbg_env && *dbg_env != '0') ||
                            to_lower(app.config().get("gt3menu", "debug").value_or("off")) == "on";

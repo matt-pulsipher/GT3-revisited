@@ -9,7 +9,6 @@
 #include "formats/png_writer.h"
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
-#include "menu/menu_scene.h"
 #include "platform/aspect.h"
 #include "platform/ios_files.h"
 #include "platform/recent_discs.h"
@@ -260,12 +259,18 @@ void App::open_saved_disc(const std::string& saved) {
     LOG_WARN("Remembered disc image not available: %s", saved.c_str());
 }
 
+bool App::has_menus(Language l) const {
+    return vfs_ && vfs_->exists(std::string("menu/") + text::language_code(l) + "/gt_mode3.pmb");
+}
+
+std::vector<Language> App::playable() const {
+    if (!vfs_) return {};
+    return playable_languages(vfs_->region(), [this](Language l) { return has_menus(l); });
+}
+
 std::vector<std::string> App::languages() const {
     std::vector<std::string> out;
-    if (!vfs_) return out;
-    for (int i = 0; menu::kMenuLanguages[i]; ++i)
-        if (vfs_->exists(std::string("menu/") + menu::kMenuLanguages[i] + "/gt_mode3.pmb"))
-            out.push_back(menu::kMenuLanguages[i]);
+    for (Language l : playable()) out.push_back(text::language_code(l));
     return out;
 }
 
@@ -278,27 +283,31 @@ std::string App::language() const { return text::language_code(vfs_ ? vfs_->lang
 
 bool App::language_chosen() const {
     if (const char* env = std::getenv("GT3R_LANG"); env && *env) return true;
-    return config_.get("gt3menu", language_key()).has_value();
+    const std::vector<std::string> have = languages();
+    const std::optional<std::string> code = config_.get("gt3menu", language_key());
+    return code && std::find(have.begin(), have.end(), *code) != have.end();
 }
 
-// The disc's language: GT3R_LANG, else the region's choice in the config, when the disc has
-// that language's menus; else the region's own, else the first language the disc has.
+// The disc's language: GT3R_LANG (development aid: any language the disc has menus for), else
+// the region's choice in the config when the disc runs in it (playable_languages: an NTSC-U
+// disc only in US English, whatever another build or a developer tool kept), else the region's
+// own.
 void App::apply_language() {
     if (!vfs_) return;
-    std::string want;
-    if (const char* env = std::getenv("GT3R_LANG"); env && *env) want = env;
-    else want = config_.get("gt3menu", language_key()).value_or("");
-    const std::vector<std::string> have = languages();
-    auto has = [&](const std::string& l) { return std::find(have.begin(), have.end(), l) != have.end(); };
-    std::string code = text::language_code(vfs_->region().default_language());
-    if (!want.empty() && has(want)) code = want;
-    else if (!has(code) && !have.empty()) code = have.front();
-    vfs_->set_language(text::language_from_code(code).value_or(vfs_->region().default_language()));
+    if (const char* env = std::getenv("GT3R_LANG"); env && *env)
+        if (std::optional<Language> l = text::language_from_code(env); l && has_menus(*l)) {
+            vfs_->set_language(*l);
+            return;
+        }
+    const std::optional<Language> want = text::language_from_code(config_.get("gt3menu", language_key()).value_or(""));
+    vfs_->set_language(choose_language(vfs_->region(), playable(), want));
 }
 
 void App::set_language(const std::string& code) {
     std::optional<Language> l = text::language_from_code(code);
-    if (!vfs_ || !l) return;
+    const std::vector<Language> have = playable();
+    // Only one the disc runs in (the Language page tool offers PAL's on any disc).
+    if (!vfs_ || !l || std::find(have.begin(), have.end(), *l) == have.end()) return;
     config_.set("gt3menu", language_key(), code);
     save_config();
     if (vfs_->language() == *l) return;

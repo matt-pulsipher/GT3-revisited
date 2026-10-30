@@ -70,7 +70,8 @@ The game's language decides the rest, as in the original releases:
   game starts with 1,500,000 Cr.) and record dates read YY/MM/DD.
 - A PAL disc asks for the language at the first start (the disc's own language
   page); Settings > Game disc changes it later. The choice is kept per region in
-  `config.ini` (`[gt3menu] lang_eu`).
+  `config.ini` (`[gt3menu] lang_eu`). NTSC-U and NTSC-J discs run in their own
+  language only, as the originals do.
 - Each region keeps its own GT Mode saves (`saves/` for NTSC-U, `saves/jp/`,
   `saves/eu/`), and PS2 saves import and export under the release's own memory
   card name (`BASCUS-97102`, `BESCES-50294`, `BISCPS-15009`). Versions up to

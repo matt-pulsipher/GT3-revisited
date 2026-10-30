@@ -153,15 +153,16 @@ public:
     std::string language() const;
     // Each region keeps its own choice in the config: [gt3menu] lang (NTSC-U), lang_jp, lang_eu.
     std::string language_key() const;
-    // Whether the region's language was chosen (the config or GT3R_LANG): PAL asks at the
-    // first start until it is.
+    // Whether the region's language was chosen (GT3R_LANG, or one of languages() in the
+    // config): PAL asks at the first start until it is.
     bool language_chosen() const;
-    // Chooses the language (a code the disc has menus for) and keeps it in the config.
+    // Chooses the language (one of languages(); others are ignored) and keeps it in the config.
     void set_language(const std::string& code);
     // The game's start: the opening movie, then the title menu; first the language page on a
     // PAL disc whose language was not chosen yet.
     void push_game_start();
-    // The languages the disc has menus for, in kMenuLanguages order.
+    // The languages the disc runs in (disc/region.h playable_languages): NTSC-U US, NTSC-J
+    // JP, PAL BR, FR, GR, IT, SP.
     std::vector<std::string> languages() const;
 
 private:
@@ -176,6 +177,8 @@ private:
     void draw_phone_mask(); // GT3R_PHONE: cutout and rounded corners, for screenshots
     void open_saved_disc(const std::string& saved); // [game] disc, with fallbacks for old relative paths
     void apply_language(); // the opened disc's language from the config
+    bool has_menus(Language l) const; // menu/<code>/ is on the disc
+    std::vector<Language> playable() const; // languages() as Language values
 
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;     // owned by gpu_ when it exists
