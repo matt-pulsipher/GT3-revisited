@@ -340,7 +340,8 @@ std::string on_frame(MenuController& ctl) {
     if (GtModeSession* rs = S()) rs->gt().tick_random();
     // (Ours: a page that took the controls away with nothing running to give them back, e.g.
     // one opened directly, gives them back once it has settled.)
-    if (ctl.ignoring_control() && !ms.wash.on && !ms.oil_change.on) ctl.give_control();
+    // (The prize car page keeps them while its roulette runs: car_get_frame gives them back.)
+    if (ctl.ignoring_control() && !ms.wash.on && !ms.oil_change.on && !car_get_holding()) ctl.give_control();
     ease_map_pointer(ctl);
     // The page's code runs on every frame; a queued effect (the map pointer's) plays on the
     // next frame the page plays none.

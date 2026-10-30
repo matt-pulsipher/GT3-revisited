@@ -653,6 +653,16 @@ with it before the first run (`menu_before_run`):
   each finished car's own race time in the menus' format (§D10; not the gaps of
   §B6), and no time for a car still racing when the race ended. The player's row
   is (255, 116, 0).
+- **Championship rounds.** The pre-race menu lists the cars in grid order (the
+  player on the last slot), each with its points so far, "%d %s" with "pt" under
+  2 points and "pts" from 2 ("0 pt", "10 pts"), in the player's color on the
+  player's row. Both menus show the round, "#1 Race" on the NTSC-U disc (the
+  realtime texts SHORTMENU_SESSION_BRFORE / _AFTER around the round number). The
+  laps read "%d %s" with the realtime text's Lap (one lap) or Laps. The rows are
+  filled by the layouts' widget classes (`race::quick_menu_column`).
+- **Left by pause EXIT.** A GT race's result menu then lists every row as "---" with
+  no time and no player color; a championship round's keeps its pre-race list (grid
+  order, no times, the player's row in color) (`race::result_menu_list`).
 - **Top 3.** Time trials, free runs (the course's ranking, §B7) and machine tests
   fill "Top 3" from the GT-mode ranking
   (`RaceScreen::fill_top3`), read again before every quick menu and after a run's

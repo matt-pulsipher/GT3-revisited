@@ -143,6 +143,8 @@ void apply_text_effects(ElementDraw& d, const Element& e, u32 age) {
 
 } // namespace
 
+void text_effects(ElementDraw& d, const Element& e, u32 age) { apply_text_effects(d, e, age); }
+
 namespace {
 
 // GT3's button list placement: along the list's axis, buttons of the given sizes kRowGap

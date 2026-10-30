@@ -777,6 +777,8 @@ GameState import_ps2_save(ByteSpan file, const GtData& data) {
     s.ride = s32(rd32(d, 0x28));
     u32 ncars = rd32(d, 0x30), nwheels = rd32(d, 0x34);
     s.trophies = rd32(d, 0xB0);
+    s.ending_short_seen = rd32(d, 0xB4) != 0; // the endings already played (gt_mode §10)
+    s.ending_long_seen = rd32(d, 0xB8) != 0;
     s.prize_cars = rd32(d, 0xBC);
     s.rng = rd32(d, 0xCC);
     s.player_name = fixed_str(d, 0x70, kNameField); // the last name entered (the name entry's start)
@@ -911,6 +913,8 @@ Bytes export_ps2_save(const GameState& s, const GtData& data) {
     wr32(p, 0x30, u32(s.garage.size()));
     wr32(p, 0x34, u32(nwheels));
     wr32(p, 0xB0, s.trophies);
+    wr32(p, 0xB4, s.ending_short_seen ? 1 : 0);
+    wr32(p, 0xB8, s.ending_long_seen ? 1 : 0);
     wr32(p, 0xBC, s.prize_cars);
     // The language the game was saved in (NTSC-J never writes it: 0).
     wr32(p, 0xC8, data.region == Region::Japan ? 0 : u32(data.language));

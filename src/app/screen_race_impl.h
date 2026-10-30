@@ -407,6 +407,9 @@ private:
     // queued (make_presentation_screen) to run before the quick menu.
     bool record_run();
     void fill_top3();
+    // Championship texts of the quick menus: the round (qm_session_num) and, before the round,
+    // every row's points (qm_pt<n>).
+    void fill_championship(std::vector<ResultRow>* rows);
     // The quick menu's item switches (menus §11): the visit's runs' and this run kind's, handed
     // to the menu shown (again after they change while it is up).
     void update_quick_menu_items();
@@ -421,6 +424,13 @@ private:
     void draw_panel(App& app, const SDL_FRect& dst);
     bool results_panel_up() const { return field_ && finished_ && !replaying_ && !two_player_ && finish_wait_ >= 5.0; }
     bool championship() const { return from_menu_ && launch_.request.champ_round > 0; }
+    // Which result list rule applies (race::result_menu_list): a championship round, a GT race
+    // (its qm_gt_result menu), or any other run.
+    race::ResultList result_list() const {
+        if (championship()) return race::ResultList::Championship;
+        if (field_ && ((from_menu_ && launch_.request.mode == "go_race") || preset_.gt_result)) return race::ResultList::GtRace;
+        return race::ResultList::Other;
+    }
 
     // Pause (screen_race_pause.cpp)
     std::vector<std::string> pause_items() const;
@@ -439,7 +449,8 @@ private:
     menu::flow::GameResult build_result() const;
     void leave(App& app);
     int presented_medal() const;
-    std::string race_text(const char* key, const char* fallback);
+    // `game_text`: the value's own bytes (what the menu font draws: quick-menu widgets), else UTF-8.
+    std::string race_text(const char* key, const char* fallback, bool game_text = false);
     // Tells the menus how the requested race went (GT mode awards prizes from it).
     void post_result() { menu::flow::post_game_result(result_latch_.for_leave(build_result())); }
     // Frames since the result was decided (the presenter's clock).
@@ -734,6 +745,9 @@ private:
     QuickMenu quick_menu_;
     RaceResultLatch result_latch_;
     std::optional<std::vector<ResultRow>> latched_rows_; // the result menu's rows, kept with the latched result
+    // The last pre-race menu's list (the grid, no times): a championship round left by pause EXIT
+    // shows it in its result menu (race::result_menu_list).
+    std::optional<std::vector<ResultRow>> prerace_rows_;
     PauseMenu pause_menu_;
     bool pause_loaded_ = false;
     menu::flow::MenuSounds quick_sounds_; // the menus' sound effects (quick / pause menus)

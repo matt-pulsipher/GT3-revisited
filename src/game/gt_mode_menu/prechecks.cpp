@@ -121,6 +121,7 @@ bool enabled(const std::string& page, const MblItem& it) {
     // Presentations: OK is accepted once the timeline is over.
     if (page == "license_get") return ms.show_frames >= kLicOk;
     if (page == "trophy_get") return trophy_ok();
+    if (page == "car_get") return car_get_ok();
     if (page == "arcade_mini") return ms.show_frames >= kArcadeMiniOk;
     if (page == "gtmode_mini" || page == "consolation_prize") return ms.show && counter_done(*ms.show);
     if (starts(page, "ar/")) {

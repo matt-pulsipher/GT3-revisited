@@ -742,8 +742,17 @@ TEST(gtmode_disc_races_and_prizes) {
     CHECK(rules->trophy_class == 5 && gt.state().trophies == 1 && gt.state().arcade.awards == 0x4);
     gt.record_race("Gsunday_e_0001", 4);
     CHECK(gt.state().trophies == 1 && gt.state().arcade.awards == 0x10004);
-    // Winning every race of the series gives the series prize car once.
+    // Winning every race of the series gives the series prize car once. A copy recording with
+    // prize cars off (the saves written before the menus record the result) rolls nothing.
     size_t cars = gt.state().garage.size();
+    {
+        GtMode copy(data);
+        copy.state() = gt.state();
+        copy.set_prize_cars(false);
+        for (const std::string& r : s->races) a = copy.record_race(r, 0);
+        CHECK(a.new_cars.empty() && copy.state().garage.size() == cars && copy.state().rng == gt.state().rng);
+        CHECK(copy.state().prizes_given.empty() && copy.state().best_position(s->races.back()) == 0);
+    }
     for (const std::string& r : s->races) a = gt.record_race(r, 0);
     CHECK(gt.state().garage.size() == cars + 1);
     CHECK(gt.state().garage[0].car == "trueno_gt_apex_85");
@@ -894,6 +903,13 @@ TEST(gtmode_disc_car_spec_bridge) {
     CHECK(gt.state().garage[0].cond.odometer_m == 1500.0 && gt.state().distance_m == 1500.0);
 }
 
+// The PS2 payload (header removed, bytes un-inverted).
+static Bytes ps2_payload(const Bytes& file) {
+    Bytes p(file.begin() + 0x40, file.begin() + 0x40 + rd32(file, 4));
+    for (u8& b : p) b = u8(~b);
+    return p;
+}
+
 TEST(gtmode_disc_ps2_save_roundtrip) {
     NEED_DATA();
     GtMode gt(data);
@@ -907,8 +923,10 @@ TEST(gtmode_disc_ps2_save_roundtrip) {
     gt.record_license("L0B0001", true, 35.0);
     for (const std::string& r : data->catalog.series_for("Gsunday_e_0001")->races) gt.record_race(r, 0);
     gt.state().day = 17;
+    gt.state().ending_short_seen = true; // the short ending played, the long one not yet
     Bytes file = export_ps2_save(gt.state(), *data);
     CHECK(file.size() % 64 == 0);
+    CHECK(rd32(ps2_payload(file), 0xB4) == 1 && rd32(ps2_payload(file), 0xB8) == 0);
     CHECK(rd32(file, 4) == 0x112BC + 0x204 * gt.state().garage.size() + 0x44 * (gt.state().wheels.size() + 1));
     GameState s = import_ps2_save(file, *data);
     const GameState& o = gt.state();
@@ -924,6 +942,8 @@ TEST(gtmode_disc_ps2_save_roundtrip) {
     CHECK(s.license_tests[0].medal == Medal::Gold);
     CHECK(s.race_best == o.race_best);
     CHECK(s.prizes_given == o.prizes_given);
+    // The endings already played (an imported game does not play them again, gt_mode §10).
+    CHECK(s.ending_short_seen && !s.ending_long_seen);
     // A flipped byte fails the CRC.
     file[0x80] ^= 1;
     bool threw = false;
@@ -933,13 +953,6 @@ TEST(gtmode_disc_ps2_save_roundtrip) {
         threw = true;
     }
     CHECK(threw);
-}
-
-// The PS2 payload (header removed, bytes un-inverted).
-static Bytes ps2_payload(const Bytes& file) {
-    Bytes p(file.begin() + 0x40, file.begin() + 0x40 + rd32(file, 4));
-    for (u8& b : p) b = u8(~b);
-    return p;
 }
 
 // Verified against a new game saved by the original (PCSX2): exporting the imported

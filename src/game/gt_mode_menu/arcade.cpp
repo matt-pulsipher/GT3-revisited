@@ -67,7 +67,7 @@ int add_time_trial_record(const std::string& code, double seconds) {
     // A time that makes the ranking asks for a name, as in GT mode.
     const int rank = gt.arcade_time_trial(code, seconds, car);
     if (rank >= 0)
-        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "at:" + code, rank, "", 0, "", true, {}});
+        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "at:" + code, rank, "", 0, "", true, {}, {}});
     return rank;
 }
 

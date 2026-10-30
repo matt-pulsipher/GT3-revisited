@@ -352,6 +352,7 @@ bool GameFlow::show_presentation() {
     open_control(p->set, p->page, -1);
     if (ctl_)
         for (const std::string& l : p->layers) ctl_->set_layer(l, 1);
+    if (ctl_ && p->take_controls) ctl_->take_control();
     return true;
 }
 

@@ -974,6 +974,8 @@ inline void add_presentation_menus(std::map<std::string, Bytes>& files) {
             .item("ok", {}, {}, 3, 280, 40, 80, 24)
             .widget("model", "render_model", "-", 200, 150, 240, 200)
             .widget("event_message", "event_message", "-", 100, 400, 400, 24)
+            .widget("get_car_message", "car_get_message", "Bonus car acquired", 100, 60, 400, 24)
+            .el("after", "after_bg1", "", 192, 0, 260, 448)
             .hidden("solo_race_clear", "Series cleared", 0, 0, 300, 20)
             .hidden("championship_win", "Championship won", 0, 0, 300, 20)
             .hidden("license_b_all_gold", "All gold", 0, 0, 300, 20)

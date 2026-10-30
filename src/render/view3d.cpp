@@ -827,6 +827,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         }
         fu.fog_color[3] = opt.fog && !background && !v.item->helper ? 1.0f : 0.0f;
         fu.tint[3] = std::max(v.item->alpha, 0.0f); // > 1 (blended items): the blend clamps
+        fu.tint[0] = fu.tint[1] = fu.tint[2] = v.item->tint;
         // GT3's lighting runs per vertex (the VU), with the infinite viewer: the lights and
         // material go to the vertex shader. The sheen's program has a local viewer instead:
         // GT3's light model viewer (0, 2, 0) in eye space, 2 m along the camera's up axis.

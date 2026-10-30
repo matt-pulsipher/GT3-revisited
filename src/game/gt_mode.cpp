@@ -1350,11 +1350,13 @@ Award GtMode::record_round(int place, const std::vector<int>& order) {
             a.money += a.bonus;
             state_.credits += a.bonus;
             state_.prize_money += a.bonus;
-            // The championship's own code: round code with the round number 00 (…_0501 -> …_0500).
+            // The trophy_get presentation picks its trophy (its weights from the completion
+            // before the title counts), then the title is recorded under the championship's own
+            // code (round code with the round number 00: …_0501 -> …_0500), then car_get rolls
+            // the prize car.
+            a.trophy = pick_trophy();
             std::string champ = code.substr(0, code.size() - 2) + "00";
             state_.race_best[champ] = 0;
-            // The trophy_get presentation picks its trophy before car_get rolls the prize car.
-            a.trophy = pick_trophy();
             a.new_cars = award_prizes(champ);
             a.prize_check = true;
         }
@@ -1418,6 +1420,8 @@ std::string GtMode::completion_file_text(float percent) {
 
 std::vector<int> GtMode::award_prizes(const std::string& code) {
     std::vector<int> got;
+    prize_rolls_.clear();
+    if (!prize_cars_) return got;
     const std::string series = code.size() > 4 ? code.substr(0, code.size() - 4) : code;
     bool stirred = false;
     for (const PrizeSet& set : data_->prizes) {
@@ -1477,6 +1481,7 @@ std::vector<int> GtMode::award_prizes(const std::string& code) {
         // Earlier indices shift by one with each insertion at the head.
         for (int& g : got) ++g;
         got.push_back(idx);
+        prize_rolls_.push_back({n, std::move(cands), std::move(paint), int(pick)});
     }
     return got;
 }

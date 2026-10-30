@@ -46,6 +46,11 @@ struct MenuEvent {
     int child = -1;   // Choice: new child index; Action/Finish: item index
 };
 
+// A text element's style effects (its marquee, its typewriter) at `age` frames: what the
+// controller applies to every text draw from its page's or layer's start; game code restarts
+// one from its own start.
+void text_effects(ElementDraw& d, const Element& e, u32 age);
+
 // .mbl page flag bits (MblPage::flags42), see docs/formats/menu.md.
 namespace page_flag {
 constexpr u16 kHorizontal = 0x001; // Left/Right move the focus (else Up/Down)
@@ -136,6 +141,8 @@ public:
     // buttons are not drawn, until control code gives control back.
     bool ignoring_control() const { return ignore_control_; }
     void give_control() { ignore_control_ = false; }
+    // Game code takes the controls away the same way (the prize car page's roulette).
+    void take_control() { ignore_control_ = true; }
     bool finished() const { return finished_; }
     int result() const { return result_; }
     u32 frame() const { return frame_; }

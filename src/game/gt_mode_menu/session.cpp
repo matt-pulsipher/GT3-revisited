@@ -122,10 +122,11 @@ const GameState* snapshot_save() {
 
 void save_race_run(const GameResult& r) {
     GtModeSession* s = S();
-    if (!s || !saving_enabled() || r.mode != "go_race" || !r.finished || r.position <= 0) return;
+    if (!s || !saving_enabled() || r.mode != "go_race" || !r.started || !r.finished || r.position <= 0) return;
     if (s->gt().state().championship.active()) return;
     GtMode copy(s->gt().data_ptr());
     copy.state() = s->gt().state();
+    copy.set_prize_cars(false); // the live result's car_get rolls the prize car
     copy.record_race(r.event.empty() ? r.race_code : r.event, r.position - 1);
     std::string err;
     if (!write_save(s->save_path(), copy.state(), &err)) LOG_WARN("gt mode: save failed: %s", err.c_str());
@@ -137,6 +138,7 @@ bool begin_race_game_save(const GameResult& r) {
     if (!s) return false;
     GtMode copy(s->gt().data_ptr());
     copy.state() = s->gt().state();
+    copy.set_prize_cars(false);
     // What on_result() will record for the round: the engine condition, the car's dirt, the place.
     apply_condition(copy, r);
     if (r.car_dirt >= 0)
@@ -156,6 +158,7 @@ void save_license_run(const std::string& code, int medal, double seconds) {
     // A copy: the live state is recorded when the result reaches the menus.
     GtMode copy(s->gt().data_ptr());
     copy.state() = s->gt().state();
+    copy.set_prize_cars(false);
     copy.record_license_medal(code, Medal(std::min(medal, 2)), seconds);
     std::string err;
     if (!write_save(s->save_path(), copy.state(), &err)) LOG_WARN("gt mode: save failed: %s", err.c_str());

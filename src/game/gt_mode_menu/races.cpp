@@ -76,6 +76,7 @@ void prepare_request(GameRequest& r) {
             r.champ_round = ch.next + 1;
             r.champ_rounds = int(ch.races.size());
             r.champ_last = r.champ_round == r.champ_rounds;
+            r.champ_points = ch.points;
         } else {
             r.race_code = s->race_code;
             r.opponents = gt.pick_opponents(r.race_code);
@@ -185,7 +186,7 @@ std::vector<std::string> on_result(const GameResult& r) {
     if (a.license_obtained) {
         std::string id = license_menu_id(License(GtMode::license_index_of(r.race_code)));
         // The license card (lic_b, a, ib, ia, s, d = rally) over the two messages, shown in turn.
-        ms.shows.push_back({"lc_get", "license_get", {id + "_mess0"}, "", "", 0, {}, "", -1, "menu/lic_" + id + ".prm", 0, "", true, {}});
+        ms.shows.push_back({"lc_get", "license_get", {id + "_mess0"}, "", "", 0, {}, "", -1, "menu/lic_" + id + ".prm", 0, "", true, {}, {}});
     }
     // A championship won: its trophy (picked by record_round, menu/champ_NN.prm) and the
     // bonus, before the prize car.
@@ -199,19 +200,29 @@ std::vector<std::string> on_result(const GameResult& r) {
             if (const char* c = std::strchr(fake_trophy, ':')) bonus = std::atoll(c + 1);
         char trophy[32];
         std::snprintf(trophy, sizeof trophy, "menu/champ_%02d.prm", t);
-        Show sh{"trophy_get", "trophy_get", {"mess0"}, "", "", 0, {}, "", -1, trophy, bonus, "", a.champion, {}};
+        Show sh{"trophy_get", "trophy_get", {"mess0"}, "", "", 0, {}, "", -1, trophy, bonus, "", a.champion, {}, {}};
         sh.counter.delay = kTrophyCountDelay;
         ms.shows.push_back(std::move(sh));
     }
-    for (int i : a.new_cars)
-        if (i >= 0 && i < int(gt.state().garage.size())) {
-            const GarageCar& c = gt.state().garage[size_t(i)];
-            log.push_back("prize car: " + car_name(gt, c.car));
-            Show sh{"car_get", "car_get", {}, prize_reason(c.origin), c.car, c.color, {}, "", -1, "", 0, "", true, {}};
-            if (const PrizeSet* ps = gt.data().prize_set(c.origin))
-                for (const PrizeCar& pc : ps->cars) sh.candidates.push_back(gt.data().prize_candidate(pc).car);
-            ms.shows.push_back(std::move(sh));
+    // One car_get page per car given, in the order the sets were checked: the set's candidates
+    // with the paints they were rolled and the one won (the roulette lands on it; gt_mode §10.1).
+    const std::vector<PrizeRoll>& rolls = gt.last_prize_rolls();
+    for (size_t k = 0; k < a.new_cars.size(); ++k) {
+        const int i = a.new_cars[k];
+        if (i < 0 || i >= int(gt.state().garage.size())) continue;
+        const GarageCar& c = gt.state().garage[size_t(i)];
+        log.push_back("prize car: " + car_name(gt, c.car));
+        Show sh{"car_get", "car_get", {}, prize_reason(c.origin), c.car, c.color, {}, "", -1, "", 0, "", true, {}, {}};
+        if (k < rolls.size() && rolls[k].set == c.origin && !rolls[k].candidates.empty()) {
+            for (const PrizeCar& pc : rolls[k].candidates) sh.candidates.push_back(pc.car);
+            sh.car_get.paints = rolls[k].paints;
+            sh.car_get.pick = rolls[k].pick;
+        } else {
+            sh.candidates = {c.car};
+            sh.car_get.paints = {c.color};
         }
+        ms.shows.push_back(std::move(sh));
+    }
     // A prize car that did not fit in the garage: "Garage is full" (as the original).
     if (gt.take_prizes_refused() > 0) {
         Show sh{};

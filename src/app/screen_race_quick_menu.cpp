@@ -205,6 +205,26 @@ void RaceScreen::fill_top3() {
     }
 }
 
+// Championship quick menus (qm_gt_event_champ, qm_gt_result_champ): qm_session_num =
+// SHORTMENU_SESSION_BRFORE + the round number + SHORTMENU_SESSION_AFTER ("%s%d%s", US "#1 Race";
+// an empty value keeps the program's default), the same in the round's result menu. `rows` (the pre-race list):
+// each car's points so far, "%d %s" with POINT_SINGLE under 2, else POINT_PLURAL ("0 pt",
+// "10 pts"); the result menu's list is the finishing order with times only.
+void RaceScreen::fill_championship(std::vector<ResultRow>* rows) {
+    if (!championship()) return;
+    const menu::flow::GameRequest& rq = launch_.request;
+    quick_menu_.set_class_text("qm_session_num", race_text("SHORTMENU_SESSION_BRFORE", "#", true) +
+                                                     std::to_string(rq.champ_round) +
+                                                     race_text("SHORTMENU_SESSION_AFTER", " Race", true));
+    if (!rows) return;
+    for (ResultRow& r : *rows) {
+        const size_t e = size_t(r.car + 1); // the entrant: 0 the player, i + 1 opponent i
+        const int pts = r.car >= -1 && e < rq.champ_points.size() ? rq.champ_points[e] : 0;
+        r.points = std::to_string(pts) + " " +
+                   race_text(pts < 2 ? "SHORTMENU_POINT_SINGLE" : "SHORTMENU_POINT_PLURAL", pts < 2 ? "pt" : "pts", true);
+    }
+}
+
 bool RaceScreen::dirt_course() const {
     for (const data::Course& c : db_.courses())
         if (c.label == courses_[size_t(course_sel_)].label) return c.surface == 2;
@@ -231,13 +251,21 @@ void RaceScreen::open_prerace_menu(App& app) {
         fill_license_menu(app);
         return;
     }
-    // The entry list (the capture of GT3's RACE MENU): every car, no times yet ("no time").
+    // The entry list in grid order (the capture of GT3's RACE MENU): every car, no times yet ("no
+    // time"); a championship round's with each car's points (the entrants by grid slot).
     if (field_) {
         std::vector<ResultRow> rows = result_rows();
         for (ResultRow& r : rows) r.time = kNoTimeText;
+        fill_championship(&rows);
+        prerace_rows_ = rows;
         quick_menu_.set_rows(std::move(rows));
     }
-    if (race_laps_ > 0) quick_menu_.set_text("laps", std::to_string(race_laps_) + (race_laps_ == 1 ? " Lap" : " Laps"));
+    // "%d %s" with the realtime text's Lap (under 2) or Laps, in every qm_laps widget
+    // (the championship layout has a shadow copy).
+    if (race_laps_ > 0)
+        quick_menu_.set_class_text("qm_laps", std::to_string(race_laps_) + " " +
+                                                  race_text(race_laps_ < 2 ? "SHORTMENU_LAPS_SINGLE" : "SHORTMENU_LAPS_PLURAL",
+                                                            race_laps_ < 2 ? "Lap" : "Laps", true));
     fill_top3();
     start_menu_backdrop(true);
 }
@@ -251,11 +279,13 @@ void RaceScreen::open_quick_menu(App& app) {
     if (!quick_menu_.load(*app.vfs(), app.renderer(), hud_.fonts(), pmb, lang_)) quick_menu_.load(*app.vfs(), app.renderer(), hud_.fonts(), "qm_arc_result1.pmb", lang_);
     update_quick_menu_items();
     // The live race's rows: after a replay (a GT race's own, or the 2P one) the field is the
-    // replay's.
-    std::vector<ResultRow> rows = latched_rows_ ? *latched_rows_ : result_menu_rows();
+    // replay's. A championship round left by pause EXIT keeps its pre-round list (latch_result).
+    std::vector<ResultRow> rows =
+        latched_rows_ ? *latched_rows_ : race::result_menu_list(result_list(), finished_, result_menu_rows(), prerace_rows_);
     for (const ResultRow& r : rows)
         LOG_INFO("Race result: %-40s %s", text::game_text_to_utf8(r.name, hud_.fonts().jis()).c_str(), r.time.c_str());
     quick_menu_.set_rows(std::move(rows));
+    fill_championship(nullptr);
     if (!license_event_.empty()) fill_license_menu(app); // the test's name and target times
     fill_top3();
     start_menu_backdrop(false);

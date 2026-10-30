@@ -202,6 +202,16 @@ struct EventRules {
     std::vector<std::string> entries; // opponent pool (car variants)
 };
 
+// One prize car's car_get roll (gt_mode §10): its set, the set's candidates as the roll saw
+// them (labels in the game's language), the paint each candidate got and the one picked (the
+// car given). The car_get page's roulette shows these (car_get_roulette.h).
+struct PrizeRoll {
+    std::string set;
+    std::vector<PrizeCar> candidates;
+    std::vector<int> paints;
+    int pick = 0;
+};
+
 // What a finished race / test produced.
 struct Award {
     s64 money = 0;            // prize money (+ championship bonus)
@@ -390,6 +400,12 @@ public:
 
     // Prize cars a result unlocks (scans every prize set).
     std::vector<int> award_prizes(const std::string& code);
+    // Off: results record everything but the prize cars (no roll, no car; the saves written
+    // from a copy of the game before the menus record the result, whose car_get rolls the car).
+    void set_prize_cars(bool on) { prize_cars_ = on; }
+    // The rolls of the last award_prizes call, one per car given, in its order (the indices
+    // it returned).
+    const std::vector<PrizeRoll>& last_prize_rolls() const { return prize_rolls_; }
     // A GT-mode code (gt_mode §23): GT races and championships (G...), endurance (E...),
     // rally (D...), licences (L.B, L.A, L.S, L.R: tests and licence sets), machine tests
     // (M4.., M1.., MM..); not arcade (A...) or anything else. Only a check with such a
@@ -520,6 +536,8 @@ private:
     std::shared_ptr<const GtData> data_;
     GameState state_;
     int prizes_refused_ = 0;
+    bool prize_cars_ = true;
+    std::vector<PrizeRoll> prize_rolls_;
 };
 
 // The original's draws on the GT-mode generator state (gt_mode §20.3), one step each.

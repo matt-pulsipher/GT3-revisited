@@ -6,6 +6,7 @@
 // per concern (docs/dev/GT_MODE.md, "Menu integration"). The declarations below are grouped by
 // the file that defines them.
 
+#include "game/car_get_roulette.h"
 #include "game/gt_mode_menu.h"
 #include "game/prize_count_up.h"
 #include "game/save_library.h"
@@ -49,6 +50,14 @@ struct Show {
         int done_frame = -1;  // presentation frame the count finished on
         bool started = false;
     } counter;
+    // car_get: each candidate's paint (as rolled), the candidate won and the page's roulette
+    // (car_get_roulette.h, started when the page opens).
+    struct CarGet {
+        std::vector<int> paints;
+        int pick = 0;
+        CarGetRoulette roulette;
+        int released_frame = -1; // presentation frame the roulette gave the controls back on
+    } car_get;
 };
 
 // Presentation timelines (frames at 60 Hz, gt_mode §18): when the model fades in.
@@ -228,6 +237,12 @@ std::optional<GameRequest> attract_demo();
 bool counter_done(const Show& sh);
 // Trophy: OK (and mess1) 15 frames after the count, and not before the bonus box's 60 frames.
 bool trophy_ok();
+// Prize car (car_get): the roulette still holds the controls; OK once it has given them back.
+bool car_get_holding();
+bool car_get_ok();
+// The car_get page opens: its roulette over the show's candidates (sizes from the database,
+// headings from the shared state).
+void start_car_get(Show& sh);
 // The remaining-prize line's opacity at `frame` (in from `shown`, out after the count).
 float remain_alpha(const Show& sh, int frame, int shown);
 // The race prize page for a GT race result: the event's cup or the consolation prize.

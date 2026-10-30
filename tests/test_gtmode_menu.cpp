@@ -212,7 +212,13 @@ TEST(gtmode_menu_disc_buy_and_race) {
     CHECK(skip_race_prizes(f).size() == 1);
     CHECK(s->gt().state().garage.size() == cars + 1);
     CHECK(f.gt_active() && f.control() == "car_get" && f.controller()->page_name() == "car_get");
-    for (int i = 0; i < 200; ++i) f.tick(0); // the roulette
+    // The page keeps the controls until its roulette has stopped on the car won and the
+    // camera has flown in on it (one candidate: 210 frames held, then the drop of the others).
+    CHECK(f.controller()->ignoring_control());
+    press(f, MenuKey::Confirm);
+    CHECK(f.control() == "car_get");
+    for (int i = 0; i < 600 && f.controller()->ignoring_control(); ++i) f.tick(0);
+    CHECK(!f.controller()->ignoring_control());
     press(f, MenuKey::Confirm);
     settle(f);
     CHECK(f.control() == "gt_mode" && f.controller()->page_name() == "r/beginner/gsunday_e");
