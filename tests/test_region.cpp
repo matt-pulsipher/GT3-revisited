@@ -260,7 +260,8 @@ TEST(region_disc_part_texts) {
         else if (lang == Language::SP) muffler = "Silenciador/Sport";
         if (lang != Language::GR) CHECK(d.part_texts["PTEXT_MUFFLER_1"] == muffler);
         if (lang == Language::JP) CHECK(d.part_texts["PTEXT_TIRE_DIRT"] == kDirt);
-        else if (lang == Language::US || lang == Language::BR) CHECK(d.part_texts["PTEXT_TIRE_DIRT"] == "Dirt Racing Tires");
+        else if (lang == Language::US) CHECK(d.part_texts["PTEXT_TIRE_DIRT"] == "Dirt Racing Tires");
+        else if (lang == Language::BR) CHECK(d.part_texts["PTEXT_TIRE_DIRT"] == "Dirt Racing Tyres");
     }
     game::GtData bare;
     CHECK(bare.load([&](const std::string& p) -> std::optional<Bytes> {

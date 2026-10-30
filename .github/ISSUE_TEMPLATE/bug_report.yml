@@ -41,7 +41,7 @@ body:
     attributes:
       label: GT3 Revisited version
       description: Shown at the top right of the GT3 Revisited menu (press Select on the title menu). For a build from source, the commit.
-      placeholder: v0.4.1
+      placeholder: v0.4.2
     validations:
       required: true
 

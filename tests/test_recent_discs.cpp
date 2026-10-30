@@ -78,8 +78,7 @@ TEST(recent_discs_rebase_app_container) {
     // Outside any app folder (iCloud Drive, another provider), or not on iOS: unchanged.
     const std::string icloud = "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/GT3.iso";
     CHECK(rebase_app_container_path(icloud, now) == icloud);
-    CHECK(rebase_app_container_path("/Users/me/GT3.iso", "/Users/me/Library/Application Support/GT3Revisited/") ==
-          "/Users/me/GT3.iso");
+    CHECK(rebase_app_container_path("/home/me/GT3.iso", "/home/me/.local/share/GT3Revisited/") == "/home/me/GT3.iso");
     CHECK(rebase_app_container_path("/x/Containers/Data/Application/", now) == "/x/Containers/Data/Application/");
 }
 
