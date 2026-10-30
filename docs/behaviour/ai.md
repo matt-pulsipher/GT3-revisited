@@ -861,9 +861,10 @@ practice and machine tests have no opponents (a ghost car aside), online battles
 besides the other players' cars.
 
 **Grid.** The players take the slot after the opponents (or a configured slot), player 2
-the next; the opponents take the other slots in their order or, in GT mode, by
-power-to-weight: lowest kg per PS on pole (PS from the peak of torque × rpm on the car's
-full-throttle curve). Each car is placed with its nose at its slot point (moved back along
+the next; the opponents take the other slots in their order or, in GT mode, by a
+whole-number weight-to-power figure: the car's kg over the whole power the menus show, in
+the language's unit, truncated; the lowest on pole, equal figures in the order drawn (gt_mode
+§22.1). Each car is placed with its nose at its slot point (moved back along
 its heading by its front extent from the center of gravity), every car facing the grid's
 direction (physics §9.2).
 

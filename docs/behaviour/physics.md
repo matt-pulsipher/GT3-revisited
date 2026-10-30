@@ -1355,8 +1355,9 @@ An electric mod car races on its donor car's stock engine, engine parts, drivetr
 gearbox: the race has no electric drive yet.
 
 **The menus' numbers** (the car pages' power and torque, the gear chart, the showroom top
-speed, the showroom ride height, GT Mode's grid order by power-to-weight and the online
-plausibility checks) come from a separate builder over the same records and settings. It
+speed, the showroom ride height and the online plausibility checks) come from a separate
+builder over the same records and settings (GT Mode's starting grid, gt_mode §22.1, builds
+its cars the race's way instead, with a fresh engine). It
 applies the rules below to what it shows, with these differences:
 
 - it fills a missing value with a conventional default: mass at least 300 kg, a front weight

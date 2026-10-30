@@ -286,7 +286,7 @@ PowerPeak spec_power_peak(const sim::CarSpec& s, float condition) {
 float spec_power_ps(const sim::CarSpec& s, float condition) { return spec_power_peak(s, condition).ps; }
 
 int display_power(float ps, const Units& units) {
-    return ps2::to_int(units.power_hp ? ps2::mul(ps, std::bit_cast<float>(0x3F7C76F3u)) : ps);
+    return sim::exact::shown_power(ee::F::raw(std::bit_cast<u32>(ps)), units.power_hp);
 }
 
 const char* power_unit(const Units& units) { return units.power; }

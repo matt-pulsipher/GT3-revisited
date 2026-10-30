@@ -1019,7 +1019,7 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
   (automatic) or 1 (manual; the pause menu's AT / MT changes it on the record while the pad drives), the
   steering-wheel type 1 when the player's controller is a wheel (`DeviceKind::Wheel`), ASM / TCS from the Options (arcade single race,
   free run, 2P battle), the engine condition words and the car's dirt. Grid: the opponents in their order
-  (GT mode: by power-to-weight) on the slots before the players' (the players behind them), never more
+  (GT mode: by whole kg per whole power, `gt_grid_places`) on the slots before the players' (the players behind them), never more
   cars than the course's grid slots (more are left out, logged): GT3's menus never make such a field (every
   event's cars fit its course; the arcade's dirt races are one against one). The start port itself reads a
   slot past the course's grid table as the program does (CourseQuery::slot: what follows the table in the
@@ -1133,10 +1133,12 @@ From the event record (database table 32; `race::event_start`):
   slot point (moved back by the front extent).
   Flying starts sit on the racing line (game line 6) at -distance, heading
   along the line's next 10 m.
-- **Grid order**: player last. Arcade: opponents in draw order. GT mode: ranked by
-  power-to-weight (kg/PS = mass / peak of torque x rpm), strongest on pole
-  (`FieldConfig::grid_by_power`; `GameResult::order` still indexes
-  `GameRequest::opponents`). Replays record which (format v9, see "Replays").
+- **Grid order**: player last. Arcade: opponents in draw order. GT mode: GT3's grid
+  (behaviour gt_mode §22.1): whole kg over the whole power the menus show in the language's
+  unit (HP / BHP / CV when `FieldConfig::grid_hp`, else PS), truncated, the lowest on pole,
+  equal figures in entry order (`FieldConfig::grid_by_power`; `gt_grid_places` over
+  `exact_grid_figure`; `GameResult::order` still indexes `GameRequest::opponents`). Replays
+  record which (format v9, see "Replays").
 - **Flying starts** (type 3 with an initial speed: time attack, moving
   licence tests): the car starts at the event's speed, `flying_m` metres
   before the line along the lap (on the start slot's lateral position), and

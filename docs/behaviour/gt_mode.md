@@ -1405,9 +1405,25 @@ code is the event label, for example `Gsunday_e_0001`. The race information page
 the six prizes (a prize of 0 as "0") and the rules (§8).
 
 Each race fields the event's car count (6 for races). The opponents are a fresh draw
-(§20.4). The result is recorded as in §3.4. GT Mode lines the opponents up by
-power-to-weight with the strongest car on pole, and the player starts behind them; the
-grid itself belongs to the race description.
+(§20.4). The result is recorded as in §3.4.
+
+**The starting grid** (`race::gt_grid_figure`, `gt_grid_places`; tests `race_gt_grid_rule`,
+`race_gt_grid_disc`). GT Mode lines the opponents up by a whole-number weight-to-power figure,
+the lowest on pole, and the player starts behind them:
+
+- each car is built from its parts the race's way, with a fresh engine
+  (`race::exact_grid_figure`);
+- the figure is the car's catalog weight in kg with its weight-reduction parts (not the
+  120 kg the race adds to every car) divided by its peak power as a whole number, the way
+  the car pages show it in the language's unit (HP on this disc; BHP or CV in the British,
+  Italian, Spanish and French languages, PS in German and Japanese), with the remainder
+  dropped: 1,510 kg over 326 HP is 4;
+- cars with the same figure keep the order they were drawn in.
+
+So close cars often tie. In the Japan Championship, a field drawn as 300ZX, 3000GT, Supra RZ,
+Lancer Evolution VI and NSX Type S Zero gives 5, 5, 4, 4 and 4 kg/HP, and the grid is Supra,
+Lancer, NSX, 300ZX, 3000GT, then the player. Where each grid place is on the course belongs to
+the race description.
 
 After a race, the ride car takes back the engine condition the race advanced (§13.1),
 and its dirt is set from the race (§13). Before the race the pre-race menu offers a free
@@ -1445,7 +1461,8 @@ A championship series has a `set_race_code_champ` item named after its own code
 
 1. **Start.** Choosing the championship starts round 1, the item's code + 1. It costs
    one day (§2). The field, cars − 1 opponents, is drawn once from round 1's pool, and
-   every entrant's points start at 0 (`start_championship`).
+   every entrant's points start at 0 (`start_championship`). Every round starts on the
+   grid of §22.1, so with the same cars the grid is the same each round.
 2. **Each round** pays its own place prize, sets cup bits and keeps best places like a
    single race, but gives no prize car (`record_round`). Points of 10, 6, 4, 3, 2 and 1
    go to the first six of the finishing order. If only the player's place is known,

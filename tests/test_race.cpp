@@ -955,6 +955,71 @@ TEST(race_field_event) {
     CHECK(st.size() == 6 && !st[0].finished);
 }
 
+// GT Mode's grid on the disc (gt_mode §22.1): the Japan Championship's round 5 field with the opponents in their entry order.
+// On NTSC-U it lines up as GT3 lines it up (GT3 on US 1.10, the round's pre-race grid: Supra, Lancer, NSX, 300ZX, 3000GT, then
+// the player; the old kg-per-PS float rule put the Lancer first). On every disc, in both power units, the race field's grid
+// slots are gt_grid_places over exact_grid_figure, the player last.
+TEST(race_gt_grid_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const bool ntsc_u = test_disc() != nullptr;
+    Vfs vfs(&disc->volume());
+    std::optional<Bytes> core = disc->volume().read_program();
+    CHECK(core.has_value());
+    if (!core) return;
+    auto d = std::make_shared<const sim::exact::ProgramData>(sim::exact::ProgramData::load(CoreImage::decode(*core)));
+    data::CarDatabase db;
+    CHECK(db.load(vfs));
+    const data::Event* ev = db.event("Gjapan_n_0505");
+    CHECK(ev != nullptr);
+    if (!ev) return;
+    const std::vector<std::string> opps = {"jpn_n_z_r_2by2_tt_98", "jpn_n_gto_tt_99", "jpn_n_supra_rz_97", "jpn_n_lancer_evo6_gsr_99",
+                                           "jpn_n_nsx_s_zero_97"};
+    std::vector<sim::exact::Equipment> eqs;
+    for (const std::string& l : opps) {
+        std::optional<sim::exact::Equipment> eq = exact_equipment(db, {l});
+        CHECK(eq.has_value());
+        if (!eq) return;
+        eqs.push_back(*eq);
+    }
+    Bytes course = disc->volume().read(*disc->volume().find(course_file_path(vfs, ev->course)));
+    std::unique_ptr<RaceTrack> track = make_track(vfs, course, ev->course);
+    for (bool hp : {false, true}) {
+        std::vector<int> fig;
+        std::string line;
+        for (size_t i = 0; i < eqs.size(); ++i) {
+            const sim::exact::Showroom s = sim::exact::showroom_build(db, *d, eqs[i]);
+            fig.push_back(exact_grid_figure(db, *d, eqs[i], hp));
+            line += " " + std::to_string(s.mass()) + "/" + std::to_string(sim::exact::shown_power(s.peak.ps, hp)) + "=" +
+                    std::to_string(fig.back());
+        }
+        const std::vector<int> places = gt_grid_places(fig);
+        std::printf("  %s:%s\n", hp ? "HP" : "PS", line.c_str());
+        if (ntsc_u && hp) CHECK(places == (std::vector<int>{3, 4, 0, 1, 2}));
+        FieldConfig cfg;
+        cfg.event = ev->label;
+        cfg.opponents = opps;
+        cfg.grid_by_power = true;
+        cfg.grid_hp = hp;
+        cfg.exact.data = d;
+        cfg.exact.course_file = course;
+        cfg.exact.course = ev->course;
+        cfg.exact.laps = ev->laps;
+        cfg.exact.player.car = {"r34_gtr_v_99"};
+        std::string err;
+        std::unique_ptr<RaceField> f = RaceField::create(*track, db, cfg, &err);
+        CHECK(f != nullptr);
+        if (!f) return;
+        std::shared_ptr<const sim::exact::RaceRecord> rec = exact_recording(*f);
+        CHECK(rec && rec->entries.size() == 6);
+        if (!rec || rec->entries.size() != 6) return;
+        std::vector<int> slots, want = {5};
+        for (const sim::exact::StartEntry& e : rec->entries) slots.push_back(e.grid_slot);
+        want.insert(want.end(), places.begin(), places.end());
+        CHECK(slots == want);
+    }
+}
+
 TEST(race_lap_logger_and_records) {
     LapLogger log;
     for (int lap = 0; lap < 3; ++lap) {
@@ -992,13 +1057,27 @@ TEST(race_event_start_fields) {
     b[0x1F3] = 0;
     b[0x1F2] = 7;
     CHECK(event_start(ev).countdown == 7);
+}
 
-    sim::CarSpec light, heavy;
-    light.engine.curve_rpm = heavy.engine.curve_rpm = {2000, 6000, 8000};
-    light.engine.curve_torque = heavy.engine.curve_torque = {300, 400, 300};
-    light.mass = 1000, heavy.mass = 1500;
-    CHECK(power_to_weight(light) < power_to_weight(heavy));
-    CHECK(std::fabs(power_to_weight(light) - 1000.0f / (400.0f * 6000 * 0.10471976f / 735.49875f)) < 0.01f);
+// GT Mode's grid (gt_mode §22.1): whole kg over the whole power shown, truncated; the lowest figure on pole, equal figures in
+// entry order.
+TEST(race_gt_grid_rule) {
+    CHECK(gt_grid_figure(1250, 300) == 4); // 4.17
+    CHECK(gt_grid_figure(1199, 290) == 4); // 4.13
+    CHECK(gt_grid_figure(1199, 300) == 3);
+    CHECK(gt_grid_figure(900, 1000) == 0);
+    CHECK(gt_grid_figure(1000, 0) > gt_grid_figure(30000, 1)); // no power (no figure in GT3): last
+    // The two 4s above tie and keep their entry order (a kg/HP compare would put the 1,199 kg car first).
+    CHECK(gt_grid_places(std::vector<int>{4, 4}) == (std::vector<int>{0, 1}));
+    CHECK(gt_grid_places(std::vector<int>{4, 4, 3, 7, 4}) == (std::vector<int>{1, 2, 0, 4, 3}));
+    CHECK(gt_grid_places(std::vector<int>{9, 8, 7, 6, 5}) == (std::vector<int>{4, 3, 2, 1, 0}));
+    CHECK(gt_grid_places(std::vector<int>{5}) == std::vector<int>{0});
+    CHECK(gt_grid_places(std::vector<int>{}).empty());
+    // The power the menus show (and the grid divides by): HP, BHP and CV are PS x 0.98619, both truncated.
+    CHECK(sim::exact::shown_power(ee::F(300.0f), false) == 300);
+    CHECK(sim::exact::shown_power(ee::F(300.0f), true) == 295); // 295.857
+    CHECK(sim::exact::shown_power(ee::F(304.9f), true) == 300); // 300.69
+    CHECK(sim::exact::shown_power(ee::F(304.2f), true) == 299); // 299.99898
 }
 
 // A judged licence run as GT3's licence display shows it, from the race flow's result words: a medal with its time; slower

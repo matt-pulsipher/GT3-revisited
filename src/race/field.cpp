@@ -3,9 +3,9 @@
 
 #include "base/bytes.h"
 #include "game/data/car_database.h"
-#include "sim/car_spec.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace gt3r::race {
 
@@ -28,13 +28,25 @@ EventStart event_start(const data::Event& ev) {
     return e;
 }
 
-// kg per PS: mass over the peak of torque x rpm on the full-throttle curve.
-float power_to_weight(const sim::CarSpec& s) {
-    float best_w = 0;
-    for (size_t i = 0; i < s.engine.curve_rpm.size() && i < s.engine.curve_torque.size(); ++i)
-        best_w = std::max(best_w, s.engine.curve_torque[i] * s.engine.curve_rpm[i] * 0.10471976f); // N*m * rad/s
-    float ps = best_w / 735.49875f;
-    return ps > 1 ? s.mass / ps : 1e9f;
+// Integer division, truncating. A power of 0 has no figure in GT3; ours puts such a car last.
+int gt_grid_figure(int mass_kg, int power) { return power > 0 ? mass_kg / power : std::numeric_limits<int>::max(); }
+
+// The grids' ranking: each opponent counts the opponents with a lower figure (equal ones neither), then
+// takes that place or, when an earlier opponent has it, the next free one.
+std::vector<int> gt_grid_places(std::span<const int> f) {
+    const size_t n = f.size();
+    std::vector<int> ahead(n, 0), place(n, 0);
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = i + 1; j < n; ++j)
+            if (f[i] != f[j]) ++ahead[f[j] < f[i] ? i : j];
+    std::vector<bool> taken(n, false);
+    for (size_t i = 0; i < n; ++i) {
+        size_t p = size_t(ahead[i]);
+        while (taken[p]) ++p;
+        taken[p] = true;
+        place[i] = int(p);
+    }
+    return place;
 }
 
 bool ranks_ahead(const RaceField::Standing& a, const RaceField::Standing& b) {

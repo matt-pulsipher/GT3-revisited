@@ -81,6 +81,11 @@ std::shared_ptr<const ex::RaceCourse> exact_course(ByteSpan file, const std::str
     return course;
 }
 
+int exact_grid_figure(const data::CarDatabase& db, const ex::ProgramData& d, const ex::Equipment& eq, bool hp) {
+    const ex::Showroom s = ex::showroom_build(db, d, eq);
+    return gt_grid_figure(s.mass(), ex::shown_power(s.peak.ps, hp));
+}
+
 std::string exact_base_car(const data::CarDatabase& db, const std::string& label) {
     if (db.car(label)) return label;
     if (const data::CarVariant* v = db.variant(label)) return v->car;

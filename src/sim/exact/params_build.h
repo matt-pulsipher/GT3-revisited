@@ -99,4 +99,31 @@ s32 convert_params(Spec& spec, const ConvertInputs& in, ParamImage& p);
 // source, the rule block, the condition block and P's address; its globals are replaced by physics_globals().
 ParamImage race_params(const data::CarDatabase& db, const ProgramData& d, Equipment eq, int mode, bool asm_on, bool tcs_on, ConvertInputs in);
 
+// The peak power and torque of P's engine (E = P + 0x138) as the menus' figures: from the curve's first point
+// (rounded to 100 rpm) every 100 rpm up to the higher of the rev limit and the last point, the full-throttle torque x the
+// condition factor of in.condition under the power cap, kgf m = T / 9.8 and PS = kgf m x rpm / 716.2;
+// only speeds up to the rev limit count, the first strictly greater value wins. The program writes {ps, kgfm, power rpm,
+// torque rpm} at its out pointer (the showroom's + 0x1294).
+struct EnginePeak {
+    F ps, kgfm;
+    s32 power_rpm = 0, torque_rpm = 0;
+};
+EnginePeak engine_peak(const ParamImage& p, const ConvertInputs& in);
+
+// The showroom build (the menus' car, and GT Mode's grid: race/field.h): the spec (with flag, mode and
+// tyre override 0), P from it (control source 0, the program's showroom rule record (no power cap), the
+// condition words `condition`; zeros: a fresh engine) and the peak. The spec's mass (+0x2A, s16 kg) is the
+// catalogue weight with the weight parts, before the converter's added mass.
+struct Showroom {
+    Spec spec{};
+    ParamImage p{};
+    EnginePeak peak;
+    s16 mass() const { return s16(spec[0x2A] | (spec[0x2B] << 8)); }
+};
+Showroom showroom_build(const data::CarDatabase& db, const ProgramData& d, Equipment eq, const std::array<u32, 8>& condition = {});
+
+// The whole power the menus show for a built car's peak of `ps` PS: converted to the language's unit
+// (HP, BHP and CV: x 0.98619, `hp`; PS as is), truncated; the NTSC-J program has no conversion (its language shows PS).
+s32 shown_power(F ps, bool hp);
+
 } // namespace gt3r::sim::exact

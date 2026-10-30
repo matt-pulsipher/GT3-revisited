@@ -563,8 +563,9 @@ bool RaceScreen::build_vehicle(App& app) {
                      race_event_.c_str(), es.type, es.rolling() ? "rolling" : es.flying() ? "flying" : "standing",
                      es.rolling() || demo_start_kmh_ > 0 ? 0.0 : es.countdown, es.cars, es.laps, es.time_limit_s / 60.0);
         }
-        // GT mode orders the grid by power-to-weight (strongest on pole, the player last).
+        // GT mode orders the grid by whole kg per whole power in the language's power unit (lowest on pole, the player last).
         cfg.grid_by_power = from_menu_ && launch_.request.mode.rfind("go_", 0) == 0;
+        cfg.grid_hp = app.vfs() && language_units(app.vfs()->language()).power_hp;
         // A race replay's field as its run had it, wherever it is played (the theater has
         // its own launch and today's settings).
         if (replaying_ && replay_.grid_by_power) cfg.grid_by_power = *replay_.grid_by_power;

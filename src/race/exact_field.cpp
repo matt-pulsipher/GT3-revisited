@@ -236,13 +236,13 @@ public:
             LOG_WARN("Race (exact): %zu opponents on a %d-slot grid: %d race", labels.size(), slots, max_opp);
             labels.resize(size_t(max_opp));
         }
-        // The opponents' equipment; the grid in the given order, or GT mode's by power-to-weight.
+        // The opponents' equipment; the grid in the given order, or GT mode's by whole kg per whole power (gt_grid_places).
         struct Opp {
             std::string label;
             ex::Equipment eq;
-            float kg_per_ps = 0;
         };
         std::vector<Opp> opps;
+        std::vector<int> figure;
         for (const std::string& l : labels) {
             std::string err;
             std::optional<ex::Equipment> eq = exact_equipment(db, {l}, &err);
@@ -250,10 +250,8 @@ public:
                 LOG_WARN("Race (exact): opponent %s: %s", l.c_str(), err.c_str());
                 continue;
             }
-            Opp o{l, *eq};
-            if (cfg_.grid_by_power)
-                if (std::optional<sim::CarSpec> sp = sim::build_car_spec(db, l)) o.kg_per_ps = power_to_weight(*sp);
-            opps.push_back(std::move(o));
+            if (cfg_.grid_by_power) figure.push_back(exact_grid_figure(db, *data_, *eq, cfg_.grid_hp));
+            opps.push_back({l, *eq});
         }
         const int n_opp = int(opps.size());
         // The players behind the opponents (or on the given slot), player 2 next; the opponents on the other slots in their
@@ -263,12 +261,11 @@ public:
         std::vector<int> free;
         for (int s = 0; s < slots; ++s)
             if (s != p1 && !(humans_ > 1 && s == p2)) free.push_back(s);
-        std::vector<size_t> rank(opps.size());
-        for (size_t i = 0; i < rank.size(); ++i) rank[i] = i;
-        if (cfg_.grid_by_power)
-            std::stable_sort(rank.begin(), rank.end(), [&](size_t a, size_t b) { return opps[a].kg_per_ps < opps[b].kg_per_ps; });
+        std::vector<int> place(opps.size());
+        for (size_t i = 0; i < place.size(); ++i) place[i] = int(i);
+        if (cfg_.grid_by_power) place = gt_grid_places(figure);
         std::vector<int> slot_of(opps.size());
-        for (size_t r = 0; r < rank.size(); ++r) slot_of[rank[r]] = free[r];
+        for (size_t i = 0; i < place.size(); ++i) slot_of[i] = free[size_t(place[i])];
         // The setup.
         ex::RaceSetup rs;
         rs.data = data_.get();

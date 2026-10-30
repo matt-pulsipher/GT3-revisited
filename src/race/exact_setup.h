@@ -60,6 +60,10 @@ std::optional<ex::Equipment> exact_equipment_as_built(const data::CarDatabase& d
 // its engine condition (a garage car's) in *condition.
 ExactCarSource exact_online_source(const data::CarDatabase& db, const game::OnlineCar& c, const std::string& course,
                                    sim::EngineCondition* condition = nullptr);
+// A car's GT Mode grid figure (gt_grid_figure, race/field.h) from its race equipment, as GT3's grids build every entry for it:
+// the showroom build with a fresh engine (sim::exact::showroom_build), the spec's mass over the power the menus show for its
+// peak (sim::exact::shown_power; `hp`: in HP, BHP or CV).
+int exact_grid_figure(const data::CarDatabase& db, const ex::ProgramData& d, const ex::Equipment& eq, bool hp);
 // The base car (table 30 label) of a car source label.
 std::string exact_base_car(const data::CarDatabase& db, const std::string& label);
 // The course category byte of a course (the course record's +8; 0 when the database has no record).

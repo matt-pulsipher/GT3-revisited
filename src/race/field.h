@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -122,9 +123,11 @@ struct FieldConfig {
     std::string event;                  // event label (opponents, AI parameters, rubber band); may be empty
     std::vector<std::string> opponents; // car (variant) labels; empty = the event's entries
     int max_opponents = 5;
-    // GT-mode grid: opponents ranked by power-to-weight (kg per PS, lightest per PS on pole);
-    // otherwise they take the slots in the given order (arcade: the random draw).
+    // GT-mode grid: opponents ranked by whole kg per whole power (gt_grid_places), the power in HP (BHP, CV) when `grid_hp`
+    // (the language's Units::power_hp, as its menus show it), else PS; otherwise they take the slots in the given order
+    // (arcade: the random draw).
     bool grid_by_power = false;
+    bool grid_hp = false;
     // The split-screen battle's options (its Options page, docs/dev/RACE.md "Options"): the catch-up for the
     // trailing player (0 off, 1 low, 2 high), the handicap in metres (> 0: player 2 starts back, < 0: player 1), tyre damage.
     int battle_catchup = 0;
@@ -165,8 +168,13 @@ EventStart event_start(const data::Event& ev);
 // Rolling start: the computer drives the player's car for this long after the start (300 frames).
 constexpr double kRollingAutoDrive = 5.0;
 
-// kg per PS of a car spec (GT mode's grid order: lowest on pole).
-float power_to_weight(const sim::CarSpec& spec);
+// GT Mode's starting grid (gt_mode §22.1; GT3's GT race grid and championship grid). A car's figure is its
+// whole kg (the showroom spec's mass, sim::exact::Showroom::mass) over the whole power the menus show for it (HP, BHP or CV
+// where the language shows them, else PS: sim::exact::shown_power), truncated: gt_grid_figure (exact_grid_figure builds a
+// car's). The opponents take the grid from pole, the lowest figure first and equal figures in entry order; the player
+// starts behind them. gt_grid_places gives each opponent's place (0 = pole) from the figures in entry order.
+int gt_grid_figure(int mass_kg, int power);
+std::vector<int> gt_grid_places(std::span<const int> figures);
 
 class RaceField {
 public:

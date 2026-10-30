@@ -900,4 +900,56 @@ ParamImage race_params(const data::CarDatabase& db, const ProgramData& d, Equipm
     return p;
 }
 
+EnginePeak engine_peak(const ParamImage& image, const ConvertInputs& in) {
+    ParamImage copy = image;
+    Spec none{};
+    const Ctx c{Img{none.data()}, Img{copy.data()}, in, condition(*in.data)};
+    const Img& p = c.p;
+    const u32 E = 0x138;
+    constexpr F k7162 = F::raw(0x44330CCD); // 716.2
+    // The curve points' rpm (x 60 / 2 pi, truncated) rounded to 100, each kept when above the last kept one.
+    std::array<s16, 16> pts{};
+    s32 m = 0;
+    for (s32 i = 0; i < p.sh(E) && i < s32(pts.size()); ++i) {
+        const s32 rpm = to_int((p.f(E + 0xC + 4 * u32(i)) * k60) / kTwoPi);
+        const s32 r = (rpm + 50) / 100 * 100;
+        if (m <= 0 || pts[size_t(m - 1)] < r) pts[size_t(m++)] = s16(r);
+    }
+    EnginePeak out;
+    if (m == 0) return out; // (no curve: GT3 keeps the out record's old words; no car has none)
+    const s32 rev = p.h(E + 0x8C);
+    const s32 top = std::max<s32>(rev, pts[size_t(m - 1)]);
+    for (s32 rpm = pts[0]; rpm <= top; rpm += 100) {
+        const F n = int_to_f(rpm);
+        const F w = n * kRpm;
+        const F kgfm = capped_torque(c, E, torque_at(c, E, w), w) / kG;
+        const F ps = (kgfm * n) / k7162;
+        if (rev < rpm) continue;
+        if (out.kgfm < kgfm) out.kgfm = kgfm, out.torque_rpm = rpm;
+        if (out.ps < ps) out.ps = ps, out.power_rpm = rpm;
+    }
+    return out;
+}
+
+Showroom showroom_build(const data::CarDatabase& db, const ProgramData& d, Equipment eq, const std::array<u32, 8>& condition) {
+    // The showroom's rule record, the same bytes on every disc: no power cap (byte
+    // 3), the CPU grip percentages (read only for control source 2).
+    constexpr std::array<u8, 12> kShowroomRules = {80, 0, 0, 0, 100, 100, 100, 100, 100, 100, 100, 100};
+    Showroom s;
+    build_spec(db, d, eq, 0, 0, false, s.spec);
+    ConvertInputs in;
+    in.data = &d;
+    in.control = 0;
+    in.rules = kShowroomRules;
+    in.condition = condition;
+    in.physics_globals();
+    convert_params(s.spec, in, s.p);
+    s.peak = engine_peak(s.p, in);
+    return s;
+}
+
+s32 shown_power(F ps, bool hp) {
+    return to_int(hp ? ps * F::raw(0x3F7C76F3) : ps); // 0.98619
+}
+
 } // namespace gt3r::sim::exact
