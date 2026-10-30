@@ -35,6 +35,11 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
             // "%d %s": the setting car's computed power (parts, condition), truncated.
             if (c == "car_current_power") return gt.power_text(gt.power_ps(*work), " ");
         }
+        // The change-parts rows: the part fitted in each slot (the working copy's parts).
+        if (starts(c, "parts_")) {
+            auto r = s->setting_event.empty() ? std::nullopt : gt.rules(s->setting_event);
+            if (auto t = setting_parts_text(gt, real && work ? work : nullptr, c, r && r->dirt_tires)) return t;
+        }
     }
     if (c == "text_box" && page == "name_entry") {
         RankEntry* r = named_entry();

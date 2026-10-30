@@ -249,16 +249,16 @@ std::vector<std::string> find_builtin_names(const CoreImage& img) {
     return out;
 }
 
-// The built-in default text of a realtime text slot (text/realtime.dat key "<group>_<name>",
-// used when the language's value is empty). The program registers each group with its name,
-// an array of slot names, an array of the slots' texts (initially the defaults) and the slot
-// count, all set up just before the call: the name's address built from its two halves, the
-// arrays' addresses as offsets from the global pointer, the count a small constant
-// (PRIZE_RT_MSG: names, texts, one slot).
-// The global pointer is the value the start-up code
-// builds and hands the thread setup.
-// "" when the program has no such slot.
-std::string find_realtime_default(const CoreImage& img, std::string_view group, std::string_view name) {
+// The slots of a realtime text group (text/realtime.dat keys "<group>_<name>") with their
+// built-in default texts, used when the language's value is empty. The program registers
+// each group with its name, an array of slot names, an array of the slots' texts (initially
+// the defaults) and the slot count, all set up just before the call: the name's address built
+// from its two halves, each array's address from its two halves too (DATABASEPARTS, 80 slots)
+// or as an offset from the global pointer (PRIZE_RT_MSG, one slot), the
+// count a small constant. The global pointer is the value the start-up code builds and hands
+// the thread setup.
+// Empty when the program has no such group.
+std::vector<std::pair<std::string, std::string>> find_realtime_group(const CoreImage& img, std::string_view group) {
     const Bytes& p = img.program;
     const u32 base = img.load_address, end = base + u32(p.size());
     auto word = [&](u32 a) { return a >= base && a + 4 <= end && !(a & 3) ? rd32(p, a - base) : 0u; };
@@ -279,22 +279,32 @@ std::string find_realtime_default(const CoreImage& img, std::string_view group, 
         else if (is_addiu(op, kA0, kA0)) a0 = a0_hi + imm(op);
         else if (op == (kA0 << 21 | kZero << 16 | kGp << 11 | 0x2D)) gp = a0;
     }
-    if (!gp) return {};
-    for (u32 a = base; a + 4 <= end; a += 4) {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (u32 a = base; a + 4 <= end && out.empty(); a += 4) {
         const u32 lui = word(a);
         if (!is_lui(lui, kA1)) continue;
-        u32 group_at = 0, names = 0, texts = 0, count = 0;
-        for (u32 k = 1; k <= 8; ++k) {
+        u32 group_at = 0, names = 0, texts = 0, count = 0, a2_hi = 0, a3_hi = 0;
+        for (u32 k = 1; k <= 10; ++k) {
             const u32 op = word(a + 4 * k);
             if (is_addiu(op, kA1, kA1)) group_at = (lui << 16) + imm(op);
-            else if (is_addiu(op, kGp, kA2)) names = gp + imm(op);
-            else if (is_addiu(op, kGp, kA3)) texts = gp + imm(op);
+            else if (is_lui(op, kA2)) a2_hi = op << 16;
+            else if (is_lui(op, kA3)) a3_hi = op << 16;
+            else if (a2_hi && is_addiu(op, kA2, kA2)) names = a2_hi + imm(op);
+            else if (a3_hi && is_addiu(op, kA3, kA3)) texts = a3_hi + imm(op);
+            else if (gp && is_addiu(op, kGp, kA2)) names = gp + imm(op);
+            else if (gp && is_addiu(op, kGp, kA3)) texts = gp + imm(op);
             else if (is_addiu(op, kZero, kT0)) count = imm(op);
         }
         if (!group_at || !names || !texts || !count || count > 256 || string_at(group_at) != group) continue;
-        for (u32 i = 0; i < count; ++i)
-            if (string_at(word(names + 4 * i)) == name) return string_at(word(texts + 4 * i));
+        for (u32 i = 0; i < count; ++i) out.emplace_back(string_at(word(names + 4 * i)), string_at(word(texts + 4 * i)));
     }
+    return out;
+}
+
+// One slot's built-in default text ("" when the program has no such slot).
+std::string find_realtime_default(const CoreImage& img, std::string_view group, std::string_view name) {
+    for (const auto& [n, t] : find_realtime_group(img, group))
+        if (n == name) return t;
     return {};
 }
 
@@ -360,24 +370,41 @@ bool GtData::load(const Reader& read) {
         // From the program (CORE.GT3): its built-in record names and realtime-text defaults.
         builtin_names.clear();
         std::string prize_default;
+        std::vector<std::pair<std::string, std::string>> parts_slots;
         if (auto core = read(Vfs::kProgramFile)) {
             try {
                 const CoreImage img = CoreImage::decode(*core);
                 builtin_names = find_builtin_names(img);
                 prize_default = find_realtime_default(img, "PRIZE_RT_MSG", "BONUS_PREFIX");
                 if (prize_default.empty()) LOG_WARN("gt mode: the program's PRIZE_RT_MSG_BONUS_PREFIX was not found");
+                parts_slots = find_realtime_group(img, "DATABASEPARTS");
+                if (parts_slots.empty()) LOG_WARN("gt mode: the program's DATABASEPARTS texts were not found");
             } catch (const std::exception& e) {
                 LOG_WARN("gt mode: %s: %s", Vfs::kProgramFile, e.what());
             }
         }
-        // The prize pages' "%s" before "Cr.": the language's realtime text, else the default.
+        // The prize pages' "%s" before "Cr." and the part names: the language's realtime text,
+        // else the default. (Without the program: every DATABASEPARTS key of the file.)
         prize_prefix = prize_default;
+        part_texts.clear();
+        for (const auto& [name, text] : parts_slots) part_texts[name] = text;
         if (auto rt = read("text/realtime.dat")) {
             try {
                 const text::StringTable t = text::StringTable::parse(*rt);
-                const int k = t.find("PRIZE_RT_MSG_BONUS_PREFIX");
-                if (k >= 0 && int(language) < t.language_count() && !t.raw(size_t(k), language).empty())
-                    prize_prefix = t.raw(size_t(k), language);
+                auto value = [&](std::string_view key) -> std::optional<std::string> {
+                    const int k = t.find(key);
+                    if (k < 0 || int(language) >= t.language_count() || t.raw(size_t(k), language).empty())
+                        return std::nullopt;
+                    return t.raw(size_t(k), language);
+                };
+                if (auto v = value("PRIZE_RT_MSG_BONUS_PREFIX")) prize_prefix = *v;
+                const std::string group = "DATABASEPARTS_";
+                if (parts_slots.empty()) {
+                    for (size_t i = 0; i < t.size(); ++i)
+                        if (t.key(i).rfind(group, 0) == 0) part_texts[t.key(i).substr(group.size())];
+                }
+                for (auto& [name, text] : part_texts)
+                    if (auto v = value(group + name)) text = *v;
             } catch (const std::exception& e) {
                 LOG_WARN("gt mode: text/realtime.dat: %s", e.what());
             }

@@ -1369,6 +1369,53 @@ TEST(gtmode_disc_setting_files) {
     CHECK(back.ref_final == gt.state().setting_files.back().ref_final);
 }
 
+// The change-parts rows (gt_mode §14, public issue 86): each slot's fitted part by the
+// program's goods texts; the turbo, intercooler, driveshaft and AYC rows by the car; the tyre
+// rows on a dirt event the dirt tyres when owned.
+TEST(gtmode_disc_change_parts_rows) {
+    NEED_DATA();
+    GtMode gt(data);
+    auto pt = [&](const char* slot) {
+        auto it = data->part_texts.find(std::string("PTEXT_") + slot);
+        return it != data->part_texts.end() ? it->second : std::string("?");
+    };
+    auto row = [&](const GarageCar& c, const char* cls, bool dirt = false) {
+        return setting_parts_text(gt, &c, cls, dirt).value_or("(none)");
+    };
+    std::optional<GarageCar> evo = gt.make_car("lancer_evo6_tommi_gsr_opt_00"), vitz = gt.make_car("vitz_euro_00");
+    CHECK(evo && vitz);
+    if (!evo || !vitz) return;
+    // The issue's Lancer Evolution VI (4WD, turbo) as it comes, then tuned.
+    CHECK(row(*evo, "parts_eng_muffler") == pt("NORMAL") && row(*evo, "parts_eng_computer") == pt("COMPUTER_NORMAL"));
+    CHECK(row(*evo, "parts_eng_na_tune") == pt("NOTHING") && row(*evo, "parts_eng_port_polish") == pt("NO_MODIFY"));
+    CHECK(row(*evo, "parts_eng_turbine") == pt("NORMAL") && row(*evo, "parts_eng_inter_cooler") == pt("NORMAL"));
+    CHECK(row(*evo, "parts_drv_shaft") == pt("NORMAL") && row(*evo, "parts_oth_ayc_s") == pt("NOTHING"));
+    CHECK(row(*evo, "parts_sus_s_kit") == pt("NORMAL") && row(*evo, "parts_oth_weight_r") == pt("NO_MODIFY"));
+    for (int g : {39, 9, 45, 35, 81, 25, 53, 28})
+        CHECK(gt.fit_goods(*evo, g));
+    CHECK(row(*evo, "parts_eng_muffler") == pt("MUFFLER_3") && row(*evo, "parts_eng_computer") == pt("COMPUTER_SPORTS"));
+    CHECK(row(*evo, "parts_eng_port_polish") == pt("MODIFY") && row(*evo, "parts_drv_lsd") == pt("LSD_5"));
+    CHECK(row(*evo, "parts_oth_ayc_s") == pt("EQUIP") && row(*evo, "parts_eng_turbine") == pt("STAGE_3"));
+    CHECK(row(*evo, "parts_eng_inter_cooler") == pt("INTERCOOLER_2") && row(*evo, "parts_sus_s_kit") == pt("SUSPENSION_3"));
+    CHECK(row(*evo, "parts_oth_weight_r") == pt("STAGE_2"));
+    // The Vitz (FF, NA): no driveshaft, no intercooler without a turbo, the turbo "N/A" until a kit.
+    CHECK(row(*vitz, "parts_drv_shaft") == pt("NO_EQUIP") && row(*vitz, "parts_eng_inter_cooler") == pt("NO_EQUIP"));
+    CHECK(row(*vitz, "parts_eng_turbine") == pt("NOTHING"));
+    CHECK(gt.fit_goods(*vitz, 79));
+    CHECK(row(*vitz, "parts_eng_turbine") == pt("STAGE_1") && row(*vitz, "parts_eng_inter_cooler") == pt("NORMAL"));
+    // Tyres; on a dirt event the dirt tyres when owned, else "----".
+    CHECK(row(*vitz, "parts_tir_f") == pt("TIRE_NORMAL") && row(*vitz, "parts_tir_r") == pt("TIRE_NORMAL"));
+    CHECK(gt.fit_goods(*vitz, 63));
+    CHECK(row(*vitz, "parts_tir_f") == pt("TIRE_SOFT") && row(*vitz, "parts_tir_r") == pt("TIRE_SOFT"));
+    CHECK(row(*vitz, "parts_tir_f", true) == "----" && row(*vitz, "parts_tir_r", true) == "----");
+    vitz->owned.set(66);
+    CHECK(row(*vitz, "parts_tir_f", true) == pt("TIRE_DIRT") && row(*vitz, "parts_tir_r", true) == pt("TIRE_DIRT"));
+    CHECK(setting_parts_text(gt, nullptr, "parts_eng_muffler", false) == "----");
+    CHECK(!setting_parts_text(gt, &*vitz, "spring_rate_f", false));
+    if (data->language == Language::US)
+        CHECK(row(*evo, "parts_eng_muffler") == "Muffler/Racing" && pt("NOTHING") == "N/A" && pt("MODIFY") == "Installed");
+}
+
 // --- Arcade progression (gt_mode §16) ---------------------------------------------------
 
 namespace {
