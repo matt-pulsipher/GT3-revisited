@@ -694,6 +694,21 @@ TEST(sound_race_music_start_after_quick_menu) {
         c.menu = RaceMusic::Menu::None;
         CHECK((m.decide(c, true) == V{A{Op::Stop}, A{Op::Play, bgm::kStartLong, false}}));
     }
+    {   // GT mode's SETTING from the pre-race menu: the menu closes (the stop: RaceMusic::stop starts the next
+        // cues afresh) and opens again after the settings, its music from the beginning; Start as usual.
+        RaceMusic m;
+        RaceMusic::Cues c;
+        c.start_type = 2;
+        c.holding = true;
+        c.menu = RaceMusic::Menu::Short;
+        CHECK((m.decide(c, false) == V{A{Op::PlayIfDifferent, bgm::kQuickMenu, true, bgm::kMenuVolume}}));
+        CHECK(m.decide(c, true).empty());
+        m.reset(); // SETTING
+        CHECK((m.decide(c, false) == V{A{Op::PlayIfDifferent, bgm::kQuickMenu, true, bgm::kMenuVolume}}));
+        CHECK(m.decide(c, true).empty());
+        c.menu = RaceMusic::Menu::None; // Start
+        CHECK((m.decide(c, true) == V{A{Op::Stop}, A{Op::Play, bgm::kStartLong, false}}));
+    }
     {   // A licence test from rest (start type 1): its menu, Start, the 4 s hold, the signal.
         RaceMusic m;
         RaceMusic::Cues c;

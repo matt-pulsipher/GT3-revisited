@@ -60,8 +60,7 @@ void RaceScreen::stop_preview(App& app) {
         restart();
         quick_ = q;
         camera_.set_mode(drive_camera_);
-        if (pre_demo_run_) recorder_.assign(std::move(*pre_demo_run_));
-        pre_demo_run_.reset();
+        restore_pre_demo_run();
         silence(app);
         return;
     }
@@ -71,8 +70,7 @@ void RaceScreen::stop_preview(App& app) {
     restart();
     quick_ = q;
     camera_.set_mode(drive_camera_);
-    if (pre_demo_run_) recorder_.assign(std::move(*pre_demo_run_));
-    pre_demo_run_.reset();
+    restore_pre_demo_run();
     silence(app);
 }
 
@@ -80,8 +78,7 @@ void RaceScreen::end_demo(App& app) {
     demo_ = false;
     restart();
     camera_.set_mode(drive_camera_);
-    if (pre_demo_run_) recorder_.assign(std::move(*pre_demo_run_));
-    pre_demo_run_.reset();
+    restore_pre_demo_run();
     silence(app);
     quick_ = true;
 }

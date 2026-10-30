@@ -193,7 +193,8 @@ The license quick menu draws the live race scene into the preview box at
 test (§G12), looping: it restarts 180 ticks after the demonstration's inputs run
 out. After a run it replays the run just driven, looping (`start_preview`); after
 a run left with the pause window's EXIT it shows the demonstration again (§A8).
-What the other quick menus draw behind them is in §C5.
+The box is silent, like the race behind every quick menu: only the menu's music
+and sounds play. What the other quick menus draw behind them is in §C5.
 
 ### §A8 After a license run
 
@@ -768,9 +769,10 @@ What a quick menu shows behind its layout depends on the mode
 
 - **The race.** The menu's race plays like a replay (play mode 2): records are
   off, and the view mode and target are picked as for the attract demo, drawing
-  from the same generator and count (`pick_attract_view`, §G13). It is silent
-  (ours). A single car replays its last run from the start, and the race never
-  ends. Once the recording runs out, the car gets a cleared input frame (no
+  from the same generator and count (`pick_attract_view`, §G13). It is silent:
+  no car or course sound plays behind a quick menu (records off mutes them). A
+  single car replays its last run from the start, and the race never ends. Once
+  the recording runs out, the car gets a cleared input frame (no
   steering, throttle or brake; its gearbox kept) and rolls on. Before any run
   the recording is empty, so the car stands at its start with no input. A field
   (the GT pre-race menus) stands on its grid, not simulated, under the TV
@@ -1801,7 +1803,8 @@ pure red pixel gray (75, 75, 75).
   cuts (§G14). Replays re-run the start sequence's music (§B2), and a field
   replay's finish jingle comes when the followed car (§G3) finishes. The automatic
   replay after a run (§C4) stops the run's music first and starts its own songs.
-- **The race behind a quick menu** (§C5) is silent (ours).
+- **The race behind a quick menu** (§C5) and the license menu's preview box (§A7)
+  are silent.
 - **Collision one-shots** are not played in replays: the impulses are passed as
   zero.
 - **Sound view.** Engine notes use the replay view gains (§M3).

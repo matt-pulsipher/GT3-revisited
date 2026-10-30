@@ -376,9 +376,10 @@ private:
     static CarExtraSounds::Frame extra_frame(const CarFacts& facts, const sim::VehicleTelemetry& t, const sim::VehicleState& s,
                                              const SoundCar& car, bool onboard, float x, float z, SoundView view);
     void silence(App& app);
-    // The original's global SE gain: race SE in live play, replay SE in replays and demos.
-    // (The race behind a quick menu is silent: ours, its sound behind the menu not traced.)
-    bool se_on() const { return backdrop_ ? false : replaying_ || demo_ || attract_ ? replay_se_ : race_se_; }
+    // The original's global SE gain: race SE in live play, replay SE in replays and demos. The race behind a quick
+    // menu (the backdrop, the licence preview box) is silent: the race drivers turn records off around their quick
+    // menus, which mutes the race's car and course sounds (presentation §C5).
+    bool se_on() const { return backdrop_ || preview_ ? false : replaying_ || demo_ || attract_ ? replay_se_ : race_se_; }
 
     // Selection (screen_race_select.cpp)
     void update_select(App& app);
@@ -446,6 +447,8 @@ private:
 
     // Replays (screen_race_replay.cpp)
     Replay finished_recording() const;
+    void latch_run_replay();
+    void restore_pre_demo_run();
     ReplayKind replay_kind() const;
     void end_replay(App& app);
     void watch_replay();
@@ -645,6 +648,9 @@ private:
     bool records_loaded_ = false;
     bool demo_ = false;                  // quick menu "demonstration": the computer drives
     std::optional<Replay> pre_demo_run_; // the player's run, kept for replay / save
+    // The live run's replay as it ended (latch_run_replay): its replays, the menu's backdrop and the licence preview
+    // rebuild the field, so the field no longer holds the run.
+    std::optional<Replay> run_replay_;
     // After a run (screen_race_post_run.cpp): what the exit transition leads to, the replay
     // whose end (or EXIT) goes back to the quick menu (the automatic one, the REPLAY item), the
     // replay due once the run's presentations close, the menu's race in play mode 2.

@@ -441,6 +441,7 @@ void RaceScreen::restart() {
     retry_locked_ = false; // every run starts with RETRY available (presentation §E3)
     result_latch_.reset(); // a new live run
     latched_rows_.reset();
+    run_replay_.reset();
     if (app_) build_vehicle(*app_); // a new race: every car back on its start
     const RaceField* f = exact_field();
     const TrackPose p = f ? f->player_grid() : track_->grid_pose(0);

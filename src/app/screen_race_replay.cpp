@@ -9,7 +9,10 @@
 
 namespace gt3r::race_screen {
 
+// The last run's replay: once the run has ended, the one latched then (latch_run_replay); during the run, from the live
+// race.
 Replay RaceScreen::finished_recording() const {
+    if (run_replay_) return *run_replay_;
     Replay r = recorder_.replay();
     r.final_position = vehicle_->state().position;
     // What the theater's info panels show, and the car itself (replay format v6).
@@ -38,6 +41,24 @@ Replay RaceScreen::finished_recording() const {
                   : sim::build_car_spec(db_, src.label);
     if (sp) r.power_ps = game::spec_power_ps(*sp, f);
     return r;
+}
+
+// The live run has ended (after_run; a pause EXIT that finishes it, at the press, where its recording closes): its replay
+// as it is now, for REPLAY, SAVE REPLAY, the ghost and the menu's backdrop, which rebuild the field (the licence preview
+// restarts the race): the field is then no longer the run's.
+void RaceScreen::latch_run_replay() {
+    if (replaying_ || attract_ || demo_ || run_replay_) return;
+    run_replay_ = finished_recording();
+}
+
+// Back from a demonstration or the licence preview (the race restarted): the run before it as the recording again, and
+// as the run's latched replay.
+void RaceScreen::restore_pre_demo_run() {
+    if (pre_demo_run_) {
+        recorder_.assign(*pre_demo_run_);
+        if (pre_demo_run_->ticks() > 0) run_replay_ = std::move(*pre_demo_run_);
+    }
+    pre_demo_run_.reset();
 }
 
 ReplayKind RaceScreen::replay_kind() const {

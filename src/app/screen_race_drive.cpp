@@ -404,12 +404,18 @@ void RaceScreen::update_drive(App& app, double dt) {
             return;
         }
     }
-    if (setting_pending_) { // back from GT mode's settings: the ride car as now set up
+    if (setting_pending_) { // back from GT mode's settings, in the menu SETTING opened from: the ride car as now set up
         setting_pending_ = false;
         if (game::GtModeSession* gs = game::gt_mode_session())
             if (const game::GarageCar* gc = gs->gt().state().ride_car()) {
                 launch_source_ = ExactCarSource{gc->car, gc->parts, gc->settings};
-                if (build_vehicle(app)) restart();
+                // Before the first run the grid takes the car at once (the run state's reset closes the menu: open it
+                // again; START then starts the race, which counts); after a run (machine test, free run) the next
+                // START builds it and the last run stays to replay.
+                if (prerace_ && build_vehicle(app)) {
+                    restart();
+                    quick_ = true;
+                }
                 toast("Settings applied");
             }
     }

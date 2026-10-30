@@ -50,6 +50,7 @@ void RaceScreen::exit_as_finish(double overlay_delay) {
     // The race's record too (the replay is its record), and the race object's own EXIT: its recordings closed, the car's
     // end of run (the end-of-run driver drives on).
     if (RaceField* f = exact_field()) exact_exit_finish(*f, machine_.has_value());
+    latch_run_replay(); // (the car drives on: the replay ends here)
     if (machine_) rank_finish(top_speed_kmh_, true);
     else rank_finish(track_->best_lap_time(), false);
     LOG_INFO("Race: pause EXIT is the run's finish (best lap %.3f s, top %.1f km/h)", track_->best_lap_time(),
@@ -71,6 +72,7 @@ void RaceScreen::after_run(App& app) {
     }
     silence(app);
     latch_result();
+    latch_run_replay();
     keep_run_laps();
     last_run_ended_ = finished_;
     const race::RunKind kind = run_kind();

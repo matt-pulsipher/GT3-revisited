@@ -803,8 +803,11 @@ menus §11.1; `race/post_run.h`, `screen_race_post_run.cpp`; tests `race_post_ru
 
 - The live run ends (its result screens' time or confirm, pause EXIT): the race-exit transition
   over its last frame (`begin_exit_transition`, 10 frames, then the grey wash), then
-  `after_run`: the result latched (every run: the replays re-run it), the prize page (a finished
-  GT race or championship round, `game::queue_race_prize`) or the arcade win's cup
+  `after_run`: the result latched (every run: the replays re-run it) and the run's replay
+  (`latch_run_replay`; a pause EXIT that finishes the run latches it at the press, where its
+  recording closes): REPLAY, SAVE REPLAY, the ghost, the menu's backdrop and the licence
+  preview play that copy, since they rebuild the field (the preview restarts the race); the
+  prize page (a finished GT race or championship round, `game::queue_race_prize`) or the arcade win's cup
   (`game::queue_arcade_trophy`), the record (`record_run`) with its name entry, all shown by
   `make_presentation_screen()`; then the run's replay by itself (`start_auto_replay`), and at its
   end or its pause's EXIT the same transition over its last frame and the quick menu

@@ -1633,7 +1633,7 @@ Some quick-menu items open a panel of the engine's own
 | Item | Panel |
 |---|---|
 | OPTION (`qm_option`) | OPTIONS: Transmission (AT / MT), Camera, Music, Vibration, Display (the HUD), and for 2 Player Battle the split (horizontal / vertical) |
-| SETTING (`qm_setting`) | in GT Mode with a garage car (not a Quick race practice), the game's car settings menu (control `setting`); otherwise a SETTINGS panel with Transmission only |
+| SETTING (`qm_setting`) | in GT Mode with a garage car (not a Quick race practice), the game's car settings menu (control `setting`), which closes back to the quick menu: before the first run with the car on its start as now set up, after a run with the last run kept (REPLAY plays it) and the next START taking the new set-up; otherwise a SETTINGS panel with Transmission only |
 | RECORDS (`qm_records`), for runs without a GT Mode ranking (§12.4) | the best laps of the saved replays on this course |
 | DATA LOGGER (`qm_logger`) | the Analyzer's graph over the session's laps, with its own keys |
 

@@ -359,7 +359,9 @@ void RaceScreen::update_quick_menu(App& app, double dt) {
         break;
     case QmAction::Setting:
         if (from_menu_ && launch_.request.mode.rfind("go_", 0) == 0 && launch_.request.car_parts && !launch_.request.practice) {
-            // GT mode: the game's car settings menu for the ride car; rebuilt when it closes.
+            // GT mode: the game's car settings menu for the ride car; rebuilt when it closes. The quick menu stops the
+            // BGM as it closes (music §3): back from the settings, its music starts again from the beginning.
+            music_.stop(app.audio());
             app.push(make_gt_setting_screen(launch_.request.event.empty() ? launch_.request.race_code
                                                                           : launch_.request.event));
             setting_pending_ = true;
