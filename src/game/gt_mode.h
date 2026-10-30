@@ -540,14 +540,17 @@ std::string format_credits(s64 v);      // "18,000": digits grouped by ',' in ev
 // "Prize Cr. 991".
 std::string credits_text(s64 v);
 std::string prize_remain_text(std::string_view prefix, s64 v);
-std::string format_time_ms(u32 ms);     // "1'02.400" (as the original's menus)
+// A time in the menus' format (race::menu_time_text): "1'02.400", "1:02'03.400" from an hour on,
+// the font's dashes for the "no time" value 359,999,999 ms.
+std::string format_time_ms(u32 ms);
 
 // Record stamps (RankEntry::stamp): the clock now, in seconds since 2000-01-01 00:00 local
 // time (at least 1, so it never reads as "none").
 u32 record_stamp_now();
 // A record's date on the records page (gt_mode §17.2): the stamp's calendar date as
-// "DD/MM/YY" ("YY/MM/DD" in Japanese), "--/--/--" for no stamp. As the original converts it,
-// only the year 2000 gets February 29 (later leap years run on from February 28).
+// "DD/MM/YY" ("YY/MM/DD" in Japanese), race::kNoDateText (the font's dashes, "--/--/--") for
+// no stamp. As the original converts it, only the year 2000 gets February 29 (later leap years
+// run on from February 28).
 std::string record_date_text(u32 stamp, Language lang = Language::US);
 
 } // namespace gt3r::game

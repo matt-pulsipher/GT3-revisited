@@ -83,7 +83,7 @@ void RaceScreen::fill_license_menu(App& app) {
     quick_menu_.add_page_layout(*app.vfs(), app.renderer(), page, lang_); // the test's description panel
     static const char* const kW[] = {"qm_license_time_gold", "qm_license_time_silver", "qm_license_time_bronz"};
     for (int i = 0; i < 3; ++i)
-        if (license_times_.ms[size_t(i)] > 0) quick_menu_.set_text(kW[i], Hud::format_time(license_times_.ms[size_t(i)] / 1000.0));
+        if (license_times_.ms[size_t(i)] > 0) quick_menu_.set_text(kW[i], menu_time_text(u32(license_times_.ms[size_t(i)])));
 }
 
 // The menus' free runs on a course (the arcade time attack, GT Mode's free run): the original's
@@ -200,7 +200,7 @@ void RaceScreen::fill_top3() {
         quick_menu_.set_class_text("qm_rank_name" + n, e ? gt.ranking_name(*e) : std::string());
         // (The free time trial's list: the entry's car, "---" without one.)
         quick_menu_.set_class_text("qm_list_car_name" + n, e && !e->car.empty() ? car_display_name(e->car) : "---");
-        quick_menu_.set_class_text("qm_rank_time" + n, e ? Hud::format_time(e->value) : "--'--.---");
+        quick_menu_.set_class_text("qm_rank_time" + n, e ? menu_time_text(e->value) : std::string(kNoTimeText));
         quick_menu_.set_class_text("qm_rank_speed" + n, speed);
     }
 }
@@ -231,10 +231,10 @@ void RaceScreen::open_prerace_menu(App& app) {
         fill_license_menu(app);
         return;
     }
-    // The entry list (the capture of GT3's RACE MENU): every car, no times yet.
+    // The entry list (the capture of GT3's RACE MENU): every car, no times yet ("no time").
     if (field_) {
         std::vector<ResultRow> rows = result_rows();
-        for (ResultRow& r : rows) r.time = "--'--.---";
+        for (ResultRow& r : rows) r.time = kNoTimeText;
         quick_menu_.set_rows(std::move(rows));
     }
     if (race_laps_ > 0) quick_menu_.set_text("laps", std::to_string(race_laps_) + (race_laps_ == 1 ? " Lap" : " Laps"));

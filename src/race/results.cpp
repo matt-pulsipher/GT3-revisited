@@ -4,7 +4,9 @@
 #include "formats/menu/mbl.h"
 #include "game/data/car_database.h"
 #include "menu/menu_text.h"
+#include "race/hud.h"
 #include "race/machine_test.h"
+#include "race/time_text.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -25,14 +27,6 @@ struct Frame {
     float sx() const { return dst.w / kMenuW; }
     float sy() const { return dst.h / kMenuH; }
 };
-
-std::string fmt_time(double s) {
-    int ms = int(std::lround(s * 1000.0));
-    char b[32];
-    if (ms >= 3600000) std::snprintf(b, sizeof(b), "%d:%02d'%02d.%03d", ms / 3600000, (ms / 60000) % 60, (ms / 1000) % 60, ms % 1000);
-    else std::snprintf(b, sizeof(b), "%d'%02d.%03d", ms / 60000, (ms / 1000) % 60, ms % 1000);
-    return b;
-}
 
 // `game`: `s` is game text (a database name: escapes and JIS pairs, drawn as the game draws them).
 constexpr bool kGameText = true;
@@ -86,9 +80,11 @@ std::string result_car_name(const data::CarDatabase& db, const std::string& labe
 
 std::string result_time_text(bool winner, bool finished, double time, double winner_time, int laps_behind) {
     if (!finished) return "Running...";
-    if (winner) return " " + fmt_time(time);
+    if (winner) return " " + menu_time_text(time);
     if (laps_behind > 0) return "+" + std::to_string(laps_behind) + (laps_behind < 2 ? " lap" : " laps");
-    return "+" + fmt_time(std::max(0.0, time - winner_time));
+    // The gap of the two times in milliseconds, in the menus' format.
+    const long long gap = std::llround(time * 1000.0) - std::llround(winner_time * 1000.0);
+    return "+" + menu_time_text(u32(std::max(0LL, gap)));
 }
 
 // --- ResultsOverlay -------------------------------------------------------------------
@@ -228,7 +224,7 @@ void TimeTrialOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, double t, c
         return;
     }
     both(200, 270, "Lap", "sw_16#1", 1, amber, text::HAlign::Left);
-    both(440, 266, d.value >= 0 ? fmt_time(d.value) : "-'--.---", "sw_20#1", 1.3f, amber, text::HAlign::Right);
+    both(440, 266, menu_time_text(d.value), "sw_20#1", 1.3f, amber, text::HAlign::Right); // (no time: kNoTimeText)
 }
 
 // --- LicenseResultOverlay ------------------------------------------------------------
@@ -272,7 +268,7 @@ void LicenseResultOverlay::draw_medal(SDL_Renderer* r, text::GameFonts& fonts, i
     text(r, fonts, f, 322, 334, kWords[medal], "sw_20", 1.25f, 1.25f, c, text::HAlign::Center, text::VAlign::Middle);
     SDL_Color tc = kColors[medal];
     tc.a = u8(255 * ft);
-    text(r, fonts, f, 320, 112, fmt_time(time), "sw_20", 1.25f, 1.25f, tc, text::HAlign::Center, text::VAlign::Middle);
+    text(r, fonts, f, 320, 112, Hud::format_time(time), "sw_20", 1.25f, 1.25f, tc, text::HAlign::Center, text::VAlign::Middle);
 }
 
 void LicenseResultOverlay::draw_fail(SDL_Renderer* r, text::GameFonts& fonts, int frame, const std::string& msg, double time,
@@ -296,7 +292,7 @@ void LicenseResultOverlay::draw_fail(SDL_Renderer* r, text::GameFonts& fonts, in
         text(r, fonts, f, 320, 224 + split, msg, "sw_20", 1.25f, 1.25f, c, text::HAlign::Center, text::VAlign::Middle);
     if (time >= 0) {
         SDL_Color tc{160, 192, 64, u8(255 * ft)};
-        text(r, fonts, f, 320, 140, fmt_time(time), "sw_20", 1.25f, 1.25f, tc, text::HAlign::Center, text::VAlign::Middle);
+        text(r, fonts, f, 320, 140, Hud::format_time(time), "sw_20", 1.25f, 1.25f, tc, text::HAlign::Center, text::VAlign::Middle);
     }
 }
 

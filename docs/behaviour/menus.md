@@ -1405,8 +1405,9 @@ The menu comes **before** the first run for GT races, machine tests, license
 tests, GT free runs, time trials and arcade free runs. The arcade race and 2
 Player Battle start driving at once.
 
-- **Before a race**, the menu lists the entry list with times "--'--.---"
-  and the lap count.
+- **Before a race**, the menu lists the entry list with no times
+  ("--'--.---", drawn with the font's long dash: presentation §D10) and the
+  lap count.
 - **Time trials, free runs and machine tests** show the ranking's Top 3
   (`RaceScreen::fill_top3`), read again before every quick menu and once more
   when a run's name entry closes (below). A free run started from the menus
@@ -1414,8 +1415,10 @@ Player Battle start driving at once.
   `RaceScreen::course_time_trial`) shows its course's time-trial ranking
   (`ct:<course>`, §12.4):
   - always three rows; a place the ranking has no entry for shows no name,
-    the time `--'--.---` and the speed ` 0.0 km/h` (or `mph`);
-  - the names as stored with the records, times as `m'ss.mmm`;
+    no time (`--'--.---` in the font's long dashes, presentation §D10) and the
+    speed ` 0.0 km/h` (or `mph`);
+  - the names as stored with the records, times as `m'ss.mmm` (the menus'
+    format, presentation §D10);
   - the top-speed test (MMAX) shows speeds as `%4.1f %s`, rounded to tenths,
     for example "218.8 mph", in the game data's speed unit (mph on the
     NTSC-U data) unless the `race` / `units` setting (Settings → Display →
@@ -1856,14 +1859,15 @@ The texts of each place:
 |---|---|---|
 | `record_rank` | the place, 1 … | the place |
 | `record_name` | the entry's name (`GtMode::ranking_name`; none for an entry stored without one) | nothing |
-| `record_data` | the time `m'ss.mmm`; the top-speed test: the speed (`race::record_speed_text`, whole units and tenths, truncated, in the game data's unit, "194.1mph") | `--'--.---` (the top-speed test: `---.-` and the unit) |
-| `record_date` | the date the record was set, `DD/MM/YY` | `--/--/--` |
+| `record_data` | the time `m'ss.mmm` (the menus' format, presentation §D10); the top-speed test: the speed (`race::record_speed_text`, whole units and tenths, truncated, in the game data's unit, "194.1mph") | `--'--.---` (the top-speed test: `---.-` and the unit), in the font's long dashes |
+| `record_date` | the date the record was set, `DD/MM/YY` | `--/--/--`, in the font's long dashes |
 | `record_car_pict`, `record_car` | machine tests and course time trials only: the car icon, then the car's two names, "<name> <second name>" | the icon, no name |
 
 **Dates** (`game::record_date_text`). Each record carries a clock stamp, the
 local time when it was set (`RankEntry::stamp`). The date is written day,
 month, year, the order of the NTSC-U data. Records without a stamp (from a
-save older than the stamps) show `--/--/--`. Only the year 2000 has a
+save older than the stamps) show `--/--/--` (the font's long dashes,
+character 0x7F, presentation §D10). Only the year 2000 has a
 February 29: in later leap years February 28 is followed by March 1 and the
 year's last day shows as December 32 (test `gtmode_record_dates`). The
 arcade challenges' built-in records have no stamp in a new game made by the

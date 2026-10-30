@@ -23,8 +23,7 @@ std::string RaceScreen::car_display_name(const std::string& label, bool full) co
 std::vector<ResultRow> RaceScreen::result_rows(bool full_names) const {
     std::vector<ResultRow> rows;
     if (!field_) {
-        rows.push_back({car_.name, track_->best_lap_time() >= 0 ? Hud::format_time(track_->best_lap_time()) : "-'--.---",
-                        true});
+        rows.push_back({car_.name, menu_time_text(track_->best_lap_time()), true}); // (none: kNoTimeText)
         return rows;
     }
     std::vector<RaceField::Standing> st = field_->standings();
@@ -47,13 +46,14 @@ std::vector<ResultRow> RaceScreen::result_rows(bool full_names) const {
 }
 
 // The result quick menu's rows, in race order: every finished car's own race time (the
-// reference capture), not the gaps the overlay shows; "--'--.---" for a car still racing.
+// reference capture), not the gaps the overlay shows, in the menus' format; "no time" for a
+// car still racing.
 std::vector<ResultRow> RaceScreen::result_menu_rows() const {
     std::vector<ResultRow> rows = result_rows();
     if (field_) {
         std::vector<RaceField::Standing> st = field_->standings();
         for (size_t i = 0; i < rows.size() && i < st.size(); ++i)
-            rows[i].time = st[i].finished ? Hud::format_time(st[i].time) : "--'--.---";
+            rows[i].time = st[i].finished ? menu_time_text(st[i].time) : std::string(kNoTimeText);
     }
     return rows;
 }

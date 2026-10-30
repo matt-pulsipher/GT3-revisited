@@ -8,6 +8,7 @@
 #include "game/gt_save.h"
 #include "game/gt_setting.h"
 #include "race/pool_draw.h"
+#include "race/time_text.h"
 #include "base/file.h"
 #include "formats/ps2/memcard.h"
 #include "vfs/vfs.h"
@@ -138,12 +139,15 @@ TEST(gtmode_format_credits) {
     CHECK(format_credits(-100) == "-,100"); // the original groups the printed text, sign included
     CHECK(credits_text(18000) == "Cr. 18,000" && prize_remain_text("Prize", 991) == "Prize Cr. 991");
     CHECK(format_time_ms(62400) == "1'02.400");
+    // The menus' formatter: hours from 60 minutes on, the font's dashes for exactly "no time".
+    CHECK(format_time_ms(3600000) == "1:00'00.000" && format_time_ms(3599999) == "59'59.999");
+    CHECK(format_time_ms(359999999) == "\x7F\x7F'\x7F\x7F.\x7F\x7F\x7F" && format_time_ms(359999998) == "99:59'59.998");
 }
 
-// Record dates (records page): the stamp's date day / month / year, dashes without one; the
-// original's conversion gives only the year 2000 a February 29.
+// Record dates (records page): the stamp's date day / month / year, the font's dashes without
+// one; the original's conversion gives only the year 2000 a February 29.
 TEST(gtmode_record_dates) {
-    CHECK(record_date_text(0) == "--/--/--");
+    CHECK(record_date_text(0) == "\x7F\x7F/\x7F\x7F/\x7F\x7F");
     CHECK(record_date_text(0x3264FD64) == "16/10/26"); // the reference new game: 2026-10-16 15:21:08
     CHECK(record_date_text(1) == "01/01/00");
     CHECK(record_date_text(59 * 86400) == "29/02/00" && record_date_text(60 * 86400) == "01/03/00");
@@ -151,7 +155,7 @@ TEST(gtmode_record_dates) {
     CHECK(record_date_text(y2028 + 58 * 86400) == "28/02/28" && record_date_text(y2028 + 59 * 86400) == "01/03/28");
     CHECK(record_date_text(y2028 + 365 * 86400) == "32/12/28");
     // Japanese: year / month / day.
-    CHECK(record_date_text(0x3264FD64, Language::JP) == "26/10/16" && record_date_text(0, Language::JP) == "--/--/--");
+    CHECK(record_date_text(0x3264FD64, Language::JP) == "26/10/16" && record_date_text(0, Language::JP) == race::kNoDateText);
     CHECK(record_date_text(y2028 + 366 * 86400) == "01/01/29");
     // The clock: after the reference stamp, never 0.
     CHECK(record_stamp_now() > 0x3264FD64);

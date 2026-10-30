@@ -19,13 +19,16 @@ SDL_FColor text_fcolor(const Rgba& c) {
 }
 
 // The debug font only has ASCII. Game text encoding: {0x80+N, c} is char c
-// of ISO-8859-N, 0xA1..0xFE start EUC-JP pairs (full width, two '?').
+// of ISO-8859-N, 0xA1..0xFE start EUC-JP pairs (full width, two '?'); 0x7F is
+// the game fonts' long dash.
 std::string ascii_only(std::string_view s) {
     std::string out;
     for (size_t i = 0; i < s.size(); ++i) {
         unsigned char c = s[i];
         if (c >= 0x20 && c < 0x7F) {
             out += char(c);
+        } else if (c == 0x7F) {
+            out += '-';
         } else if (c >= 0xA1 && c <= 0xFE) {
             out += "??";
             ++i;

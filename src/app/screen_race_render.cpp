@@ -467,7 +467,8 @@ HudData RaceScreen::hud_data(int player) {
         // The licence clock (the original's HUD: clock - start): standing tests from GO,
         // flying ones from the first line crossing (0 before it); frozen at the result.
         // After the run ends the original's HUD reads the car's recorded time: the finish
-        // time, or 359,999,999 after a FAIL, which its formatter shows as -'--.---.
+        // time, or 359,999,999 after a FAIL, which its formatter shows as the font's dashes
+        // (race::kHudNoTimeText).
         if (license_.state() == LicenseRun::State::Finished) d.lap_time = license_.time();
         else if (license_.state() == LicenseRun::State::Failed) d.lap_time = -1;
         else if (!license_.rules().standing && !track_->lap_started()) d.lap_time = 0;

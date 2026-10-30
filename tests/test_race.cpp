@@ -23,6 +23,7 @@
 #include "formats/menu/mbl.h"
 #include "formats/menu/pmb.h"
 #include "race/hud.h"
+#include "race/time_text.h"
 #include "race/license.h"
 #include "race/paint.h"
 #include "race/race_panels.h"
@@ -1108,11 +1109,12 @@ TEST(race_pylons_disc) {
     CHECK(!Pylons::shadow_matrix(p.bodies()[0], {1, 0, 0}, m)); // grazing light: none
 }
 
-// GT3's time formatter: dashes for "no time" (negative, or the 359,999,999 ms a FAIL
-// records), clamp at 999'59.999, no leading zero on the minutes.
+// The race display's time formatter: the font's dashes (0x7F) for "no time" (negative, or the
+// 359,999,999 ms a FAIL records), one for the minutes; clamp at 999'59.999, no leading zero on
+// the minutes.
 TEST(race_hud_time_format) {
-    CHECK(Hud::format_time(-1) == "-'--.---");
-    CHECK(Hud::format_time(359999.999) == "-'--.---");
+    CHECK(Hud::format_time(-1) == "\x7F'\x7F\x7F.\x7F\x7F\x7F" && Hud::format_time(-1) == kHudNoTimeText);
+    CHECK(Hud::format_time(359999.999) == kHudNoTimeText);
     CHECK(Hud::format_time(35.1) == "0'35.100");
     CHECK(Hud::format_time(125.007) == "2'05.007");
     CHECK(Hud::format_time(100000.0) == "999'59.999");
@@ -1123,7 +1125,7 @@ TEST(race_hud_speed_lines) {
     // at most 999.9, dashes for none.
     CHECK(Hud::speed_text(312.46f, false) == "312.5");
     CHECK(Hud::speed_text(200.0f, true) == "124.3");
-    CHECK(Hud::speed_text(0.0f, false) == "---.-" && Hud::speed_text(-1.0f, true) == "---.-");
+    CHECK(Hud::speed_text(0.0f, false) == "\x7F\x7F\x7F.\x7F" && Hud::speed_text(-1.0f, true) == kNoSpeedText);
     CHECK(Hud::speed_text(1200.0f, false) == "999.9");
 }
 

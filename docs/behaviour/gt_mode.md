@@ -1083,8 +1083,8 @@ same text box (`GameFlow`, `src/menu/flow/game_flow.cpp`).
 ranking's Top 3 (`RaceScreen::fill_top3`; a free run its course's `ct:` ranking), read
 again before every quick menu, so before the first run and after each. An arcade time
 trial with no ranking yet shows its seeded records (§16).
-There are always three rows; a place with no entry shows no name, "--'--.---" and a speed
-of " 0.0 km/h" (or " 0.0 mph"). A top speed is printed "%4.1f %s", rounded to tenths, in
+There are always three rows; a place with no entry shows no name, no time ("--'--.---" in
+the font's long dashes, presentation §D10) and a speed of " 0.0 km/h" (or " 0.0 mph"). A top speed is printed "%4.1f %s", rounded to tenths, in
 the race screens' unit (the game data's, mph on NTSC-U, km/h × 0.62139; the `[race]
 units` setting, Settings → Display → Speed units, overrides it): 200 km/h reads
 "124.3 mph". The free time trial's list shows each entry's car name in its car column,
@@ -1099,11 +1099,11 @@ starts on the first place each time a ranking is opened, and its bar is drawn
 highlighted. Up / Down move it over all the places, stopping at the ends, with the
 `select` sound, and the list scrolls to keep it in view; a hovering pointer moves it
 too. The bars are 60 apart (layout: menus §9.7; `gtmode_menu_disc_vertical_lists`). A place with no
-entry has no name, the time "--'--.---" (a top speed "---.-mph") and the date "--/--/--".
-Columns:
+entry has no name, the time "--'--.---" (a top speed "---.-mph") and the date "--/--/--",
+each dash the font's long dash, character 0x7F (presentation §D10). Columns:
 
 - the name as stored (a built-in record shows its built-in name, §16);
-- the value: a time as m'ss.mmm; a top speed (`mt:MMAX`) in the game data's unit with
+- the value: a time as m'ss.mmm (from an hour on h:mm'ss.mmm, presentation §D10); a top speed (`mt:MMAX`) in the game data's unit with
   whole units and tenths both truncated and no space, so 200 km/h reads "124.2mph"
   (`race::record_speed_text`, `src/race/machine_test.cpp`);
 - the date from the stamp, "DD/MM/YY" on the US data (`record_date_text`); an entry

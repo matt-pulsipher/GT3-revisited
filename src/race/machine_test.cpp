@@ -1,5 +1,6 @@
 #include "race/machine_test.h"
 
+#include "race/time_text.h"
 #include "track/track.h"
 
 #include <cmath>
@@ -39,7 +40,7 @@ std::vector<MachineTest::Crossing> MachineTest::update(double before_m, double a
 
 std::string record_speed_text(double kmh, bool imperial) {
     const char* unit = imperial ? "mph" : "km/h";
-    if (kmh <= 0) return std::string("---.-") + unit;
+    if (kmh <= 0) return std::string(kNoSpeedText) + unit;
     const float v = imperial ? float(kmh) * 0.62139f : float(kmh);
     char b[32];
     std::snprintf(b, sizeof b, "%d.%1d%s", int(v), int(v * 10.0f) % 10, unit);
