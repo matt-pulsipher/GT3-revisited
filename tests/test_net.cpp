@@ -251,7 +251,7 @@ static void session_flow(float loss) {
     c2.set_car("impreza_wrc_01", 0);
     c2.set_ready(true);
     CHECK(pump(all, [&] { return host.all_ready(); }));
-    CHECK(host.player(2)->car == "impreza_wrc_01");
+    CHECK(host.player(2) && host.player(2)->car == "impreza_wrc_01");
     host.load();
     std::vector<net::Event> e1;
     CHECK(pump(all, [&] {
@@ -292,8 +292,9 @@ static void session_flow(float loss) {
         return a && b && a->snap.tick >= 15 && b->snap.tick >= 15;
     }));
     // Each car's own state, bit for bit (with loss the newest state to arrive may be any tick from 15 on).
-    CHECK(c2.remote(1)->snap.player == 1 && c2.remote(1)->snap.motion.pos[0] == fbits(float(c2.remote(1)->snap.tick)));
-    CHECK(c2.remote(0)->snap.motion.pos[2] == fbits(float(c2.remote(0)->snap.tick)));
+    CHECK(c2.remote(1) && c2.remote(1)->snap.player == 1 &&
+          c2.remote(1)->snap.motion.pos[0] == fbits(float(c2.remote(1)->snap.tick)));
+    CHECK(c2.remote(0) && c2.remote(0)->snap.motion.pos[2] == fbits(float(c2.remote(0)->snap.tick)));
     CHECK(!c2.remote(2)); // never our own car
 
     // A finish is relayed to everyone.
@@ -1010,7 +1011,9 @@ TEST(net_car_info_reaches_everyone) {
     host.set_car_info(Bytes{1, 2, 3});
     c1.join(addr, "One", "b", 0);
     c1.set_car_info(Bytes{4, 5}); // before the Welcome: sent once joined
-    CHECK(pump({&host, &c1}, [&] { return host.car_info(1) && c1.car_info(0); }));
+    bool swapped = pump({&host, &c1}, [&] { return host.car_info(1) && c1.car_info(0); });
+    CHECK(swapped);
+    if (!swapped) return;
     CHECK(*host.car_info(1) == (Bytes{4, 5}) && *c1.car_info(0) == (Bytes{1, 2, 3}));
     // A later player gets everyone's.
     c2.join(addr, "Two", "c", 0);
