@@ -115,7 +115,7 @@ The time shown follows the judge's clock:
 - a flying test 0 until the first line crossing, then from it;
 - frozen at the judged time once the run finishes (TIME EXPIRED included);
 - dashes (`-'--.---`) after a FAIL (the HUD is given no time, which the time
-  formatter shows as dashes, §D10).
+  formatter shows as the font's long dashes, §D10).
 
 ### §A4 Result presenter
 
@@ -459,8 +459,9 @@ goes through §C1.
   - 0-400 m / 0-1000 m: "Lap" and the time to the goal, in the same places;
   - the top-speed test: "Max Speed" (sw_16, at (160, 270)) and the top speed
     (sw_20 at 1.3 x, right edge 480) as "312.4km/h" or "124.2mph" (mph = km/h
-    x 0.62139), whole units and tenths both truncated, "---.-" and the unit for
-    none (`race::record_speed_text`, test `race_record_rank`). The unit is
+    x 0.62139), whole units and tenths both truncated, "---.-" (the font's long
+    dashes, §D10) and the unit for none (`race::record_speed_text`, test
+    `race_record_rank`). The unit is
     the HUD's speed unit (§D1). Stored top speeds are shown the same way on GT
     mode's records page (there in the game data's unit); the quick menu's Top 3
     rounds them instead (§C2).
@@ -646,17 +647,18 @@ with it before the first run (`menu_before_run`):
 | GT race | `qm_gt_event1.pmb` | `qm_gt_result1.pmb` |
 | championship round | `qm_gt_event_champ1.pmb` | `qm_gt_result_champ1.pmb` |
 
-- **Rows.** The pre-race menu lists every car with "--'--.---". The result menu
-  lists the cars in race order with each finished car's own race time (not the
-  gaps of §B6), and "--'--.---" for a car still racing when the race ended. The
-  player's row is (255, 116, 0).
+- **Rows.** The pre-race menu lists every car with no time, "--'--.---" in the
+  font's long dashes (§D10). The result menu lists the cars in race order with
+  each finished car's own race time in the menus' format (§D10; not the gaps of
+  §B6), and no time for a car still racing when the race ended. The player's row
+  is (255, 116, 0).
 - **Top 3.** Time trials, free runs (the course's ranking, §B7) and machine tests
   fill "Top 3" from the GT-mode ranking
   (`RaceScreen::fill_top3`), read again before every quick menu and after a run's
   name entry (§B7): name and time, or for the MMAX test the top speed as
   "%4.1f %s" in the HUD's unit, rounded ("218.8 mph"). There are
-  always three rows; a place the ranking has not filled shows no name,
-  "--'--.---" and " 0.0" with the unit. The free-run menu (`qm_arc_tt_free1.pmb`) also
+  always three rows; a place the ranking has not filled shows no name, no time
+  ("--'--.---", §D10) and " 0.0" with the unit. The free-run menu (`qm_arc_tt_free1.pmb`) also
   shows each entry's car name, "---" for none.
 - **Actions.** Items act on their `.mbl` action string (`race::quick_menu_action`):
 
@@ -970,8 +972,8 @@ right edge max(value width, 90) + 10 units left of the value's
     far, taken every tick of the run from its start, past the goal too (not
     in demonstrations, where it shows dashes; replays keep it too, for the
     goal's pop-up of §D6, but draw the replay layout). The value is "%.1f",
-    rounded, in mph x 0.62139, at most 999.9, and "---.-" for 0 or less
-    (`Hud::speed_text`, test `race_hud_speed_lines`). This is not the recorded
+    rounded, in mph x 0.62139, at most 999.9, and "---.-" (the font's long
+    dashes, §D10) for 0 or less (`Hud::speed_text`, test `race_hud_speed_lines`). This is not the recorded
     top speed of §B7, which stops at the goal.
 
 ### §D5 Mini-map and position
@@ -1162,13 +1164,28 @@ A theater demonstration draws the items on its run's own layout instead (§G7).
 
 ### §D10 Time format
 
-`Hud::format_time` (test `race_hud_time_format`):
+Times are printed in one of two formats, as the game prints them
+(`race/time_text.h`):
 
-- "m'ss.mmm", with minutes unpadded ("0'35.100", "2'05.007");
-- dashes `-'--.---` for negative times and for the "no time" value 359,999,999 ms;
-- clamped at 999'59.999.
+- **The race display** (`Hud::format_time`, test `race_hud_time_format`): the
+  HUD's time lines and lap-time list (§D4), the pop-ups (§D6) and the license
+  result's time (§A4). "m'ss.mmm", with minutes unpadded ("0'35.100",
+  "2'05.007"), clamped at 999'59.999; `-'--.---` for negative times and for the
+  "no time" value 359,999,999 ms.
+- **The menus** (`race::menu_time_text`, test `race_time_text_format`): the
+  quick menus' rows and Top 3 (§C2), the time-trial result's "Lap" (§B7), the
+  results overlay's times and gaps (§B6), GT mode's records pages, the Replay
+  Theater's Record (§G9) and the Analyzer (§G10). "m'ss.mmm", and
+  "h:mm'ss.mmm" from an hour on ("1:02'03.400"); `--'--.---` (two dashes for
+  the minutes) for "no time": exactly 359,999,999 ms, or a time we do not have.
 
-The results overlay prints hours as "h:mm'ss.mmm" (§B6).
+The dashes of these placeholders, of the no-speed `---.-` (§B7, §D4) and of a
+record's missing date `--/--/--` (GT mode's records pages) are the game font's
+long dash, character 0x7F, never the hyphen: in sw_16 the dash is 12 pixels
+wide, the hyphen 7. The texts are game text, and the UTF-8 path draws 0x7F
+with the same glyph (tests `race_time_text_disc_program`, which checks them
+against the game program on the disc, and `race_time_text_disc_fonts`, which
+lays them out with the disc's fonts).
 
 ### §D11 Touch layouts
 

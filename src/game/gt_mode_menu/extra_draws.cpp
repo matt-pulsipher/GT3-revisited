@@ -9,6 +9,7 @@
 #include "game/gt_setting.h"
 #include "menu/menu_renderer.h"
 #include "race/machine_test.h"
+#include "race/time_text.h"
 
 #include <algorithm>
 #include <cctype>
@@ -263,8 +264,7 @@ void draw_records(const MenuController& ctl, GtModeSession& s, const PageRef& re
         b.z = bar.z;
         out.push_back(b);
         const std::string data = speed ? race::record_speed_text(r ? r->value : 0, gt.data().imperial())
-                                 : r   ? format_time_ms(u32(std::llround(r->value * 1000)))
-                                       : std::string("--'--.---");
+                                       : race::menu_time_text(r ? r->value : -1.0); // (empty: "no time")
         put(hidden_element(ref.layout(), "record_rank_shadow"), std::to_string(i + 1));
         put(hidden_element(ref.layout(), "record_rank"), std::to_string(i + 1));
         put(hidden_element(ref.layout(), "record_name"), r ? gt.ranking_name(*r) : std::string());

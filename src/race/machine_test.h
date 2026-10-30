@@ -64,7 +64,7 @@ private:
 
 // A top speed in the records (the result's "Max Speed", the quick menu's Top 3, GT Mode's
 // records page), in the speed unit: whole units and tenths, both truncated, and the unit
-// ("312.4km/h", "194.1mph"); 0 or less shows dashes.
+// ("312.4km/h", "194.1mph"); 0 or less kNoSpeedText (the font's dashes) and the unit.
 std::string record_speed_text(double kmh, bool imperial);
 
 // A time test's pop-up for a crossing: the split "T<n> m'ss.mmm" or the time to the goal (as

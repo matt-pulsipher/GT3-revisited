@@ -173,10 +173,10 @@ public:
     // Where the last draw() put the P.P. line's car picture (UI units; w = 0: none).
     const SDL_FRect& pole_icon_rect() const { return pole_icon_rect_; }
 
-    // "1'23.456" (or "-'--.---" for negative times).
+    // "1'23.456"; race::kHudNoTimeText (the font's dashes, "-'--.---") for negative times.
     static std::string format_time(double seconds);
     // A speed line's value (the unit is drawn after it): "%.1f" of the speed in km/h or mph
-    // (x 0.62139), at most 999.9; 0 or less "---.-".
+    // (x 0.62139), at most 999.9; 0 or less race::kNoSpeedText (the font's "---.-").
     static std::string speed_text(float kmh, bool imperial);
     // Tachometer scale (rpm) for a rev limit, as the game picks it.
     static int tach_scale(float rev_limit_rpm);

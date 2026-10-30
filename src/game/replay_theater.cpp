@@ -7,6 +7,7 @@
 #include "game/net_car.h"
 #include "race/demo_replay.h"
 #include "race/replay_library.h"
+#include "race/time_text.h"
 #include "vfs/vfs.h"
 
 #include <cmath>
@@ -51,7 +52,8 @@ std::string power_text(float ps, const Vfs* vfs) {
     return std::to_string(display_power(ps, u)) + power_unit(u);
 }
 
-std::string record_text(double s) { return s >= 0 ? format_time_ms(u32(std::llround(s * 1000.0))) : "-'--.---"; }
+// The menus' time format; no time: the font's dashes.
+std::string record_text(double s) { return race::menu_time_text(s); }
 
 // MM/DD/YYYY as the US menus show dates.
 std::string date_text(const race::ReplayEntry& e) {

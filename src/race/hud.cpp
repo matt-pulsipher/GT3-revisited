@@ -4,6 +4,7 @@
 #include "formats/gs_memory.h"
 #include "formats/menu/imgs.h"
 #include "formats/tex1.h"
+#include "race/time_text.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -123,11 +124,12 @@ Hud::~Hud() {
 }
 
 std::string Hud::format_time(double s) {
-    // GT3's formatter: dashes for negative times (and the 359,999,999 ms "no time" value),
-    // otherwise clamped to 999'59.999.
-    if (s < 0) return "-'--.---";
+    // The race display's formatter: the font's dashes for negative times and the
+    // 359,999,999 ms "no time" value (one for the minutes, not the menus' two), otherwise
+    // clamped to 999'59.999.
+    if (!(s >= 0)) return std::string(kHudNoTimeText);
     long long ms = std::llround(s * 1000.0);
-    if (ms == 359999999) return "-'--.---";
+    if (ms == 359999999) return std::string(kHudNoTimeText);
     ms = std::min<long long>(ms, 59999999);
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%lld'%02lld.%03lld", ms / 60000, (ms / 1000) % 60, ms % 1000);
@@ -136,7 +138,7 @@ std::string Hud::format_time(double s) {
 
 std::string Hud::speed_text(float kmh, bool imperial) {
     const float v = imperial ? kmh * 0.62139f : kmh;
-    if (!(v > 0)) return "---.-";
+    if (!(v > 0)) return std::string(kNoSpeedText); // the race display's speed text
     char buf[16];
     std::snprintf(buf, sizeof(buf), "%.1f", double(std::min(v, 999.9f)));
     return buf;
@@ -257,7 +259,9 @@ void Hud::draw_text(SDL_Renderer* r, float x, float y, const std::string& s, boo
             return;
         }
         SDL_SetRenderDrawColor(r, c.r, c.g, c.b, c.a);
-        SDL_RenderDebugText(r, x0, y, s.c_str());
+        std::string ascii = s; // (the game fonts' long dash: the debug font's hyphen)
+        std::replace(ascii.begin(), ascii.end(), kDash, '-');
+        SDL_RenderDebugText(r, x0, y, ascii.c_str());
         return;
     }
     text::TextStyle st;

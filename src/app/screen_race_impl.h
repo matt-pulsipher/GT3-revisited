@@ -71,6 +71,7 @@
 #include "game/net_car.h"
 #include "net/session.h"
 #include "race/replay_cameras.h"
+#include "race/time_text.h"
 #include "formats/course/course_file.h"
 #include "render/view3d.h"
 

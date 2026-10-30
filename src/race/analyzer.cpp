@@ -4,6 +4,7 @@
 #include "formats/tex1.h"
 #include "menu/flow/menu_controller.h"
 #include "menu/menu_text.h"
+#include "race/time_text.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -55,14 +56,6 @@ void text(text::GameFonts* fonts, const Frame& f, float mx, float my, const std:
     st.valign = text::VAlign::Middle;
     if (game) g->draw_game(f.x(mx), f.y(my), s, st);
     else g->draw(f.x(mx), f.y(my), s, st);
-}
-
-std::string fmt_time(double s) {
-    if (!(s >= 0)) return "-'--.---";
-    long ms = std::lround(s * 1000.0);
-    char b[32];
-    std::snprintf(b, sizeof(b), "%ld'%02ld.%03ld", ms / 60000, (ms / 1000) % 60, ms % 1000);
-    return b;
 }
 
 const menu::Element* find(const menu::MenuScene& s, const std::string& name) {
@@ -523,7 +516,7 @@ void Analyzer::draw(SDL_Renderer* r, const SDL_FRect& dst) {
             std::snprintf(buf + 16, 16, "%d", int(std::lround(sd / st * 3.6 * unit)));
             avg = std::string(buf + 16) + (imperial ? " mph" : " km/h");
         }
-        const std::string vals[4] = {std::string(buf, std::strlen(buf)), fmt_time(tr.time_at(i)), fmt_time(st), avg};
+        const std::string vals[4] = {std::string(buf, std::strlen(buf)), menu_time_text(tr.time_at(i)), menu_time_text(st), avg};
         static const char* const kInfo[4] = {"r_speed_info", "r_total_info", "r_sector_info", "r_average_info"};
         for (int k = 0; k < 4; ++k)
             if (const menu::Element* e = find(*scene_, kInfo[k]))

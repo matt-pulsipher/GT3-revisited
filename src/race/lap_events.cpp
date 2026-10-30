@@ -1,6 +1,7 @@
 #include "race/lap_events.h"
 
 #include "race/hud.h"
+#include "race/time_text.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -127,7 +128,7 @@ std::string lap_time_text(long long ms) { return Hud::format_time(double(ms) / 1
 std::string split_text(int number, long long ms) { return "T" + std::to_string(number) + " " + lap_time_text(ms); }
 
 std::string gap_text(long long gap_ms) {
-    return std::string(gap_ms >= 0 ? "+" : "\x7F") + lap_time_text(std::llabs(gap_ms));
+    return std::string(1, gap_ms >= 0 ? '+' : kDash) + lap_time_text(std::llabs(gap_ms));
 }
 
 std::string lap_diff_text(int laps, const std::string& format) {
@@ -136,7 +137,7 @@ std::string lap_diff_text(int laps, const std::string& format) {
     std::string n = std::to_string(std::abs(laps));
     if (at != std::string::npos) s.replace(at, 2, n);
     else s = n + " " + s;
-    return std::string(laps >= 0 ? "+" : "\x7F") + s;
+    return std::string(1, laps >= 0 ? '+' : kDash) + s;
 }
 
 // --- the event display ------------------------------------------------------------------------

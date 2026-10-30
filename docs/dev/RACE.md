@@ -19,6 +19,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/hud.h/.cpp` | HUD (lap times, tachometer, gear, speed) using the game's own assets |
 | `race/hud_layout.h/.cpp` | The HUD layout per display mode (the original's layout table) and the mode a run uses |
 | `race/hud_clocks.h/.cpp` | The start title's and the replay mark's clocks (`TitleClock`, `ReplayMarkTimer`) |
+| `race/time_text.h/.cpp` | The menus' time format (`menu_time_text`) and the game's "none" placeholders in the font's long dash (no time, no speed, no date) |
 | `race/machine_test.h/.cpp` | Machine tests: the test from the event, its timing points and goal (`MachineTest`) |
 | `race/lap_events.h/.cpp` | The event display (the pop-ups' queue and timing), race gaps (`PassingOrder`), time trials' best lap and split times (`BestLapSplits`) |
 | `race/replay.h/.cpp` | Replay format, recorder, player, save/list in `<user data>/replays/` |
@@ -44,6 +45,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `tests/test_race.cpp` | Control mapping, stepping, interpolation, rumble, render-state decoding, car setup |
 | `tests/test_race_presentation.cpp` | Presentation rules without the disc: records and RETRY, HUD layouts, replay view modes, quick menus, what follows a run, the title and mark clocks |
 | `tests/test_race_lap_events.cpp` | The pop-ups, split points, machine-test timing and the loading picture without the disc |
+| `tests/test_time_text.cpp` | The time formats; disc (any region): the placeholders against the game program and laid out with the disc's fonts |
 | `tests/test_exact_game.cpp` | Disc: the pad read's frames; whole races through `RaceField` on the exact core equal to `ExactRace` stepped directly (`exact_game_race_lockstep`); a pad-read run equal to its replay's inputs (`exact_game_pad_replay`) |
 | `tests/test_exact_replay.cpp`, `tests/test_exact_demos.cpp` | Disc: races on the exact core through a replay file and back, every step (`exact_replay_round_trip`); the whole-run ghost car (`exact_replay_ghost`); the disc's demos through their race records (`exact_demo_records`) |
 | `tools/gt3tool/cmd_race.cpp` | Diagnostics: `race-texlod`, `race-blend`, `race-sheen`, `race-carprims` |
@@ -1206,7 +1208,8 @@ From the race workstream's research (presentation §B, `result1.pmb`,
   Exit through the layout's "Retire from championship?" page (Yes posts
   `GameResult::abandoned`). Time trial and machine test menus show the ranking's Top 3
   (`RaceScreen::fill_top3`, read again before every menu and after a run's name entry):
-  always three rows, an empty entry with no name and `--'--.---` (or ` 0.0 km/h`), a top
+  always three rows, an empty entry with no name and `race::kNoTimeText` (`--'--.---` in the
+  font's long dash, character 0x7F; or ` 0.0 km/h`), a top
   speed as `%4.1f %s` in the Options unit (rounded), the free time trial's car list
   (`qm_list_car_name<n>`) as the entry's car name or `---`. A licence run with a medal, a
   finished machine test or time-trial challenge, and a free run with a best lap (the arcade
@@ -1546,8 +1549,8 @@ screen, `screen_race_license.cpp` the flow. The rules (presentation §A):
   of 20 cones 1.9 m past the box is the limit. A fail plays the fail cue and shows
   FAIL (no time under it), then the licence quick menu; from the failing tick the HUD
   Time reads the car's recorded time, 359,999,999 ms, which GT3's formatter shows as
-  `-'--.---` (it also dashes negative times and clamps at 999'59.999; test
-  `race_hud_time_format`). After a finish the HUD shows the recorded time, frozen.
+  `-'--.---` in the font's long dash (`race::kHudNoTimeText`; it also dashes negative times
+  and clamps at 999'59.999; test `race_hud_time_format`). After a finish the HUD shows the recorded time, frozen.
   Time trial stops the car on a pylon hit too (the same failure bit as a wall hit)
   and its HUD Time then shows the run's best lap, or dashes.
 - **The pit lane** (physics §11) fails only inside the course's **pit span**: four grounded
@@ -1670,7 +1673,7 @@ screen, `screen_race_license.cpp` the flow. The rules (presentation §A):
   credits, or the consolation prize; `game::queue_race_prize`, shown by
   `make_presentation_screen()` over the race) -> the race's replay starts by itself -> its end
   or EXIT, the transition again -> the GT result quick menu (finished cars with their own race
-  times, `--'--.---` for a car still racing when the race ended; no race behind it). A race left
+  times, `race::kNoTimeText` for a car still racing when the race ended; no race behind it). A race left
   with EXIT: no prize, the replay all the same ("After a run"). `GameResult::prize_shown` tells
   GT mode not to show the page again. The result is latched when the live race ends (`RaceResultLatch`, as the
   original records the place and prize before the replay) and is what every exit posts: quick

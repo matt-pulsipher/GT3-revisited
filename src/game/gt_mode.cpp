@@ -8,6 +8,7 @@
 #include "base/log.h"
 #include "base/ps2_float.h"
 #include "race/pool_draw.h"
+#include "race/time_text.h"
 #include "disc/core_image.h"
 #include "vfs/vfs.h"
 #include "formats/menu/pmb.h"
@@ -157,11 +158,7 @@ std::string fill(std::string_view format, std::initializer_list<std::string_view
 std::string credits_text(s64 v) { return fill("Cr. %s", {format_credits(v)}); }
 std::string prize_remain_text(std::string_view prefix, s64 v) { return fill("%s Cr. %s", {prefix, format_credits(v)}); }
 
-std::string format_time_ms(u32 ms) {
-    char b[32];
-    std::snprintf(b, sizeof b, "%u'%02u.%03u", ms / 60000, ms / 1000 % 60, ms % 1000);
-    return b;
-}
+std::string format_time_ms(u32 ms) { return race::menu_time_text(ms); }
 
 u32 record_stamp_now() {
     const std::time_t now = std::time(nullptr);
@@ -180,7 +177,7 @@ u32 record_stamp_now() {
 }
 
 std::string record_date_text(u32 stamp, Language lang) {
-    if (stamp == 0) return "--/--/--";
+    if (stamp == 0) return std::string(race::kNoDateText); // (the font's dashes, every language)
     // The original's conversion: four-year cycles of 1461 days, each starting with a leap
     // year, then the month by the days before it; it picks the leap year's month table only
     // for the year 2000.

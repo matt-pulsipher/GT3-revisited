@@ -111,7 +111,7 @@ TEST(race_record_rank) {
     // "%d.%1d" with the unit, both parts truncated; mph x 0.62139; dashes for none.
     CHECK(record_speed_text(312.47, false) == "312.4km/h");
     CHECK(record_speed_text(200.0, true) == "124.2mph");
-    CHECK(record_speed_text(0.0, true) == "---.-mph");
+    CHECK(record_speed_text(0.0, true) == "\x7F\x7F\x7F.\x7Fmph"); // the font's dashes
 }
 
 TEST(race_retry_lock) {

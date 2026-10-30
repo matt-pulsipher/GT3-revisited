@@ -13,6 +13,7 @@
 #include "game/save_library.h"
 #include "menu/flow/game_flow.h"
 #include "menu/flow/gt_mode_hooks.h"
+#include "race/time_text.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -1854,8 +1855,9 @@ TEST(gtmode_synth_machine_test_and_records) {
     CHECK((texts("record_rank") == std::vector<std::string>{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"}));
     CHECK(texts("record_name") == places({"C", "C"}, "")); // (the last name entered)
     CHECK(texts("record_car") == places({"Synthetic Coupe ", "Synthetic Wagon Touring"}, ""));
-    CHECK(texts("record_data") == places({"0'12.345", "0'13.500"}, "--'--.---"));
-    CHECK(texts("record_date") == places({game::record_date_text(stamp0), "16/10/26"}, "--/--/--"));
+    // (Empty places: the font's dashes, race::kNoTimeText / kNoDateText.)
+    CHECK(texts("record_data") == places({"0'12.345", "0'13.500"}, "\x7F\x7F'\x7F\x7F.\x7F\x7F\x7F"));
+    CHECK(texts("record_date") == places({game::record_date_text(stamp0), "16/10/26"}, "\x7F\x7F/\x7F\x7F/\x7F\x7F"));
     CHECK(draws_named(rec, "record_car_pict").size() == 12);
     int bars = 0;
     for (const menu::ElementDraw& d : rec.draw_list())
@@ -2013,7 +2015,7 @@ TEST(gtmode_synth_course_time_trials) {
         if (d.element && d.element->name == "record_data" && d.text) data.push_back(*d.text);
     }
     CHECK(cars.size() == 12 && cars[0] == "Synthetic Coupe " && cars[1] == "Synthetic Wagon Touring" && cars[3].empty());
-    CHECK(data.size() == 12 && data[0] == "0'59.500" && data[2] == "1'01.250" && data[3] == "--'--.---");
+    CHECK(data.size() == 12 && data[0] == "0'59.500" && data[2] == "1'01.250" && data[3] == race::kNoTimeText);
     CHECK(draws_named(rec, "record_car_pict").size() == 12);
 }
 
