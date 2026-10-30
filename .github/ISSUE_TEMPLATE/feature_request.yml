@@ -1,0 +1,58 @@
+name: Feature request
+description: Suggest a new option or feature.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        GT3 Revisited aims to play exactly like GT3 on the PS2: where GT3 has its own way of doing something (physics, AI, rules, GT Mode), that comes first. New options and features around the game are welcome.
+
+        Open-ended ideas can start in [Ideas](https://github.com/matt-pulsipher/GT3-revisited/discussions/categories/ideas).
+
+  - type: textarea
+    id: request
+    attributes:
+      label: What you'd like
+      description: The option or feature, and where in the game it would go.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it would let you do, or the problem it solves.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Platforms
+      description: Leave empty if it's for every platform.
+      multiple: true
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Android
+        - iPhone / iPad
+        - Meta Quest
+    validations:
+      required: false
+
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Mockups, screenshots, or how other games do it.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Before you send
+      options:
+        - label: I searched the open and closed issues for this request.
+          required: true
