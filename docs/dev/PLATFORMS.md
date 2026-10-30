@@ -253,11 +253,11 @@ GT3R_SHOT_FRAME=120 GT3R_ONLINE="host" ./build/gt3r.app/Contents/MacOS/gt3r disc
 
 `.github/workflows/build.yml`:
 
-- **desktop** (ubuntu-24.04, windows-2022, macos-14): configure, build
+- **desktop** (ubuntu-24.04, windows-2022, macos-15): configure, build
   `gt3r gt3tool gt3r_tests`, run ctest (tests that need a disc skip).
 - **android**: JDK 21, installs NDK 27.0.12077973 + CMake 3.22.1 with
   sdkmanager, fetches SDL, `assembleDebug`, uploads the APK.
-- **ios** (macos-14): configures with the Xcode generator and builds the app for devices,
+- **ios** (macos-15): configures with the Xcode generator and builds the app for devices,
   unsigned (no artifact: an unsigned app installs nowhere).
 
 Validated locally with `actionlint`. GitHub Actions runs it on every push and
