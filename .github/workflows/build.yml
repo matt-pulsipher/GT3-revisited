@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-14]
+        os: [ubuntu-24.04, windows-2022, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
   # iOS (docs/dev/PLATFORMS.md "iOS"): no signing without GT3R_IOS_TEAM, so no artifact either
   # (an unsigned app installs nowhere).
   ios:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Configure
@@ -84,7 +84,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             name: macos-arm64
           - os: windows-2022
             name: windows-x64
