@@ -4,12 +4,14 @@
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
+#include "race/exact_field.h"
 #include "sim/exact/race.h"
 
 namespace gt3r::race_screen {
 
-// Free run before a GT race: the course alone (no opponents, no laps); leaving it
-// ("Exit" in the pause menu) returns to the pre-race menu with the field rebuilt.
+// Free run before a GT race (free practice, gt_mode §22.5): the race's field on the course, no laps; leaving it ("Exit" in
+// the pause menu) returns to the pre-race menu with the field rebuilt, re-gridded by the practice's best laps when the
+// player set one.
 void RaceScreen::start_free_run(App& app) {
     // Free practice starts the player's car in its pit box on the course's stop line (GT3's free practice start). GT3 offers
     // it only where there is one: its pre-race menu turns FREE RUN off on a dirt course (QuickMenuItems::visit), and every
@@ -38,6 +40,22 @@ void RaceScreen::start_free_run(App& app) {
 }
 
 void RaceScreen::end_free_run(App& app) {
+    // The practice's end (GT race, championship): every car's best lap of it for the list; the grid by them
+    // when the player set one (else the grid stays); each entry's best lap carried into the next practice (race information
+    // + entry 0x11D8, laps without a course-out: the min of what it had and this practice's).
+    if (solo_field_) {
+        const ExactBestLaps b = exact_best_laps(*solo_field_);
+        practice_best_ = b.car;
+        if (practice_entry_best_.size() != b.entry.size()) practice_entry_best_.assign(b.entry.size(), race::kPracticeNoTime);
+        for (size_t k = 0; k < b.entry.size(); ++k) practice_entry_best_[k] = std::min(practice_entry_best_[k], b.entry[k]);
+        if (race::practice_regrids(b.car)) practice_grid_ = race::practice_grid(b.car);
+        std::string list;
+        for (size_t k = 0; k < b.car.size(); ++k)
+            list += (k ? ", " : "") + text::game_text_to_utf8(race::menu_time_text(b.car[k]), hud_.fonts().jis()) +
+                    (k < practice_grid_.size() ? " (slot " + std::to_string(practice_grid_[k] + 1) + ")" : "");
+        LOG_INFO("Race: free practice ended, best laps %s%s", list.c_str(),
+                 race::practice_regrids(b.car) ? "; the grid by them" : "; no lap by the player, the grid kept");
+    }
     free_run_ = false;
     race_mode_ = true;
     build_vehicle(app);
@@ -251,12 +269,17 @@ void RaceScreen::open_prerace_menu(App& app) {
         fill_license_menu(app);
         return;
     }
-    // The entry list in grid order (the capture of GT3's RACE MENU): every car, no times yet ("no
-    // time"); a championship round's with each car's points (the entrants by grid slot).
+    // The entry list in grid order (the capture of GT3's RACE MENU): every car, no times before a free practice ("no time"),
+    // each car's best lap of the last one after it (a GT race's; a championship round's keeps none,
+    // the entrants by grid slot with their points).
     if (field_) {
         std::vector<ResultRow> rows = result_rows();
         for (ResultRow& r : rows) r.time = kNoTimeText;
+        if (!championship() && !practice_best_.empty()) race::practice_list_times(rows, practice_best_);
         fill_championship(&rows);
+        for (const ResultRow& r : rows)
+            LOG_INFO("Race pre-race list: %-40s %s%s", text::game_text_to_utf8(r.name, hud_.fonts().jis()).c_str(),
+                     text::game_text_to_utf8(r.time, hud_.fonts().jis()).c_str(), r.points.empty() ? "" : (" " + r.points).c_str());
         prerace_rows_ = rows;
         quick_menu_.set_rows(std::move(rows));
     }

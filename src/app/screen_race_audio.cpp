@@ -82,13 +82,12 @@ void RaceScreen::update_course_ambience(App& app) {
     };
     std::vector<CourseAmbience::Listener> ls{listener(camera_, render_state_)};
     std::vector<float> dist{track_->distance_of(render_state_.position)};
-    if (field_) {
-        if (field_->has_second()) {
-            ls.push_back(listener(camera2_, render_state2_));
-            dist.push_back(track_->distance_of(field_->second_state().position));
-        }
-        for (int i = 0; i < field_->opponents(); ++i) dist.push_back(track_->distance_of(field_->opponent_state(i).position));
+    if (field_ && field_->has_second()) {
+        ls.push_back(listener(camera2_, render_state2_));
+        dist.push_back(track_->distance_of(field_->second_state().position));
     }
+    if (const RaceField* f = exact_field()) // (the opponents on the course: a race's, a free practice's)
+        for (int i = 0; i < f->opponents(); ++i) dist.push_back(track_->distance_of(f->opponent_state(i).position));
     crss_.update(ls, dist);
     crss_player_.update(app.audio().voices(), crss_);
 }
@@ -133,7 +132,8 @@ void RaceScreen::update_tyre_sounds(App& app, const sim::VehicleState& s) {
         car_sfx2_.update(sfx_, mixer, p2);
     }
     // The other cars: the "other car" gains, placed and attenuated (32/d) like the followed car's.
-    const int n = field_ ? field_->opponents() : 0;
+    const RaceField* f = exact_field();
+    const int n = f ? f->opponents() : 0;
     if (int(opp_sfx_.size()) != n) {
         for (CarSfx& c : opp_sfx_) c.stop(mixer);
         opp_sfx_.clear();
@@ -141,8 +141,8 @@ void RaceScreen::update_tyre_sounds(App& app, const sim::VehicleState& s) {
     }
     const SoundView other = camera_.onboard() ? SoundView::InCarOther : tv ? SoundView::Other : SoundView::ChaseOther;
     for (int i = 0; i < n; ++i) {
-        const sim::VehicleState& os = field_->opponent_state(i);
-        CarSfx::Step p = step(camera_, os, field_->opponent_setup(i), field_->opponent_telemetry(i), other);
+        const sim::VehicleState& os = f->opponent_state(i);
+        CarSfx::Step p = step(camera_, os, f->opponent_setup(i), f->opponent_telemetry(i), other);
         p.doppler = doppler(os, p.eye);
         opp_sfx_[size_t(i)].update(sfx_, mixer, p);
     }

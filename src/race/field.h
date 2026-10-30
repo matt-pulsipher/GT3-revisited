@@ -114,7 +114,8 @@ struct ExactFieldOptions {
     bool analysis = false;
     std::shared_ptr<const std::vector<std::map<s32, sim::exact::Snapshot>>> logger_tables;
 };
-// The solo conductors: the time trial, licence test, machine test, free run and free practice (the player alone).
+// The solo conductors: the time trial, licence test, machine test, free run and free practice (the player alone; free
+// practice with the race's field, FieldConfig::opponents).
 bool exact_solo_kind(sim::exact::Conductor k);
 
 struct FieldConfig {
@@ -145,6 +146,12 @@ struct FieldConfig {
     };
     std::vector<Remote> remote;
     int player_slot = -1; // the local player's grid slot (-1: behind the opponents)
+    // The grid a free practice left (race::practice_grid): entry k's slot, 0 the player, k opponent k - 1; empty (or not
+    // one slot per car): the order above.
+    std::vector<int> grid_slots;
+    // Free practice: each entry's best lap so far (ms, entry + 0x11D8: GT3's race information keeps it from run to run, and
+    // the conductor's restart, starts each car's best lap from it); empty (or not one per car): none.
+    std::vector<u32> entry_best;
 };
 
 // How an event starts (event record, database table 32; docs/dev/RACE.md "Starts"):

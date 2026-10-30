@@ -16,6 +16,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     error_.clear();
     reset_session_best(); // a new visit: the runs and retries that follow share it
     qm_items_ = {};       // ... and its quick menus' item switches (menus §11)
+    practice_best_.clear(), practice_grid_.clear(), practice_entry_best_.clear(); // ... and its free practices' times and grid
     // Speed unit: the game language's (language_units: mph in US English, else km/h, like the
     // menus) unless the player picked one ([race] units, speed_unit()).
     imperial_ = !app.vfs() || language_units(app.vfs()->language()).mph;
@@ -564,9 +565,11 @@ bool RaceScreen::build_vehicle(App& app) {
                      race_event_.c_str(), es.type, es.rolling() ? "rolling" : es.flying() ? "flying" : "standing",
                      es.rolling() || demo_start_kmh_ > 0 ? 0.0 : es.countdown, es.cars, es.laps, es.time_limit_s / 60.0);
         }
-        // GT mode orders the grid by whole kg per whole power in the language's power unit (lowest on pole, the player last).
+        // GT mode orders the grid by whole kg per whole power in the language's power unit (lowest on pole, the player last);
+        // after a free practice in which the player set a lap, by its best laps (race::practice_grid).
         cfg.grid_by_power = from_menu_ && launch_.request.mode.rfind("go_", 0) == 0;
         cfg.grid_hp = app.vfs() && language_units(app.vfs()->language()).power_hp;
+        cfg.grid_slots = practice_grid_;
         // A race replay's field as its run had it, wherever it is played (the theater has
         // its own launch and today's settings).
         if (replaying_ && replay_.grid_by_power) cfg.grid_by_power = *replay_.grid_by_power;
@@ -649,81 +652,88 @@ bool RaceScreen::build_vehicle(App& app) {
             }
             field_->set_laps(race_laps_);
             race_opponents_ = field_->labels();
-            // Paint colours: player first, then the opponents (event slot ids or the game's draw).
-            std::vector<PaintEntry> entries;
-            std::string player_model = launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_;
-            entries.push_back({player_model, colors_.id_at(player_model, preset_.paint)});
-            const data::Event* pev = db_.event(race_event_);
-            for (int i = 0; i < field_->opponents(); ++i) {
-                PaintEntry e{field_->opponent_model(i)};
-                if (pev && race_opponents_ == pev->entries && pev->bytes.size() >= 0x110 + 4 * size_t(i + 1))
-                    e.id = rd32(pev->bytes, 0x110 + 4 * size_t(i));
-                if (online_ && size_t(i) < net_.paint.size()) // the colour that player chose
-                    e.id = colors_.id_at(field_->opponent_model(i), net_.paint[size_t(i)]);
-                entries.push_back(e);
-            }
-            // The race module's generator, as left by the opponent draw; a replay re-runs
-            // the draw from the state its race had.
-            GameRandom replay_rng{paint_seed_override_.value_or(GameRandom::kBootSeed)};
-            GameRandom& rng = paint_seed_override_ ? replay_rng : race_info_random();
-            paint_seed_ = rng.x;
-            paint_seed_override_.reset();
-            std::vector<int> paints = assign_paints(colors_, entries, rng);
-            std::map<std::pair<std::string, int>, std::shared_ptr<CarVisual>> by_model;
-            for (int i = 0; i < field_->opponents(); ++i) {
-                const std::string& model = field_->opponent_model(i);
-                int paint = std::max(0, paints[size_t(i) + 1]);
-                if (online_ && size_t(i) < net_.paint.size())
-                    LOG_INFO("Online: %s's %s in paint %d (chosen %d)", net_.names[size_t(i)].c_str(), model.c_str(),
-                             paint, net_.paint[size_t(i)]);
-                // A mod car's own body (glTF, or the stretched donor shell) and rim, as the player's
-                // car gets them; disc cars have none.
-                std::string l = field_->opponent_label(i), base = db_.car(l) ? l : "";
-                if (base.empty())
-                    if (const data::CarVariant* cv = db_.variant(l)) base = cv->car;
-                CarBodyMod bm = db_.mod_car(base) ? body_mod_for_car(db_, base, paint) : CarBodyMod{};
-                std::shared_ptr<CarVisual>& v = by_model[{bm.active() ? base : model, paint}];
-                if (!v) {
-                    std::optional<Bytes> f = read_car(app, model);
-                    WheelSpec ws;
-                    if (auto w = wheel_spec_from_database(db_, model)) ws = *w;
-                    std::optional<Bytes> wf = bm.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm.wheel);
-                    try {
-                        if (f && !f->empty()) {
-                            v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm);
-                            v->set_full_detail(full_car_detail_);
-                        }
-                    } catch (const std::exception& e) {
-                        LOG_WARN("Race: opponent model %s: %s", model.c_str(), e.what());
-                    }
-                }
-                opp_visuals_.push_back(v);
-            }
-            // Engine notes of the opponents (their base car's sound bank).
-            std::vector<OpponentEngines::Car> sounds;
-            for (int i = 0; i < field_->opponents(); ++i) {
-                const std::string& l = field_->opponent_label(i);
-                std::string car = db_.car(l) ? l : "";
-                if (car.empty())
-                    if (const data::CarVariant* v = db_.variant(l)) car = v->car;
-                if (car.empty())
-                    for (const data::CarVariant& v : db_.arcade_cars())
-                        if (v.label == l) car = v.car;
-                OpponentEngines::Car c;
-                c.cd = car_sound_facts(l).cd;
-                if (const data::Car* dc = db_.car(car)) {
-                    data::CarDatabase::EngineSound es = db_.engine_sound(*dc);
-                    c.sound_id = es.id, c.variant = es.variant;
-                }
-                sounds.push_back(c);
-            }
-            opp_engines_.stop(app.audio().voices());
-            opp_engines_.load(*app.vfs(), sounds);
+            load_opponent_cars(app, *field_);
             return true;
         }
     }
     // The solo modes (screen_race_solo.cpp).
     return build_exact_solo(app);
+}
+
+// The opponents' cars as drawn and heard (a race's field, a free practice's): their paints (the event's slot ids, else the
+// game's draw), models and engine notes.
+void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
+    opp_visuals_.clear();
+    // Paint colours: player first, then the opponents (event slot ids or the game's draw).
+    std::vector<PaintEntry> entries;
+    std::string player_model = launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_;
+    entries.push_back({player_model, colors_.id_at(player_model, preset_.paint)});
+    const data::Event* pev = db_.event(race_event_);
+    for (int i = 0; i < f.opponents(); ++i) {
+        PaintEntry e{f.opponent_model(i)};
+        if (pev && race_opponents_ == pev->entries && pev->bytes.size() >= 0x110 + 4 * size_t(i + 1))
+            e.id = rd32(pev->bytes, 0x110 + 4 * size_t(i));
+        if (online_ && size_t(i) < net_.paint.size()) // the colour that player chose
+            e.id = colors_.id_at(f.opponent_model(i), net_.paint[size_t(i)]);
+        entries.push_back(e);
+    }
+    // The race module's generator, as left by the opponent draw; a replay re-runs
+    // the draw from the state its race had.
+    GameRandom replay_rng{paint_seed_override_.value_or(GameRandom::kBootSeed)};
+    GameRandom& rng = paint_seed_override_ ? replay_rng : race_info_random();
+    paint_seed_ = rng.x;
+    paint_seed_override_.reset();
+    std::vector<int> paints = assign_paints(colors_, entries, rng);
+    std::map<std::pair<std::string, int>, std::shared_ptr<CarVisual>> by_model;
+    for (int i = 0; i < f.opponents(); ++i) {
+        const std::string& model = f.opponent_model(i);
+        int paint = std::max(0, paints[size_t(i) + 1]);
+        if (online_ && size_t(i) < net_.paint.size())
+            LOG_INFO("Online: %s's %s in paint %d (chosen %d)", net_.names[size_t(i)].c_str(), model.c_str(),
+                     paint, net_.paint[size_t(i)]);
+        // A mod car's own body (glTF, or the stretched donor shell) and rim, as the player's
+        // car gets them; disc cars have none.
+        std::string l = f.opponent_label(i), base = db_.car(l) ? l : "";
+        if (base.empty())
+            if (const data::CarVariant* cv = db_.variant(l)) base = cv->car;
+        CarBodyMod bm = db_.mod_car(base) ? body_mod_for_car(db_, base, paint) : CarBodyMod{};
+        std::shared_ptr<CarVisual>& v = by_model[{bm.active() ? base : model, paint}];
+        if (!v) {
+            std::optional<Bytes> f = read_car(app, model);
+            WheelSpec ws;
+            if (auto w = wheel_spec_from_database(db_, model)) ws = *w;
+            std::optional<Bytes> wf = bm.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm.wheel);
+            try {
+                if (f && !f->empty()) {
+                    v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm);
+                    v->set_full_detail(full_car_detail_);
+                }
+            } catch (const std::exception& e) {
+                LOG_WARN("Race: opponent model %s: %s", model.c_str(), e.what());
+            }
+        }
+        opp_visuals_.push_back(v);
+    }
+    // Engine notes of the opponents (their base car's sound bank).
+    std::vector<OpponentEngines::Car> sounds;
+    for (int i = 0; i < f.opponents(); ++i) {
+        const std::string& l = f.opponent_label(i);
+        std::string car = db_.car(l) ? l : "";
+        if (car.empty())
+            if (const data::CarVariant* v = db_.variant(l)) car = v->car;
+        if (car.empty())
+            for (const data::CarVariant& v : db_.arcade_cars())
+                if (v.label == l) car = v.car;
+        OpponentEngines::Car c;
+        c.cd = car_sound_facts(l).cd;
+        if (const data::Car* dc = db_.car(car)) {
+            data::CarDatabase::EngineSound es = db_.engine_sound(*dc);
+            c.sound_id = es.id, c.variant = es.variant;
+        }
+        sounds.push_back(c);
+    }
+    opp_engines_.stop(app.audio().voices());
+    opp_engines_.load(*app.vfs(), sounds);
 }
 
 // A 2P battle as launched: the Options menu's catch-up, handicap and tyre damage (not on dirt), player 2's model and wheels;

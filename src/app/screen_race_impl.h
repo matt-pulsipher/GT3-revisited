@@ -592,9 +592,11 @@ private:
     // The solo modes (screen_race_solo.cpp): the time trial, licence test, machine test, free run and free practice as
     // GT3 runs them (their conductors' race flow judges the run, times its laps, sectors and splits; the free run's lap
     // handlers keep its best lap and drive its ghost car). The run's field is solo_field_ (field_ stays null: the screen's
-    // solo paths); exact_field() is the run's field either way.
+    // solo paths); exact_field() is the run's field either way, and the cars on the course are its opponents (free
+    // practice: the race's field; the other solo runs have none).
     std::optional<sim::exact::Conductor> solo_conductor() const;
     bool build_exact_solo(App& app);
+    void load_opponent_cars(App& app, const RaceField& f);
     void exact_solo_step();      // after each step: the run's end and result from the race flow
     bool exact_solo() const { return solo_field_ != nullptr; }
     RaceField* exact_field() const { return field_ ? field_.get() : solo_field_.get(); }
@@ -739,6 +741,15 @@ private:
     bool prerace_ = false;
     bool free_run_ = false;              // free run before a GT race (back to the pre-race menu)
     int free_run_laps_ = 0;               // the pre-race quick menu (before the race starts)
+    // The last free practice of the visit: each entry's best lap (0 the player, k opponent k - 1; empty before the first),
+    // and the grid it left (race::practice_grid; empty: the event's), which the race and later practices start from.
+    std::vector<u32> practice_best_;
+    std::vector<int> practice_grid_;
+    std::vector<u32> practice_entry_best_; // each entry's best lap so far (entry + 0x11D8), the next practice's start
+    static constexpr int kNoPoleCar = -100;
+    bool practice_ready_posted_ = false;   // the free practice's "Qualifying starts after 1 warm-up lap" (once a run)
+    bool practice_pit_exit_ = false;       // the player's car left the pit lane this step (START, count_s)
+    int practice_pole_car_ = kNoPoleCar;   // the free practice's P.P. car (-1 the player, k opponent k; none before a lap)
     bool music_on_ = true, menu_music_on_ = true, rumble_on_ = true, rumble2_on_ = true;
     bool aids_options_apply_ = false, asm_on_ = true, tcs_on_ = true;
     bool race_se_ = true, replay_se_ = true, ghost_on_ = true, wide_mode_ = false;

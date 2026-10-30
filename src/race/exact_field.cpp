@@ -226,7 +226,9 @@ public:
         const bool solo = exact_solo_kind(opts_.kind);
         std::vector<std::string> labels = cfg_.opponents;
         if (labels.empty() && ev && !battle) labels = ev->entries;
-        if (solo) labels.clear(); // the player alone (and a ghost car)
+        // The player alone (and a ghost car); free practice runs the race's field (GT3's race information with
+        // every entry, the race's start-up giving the conductor a car for each).
+        if (solo && opts_.kind != ex::Conductor::FreePractice) labels.clear();
         if (int(labels.size()) > cfg_.max_opponents) labels.resize(size_t(std::max(0, cfg_.max_opponents)));
         // Never more cars than the course's grid slots, as GT3's menus never make such a field (every event's cars fit its
         // course; the arcade's dirt races are one against one). The race start itself reads a slot past the grid table as the
@@ -266,6 +268,23 @@ public:
         if (cfg_.grid_by_power) place = gt_grid_places(figure);
         std::vector<int> slot_of(opps.size());
         for (size_t i = 0; i < place.size(); ++i) slot_of[i] = free[size_t(place[i])];
+        // A free practice's grid (the pre-race menus after it): a slot for every car, each once.
+        if (!cfg_.grid_slots.empty() && humans_ == 1) {
+            const std::vector<int>& g = cfg_.grid_slots;
+            bool ok = g.size() == opps.size() + 1;
+            std::vector<bool> seen(size_t(slots), false);
+            for (size_t k = 0; ok && k < g.size(); ++k) {
+                ok = g[k] >= 0 && g[k] < slots && !seen[size_t(g[k])];
+                if (ok) seen[size_t(g[k])] = true;
+            }
+            if (ok) {
+                p1 = g[0];
+                for (size_t i = 0; i < opps.size(); ++i) slot_of[i] = g[i + 1];
+            } else {
+                LOG_WARN("Race (exact): the practice's grid (%zu slots) does not fit the field (%zu cars); the event's grid",
+                         g.size(), opps.size() + 1);
+            }
+        }
         // The setup.
         ex::RaceSetup rs;
         rs.data = data_.get();
@@ -325,12 +344,15 @@ public:
             e.best_lap = 0x157529FF; // entry + 0x11D8: none (free practice keeps the lower of it and the car's)
             return e;
         };
+        // Free practice: each entry's best lap of the visit's earlier practices (FieldConfig::entry_best), one for every car.
+        const bool seeded = opts_.kind == ex::Conductor::FreePractice && cfg_.entry_best.size() == opps.size() + 1;
         std::string err;
         std::optional<ex::StartEntry> e1 = human(opts_.player, p1, &err);
         if (!e1) {
             if (error) *error = "player car " + opts_.player.car.label + ": " + err;
             return false;
         }
+        if (seeded) e1->best_lap = cfg_.entry_best[0];
         rs.entries.push_back(*e1);
         if (battle) {
             std::optional<ex::StartEntry> e2 = human(opts_.second, p2, &err);
@@ -361,7 +383,7 @@ public:
             ex::StartEntry e;
             e.eq = opps[i].eq;
             e.grid_slot = slot_of[i];
-            e.best_lap = 0x157529FF;
+            e.best_lap = seeded ? cfg_.entry_best[i + 1] : 0x157529FF;
             rs.entries.push_back(e);
         }
         // Online: the other players' cars after the opponents, each on its grid slot as the session's grid has it.
@@ -713,6 +735,17 @@ public:
     RaceVehicle& player() override { return player_; }
     TrackPose player_grid() const override { return grid_; }
     int opponents() const override { return int(cars_.size()) - opp0_; }
+    ExactBestLaps best_laps() const {
+        ExactBestLaps out;
+        const std::vector<ex::EntryRecords>& rec = race_->flow().entries;
+        auto add = [&](int k) {
+            out.car.push_back(race_->cars()[size_t(k)].best_lap);
+            out.entry.push_back(size_t(k) < rec.size() ? rec[size_t(k)].best.lap : ex::kNoTime);
+        };
+        add(0);
+        for (int i = opp0_; i < race_->size(); ++i) add(i);
+        return out;
+    }
     const std::string& opponent_label(int i) const override { return opp(i).label; }
     const std::string& opponent_model(int i) const override { return opp(i).model; }
     const sim::VehicleState& opponent_state(int i) const override { return opp(i).state; }
@@ -1100,6 +1133,11 @@ std::unique_ptr<RaceField> make_exact_field(const RaceTrack&, const data::CarDat
 const sim::exact::ExactRace* exact_race_of(const RaceField& f) {
     const auto* e = dynamic_cast<const ExactField*>(&f);
     return e ? &e->race() : nullptr;
+}
+
+ExactBestLaps exact_best_laps(const RaceField& f) {
+    const auto* e = dynamic_cast<const ExactField*>(&f);
+    return e ? e->best_laps() : ExactBestLaps{};
 }
 
 const std::vector<sim::exact::PadFrame>* exact_frames_of(const RaceField& f) {

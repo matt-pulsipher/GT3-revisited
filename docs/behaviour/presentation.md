@@ -648,13 +648,14 @@ with it before the first run (`menu_before_run`):
 | GT race | `qm_gt_event1.pmb` | `qm_gt_result1.pmb` |
 | championship round | `qm_gt_event_champ1.pmb` | `qm_gt_result_champ1.pmb` |
 
-- **Rows.** The pre-race menu lists every car with no time, "--'--.---" in the
-  font's long dashes (§D10). The result menu lists the cars in race order with
-  each finished car's own race time in the menus' format (§D10; not the gaps of
-  §B6), and no time for a car still racing when the race ended. The player's row
-  is (255, 116, 0).
+- **Rows.** The pre-race menu lists every car in grid order with no time,
+  "--'--.---" in the font's long dashes (§D10); after a free practice (FREE RUN) a
+  GT race's lists each car's best lap of it in the new grid order (GT Mode page
+  §22.5). The result menu lists the cars in race order with each finished car's
+  own race time in the menus' format (§D10; not the gaps of §B6), and no time for
+  a car still racing when the race ended. The player's row is (255, 116, 0).
 - **Championship rounds.** The pre-race menu lists the cars in grid order (the
-  player on the last slot), each with its points so far, "%d %s" with "pt" under
+  player on the last slot, or the grid a free practice left), each with its points so far, "%d %s" with "pt" under
   2 points and "pts" from 2 ("0 pt", "10 pts"), in the player's color on the
   player's row. Both menus show the round, "#1 Race" on the NTSC-U disc (the
   realtime texts SHORTMENU_SESSION_BRFORE / _AFTER around the round number). The
@@ -947,7 +948,8 @@ right edge max(value width, 90) + 10 units left of the value's
   otherwise "n" alone (free runs, the free practice, time-limited races). The lap
   number is shown from the grid (lap 0 counts as 1) and never above N. A
   time-limited race shows no time remaining.
-- **Lap** is the current lap's time; in races it runs from GO (§B9). Once the
+- **Lap** is the current lap's time; in races it runs from GO (§B9); in the free
+  practice it stays at 0'00.000 until the car first crosses the line. Once the
   followed car has finished, the Lap line goes in the layouts that have Last or
   the lap-time list (race, endurance, free run, free practice).
 - **Best** is the best lap, **Last** the last lap. In the solo runs (time trials,
@@ -964,13 +966,15 @@ right edge max(value width, 90) + 10 units left of the value's
   Each line has its lap number in sw_12, right-aligned max(widest time, 90) + 10
   units left of the times.
 - **Record Lap** (free run) and **P.P.** (free practice) show the session's
-  fastest lap: in these solo runs the player's best lap driven so far; no stored
+  fastest lap: in the free run the player's best lap driven so far, in the free
+  practice the fastest lap of any car without a course-out; no stored
   record (§B7) is loaded into it, so both show dashes until a lap is done. The
   session's fastest lap (every car's in races) starts with no time when the
   course and car are loaded (`RaceScreen::reset_session_best`) and lasts across
   retries (TRY AGAIN, START, the pause window's RETRY) and replays until the next
-  visit. P.P.'s label is replaced by a 64 x 32 picture of the
-  player's car (the pictures of §B8), its right edge 99 units left of the label's
+  visit. After the practice's first fastest lap, P.P.'s label is replaced by a 64 x 32
+  picture of the car that set each new fastest lap (the pictures of §B8; before it
+  the label shows), its right edge 99 units left of the label's
   place and its center 4 units above the line's baseline
   (`RaceScreen::draw_event_icons`).
 - **Machine tests** (§B7) show no lap count.

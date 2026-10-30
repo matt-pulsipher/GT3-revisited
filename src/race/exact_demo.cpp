@@ -17,7 +17,9 @@ ex::Conductor demo_conductor(const std::string& event_label) {
 s32 demo_start_type(const data::Event& ev, ex::Conductor kind) {
     const ex::RaceConfig cfg = ex::race_config(ev.bytes);
     s32 t = ev.bytes.size() > 0x1F3 ? s32(ev.bytes[0x1F3]) : 2;
+    // The race's start-up from the conductor's start type: 0 and 3 none (-1), 1 the event's, 2 moving (3).
     if (kind == ex::Conductor::TimeTrial || kind == ex::Conductor::FreeRun) t = 3; // their start type: 2
+    else if (kind == ex::Conductor::FreePractice) t = -1;                          // its start type: 3
     else if (cfg[0] != 0) t = -1;                                                    // the base's: configuration +0 clear
     return t;
 }
