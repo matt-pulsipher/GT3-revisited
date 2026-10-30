@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: https://github.com/matt-pulsipher/GT3-revisited/discussions/categories/q-a
+    about: Setting up, controls, mods, or how something works.
+  - name: Ideas and everything else
+    url: https://github.com/matt-pulsipher/GT3-revisited/discussions
+    about: Open-ended ideas, show and tell, and general talk.

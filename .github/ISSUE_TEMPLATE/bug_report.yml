@@ -1,0 +1,114 @@
+name: Bug report
+description: Something doesn't work, crashes, or plays differently from GT3 on the PS2.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. One problem per issue, please. Questions and setup help go in [Q&A](https://github.com/matt-pulsipher/GT3-revisited/discussions/categories/q-a).
+
+        Don't attach or link disc images or files taken from the game.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and where in the game (mode, menu, event, course, car).
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. GT Mode, Beginner League, Sunday Cup
+        2. Win race 2
+        3. Back in the event menu, race 2 shows no finishing position
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+      description: If it's different on the PS2, say what GT3 does there. A screenshot or video from the PS2 game helps a lot.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: GT3 Revisited version
+      description: Shown at the top right of the GT3 Revisited menu (press Select on the title menu). For a build from source, the commit.
+      placeholder: v0.4.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Android
+        - iPhone / iPad
+        - Meta Quest
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and system version
+      description: The OS version, and the graphics card or the phone / tablet model.
+      placeholder: Windows 11, GeForce RTX 3060 / Pixel 8, Android 15
+    validations:
+      required: true
+
+  - type: input
+    id: disc
+    attributes:
+      label: Game disc
+      description: Settings → Game disc shows the serial, version and region.
+      placeholder: SCUS_971.02 v1.00 NTSC-U
+    validations:
+      required: true
+
+  - type: input
+    id: controls
+    attributes:
+      label: Controls
+      description: What you play with, if it might matter.
+      placeholder: DualSense over Bluetooth / keyboard / Logitech G29 / touch
+    validations:
+      required: false
+
+  - type: input
+    id: mods
+    attributes:
+      label: Mods enabled
+      placeholder: None
+    validations:
+      required: false
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Screenshots, video, logs
+      description: |
+        Drag files here. F12 saves a screenshot to the `screenshots` folder in the game's user data folder.
+        For a crash or freeze, attach the crash report or the game's output if you have it (Linux and macOS: start the game from a terminal; Android and Quest: `adb logcat`).
+        A save or replay that shows the problem helps too: zip it first.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Before you send
+      options:
+        - label: I searched the open and closed issues for this problem.
+          required: true
