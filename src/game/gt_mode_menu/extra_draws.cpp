@@ -39,7 +39,7 @@ void fade_prize_line(const std::string& page, DrawList& out) {
 // belongs to its mess1 layer).
 void hide_ok_until_accepted(const MenuController& ctl, const std::string& page, DrawList& out) {
     const MenuState& ms = menu_state();
-    if ((is_mini_prize(page) || page == "trophy_get") && ms.show && ctl.has_page() && !ctl.items().empty() &&
+    if ((is_mini_prize(page) || page == "trophy_get" || page == "car_get") && ms.show && ctl.has_page() && !ctl.items().empty() &&
         !enabled(page, *ctl.items()[0].flow)) {
         const Element* ok = ctl.items()[0].element;
         out.erase(std::remove_if(out.begin(), out.end(),
@@ -47,6 +47,47 @@ void hide_ok_until_accepted(const MenuController& ctl, const std::string& page, 
                                      return ok && d.element && (d.element == ok || (!ok->alt.empty() && d.element == &ok->alt[0]));
                                  }),
                   out.end());
+    }
+}
+
+// The prize car page's "Bonus car acquired" ticker (CarGetMessageItem: its update and draw run
+// only once the roulette has given the controls back): none until then,
+// then its marquee from the frame after. The "after" layer is built on that frame too:
+// its band fades in over 24 frames from then (its elements' fade flags, as any
+// layer's when it is built).
+void car_get_message(const MenuController& ctl, const std::string& page, DrawList& out) {
+    const MenuState& ms = menu_state();
+    if (page != "car_get" || !ms.show || ms.show->page != "car_get") return;
+    const int since = ms.show->car_get.released_frame;
+    const int age = since < 0 ? -1 : ms.show_frames - since - 1;
+    const menu::Layer* after = nullptr;
+    if (ctl.has_page())
+        for (const menu::Layer& l : ctl.page().layout().layers)
+            if (l.name == "after") after = &l;
+    auto in_after = [&](const Element* e) {
+        return after && !after->elements.empty() && e >= &after->elements.front() && e <= &after->elements.back();
+    };
+    for (auto it = out.begin(); it != out.end();) {
+        const Element* e = it->element;
+        if (e && in_after(e)) {
+            if (age < 0) {
+                it = out.erase(it);
+                continue;
+            }
+            if ((e->flags >> 4) & 0xF) it->alpha *= std::min(1.0f, float(age) / 24.0f);
+            ++it;
+            continue;
+        }
+        if (!e || !e->widget_class || *e->widget_class != "car_get_message") {
+            ++it;
+            continue;
+        }
+        if (age < 0) {
+            it = out.erase(it);
+            continue;
+        }
+        if (e->text) menu::flow::text_effects(*it, *e, u32(age));
+        ++it;
     }
 }
 
@@ -577,6 +618,7 @@ void extra_draws(const MenuController& ctl, std::vector<menu::ElementDraw>& out)
     oil_gauge_draws(ctl, out); // first: it goes in at its depth while the list is still sorted
     fade_prize_line(page, out);
     hide_ok_until_accepted(ctl, page, out);
+    car_get_message(ctl, page, out);
     draw_map_pointer(ctl, page, out);
     raise_prize_model(ctl, page, out);
     place_status_day(ctl, out);

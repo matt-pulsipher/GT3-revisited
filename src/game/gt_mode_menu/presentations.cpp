@@ -66,9 +66,61 @@ std::optional<Show> race_prize_show(const GtMode& gt, const std::string& code, i
     return sh;
 }
 
+// The car_get page's roulette is running: the page keeps the controls (its OK hidden, no key
+// does anything) until it gives them back.
+bool car_get_holding() {
+    const MenuState& ms = menu_state();
+    return ms.show && ms.show->page == "car_get" && !ms.show->car_get.roulette.released;
+}
+
+bool car_get_ok() { return !car_get_holding(); }
+
+namespace {
+
+// One frame of the car_get page (car get control's loop and the cars item): the "after"
+// band is built at the top of the frame after the one that gave the controls back;
+// the roulette steps; the controls come back on its release.
+void car_get_frame(MenuController& ctl, Show& sh) {
+    CarGetRoulette& rl = sh.car_get.roulette;
+    if (rl.released) ctl.set_layer("after", 1);
+    ++menu_state().show_frames;
+    const bool held = !rl.released;
+    rl.step();
+    if (held && rl.released) {
+        sh.car_get.released_frame = menu_state().show_frames;
+        ctl.give_control();
+    }
+}
+
+// The candidates' sizes the page reads from each car's built spec: +0x1A the
+// chassis length, +0x22 the body's height extent (body f32 +0x2C truncated), in mm.
+CarGetRoulette::Size car_get_size(const GtMode& gt, const std::string& label) {
+    CarGetRoulette::Size z;
+    const data::Car* c = gt.db().car(label);
+    if (!c) return z;
+    if (auto ch = gt.db().chassis(c->parts[3])) z.length_mm = ch->length_mm;
+    if (auto b = gt.db().body(c->parts[5])) z.height_mm = int(b->inertia[3]);
+    return z;
+}
+
+} // namespace
+
+void start_car_get(Show& sh) {
+    std::array<CarGetRoulette::Size, CarGetRoulette::kMaxCars> sizes{};
+    if (GtModeSession* s = S())
+        for (size_t i = 0; i < sh.candidates.size() && i < sizes.size(); ++i)
+            sizes[i] = car_get_size(s->gt(), sh.candidates[i]);
+    sh.car_get.roulette.start(int(sh.candidates.size()), sh.car_get.pick, sizes, shared_random());
+    sh.car_get.released_frame = -1;
+}
+
 bool presentation_frame(MenuController& ctl, GtModeSession& s, const std::string& page, std::string& se) {
     MenuState& ms = menu_state();
     const bool confirm = (ctl.pressed() & menu::flow::key_bit(menu::flow::MenuKey::Confirm)) != 0;
+    if (page == "car_get" && ms.show && ms.show->page == "car_get") {
+        car_get_frame(ctl, *ms.show);
+        return true;
+    }
     if (page == "car_get" || page == "not_car_get" || is_mini_prize(page)) {
         ++ms.show_frames;
         if (ms.show && (page == "gtmode_mini" || page == "consolation_prize") &&
@@ -116,9 +168,21 @@ std::optional<menu::flow::GtModeHooks::Presentation> next_presentation() {
     ms.shows.erase(ms.shows.begin());
     ms.show_frames = 0;
     ++ms.show_serial;
+    // The prize car page: its roulette over the set's candidates (car_get_roulette.h).
+    if (ms.show->page == "car_get") start_car_get(*ms.show);
     // Screenshots: GT3R_GTMODE_PRIZE_FRAME=<n> starts presentations n frames in.
     if (const char* env = std::getenv("GT3R_GTMODE_PRIZE_FRAME")) {
         ms.show_frames = std::max(0, std::atoi(env));
+        if (ms.show->page == "car_get") {
+            const int n = ms.show_frames;
+            ms.show_frames = 0;
+            CarGetRoulette& rl = ms.show->car_get.roulette;
+            while (ms.show_frames < n) {
+                ++ms.show_frames;
+                rl.step();
+                if (rl.released && ms.show->car_get.released_frame < 0) ms.show->car_get.released_frame = ms.show_frames;
+            }
+        }
         if (S() && (ms.show->page == "gtmode_mini" || ms.show->page == "consolation_prize" ||
                      ms.show->page == "trophy_get")) {
             int n = ms.show_frames;
@@ -133,7 +197,11 @@ std::optional<menu::flow::GtModeHooks::Presentation> next_presentation() {
     // last name entered), the cursor after it (gt_mode §17.1).
     if (GtModeSession* s = S())
         if (const RankEntry* r = named_entry()) s->name_box.reset(r->name, kRecordNameMax);
-    return menu::flow::GtModeHooks::Presentation{ms.show->set, ms.show->page, ms.show->layers};
+    // The prize car page takes the controls when it is built ((pm, 1)) and
+    // gives them back when its roulette is over (car_get_frame); with the controls given (a
+    // screenshot started past the release) the page keeps them.
+    const bool take = ms.show->page == "car_get" && !ms.show->car_get.roulette.released;
+    return menu::flow::GtModeHooks::Presentation{ms.show->set, ms.show->page, ms.show->layers, take};
 }
 
 // Record name entry: Triangle / Square is Back Space (never leaves the page).
@@ -176,7 +244,7 @@ int add_license_record(const std::string& code, double seconds) {
         if (const data::CarVariant* v = gt.db().variant(rr->entries[0])) test_car = v->car;
     int rank = gt.add_record("lic:" + code, seconds, test_car, true, 6);
     if (rank >= 0)
-        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "lic:" + code, rank, "", 0, "", true, {}});
+        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "lic:" + code, rank, "", 0, "", true, {}, {}});
     return rank;
 }
 
@@ -185,7 +253,7 @@ int add_course_time_trial_record(const std::string& course, double best_lap, con
     if (!s) return -1;
     int rank = s->gt().record_course_time_trial(course, best_lap, car);
     if (rank >= 0)
-        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "ct:" + course, rank, "", 0, "", true, {}});
+        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "ct:" + course, rank, "", 0, "", true, {}, {}});
     return rank;
 }
 
@@ -195,7 +263,7 @@ int add_machine_test_record(const std::string& code, double value) {
     const GarageCar* ride = s->gt().state().ride_car();
     int rank = s->gt().record_machine_test(code, value, ride ? ride->car : std::string());
     if (rank >= 0)
-        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "mt:" + code, rank, "", 0, "", true, {}});
+        menu_state().shows.push_back({"name_entry", "name_entry", {}, "", "", 0, {}, "mt:" + code, rank, "", 0, "", true, {}, {}});
     return rank;
 }
 

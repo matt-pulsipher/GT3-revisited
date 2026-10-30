@@ -66,7 +66,8 @@ void RaceScreen::latch_result() {
     if (replaying_ || attract_ || demo_ || result_latch_.has()) return;
     menu::flow::GameResult r = build_result();
     result_latch_.capture(r);
-    if (field_) latched_rows_ = result_menu_rows();
+    // (A championship round left by pause EXIT: the pre-round list, race::result_menu_list.)
+    if (field_) latched_rows_ = race::result_menu_list(result_list(), finished_, result_menu_rows(), prerace_rows_);
     LOG_INFO("Race: result latched: finished %d position %d", int(r.finished), r.position);
     if (from_menu_ && r.mode == "go_race" && r.finished && !championship() && !launch_.request.practice)
         game::save_race_run(r);
@@ -209,7 +210,7 @@ int RaceScreen::presented_medal() const {
 
 // A race display string in the disc's text table (text/realtime.dat) in the game's language
 // (else US English), or `fallback`.
-std::string RaceScreen::race_text(const char* key, const char* fallback) {
+std::string RaceScreen::race_text(const char* key, const char* fallback, bool game_text) {
     if (!race_strings_tried_ && app_ && app_->vfs()) {
         race_strings_tried_ = true;
         try {
@@ -224,7 +225,7 @@ std::string RaceScreen::race_text(const char* key, const char* fallback) {
             const text::Language own = text::language_from_code(lang_).value_or(text::Language::US);
             for (text::Language l : {own, text::Language::US}) {
                 if (int(l) >= race_strings_->language_count()) continue;
-                std::string v = race_strings_->utf8(size_t(i), l, nullptr);
+                std::string v = game_text ? race_strings_->raw(size_t(i), l) : race_strings_->utf8(size_t(i), l, nullptr);
                 if (!v.empty()) return v;
             }
         }

@@ -105,6 +105,27 @@ void choose(GameFlow& f, const std::string& item) {
 
 std::string page(const GameFlow& f) { return f.controller() ? f.controller()->page_name() : std::string("<none>"); }
 
+bool layer_on(const GameFlow& f, const std::string& name);
+std::vector<menu::ElementDraw> draws_named(const GameFlow& f, const std::string& name);
+
+// The prize car page (car_get): its roulette keeps the controls (no key does anything, OK is not
+// drawn) until it gives them back; then OK leaves. The "Bonus car acquired" message comes the
+// frame after the controls, the "after" band then too. Returns the frames waited.
+int leave_car_get(GameFlow& f) {
+    CHECK(page(f) == "car_get" && f.controller() && f.controller()->ignoring_control());
+    CHECK(draws_named(f, "get_car_message").empty() && draws_named(f, "ok").empty() && !layer_on(f, "after"));
+    press(f, MenuKey::Confirm);
+    CHECK(page(f) == "car_get");
+    int frames = 0;
+    while (frames < 3000 && f.controller() && f.controller()->ignoring_control()) f.tick(0), ++frames;
+    CHECK(f.controller() && !f.controller()->ignoring_control() && f.controller()->item_enabled(0));
+    CHECK(draws_named(f, "get_car_message").empty());
+    f.tick(0);
+    CHECK(draws_named(f, "get_car_message").size() == 1 && layer_on(f, "after") && draws_named(f, "ok").size() == 1);
+    press(f, MenuKey::Confirm);
+    return frames;
+}
+
 // The text a widget class is drawn with ("<none>" when not drawn).
 std::string text_of(const GameFlow& f, const std::string& cls) {
     for (const menu::ElementDraw& d : f.draw_list())
@@ -1322,7 +1343,7 @@ TEST(gtmode_synth_race_and_prizes) {
     std::string car;
     int paint = -1;
     CHECK(game::car_for_widget("car_get", "render_model", car, paint) && car == w::kRacer && paint == 0);
-    press(f, MenuKey::Confirm);
+    leave_car_get(f);
     // The beginner league is complete (its only series won): the short ending, once.
     r = wait_request(f);
     CHECK(r && r->kind == GameRequest::Kind::PlayMovie && r->course == "stream/ending_short_full.pss");
@@ -1513,7 +1534,13 @@ TEST(gtmode_synth_championship) {
     CHECK(page(f) == "car_get" && gt.state().garage.size() == 2 && gt.state().garage[0].car == w::kWagon);
     CHECK(gt.state().garage[0].color == 2 && gt.state().garage[0].origin == "Gsynch_n_0500");
     CHECK(draws_named(f, "championship_win").size() == 1);
-    press(f, MenuKey::Confirm);
+    {
+        // The page's scene: the set's one candidate in its rolled paint, under its light.
+        game::CarGetScene sc;
+        CHECK(game::car_get_scene(sc) && sc.cars.size() == 1 && sc.cars[0].car == w::kWagon && sc.cars[0].paint == 2);
+        CHECK(sc.cars[0].light == 1.0f && sc.cars[0].y == 0.0f);
+    }
+    leave_car_get(f);
     // The amateur league complete: the long ending, then the series page again.
     r = wait_request(f);
     CHECK(r && r->kind == GameRequest::Kind::PlayMovie && r->course == "stream/ending_long_full.pss");
@@ -1646,7 +1673,7 @@ TEST(gtmode_synth_licenses_and_name_entry) {
     // All gold: the licence's prize car (Night Blue = index 1).
     CHECK(page(f) == "car_get" && draws_named(f, "license_b_all_gold").size() == 1);
     CHECK(gt.state().garage.size() == 1 && gt.state().garage[0].car == w::kWagon && gt.state().garage[0].color == 1);
-    press(f, MenuKey::Confirm);
+    leave_car_get(f);
     CHECK(f.control() == "gt_mode" && page(f) == "lc/lc_b");
     {
         auto cup = draws_named(f, "cup_gold");
@@ -2726,6 +2753,8 @@ TEST(gtmode_synth_hook_branches) {
     first.mode = "go_race";
     h.prepare_request(first);
     CHECK(first.race_code == "Gsynch_n_0501" && first.champ_round == 1);
+    // The standings going into the round (the pre-race menu's qm_pt<n>): nobody has points yet.
+    CHECK(first.champ_points.size() == first.opponents.size() + 1 && first.champ_points[0] == 0);
     GameResult round = won;
     round.race_code = round.event = "Gsynch_n_0501";
     h.on_result(round);
@@ -2733,6 +2762,7 @@ TEST(gtmode_synth_hook_branches) {
     }
     std::optional<GameRequest> next = h.next_request();
     CHECK(next && next->race_code == "Gsynch_n_0502" && next->champ_last && !h.next_request());
+    CHECK(next && next->champ_points == gt.state().championship.points && next->champ_points[0] == 10);
     std::optional<GameRequest> resume = h.resume_request();
     CHECK(resume && resume->page == "map" && resume->race_code == "Gsynch_n_0502");
     // Arcade helpers.

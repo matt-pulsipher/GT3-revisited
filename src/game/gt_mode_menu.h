@@ -84,6 +84,32 @@ GtModeSession* gt_mode_session();
 // wash the dirt the car had, until the wash is over.
 bool car_for_widget(const std::string& page, const std::string& widget_class, std::string& car, int& paint,
                     std::string* wheel = nullptr, float* dirt = nullptr);
+// The prize car page's 3D scene (car_get, gt_mode §10.1; car_get_roulette.h): the candidates
+// on their carousel, each in its own paint at its place (m, y up) and heading (degrees, about
+// y), the ones the roulette is not on dropped by `y`; under each its floor light (the page's
+// hit-mark image on a square of half size `light_half` at `light_y` below the car, opacity
+// `light`); once the others have dropped away only the car won. The camera: eye, look-at point
+// and up vector (a 40-degree horizontal field over the whole 640 x 448 frame). False when the
+// page is not showing a prize car.
+struct CarGetScene {
+    struct Car {
+        std::string car;
+        int paint = 0;
+        float x = 0, y = 0, z = 0, heading = 0, light = 0;
+        bool lit = false; // the car the roulette is on: drawn last, over the page's background
+    };
+    std::vector<Car> cars;
+    float eye[3]{}, look[3]{}, up[3]{0, 1, 0};
+    float light_half = 0, light_y = 0;
+    // What stays of the cars drawn before the lit one (and their lights): the page background is
+    // put back over them at 1 - others (they fade out while the camera waits to fly in).
+    float others = 1;
+    // The cars' colour scale: 0 = black silhouettes (the whole carousel), then the car won
+    // alone lighting up (0..1).
+    float shade = 0;
+    static constexpr float kHalfFov = 20.0f; // degrees, horizontal (= 0.3490659 rad)
+};
+bool car_get_scene(CarGetScene& out);
 // The car wash spins the car (gt_mode §13.2): for 181 frames its showroom turntable gets an extra
 // kWashSpinPush of yaw acceleration (degrees / s², on top of the camera's own) once a frame.
 // `serial` is new for every wash; `pushes` counts the frames pushed so far, so a showroom

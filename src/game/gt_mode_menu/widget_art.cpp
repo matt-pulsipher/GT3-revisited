@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 
 namespace gt3r::game {
@@ -465,6 +466,44 @@ void oil_gauge_draws(const MenuController& ctl, std::vector<menu::ElementDraw>& 
 
 using namespace gt_menu;
 
+bool car_get_scene(CarGetScene& out) {
+    const MenuState& ms = menu_state();
+    out = CarGetScene{};
+    if (!ms.show || ms.show->page != "car_get" || ms.show->candidates.empty()) return false;
+    const Show& sh = *ms.show;
+    const CarGetRoulette& rl = sh.car_get.roulette;
+    if (rl.n <= 0) return false;
+    // The cars item: the carousel until the others have dropped below the
+    // tallest car, then the car won alone. Each car: Translate(place) RotY(heading),
+    // the others then Translate(0, drop, 0); its floor light Translate(0, -0.005, 0)
+    // RotY(-heading) Scale(side / 2, 1, side / 2) over the unit square.
+    for (int i = 0; i < rl.n && size_t(i) < sh.candidates.size(); ++i) {
+        const bool lit = rl.current[size_t(i)];
+        if (rl.alone() && !lit) continue;
+        CarGetScene::Car c;
+        c.car = sh.candidates[size_t(i)];
+        c.paint = size_t(i) < sh.car_get.paints.size() ? sh.car_get.paints[size_t(i)] : 0;
+        rl.place(i, c.x, c.z);
+        c.y = lit ? 0.0f : rl.sink.host();
+        c.heading = rl.heading[size_t(i)].host();
+        c.light = rl.spot[size_t(i)].host();
+        c.lit = lit;
+        out.cars.push_back(std::move(c));
+    }
+    out.others = rl.others_opacity();
+    out.shade = rl.shade();
+    out.light_half = rl.side.host() * 0.5f;
+    out.light_y = CarGetRoulette::kSpotDrop;
+    // The car get menu camera: eye and look-at from the springs; the up vector
+    // (0, -dz, dy) / max(|(dy, dz)|, 0.01) of the view direction.
+    for (int k = 0; k < 3; ++k) out.eye[k] = rl.eye[size_t(k)].x.host(), out.look[k] = rl.look[size_t(k)].x.host();
+    const float dy = out.look[1] - out.eye[1], dz = out.look[2] - out.eye[2];
+    float len = std::sqrt(dy * dy + dz * dz);
+    if (len < CarGetRoulette::kUpMin) len = CarGetRoulette::kUpMin;
+    out.up[0] = 0, out.up[1] = -dz / len, out.up[2] = dy / len;
+    return true;
+}
+
 CarWashSpin car_wash_spin() {
     const CarWash& w = menu_state().wash;
     return {w.serial, w.pushes};
@@ -477,12 +516,14 @@ bool car_for_widget(const std::string& page, const std::string& cls, std::string
     if (!s) return false;
     if (wheel) wheel->clear();
     if (dirt) *dirt = 0;
-    if (cls == "render_model" && page == "car_get" && ms.show) {
-        // Roulette: the set's candidates flash by for 2.5 s, then the car won.
+    if (cls == "render_model" && page == "car_get" && ms.show && ms.show->page == "car_get") {
+        // The candidate the roulette is on, in its own paint (the car won once it has stopped).
         const auto& c = ms.show->candidates;
-        if (c.size() > 1 && ms.show_frames < 150) {
-            car = c[size_t(ms.show_frames / 6) % c.size()];
-            paint = 0;
+        const auto& p = ms.show->car_get.paints;
+        const int i = ms.show->car_get.roulette.shown();
+        if (i >= 0 && size_t(i) < c.size()) {
+            car = c[size_t(i)];
+            paint = size_t(i) < p.size() ? p[size_t(i)] : 0;
         } else {
             car = ms.show->car;
             paint = ms.show->paint;

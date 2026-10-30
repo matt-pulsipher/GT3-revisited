@@ -87,6 +87,9 @@ struct GameRequest {
     int champ_round = 0;
     int champ_rounds = 0;
     bool champ_last = false;
+    // The championship points before this round: the player first, then the opponents in
+    // `opponents` order (game::Championship::points; the pre-race menu's qm_pt<n>).
+    std::vector<int> champ_points;
     // A practice run from our Quick race screen: GT mode events (licence tests, machine
     // tests) run as the game runs them, but nothing goes into the GT Mode save (no medals,
     // records, prizes) and the GT Mode garage settings / records menus are not offered.

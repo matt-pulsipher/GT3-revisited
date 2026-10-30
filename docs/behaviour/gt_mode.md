@@ -574,7 +574,7 @@ The card directory `BASCUS-97102GAMEDATA` holds four files, written in this orde
 
 The game data holds:
 
-- the scalars (including the GT-mode random state);
+- the scalars (including the GT-mode random state and the endings-seen flags, §10);
 - cars and wheels;
 - license records;
 - race results in gcf section-4 order;
@@ -641,7 +641,7 @@ GT3 Revisited's own options, its race playlist included, are kept in `config.ini
 - a championship suspended between rounds (it restarts);
 - license rankings beyond the best time;
 - the prize-car origin;
-- the endings-seen flags and the file name;
+- the file name;
 - the setting files, which are separate card files (§19).
 
 The total distance is stored in 2 m units, so it can lose up to 2 m on export.
@@ -651,10 +651,12 @@ The total distance is stored in 2 m units, so it can lose up to 2 m on export.
 A few results are written while the race screen is still open, so they are kept if the
 game is closed before it returns to the menus. Each is a copy of the game with the result
 recorded. The running game is recorded from the result when the race screen closes, and
-that autosave replaces the copy (`src/game/gt_mode_menu/session.cpp`):
+that autosave replaces the copy (`src/game/gt_mode_menu/session.cpp`). A copy records no
+prize car: the car is rolled and added only when the running game records the result, so
+the car the prize page shows is the one saved:
 
-- **A GT single race** (not a championship round, not a practice run) that finished
-  classified is written as its result is taken, before its replay: the place, the prize
+- **A GT single race** (not a championship round, not a practice run) that was started
+  and finished classified is written as its result is taken, before its replay: the place, the prize
   and the best place, as §3.4 records them (`save_race_run`).
 - **A license test** run with a medal (not a practice run or the demonstration) is
   written as soon as it is judged (`save_license_run`).
@@ -1194,8 +1196,24 @@ prize-model flag (§3.2).
 **Prize car** (`car_get`):
 
 - the reason line comes from the prize set (table below);
-- for a set with several candidates, the candidates flash by, a new one every 6
-  frames, for 150 frames (2.5 s), and then the car won is shown in its paint.
+- every candidate of the set stands on a slowly turning carousel, each turning on its own spot
+  and shown as a black silhouette. A light on the floor marks the car the roulette is on: it
+  comes on at once and fades out over 20 frames when the roulette moves on;
+- the roulette rests on the first candidate for 120 frames, then moves from car to car at 0.1
+  car a frame for 60 frames, then slows down (never below one car every 60 frames). It travels
+  whole turns of the carousel (12 cars' worth for 2, 3 or 4 candidates) plus the way to the car
+  won, and stops only when that car is under the light. The car it stops on is always the car
+  you get. With 2 to 4 candidates it stops 379 to 432 frames (6.3 to 7.2 s) after the page opens;
+- a set with one car has no roulette: the car is shown alone for 210 frames;
+- once the roulette stops, the other cars and their floor lights fade out over 41 frames. Then
+  the camera flies in on the car won, the carousel and the cars' turning slow down, and the
+  other cars, now out of sight, sink through the floor at 0.05 m a frame;
+- when they are below the floor by the height of the tallest car (times 1.1), the car won,
+  still black, is drawn alone and lights up in its paint over 30 frames;
+- when they are twice that far down (69 frames into the drop for cars up to 1.55 m tall), the OK
+  button appears, and from the next frame the dark band behind the car fades in over 24 frames
+  and the "Bonus car acquired!! Check garage." message starts. Until the OK button appears no
+  button does anything, so the page cannot be left before it shows the car won.
 
 The reason line is a hidden text element of the `car_get` page, chosen by the prize set
 (`prize_reason`):

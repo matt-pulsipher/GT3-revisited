@@ -161,6 +161,10 @@ struct DrawItem {
     // < 1: the whole item is drawn translucent (alpha-blended after the opaque
     // pass, depth writes kept), e.g. a ghost car.
     float alpha = 1.0f;
+    // Multiplies the item's final colour (its lit colour; the car reflection passes take
+    // reflection_scale): GT3's car colour scale ((0, s)), e.g. 0 for a black
+    // silhouette.
+    float tint = 1.0f;
     // Prize scenes (.prm loaded with gtm1::Options::static_env_maps) and course environment
     // passes (chunk kind 2, gtm1::Options::course_env_maps): textured kEnvironmentMap
     // primitives sample their own texture as a sphere map with GT3's reflection kernel

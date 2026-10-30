@@ -59,6 +59,12 @@ public:
                 return;
             }
         }
+        // The prize car page: GT3's carousel of the set's candidates and its roulette over the
+        // whole frame (game::car_get_scene); the widget's own image is the floor light.
+        if (e.widget_class && *e.widget_class == "render_model" && page == "car_get") {
+            draw_car_get(app, r, e, box, image);
+            return;
+        }
         std::string car, wheel;
         int paint = 0;
         // Arcade car pickers ("ar/select_car:<entry>"): the entry's car, turning, in the
@@ -136,10 +142,7 @@ public:
             }
         }
         if (e.w > 0 && e.h > 0) {
-            if (*e.widget_class == "render_model") {
-                area = menu_rect(40, 150, 560, 180); // between the title and the OK button
-                zoom = 0.62f;
-            } else if (*e.widget_class == "car_render_from") {
+            if (*e.widget_class == "car_render_from") {
                 area = menu_rect(0, 40, 640, 250); // dealer: above the price and paint row
                 zoom = 0.9f;
             }
@@ -326,6 +329,111 @@ private:
                 v.draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, pj, eye, {{m.model.get(), {}, 0}}, o);
             });
         }, fade);
+    }
+
+    // The prize car page (gt_mode §10.1): every candidate on the carousel at its place and
+    // heading, a floor light under each (the page's hit-mark image), drawn through the page's
+    // own camera (CarGetMenuCamera: the eye and look-at springs, a 40-degree horizontal field of
+    // the 640 x 448 frame, the game's 1.098 vertical aspect fix).
+    void draw_car_get(App& app, SDL_Renderer* r, const menu::Element& e, const SDL_FRect& box,
+                      const menu::MenuImage* image) {
+        game::CarGetScene sc;
+        if (!game::car_get_scene(sc) || sc.cars.empty()) return;
+        SDL_FRect page = box;
+        if (e.w > 0 && e.h > 0) {
+            const float sx = box.w / e.w, sy = box.h / e.h;
+            page = SDL_FRect{box.x - e.x * sx, box.y - (448 - e.y - e.h) * sy, 640 * sx, 448 * sy};
+        }
+        // Every model of the frame in the cache at once (up to four candidates).
+        std::vector<std::string> keys;
+        for (const game::CarGetScene::Car& c : sc.cars) keys.push_back(c.car + "#" + std::to_string(c.paint) + "#");
+        size_t missing = 0;
+        for (const std::string& k : keys) missing += cars_.count(k) ? 0 : 1;
+        const size_t cap = std::max<size_t>(platform::is_mobile() ? 3u : 13u, keys.size() + 1);
+        if (cars_.size() + missing > cap) cars_.clear();
+        std::vector<const Loaded*> models;
+        for (const game::CarGetScene::Car& c : sc.cars) models.push_back(this->car(app, c.car, c.paint, std::string(), cap));
+        const render::Vec3 eye{sc.eye[0], sc.eye[1], sc.eye[2]}, look{sc.look[0], sc.look[1], sc.look[2]};
+        const render::Mat4 view = render::look_at(eye, look, {sc.up[0], sc.up[1], sc.up[2]});
+        const float aspect = page.w / std::max(page.h, 1.0f);
+        const float d2r = 3.14159265f / 180.0f;
+        const float vfov = 2.0f * std::atan(std::tan(game::CarGetScene::kHalfFov * d2r) / aspect);
+        render::Mat4 proj = render::perspective(vfov, aspect, 0.1f, 1000.0f);
+        proj.at(1, 1) /= 1.098f; // the game's vertical aspect fix
+        // GT3 draws the cars the roulette is not on first, each with its floor light; then, with
+        // the lit car, the page's background back over the frame at 1 - others (they fade out);
+        // then the lit car's light and the lit car. Every car in black (colour scale 0) on the
+        // carousel; the car won alone at the shade it lights up by.
+        SDL_Texture* light = light_texture(r, image);
+        const render::Mat4 vp = proj * view;
+        auto project = [&](float x, float y, float z, SDL_FPoint& out) {
+            const float cx = vp.at(0, 0) * x + vp.at(0, 1) * y + vp.at(0, 2) * z + vp.at(0, 3);
+            const float cy = vp.at(1, 0) * x + vp.at(1, 1) * y + vp.at(1, 2) * z + vp.at(1, 3);
+            const float cw = vp.at(3, 0) * x + vp.at(3, 1) * y + vp.at(3, 2) * z + vp.at(3, 3);
+            if (cw < 0.01f) return false;
+            out = {page.x + (cx / cw + 1) * 0.5f * page.w, page.y + (1 - cy / cw) * 0.5f * page.h};
+            return true;
+        };
+        auto draw_light = [&](const game::CarGetScene::Car& c, float opacity) {
+            const float a = std::clamp(c.light * opacity, 0.0f, 1.0f);
+            if (!light || a <= 0) return;
+            // The unit square scaled by half the spacing, just under the car.
+            static const float kCorner[4][2] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
+            static const float kUv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+            SDL_Vertex v[4];
+            for (int k = 0; k < 4; ++k) {
+                SDL_FPoint p;
+                if (!project(c.x + kCorner[k][0] * sc.light_half, c.y + sc.light_y, c.z + kCorner[k][1] * sc.light_half, p))
+                    return;
+                v[k].position = p;
+                v[k].color = SDL_FColor{1, 1, 1, a};
+                v[k].tex_coord = SDL_FPoint{kUv[k][0], kUv[k][1]};
+            }
+            static const int kIdx[6] = {0, 1, 2, 1, 3, 2};
+            SDL_RenderGeometry(r, light, v, 4, kIdx, 6);
+        };
+        if (!view_black_) view_black_ = std::make_unique<render::View3D>(*app.gpu());
+        if (!view_white_) view_white_ = std::make_unique<render::View3D>(*app.gpu());
+        auto draw_cars = [&](bool lit, float opacity) {
+            std::vector<render::DrawItem> items;
+            for (size_t i = 0; i < sc.cars.size(); ++i) {
+                const game::CarGetScene::Car& c = sc.cars[i];
+                if (c.lit != lit || !models[i]) continue;
+                render::DrawItem it{models[i]->model.get(), render::translate({c.x, c.y, c.z}) * render::rotate_y(c.heading * d2r), 0};
+                it.tint = lit ? sc.shade : 0.0f;
+                it.reflection_scale = it.tint;
+                items.push_back(it);
+            }
+            if (items.empty() || opacity <= 0) return;
+            composite(r, page, [&](SDL_Texture*, int w, int h, float bg) {
+                render::DrawOptions o;
+                o.clear[0] = o.clear[1] = o.clear[2] = bg;
+                o.clear[3] = 1;
+                render::View3D& v = bg > 0.5f ? *view_white_ : *view_black_;
+                v.draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, proj, eye, items, o);
+            }, opacity);
+        };
+        for (const game::CarGetScene::Car& c : sc.cars)
+            if (!c.lit) draw_light(c, sc.others);
+        draw_cars(false, sc.others);
+        for (const game::CarGetScene::Car& c : sc.cars)
+            if (c.lit) draw_light(c, 1.0f);
+        draw_cars(true, 1.0f);
+    }
+
+    // The page's hit-mark image as a 2D texture (the floor light), made once per image.
+    SDL_Texture* light_texture(SDL_Renderer* r, const menu::MenuImage* image) {
+        if (!image || image->rgba.empty() || !image->width || !image->height) return nullptr;
+        if (light_image_ == image && light_tex_ && light_w_ == image->width && light_h_ == image->height) return light_tex_;
+        light_w_ = image->width, light_h_ = image->height;
+        if (light_tex_) SDL_DestroyTexture(light_tex_);
+        light_tex_ = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, int(image->width),
+                                       int(image->height));
+        light_image_ = image;
+        if (!light_tex_) return nullptr;
+        SDL_UpdateTexture(light_tex_, nullptr, image->rgba.data(), int(image->width * 4));
+        SDL_SetTextureBlendMode(light_tex_, SDL_BLENDMODE_BLEND);
+        return light_tex_;
     }
 
     // The prize model of a presentation (render::PrizeView, shared with the race
@@ -522,11 +630,13 @@ private:
         return t;
     }
 
-    const Loaded* car(App& app, const std::string& car, int paint, const std::string& wheel) {
+    // `cap`: the cache size (0 = the platform's; the prize car page needs room for all its
+    // candidates in one frame and clears beforehand, draw_car_get).
+    const Loaded* car(App& app, const std::string& car, int paint, const std::string& wheel, size_t cap = 0) {
         std::string key = car + "#" + std::to_string(paint) + "#" + wheel;
         if (auto it = cars_.find(key); it != cars_.end()) return it->second.model ? &it->second : nullptr;
         // Phones keep fewer of the detailed menu cars (Mali drivers spend ~185 KB per texture).
-        if (cars_.size() >= (platform::is_mobile() ? 3u : 13u)) cars_.clear();
+        if (cars_.size() >= std::max<size_t>(cap, platform::is_mobile() ? 3u : 13u)) cars_.clear();
         Loaded& l = cars_[key];
         const game::GtModeSession* s = game::gt_mode_session();
         if (!s) return nullptr;
@@ -590,10 +700,16 @@ public:
             for (auto& [key, t] : env_maps_)
                 if (t) SDL_ReleaseGPUTexture(app.gpu()->device(), t);
         env_maps_.clear();
+        if (light_tex_) SDL_DestroyTexture(light_tex_);
+        light_tex_ = nullptr;
+        light_image_ = nullptr;
     }
 
 private:
     std::map<std::string, Loaded> cars_;
+    SDL_Texture* light_tex_ = nullptr;           // the prize car page's floor light (light_texture)
+    const menu::MenuImage* light_image_ = nullptr;
+    u32 light_w_ = 0, light_h_ = 0;
     struct Showroom {
         std::string key;
         float yaw = 190, yaw_v = 0, elev = 0, elev_v = 0, dist = 2, dist_v = 0;

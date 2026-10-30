@@ -1822,6 +1822,48 @@ TEST(race_result_latch_exit_paths) {
     }
 }
 
+// The quick menus' list widgets by class (the championship pre-race layout names its rows
+// qm_grid<n> / qm_pt<n>), else by the rank<n>_name / _time names; other widgets none.
+TEST(race_quick_menu_columns) {
+    auto col = [](const char* name, const char* cls, int& row) {
+        menu::Element e;
+        e.name = name;
+        if (cls) e.widget_class = cls;
+        return quick_menu_column(e, row);
+    };
+    int row = -1;
+    CHECK(col("qm_grid1", "qm_list_car_name1", row) == QmColumn::Name && row == 0);
+    CHECK(col("qm_pt6", "qm_pt6", row) == QmColumn::Points && row == 5);
+    CHECK(col("rank3_time", "qm_list_time3", row) == QmColumn::Time && row == 2);
+    CHECK(col("rank2_name", nullptr, row) == QmColumn::Name && row == 1);
+    CHECK(col("rank1_time", "qm_rank_time1", row) == QmColumn::Time && row == 0); // (a class text wins)
+    CHECK(col("rank1_name1", "qm_rank_name1", row) == QmColumn::None);           // a shadow copy
+    CHECK(col("session_number", "qm_session_num", row) == QmColumn::None);
+    CHECK(col("laps", "qm_laps", row) == QmColumn::None);
+}
+
+// The result menu's list: the finishing order; a championship round left by pause EXIT keeps the
+// pre-round grid list (no times, the player's row still marked).
+TEST(race_result_menu_list) {
+    const std::vector<ResultRow> finish = {{"B", "1'02.000", false, 1}, {"A", "--'--.---", true, -1}};
+    const std::optional<std::vector<ResultRow>> grid =
+        std::vector<ResultRow>{{"A", "--'--.---", true, -1}, {"B", "--'--.---", false, 1}};
+    auto names = [](const std::vector<ResultRow>& rows) {
+        std::string s;
+        for (const ResultRow& r : rows) s += r.name + (r.player ? "*" : "") + " " + r.time + ";";
+        return s;
+    };
+    using K = ResultList;
+    CHECK(names(result_menu_list(K::Championship, false, finish, grid)) == "A* --'--.---;B --'--.---;");
+    CHECK(names(result_menu_list(K::Championship, true, finish, grid)) == "B 1'02.000;A* --'--.---;");
+    CHECK(names(result_menu_list(K::Other, false, finish, grid)) == "B 1'02.000;A* --'--.---;");
+    CHECK(names(result_menu_list(K::Championship, false, finish, std::nullopt)) == "B 1'02.000;A* --'--.---;");
+    // A GT race left by pause EXIT: the list cleared, every row "---" with no time, no player mark.
+    const std::string none = std::string(kNoTimeText);
+    CHECK(names(result_menu_list(K::GtRace, false, finish, grid)) == "--- " + none + ";--- " + none + ";");
+    CHECK(names(result_menu_list(K::GtRace, true, finish, grid)) == "B 1'02.000;A* --'--.---;");
+}
+
 // Every item of the disc's race quick-menu layouts (menu/qm_*.mbl in the game's format, the
 // ones the race drivers load) does something: its action is a known QmAction, or it opens a
 // page of its layout, or it closes the popup ("No").

@@ -73,6 +73,9 @@ struct GtModeHooks {
     struct Presentation {
         std::string set, page;           // menu set and page, e.g. "car_get" / "car_get"
         std::vector<std::string> layers; // layers to force on (e.g. "b_mess0")
+        // The page takes the controls away when it is built (no key does anything, its buttons
+        // are not drawn) until game code gives them back (MenuController::give_control).
+        bool take_controls = false;
     };
     std::function<std::optional<Presentation>()> presentation;
     // Touch on code-drawn lists (garage rows): 0 = not handled, 1 = handled

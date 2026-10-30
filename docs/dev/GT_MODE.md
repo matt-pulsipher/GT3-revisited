@@ -264,9 +264,22 @@ Phase 2 additions:
   queues `lc_get/license_get` (layers `<lic>_mess0/1`) and
   `car_get/car_get` (reason line = the page's hidden text element for the
   prize set: "Event Winner", "Championship winner", "B License all gold",
-  ...; for multi-car sets the candidates flash by for 2.5 s before the car
-  won). `GameFlow` shows them (`GtModeHooks::presentation`) before the next
+  ...). `GameFlow` shows them (`GtModeHooks::presentation`) before the next
   championship round or the menu.
+- **Prize car page** (gt_mode §10.1): the roll stays at the result (`award_prizes`; its rolls,
+  `GtMode::last_prize_rolls`, carry each candidate's paint and the pick into the `Show`); the
+  page's `CarGetRoulette` (`src/game/car_get_roulette.*`, the program's state machine in EE
+  singles: hold, spin, slowdown onto the pick, the camera's fly-in, the others' drop) is started
+  by `next_presentation` and stepped by `presentation_frame`. The page takes the controls when
+  built (`GtModeHooks::Presentation::take_controls` → `MenuController::take_control`; `on_frame`'s
+  automatic give-back skips it, `car_get_holding`) and gets them back on the release, with the
+  `after` band and the `car_get_message` ticker (its marquee restarted from then,
+  `menu::flow::text_effects`; the band's 24-frame fade from then). The app draws the others'
+  floor lights and cars at `CarGetRoulette::others_opacity` (the original puts the page's
+  background back over them), then the lit car's light and the lit car, every car with the colour
+  scale `shade` (black silhouettes, then the car won lighting up: `DrawItem::tint` and
+  `reflection_scale`), through the page's camera over the full frame (`screen_gtmode.cpp`
+  `draw_car_get`; the floor lights are the widget's hit-mark image as projected quads).
 - **Championship resume**: a championship saved between rounds resumes
   with the next round when GT mode is entered (`resume_request`).
   GameRequests of rounds carry `champ_round`, `champ_rounds`, `champ_last`;
