@@ -360,14 +360,15 @@ read [CONTRIBUTING](CONTRIBUTING.md) before sending changes.
 
 ```text
 gt3r [disc.iso] [--hub] [--screen <id>] [--browse <vol path>] [--shot <out.png>]
-     [--msaa <n>] [--render-scale <s>] [--no-gpu]
+     [--msaa <n>] [--render-scale <s>] [--no-gpu] [--help]
 ```
 
+- `--help` lists the options, every screen id and the testing variables (`GT3R_*`).
 - `--hub` starts in Developer options (or set `start = hub` under `[app]`).
 - `--screen <id>` opens a screen: the main menu's `online`, `settings`,
   `mods`, `jukebox`, `quickrace`, `race` (time trial), `movies`,
-  `database`, or a developer tool (`browser`, `gt3menu`, `cars`, `courses`,
-  `menu`, `text`, `sound`, `sim`, `ai`, `viewer`, ...).
+  `database`, `saveeditor`, or a developer tool (`browser`, `gt3menu`, `cars`,
+  `courses`, `menu`, `text`, `sound`, `viewer`, ...).
 - `--browse <path>` opens the asset browser on a file in `GT3.VOL`.
 - `--shot out.png` saves a screenshot after a few frames and exits.
 
