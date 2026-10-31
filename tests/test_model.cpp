@@ -314,6 +314,42 @@ TEST(gtm1_synthetic_model) {
     CHECK(m.bounds_max[0] == 1.0f && m.bounds_max[1] == 1.0f);
 }
 
+// A texture set whose data is not a Tex1 (zeros: courses/EU/L_apricot1's slot 23) is a set without
+// textures, as the game sets it up: the model loads and its textured packet is not drawn (the game
+// draws it with whatever texture the GS still holds); an untextured packet still is. An offset past
+// the model is still an error.
+TEST(gtm1_texture_set_not_tex1) {
+    auto with_set = [](u32 set_offset, u8 mat) {
+        Bytes g = make_gtm1();
+        auto set32 = [&](size_t o, u32 v) { for (int i = 0; i < 4; ++i) g[o + i] = u8(v >> (8 * i)); };
+        g[0x60 + 0x16] = mat; // the packet's mat: 1 = the set's first texture, 0 = none
+        u32 tab = u32(g.size());
+        g.resize(tab + 0x10 + 0x80, 0); // the set table, then a zeroed 0x80-byte set
+        g[0x16] = 1;
+        set32(0x2C, tab);
+        set32(tab, set_offset ? set_offset : tab + 0x10);
+        return g;
+    };
+    auto primitives = [](const scene::Model& m) {
+        size_t n = 0;
+        for (const scene::Mesh& mesh : m.meshes) n += mesh.primitives.size();
+        return n;
+    };
+    Bytes g = with_set(0, 1);
+    gtm1::Gtm1 parsed = gtm1::Gtm1::parse(g);
+    CHECK(parsed.texsets.size() == 1);
+    scene::Model m = gtm1::decode_gtm1(g);
+    CHECK(m.textures.empty() && primitives(m) == 0);
+    CHECK(primitives(gtm1::decode_gtm1(with_set(0, 0))) == 1);
+    bool threw = false;
+    try {
+        gtm1::Gtm1::parse(with_set(0x10000, 1));
+    } catch (const FormatError&) {
+        threw = true;
+    }
+    CHECK(threw);
+}
+
 // gtm1::Options::carry_state: the game's whole-model draw sets the default state once and runs
 // the nodes in order, so a state-only node 0 applies to node 1's draw.
 TEST(gtm1_state_carried_between_nodes) {

@@ -170,7 +170,8 @@ public:
     const std::vector<Material>& materials_for(int paint) const {
         return paint >= 0 && size_t(paint) < paint_materials.size() ? paint_materials[size_t(paint)] : materials;
     }
-    std::vector<u32> texsets;               // Tex1 offsets (distinct, in table order); 0xFFFFFFFF in tables = empty slot
+    std::vector<u32> texsets;               // Tex1 offsets (distinct, in table order; data that is not a Tex1 = a set
+                                            // without textures); 0xFFFFFFFF in tables = empty slot
     std::vector<std::vector<u32>> texset_tables; // [texture LOD][set index] -> index into texsets
 
     // The +0x3C animation list (docs/formats/course.md): values the game advances every frame
