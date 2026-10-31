@@ -837,6 +837,10 @@ filled in), the data file and the 0x60-byte `thumbnail`. The containers are in
 `src/formats/ps2/memcard.*`: the card writer formats like the PS2 BIOS (same
 superblock, FAT, directory entries and page ECC as a card the BIOS formatted in
 PCSX2, apart from the time stamps). `.max` / `.cbs` are not supported.
+gt3tool reads the disc through a `Vfs` without mods, as the app does, so its
+region, language and program files answer and both commands use the disc
+release's folder, minor version and language word (the region's own language;
+`save-export --lang=XX` another of the release's, `gtmode_disc_ps2_save_own_release`).
 
 Verified in PCSX2 (original game, folder and `.ps2` cards, October 2026):
 - A new game saved by the original imports and exports back byte for byte.

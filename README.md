@@ -225,24 +225,29 @@ cars are set as chosen: the prize cars they would have won are not given.
 pages, "FROM A FILE" imports a save from anywhere (a GT3 Revisited `.sav` or
 a PS2 save), and "Export to PS2" in a save's menu asks for the format: a
 `.psu`, a PCSX2 `.ps2` card image or a raw save (`.raw`), then where to put
-it. The raw save is the bare `BASCUS-97102GAMEDATA` file that save editors
+it. The raw save is the bare game data file that save editors
 such as [GT3SaveEditor](https://github.com/zyzalfors/GT3SaveEditor) open; an
 edited one imports like any other save. Home → Trade and the arcade's Load Garage take a
-friend's save the same way. The original's save is the NTSC-U
-`BASCUS-97102GAMEDATA` save, which both NTSC-U discs use. `gt3tool` converts
-on the command line too (it needs your disc for the game data):
+friend's save the same way. Each release of the original reads only its own
+save, and saves go to and from your disc's: `BASCUS-97102GAMEDATA` (NTSC-U,
+both discs), `BESCES-50294GAMEDATA` (PAL) or `BISCPS-15009GAMEDATA`
+(NTSC-J). `gt3tool` converts on the command line too (it needs your disc for
+the game data):
 
 ```text
 gt3tool save-import <iso> <ps2 save> <saves folder>/name.sav
-gt3tool save-export <iso> <saves folder>/name.sav <out.psu | out.ps2 | out.raw | out folder>
+gt3tool save-export <iso> <saves folder>/name.sav <out.psu | out.ps2 | out.raw | out folder> [--lang=XX]
 ```
 
-`<ps2 save>` can be the `BASCUS-97102GAMEDATA` data file (under any name,
+On a PAL disc, `--lang` picks the language the original starts in with the
+exported save: `BR` (British English, the default), `FR`, `GR`, `IT` or `SP`.
+
+`<ps2 save>` can be the data file (`BASCUS-97102GAMEDATA` etc., under any name,
 e.g. a `.raw`), its save folder, a PCSX2 folder memory card, a `.psu`
 (uLaunchELF / EMS export) or a PCSX2 `.ps2` / `.mcd` card image (8 MB, read
 only). The export writes a `.psu`, a new 8 MB `.ps2` card image holding just
 this save, the data file alone (`.raw`) or a folder
-`<out>/BASCUS-97102GAMEDATA/`. To move a save onto a PCSX2 card you already
+`<out>/BASCUS-97102GAMEDATA/` (or the PAL / NTSC-J name). To move a save onto a PCSX2 card you already
 use, import the `.psu` with a memory-card manager. Compressed `.max` / `.cbs`
 saves (Action Replay, CodeBreaker) are not read; convert them to `.psu`
 first.

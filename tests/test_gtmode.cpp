@@ -1055,6 +1055,49 @@ TEST(gtmode_disc_ps2_save_by_region) {
     CHECK(std::any_of(files.begin(), files.end(), [](const Ps2SaveFile& f) { return f.name == "BESCES-50294GAMEDATA"; }));
 }
 
+// Any disc through its Vfs (as gt3tool save-export / save-import read it): the save is the
+// disc release's own (card folder, GAMEDATA minor version, language word +0xC8 in each of
+// its languages, which the original starts in), as a card image and as a folder card, and
+// imports back.
+TEST(gtmode_disc_ps2_save_own_release) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    const RegionData rd = vfs.region();
+    const GtData::Reader read = [&](const std::string& p) { return vfs.read(p); };
+    const std::string dir = rd.region == Region::Japan    ? "BISCPS-15009GAMEDATA"
+                            : rd.region == Region::Europe ? "BESCES-50294GAMEDATA"
+                                                          : "BASCUS-97102GAMEDATA";
+    const u16 minor = rd.region == Region::Japan ? 0 : rd.region == Region::Europe ? 2 : 1;
+    namespace fs = std::filesystem;
+    const fs::path out = test::temp_dir("ps2_own_release");
+    for (Language lang : rd.languages()) {
+        vfs.set_language(lang);
+        auto data = std::make_shared<GtData>();
+        CHECK(data->load(read) && data->region == rd.region && data->language == lang);
+        GtMode gt(data);
+        gt.state().credits = 10000000;
+        CHECK(gt.buy_car("r34_gtr_v_99") >= 0);
+        const std::string card = (out / "game.ps2").string();
+        export_ps2_save_path(gt.state(), data, read, card);
+        std::optional<Bytes> image = read_host_file(card);
+        const std::vector<ps2::McDir> dirs = image ? ps2::read_card(*image) : std::vector<ps2::McDir>{};
+        CHECK(dirs.size() == 1 && dirs[0].name == dir);
+        const ps2::McFile* file = nullptr;
+        for (const ps2::McDir& d : dirs)
+            for (const ps2::McFile& f : d.files)
+                if (f.name == dir) file = &f;
+        CHECK(file && rd16(file->data, 8) == minor &&
+              rd32(ps2_payload(file->data), 0xC8) == (rd.region == Region::Japan ? 0 : u32(lang)));
+        GameState s = import_ps2_save_path(card, *data);
+        CHECK(s.credits == gt.state().credits && s.garage.size() == 1 && s.garage[0].car == "r34_gtr_v_99");
+        const fs::path folder = out / "card";
+        export_ps2_save_path(gt.state(), data, read, folder.string());
+        CHECK(fs::exists(folder / dir / dir) && import_ps2_save_path(folder.string(), *data).credits == gt.state().credits);
+    }
+    fs::remove_all(out);
+}
+
 TEST(gtmode_disc_ps2_rankings_and_options) {
     NEED_DATA();
     GtMode gt(data);
