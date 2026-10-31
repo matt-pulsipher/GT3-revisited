@@ -65,7 +65,9 @@ From macOS, the same build runs in Docker (`colima start`, then
 ### Windows
 
 Visual Studio 2022: `cmake -S . -B build` then build `gt3r` (or open the
-folder in VS). SDL3 and zlib are fetched. The renderer uses Vulkan on
+folder in VS). SDL3 and zlib are fetched; the fetched SDL gets the fixes in
+`cmake/patches` (on AMD GPUs the Vulkan swapchain keeps fullscreen out of the
+driver's own exclusive mode, in which the window froze). The renderer uses Vulkan on
 Windows (we ship SPIR-V and MSL only, no DXIL yet; see RENDERING.md), and on
 GPUs without Vulkan OpenGL ES 3.0: ANGLE's (Direct3D 11) when
 `-DGT3R_ANGLE_DIR=<folder>` puts its DLLs next to the game, as release
