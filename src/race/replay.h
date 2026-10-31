@@ -6,7 +6,7 @@
 //
 // File format (little endian), ".gt3replay" in <user data>/replays/:
 //   0x00 "GT3RRPL1"
-//   u32 version (11; files of older versions, and version 11 files without a race record, are refused: ReplayTooOld),
+//   u32 version (12; files of older versions, and version 11 files without a race record, are refused: ReplayTooOld),
 //   u32 tick count N, f64 tick rate (Hz)
 //   string course, string car (u16 length + bytes), u8 automatic, u8 paint
 //   pose start (f32 x, y, z, qw, qx, qy, qz)
@@ -39,6 +39,8 @@
 //       and the game's changes between frames, the race's hash at the end). Playback builds the
 //       same race from it and steps it from the same frames, so it runs again bit for bit; the
 //       inputs above are for the HUD only.
+//   v12: the same layout; races on the EE's measured multiplier and divider (a v11 race, run on
+//       the earlier rounding, would play differently: refused).
 
 #include "base/game_random.h"
 #include "race/backend.h"
@@ -56,8 +58,8 @@ struct RaceRecord;
 
 namespace gt3r::race {
 
-// A file of a replay version before 11, or of version 11 without a race record (before every race ran on the exact core):
-// refused, not played approximately.
+// A file of a replay version before 12 (11: run on the earlier float rounding; older ones, and 11 without a race record, not on
+// the exact core): refused, not played approximately.
 struct ReplayTooOld : FormatError {
     using FormatError::FormatError;
 };
@@ -92,7 +94,7 @@ enum class ReplayKind : u8 {
 const char* replay_kind_name(ReplayKind k); // "Arcade", "GT", "License", ...
 
 struct Replay {
-    static constexpr u32 kVersion = 11;
+    static constexpr u32 kVersion = 12;
     std::string course, car; // database labels
     bool automatic = true;
     int paint = 0;

@@ -65,10 +65,14 @@ input differs (§4.4).
 | step | 1/60 s | §1.1 |
 
 **Arithmetic.** Every value of the step is a PS2 single-precision float, computed in the
-game's own order of operations: additions, subtractions and multiplications round
-towards zero, an addition drops the smaller operand's bits beyond one guard bit,
-divisions and square roots round to nearest, there are no denormals (they read as 0) and
-no infinities or NaNs (an overflow saturates at the largest value). Where the game computes
+game's own order of operations: additions and subtractions round towards zero, and an
+addition drops the smaller operand's bits beyond one guard bit; a multiplication gives the
+EE multiplier's result, the product rounded towards zero or now and then one below it (the
+multiplier loses a carry from its lowest columns); divisions and square roots give the EE
+divider's, the result rounded towards zero or one above it but never above an exact one (a
+digit recurrence that is never corrected). There are no denormals (they read as 0) and no
+infinities or NaNs (an overflow saturates at the largest value; a multiply-add whose
+product overflows gives that product). Where the game computes
 in double precision (a few steps of the car's parameter build, the wear grip and the AI's
 speed planning), it uses
 its own software doubles, and so does GT3 Revisited. Sines, cosines and arctangents are

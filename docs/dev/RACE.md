@@ -752,7 +752,8 @@ pads and inputs are ignored; at the last frame it logs whether the race's hash i
 the exact core, the program and the game data it was recorded on and its rules (`RaceScreen::can_play`,
 `build_playback`: refused with the reason otherwise, "This replay cannot be played: recorded with ...",
 never played on another program, data or rules). Saved ghosts follow the same rule (a ghost of
-another program's or rules' run is not offered). **Files of versions before 11 are refused** (`ReplayTooOld`,
+another program's or rules' run is not offered). **Files of versions before 12 are refused** (`ReplayTooOld`; version 11
+ran on the float rounding before the EE's measured multiplier and divider,
 "This replay was recorded with an older version and cannot be played."); the Replay Theater lists them
 with "Recorded with an older version", not playable (they can be deleted). Tests: `race_replay_exact_record` (the record through a file, disc-free),
 `exact_replay_round_trip` (disc: a pad-read GT race with a gearbox change and a seeded condition, a
@@ -1663,11 +1664,11 @@ screen, `screen_race_license.cpp` the flow. The rules (presentation §A):
   the race's start-up sets it: the event's +0x1F3, the time trial's start type the moving start 3) and car
   0's frames as the input device's recorder hands them to the pad read (the recording's
   T - 1, then empty frames; the stream read on past its block as the game's reader does). The race
-  judges it and drives its end itself, and every demo plays as it does in the game: 7 of them end on
-  the time the save records (A-1, A-2, A-3, A-7, B-1, B-2, IB-4); several within a few ms (A-6, A-8,
-  B-6, R-1, IA-2); the rest, the arcade time attacks among them, leave the course in the game too
-  (course-outs from 3 to 22 s after the line): the saves were recorded on a build whose race differs
-  from the release's (the Japanese disc's data, same files, gives the same results). The licence
+  judges it and drives its end itself, and every demo ends on the time its save records (the runs were
+  recorded on a PS2): all 58 on the NTSC-U and NTSC-J discs, the arcade time attacks among them; on
+  the PAL disc's data all but the AT02 time trial, which leaves the course. They need the EE's own
+  multiplier and divider (`base/ee_float.h`); with the float rounding before (an exact chopped
+  product, divisions to nearest) 7 did. The licence
   menu's preview box is no movie: GT3 runs the demo live behind the menu and draws the scene into
   (32, 58, 280, 210); we do the same (looping, TV cameras, silent), and "Demonstration" runs it full
   screen. Test `exact_demo_records`.

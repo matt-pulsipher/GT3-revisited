@@ -153,7 +153,7 @@ TEST(net_car_params_digest_platform_hash) {
     // The same bytes on every platform (arm64, x86-64; fp contraction on or off): the lobby compares digests exactly.
     const u64 h = params_digest_hash();
     std::printf("  parameter block digests: %016llx\n", (unsigned long long)h);
-    CHECK(h == 0x08df94000f9ad8bcull);
+    CHECK(h == 0xb2bd4ee5d67b3977ull);
 }
 
 TEST(net_car_here_regions) {

@@ -1,15 +1,17 @@
 // The disc's demo runs on the exact core (race/exact_demo.h): each demo's race record built from its save, stepped on an
-// ExactRace from its frames, its result against the time the save records (GT3's own result for that run). Needs
-// GT3R_DISC.
+// ExactRace from its frames, its result against the time the save records (GT3's own result for that run, recorded on a PS2).
+// Needs GT3R_DISC (any region: every disc carries the NTSC-U runs).
 
 #include "test_framework.h"
 
 #include "disc/core_image.h"
+#include "disc/disc.h"
 #include "disc/volume.h"
 #include "game/data/car_database.h"
 #include "race/exact_demo.h"
 #include "sim/exact/race.h"
 #include "sim/exact/race_record.h"
+#include "vfs/vfs.h"
 
 #include <cstdlib>
 #include <memory>
@@ -28,7 +30,9 @@ struct DemoRun {
 DemoRun run_demo(const ex::RaceRecord& rec, const ex::ProgramData& d, const data::CarDatabase& db, ByteSpan course_file,
                  size_t frames) {
     DemoRun out;
-    const ex::RaceSetup s = rec.setup(d, db, ex::RaceCourse::load(course_file, d));
+    ex::ProgramData dd = d; // the record's rules, as playback runs it (the NTSC-U runs every disc carries: NTSC-U's)
+    if (!(dd.behaviour() == rec.behaviour) && dd.can_behave(rec.behaviour)) dd.set_behaviour(rec.behaviour);
+    const ex::RaceSetup s = rec.setup(dd, db, ex::RaceCourse::load(course_file, dd));
     ex::ExactRace race(s);
     ex::RacePlayback play(&rec);
     while (!play.done()) {
@@ -45,8 +49,9 @@ DemoRun run_demo(const ex::RaceRecord& rec, const ex::ProgramData& d, const data
 } // namespace
 
 TEST(exact_demo_records) {
-    Disc* disc = test::test_disc();
+    Disc* disc = test::any_region_disc();
     if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
     data::CarDatabase db;
     CHECK(db.load(disc->volume()));
     std::optional<Bytes> core = disc->volume().read_program();
@@ -69,7 +74,7 @@ TEST(exact_demo_records) {
         // Through a replay file's record.
         const ex::RaceRecord back = ex::RaceRecord::parse(rec->serialize());
         CHECK(back.frames == rec->frames && back.entries.size() == 1);
-        const Volume::Entry* ce = disc->volume().find("courses/US/" + ev->course);
+        const Volume::Entry* ce = disc->volume().find(vfs.region().course_path(ev->course, vfs.language()));
         CHECK(ce != nullptr);
         if (!ce) continue;
         const DemoRun r = run_demo(back, d, db, disc->volume().read(*ce), demo->size());
@@ -80,5 +85,8 @@ TEST(exact_demo_records) {
     }
     std::printf("  %d demos on the exact core, %d timed, %d with the recorded time; the others (ours / recorded):%s\n", runs, timed,
                 recorded, others.c_str());
-    CHECK(runs > 0 && timed > 0 && recorded > 0);
+    // Every one ends on its recorded time; on the PAL disc's data all but the AT02 time trial (which leaves the course there).
+    const bool pal = disc->info().region == Region::Europe;
+    CHECK(runs == 58 && recorded == (pal ? runs - 1 : runs));
+    CHECK(!pal || others.rfind(" AT020001 ", 0) == 0);
 }

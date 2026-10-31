@@ -43,7 +43,7 @@ u64 params_build_hash() {
 
 } // namespace
 
-TEST(params_build_platform_hash) { CHECK(params_build_hash() == 0x6091ddfea5d61001ull); }
+TEST(params_build_platform_hash) { CHECK(params_build_hash() == 0xd4cff275d646b663ull); }
 
 // ---- on the disc ----
 
