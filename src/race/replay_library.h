@@ -21,7 +21,7 @@ struct ReplayEntry {
     u64 size = 0;           // bytes
     u32 ticks = 0;
     Replay header;          // everything but the inputs (header.inputs / inputs2 are empty)
-    bool too_old = false;   // a file of a version before 11: listed (it can be deleted), not played (header empty)
+    bool too_old = false;   // a file of a version before 12: listed (it can be deleted), not played (header empty)
 };
 
 // The folder's replays, newest first (unreadable files are skipped; those of older versions are listed as too_old).

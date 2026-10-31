@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(GT3Revisited VERSION 0.4.3 LANGUAGES C CXX)
+project(GT3Revisited VERSION 0.5.0 LANGUAGES C CXX)
 
 # GT3 Revisited: an open reimplementation of the Gran Turismo 3 engine.
 # No game data is part of this project; everything is read at runtime from

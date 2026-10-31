@@ -1900,7 +1900,7 @@ Page `replay_theater` (from the title) offers three items:
   shows the focused file's course, car, time, laps, power, mode, date and
   size.
 - **Confirm** plays the file at once. With no files it plays `disable`.
-- **Older replays.** A saved replay of a format before 11 is still listed,
+- **Older replays.** A saved replay of a format before 12 is still listed,
   but its info panel shows only "-", its date and size, with the comment
   "Recorded with an older version". Confirm on it plays `disable`; Start can
   delete it (`game::replay_theater_entries`, test `replay_library_files`).
