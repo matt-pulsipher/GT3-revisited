@@ -60,7 +60,7 @@ std::optional<Bytes> course_file(const std::string& label) {
 
 // Aim at the car's AI line ahead; full throttle below a speed that falls with the aim's angle, the brake above it (its top:
 // g_line_pace km/h).
-float g_line_pace = 150.0f;
+float g_line_pace = 145.0f;
 ex::PadFrame line_driver(const ex::Car& c, const ex::RaceCourse& course) {
     ex::PadFrame f;
     f.flags = 0x1F;
@@ -465,7 +465,7 @@ TEST(exact_game_analysis) {
     SoloRun a = solo("AT020001", ex::Conductor::TimeTrial, 12000, 0, nullptr, car);
     g_line_pace = 125.0f; // (track B slower)
     SoloRun b = solo("AT020001", ex::Conductor::TimeTrial, 14000, 0, nullptr, car);
-    g_line_pace = 150.0f;
+    g_line_pace = 145.0f;
     CHECK(a.record && b.record && !a.record->run_recording.empty());
     if (!a.record || !b.record) return;
     data::CarDatabase& db = *database();
@@ -624,7 +624,7 @@ TEST(exact_game_licence_over_the_times) {
     const race::LicenseTimes lt = race::license_times(*ev);
     g_line_pace = 60.0f; // (well under the pace a medal needs)
     SoloRun slow = solo("L0A0004", ex::Conductor::License, 30000);
-    g_line_pace = 150.0f;
+    g_line_pace = 145.0f;
     CHECK(slow.finished);
     CHECK(slow.result == 0 && posted(slow, 9));
     CHECK(slow.result_time > u32(lt.ms[2])); // slower than bronze

@@ -58,8 +58,8 @@ same pad frames compute the same race. That would allow, later:
   prediction, contacts exactly alike everywhere, a few bytes per step; it costs input
   delay of about half the slowest round trip and a stall when frames are late.
 - **Rollback:** run on with predicted frames and re-run from a copy of the race
-  (`ExactRace` is copyable) when a real frame differs: no input delay, at about 12 µs per
-  car and step re-run (M-series).
+  (`ExactRace` is copyable) when a real frame differs: no input delay, at about 20 µs per
+  car and step re-run (M-series; the EE's divider, run digit by digit, is about half of it).
 - What it needs: the same rules and program tables on every machine (NTSC-U rules, as
   now), the same race setup (each car's parameter block from each disc's database: the
   lobby already compares its digest exactly, "Regional discs" below), and the same
