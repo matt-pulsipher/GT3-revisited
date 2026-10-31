@@ -1,5 +1,6 @@
 // ee_float (src/base/ee_float.h): the bit-manipulation conversions against a plain frexp/ldexp model of the same rules, on random
-// and edge-case operands of every operation (the rules themselves are checked against known PS2 results elsewhere).
+// and edge-case operands of every operation; the multiplier and divider within their bounds of the exact result and on known
+// PS2 results.
 
 #include "base/ee_float.h"
 #include "base/ee_math.h"
@@ -116,16 +117,26 @@ TEST(ee_float_operations_match_model) {
         if (ee::add(a, b, ee::Round::Chop, &f1) != add_model(a, b, ee::Round::Chop, &f2) || !same(f1, f2)) ++bad;
         if (ee::add(a, b, ee::Round::Nearest) != add_model(a, b, ee::Round::Nearest, &f2)) ++bad;
         if (ee::sub(a, b) != add_model(a, b ^ 0x80000000u, ee::Round::Chop, &f2)) ++bad;
+        // The multiplier: the chopped product, or one below it only when the bits below its last place are under 2^16 (the
+        // carry it loses); the divider: the chopped quotient or root, or one above it when not exact. (Away from the
+        // exponent's ends, where a step changes the exponent.)
         double p = m_to_double(a) * m_to_double(b);
         u32 pm = p == 0.0 ? (a ^ b) & 0x80000000u : m_from_double(p, ee::Round::Chop, &f2);
-        if (ee::mul(a, b) != pm) ++bad;
+        const u64 p48 = u64((a & 0x7FFFFFu) | 0x800000u) * u64((b & 0x7FFFFFu) | 0x800000u);
+        const u64 below = p48 & ((u64(1) << (23 + (p48 >> 47))) - 1); // the exact product's bits below pm's last place
+        const u32 r = ee::mul(a, b);
+        if (r != pm && !(r == pm - 1 && below < 65536 && (pm & 0x7FFFFFFFu) > 0x800000u)) ++bad;
         if (((b >> 23) & 0xFF) != 0) {
             double q = m_to_double(a) / m_to_double(b);
-            u32 qm = q == 0.0 ? (a ^ b) & 0x80000000u : m_from_double(q, ee::Round::Nearest, &f2);
-            if (ee::div(a, b) != qm) ++bad;
+            u32 qm = q == 0.0 ? (a ^ b) & 0x80000000u : m_from_double(q, ee::Round::Chop, &f2);
+            const u32 e = (qm >> 23) & 0xFF, r = ee::div(a, b);
+            const bool exact = q == m_to_double(qm);
+            const bool inside = e > 0 && e < 255 && (qm & 0x7FFFFFu) != 0x7FFFFFu;
+            if (inside ? !(r == qm || (!exact && r == qm + 1)) : (e == 0 && r != qm)) ++bad;
         }
         double sq = std::sqrt(std::fabs(m_to_double(a)));
-        if (ee::sqrt(a) != (sq == 0.0 ? 0u : m_from_double(sq, ee::Round::Nearest, &f2))) ++bad;
+        const u32 sm = sq == 0.0 ? 0u : m_from_double(sq, ee::Round::Chop, &f2), rs = ee::sqrt(a);
+        if ((sm & 0x7FFFFFu) != 0x7FFFFFu && !(rs == sm || (sq != m_to_double(sm) && rs == sm + 1))) ++bad;
         double ma = m_to_double(a), mb = m_to_double(b);
         if (ee::compare(a, b) != (ma < mb ? -1 : ma > mb ? 1 : 0)) ++bad;
         double t = std::trunc(ma);
@@ -135,6 +146,44 @@ TEST(ee_float_operations_match_model) {
         if (ee::from_int(iv) != m_from_double(double(iv), ee::Round::Chop, &f2)) ++bad;
     }
     CHECK(bad == 0);
+}
+
+// Known PS2 results where the multiplier gives one below the chopped product and the divider one above the chopped quotient
+// or root (with a few plain ones), through the functions and the ee::F operators.
+TEST(ee_float_ps2_known_results) {
+    const u32 mul[][3] = {
+        {0x42867EF9u, 0x44E2CAB1u, 0x47EE4D29u}, {0xC23EADDCu, 0x390B27B6u, 0xBBCF4BF4u}, {0xC67EABFEu, 0xC7199C76u, 0x4E18D070u},
+        {0x43574BC8u, 0xC41DC545u, 0xC804AF60u}, {0x4AFD0AAFu, 0xB383B509u, 0xBF022F68u}, {0x3C0F1FDBu, 0x3F7C1EA4u, 0x3C0CF47Cu},
+        {0x3F800000u, 0x3F7FFFFFu, 0x3F7FFFFEu}, {0x3F7FFFFFu, 0x3F800000u, 0x3F7FFFFFu}, // 1.0 * m low, m * 1.0 exact
+    };
+    const u32 div[][3] = {
+        {0xBF6F746Eu, 0xBBD8AF44u, 0x430D7368u}, {0xC2F683A1u, 0x453D2682u, 0xBD26D192u}, {0xBD357760u, 0xB79071B7u, 0x4520CEAEu},
+        {0xB7992194u, 0xC4AB79DFu, 0x32649CD0u}, {0x3D83815Eu, 0x456DF726u, 0x378D78C0u}, {0xB7DE9689u, 0x3A5574FFu, 0xBD0579B6u},
+        {0x3F800000u, 0x40400000u, 0x3EAAAAABu}, {0x40A00000u, 0x41200000u, 0x3F000000u}, // 1 / 3, 5 / 10
+    };
+    const u32 sqrt[][2] = {
+        {0x36CC3609u, 0x3B21ACF8u}, {0x3F5C248Cu, 0x3F6D6535u}, {0x495F7BE1u, 0x446F30A7u}, {0x371B6734u, 0x3B477510u},
+        {0x3FF73693u, 0x3FB1E2B7u}, {0x40ADA8C8u, 0x40151786u}, {0x40000000u, 0x3FB504F3u}, {0x40400000u, 0x3FDDB3D7u},
+    };
+    for (const auto& t : mul) {
+        CHECK(ee::mul(t[0], t[1]) == t[2]);
+        CHECK((ee::F::raw(t[0]) * ee::F::raw(t[1])).bits == t[2]);
+    }
+    for (const auto& t : div) {
+        CHECK(ee::div(t[0], t[1]) == t[2]);
+        CHECK((ee::F::raw(t[0]) / ee::F::raw(t[1])).bits == t[2]);
+    }
+    for (const auto& t : sqrt) {
+        CHECK(ee::sqrt(t[0]) == t[1]);
+        CHECK(ee::sqrt(t[0] | 0x80000000u) == t[1]); // sqrt(|a|)
+        CHECK(ee::rsqrt(0x3F800000u, t[0]) == ee::div(0x3F800000u, t[1]));
+    }
+    // Division by zero: +-max, and 0 / 0 flags invalid; a zero dividend gives the signed zero.
+    ee::Flags f;
+    CHECK(ee::div(0xC0000000u, 0x00000000u, &f) == 0xFFFFFFFFu && f.divzero);
+    ee::Flags g;
+    CHECK(ee::div(0x00000000u, 0x80000000u, &g) == 0xFFFFFFFFu && g.invalid);
+    CHECK(ee::div(0x80000000u, 0x3F800000u) == 0x80000000u && ee::sqrt(0x80000000u) == 0);
 }
 
 TEST(ee_float_fast_paths_match) {
@@ -234,8 +283,8 @@ TEST(ee_float_platform_hash) {
         }
     }
     CHECK(h[0] == 0x534ba27d4f41d126ull);
-    CHECK(h[1] == 0x8f92a08065f8d753ull);
-    CHECK(h[2] == 0x1e7698169f3a6065ull);
-    CHECK(h[3] == 0xadfcb3d4d26d08caull);
+    CHECK(h[1] == 0xd1182518a327deccull); // (h[1] and h[2] as a reference model of the EE's FPU gives them too)
+    CHECK(h[2] == 0x8b0a9ed8cf1ef085ull);
+    CHECK(h[3] == 0x8692188a8ed84c56ull);
 }
 

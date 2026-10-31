@@ -1057,7 +1057,7 @@ The public tests that drive the AI (the disc tests need the player's disc, `GT3R
 | `exact_game_free_run_visit` | a free run's ghost kept from run to run of a visit, and a loaded ghost |
 | `exact_replay_round_trip` | races recorded through the race screen (on the pad, from inputs, a split-screen battle, a race demonstration with the AI's take-over, the autopilot) replay to the same race, every car record equal |
 | `exact_replay_ghost` | a time trial's whole-run ghost drives the earlier run again from its pad frames |
-| `exact_demo_records` | the disc's demonstrations built as race records, through a replay file, play on the race; some reach a judged or lap time, and at least one the time its save records (on the US disc 7 of 58) |
+| `exact_demo_records` | the disc's demonstrations built as race records, through a replay file, play on the race; each ends on the time its save records (every one on the NTSC-U and NTSC-J discs; on the PAL disc's data all but the AT02 time trial) |
 | `net_exact_duel_ai`, `net_exact_duel_autopilot` | online, the race's AI drives both players' cars to the finish, with the autopilot's configuration 3 |
 | `race_flow_ranking_and_gaps` | the race order (laps, finished cars, progress; free practice by best lap) and the gaps between cars |
 | `race_replay_driver_kind` | the player's driver kind per step (the run-up 1, the stop driver 5) survives a replay file |

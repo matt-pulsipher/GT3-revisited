@@ -1592,7 +1592,7 @@ TEST(race_replay_driver_kind) {
 }
 
 // The players' reverse requests survive a file round trip (format v10); a file of a version before
-// 11 is refused (ReplayTooOld), not played approximately.
+// 12 is refused (ReplayTooOld), not played approximately.
 TEST(race_replay_reverse) {
     ReplayRecorder rec;
     rec.begin("trialmt", "r34_gtr_v_99", true, 0, {}, 60.0);
@@ -1611,8 +1611,8 @@ TEST(race_replay_reverse) {
     for (size_t i = 0; same && i < 6; ++i) same = (r.reverse[i] != 0) == rev[i] && (r.reverse2[i] != 0) == !rev[i];
     CHECK(same);
 
-    // Versions 1..10: refused with the older-version message; a later version: not a ReplayTooOld.
-    for (u32 v : {1u, 9u, 10u, 12u}) {
+    // Versions 1..11: refused with the older-version message; a later version: not a ReplayTooOld.
+    for (u32 v : {1u, 9u, 10u, 11u, 13u}) {
         Bytes b = recorded.serialize();
         std::memcpy(b.data() + 8, &v, 4);
         bool too_old = false, refused = false;
@@ -1623,7 +1623,7 @@ TEST(race_replay_reverse) {
         } catch (const FormatError&) {
             refused = true;
         }
-        CHECK(refused && too_old == (v < 11));
+        CHECK(refused && too_old == (v < 12));
     }
 }
 

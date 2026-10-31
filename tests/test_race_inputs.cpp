@@ -116,12 +116,12 @@ u64 race_inputs_hash() {
 
 } // namespace
 
-TEST(race_inputs_platform_hash) { CHECK(race_inputs_hash() == 0xb776546c93ed5835ull); }
+TEST(race_inputs_platform_hash) { CHECK(race_inputs_hash() == 0xa4bcb16f366249ecull); }
 
 // A pedal curve from its bytes, as the original builds the steering wheel's throttle curve from type 1, 50.
 TEST(race_inputs_pedal_curve) {
     const ex::PedalCurve k = ex::pedal_curve_record(1, 50);
-    CHECK(k.type == 1 && k.a.bits == 0xBF000002 && k.b.bits == 0xBE000003 && k.c.bits == 0x3EFFFFFF);
+    CHECK(k.type == 1 && k.a.bits == 0xBF000001 && k.b.bits == 0xBE000001 && k.c.bits == 0x3EFFFFFF);
     const ex::PedalCurve none = ex::pedal_curve_record(3, 50);
     CHECK(none.type == 3 && none.a.bits == 0 && none.b.bits == 0 && none.c.bits == 0);
 }

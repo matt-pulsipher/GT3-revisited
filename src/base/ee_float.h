@@ -8,14 +8,19 @@
 //    below the smallest normal flushes to signed zero (underflow flag);
 //  - no Inf/NaN: exponent 255 is an ordinary exponent, so the largest value
 //    is 0x7FFFFFFF ~ 3.4e38 * 2; a result above it clamps to +-max (overflow);
-//  - add/sub/mul round toward zero ("chop"). The adder aligns the smaller
+//  - add/sub round toward zero ("chop"). The adder aligns the smaller
 //    operand without a sticky bit: bits below one guard bit are dropped and an
 //    operand 25+ binary orders smaller is ignored (PCSX2's accurate model);
+//  - mul is the EE's multiplier: radix-4 Booth partial products summed by a
+//    tree of 4:2 compressors whose carry out of the low 16 columns is lost, so
+//    a product is the chopped one or, now and then, one below it;
+//  - div and sqrt are the EE's divider: a radix-2 SRT recurrence on a
+//    carry-save remainder, 25 digits and no correction, so a result is the
+//    chopped one or one above it (never above an exact one); rsqrt divides by
+//    the square root;
 //  - division by zero gives +-max (sign = xor of signs), sqrt/rsqrt use |x|.
-// Divide and square root round to nearest by default (as PCSX2's default);
-// both modes are selectable per call.
-// Known gap: the real multiplier occasionally differs from exact truncation
-// by 1 ulp (PCSX2 models the Booth multiplier); we use exact truncation.
+// The multiplier and the divider were worked out from their results alone; with them the disc's
+// demonstration runs (pad frames recorded on a PS2) all end on the times their saves record.
 //
 // Two layers: functions on raw bit patterns, and ee::F, a value with those rules as operators,
 // for ports that keep GT3's order of operations:
@@ -49,20 +54,28 @@ u32 from_host(float v);
 // PS2 float -> host float for reporting (exponent 255 clamps to +-FLT_MAX).
 float to_host(u32 bits);
 
-// Experiments only (float-noise horizon of a whole-pipeline run): when set, add/sub/mul round to nearest
-// instead of chopping, a last-ulp perturbation of every such operation. The functions below only (on raw
-// bits), not ee::F.
-extern bool g_nearest_override;
-
 u32 add(u32 a, u32 b, Round r = Round::Chop, Flags* f = nullptr);
 u32 sub(u32 a, u32 b, Round r = Round::Chop, Flags* f = nullptr);
-u32 mul(u32 a, u32 b, Round r = Round::Chop, Flags* f = nullptr);
-u32 div(u32 a, u32 b, Round r = Round::Nearest, Flags* f = nullptr);
-u32 sqrt(u32 a, Round r = Round::Nearest, Flags* f = nullptr);
-u32 rsqrt(u32 a, u32 b, Round r = Round::Nearest, Flags* f = nullptr); // a / sqrt(|b|)
-// a + b * c with the product rounded first (the PS2's multiply-add).
-inline u32 madd(u32 acc, u32 b, u32 c, Flags* f = nullptr) { return add(acc, mul(b, c, Round::Chop, f), Round::Chop, f); }
-inline u32 msub(u32 acc, u32 b, u32 c, Flags* f = nullptr) { return sub(acc, mul(b, c, Round::Chop, f), Round::Chop, f); }
+// The EE's multiplier: the chopped product, now and then one below it (see the top of this file).
+u32 mul(u32 a, u32 b, Flags* f = nullptr);
+// The EE's divider: the chopped quotient or one above it, never above when exact.
+u32 div(u32 a, u32 b, Flags* f = nullptr);
+u32 sqrt(u32 a, Flags* f = nullptr);        // sqrt(|a|): the chopped root or one above
+u32 rsqrt(u32 a, u32 b, Flags* f = nullptr); // a / sqrt(|b|): the square root, then the division
+// a + b * c with the product rounded first (the PS2's multiply-add); a product that overflows is the result (+-max, negated
+// for msub) whatever the accumulator.
+inline u32 madd(u32 acc, u32 b, u32 c, Flags* f = nullptr) {
+    Flags m;
+    const u32 p = mul(b, c, &m);
+    if (f) f->overflow |= m.overflow, f->underflow |= m.underflow;
+    return m.overflow ? p : add(acc, p, Round::Chop, f);
+}
+inline u32 msub(u32 acc, u32 b, u32 c, Flags* f = nullptr) {
+    Flags m;
+    const u32 p = mul(b, c, &m);
+    if (f) f->overflow |= m.overflow, f->underflow |= m.underflow;
+    return m.overflow ? (p ^ 0x80000000u) : sub(acc, p, Round::Chop, f);
+}
 
 inline u32 neg(u32 a) { return a ^ 0x80000000u; }
 inline u32 abs(u32 a) { return a & 0x7FFFFFFFu; }
@@ -79,8 +92,8 @@ u32 from_int(s32 v, Round r = Round::Chop);
 s32 to_fixed(u32 a, int frac_bits);
 u32 from_fixed(s32 v, int frac_bits);
 
-// An EE single: addition, subtraction and multiplication chop, division rounds to nearest, comparisons
-// as the FPU compares (+0 == -0).
+// An EE single: the EE's addition, subtraction, multiplication, division and square root (the rules above),
+// comparisons as the FPU compares (+0 == -0).
 struct F {
     u32 bits = 0;
     constexpr F() = default;
@@ -94,7 +107,7 @@ struct F {
     double value() const { return to_double(bits); }
 };
 
-// Inline fast paths of add / sub / mul (chop, no flags), divide, square root, compare and the int conversions, for ports that
+// Inline fast paths of add / sub / mul (no flags), divide, square root, compare and the int conversions, for ports that
 // run every frame: the same results as the functions above (tests/test_ee_float.cpp checks them against each other).
 #if defined(_MSC_VER)
 #define GT3R_EE_INLINE __forceinline
@@ -144,26 +157,17 @@ GT3R_EE_INLINE u32 mul(u32 a, u32 b) {
     if (!ea || !eb) return sign;
     const u64 p = u64((a & 0x7FFFFFu) | 0x800000u) * u64((b & 0x7FFFFFu) | 0x800000u); // [2^46, 2^48), exact
     const u32 hi = u32(p >> 47);
+    // The multiplier's lost carry can only move a product whose bits below its last place are under 2^16.
+    if ((p & ((u64(1) << (23 + hi)) - 1)) < (u64(1) << 16)) return ee::mul(a, b);
     const s32 e = s32(ea + eb) - 127 + s32(hi);
     const u32 m = u32(p >> (23 + hi)) & 0x7FFFFFu; // chopped
     if (e <= 0) return sign;
     if (e > 255) return sign | 0x7FFFFFFFu;
     return sign | (u32(e) << 23) | m;
 }
-// Divide and square root round to nearest, as the host does: the host's result where both are normal.
-GT3R_EE_INLINE u32 div(u32 a, u32 b) {
-    const u32 ea = (a >> 23) & 0xFF, eb = (b >> 23) & 0xFF;
-    if (ea - 1u < 254u && eb - 1u < 254u) {
-        const u32 q = bits(host(a) / host(b));
-        if (((q >> 23) & 0xFF) - 1u < 254u) return q;
-    }
-    return ee::div(a, b);
-}
-GT3R_EE_INLINE u32 sqrt(u32 a) {
-    const u32 m = a & 0x7FFFFFFFu, e = m >> 23;
-    if (e - 1u < 254u) return bits(std::sqrt(host(m)));
-    return ee::sqrt(a);
-}
+// Divide and square root: the divider's recurrence, out of line.
+GT3R_EE_INLINE u32 div(u32 a, u32 b) { return ee::div(a, b); }
+GT3R_EE_INLINE u32 sqrt(u32 a) { return ee::sqrt(a); }
 // Float to int (truncates toward zero, saturates) and int to float (chopped to 24 bits) in integer arithmetic.
 GT3R_EE_INLINE s32 to_int(u32 a) {
     const u32 e = (a >> 23) & 0xFF;
@@ -206,8 +210,15 @@ GT3R_EE_INLINE bool operator>=(F a, F b) { return fast::key(a.bits) >= fast::key
 inline F abs(F a) { return F::raw(abs(a.bits)); }
 GT3R_EE_INLINE F sqrt(F a) { return F::raw(fast::sqrt(a.bits)); } // sqrt(|a|)
 inline F rsqrt(F a, F b) { return F::raw(rsqrt(a.bits, b.bits)); } // a / sqrt(|b|)
-GT3R_EE_INLINE F madd(F acc, F b, F c) { return acc + b * c; } // the product chopped first, as the PS2's multiply-add
-GT3R_EE_INLINE F msub(F acc, F b, F c) { return acc - b * c; }
+// The PS2's multiply-add: the product rounded first (an overflowed one, +-max, is the result).
+GT3R_EE_INLINE F madd(F acc, F b, F c) {
+    const F p = b * c;
+    return (p.bits & 0x7FFFFFFFu) == 0x7FFFFFFFu ? F::raw(ee::madd(acc.bits, b.bits, c.bits)) : acc + p;
+}
+GT3R_EE_INLINE F msub(F acc, F b, F c) {
+    const F p = b * c;
+    return (p.bits & 0x7FFFFFFFu) == 0x7FFFFFFFu ? F::raw(ee::msub(acc.bits, b.bits, c.bits)) : acc - p;
+}
 inline F max(F a, F b) { return a >= b ? a : b; }
 inline F min(F a, F b) { return a <= b ? a : b; }
 GT3R_EE_INLINE s32 to_int(F a) { return fast::to_int(a.bits); }        // truncates, saturates
