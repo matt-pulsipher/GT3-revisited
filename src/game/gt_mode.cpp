@@ -783,11 +783,26 @@ Check GtMode::can_sell(int index) const {
 s64 GtMode::sell_car(int index) {
     if (can_sell(index) != Check::Ok) return 0;
     s64 v = sell_price(state_.garage[size_t(index)]);
+    remove_car(index);
+    state_.credits += v;
+    return v;
+}
+
+int GtMode::add_car(const std::string& car, int paint) {
+    std::optional<GarageCar> g = make_car(car);
+    if (!g) return -1;
+    int n = data_->color_count(car);
+    g->color = n > 0 ? std::clamp(paint, 0, n - 1) : std::max(paint, 0);
+    int idx = place_in_garage(std::move(*g));
+    if (idx >= 0 && state_.ride < 0) state_.ride = idx;
+    return idx;
+}
+
+void GtMode::remove_car(int index) {
+    if (index < 0 || index >= int(state_.garage.size())) return;
     state_.garage.erase(state_.garage.begin() + index);
     if (state_.ride == index) state_.ride = -1;
     else if (state_.ride > index) --state_.ride;
-    state_.credits += v;
-    return v;
 }
 
 void GtMode::ride(int index) {

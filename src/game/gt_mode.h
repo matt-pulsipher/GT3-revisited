@@ -273,6 +273,12 @@ public:
     Check can_sell(int index) const;
     s64 sell_car(int index);
     void ride(int index);
+    // The save editor's garage (game/save_edit.h), outside the game's rules: a stock car as a
+    // dealer sells it (paint index clamped to the model's list), not paid for and not counted
+    // as a prize; the first car becomes the ride car. -1 when the garage is full or the car
+    // unknown. remove_car takes a car out without selling it (the ride car leaves none).
+    int add_car(const std::string& car, int paint);
+    void remove_car(int index);
     // A fresh garage car with stock parts and settings (not added).
     std::optional<GarageCar> make_car(const std::string& car) const;
 

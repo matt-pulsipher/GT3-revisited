@@ -227,6 +227,18 @@ std::u32string decode_game_text(ByteSpan s, const JisTable* jis) {
 
 std::string game_text_to_utf8(ByteSpan s, const JisTable* jis) { return utf8_encode(decode_game_text(s, jis)); }
 
+std::string game_text_for_ui(std::string_view s, const JisTable* jis) {
+    std::string out;
+    for (char32_t c : decode_game_text(ByteSpan(reinterpret_cast<const u8*>(s.data()), s.size()), jis)) {
+        if (c >= 0xFF01 && c <= 0xFF5E) c -= 0xFEE0; // full-width ASCII
+        else if (c == 0x2010 || c == 0x2015 || c == 0x2212 || c == 0x30FB) c = '-';
+        else if (c == 0x3000) c = ' ';
+        else if (c > 0x17F && !(c >= 0x2013 && c <= 0x2026)) c = '?'; // (dashes, quotes, ellipsis: Latin fonts have them)
+        utf8_append(out, c);
+    }
+    return out;
+}
+
 namespace {
 
 // The bytes of the first `chars` characters (all of them when fewer); `count` gets how many.

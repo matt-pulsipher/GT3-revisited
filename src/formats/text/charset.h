@@ -73,6 +73,10 @@ std::string game_text_to_utf8(ByteSpan s, const JisTable* jis);
 inline std::string game_text_to_utf8(std::string_view s, const JisTable* jis) {
     return game_text_to_utf8(ByteSpan(reinterpret_cast<const u8*>(s.data()), s.size()), jis);
 }
+// Game text for our own screens' Latin font (UTF-8): the full-width forms the names use for ASCII
+// as ASCII, their dashes and middle dot as '-' and the ideographic space as a space (a car's
+// "V-spec" is one of those dashes); other characters outside Latin-1 / Latin Extended-A as '?'.
+std::string game_text_for_ui(std::string_view s, const JisTable* jis);
 
 // Game text's characters: a byte below 0x80 is one, every other byte starts a two-byte one
 // (stops at the first NUL like the renderer). game_text_prefix keeps the first `chars`

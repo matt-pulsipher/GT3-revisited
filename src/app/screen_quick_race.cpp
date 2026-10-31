@@ -21,13 +21,12 @@
 // arcade difficulty and course.
 
 #include "app/app.h"
+#include "app/gt_mode_titles.h"
 #include "app/online_pickers.h"
 #include "app/screen_race.h"
 #include "app/screen_registry.h"
 #include "app/ui.h"
 #include "base/log.h"
-#include "formats/menu/mbl.h"
-#include "formats/menu/pmb.h"
 #include "game/data/car_database.h"
 #include "game/gt_mode.h"
 #include "game/language_rules.h"
@@ -60,50 +59,6 @@ std::string ascii(const std::string& s) {
 }
 
 bool starts(const std::string& s, const char* p) { return s.rfind(p, 0) == 0; }
-
-// The titles the GT Mode menus show for their items: every menu/gt_mode.mbl item with a
-// focus layer (MblItem::str80) whose layout (the page in menu/<lang>/gt_mode<N>.pmb, that layer)
-// holds a title text - the league pages' "event_text" widgets ("Sunday Cup", "Seattle 100
-// Miles") and the licence pages' "license_title<n>" ("Practical Cornering I"). Keyed by the
-// page the item opens (a series page, "r/beginner/gsunday_e"), else by the item (a test,
-// "L0B0001").
-std::map<std::string, std::string> game_menu_titles(const Vfs& vfs, const std::string& lang) {
-    std::map<std::string, std::string> out;
-    std::optional<Bytes> mb = vfs.read("menu/gt_mode.mbl");
-    if (!mb) return out;
-    try {
-        menu::MblFile mbl = menu::MblFile::parse(*mb);
-        std::map<int, std::optional<menu::PmbFile>> pmbs;
-        for (const menu::MblPage& p : mbl.pages) {
-            if (!starts(p.name, "r/") && !starts(p.name, "lc/")) continue;
-            int n = menu::flow::pmb_number(p);
-            if (!pmbs.count(n)) {
-                std::optional<Bytes> b = vfs.read("menu/" + lang + "/gt_mode" + std::to_string(n) + ".pmb");
-                pmbs[n] = b ? std::optional<menu::PmbFile>(menu::PmbFile::parse(*b)) : std::nullopt;
-            }
-            const std::optional<menu::PmbFile>& pmb = pmbs[n];
-            int pi = pmb ? pmb->find_page(p.name) : -1;
-            if (pi < 0) continue;
-            const menu::Page& page = pmb->pages[size_t(pi)];
-            for (const menu::MblItem& it : p.items) {
-                if (it.str80.empty()) continue;
-                for (const menu::Layer& l : page.layers) {
-                    if (l.name != it.str80) continue;
-                    std::string title;
-                    for (const menu::Element& w : l.widgets)
-                        if (w.text && w.widget_class == "event_text") title = w.text->text;
-                    for (const menu::Element& e : l.elements)
-                        if (e.text && starts(e.name, "license_title")) title = e.text->text;
-                    title = ascii(title);
-                    if (!title.empty()) out[it.link.empty() ? it.name : it.link] = title;
-                }
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG_WARN("Quick race: menu titles: %s", e.what());
-    }
-    return out;
-}
 
 enum class Kind { Race, Arcade, License, Machine, TimeAttack };
 
@@ -300,24 +255,8 @@ private:
         };
         // GT Mode leagues: the series in the order of their league page (gt_mode.mbl), each
         // race as "<series> - Race n" ("Round n" in a championship).
-        static const std::pair<const char*, const char*> kTiers[] = {
-            {"beginner", "Beginner League"}, {"amateur", "Amateur League"}, {"pro", "Professional League"},
-            {"dirt", "Rally Events"},        {"end", "Endurance Races"}};
-        std::vector<const game::RaceSeries*> ordered;
-        try {
-            if (std::optional<Bytes> mb = app.vfs()->read("menu/gt_mode.mbl")) {
-                menu::MblFile mbl = menu::MblFile::parse(*mb);
-                for (const menu::MblPage& p : mbl.pages)
-                    for (const menu::MblItem& it : p.items)
-                        for (const game::RaceSeries& s : cat.series)
-                            if (s.page == it.link && std::find(ordered.begin(), ordered.end(), &s) == ordered.end())
-                                ordered.push_back(&s);
-            }
-        } catch (const std::exception&) {
-        }
-        for (const game::RaceSeries& s : cat.series) // any the league pages do not name
-            if (std::find(ordered.begin(), ordered.end(), &s) == ordered.end()) ordered.push_back(&s);
-        for (const auto& [tier, title] : kTiers) {
+        const std::vector<const game::RaceSeries*> ordered = ordered_series(*app.vfs(), cat);
+        for (const auto& [tier, title] : kLeagues) {
             Category c{title, {}};
             for (const game::RaceSeries* s : ordered) {
                 if (s->tier != tier) continue;
@@ -342,7 +281,7 @@ private:
                     for (const std::string& code : l->tests) {
                         if (!playable(code)) continue;
                         const data::Event* ev = db_.event(code);
-                        std::string name = license_label(code);
+                        std::string name = license_test_label(code);
                         if (titles.count(code)) name += "  " + titles[code];
                         // The test's car in the game's language (gt_mode §21, docs/dev/GT_MODE.md "Language").
                         add(c, {code, code, name, Kind::License, {},
@@ -399,13 +338,6 @@ private:
     }
 
     // "L0B0003" -> "B-3", "LIA0007" -> "IA-7", "L0R0001" -> "R-1".
-    static std::string license_label(const std::string& code) {
-        if (code.size() < 7) return code;
-        std::string cls = code.substr(1, 2);
-        if (cls[0] == '0') cls = cls.substr(1);
-        return cls + "-" + std::to_string(std::atoi(code.substr(3).c_str()));
-    }
-
     static std::string arcade_code(const std::string& cls, int level) {
         static const char kLevel[] = "ENHP";
         std::string code = std::string("A") + kLevel[std::clamp(level, 0, 3)];

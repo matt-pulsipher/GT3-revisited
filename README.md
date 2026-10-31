@@ -125,6 +125,7 @@ game:
 | Time trial | any car on any course; saved replays |
 | Movie theater | the game's movies |
 | Car database | specs, torque curves, upgrades and events |
+| Save editor | change a GT Mode save (below) |
 | Change disc image... | recent discs, or browse |
 | Developer options | asset browser, viewers and test screens for working on the project |
 | Quit | |
@@ -209,6 +210,16 @@ day, credits, cars and completion, and let you start a new game, save under a
 new name or over a save, rename, copy and delete. The game being played
 autosaves after every race and continues at the next launch. A save that
 cannot be read (damaged, or from a newer version) is never written over.
+
+**Save editor** (main menu) changes a save of the disc's region: credits,
+prize money, the day, races and wins, the endings seen; the garage (add any car
+of the game in any paint, remove a car, choose the active car, set a car's
+paint, odometer, engine, oil and dirt); each license test's medal; each
+race's best place and the championships won; the arcade's courses and car
+levels. Numbers change with Left/Right or a number pad (keyboard digits work
+too). Nothing is written until **Save** (Start); leaving with changes asks
+first. The game being played takes the changes at once. Medals, results and
+cars are set as chosen: the prize cars they would have won are not given.
 
 **Saves from and to the PS2 original:** on the Load game and File Operation
 pages, "FROM A FILE" imports a save from anywhere (a GT3 Revisited `.sav` or

@@ -750,6 +750,15 @@ its own) save a given state as a new or existing save without touching the runni
 game: the championship result quick menu's Save game (`make_game_save_screen`,
 `begin_race_game_save`: the game with the round just finished recorded) uses it.
 
+The save editor (main menu, `app/screen_save_editor.cpp`, `gt3r --screen saveeditor`) is
+ours: Settings-style pages over a save of the library (Career, Garage, Licenses, Races,
+Arcade). Its changes (`game/save_edit.h`, `GtMode::add_car` / `remove_car`) keep the state
+consistent the way the game does (wins never exceed races, a medal's best time earns that
+medal, the licence card follows the licence, the ride car follows a removal) but play
+nothing: no prize car or prize money is given for a result set by hand. It edits
+the save being played as the session has it (`editable_save`: it can be a race ahead of
+its file), and `store_edited_save` writes the file and hands the running game the edit.
+
 ### Save format
 
 UTF-8 text, written atomically (`.tmp` + rename):
