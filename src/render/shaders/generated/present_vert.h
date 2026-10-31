@@ -113,4 +113,22 @@ inline constexpr char present_vert_msl[] =
     "}\n"
     "\n";
 
+// GLSL ES 3.00 (OpenGL ES 3.0: render/gpu_gles.*), with its uniform block and sampler names in slot order.
+inline constexpr char present_vert_gles[] =
+    "#version 300 es\n"
+    "\n"
+    "out vec2 v_uv;\n"
+    "\n"
+    "void main()\n"
+    "{\n"
+    "    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+    "    v_uv = p;\n"
+    "    gl_Position = vec4((p.x * 2.0) - 1.0, 1.0 - (p.y * 2.0), 0.0, 1.0);\n"
+    "    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;\n"
+    "    gl_Position.y = -gl_Position.y;\n"
+    "}\n"
+    "\n";
+inline constexpr char present_vert_gles_blocks[] = "";
+inline constexpr char present_vert_gles_samplers[] = "";
+
 } // namespace gt3r::render::shaders

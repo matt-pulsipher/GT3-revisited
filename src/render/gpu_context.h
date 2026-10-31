@@ -10,12 +10,14 @@
 // wraps the GPU texture, and draws the UI on top. Screenshots via
 // SDL_RenderReadPixels therefore include the 3D layer.
 //
-// Requires SDL >= 3.4 (SDL_CreateGPURenderer, GPU texture wrapping). With
-// older SDL, or when no backend supports our shaders, create() returns
+// Requires SDL >= 3.4 (SDL_CreateGPURenderer, GPU texture wrapping). Where SDL_GPU
+// has no backend for the GPU, the OpenGL ES device takes its place (gpu_gles.h,
+// GT3R_GLES builds). With older SDL, or when neither works, create() returns
 // nullptr and the app runs 2D-only.
 
 #include "base/bytes.h"
-#include "xr/xr_session.h" // VR builds (GT3R_XR)
+#include "render/gpu_gles.h" // the OpenGL ES fallback (GT3R_GLES): routes the SDL_GPU calls
+#include "xr/xr_session.h"   // VR builds (GT3R_XR)
 
 #include <SDL3/SDL.h>
 
@@ -64,6 +66,8 @@ struct GpuOptions {
     bool debug = false; // backend validation layers
     float render_scale = 1.0f; // 3D resolution relative to the display (0.5..4); the UI stays native
     int anisotropy = 4;        // anisotropic texture filtering: 1 (off), 2, 4, 8 or 16
+    bool gles = false;         // OpenGL ES first, SDL_GPU after ([video] gpu = gles; GT3R_GLES builds)
+    bool angle = true;         // Windows: OpenGL ES through ANGLE when bundled (off: gpu = gles_driver)
     // VR builds (GT3R_XR): create the device through the headset's OpenXR runtime when there is
     // one; the 2D renderer then draws offscreen (canvases of xr::Session) instead of the window.
     bool xr = false;
@@ -87,6 +91,8 @@ public:
     const xr::Session::DeviceRequest& xr_request() const { return xr_request_; }
 #endif
     const char* driver_name() const { return SDL_GetGPUDeviceDriver(device_); }
+    // The OpenGL ES device (gpu_gles.h) rather than SDL_GPU's.
+    bool gles() const { return gles_; }
 
     // Offscreen 3D formats.
     static constexpr SDL_GPUTextureFormat kColorFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -116,7 +122,8 @@ public:
     SDL_GPUGraphicsPipeline* pipeline(const PipelineKey& key);
     // Creates the pipelines races and menus draw with on a background thread, ahead of their
     // first use: one takes ~65 ms on a Galaxy A15 (Mali), a stutter the first time each blend /
-    // cull / write combination appears in a session.
+    // cull / write combination appears in a session. Not on OpenGL ES (its objects belong to
+    // the context, on the main thread).
     void warm_pipelines();
     // no_mips: the full-size image only (GS MXL 0), linear, no anisotropy.
     SDL_GPUSampler* sampler(bool clamp_u, bool clamp_v, bool no_mips = false) const {
@@ -150,7 +157,11 @@ private:
     void stop_warming();
     void release_pipelines();
 
+    bool open_sdl_gpu(SDL_Window* window, const GpuOptions& options);
+    bool open_gles(SDL_Window* window, const GpuOptions& options);
+
     SDL_GPUDevice* device_ = nullptr;
+    bool gles_ = false;
     bool anisotropy_ = true; // the device was created with anisotropic filtering
     int aniso_level_ = 4;    // the samplers' anisotropy (when anisotropy_)
 #if GT3R_XR

@@ -6,6 +6,7 @@
 // the key list.
 
 #include "app/app.h"
+#include "app/gles_probe.h"
 #include "app/screen_online.h"
 #include "app/screen_registry.h"
 #include "app/updates.h"
@@ -639,15 +640,65 @@ private:
         detail.enabled = scale.enabled;
         if (!detail.enabled) detail.desc = msaa.desc;
 
-        bool gpu_cfg = cfg.get("video", "gpu").value_or("1") != "0";
+        // [video] gpu = auto | gles | gles_driver | 0 (App::init)
+        const std::string gpu_cfg = to_lower(cfg.get("video", "gpu").value_or("auto"));
+        const bool gpu_off = gpu_cfg == "0" || gpu_cfg == "off";
+#if GT3R_GLES
+        // Automatic, each OpenGL ES that opens on this computer (app/gles_probe.h: they appear
+        // once the probes answer, in about a second) and Off; the one the setting names always,
+        // so the row shows it.
+        std::vector<std::string> gpu_values = {"auto"}, gpu_labels = {"Automatic"};
+        bool chosen_missing = false; // the setting names an OpenGL ES that does not open here
+        auto offer = [&](const char* value, const char* label, GlesKind kind) {
+            const std::optional<bool> opens = gles_opens(kind, app.gpu());
+            if (gpu_cfg == value) chosen_missing = opens == false;
+            if (opens.value_or(false) || gpu_cfg == value) gpu_values.push_back(value), gpu_labels.push_back(label);
+        };
+#ifdef SDL_PLATFORM_WINDOWS
+        offer("gles", "OpenGL ES (ANGLE)", GlesKind::Angle);
+        offer("gles_driver", "OpenGL ES (driver)", GlesKind::Driver);
+        const char* gpu_desc = "Automatic: SDL_GPU (Vulkan), or OpenGL ES on GPUs without Vulkan. OpenGL ES: tried "
+                               "first, through ANGLE (Direct3D 11) or the graphics driver's own. "
+                               "Off: 2D-only fallback for systems without a working GPU driver.";
+#else
+        offer("gles", "OpenGL ES", GlesKind::Driver);
+        const char* gpu_desc = "Automatic: SDL_GPU (Vulkan), or OpenGL ES on GPUs without Vulkan. OpenGL ES: tried "
+                               "first. Off: 2D-only fallback for systems without a working GPU driver.";
+#endif
+        gpu_values.push_back("0");
+        gpu_labels.push_back("Off");
+        int gpu_idx = gpu_off ? int(gpu_values.size()) - 1 : 0;
+        for (size_t i = 1; i + 1 < gpu_values.size(); ++i)
+            if (gpu_cfg == gpu_values[i]) gpu_idx = int(i);
+        Row& gpu = choice("3D renderer", gpu_desc, gpu_labels, gpu_idx, [a, gpu_values](int i) {
+            a->config().set("video", "gpu", gpu_values[size_t(i)]);
+            a->save_config();
+        });
+        // A chosen OpenGL ES that is not the one running (SDL_GPU, or the other kind on Windows).
+        const bool gles_chosen = gpu_cfg == "gles" || gpu_cfg == "gles_driver";
+        const bool gles_running = app.gpu() && app.gpu()->gles();
+        gpu.restart = gpu_off != (app.gpu() == nullptr) || (gles_chosen && app.gpu() && !gles_running);
+#ifdef SDL_PLATFORM_WINDOWS
+        if (gles_chosen && gles_running && render::gles::angle() != (gpu_cfg == "gles")) gpu.restart = true;
+#endif
+        if (chosen_missing) {
+            gpu.restart = false;
+            gpu.desc = "Not available on this computer: the game uses the next renderer that works.";
+        }
+#else
         Row& gpu = toggle("3D renderer (SDL_GPU)", "Off: 2D-only fallback for systems without a working GPU driver.",
-                          gpu_cfg, [a](bool v) {
-                              a->config().set("video", "gpu", v ? "1" : "0");
+                          !gpu_off, [a](bool v) {
+                              a->config().set("video", "gpu", v ? "auto" : "0");
                               a->save_config();
                           });
-        gpu.restart = gpu_cfg != (app.gpu() != nullptr);
+        gpu.restart = gpu_off != (app.gpu() == nullptr);
+#endif
         if (gpu.restart) gpu.desc = "Takes effect after restarting GT3 Revisited.";
-        if (app.gpu()) info("Graphics driver", app.gpu()->driver_name());
+#if GT3R_GLES
+        if (app.gpu() && app.gpu()->gles()) info("Graphics driver", render::gles::description());
+        else
+#endif
+            if (app.gpu()) info("Graphics driver", app.gpu()->driver_name());
         info("2D renderer", SDL_GetRendererName(app.renderer()));
     }
 

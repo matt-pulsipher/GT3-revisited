@@ -34,7 +34,7 @@ std::unique_ptr<GpuContext> GpuContext::create(SDL_Window* window, const GpuOpti
 #endif
 }
 
-bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
+bool GpuContext::open_sdl_gpu(SDL_Window* window, const GpuOptions& options) {
 #if GT3R_HAVE_GPU_RENDERER
     // Ask only for the optional Vulkan features the renderer uses. SDL requests clip distances,
     // depth clamping and first-instance indirect draws by default, and rejects every GPU without
@@ -98,9 +98,52 @@ bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
     renderer_ = SDL_CreateGPURenderer(device_, target);
     if (!renderer_) {
         LOG_WARN("SDL_CreateGPURenderer failed: %s", SDL_GetError());
+        SDL_DestroyGPUDevice(device_);
+        device_ = nullptr;
         return false;
     }
-    if (target) SDL_SetRenderVSync(renderer_, options.vsync ? 1 : 0);
+    return true;
+#else
+    (void)window;
+    (void)options;
+    return false;
+#endif
+}
+
+// The OpenGL ES device (gpu_gles.h): its renderer is SDL's GLES2 one, with the context.
+bool GpuContext::open_gles(SDL_Window* window, const GpuOptions& options) {
+#if GT3R_GLES
+    device_ = gles::create_device(options.debug, options.angle);
+    renderer_ = SDL_CreateGPURenderer(device_, window);
+    if (!renderer_) {
+        LOG_WARN("No OpenGL ES renderer: %s", SDL_GetError());
+        SDL_DestroyGPUDevice(device_);
+        device_ = nullptr;
+        return false;
+    }
+    gles_ = true;
+    return true;
+#else
+    (void)window;
+    (void)options;
+    return false;
+#endif
+}
+
+bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
+#if GT3R_HAVE_GPU_RENDERER
+    // SDL_GPU first, OpenGL ES when it has no backend for this GPU; [video] gpu = gles turns
+    // the order round.
+    bool open = false;
+#if GT3R_GLES
+    if (options.gles) open = open_gles(window, options);
+#endif
+    if (!open) open = open_sdl_gpu(window, options);
+#if GT3R_GLES
+    if (!open && !options.gles) open = open_gles(window, options);
+#endif
+    if (!open) return false;
+    if (renderer_ && SDL_GetRenderWindow(renderer_)) SDL_SetRenderVSync(renderer_, options.vsync ? 1 : 0);
 
     vs_ = make_shader(true);
     fs_ = make_shader(false);
@@ -122,8 +165,9 @@ bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
     white_ = up.texture_rgba(1, 1, &white, false);
     if (!white_ || !up.submit()) return false;
 
-    LOG_INFO("3D renderer: SDL_GPU %s, MSAA %dx, anisotropy %dx, depth format %d, render scale %.2f", driver_name(),
-             msaa(), anisotropy(), int(depth_format_), double(render_scale_));
+    LOG_INFO("3D renderer: %s%s, MSAA %dx, anisotropy %dx, depth format %d, render scale %.2f",
+             gles_ ? "OpenGL ES" : "SDL_GPU ", gles_ ? "" : driver_name(), msaa(), anisotropy(), int(depth_format_),
+             double(render_scale_));
     return true;
 #else
     (void)window;
@@ -149,6 +193,23 @@ GpuContext::~GpuContext() {
 SDL_GPUShader* GpuContext::make_shader(bool vertex) {
     SDL_GPUShaderCreateInfo info{};
     SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device_);
+    SDL_PropertiesID props = 0;
+#if GT3R_GLES
+    if (formats & SDL_GPU_SHADERFORMAT_PRIVATE) {
+        // OpenGL ES (gpu_gles.h): GLSL ES source, with its block and sampler names.
+        props = SDL_CreateProperties();
+        SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_UNIFORM_BLOCKS,
+                              vertex ? shaders::model_vert_gles_blocks : shaders::model_frag_gles_blocks);
+        SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_SAMPLERS,
+                              vertex ? shaders::model_vert_gles_samplers : shaders::model_frag_gles_samplers);
+        info.props = props;
+        info.format = SDL_GPU_SHADERFORMAT_PRIVATE;
+        const char* src = vertex ? shaders::model_vert_gles : shaders::model_frag_gles;
+        info.code = reinterpret_cast<const Uint8*>(src);
+        info.code_size = std::strlen(src);
+        info.entrypoint = "main";
+    } else
+#endif
     if (formats & SDL_GPU_SHADERFORMAT_SPIRV) {
         info.format = SDL_GPU_SHADERFORMAT_SPIRV;
         info.code = vertex ? shaders::model_vert_spv : shaders::model_frag_spv;
@@ -169,6 +230,7 @@ SDL_GPUShader* GpuContext::make_shader(bool vertex) {
     info.num_uniform_buffers = vertex ? 2 : 1; // vertex: transforms, GT3 per-vertex lighting
     SDL_GPUShader* s = SDL_CreateGPUShader(device_, &info);
     if (!s) LOG_WARN("Shader creation failed: %s", SDL_GetError());
+    if (props) SDL_DestroyProperties(props);
     return s;
 }
 
@@ -304,6 +366,7 @@ std::vector<PipelineKey> warm_keys() {
 } // namespace
 
 void GpuContext::warm_pipelines() {
+    if (gles_) return;
     stop_warming();
     warm_ = true;
     warm_stop_ = false;

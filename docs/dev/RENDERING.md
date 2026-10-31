@@ -1,8 +1,10 @@
 # Rendering
 
 The 3D renderer lives in `src/render/` and is built on **SDL_GPU**: Metal on
-macOS/iOS, Vulkan on Linux, Android and Windows. The 2D UI (`Ui`,
-`SDL_Renderer`) keeps working unchanged on top of it.
+macOS/iOS, Vulkan on Linux, Android and Windows. PCs whose GPU has no Vulkan
+get it through our own implementation of the SDL_GPU calls we use on OpenGL ES
+3.0 ([OpenGL ES](#opengl-es)). The 2D UI (`Ui`, `SDL_Renderer`) keeps working
+unchanged on top of it.
 
 ## Frame structure
 
@@ -60,10 +62,11 @@ take a pinned commit of SDL's 3.6 development branch ([VR](VR.md#building)).
 2D-only, when:
 
 - SDL is older than 3.4;
-- no GPU backend accepts SPIR-V or MSL (e.g. a Windows PC without Vulkan
-  drivers: we don't ship DXIL yet);
+- no GPU backend accepts SPIR-V or MSL (e.g. a PC without Vulkan drivers: we
+  don't ship DXIL yet), and OpenGL ES 3.0 is not there either ([OpenGL ES](#opengl-es));
 - device, renderer, shader or sampler creation fails;
-- the user disabled it: `[video] gpu=0` in `config.ini`, or `--no-gpu`.
+- the user disabled it: `[video] gpu = 0` in `config.ini` (Settings → Display →
+  3D renderer → Off), or `--no-gpu`.
 
 `App::gpu()` is nullptr in that case. Screens must check it.
 The model viewer (`ModelViewerScreen`) shows the list and statistics with a
@@ -77,13 +80,13 @@ game with a message.
 
 | `config.ini [video]` | Command line | Default | Effect |
 |---|---|---|---|
-| `gpu` | `--no-gpu` | 1 | Use the SDL_GPU path |
+| `gpu` | `--no-gpu`, `--gles`, `--gles-driver` | auto | Settings → Display → 3D renderer. `auto`: SDL_GPU, then OpenGL ES where built in (Windows, Linux); `gles`: OpenGL ES first; `gles_driver`: OpenGL ES first, on Windows the driver's rather than ANGLE; `0`: 2D only. Takes effect after a restart |
 | `msaa` | `--msaa N` | 4 (desktop), 2 (Android: phones, tablets, Quest) | 1/2/4/8, the nearest the device offers: a missing 2x becomes 4x (Mali GPUs offer 1x, 4x and 8x only; on a Galaxy A15 4x cost about 5 points of dynamic resolution), other missing levels the next lower. Phones default to 2x: on a Moto G Power 2024 (Trial Mountain, 6 cars, fixed 60% scale) 4x cost about 19% of the frame and 2x about 3% vs off, and with 4x dynamic resolution sat at its 50% floor. See `platform::default_msaa` |
 | `vsync` | | 1 | Present with vsync |
 | `aspect` | | 16:9 | Settings → Display → Aspect ratio: the game area of the game's own screens (`Screen::follows_aspect`: its menus, races, movies), 360 UI units tall and 640 (`16:9`), 480 (`4:3`) or the window's shape (`fill`, 480 to 1440 wide) across, letterboxed into the window (`App::layout_ui`, `platform::game_width`). Our own screens keep the 640×360 space or the whole window. 3D views are Hor+ (the vertical FOV is fixed). The race HUD keeps GT3's 640×448 layout in the middle and pushes the elements GT3 pushes in its 16:9 option to the game area's sides: 106.667 frame units on 16:9, more with `fill`, none at 4:3 (GT3's 4:3 layout). Always 16:9 in VR, where Settings has no such row |
 | `limit_60fps` | | off | `on` (Settings → Display → Limit to 60 fps): on 120 Hz and faster displays draw every Nth refresh (120 Hz → 60 fps, 144 → 72) through SDL's main loop rate (`App::apply_frame_limit`); off: every refresh |
 | `full_car_detail` | | on (desktop), off (Android, iOS) | Settings → Display → Always show full car detail: every car at LOD 0 at any distance (`race::car_lod`, `App::full_car_detail`); off: GT3's LODs by distance. On a Galaxy A15 (Trial Mountain, 6 cars) on drew 32% more triangles and 25% more draw calls: +1.4 ms a frame at a fixed 70% scale with `gpusync=1` (+0.7 ms of it CPU), and in normal play about 1.5 points less dynamic resolution at the same 45 fps |
-| `gpu_debug` | | 0 | Backend validation layers |
+| `gpu_debug` | | 0 | Backend validation layers (OpenGL ES: GL error checks kept) |
 | `anisotropy` | | 4 | 1 (off), 2, 4, 8 or 16: the mipmapped samplers' anisotropy (not the `no_mips` ones). A GPU without anisotropic filtering gets none (`GpuContext::anisotropy_supported`) |
 | `render_scale` | `--render-scale X` | auto | 0.5..4.0: 3D views render at this fraction of their on-screen pixel size and are scaled (linear) when composited; UI and HUD stay native. `auto` = 1.0 on desktop; on Android/iOS about 900 lines of the 16:9 game area (e.g. 0.63 on a 2560×1600 tablet, 0.70 on a 2856×1280 phone). Above 1 (supersampling) within `platform::supersample_limit`: 16384 pixels a side per view, the largest 2D texture SDL_GPU assumes (400% up to 4096 pixels across, 320% of 5120×2880); no memory cap, and like any 3D resolution it costs frame rate unless dynamic resolution is on. Supersampled targets are not cycled: SDL keeps a cycled target once per frame in flight, and 400% of 3840×2160 with 4x MSAA then took over 20 GB, which SDL's Vulkan backend put in system memory (it only warns, once per device) on a 10 GB RTX 3080: about a frame a second. Uncycled (about 5 GB), the 3080 draws it in 29.9 ms a frame, 10.3 ms with MSAA off; an M4 Pro draws 400% of 2560×1440 at 48–55 fps (42–46 cycled). A picture over twice the on-screen size is halved first by a linear `SDL_BlitGPUTexture` (each pixel a 2×2 mean), so the composite's linear filter misses no texel. A view whose supersampled targets cannot be created steps down to 75% of that size per failed frame, at most to native. See `src/platform/render_scale.*` |
 | `dynamic_resolution` | | on (phones, tablets), off (desktop) | Settings → Display → Dynamic resolution: `render_scale` becomes the ceiling (with `auto`, the screen's full resolution up to 1440 lines of the 16:9 game area, `platform::dynamic_ceiling`; it starts at the fixed `auto` size, or with `auto` where the last race's scale ended, `[video] dynamic_start`, saved when a race ends and when the app goes to the background and cleared when 3D resolution or dynamic resolution change; a manual 3D resolution always starts at its own value) and `render::DynamicScale` lowers the 3D scale in 5% steps (to 0.5) when frames miss the target while waiting on the GPU, and steps back up when they keep it. Target: 60 fps, or the first whole number of refreshes at or above 1/60 s with vsync (45 fps on 90 Hz). Judged each second; the 5 s after a load or pause are skipped. Calm on purpose (each change is a visible twitch, each missed refresh a judder): it steps down when frames keep missing a refresh (3 in a second) or are slow on average, skips the second after a step down, and steps up only after 5 s without a miss; a step up that misses is undone and not retried for 1, then 2, then 3 minutes. Off for `--shot`, `--render-scale` and VR. A Galaxy A15 on Tokyo R246 (6 cars): 50–75%, 42–49 fps |
@@ -98,6 +101,7 @@ the Android Gradle build need no shader tools:
 ```
 GLSL --glslangValidator--> SPIR-V   (Vulkan)
 SPIR-V --spirv-cross--msl-> MSL     (Metal, compiled from source at runtime)
+SPIR-V --spirv-cross--es--> GLSL ES 3.00 (OpenGL ES 3.0: gpu_gles.*)
 ```
 
 To regenerate after editing a shader:
@@ -107,8 +111,11 @@ brew install glslang spirv-cross     # or the LunarG Vulkan SDK on Linux/Windows
 python3 src/render/shaders/compile_shaders.py
 ```
 
-This writes `src/render/shaders/generated/{model,present}_{vert,frag}.h`: a 4-byte
-aligned SPIR-V byte array and the MSL source (entry point `main0`).
+This writes `src/render/shaders/generated/model_{vert,frag}.h`: a 4-byte
+aligned SPIR-V byte array, the MSL source (entry point `main0`) and the GLSL ES
+source with its uniform block and sampler names in slot order (GLSL ES 3.00
+has no binding qualifiers, so `gpu_gles.cpp` binds them by name). The GLSL ES
+vertex shader flips y and remaps depth to GL's clip space.
 
 Binding conventions follow SDL_GPU's rules:
 
@@ -128,6 +135,83 @@ add D3D12 later:
    `t0/s0, space2` and `b0, space3`.
 2. Compile with `dxc -T vs_6_0/ps_6_0` and add `SDL_GPU_SHADERFORMAT_DXIL`
    to the device and `make_shader`.
+
+## OpenGL ES
+
+PCs whose GPU SDL_GPU cannot drive (no Vulkan driver: NVIDIA GeForce 400/500,
+Intel HD 2000–4000, AMD Radeon HD 2000–6000 and their laptop versions) get the
+3D renderer on OpenGL ES 3.0, the feature level of Direct3D 10 hardware.
+`src/render/gpu_gles.*` implements the SDL_GPU calls the renderer makes on it;
+builds with `GT3R_GLES` (Windows and Linux by default) include it.
+
+- **Routing.** `gpu_gles.h` maps those SDL_GPU calls onto `gpu_gles.cpp`
+  (macros, so the renderer's code is the same on every backend), which hands
+  each one on to SDL unless the OpenGL ES device is in use (`gles::active()`).
+  `GpuContext::init` tries SDL_GPU, then OpenGL ES; `[video] gpu = gles`
+  (`--gles`) turns the order round.
+- **Context.** SDL's GLES2 2D renderer owns the OpenGL ES 3.0 context; 3D views
+  render into GL textures it composites
+  (`SDL_PROP_TEXTURE_CREATE_OPENGLES2_TEXTURE_NUMBER`), as on SDL_GPU. Every
+  call that touches GL first flushes the 2D renderer (which also drops its
+  cached GL state) and leaves the state it expects. On a window that has no GL
+  yet, SDL sets it up and asks for OpenGL ES 2.0, so a 2.0 context gets one
+  more try with 3.0. The GL functions come from the context
+  (`SDL_GL_GetProcAddress`, with the Khronos headers in `third_party/khronos`).
+  Unless `gpu_debug` is on, the context skips GL error checks where it offers
+  that (`SDL_GL_CONTEXT_NO_ERROR`): less work per call, mostly in ANGLE.
+- **Windows: ANGLE.** With `libEGL.dll` and `libGLESv2.dll` next to `gt3r.exe`,
+  SDL takes ANGLE (OpenGL ES on Direct3D 11, on any Direct3D 10.1 GPU) over the
+  driver's own OpenGL ES (`SDL_HINT_OPENGL_ES_DRIVER`), and ANGLE draws
+  straight into the window's swap chain instead of copying each frame there
+  (`EGL_ANGLE_experimental_present_path`). Settings → Display → 3D renderer →
+  OpenGL ES (driver) (`[video] gpu = gles_driver`, `--gles-driver`) asks for the
+  driver's instead; SDL still uses ANGLE for a driver without OpenGL ES 3.0
+  contexts. `SDL_OPENGL_ES_DRIVER=0` or `1` in the environment overrides both. Release packages ship it: CI builds
+  ANGLE with vcpkg's `angle` port, and `-DGT3R_ANGLE_DIR=<folder>` copies a
+  build next to the game and into the package. Without ANGLE, NVIDIA and AMD
+  drivers offer OpenGL ES 3.0 contexts themselves (NVIDIA from GeForce 400 on);
+  older Intel ones do not.
+- **Choices.** Settings → Display → 3D renderer lists the kinds of OpenGL ES
+  that open on the computer (`src/app/gles_probe.*`): the one in use, and each
+  other kind tried in a copy of the game started with `--probe-3d angle|driver`
+  when the Display page first opens (it opens the device on a hidden window as
+  a start would, and exits 0 when that works). A copy, because one process can
+  set up only one kind of OpenGL, and a driver that crashes or hangs there
+  takes only the copy down (no answer in 10 s counts as no). The choices appear
+  once the copies answer, in about a second; the setting's own choice stays
+  listed, marked as not available, when it does not open.
+- **Laptops with two GPUs.** `gt3r.exe` exports `NvOptimusEnablement` and
+  `AmdPowerXpressRequestHighPerformance`, so OpenGL ES runs on the fast GPU
+  rather than the integrated one (SDL_GPU picks it itself).
+- **Conventions.** Render targets keep SDL_GPU's layout (top row first) and
+  depth range: the GLSL ES vertex shaders flip y and remap z from [0, w] to
+  [-w, w], and the backend flips the front face to match. The remap gives up
+  the reversed depth's extra precision far away.
+- **Passes.** Copy passes and blits (`glBlitFramebuffer`, linear for the
+  supersampled picture's halving) run immediately. Render passes are recorded
+  and run at `SDL_EndGPURenderPass`: all uniform data pushed for the pass goes
+  up in one buffer upload (bound per draw with `glBindBufferRange`), and the
+  draws replay with only the state that changes. With base vertex draws
+  (OpenGL ES 3.2, `OES_` or `EXT_draw_elements_base_vertex`) the vertex
+  attributes stay put; without, their offsets move by the draw's vertex offset.
+  Multisampled targets are renderbuffers resolved with `glBlitFramebuffer`
+  (into a cube face for the environment map). Fences wait for the whole GPU
+  (`glFinish`); only screenshots and readbacks use them.
+- **One thread.** GL objects belong to the context, on the main thread, so
+  `GpuContext::warm_pipelines` builds nothing ahead on OpenGL ES.
+
+The log names the context: `OpenGL ES: <GL_VERSION>; <GL_RENDERER>`, e.g.
+`ANGLE (NVIDIA, ... Direct3D11 vs_5_0 ps_5_0, ...)` for ANGLE, and so does
+Settings → Display → Graphics driver.
+
+Measured (2026-10-31, `--shot` runs of a 6-car Trial Mountain race, 1280×720,
+4x MSAA, vsync off): on an RTX 3080 with an i7-12700K, ANGLE and NVIDIA's own
+OpenGL ES 3.2 take the same 1.9–2.8 ms a frame (1.3–2.1 ms of it the scene
+draw on the CPU) and Vulkan 1.3–1.6 ms (0.7–1.0); on an Intel HD 520 (Mesa
+25.2) OpenGL ES takes 19–26 ms and Vulkan 25–28. The pictures match Vulkan's:
+0.2% of the pixels differ by more than 16 of 255, along the edges of
+alpha-tested foliage (texture sampling differs between the APIs), and none on
+the HD 520.
 
 ## Materials
 

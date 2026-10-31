@@ -111,10 +111,16 @@ bool App::init(int argc, char** argv) {
         if (d > 0.1f) SDL_SetWindowSize(window_, int(std::lround(1170 / d)), int(std::lround(540 / d)));
     }
     // Preferred: an SDL_GPU device shared by the 3D renderer and the 2D UI
-    // renderer. Fallback: a plain SDL_Renderer (native Metal/D3D/Vulkan/GLES
-    // backend) and no 3D. [video] gpu=0 or --no-gpu forces the fallback.
+    // renderer, or where SDL_GPU cannot drive the GPU, the OpenGL ES one
+    // (render/gpu_gles.h). Fallback: a plain SDL_Renderer (native Metal/D3D/
+    // Vulkan/GLES backend) and no 3D. [video] gpu = auto | gles (OpenGL ES
+    // first, --gles) | gles_driver (Windows: the same with the driver's OpenGL
+    // ES, not ANGLE, --gles-driver) | 0 (the fallback, --no-gpu).
     render::GpuOptions gpu_opts;
-    bool use_gpu = config_.get("video", "gpu").value_or("1") != "0";
+    const std::string gpu_cfg = to_lower(config_.get("video", "gpu").value_or("auto"));
+    bool use_gpu = gpu_cfg != "0" && gpu_cfg != "off";
+    gpu_opts.gles = gpu_cfg == "gles" || gpu_cfg == "gles_driver";
+    gpu_opts.angle = gpu_cfg != "gles_driver";
     gpu_opts.msaa = platform::default_msaa(platform::is_mobile());
     if (auto v = config_.get("video", "msaa")) gpu_opts.msaa = std::atoi(v->c_str());
     if (auto v = config_.get("video", "anisotropy")) gpu_opts.anisotropy = std::atoi(v->c_str());
@@ -125,6 +131,8 @@ bool App::init(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--no-gpu") use_gpu = false;
+        else if (a == "--gles") gpu_opts.gles = true, gpu_opts.angle = true;
+        else if (a == "--gles-driver") gpu_opts.gles = true, gpu_opts.angle = false;
         else if (a == "--msaa" && i + 1 < argc) gpu_opts.msaa = std::atoi(argv[++i]);
         else if (a == "--render-scale" && i + 1 < argc)
             render_scale = platform::parse_render_scale(argv[++i]), render_scale_arg_ = true;

@@ -38,7 +38,8 @@ tests all link it.
 - **SDL3 is the only platform layer.** Windowing, gamepads/sensors/haptics,
   audio, file dialogs (including Android's Storage Access Framework, via
   `SDL_IOFromFile` on `content://` URIs) and GPU access. 3D rendering uses
-  `SDL_GPU` (Metal, Vulkan), sharing one device with the 2D UI renderer; see
+  `SDL_GPU` (Metal, Vulkan), sharing one device with the 2D UI renderer, or on
+  PCs without Vulkan our OpenGL ES 3.0 implementation of it (`render/gpu_gles.*`); see
   [dev/RENDERING.md](dev/RENDERING.md). Requires SDL 3.4+.
 
 ## Threading

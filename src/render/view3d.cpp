@@ -196,7 +196,12 @@ SDL_Texture* View3D::wrap(SDL_Renderer* renderer, SDL_GPUTexture* texture, int w
     SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_ACCESS_NUMBER, SDL_TEXTUREACCESS_STATIC);
     SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_WIDTH_NUMBER, w);
     SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_HEIGHT_NUMBER, h);
-    SDL_SetPointerProperty(props, SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER, texture);
+#if GT3R_GLES
+    if (gles::active()) // SDL's GLES2 renderer takes the GL texture
+        SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_OPENGLES2_TEXTURE_NUMBER, gt3r_gl_texture_name(texture));
+    else
+#endif
+        SDL_SetPointerProperty(props, SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER, texture);
     t = SDL_CreateTextureWithProperties(renderer, props);
     SDL_DestroyProperties(props);
 #else
