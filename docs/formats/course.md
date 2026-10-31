@@ -55,7 +55,7 @@ present offset. Slot 0 is always 0, and slot 1 always starts at 0xC0.
 | 9, 13 | `GTM1` | 36, 40 | Wet-road reflection: slot 9 the scenery pre-mirrored below the road (drawn into a small buffer), slot 13 its alpha-only mask (`Vls0` in 10 and 14). US: route5 / route11 families, the L_circle tests; see docs/dev/RACE.md "Wet-road reflection" |
 | 21 | `GTM1` | 320 | Sky dome (centred on the camera, view rotation only, no fog). The only sky the race's main view draws |
 | 22 | `GTM1` | 304 | Distant backdrop (mountains, skyline) |
-| 23 | `GTM1` | 320 | Small sky dome drawn only into the cars' reflection map (translation removed), before slot 5 |
+| 23 | `GTM1` | 320 | Small sky dome drawn only into the cars' reflection map (translation removed), before slot 5. In `courses/EU/L_apricot1` its texture set is 0x80 zero bytes: the game loads it as a set without textures and binds none, so the GS keeps an earlier draw's texture. The cars then reflect no sky there (French, German, Italian, Spanish; UK English reads `courses/UK/`, whose dome is textured): we leave the dome out, so the map's black shows |
 | 24 | `GTM1` | 304 | Low-resolution sky dome (±50 m; trialmt: one 128×32 T4 texture vs slot 21's 1024×256 T8). Drawn only by the rear-view mirror, never in the main view |
 | 25 | – | 28 | Small table starting with a u32 1..7 |
 | 26 | `Tex1` | 316 | Extra texture set: the tyre smoke and dust puffs (four 32×64 frames; `src/race/tyre_smoke.*`) |

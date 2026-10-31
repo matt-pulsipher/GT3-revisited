@@ -351,6 +351,54 @@ TEST(course_animated_nodes_disc) {
     CHECK(changed == crowd[0].operands().size()); // every crowd moved on (15-30 frames a second)
 }
 
+// Every GTM1 model of every course file on the disc loads (every folder, every slot). The European
+// L_apricot1's small sky dome (slot 23) has a zeroed texture set: it builds without textures and
+// draws nothing, the UK copy draws (public issue 97: licence test IB-8 did not start in French,
+// German, Italian or Spanish).
+TEST(course_models_load_every_file_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    size_t files = 0, models = 0, failed = 0;
+    for (const auto& e : disc->volume().entries()) {
+        if (e.path.rfind("courses/", 0) != 0 || e.path == "courses/.list") continue; // .list: the folder's names
+        Bytes data = disc->volume().read(e);
+        CourseFile f = CourseFile::parse(data);
+        ++files;
+        for (int s = 0; s < kSlotCount; ++s) {
+            ByteSpan sec = f.section(data, s);
+            if (!gtm1::Gtm1::is_gtm1(sec)) continue;
+            ++models;
+            try {
+                gtm1::Gtm1::parse(sec);
+            } catch (const std::exception& x) {
+                ++failed;
+                std::printf("  %s slot %d: %s\n", e.path.c_str(), s, x.what());
+            }
+        }
+    }
+    std::printf("  %zu course files, %zu models\n", files, models);
+    CHECK(files >= 80 && models > files && failed == 0);
+    auto dome = [&](const char* path) {
+        const Volume::Entry* e = disc->volume().find(path);
+        if (!e) return scene::Model{};
+        Bytes data = disc->volume().read(*e);
+        CourseModelOptions o;
+        o.scenery = o.course_line = o.backdrop = false;
+        o.sky_object = true;
+        return build_course_model(data, o, path);
+    };
+    auto primitives = [](const scene::Model& m) {
+        size_t n = 0;
+        for (const scene::Mesh& mesh : m.meshes) n += mesh.primitives.size();
+        return n;
+    };
+    if (disc->volume().find("courses/EU/L_apricot1")) {
+        scene::Model eu = dome("courses/EU/L_apricot1"), uk = dome("courses/UK/L_apricot1");
+        std::printf("  L_apricot1 slot 23: EU %zu primitives, UK %zu\n", primitives(eu), primitives(uk));
+        CHECK(eu.textures.empty() && primitives(eu) == 0 && !uk.textures.empty() && primitives(uk) > 0);
+    }
+}
+
 // The licence course lines (slot 27, course.md "Course line") on every US course file: which files
 // carry one, and that each decodes to the dashed 0.4 m ribbon on the road from the start
 // line, coloured blue / white / red (and blends), with its node 0's state.

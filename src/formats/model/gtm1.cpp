@@ -177,7 +177,9 @@ Gtm1 Gtm1::parse(ByteSpan data) {
         if (off == 0) return kNoTexset; // unused slot (e.g. wheel/pd0004)
         auto it = std::find(g.texsets.begin(), g.texsets.end(), off);
         if (it != g.texsets.end()) return u32(it - g.texsets.begin());
-        if (off >= data.size() || !Tex1::is_tex1(data.subspan(off))) throw FormatError("GTM1 texture set is not Tex1");
+        // No magic check: the game sets up whatever the offset holds, and a
+        // zeroed header (courses/EU/L_apricot1 slot 23) is a set without textures.
+        if (off >= data.size()) throw FormatError("GTM1 texture set out of range");
         g.texsets.push_back(off);
         return u32(g.texsets.size() - 1);
     };
@@ -629,6 +631,9 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     std::map<u32, u32> set_size;
     // Texture -> smallest texel alpha (alpha tests): over every frame of a CLUT animation.
     std::map<int, u32> min_alpha;
+    auto set_without_textures = [&](u32 texset) {
+        return texset < g.texsets.size() && !Tex1::is_tex1(g.data.subspan(g.texsets[texset]));
+    };
     auto texture_for = [&](u32 texset, u32 index) -> int {
         if (!opt.textures || texset >= g.texsets.size()) return -1;
         auto it = set_first.find(texset);
@@ -636,7 +641,10 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             ByteSpan sub = g.data.subspan(g.texsets[texset]);
             size_t before = model.textures.size();
             ClutTextures clut;
-            int first = decode_texture_set(sub, model.textures, "set" + std::to_string(texset) + "_", opt.paint, &clut);
+            // A set that is not a Tex1 has no textures. The game then binds none (the program skips TEX0
+            // without a texture table) and the GS keeps an earlier draw's texture.
+            const std::string prefix = "set" + std::to_string(texset) + "_";
+            int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut);
             it = set_first.emplace(texset, first).first;
             set_size[texset] = u32(model.textures.size() - before);
             if (!clut.empty()) {
@@ -900,8 +908,16 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 }
                 // 0x1FF is a runtime texture slot (op 0x29; the game fills it, e.g. the wheel rim image);
                 // the set's first texture is the closest static stand-in.
-                if (dp.prim.tme && dp.has_uv && tex != 0 && !env)
+                if (dp.prim.tme && dp.has_uv && tex != 0 && !env) {
+                    // A set that is not a Tex1 binds no texture and the GS draws with an earlier draw's.
+                    // At courses/EU/L_apricot1's reflection dome GT3's cars then reflect no sky (the UK
+                    // copy's dome is textured): not drawn, so the reflection map's black stays.
+                    if (opt.textures && set_without_textures(d.texset)) {
+                        mesh.indices.resize(prim.first_index);
+                        continue;
+                    }
                     prim.texture = texture_for(d.texset, tex == 0x1FF ? 0 : tex - 1);
+                }
                 if (opt.course_env_maps && env && (kind == 2 || kind == 3) && dp.prim.tme && tex != 0) {
                     // The packet's own texture; the runtime slot 0x1FF is empty while the course is
                     // drawn, so the GS keeps the texture the packet before bound.
