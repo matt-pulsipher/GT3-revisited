@@ -37,10 +37,20 @@ if(NOT SDL3_FOUND)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
   endif()
   set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+  # Our fixes to SDL 3.4 (cmake/patches; the VR builds' SDL 3.6 takes none). A source tree given
+  # with FETCHCONTENT_SOURCE_DIR_SDL3 is used as it is.
+  set(GT3R_SDL_PATCH "")
+  if(NOT GT3R_XR)
+    find_package(Git REQUIRED)
+    set(GT3R_SDL_PATCH PATCH_COMMAND "${CMAKE_COMMAND}" "-DGIT=${GIT_EXECUTABLE}"
+        "-DPATCHES=${CMAKE_CURRENT_LIST_DIR}/patches/sdl-vulkan-amd-fullscreen.patch"
+        -P "${CMAKE_CURRENT_LIST_DIR}/ApplyPatches.cmake")
+  endif()
   FetchContent_Declare(SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
     GIT_TAG ${GT3R_SDL_TAG}
-    GIT_SHALLOW ${GT3R_SDL_SHALLOW})
+    GIT_SHALLOW ${GT3R_SDL_SHALLOW}
+    ${GT3R_SDL_PATCH})
   FetchContent_MakeAvailable(SDL3)
   if(GT3R_LIBTOOL_QUIET AND TARGET SDL3-static)
     set_target_properties(SDL3-static PROPERTIES STATIC_LIBRARY_OPTIONS ${GT3R_LIBTOOL_QUIET})
