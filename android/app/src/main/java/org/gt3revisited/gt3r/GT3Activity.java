@@ -22,6 +22,22 @@ public class GT3Activity extends SDLActivity {
         return new String[] { "main" };
     }
 
+    // The game's Quit (SDL's main returned): SDL finishes the activity but keeps the process, which
+    // cannot run the game again (SDL exits it inside the next onCreate and relies on the system
+    // restarting it). Leave nothing to restart: the task leaves Recents and the process ends
+    // once the activity is gone (the game has saved and shut down by then).
+    @Override
+    public void finish() {
+        if (mSDLMainFinished) finishAndRemoveTask();
+        else super.finish();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (mSDLMainFinished) android.os.Process.killProcess(android.os.Process.myPid());
+    }
+
     // The disc image comes from the system file picker as a content:// URI.
     // Keep read access across app restarts so the remembered disc (and the
     // recent-discs list) still opens next launch.
