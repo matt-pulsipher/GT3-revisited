@@ -52,13 +52,17 @@ the tagged source. The packages are not signed with a developer
 certificate, so the first launch needs one extra step:
 
 - **Windows**: unzip and run `gt3r.exe`. If SmartScreen says "Windows
-  protected your PC", choose **More info → Run anyway**.
+  protected your PC", choose **More info → Run anyway**. 3D runs on Vulkan,
+  or on GPUs without it (e.g. GeForce 400/500, Intel HD 2000–4000) on OpenGL
+  ES through ANGLE, which the package includes.
 - **macOS** (Apple Silicon, macOS 12 or later): unzip and move `gt3r.app`
   to Applications. On the first launch macOS says it cannot verify the app;
   open **System Settings → Privacy & Security**, scroll down and choose
   **Open Anyway** next to GT3 Revisited. Later launches open normally.
-- **Linux** (x86_64): extract the archive and run `gt3r`. It needs a Vulkan
-  driver (Mesa's `mesa-vulkan-drivers` on AMD / Intel, or your GPU vendor's).
+- **Linux** (x86_64): extract the archive and run `gt3r`. 3D needs a Vulkan
+  driver (Mesa's `mesa-vulkan-drivers` on AMD / Intel, or your GPU vendor's),
+  or on older GPUs without Vulkan, OpenGL ES 3.0 (Mesa, or NVIDIA's legacy
+  drivers).
 - **Android** (7.0 or later, arm64 or x86_64): open the `.apk` on the device
   and allow installing from that source when asked. In countries where
   Android requires verified developers for sideloaded apps, use Android's
@@ -181,7 +185,7 @@ are only there:
 | `[video] render_scale` | `auto`, `0.5`..`4.0` | 3D resolution vs. the screen; above `1.0` the 3D views render larger and are scaled down (supersampling), up to 16384 pixels a side |
 | `[video] dynamic_resolution` | `on` / `off` | lower the 3D resolution (to 50% at most) when the GPU can't keep up and raise it while it keeps up, up to `render_scale`; with `auto`, up to the screen's full resolution (at most 1440 lines), starting where the last race ended (kept in `dynamic_start`). Default on for phones and tablets |
 | `[video] full_car_detail` | `on` / `off` | every car in full detail at any distance; `off`: distant cars switch to GT3's simpler models. Default on, off for phones and tablets |
-| `[video] gpu` | `1` / `0` | SDL_GPU 3D renderer; `0` = 2D-only (restart required) |
+| `[video] gpu` | `auto` / `gles` / `gles_driver` / `0` | the 3D renderer: `auto` = SDL_GPU (Vulkan, Metal), or OpenGL ES where the GPU has no Vulkan (Windows, Linux); `gles` = OpenGL ES first; `gles_driver` = the same on Windows with the graphics driver's OpenGL ES rather than ANGLE; `0` = 2D-only (restart required). Settings offers only the kinds of OpenGL ES that open on the computer |
 | `[video] original_res` | `on` / `off` | *(file)* races at the PS2's 640×448 in a 4:3 frame |
 | `[video] original_filter` | `nearest` / `bilinear` | *(file)* upscaling filter for `original_res` |
 | `[video] car_reflections`, `car_shadows` | `on` / `off` | *(file)* |
@@ -345,8 +349,11 @@ cmake --build build -j
   in a `.tbd` file, your linker is older than your SDK: update Xcode / the
   Command Line Tools, or point `-DCMAKE_OSX_SYSROOT` at an older SDK.
 - **Windows**: Visual Studio 2022 or later. `cmake -S . -B build` then build
-  `gt3r`. SDL3 is fetched automatically, or install it with vcpkg. 3D needs
-  a GPU driver with Vulkan.
+  `gt3r`. SDL3 is fetched automatically, or install it with vcpkg. 3D uses
+  Vulkan, or OpenGL ES 3.0 on GPUs without it: the driver's, or ANGLE's when
+  `-DGT3R_ANGLE_DIR=<folder>` points at a folder with its DLLs and license
+  (`vcpkg install angle:x64-windows-angle --overlay-triplets=packaging/vcpkg-triplets`;
+  [RENDERING](docs/dev/RENDERING.md#opengl-es)).
 - **Linux**: install your distro's SDL3 development package, or let CMake
   fetch and build it. Building SDL needs its window, audio and input
   headers; on Debian / Ubuntu (tested on Ubuntu 24.04):
@@ -376,7 +383,7 @@ read [CONTRIBUTING](CONTRIBUTING.md) before sending changes.
 
 ```text
 gt3r [disc.iso] [--hub] [--screen <id>] [--browse <vol path>] [--shot <out.png>]
-     [--msaa <n>] [--render-scale <s>] [--no-gpu] [--help]
+     [--msaa <n>] [--render-scale <s>] [--no-gpu] [--gles] [--gles-driver] [--help]
 ```
 
 - `--help` lists the options, every screen id and the testing variables (`GT3R_*`).
@@ -449,3 +456,8 @@ original program's code in any form.
   public domain (or MIT), rasterises that font.
 - [SDL 3](https://libsdl.org) and [zlib](https://zlib.net), zlib License,
   fetched at build time (Windows builds ship `SDL3.dll`).
+- The [Khronos](https://github.com/KhronosGroup/OpenGL-Registry) OpenGL ES 3.0
+  headers (`third_party/khronos`), MIT and Apache 2.0, for the OpenGL ES renderer.
+- [ANGLE](https://chromium.googlesource.com/angle/angle), BSD 3-Clause, built
+  with vcpkg: Windows packages ship `libEGL.dll` and `libGLESv2.dll` with its
+  license (`LICENSE-ANGLE.txt`).

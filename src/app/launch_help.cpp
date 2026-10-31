@@ -27,6 +27,8 @@ const char kOptions[] = R"(Usage: gt3r [disc.iso] [options]
   --msaa <n>             MSAA sample count ([video] msaa)
   --render-scale <s>     auto or 0.5..4.0 ([video] render_scale)
   --no-gpu               the 2D renderer only, no 3D ([video] gpu = 0)
+  --gles                 OpenGL ES before SDL_GPU for 3D, Windows and Linux ([video] gpu = gles)
+  --gles-driver          Windows: --gles with the driver's, not ANGLE ([video] gpu = gles_driver)
   --no-vr                VR builds: the window, not the headset ([vr] enabled = off)
   --env NAME=value       set one of the variables below
   -h, --help             this text
