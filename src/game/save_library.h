@@ -93,6 +93,9 @@ private:
     bool tracked_ = true;
 };
 
+// Two names of one save file, with either path separator ("" names none).
+bool same_save_file(const std::string& a, const std::string& b);
+
 // A save the player picked anywhere: a native save, or a PS2 save in any of the
 // containers import_ps2_save_path reads (a .psu or card image is also recognised by its
 // contents, for paths without an extension such as Android's content:// URIs). Throws

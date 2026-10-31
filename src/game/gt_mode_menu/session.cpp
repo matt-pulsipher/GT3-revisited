@@ -111,6 +111,17 @@ std::string current_save_path() {
     return lib.dir() + "gtmode.sav";
 }
 
+std::optional<GameState> editable_save(const std::string& path, std::string* error) {
+    if (GtModeSession* s = S(); s && same_save_file(path, s->save_path())) return s->gt().state();
+    return read_save(path, error);
+}
+
+bool store_edited_save(const std::string& path, const GameState& st, std::string* error) {
+    if (saving_enabled() && !write_save(path, st, error)) return false;
+    if (GtModeSession* s = S(); s && same_save_file(path, s->save_path())) s->gt().state() = st;
+    return true;
+}
+
 void begin_snapshot_save(GameState s) { menu_state().snapshot = std::move(s); }
 
 void end_race_game_save() { menu_state().snapshot.reset(); }

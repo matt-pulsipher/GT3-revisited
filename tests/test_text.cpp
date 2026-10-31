@@ -84,6 +84,27 @@ TEST(text_game_encoding) {
     CHECK(encode_game_text(U"dé€あ", &jis) == str({'d', 0x81, 0xE9, 0x80, 0x80, 0xA4, 0xA2}));
 }
 
+// Game text for our UI font: full-width forms and the dashes folded, Latin kept, the rest '?'.
+// An invented UTBL row 0x21 from col 0x3E: U+2010 (hyphen), U+FF21 (full-width A), U+3000
+// (ideographic space), U+3042 (hiragana).
+TEST(text_game_text_for_ui) {
+    Bytes b(0x40, 0);
+    std::memcpy(b.data(), "UTBL", 4);
+    put16(b, 4, 1);
+    put16(b, 6, 4);
+    put32(b, 8, 0x10);
+    put32(b, 12, 0x20);
+    b[0x10] = 0x3E, b[0x11] = 0x21;
+    put16(b, 0x12, 0);
+    const u16 cps[] = {0x2010, 0xFF21, 0x3000, 0x3042};
+    for (size_t i = 0; i < 4; ++i) put16(b, 0x20 + 2 * i, cps[i]);
+    const JisTable jis = JisTable::parse(b);
+    // "V-spec" with the JIS hyphen (EUC A1 BE), then a full-width A, a wide space, kana, é.
+    const std::string s = str({'V', 0xA1, 0xBE, 's', 'p', 'e', 'c', 0xA1, 0xBF, 0xA1, 0xC0, 0xA1, 0xC1, 0x81, 0xE9});
+    CHECK(game_text_for_ui(s, &jis) == "V-specA ?\xC3\xA9");
+    CHECK(game_text_for_ui(s, nullptr) == "V?spec???\xC3\xA9"); // (no table: the pairs are unknown)
+}
+
 TEST(text_game_text_prefix) {
     // ASCII, a Latin escape and an EUC-JP pair: one character each.
     const std::string s = str({'A', 0x81, 0xE9, 0xA1, 0xA6, 'B'});

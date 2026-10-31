@@ -151,6 +151,12 @@ bool ensure_gt_mode_session(const std::function<std::optional<Bytes>(const std::
 // remembered current save, the newest save, or <library>/gtmode.sav for a new game.
 SaveLibrary& save_library();
 std::string current_save_path();
+// The save editor (Home -> Save editor): the game in the save at `path`, the running game when
+// it is the session's save (it can be a race ahead of its file); nullopt when the file cannot be
+// read (`error`). store_edited_save writes an edited game there (not with GT3R_GTMODE_NOSAVE)
+// and, when it is the session's save, the running game takes it too.
+std::optional<GameState> editable_save(const std::string& path, std::string* error = nullptr);
+bool store_edited_save(const std::string& path, const GameState& s, std::string* error = nullptr);
 // The next save page in SaveGame mode saves `s` instead of the running game (e.g. a
 // championship between rounds, with the round just finished), and the running game and
 // its current save stay as they are. Cleared when that page closes.

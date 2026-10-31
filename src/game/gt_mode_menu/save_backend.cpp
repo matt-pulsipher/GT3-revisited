@@ -9,7 +9,6 @@
 #include "game/gt_save.h"
 #include "game/gt_setting.h"
 
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -60,13 +59,6 @@ Texts game_file_texts(const GtMode& gt, const std::string& path) {
     return t;
 }
 
-bool same_path(const std::string& a, const std::string& b) {
-    std::string x = a, y = b;
-    std::replace(x.begin(), x.end(), '\\', '/');
-    std::replace(y.begin(), y.end(), '\\', '/');
-    return x == y;
-}
-
 int read_result(const std::string& err) {
     return err.find("version") != std::string::npos ? SavePage::BadData : SavePage::ReadError;
 }
@@ -111,7 +103,7 @@ std::vector<SavePage::File> save_page_files(SavePage::Mode m) {
     for (SaveInfo& info : lib.list()) {
         SavePage::File f;
         f.id = info.path;
-        f.current = same_path(info.path, s->save_path());
+        f.current = same_save_file(info.path, s->save_path());
         if (f.current && m == SavePage::Mode::LoadGuest) continue; // the home garage already
         f.name = info.name;
         f.broken = !info.state;

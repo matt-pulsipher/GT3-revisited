@@ -35,14 +35,6 @@ std::string stem_of(const std::string& path) {
     return b;
 }
 
-bool same_file(const std::string& a, const std::string& b) {
-    if (a.empty() || b.empty()) return false;
-    std::string x = a, y = b;
-    std::replace(x.begin(), x.end(), '\\', '/');
-    std::replace(y.begin(), y.end(), '\\', '/');
-    return x == y;
-}
-
 // Cuts a UTF-8 string to at most `n` bytes without splitting a character.
 std::string cut(std::string s, size_t n) {
     if (s.size() <= n) return s;
@@ -53,6 +45,14 @@ std::string cut(std::string s, size_t n) {
 }
 
 } // namespace
+
+bool same_save_file(const std::string& a, const std::string& b) {
+    if (a.empty() || b.empty()) return false;
+    std::string x = a, y = b;
+    std::replace(x.begin(), x.end(), '\\', '/');
+    std::replace(y.begin(), y.end(), '\\', '/');
+    return x == y;
+}
 
 SaveLibrary::SaveLibrary(std::string dir, bool tracked) : dir_(with_sep(std::move(dir))), tracked_(tracked) {}
 
@@ -92,7 +92,7 @@ int SaveLibrary::copy_library(const std::string& from) {
             const std::string f = src + names[i];
             if (host_is_directory(f) || !SDL_CopyFile(f.c_str(), (dir_ + names[i]).c_str())) continue;
             ++n;
-            if (same_file(f, current)) copied_current = dir_ + names[i];
+            if (same_save_file(f, current)) copied_current = dir_ + names[i];
         }
         SDL_free(names);
     }
@@ -159,7 +159,7 @@ std::string SaveLibrary::file_stem(const std::string& name) {
 std::string SaveLibrary::unique_name(const std::string& base, size_t max, const std::string& except) const {
     std::vector<std::string> taken;
     for (const SaveInfo& f : list())
-        if (!same_file(f.path, except)) taken.push_back(f.name);
+        if (!same_save_file(f.path, except)) taken.push_back(f.name);
     auto free = [&](const std::string& n) { return std::find(taken.begin(), taken.end(), n) == taken.end(); };
     std::string b = cut(base.empty() ? std::string("GAME") : base, max);
     if (free(b)) return b;
@@ -175,7 +175,7 @@ std::string SaveLibrary::path_for(const std::string& name, const std::string& ex
     const std::string stem = file_stem(name);
     for (int i = 1; i < 1000; ++i) {
         std::string p = dir_ + stem + (i == 1 ? std::string() : " " + std::to_string(i)) + ".sav";
-        if (same_file(p, except) || !host_path_exists(p)) return p;
+        if (same_save_file(p, except) || !host_path_exists(p)) return p;
     }
     return dir_ + stem + ".sav";
 }
@@ -200,10 +200,10 @@ bool SaveLibrary::rename(const std::string& path, const std::string& name, std::
         s = std::move(*r);
     }
     s.file_comment = name;
-    const bool was_current = same_file(path, current());
+    const bool was_current = same_save_file(path, current());
     std::string p = path_for(name, path);
     if (!write_save(p, s, error)) return false;
-    if (!same_file(p, path)) remove(path);
+    if (!same_save_file(p, path)) remove(path);
     if (was_current) set_current(p);
     if (new_path) *new_path = p;
     return true;
