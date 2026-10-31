@@ -231,12 +231,8 @@ int cmd_modcar(Disc& disc, const Args& a) {
     for (const std::string& p : a) {
         if (p.rfind("arcade:", 0) == 0) { // every arcade car of a class: arcade:CLASS_S
             game::GtData gd;
-            Volume& vol = disc.volume();
-            if (!gd.load([&](const std::string& path) -> std::optional<Bytes> {
-                    const Volume::Entry* e = vol.find(path);
-                    if (!e) return std::nullopt;
-                    return vol.read(*e);
-                })) {
+            Vfs vfs(&disc.volume()); // the disc release's game config (Vfs::kRegionFile)
+            if (!gd.load([&](const std::string& path) { return vfs.read(path); })) {
                 std::fprintf(stderr, "error: %s\n", gd.error().c_str());
                 return 1;
             }
