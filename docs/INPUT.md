@@ -354,7 +354,7 @@ force, impacts) and each player's device turns it into native feedback:
 |---|---|
 | DualSense (PS5) | Adaptive trigger on the trigger bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while ABS is working. Sent with `SDL_SendGamepadEffect` only when the effect changes |
 | Xbox One/Series | Impulse trigger on the brake trigger pulses at ~16 Hz while ABS is working (`SDL_RumbleGamepadTriggers`) |
-| Wheels with force feedback | SDL haptics: a self-centring spring that firms up with speed (light when stopped, full from 120 km/h) and a constant force from the front tyres' lateral load (self-aligning feel) plus a kick on impacts. The wheel's own autocentre is switched off while driving |
+| Wheels with force feedback | SDL haptics: a self-centring spring that firms up with speed (light when stopped, full from 120 km/h) and a constant force from the front tyres' lateral load (self-aligning feel) plus a kick on impacts. The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
 
 Effects stop by themselves ~0.25 s after the last update (pause, menus).
 The brake trigger is found from the race bindings: whichever of

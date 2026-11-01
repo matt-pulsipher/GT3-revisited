@@ -80,6 +80,10 @@ public:
                const ForceFeedbackState& s, double time);
     void stop(SDL_JoystickID id);
     void forget(SDL_JoystickID id); // device removed (handles closed by SDL)
+    // Whether the wheel's force effects are ours (a spring or constant force made). Joystick rumble
+    // must not reach it then: SDL's DirectInput and macOS rumble resets the device's force
+    // feedback the first time it runs, which removes those effects.
+    bool drives_wheel(SDL_JoystickID id) const;
 
 private:
     struct Dev {
@@ -96,7 +100,7 @@ private:
     };
     Dev& dev(SDL_JoystickID id);
     void stop(Dev& d);
-    void apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s);
+    void apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, bool restart = false);
 
     ForceFeedbackConfig cfg_;
     std::vector<Dev> devs_;

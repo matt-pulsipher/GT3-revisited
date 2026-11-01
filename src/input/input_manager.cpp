@@ -789,8 +789,9 @@ void InputManager::set_rumble(int player, const PadRumble& r) {
     // DS2: large motor -> low-frequency rumble, small (on/off) -> high frequency.
     Uint16 low = Uint16(r.large * 257);
     Uint16 high = r.small ? 0xA000 : 0;
+    // None to a wheel whose force effects are ours (ForceFeedback::drives_wheel): it would reset them.
     if (d->gamepad) SDL_RumbleGamepad(d->gamepad, low, high, 250);
-    else SDL_RumbleJoystick(d->joystick, low, high, 250);
+    else if (!ffb_.drives_wheel(d->id)) SDL_RumbleJoystick(d->joystick, low, high, 250);
 }
 
 bool InputManager::phone_vibration_available() {
