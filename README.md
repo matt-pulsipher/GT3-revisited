@@ -180,6 +180,7 @@ are only there:
 | `[video] aspect` | `16:9` / `4:3` / `fill` | the game's picture: 16:9 (default), 4:3 like on a 4:3 TV, or the whole screen (races use its full width; menus and movies stay 4:3) |
 | `[video] vsync` | `1` / `0` | wait for the display refresh |
 | `[video] limit_60fps` | `on` / `off` | on 120 Hz and faster displays, draw about 60 frames a second (every Nth refresh) |
+| `[video] show_fps` | `on` / `off` | the frame rate in a corner of the screen (default off) |
 | `[video] msaa` | `1` `2` `4` `8` | 3D anti-aliasing (clamped to the GPU); default 4, 2 on phones, tablets and the Quest (Android, iOS) |
 | `[video] anisotropy` | `1` `2` `4` `8` `16` | anisotropic texture filtering (`1` = off); default 4 |
 | `[video] render_scale` | `auto`, `0.5`..`4.0` | 3D resolution vs. the screen; above `1.0` the 3D views render larger and are scaled down (supersampling), up to 16384 pixels a side |

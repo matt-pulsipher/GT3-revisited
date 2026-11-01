@@ -525,6 +525,8 @@ private:
                "On 120 Hz and faster displays, draw about 60 frames a second (the game runs at 60 Hz). "
                "Steadier when the computer is busy.",
                app.limit_60fps(), [a](bool v) { a->set_limit_60fps(v); });
+        toggle("FPS counter", "Show the frames drawn per second in a corner of the screen.", app.show_fps(),
+               [a](bool v) { a->set_show_fps(v); });
 
         // [race] units: the disc's own (its language's: mph on the North American disc, km/h on
         // the European and Japanese ones) unless one is picked; menus and races follow it.
