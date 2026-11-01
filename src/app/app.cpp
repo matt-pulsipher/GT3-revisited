@@ -126,6 +126,7 @@ bool App::init(int argc, char** argv) {
     if (auto v = config_.get("video", "anisotropy")) gpu_opts.anisotropy = std::atoi(v->c_str());
     if (auto v = config_.get("video", "vsync")) gpu_opts.vsync = *v != "0";
     if (auto v = config_.get("video", "gpu_debug")) gpu_opts.debug = *v == "1";
+    show_fps_ = to_lower(config_.get("video", "show_fps").value_or("off")) == "on";
     // [video] render_scale = auto | 0.5..4.0 (auto: native on desktop, capped on mobile)
     std::optional<float> render_scale = platform::parse_render_scale(config_.get("video", "render_scale").value_or("auto"));
     for (int i = 1; i < argc; ++i) {
@@ -406,6 +407,44 @@ void App::set_limit_60fps(bool on) {
     apply_frame_limit();
 }
 
+void App::set_show_fps(bool on) {
+    show_fps_ = on;
+    config_.set("video", "show_fps", on ? "on" : "off");
+    save_config();
+}
+
+// [video] show_fps: the frames drawn per second in a corner of the window (of a phone's safe
+// area: clear of its cutout and rounded corners; in VR, of the virtual screen), at the size of
+// 640x360 UI text whatever the screen's layout, over everything. Top left, clear of the race HUD
+// and the game's menus; on our own screens (`frontend`: Screen::adaptive_ui), whose header runs
+// along the top, bottom right, beside the footer's hints.
+void App::draw_fps(bool frontend) {
+    if (!show_fps_ || fps_shown_ <= 0) return;
+    int lw = 0, lh = 0;
+    SDL_RendererLogicalPresentation mode = SDL_LOGICAL_PRESENTATION_DISABLED;
+    SDL_GetRenderLogicalPresentation(renderer_, &lw, &lh, &mode);
+    SDL_SetRenderLogicalPresentation(renderer_, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+    int pw = 0, ph = 0, ww = 0, wh = 0;
+    SDL_GetCurrentRenderOutputSize(renderer_, &pw, &ph);
+    SDL_GetWindowSize(window_, &ww, &wh);
+#if GT3R_XR
+    if (xr_) ww = pw; // the canvas stands in for the window
+#endif
+    const float k = float(ph) / Ui::kHeight; // pixels per UI unit
+    const SDL_FRect sa = safe_area_window();
+    const float to_ui = ww > 0 ? float(pw) / float(ww) / k : 1; // window units -> UI units
+    char text[16];
+    std::snprintf(text, sizeof(text), "%d FPS", int(std::lround(fps_shown_)));
+    const float w = std::ceil(Ui::text_width(text)) + 8, h = Ui::kChar + 4;
+    float x = std::round(sa.x * to_ui) + 2, y = std::round(sa.y * to_ui) + 2;
+    if (frontend) x = std::round((sa.x + sa.w) * to_ui) - 2 - w, y = std::round((sa.y + sa.h) * to_ui) - 2 - h;
+    SDL_SetRenderScale(renderer_, k, k);
+    ui_->fill_round(x, y, w, h, 3, Color{0, 0, 0, 150});
+    ui_->text(x + 4, y + 2, text);
+    SDL_SetRenderScale(renderer_, 1, 1);
+    SDL_SetRenderLogicalPresentation(renderer_, lw, lh, mode);
+}
+
 platform::Aspect App::aspect() const {
 #if GT3R_XR
     if (xr_) return platform::Aspect::Wide;
@@ -569,6 +608,8 @@ SDL_AppResult App::iterate() {
 #endif
     double dt = frame_s;
     last_ticks_ = now;
+    ++fps_frames_, fps_time_ += frame_s;
+    if (fps_time_ >= 0.5) fps_shown_ = fps_frames_ / fps_time_, fps_frames_ = 0, fps_time_ = 0;
     if (dt > 0.1) dt = 0.1;
     // --shot: step exactly one 60 Hz frame per iteration, so a shot of frame N shows the same
     // simulation time on every run (comparison screenshots are repeatable).
@@ -639,6 +680,7 @@ SDL_AppResult App::iterate() {
     Uint64 h_r1 = SDL_GetTicksNS();
     touch_.set_safe_area(safe_area_window());
     touch_.render(*ui_);
+    draw_fps(shown && shown->adaptive_ui());
     if (phone_sim_) draw_phone_mask();
     if (pointer_shown_) { // a scripted pointer's arrow (screenshots)
         const float x = pointer_x_, y = pointer_y_;

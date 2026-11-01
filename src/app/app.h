@@ -85,6 +85,10 @@ public:
     // runs at 60 Hz); steadier when the computer is busy. Off (default): every display refresh.
     bool limit_60fps() const;
     void set_limit_60fps(bool on);
+    // [video] show_fps = on | off (default off): the frame rate in a corner of the screen, over
+    // every screen (App::draw_fps).
+    bool show_fps() const { return show_fps_; }
+    void set_show_fps(bool on);
     // [video] aspect = 16:9 (default) | 4:3 | fill: the game area's shape (platform/aspect.h).
     // Always 16:9 in VR (the headset's virtual screen).
     platform::Aspect aspect() const;
@@ -235,6 +239,11 @@ private:
     // The main loop rate set by App::apply_frame_limit (0: as fast as vsync allows).
     double frame_limit_rate_ = 0;
     void apply_frame_limit();
+    // [video] show_fps: frames counted over about half a second and the rate they make.
+    bool show_fps_ = false;
+    int fps_frames_ = 0;
+    double fps_time_ = 0, fps_shown_ = 0;
+    void draw_fps(bool frontend);
     bool touch_ui_ = false;  // phone/tablet sizing (mobile builds, or GT3R_PHONE)
     bool phone_sim_ = false; // GT3R_PHONE=1: desktop window shaped like a 20:9 phone
     std::optional<platform::DisplayInsets> display_insets_; // phones: cutout and corner radius (pixels)
