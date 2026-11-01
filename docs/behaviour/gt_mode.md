@@ -1441,7 +1441,7 @@ Each race fields the event's car count (6 for races). The opponents are a fresh 
 `race_gt_grid_disc`). GT Mode lines the opponents up by a whole-number weight-to-power figure,
 the lowest on pole, and the player starts behind them:
 
-- each car is built from its parts the race's way, with a fresh engine
+- each car is built the race's way (an event's car with its parts and its own settings, physics §6), with a fresh engine
   (`race::exact_grid_figure`);
 - the figure is the car's catalog weight in kg with its weight-reduction parts (not the
   120 kg the race adds to every car) divided by its peak power as a whole number, the way
@@ -1451,8 +1451,8 @@ the lowest on pole, and the player starts behind them:
 - cars with the same figure keep the order they were drawn in.
 
 So close cars often tie. In the Japan Championship, a field drawn as 300ZX, 3000GT, Supra RZ,
-Lancer Evolution VI and NSX Type S Zero gives 5, 5, 4, 4 and 4 kg/HP, and the grid is Supra,
-Lancer, NSX, 300ZX, 3000GT, then the player. Where each grid place is on the course belongs to
+Lancer Evolution VI and NSX Type S Zero, each tuned by its event to about 345 HP, gives 4, 4,
+4, 3 and 3 kg/HP, and the grid is Lancer, NSX, 300ZX, 3000GT, Supra, then the player. Where each grid place is on the course belongs to
 the race description. A free practice in which the player sets a lap lines the field up by best
 lap instead (§22.5).
 

@@ -493,7 +493,7 @@ TEST(example_mod_car) {
 }
 
 // --- a mod car races the same from its arcade record as from its own parts ----------
-// Arcade mode, quick races and gt3tool modcar find a mod car's label among the arcade cars first (table 35, arcade_equipment);
+// Arcade mode, quick races and gt3tool modcar find a mod car's label among the arcade cars first (table 35, variant_equipment);
 // a GT Mode garage car races on its parts and settings. The arcade record holds the car's stock settings, not the donor's
 // arcade tune, so the mod's own final drive, output factor and suspension reach the race either way.
 

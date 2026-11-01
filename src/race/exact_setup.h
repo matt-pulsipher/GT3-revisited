@@ -46,9 +46,10 @@ const char* race_core_name(RaceCore c);
 // The course of a course file (the last one loaded is kept: a restart and a replay of the race reuse it).
 std::shared_ptr<const ex::RaceCourse> exact_course(ByteSpan course_file, const std::string& label, const ex::ProgramData& d);
 
-// The equipment of a car source as GT3's race entry holds it: a garage car's parts and settings (make_equipment), a
-// variant's base car with the variant's parts (stock_equipment), an arcade car's record (arcade_equipment, its tyres
-// switched to the stage's records), a database car with its own parts. nullopt with *error set for an unknown label.
+// The equipment of a car source as GT3's race entry holds it: a garage car's parts and settings (make_equipment), an event
+// entry's variant record or an arcade car's (variant_equipment; an arcade car's tyres switched to the stage's records), a
+// database car with its own parts. nullopt with *error set for an unknown label. The race fits the course's tyres to it
+// (sim::exact::course_tires).
 // An electric mod car races on its donor car's engine (its stock engine, engine parts, drivetrain and gearbox): the exact
 // core has no EV drive yet.
 std::optional<ex::Equipment> exact_equipment(const data::CarDatabase& db, const ExactCarSource& src, std::string* error = nullptr);

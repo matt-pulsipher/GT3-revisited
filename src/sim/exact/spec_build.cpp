@@ -340,7 +340,7 @@ Equipment stock_equipment(const data::CarDatabase& db, const std::string& car_la
     return make_equipment(db, car_label, parts, c);
 }
 
-Equipment arcade_equipment(const data::CarDatabase& db, const data::CarVariant& v) {
+Equipment variant_equipment(const data::CarDatabase& db, const data::CarVariant& v) {
     Equipment eq = stock_equipment(db, v.car, v.parts);
     const Rec r{&v.bytes};
     eq.car = r.d(8);
@@ -353,6 +353,25 @@ Equipment arcade_equipment(const data::CarDatabase& db, const data::CarVariant& 
     set(0x14C, r.h(0x100)), set(0x150, r.h(0x102)), set(0x15C, r.h(0x104)), set(0x160, r.h(0x106));
     set(0x1B0, r.b(0x108)), set(0x1B8, r.h(0x10A)), set(0x1BC, r.b(0x109));
     return eq;
+}
+
+bool course_tires(const data::CarDatabase& db, Equipment& eq, u8 category) {
+    auto stage = [&](TableId t) { return s32(Rec{db.record(t, eq.part[size_t(t)])}.b(0x10)); };
+    const s32 front = stage(TableId::FrontTire), rear = stage(TableId::RearTire);
+    s32 want = -1;
+    if (category == 2) { // unless both are dirt tyres already
+        if (front != 12 || rear != 12) want = 12;
+    } else if (category == 1) { // unless both are wet tyres already: the front's stage + 13
+        auto wet = [](s32 s) { return u32(s - 13) < 12; };
+        if (!(wet(front) && wet(rear)) && front < 12) want = front + 13;
+    }
+    if (want < 0) return false;
+    // Both tyres or neither.
+    const u64 f = tire_for_stage(db, TableId::FrontTire, eq.car, want);
+    const u64 r = f ? tire_for_stage(db, TableId::RearTire, eq.car, want) : 0;
+    if (!r) return false;
+    eq.part[size_t(TableId::FrontTire)] = f, eq.part[size_t(TableId::RearTire)] = r;
+    return true;
 }
 
 void build_spec(const data::CarDatabase& db, const ProgramData& d, Equipment& eq, int flag, int mode, bool tire_override, Spec& spec) {

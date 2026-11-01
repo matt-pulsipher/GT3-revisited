@@ -2,6 +2,7 @@
 // builds, pinned so a build that changes its results (host float or std:: math creeping in, another architecture, FMA
 // contraction) fails.
 
+#include "car_db_synth.h"
 #include "program_synth.h"
 #include "sim/exact/params_build.h"
 #include "test_framework.h"
@@ -138,4 +139,50 @@ TEST(params_tire_base_grip_disc) {
     }
     CHECK(varies == 0); // (a compound's grip is the same on every car)
     std::printf("  %d builds, %zu compounds\n", builds, by_compound.size());
+}
+
+// The course's tyres (course_tires) on an INVENTED car (car_db_synth.h) with tyre records of stages 0, 2, 12,
+// 13 and a front of 15: dirt fits stage 12, wet the front's stage + 13; a car on such tyres already, or one whose rear tyre of
+// that stage is missing, keeps its tyres.
+TEST(params_course_tires) {
+    namespace ex = sim::exact;
+    auto db = test::cardb::empty_database();
+    CHECK(db != nullptr);
+    if (!db) return;
+    test::cardb::add_car(*db, "syn_car", 300);
+    auto tire = [&](data::TableId t, int stage) {
+        const std::string l = std::string(t == data::TableId::FrontTire ? "ft_syn_car_" : "rt_syn_car_") + char('a' + stage);
+        db->add_label(l);
+        Bytes r(0x58);
+        test::cardb::put64(r, 0, db::id_hash(l));
+        test::cardb::put64(r, 8, db::id_hash("syn_car"));
+        r[0x10] = u8(stage);
+        db->put_record(t, r);
+        return db::id_hash(l);
+    };
+    std::array<u64, 30> f{}, r{};
+    for (int s : {0, 2, 12, 13, 15}) f[size_t(s)] = tire(data::TableId::FrontTire, s);
+    for (int s : {0, 2, 12, 13}) r[size_t(s)] = tire(data::TableId::RearTire, s); // (no wet rear of stage 2)
+    db->rebuild();
+    ex::Equipment eq;
+    eq.car = db::id_hash("syn_car");
+    auto on = [&](int front, int rear) {
+        eq.part[size_t(data::TableId::FrontTire)] = f[size_t(front)], eq.part[size_t(data::TableId::RearTire)] = r[size_t(rear)];
+    };
+    auto is = [&](int front, int rear) {
+        return eq.part[size_t(data::TableId::FrontTire)] == f[size_t(front)] && eq.part[size_t(data::TableId::RearTire)] == r[size_t(rear)];
+    };
+    on(0, 0);
+    CHECK(!ex::course_tires(*db, eq, 0) && is(0, 0)); // a road course: as they are
+    CHECK(ex::course_tires(*db, eq, 2) && is(12, 12)); // dirt
+    CHECK(!ex::course_tires(*db, eq, 2) && is(12, 12)); // (already)
+    on(2, 0);
+    CHECK(ex::course_tires(*db, eq, 2) && is(12, 12)); // a mixed set too
+    on(0, 0);
+    CHECK(ex::course_tires(*db, eq, 1) && is(13, 13)); // wet
+    CHECK(!ex::course_tires(*db, eq, 1) && is(13, 13)); // (already)
+    on(2, 2);
+    CHECK(!ex::course_tires(*db, eq, 1) && is(2, 2)); // stage 15's rear missing: both or neither
+    on(12, 12);
+    CHECK(!ex::course_tires(*db, eq, 1) && is(12, 12)); // dirt tyres on a wet course: as they are
 }
