@@ -15,13 +15,21 @@ sim::ControlInputs RaceScreen::demo_inputs(size_t i) const {
 
 void RaceScreen::start_demo() {
     if (!track_ || !vehicle_) return;
+    // Without the disc's demonstration GT3's loader writes nothing into the race and the driver plays it in
+    // replay mode all the same: the last run, or the empty recording before any run (its replay over at once).
+    if (!disc_demo_) {
+        if (finished_) latch_result(); // the replay re-runs the field: keep the live run's result
+        quick_ = false;
+        start_playback(finished_recording());
+        replay_to_menu_ = replaying_ && !theater_;
+        if (!replaying_) quick_ = true;
+        return;
+    }
     pre_demo_run_ = finished_recording();
     quick_ = false;
     demo_ = true; // (before the race is built: the exact core plays the demonstration's record, with NTSC-U's rules)
     restart();
     demo_tick_ = 0, demo_logged_ = false;
-    // Without the disc's demonstration: the race's own AI drives the player's car.
-    if (vehicle_ && !disc_demo_) vehicle_->ai_take_over();
     drive_camera_ = camera_.mode() == CameraMode::Tv ? drive_camera_ : camera_.mode();
     camera_.set_mode(CameraMode::Tv);
     restart_director();
@@ -93,7 +101,9 @@ std::string RaceScreen::license_title(const std::string& code) {
 
 void RaceScreen::begin_license() {
     license_times_ = {};
-    const std::string& demo_code = license_event_.empty() ? theater_demo_ : license_event_;
+    // The demonstration's event: the licence test's, the theater's, else the arcade time trial's (its menu's DEMO).
+    std::string demo_code = license_event_.empty() ? theater_demo_ : license_event_;
+    if (demo_code.empty() && game::GtMode::time_trial_index(solo_event_) >= 0) demo_code = solo_event_;
     if (!demo_code.empty() && !disc_demo_tried_ && app_ && app_->vfs()) { // the disc's demonstration run
         disc_demo_tried_ = true;
         std::string err;
