@@ -1018,10 +1018,12 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
   player, or the split-screen battle), the start type and countdown from the event (+0x1F3 / +0x1F2;
   battles none), the race's laps, and one race entry per car as GT3's race information holds it: car 0
   player 1 (car 1 player 2), then the opponents. A car's equipment (`exact_equipment`): a GT-mode garage
-  car's parts and settings (`GameRequest::car_parts` / `car_settings`; `make_equipment`), a variant
-  (table 31: its base car with the variant's parts, `stock_equipment`), an arcade car (table 35:
-  `arcade_equipment`, the tyres switched to the car page's stage), a database car with its parts; the
-  screen keeps the launch's source (`launch_source_`). A player's entry: pedal style 0
+  car's parts and settings (`GameRequest::car_parts` / `car_settings`; `make_equipment`), an event's
+  car (table 31: the opponents, a licence test's car) or an arcade car (table 35) from its record, parts and
+  settings (`variant_equipment`; an arcade car's tyres switched to the car page's stage), a database car with
+  its parts; then every entry on the course's tyres (`sim::exact::course_tires`: dirt stage 12, wet the front's
+  stage + 13; a replay's and a whole-run ghost's cars as recorded); the screen keeps the launch's source
+  (`launch_source_`). A player's entry: pedal style 0
   (automatic) or 1 (manual; the pause menu's AT / MT changes it on the record while the pad drives), the
   steering-wheel type 1 when the player's controller is a wheel (`DeviceKind::Wheel`), ASM / TCS from the Options (arcade single race,
   free run, 2P battle), the engine condition words and the car's dirt. Grid: the opponents in their order

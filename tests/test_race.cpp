@@ -958,9 +958,9 @@ TEST(race_field_event) {
 }
 
 // GT Mode's grid on the disc (gt_mode §22.1): the Japan Championship's round 5 field with the opponents in their entry order.
-// On NTSC-U it lines up as GT3 lines it up (GT3 on US 1.10, the round's pre-race grid: Supra, Lancer, NSX, 300ZX, 3000GT, then
-// the player; the old kg-per-PS float rule put the Lancer first). On every disc, in both power units, the race field's grid
-// slots are gt_grid_places over exact_grid_figure, the player last.
+// On NTSC-U it lines up as GT3 lines it up: each car with its entry's tune (about 345 HP each), 4, 4, 4, 3 and 3 kg/HP, so
+// Lancer, NSX, 300ZX, 3000GT, Supra, then the player. On every disc, in both power units, the race field's grid slots are
+// gt_grid_places over exact_grid_figure, the player last.
 TEST(race_gt_grid_disc) {
     Disc* disc = test::any_region_disc();
     if (!disc) SKIP("needs GT3R_DISC");
@@ -997,7 +997,7 @@ TEST(race_gt_grid_disc) {
         }
         const std::vector<int> places = gt_grid_places(fig);
         std::printf("  %s:%s\n", hp ? "HP" : "PS", line.c_str());
-        if (ntsc_u && hp) CHECK(places == (std::vector<int>{3, 4, 0, 1, 2}));
+        if (ntsc_u && hp) CHECK(places == (std::vector<int>{2, 3, 4, 0, 1}));
         FieldConfig cfg;
         cfg.event = ev->label;
         cfg.opponents = opps;

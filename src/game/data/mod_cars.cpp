@@ -126,7 +126,7 @@ bool engine_part_table(int t) {
 
 // An arcade record's tuning settings (table 35, +0xE8..) set to the car's stock settings: each one from the car's own part
 // record and clamped to that record's range, as the race builds a car's stock equipment (stock_equipment in
-// sim/exact/spec_build.cpp), at the offsets arcade_equipment reads them from. The disc's arcade cars mostly hold exactly
+// sim/exact/spec_build.cpp), at the offsets variant_equipment reads them from. The disc's arcade cars mostly hold exactly
 // these; a copy of the donor's would replace the mod car's final drive, output factor and suspension with the donor's.
 // `part(slot)` is the car's part record for a kCarPartTables slot (empty when it has none). The output word (+0x10A) is 0:
 // the engine record's own factor, as in a garage car's equipment.

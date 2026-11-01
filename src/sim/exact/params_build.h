@@ -42,10 +42,16 @@ Equipment make_equipment(const data::CarDatabase& db, const std::string& car_lab
 // The equipment set-car gives a car with these parts: the defaults of sim::stock_settings clamped to the records'
 // ranges as its part setters clamp them [physics §6.6].
 Equipment stock_equipment(const data::CarDatabase& db, const std::string& car_label, const std::array<u64, 27>& parts);
-// The equipment set-car gives an arcade car (a table 35 record, which the program looks up first): its parts as they are and the
-// part setters, the base car's id from the record's +0x08, then the record's own settings bytes +0xE8 .. +0x10D over
-// the setters'.
-Equipment arcade_equipment(const data::CarDatabase& db, const data::CarVariant& v);
+// The equipment of a variant record: an arcade car (table 35, which the equipment set-car's code looks up first) or an
+// event's entry (table 31, the race information's code: a licence test's car, every drawn opponent). Its parts as they are
+// and the part setters, the base car's id from the record's +0x08, then the record's own settings bytes +0xE8 ..
+// +0x10D over the setters' (+0x10A the engine output factor, EQ +0x1B8).
+Equipment variant_equipment(const data::CarDatabase& db, const data::CarVariant& v);
+// The course's tyres, as every race mode fits them to each entry before the race: on a wet course
+// (category 1) the tyres of the front tyre's stage + 13 unless both are wet ones (stages 13 .. 24) already, on a dirt course
+// (category 2) the stage 12 (dirt) tyres unless both are; the car's front and rear records of that stage, both or neither. True
+// when it changed them.
+bool course_tires(const data::CarDatabase& db, Equipment& eq, u8 category);
 // The equipment a car equipment image holds as it is (the memory card's 0x1D0-byte car layout: a saved car, a replay's car
 // record, the disc's demo runs'): the car id EQ +0x00, the part ids EQ +0x18 + 8 k by slot, the settings words EQ +0xF0 ...
 constexpr u32 kEquipmentImageSize = 0x1D0;

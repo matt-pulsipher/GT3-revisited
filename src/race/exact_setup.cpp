@@ -133,18 +133,12 @@ std::optional<ex::Equipment> exact_equipment_as_built(const data::CarDatabase& d
         if (src.settings) return ex::make_equipment(db, base, *src.parts, *src.settings);
         return ex::stock_equipment(db, base, *src.parts);
     }
-    // As the race entries are built (the set-car): a variant (table 31) as its base car with the variant's parts,
-    // else an arcade car (table 35), else the car (table 30) with its own parts.
-    if (const data::CarVariant* v = db.variant(label)) {
-        std::array<u64, 27> parts{};
-        if (const data::Car* b = db.car(v->car)) parts = b->parts;
-        for (size_t k = 0; k < 27; ++k)
-            if (v->parts[k]) parts[k] = v->parts[k];
-        return ex::stock_equipment(db, v->car, parts);
-    }
+    // As the race entries are built: an event's entry (table 31) from its record, as the race information builds it;
+    // else an arcade car (table 35, which the set-car looks up first); else the car (table 30) with its own parts.
+    if (const data::CarVariant* v = db.variant(label)) return ex::variant_equipment(db, *v);
     for (const data::CarVariant& a : db.arcade_cars()) {
         if (a.label != label && a.label != "_" + label) continue;
-        ex::Equipment eq = ex::arcade_equipment(db, a);
+        ex::Equipment eq = ex::variant_equipment(db, a);
         if (src.tire_stage >= 0) { // the car page's tyres: both tyre parts to the stage's records when the car has them
             const char sfx = char('a' + src.tire_stage);
             for (data::TableId t : {data::TableId::FrontTire, data::TableId::RearTire}) {
