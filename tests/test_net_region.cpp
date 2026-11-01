@@ -10,6 +10,7 @@
 
 #include "disc/volume.h"
 #include "game/data/car_database.h"
+#include "game/data/mod_cars.h"
 #include "game/gt_mode.h"
 #include "game/gt_parts.h"
 #include "game/gt_setting.h"
@@ -93,6 +94,73 @@ TEST(net_car_digest_wire) {
         // A truncated digest is no digest.
         std::optional<game::OnlineCar> td = game::decode_online_car(ByteSpan(now.data(), now.size() - 1));
         CHECK(td && !td->digest);
+    }
+
+    // A mod car bought in GT Mode: a garage car whose package and donor trail the digest.
+    game::OnlineCar gm = g;
+    gm.car = "mod_x";
+    gm.digest.emplace();
+    gm.digest->fill(0x33);
+    game::OnlineCar plain = gm; // as an older game sends it: no package
+    gm.package = std::string(64, 'e');
+    gm.package_size = 4321;
+    gm.donor = "syn_a";
+    const Bytes old = game::encode_online_car(plain), now = game::encode_online_car(gm);
+    CHECK(now.size() == old.size() + 1 + 64 + 4 + 1 + 5 && std::equal(old.begin(), old.end(), now.begin()));
+    CHECK(now.size() < game::kMaxOnlineCarBytes);
+    // 0.5.0's decoder is this one without the fields after the digest: it reads up to the digest and ignores the rest,
+    // which is reading the bytes up to the digest. The same garage car, with its digest.
+    std::optional<game::OnlineCar> as_old = game::decode_online_car(ByteSpan(now.data(), old.size()));
+    CHECK(as_old && as_old->kind == game::OnlineCar::Kind::Garage && as_old->car == "mod_x" && as_old->parts == gm.parts &&
+          as_old->digest == gm.digest && as_old->package.empty() && as_old->donor.empty());
+    // This game reads the package and the donor.
+    std::optional<game::OnlineCar> nd = game::decode_online_car(now);
+    CHECK(nd && nd->kind == game::OnlineCar::Kind::Garage && nd->parts == gm.parts && nd->engine_wear_m == 1000 &&
+          nd->digest == gm.digest && nd->package == gm.package && nd->package_size == 4321 && nd->donor == "syn_a");
+    CHECK(nd && game::online_car_is_mod(*nd) && game::encode_online_car(*nd) == now);
+    // An older game's descriptor: no package (a garage car, not a mod car to download).
+    std::optional<game::OnlineCar> od = game::decode_online_car(old);
+    CHECK(od && od->digest && od->package.empty() && od->package_size == 0 && !game::online_car_is_mod(*od));
+    // Without a digest neither is sent: the decoder would read their bytes as the digest.
+    game::OnlineCar nodig = gm;
+    nodig.digest.reset(), plain.digest.reset();
+    CHECK(game::encode_online_car(nodig) == game::encode_online_car(plain));
+    // What follows them is ignored, as 0.5.0 ignores what follows the digest.
+    Bytes more = now;
+    more.push_back(7);
+    std::optional<game::OnlineCar> md = game::decode_online_car(more);
+    CHECK(md && md->package == gm.package && md->donor == "syn_a" && game::encode_online_car(*md) == now);
+    // Malformed: a truncated package or donor, a bad hash.
+    CHECK(!game::decode_online_car(ByteSpan(now.data(), now.size() - 1)));
+    CHECK(!game::decode_online_car(ByteSpan(now.data(), old.size() + 1)));
+    CHECK(!game::decode_online_car(ByteSpan(now.data(), old.size() + 1 + 64 + 4)));
+    gm.package = "zz";
+    CHECK(!game::decode_online_car(game::encode_online_car(gm)));
+
+    // A mod car from the list: its donor trails the digest.
+    game::OnlineCar ml = m;
+    ml.package_size = 99;
+    ml.digest = gm.digest;
+    const Bytes ml_old = game::encode_online_car(ml); // as 0.5.0 sends it: no donor
+    ml.donor = "syn_a";
+    const Bytes ml_now = game::encode_online_car(ml);
+    CHECK(ml_now.size() == ml_old.size() + 1 + 5 && std::equal(ml_old.begin(), ml_old.end(), ml_now.begin()));
+    std::optional<game::OnlineCar> ml_as_old = game::decode_online_car(ByteSpan(ml_now.data(), ml_old.size()));
+    CHECK(ml_as_old && ml_as_old->kind == game::OnlineCar::Kind::Mod && ml_as_old->package == m.package &&
+          ml_as_old->package_size == 99 && ml_as_old->digest == gm.digest && ml_as_old->donor.empty());
+    std::optional<game::OnlineCar> ml_d = game::decode_online_car(ml_now);
+    CHECK(ml_d && ml_d->donor == "syn_a" && ml_d->package == m.package && game::encode_online_car(*ml_d) == ml_now);
+    CHECK(!game::decode_online_car(ByteSpan(ml_now.data(), ml_now.size() - 1)));
+    ml.digest.reset();
+    CHECK(game::encode_online_car(ml) == Bytes(ml_old.begin(), ml_old.end() - 32)); // no digest: no donor
+
+    // The other kinds send nothing after the digest.
+    for (game::OnlineCar c : {a, d}) {
+        c.digest = gm.digest;
+        const Bytes b = game::encode_online_car(c);
+        c.package = std::string(64, 'e');
+        c.donor = "syn_a";
+        CHECK(game::encode_online_car(c) == b);
     }
 }
 
@@ -459,6 +527,140 @@ TEST(net_car_setup_rules) {
     CHECK(f.setup == "final gear out of range" && game::online_car_facts(db, nullptr, ok).setup.empty());
     game::CarRules any;
     CHECK(!game::car_meets_rules(bad, f, any, &why) && why == "not a legal setup: final gear out of range");
+}
+
+namespace {
+
+// INVENTED mod cars over donor car syn_d.
+const char* kSynMod = "[car]\nlabel = syn_mod\nname = Syn Mod\ndonor = syn_d\n[body]\nweight_kg = 1000\n";
+const char* kSynModHeavier = "[car]\nlabel = syn_mod\nname = Syn Mod\ndonor = syn_d\n[body]\nweight_kg = 1100\n";
+
+bool add_mod(data::CarDatabase& db, const char* def) {
+    std::string err;
+    std::optional<data::ModCarDef> d = data::parse_mod_car(def, &err);
+    if (!d || !data::add_mod_car(db, *d, &err)) {
+        std::printf("  mod car: %s\n", err.c_str());
+        return false;
+    }
+    db.rebuild();
+    return true;
+}
+
+// Car syn_d (cardb::add_car, model zz0001) with the drivetrain and gearbox records a mod car's donor needs; with `mod`,
+// that mod car installed over it, as a player who has the mod.
+std::unique_ptr<data::CarDatabase> donor_db(const char* mod = nullptr) {
+    auto db = cardb::empty_database();
+    if (!db) return db;
+    cardb::add_car(*db, "syn_d", 300, 75, "zz0001");
+    db->put_record(data::TableId::Drivetrain, part_record(*db, "dt_syn_d", "syn_d", 0, 0x40));
+    Bytes ge = part_record(*db, "ge_syn_d", "syn_d", 0, 0x30); // stored ratios, final 4.000
+    ge[0x11] = 5;
+    cardb::put16(ge, 0x12, 3300);
+    const u16 ratios[5] = {3200, 2000, 1400, 1050, 820};
+    for (size_t i = 0; i < 5; ++i) cardb::put16(ge, 0x14 + 2 * i, ratios[i]);
+    cardb::put16(ge, 0x22, 4000), cardb::put16(ge, 0x24, 4000), cardb::put16(ge, 0x26, 4000);
+    db->put_record(data::TableId::Gear, std::move(ge));
+    const ByteSpan* car = db->record(data::TableId::Car, "syn_d");
+    if (!car) return nullptr;
+    Bytes c(car->begin(), car->end());
+    cardb::put64(c, 8 + 8 * 13, db::id_hash("dt_syn_d"));
+    cardb::put64(c, 8 + 8 * 18, db::id_hash("ge_syn_d"));
+    db->put_record(data::TableId::Car, std::move(c));
+    db->rebuild();
+    if (mod && !add_mod(*db, mod)) return nullptr;
+    return db;
+}
+
+} // namespace
+
+TEST(net_car_garage_mod_car) {
+    // A mod car bought in GT Mode races from the garage as a garage car that carries its package and donor
+    // (docs/dev/ONLINE.md "Mod cars"): a player who lacks the mod is offered it when the donor is on their disc, not
+    // refused; once it is installed the car is checked as a garage car, its digest and then its setup.
+    auto owner = donor_db(kSynMod), lacks = donor_db();
+    if (!owner || !lacks) SKIP("in-memory database did not load");
+    const data::Car* car = owner->car("syn_mod");
+    CHECK(car && owner->mod_car("syn_mod") && !lacks->car("syn_mod"));
+    if (!car) return;
+    game::GarageCar g;
+    g.car = "syn_mod";
+    g.parts = car->parts;
+    g.settings = sim::stock_settings(*owner, g.car, g.parts);
+    game::OnlineCar own = game::online_car_from_garage(*owner, g);
+    CHECK(own.kind == game::OnlineCar::Kind::Garage && !game::online_car_is_mod(own));
+    game::OnlineCar oc = own;
+    oc.package = std::string(64, 'e'); // as the lobby fills it in: its package's SHA-256 and size
+    oc.package_size = 4321;
+    const game::OnlineCar sent = announced(*owner, oc);
+    CHECK(sent.kind == game::OnlineCar::Kind::Garage && sent.digest && sent.parts == g.parts);
+    CHECK(sent.package == oc.package && sent.package_size == 4321 && game::online_car_is_mod(sent) && sent.donor == "syn_d");
+    const auto all = models({"zz0001"});
+    CHECK(here_on(*owner, sent, all) == CarHere::Ok && !game::mod_download_offered(*owner, sent));
+
+    // Not installed: offered for download (its donor is on this disc), else a stand-in.
+    CHECK(here_on(*lacks, sent, all) == CarHere::ModMissing && game::mod_download_offered(*lacks, sent));
+    // An older game's descriptor has no package: not on this disc, as before, and nothing is offered.
+    game::OnlineCar old = sent;
+    old.package.clear(), old.package_size = 0;
+    old = wire(old);
+    CHECK(here_on(*lacks, old, all) == CarHere::Unknown && !game::mod_download_offered(*lacks, old));
+
+    // The donor decides the offer, for a garage mod car and a mod car from the list alike. A disc without the donor (the
+    // mod is built over another game's disc car): not on this disc, nothing offered. A donor not known (an older game's
+    // descriptor): a stand-in, nothing offered.
+    game::OnlineCar list = game::online_car_from_db(*owner, "syn_mod", 0);
+    CHECK(list.kind == game::OnlineCar::Kind::Mod && list.donor == "syn_d");
+    list.package = oc.package, list.package_size = 4321;
+    list = announced(*owner, list);
+    CHECK(list.donor == "syn_d");
+    auto elsewhere = cardb::empty_database();
+    if (!elsewhere) SKIP("in-memory database did not load");
+    cardb::add_car(*elsewhere, "syn_e", 300, 75, "zz0001");
+    elsewhere->rebuild();
+    for (const game::OnlineCar& c : {sent, list}) {
+        CHECK(here_on(*lacks, c, all) == CarHere::ModMissing && game::mod_download_offered(*lacks, c));
+        CHECK(here_on(*elsewhere, c, all) == CarHere::Unknown && !game::mod_download_offered(*elsewhere, c));
+        game::OnlineCar unknown = c;
+        unknown.donor.clear();
+        unknown = wire(unknown);
+        CHECK(unknown.package == c.package && unknown.donor.empty());
+        CHECK(here_on(*lacks, unknown, all) == CarHere::ModMissing && !game::mod_download_offered(*lacks, unknown));
+        CHECK(here_on(*elsewhere, unknown, all) == CarHere::ModMissing && !game::mod_download_offered(*elsewhere, unknown));
+        // A donor that is a mod car here is no donor (mod cars are built over disc cars).
+        game::OnlineCar over_mod = c;
+        over_mod.car = "syn_other", over_mod.donor = "syn_mod";
+        CHECK(here_on(*owner, wire(over_mod), all) == CarHere::Unknown && !game::mod_download_offered(*owner, wire(over_mod)));
+    }
+
+    // Lobby rules: the checks that need the car pass on a machine without it; "no mod cars" refuses it there, and on its
+    // owner's machine before the package is filled in.
+    game::CarRules r;
+    std::string why;
+    r.max_ps = 1, r.drive = 3;
+    CHECK(game::car_meets_rules(sent, game::online_car_facts(*lacks, nullptr, sent), r, &why));
+    r = {};
+    r.allow_mods = false;
+    CHECK(!game::car_meets_rules(sent, game::online_car_facts(*lacks, nullptr, sent), r, &why) && why == "mod cars are not allowed");
+    CHECK(!game::car_meets_rules(own, game::online_car_facts(*owner, nullptr, own), r, &why) && why == "mod cars are not allowed");
+    CHECK(game::online_car_facts(*owner, nullptr, own).mod && !game::online_car_facts(*lacks, nullptr, old).mod);
+
+    // Installed (the download): checked as a garage car, and offered no more.
+    CHECK(add_mod(*lacks, kSynMod));
+    CHECK(here_on(*lacks, sent, all) == CarHere::Ok && !game::mod_download_offered(*lacks, sent));
+    CHECK(here_on(*lacks, old, all) == CarHere::Ok);
+    CHECK(game::online_car_facts(*lacks, nullptr, old).mod); // (a mod car in this database)
+    // Another version of the mod under its label builds another car: different.
+    auto heavier = donor_db(kSynModHeavier);
+    CHECK(heavier && here_on(*heavier, sent, all) == CarHere::Differs);
+    // A setup GT Mode cannot give it (a setting off its parts' ranges), announced with its own digest: not legal.
+    game::OnlineCar soft = oc;
+    soft.settings.spring[0] += 10;
+    soft = announced(*owner, soft);
+    why.clear();
+    CHECK(soft.digest && soft.digest != sent.digest);
+    CHECK(game::online_car_here(*lacks, &program(), soft, all, &why) == CarHere::Illegal && why == "front spring rate out of range");
+    // The race draws its body: the donor's model here.
+    CHECK(here_on(*lacks, sent, models({"zz0002"})) == CarHere::NoModel);
 }
 
 namespace {

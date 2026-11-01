@@ -452,14 +452,16 @@ private:
     void announce_car() {
         net::Session& ns = net::online();
         game::OnlineCar oc = current_car();
-        if (oc.kind == game::OnlineCar::Kind::Mod && app_ && app_->vfs()) offer_own_package(oc);
+        const bool mod = oc.kind == game::OnlineCar::Kind::Mod || (oc.kind == game::OnlineCar::Kind::Garage && db_.mod_car(oc.car));
+        if (mod && app_ && app_->vfs()) offer_own_package(oc); // (a garage mod car's package travels after the digest)
         ns.set_car(oc.car, oc.paint);
         ns.set_car_info(game::encode_online_car(oc));
     }
 
     // --- mod car downloads (docs/dev/ONLINE.md "Mod cars") ---
 
-    // Our mod car's package: built once per car, offered to the session, its hash in our descriptor.
+    // Our mod car's package (from the car list or the garage): built once per car, offered to the session, its hash in
+    // our descriptor.
     void offer_own_package(game::OnlineCar& oc) {
         auto it = own_packages_.find(oc.car);
         if (it == own_packages_.end()) {
@@ -478,17 +480,19 @@ private:
         }
         oc.package = it->second.hash;
         oc.package_size = it->second.size;
-        if (oc.package.empty()) oc.kind = game::OnlineCar::Kind::Disc; // not shareable: others use a stand-in
+        // Not shareable: others use a stand-in (a garage car keeps its kind, without a package).
+        if (oc.package.empty() && oc.kind == game::OnlineCar::Kind::Mod) oc.kind = game::OnlineCar::Kind::Disc;
     }
 
-    // Other players' mod cars we lack: ask once per package (when the lobby allows mods).
+    // Other players' mod cars we lack (from their car list or garage) whose donor car is on this disc: ask once per
+    // package (when the lobby allows mods).
     void offer_downloads(const net::Session& ns) {
         if (!ns.settings().allow_mods) return;
         for (const net::Player& p : ns.players()) {
             if (int(p.id) == ns.my_id()) continue;
             const Bytes* info = ns.car_info(p.id);
             std::optional<game::OnlineCar> oc = info ? game::decode_online_car(*info) : std::nullopt;
-            if (!oc || oc->kind != game::OnlineCar::Kind::Mod || oc->package.empty() || db_.car(oc->car)) continue;
+            if (!oc || !game::mod_download_offered(db_, *oc)) continue;
             if (!asked_.insert(oc->package).second) continue;
             prompts_.push_back({p.id, p.name, *oc});
         }
@@ -1218,7 +1222,7 @@ private:
                 if (std::optional<game::OnlineCar> oc = game::decode_online_car(*info)) {
                     car = oc->name.empty() ? oc->car : oc->name;
                     if (oc->kind == game::OnlineCar::Kind::Garage) car = "Garage: " + car;
-                    if (oc->kind == game::OnlineCar::Kind::Mod) car += db_.car(oc->car) ? " (mod)" : " (mod, not installed)";
+                    if (game::online_car_is_mod(*oc)) car += db_.car(oc->car) ? " (mod)" : " (mod, not installed)";
                     if (oc->kind == game::OnlineCar::Kind::Arcade)
                         if (int k = gd ? game::arcade_class_of(*gd, oc->arcade) : 0)
                             car = std::string(game::arcade_class_name(k)) + ": " + car;

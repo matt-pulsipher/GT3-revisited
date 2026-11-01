@@ -156,8 +156,12 @@ Each player's car travels as a `game::OnlineCar` descriptor (`src/game/net_car.*
   (`game::online_car_spec`, the same path as GT Mode's `car_spec`). The lobby lists the GT Mode garage first. A
   garage car keeps its own paint. Remote cars use their real spec, since
   weight and size count in contact. Its parts and settings must be ones GT Mode
-  can give the car ("Legal setups" below).
-- **Mod car:** its label plus the SHA-256 and size of its package (below).
+  can give the car ("Legal setups" below). A mod car bought in GT Mode is a
+  garage car that also carries its package's SHA-256 and size and its donor,
+  so a player without the mod is offered it as for a mod car from the list
+  ("Mod cars").
+- **Mod car:** its label plus the SHA-256 and size of its package and its
+  donor car (below).
 - **Arcade car:** a car of the arcade's class lists (database table 35, e.g.
   `nsx_s_zero_97_290`), with its base car. Every machine builds it as the arcade
   races it (`race::arcade_car`): the variant's parts with its arcade tyres for the
@@ -184,7 +188,8 @@ players' cars from its own disc, so a car races only where it is the same car.
   race equals it (`net_exact_lobby_digest_is_the_race_params`).
 - **The check** (`game::online_car_here`, tested in `net_car_here_regions`,
   `net_car_here_disc`). For every other player's car each machine reports one of:
-  - **not on this disc**: the car, a part or its arcade car is not in this database;
+  - **not on this disc**: the car, a part, its arcade car or a mod car's donor is not in this
+    database;
   - **different on this disc**: this machine's digest differs: this disc's data for the car
     differs where it reaches P (another engine curve, body size, gear set, tyre, suspension);
   - **no model on this disc**: no `cars/day/<model>` for the body the race would draw;
@@ -193,16 +198,23 @@ players' cars from its own disc, so a car races only where it is the same car.
     "Legal setups" below). It is checked after the digest, so another region's car that
     builds differently reads as different;
   - fine.
-  A mod car not installed here is not refused (download, else a stand-in). Once installed it
-  is checked like the others: its package fixes the definition, but it is built over its
-  donor from this disc's database.
+  A mod car not installed here whose donor is here is not refused (download, else a
+  stand-in), from the list or from a garage (`game::online_car_is_mod`). Once installed it
+  is checked like the others:
+  its package fixes the definition, but it is built over its donor from this disc's
+  database. A garage mod car is then checked as a garage car: the digest, then its setup
+  (`net_car_garage_mod_car`).
 - **Arcade cars** are found by their arcade label. Their base car may have another label on
   another disc (`viper_gtsr_oreca_00_597`: `dodge_viper_gtsr_oreca_00` on NTSC-U,
   `viper_gtsr_oreca_00` on PAL and NTSC-J). A descriptor with a digest builds on this disc's
   base car, and races when the digests match, drawn as this disc's base car
   (`game::online_car_base`); one without a digest is refused.
 - **Wire.** The digest trails the descriptor (32 bytes). Older games stop reading before it;
-  an older game's descriptor has none and is not compared.
+  an older game's descriptor has none and is not compared. After the digest, and only
+  with one (without it, these bytes would read as the digest): a mod car's donor, and a
+  garage mod car's package (its hash and size, as a mod car's) and donor. 0.5.0 ignores
+  what follows the digest and reads the same car. A descriptor that ends at the digest
+  (an older game's) has no garage package and no donor (`net_car_digest_wire`).
 
 What the discs build differently (`net_car_params_regions` with `GT3R_COMPARE_DISC`: every
 car, every arcade car, and every car with each of its upgrade parts alone, 9,962 builds):
@@ -350,9 +362,26 @@ lobby builds and validates its own package when the car is chosen (a car
 that would not pass is shown to the others as a stand-in, with a note to its
 owner).
 
+**What is offered.** Only a mod car (`cars/<label>.ini`) has a package. A disc
+car never travels as one, whatever disc it comes from: a garage car from a disc
+this machine does not have is "not on this disc", with nothing to download. A
+package holds only the mod's own files, and the mod is built over its donor
+car from the receiver's disc, so the descriptor names the donor
+(`data::ModCar::donor`) and the lobby offers the download only when the donor
+is a disc car here (`game::mod_download_offered`, tested in
+`net_car_garage_mod_car`):
+- donor here: the download is offered;
+- donor not here: the car is "not on this disc", and nothing is offered;
+- donor not known (an older game's descriptor): nothing is offered, and the
+  car races as a stand-in.
+
 **Download.** When the lobby allows mod cars and another player races one this
-machine lacks, the lobby asks once per package: "Download it? It is checked,
-then added to your mods" (Cross / Circle; Circle = a stand-in car).
+machine lacks, over a donor it has, the lobby asks once per package: "Download it? It is checked,
+then added to your mods" (Cross / Circle; Circle = a stand-in car). This holds
+for a mod car from the car list and for one from the player's GT Mode garage,
+whose garage descriptor carries the package ("Cars" above). An older game
+sends a garage mod car without its package: a player without the mod sees
+"is not on this disc".
 - The request goes to the host, which serves the package if it has it, or
   fetches it from the owner, verifies it, and keeps a copy for the next player.
 - Chunks are 1 KB on the reliable channel, at most 24 in flight per
@@ -485,7 +514,8 @@ the rules page, where the host changes them and the others read them. The page c
 how many of the player's cars are allowed and says why the chosen one is not.
 Each rule is "any" by default (`game::CarRules`, `game::car_meets_rules`; tested in
 `net_car_rules_disc`, `net_car_rules_arcade_classes`):
-- **Mod cars:** allowed (default) or not.
+- **Mod cars:** allowed (default) or not. A mod car from a GT Mode garage is one too:
+  by its package, or, where the car is installed, by this database.
 - **Tuned cars:** allowed, or stock cars only. A garage car counts as tuned when a part
   or a setting differs from the stock car's, as GT Mode's own test (`GtMode::tuned`);
   an untuned garage car races in a stock lobby.
