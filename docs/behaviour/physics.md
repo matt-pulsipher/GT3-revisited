@@ -1121,8 +1121,9 @@ gain_D = p20 × 0.01, gain_C = p21 × 0.01, threshold_C = p22 × 0.01, gain_E = 
 Every built-in set gives TCS 6.0 / 1.0 / 0 / 1.0 and enable bits 0 (no ASCC); a course's own
 set with non-zero bits turns the channels on.
 
-**The Options menu's ASM / TCS.** In arcade single races, free runs and two-player battles
-(both players' cars) the race applies the two switches when it builds the car; other modes
+**The Options menu's ASM / TCS.** In arcade single races, free runs, two-player battles
+(both players' cars) and online battles the race applies the two switches when it builds the
+car (an online lobby sets the same two); other modes
 always keep the aids; a saved replay keeps those of its run and a demonstration those of its
 recording. ASM off clears the ASCC
 enable bits, so no channel acts; TCS off sets the TCS gain to 0. ABS and the AI's aid block

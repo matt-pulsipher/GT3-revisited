@@ -284,7 +284,7 @@ wheelspin under throttle (`race_rumble`).
     race's battle start on GT3's line 6).
   - 2P tyre damage: the battle's tire wear for both cars, not on dirt courses.
   - ASM / TCS off: the player's car (and player 2's) gets its ASCC flags / TCS gain cleared, in
-    arcade single race, free run and 2P only; on keeps the car's own systems.
+    arcade single race, free run, 2P and online battles only; on keeps the car's own systems.
   - gear_auto: the default AT/MT outside arcade single race and 2P (they use the car page).
   - race / replay SE off: no engine, tyre or car one-shot sounds (race SE live, replay SE in
     replays, demos and the attract mode); race BGM off: no race music (the quick menus' music
@@ -1026,7 +1026,7 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
   (`launch_source_`). A player's entry: pedal style 0
   (automatic) or 1 (manual; the pause menu's AT / MT changes it on the record while the pad drives), the
   steering-wheel type 1 when the player's controller is a wheel (`DeviceKind::Wheel`), ASM / TCS from the Options (arcade single race,
-  free run, 2P battle), the engine condition words and the car's dirt. Grid: the opponents in their order
+  free run, 2P battle, online battle), the engine condition words and the car's dirt. Grid: the opponents in their order
   (GT mode: by whole kg per whole power, `gt_grid_places`) on the slots before the players' (the players behind them), never more
   cars than the course's grid slots (more are left out, logged): GT3's menus never make such a field (every
   event's cars fit its course; the arcade's dirt races are one against one). The start port itself reads a

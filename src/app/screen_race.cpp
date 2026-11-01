@@ -85,6 +85,8 @@ RaceScreen::RaceScreen(const OnlineLaunch& l) : preset_(read_preset()) {
     preset_.car = l.car;
     preset_.paint = l.paint;
     preset_.manual = l.manual;
+    // The Options' ASM / TCS, as arcade single race takes them (the lobby sets them too).
+    aids_options_apply_ = true, asm_on_ = l.asm_on, tcs_on_ = l.tcs_on;
     preset_.laps = l.laps;
     preset_.event.clear(), preset_.tt_event.clear(), preset_.replay.clear();
     preset_.two_player = preset_.watch = preset_.save = false;

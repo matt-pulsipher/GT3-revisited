@@ -13,7 +13,10 @@ online lobby (`src/app/screen_online.cpp`; also `gt3r --screen online`).
   sends that car's state after every step.
 - An online race is a `race::ExactField` with the i.LINK battle's race rules
   (`Conductor::BattleMP`): start type 1 (four seconds on the grid), the lobby's laps, no
-  tyre wear, no catch-up. Every machine runs **NTSC-U rules at 60 steps a second**,
+  tyre wear, no catch-up. Each player's car takes their own ASM / TCS: the game's Options
+  (`[options] assist_asm` / `assist_tcs`), which the start page and the lobby set too
+  (`OnlineLaunch::asm_on` / `tcs_on`); the race entry's flags in every state tell the other
+  machines, whose prediction for that car is built for them. Every machine runs **NTSC-U rules at 60 steps a second**,
   whatever disc it has (`ExactFieldOptions::rules`, set by `RaceScreen::exact_options` for
   online races; offline races follow their disc's release), so everyone in a race shares
   one physics.

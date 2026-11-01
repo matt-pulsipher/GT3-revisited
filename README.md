@@ -286,6 +286,10 @@ players, each on their own machine:
   page can list only the cars allowed.
 - A GT Mode car races only with parts and settings the game's tune shop and
   settings menu can give it; any other setup (an edited save, say) is refused.
+- **Stability control (ASM)** and **Traction control (TCS)** are your own
+  choice, on the start page or in the lobby. They are the same switches as
+  the Options menu's driver's assist page, so a change in one place applies
+  everywhere.
 - Every lobby page works with a mouse, touch or a VR controller's pointer too.
 - Mod cars are offered to the other players as checked downloads.
 - The other players can see your IP address, as in any peer-to-peer game.
