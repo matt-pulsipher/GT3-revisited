@@ -877,6 +877,11 @@ few rows follow the car:
 because the physics reads the front second damper stage from the bump words. The
 drivetrain-split word is stored but ignored by the physics.
 
+**Online.** A garage car raced online is checked on every machine against these ranges and
+locks, and against the parts GT Mode fits on it (§6.3). A car with a part or a setting the
+tune shop and this menu cannot give it is refused ("not a legal setup";
+`docs/dev/ONLINE.md` "Legal setups").
+
 The setting files are in §19.
 
 ## §15 Attract demo field

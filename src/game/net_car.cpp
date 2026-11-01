@@ -4,6 +4,7 @@
 #include "game/data/weight_class.h"
 #include "game/gt_mode.h"
 #include "game/gt_parts.h"
+#include "game/gt_setting.h"
 #include "game/gt_state.h"
 #include "base/ps2_float.h"
 #include "base/sha256.h"
@@ -222,12 +223,18 @@ std::optional<std::array<u8, 32>> online_car_digest(const data::CarDatabase& db,
 }
 
 CarHere online_car_here(const data::CarDatabase& db, const sim::exact::ProgramData* d, const OnlineCar& c,
-                        const std::function<bool(const std::string& model)>& has_model) {
+                        const std::function<bool(const std::string& model)>& has_model, std::string* why) {
     if (c.kind == OnlineCar::Kind::Mod && !db.car(c.car)) return CarHere::ModMissing;
     std::optional<sim::CarSpec> s = online_car_spec(db, c);
     if (!s) // an arcade car of this disc on a base car that builds another spec: different
         return c.kind == OnlineCar::Kind::Arcade && race::arcade_car(db, c.arcade, 0, {}) ? CarHere::Differs : CarHere::Unknown;
     if (c.digest && d && online_car_digest(db, *d, c) != c.digest) return CarHere::Differs;
+    // After the digest: another region's car that builds alike may still fall outside this disc's ranges.
+    if (c.kind == OnlineCar::Kind::Garage)
+        if (std::string bad = garage_setup_problem(db, c.car, c.parts, c.settings); !bad.empty()) {
+            if (why) *why = std::move(bad);
+            return CarHere::Illegal;
+        }
     // The body the race draws (the base car's model).
     const data::Car* car = db.car(online_car_base(db, c));
     const std::string model = car ? db.model_of(*car) : std::string();
@@ -240,6 +247,7 @@ const char* car_here_text(CarHere h) {
     case CarHere::Unknown: return "is not on this disc";
     case CarHere::Differs: return "is different on this disc";
     case CarHere::NoModel: return "has no model on this disc";
+    case CarHere::Illegal: return "is not a legal setup";
     default: return "";
     }
 }
@@ -372,7 +380,10 @@ CarFacts online_car_facts(const data::CarDatabase& db, const GtData* gd, const O
             if (v.label == c.arcade)
                 for (size_t i = 0; i < parts.size(); ++i)
                     if (v.parts[i]) parts[i] = v.parts[i];
-    if (c.kind == OnlineCar::Kind::Garage) f.tuned = GtMode::tuned(db, c.car, c.parts, c.settings);
+    if (c.kind == OnlineCar::Kind::Garage) {
+        f.tuned = GtMode::tuned(db, c.car, c.parts, c.settings);
+        f.setup = garage_setup_problem(db, c.car, c.parts, c.settings);
+    }
     // Drivetrain and aspiration as GT3's event rules read them (GtMode::check_entry).
     static const int kRule[5] = {2, 1, 3, 4, 5}; // database drive type FR, FF, AWD, MR, RR -> rule
     if (auto dt = db.drivetrain(parts[size_t(part_slot(int(data::TableId::Drivetrain)))]); dt && dt->drive_type < 5)
@@ -412,6 +423,7 @@ bool car_meets_rules(const OnlineCar& c, const CarFacts& f, const CarRules& r, s
     };
     if (!r.allow_mods && c.kind == OnlineCar::Kind::Mod) return no("mod cars are not allowed");
     if (!f.known) return true; // a mod car this machine lacks: its owner's lobby checked it
+    if (!f.setup.empty()) return no("not a legal setup: " + f.setup);
     // "Class B cars", "rally cars".
     auto cars_of = [](int cls) { return cls == kArcadeClasses ? std::string("rally cars") : arcade_class_name(cls) + std::string(" cars"); };
     if (const int k = car_class(f, r.dirt_course); r.car_class && k != r.car_class) {
