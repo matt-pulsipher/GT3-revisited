@@ -1537,7 +1537,7 @@ The item actions:
 | `qm_start`, `qm_try_again` | run (again) |
 | `qm_free_run` | the free practice before a GT race: the race's field on the course, the player's car starting in its pit box (below); after it the grid by best lap (GT Mode page §22.5) |
 | `qm_replay` | watch the replay (§11.1) |
-| `qm_demo` | the disc's demonstration of the event plays as a recorded race; without one, the computer drives the player's car |
+| `qm_demo` | the disc's demonstration of the event (a license test's, or an arcade time trial's) plays as a recorded race; when the disc's file cannot be read, the race's own recording plays as a replay instead: the last run, or the empty recording before any run |
 | `qm_save_replay` | save the replay |
 | `qm_save_ghost` | save the visit's best run (a free run: the run of its best lap), presentation §G11 |
 | `qm_load_ghost` | load a saved ghost at once, from the saved replays that can be played here (§13), presentation §G11 |

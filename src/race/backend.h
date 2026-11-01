@@ -159,7 +159,7 @@ public:
     virtual int driver_kind() const { return 0; }
     // The race pad's state for the next step (the car reads the pad itself, as in GT3).
     virtual void set_pad(const PadState* pad) { (void)pad; }
-    // The car's own AI takes the car over (a race's demonstration); false when it cannot.
+    // The car's own AI takes the car over; false when it cannot.
     virtual bool ai_take_over() { return false; }
     // Player reverse (GT3's "back" action) for a step without a pad.
     virtual void set_reverse_request(bool on) { (void)on; }
