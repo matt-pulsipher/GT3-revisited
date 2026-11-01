@@ -342,7 +342,7 @@ Triangle or Square leave at once as its EXIT, except in championships
 
 ### Song controls
 
-Ours, with the [player's own music](../README.md#your-music) or the disc's: in a
+Ours, with the [player's own music](MUSIC.md) or the disc's: in a
 race whose music is playing (not licence tests, the attract demo, jingles or the
 quick menus' music, and not with Race BGM off), **Next song** and **Previous
 song** skip through the race songs. Previous goes back through the songs played

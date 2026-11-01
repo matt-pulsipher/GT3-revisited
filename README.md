@@ -166,39 +166,11 @@ beside it instead.
 
 ### Your music
 
-Your own MP3, FLAC and WAV files can play as race songs. Put them in the user
-data folder's `music/` (at any depth; on phones and tablets the Files app shows
-it as GT3 Revisited > music), or choose the folder they're in with **Settings →
-Audio → Music folder**: they play from there, nothing is copied. On Android the
-game asks to read your music files, and the folder has to be on the device or
-its memory card (not in a cloud drive's app); if you take that permission back
-in Android's settings, Settings says so and your playlist waits for it. On iOS
-the folder is picked as in the Files app (On My iPhone, iCloud Drive). Titles and artists come from the files'
-tags (ID3, FLAC comments, WAV INFO), otherwise from the file name. AAC (`.m4a`),
-Ogg and other formats don't play, nor do damaged files; Settings counts the files
-it skipped. Every folder inside is searched, linked folders too (32 levels deep at
-most; names starting with `.` are skipped), up to 10,000 songs (the first ones in
-name order). Moving an album's folder keeps its songs' check marks and order. If
-the music folder can't be read (a drive unplugged), your playlist is kept for when
-it's back. The songs found are remembered, so the next start has them at once,
-before it has looked through the folder again.
-
-Your songs play as loud as the disc's race songs: the game turns each one up or
-down to the disc songs' average, by at most 12 dB up (less when that would
-clip) and 20 dB down. A song is measured the first time it plays (it eases to
-its level a moment after it starts) and the next song in your list while it
-plays, so most start at the right level; what was measured is remembered.
-
-The game's **Options → Favorite Music List** then has three tabs over the list
-(Up from the first song, or L1 / R1): **Original** plays the disc's race songs
-as the original does, **Custom** only yours, **Both** the two lists mixed song
-by song (Shuffle draws from both evenly; Order takes turns, one of each). Each
-tab's list is edited as the original's is: check marks, the order, Order /
-Shuffle (also at the right of the tab row, so it's in reach of a long list).
-L2 / R2 jump a screen of songs at a time; a drag or the mouse wheel scrolls.
-Without songs in the folder the tabs are hidden and the disc's list plays. In races, the pause screen shows the song with L1 / R1 to skip, and
-Next / Previous song can be bound to chords or touch buttons
-([INPUT](docs/INPUT.md#song-controls)).
+Your own MP3, FLAC and WAV files can play as race songs, in place of the
+disc's or mixed with them: choose their folder in **Settings → Audio → Music
+folder** (or copy them into `music/`), then pick the **Custom** or **Both** tab
+in the game's **Options → Favorite Music List**. In races, the pause screen's
+L1 / R1 skip songs. Step by step: [MUSIC](docs/MUSIC.md).
 
 ### Settings
 
@@ -475,6 +447,7 @@ Run `gt3tool` without arguments for the full list.
 - [docs/behaviour/](docs/behaviour/): how the original game behaves, per
   system (physics, AI, GT Mode, menus, race presentation, sound, music)
 - [INPUT](docs/INPUT.md): controller support and binding syntax
+- [MUSIC](docs/MUSIC.md): playing your own music in races
 - [MODDING](docs/MODDING.md): making and installing mods
 - [COMPATIBILITY](docs/COMPATIBILITY.md): tested disc versions
 - `docs/dev/`: implementation notes per area (race, GT Mode, physics, AI,
