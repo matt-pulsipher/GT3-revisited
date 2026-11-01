@@ -4,6 +4,7 @@
 // from the disc (GT3R_DISC).
 
 #include "test_framework.h"
+#include "exact_drive.h"
 
 #include "disc/core_image.h"
 #include "disc/volume.h"
@@ -71,11 +72,11 @@ ex::PadFrame line_driver(const ex::Car& c, const ex::RaceCourse& course, int ste
     ex::F dx, dy;
     const int line = c.ai.line ? c.ai.line : 6;
     ex::ai_target(c, course.ai, line, c.ai.next, ex::F(12.0f) + ex::F(0.6f) * c.speed, dx, dy);
-    const float fx = c.fwd.x.host(), fy = c.fwd.y.host(), x = dx.host(), y = dy.host();
-    const float angle = std::atan2(fx * y - fy * x, fx * x + fy * y) + weave * std::sin(float(step) * 0.05f);
-    f.steer = s16(std::lround(std::clamp(angle * 2.5f, -1.0f, 1.0f) * 4096.0f));
-    const float kmh = c.speed.host() * 3.6f, limit = 200.0f - 260.0f * std::fabs(angle);
-    if (kmh < limit) f.throttle = 4096;
+    // (EE floats: the same frames on every platform)
+    const ex::F angle = test::heading_angle(c, dx, dy) + ex::F(weave) * ee::sin(ex::F(float(step) * 0.05f));
+    f.steer = s16(std::lround(std::clamp(angle.host() * 2.5f, -1.0f, 1.0f) * 4096.0f));
+    // (never below 10 km/h: a car stopped across its line drives on)
+    if (c.speed * ex::F(3.6f) < ee::max(ex::F(200.0f) - ex::F(260.0f) * ee::abs(angle), ex::F(10.0f))) f.throttle = 4096;
     else f.brake = 2048;
     return f;
 }
@@ -174,10 +175,8 @@ ex::PadFrame ram_driver(const ex::Car& me, const ex::Car& target) {
     ex::PadFrame f;
     f.flags = 0x1F;
     f.kind = 2;
-    const float x = target.pos.x.host() - me.pos.x.host(), y = target.pos.y.host() - me.pos.y.host();
-    const float fx = me.fwd.x.host(), fy = me.fwd.y.host();
-    const float angle = std::atan2(fx * y - fy * x, fx * x + fy * y);
-    f.steer = s16(std::lround(std::clamp(angle * 3.0f, -1.0f, 1.0f) * 4096.0f));
+    const ex::F angle = test::heading_angle(me, target.pos.x - me.pos.x, target.pos.y - me.pos.y);
+    f.steer = s16(std::lround(std::clamp(angle.host() * 3.0f, -1.0f, 1.0f) * 4096.0f));
     f.throttle = 4096;
     return f;
 }

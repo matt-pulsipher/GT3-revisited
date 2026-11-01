@@ -5,6 +5,7 @@
 // the courses from the disc (GT3R_DISC).
 
 #include "test_framework.h"
+#include "exact_drive.h"
 
 #include "disc/core_image.h"
 #include "disc/volume.h"
@@ -72,12 +73,10 @@ Aim aim(const ex::Car& c, const ex::RaceCourse& course) {
     ex::F dx, dy;
     const int line = c.ai.line ? c.ai.line : 6;
     ex::ai_target(c, course.ai, line, c.ai.next, ex::F(12.0f) + ex::F(0.6f) * c.speed, dx, dy);
-    const float fx = c.fwd.x.host(), fy = c.fwd.y.host(), x = dx.host(), y = dy.host();
-    const float angle = std::atan2(fx * y - fy * x, fx * x + fy * y);
+    const ex::F angle = test::heading_angle(c, dx, dy); // (EE floats: the same aim on every platform)
     Aim a;
-    a.steer = std::clamp(angle * 2.5f, -1.0f, 1.0f);
-    const float kmh = c.speed.host() * 3.6f, limit = 200.0f - 260.0f * std::fabs(angle);
-    a.throttle = kmh < limit, a.brake = !a.throttle;
+    a.steer = std::clamp(angle.host() * 2.5f, -1.0f, 1.0f);
+    a.throttle = c.speed * ex::F(3.6f) < ex::F(200.0f) - ex::F(260.0f) * ee::abs(angle), a.brake = !a.throttle;
     return a;
 }
 
