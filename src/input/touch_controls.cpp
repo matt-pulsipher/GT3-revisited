@@ -674,7 +674,7 @@ void TouchControls::update(double, float tilt) {
         for (Widget& w : widgets_)
             if (w.kind == Widget::Kind::Steering) w.value = lx;
     }
-    pad_.axes[size_t(PadAxis::LX)] = u8(std::lround((std::clamp(lx, -1.0f, 1.0f) + 1.0f) * 127.5f));
+    pad_.set_axis(PadAxis::LX, lx);
     pressed_actions_ = u8(held_actions_ & ~was_held);
     std::erase_if(fingers_, [](const Finger& f) { return f.released; });
     for (Finger& f : fingers_) f.seen = true;

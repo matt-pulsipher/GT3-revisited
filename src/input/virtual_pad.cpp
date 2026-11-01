@@ -2,6 +2,9 @@
 
 #include "base/config.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace gt3r {
 
 namespace {
@@ -11,6 +14,21 @@ constexpr std::string_view kButtonNames[kPadButtonCount] = {
 };
 constexpr std::string_view kAxisNames[kPadAxisCount] = {"LX", "LY", "RX", "RY"};
 } // namespace
+
+u8 PadState::axis_byte(float v) { return u8(std::lround((std::clamp(v, -1.0f, 1.0f) + 1.0f) * 127.5f)); }
+
+void PadState::set_axis(PadAxis a, float v) {
+    const size_t i = static_cast<size_t>(a);
+    fine[i] = std::clamp(v, -1.0f, 1.0f);
+    axes[i] = axis_byte(v);
+}
+
+float PadState::axis_fine(PadAxis a) const {
+    const size_t i = static_cast<size_t>(a);
+    if (axis_byte(fine[i]) == axes[i]) return fine[i];
+    const float b = float(axes[i]) - 128.0f;
+    return b / (b < 0 ? 128.0f : 127.0f);
+}
 
 std::string_view pad_button_name(PadButton b) { return kButtonNames[static_cast<size_t>(b)]; }
 std::string_view pad_axis_name(PadAxis a) { return kAxisNames[static_cast<size_t>(a)]; }

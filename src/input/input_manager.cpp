@@ -172,9 +172,15 @@ void InputManager::reset_bindings(int player) {
     refresh(p);
 }
 
+bool InputManager::wheel_source(const Player& p, const InputSource& source) const {
+    if (source.kind != InputSource::Kind::JoyAxis) return false;
+    const Device* d = source.device.empty() ? find_device(p.device) : find_tagged(source.device, p.device);
+    return d && !d->gamepad && d->wheel;
+}
+
 bool InputManager::bind(int player, const PadTarget& target, const InputSource& source, bool replace) {
     Player& p = players_[player];
-    if (!p.bindings.bind(p.kind, false, target, source, replace)) return false;
+    if (!p.bindings.bind(p.kind, false, target, source, replace, wheel_source(p, source))) return false;
     if (source.device.empty()) refresh(p);
     else assign_devices(); // the other player's Auto can't keep the device this binding names
     return true;
@@ -199,7 +205,7 @@ const Profile& InputManager::race_profile(int player) const {
 
 bool InputManager::bind_race(int player, const PadTarget& target, const InputSource& source, bool replace) {
     Player& p = players_[player];
-    if (!p.bindings.bind(p.kind, true, target, source, replace)) return false;
+    if (!p.bindings.bind(p.kind, true, target, source, replace, wheel_source(p, source))) return false;
     if (source.device.empty()) refresh(p);
     else assign_devices(); // the other player's Auto can't keep the device this binding names
     return true;
@@ -716,7 +722,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
             button_digital[i] = true;
             button_val[i] = std::max(button_val[i], float(ov.pressure[i]) / 255.0f);
         }
-        for (size_t i = 0; i < kPadAxisCount; ++i) axis_val[i] += ov.axis_f(static_cast<PadAxis>(i));
+        for (size_t i = 0; i < kPadAxisCount; ++i) axis_val[i] += ov.axis_fine(static_cast<PadAxis>(i));
     }
 
     s.connected = dev != nullptr || p.keyboard || p.overlay.connected;
@@ -729,10 +735,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
         else
             s.pressure[i] = pressed ? 255 : 0;
     }
-    for (size_t i = 0; i < kPadAxisCount; ++i) {
-        float v = std::clamp(axis_val[i], -1.0f, 1.0f);
-        s.axes[i] = u8(std::lround((v + 1.0f) * 127.5f));
-    }
+    for (size_t i = 0; i < kPadAxisCount; ++i) s.set_axis(static_cast<PadAxis>(i), axis_val[i]);
 }
 
 void InputManager::update(double dt) {
@@ -867,13 +870,14 @@ int pick_auto_device(const std::vector<AutoRank>& devices) {
 
 PadState merge_pads(const std::vector<PadState>& pads) {
     PadState out;
-    auto off_rest = [](u8 v) { return std::abs(int(v) - 128); };
     for (const PadState& p : pads) {
         out.connected |= p.connected;
         out.buttons |= p.buttons;
         for (size_t i = 0; i < kPadButtonCount; ++i) out.pressure[i] = std::max(out.pressure[i], p.pressure[i]);
-        for (size_t i = 0; i < kPadAxisCount; ++i)
-            if (off_rest(p.axes[i]) > off_rest(out.axes[i])) out.axes[i] = p.axes[i];
+        for (size_t i = 0; i < kPadAxisCount; ++i) {
+            const PadAxis a = static_cast<PadAxis>(i);
+            if (std::fabs(p.axis_fine(a)) > std::fabs(out.axis_fine(a))) out.axes[i] = p.axes[i], out.fine[i] = p.fine[i];
+        }
     }
     return out;
 }

@@ -259,7 +259,9 @@ void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedb
             if (id >= 0) SDL_RunHapticEffect(d.haptic, id, 1);
     }
     if (!d.haptic) return;
-    // Only talk to the device when a value moved noticeably (USB bandwidth).
+    // Only talk to the device when a value moved (USB bandwidth): the spring, which follows the
+    // speed, noticeably; the steering force at each of GT3's steps (1/127 of full force, 258 at
+    // 100% strength: a threshold above one step left the smallest forces around the centre out).
     int coef = ffb::wheel_spring_coefficient(s, cfg_);
     if (d.spring_id >= 0 && std::abs(coef - d.spring_coef) > 300) {
         SDL_HapticEffect e = wheel_spring(coef);
@@ -267,7 +269,7 @@ void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedb
         d.spring_coef = coef;
     }
     int level = ffb::wheel_constant_level(s, cfg_);
-    if (d.constant_id >= 0 && std::abs(level - d.constant_level) > 300) {
+    if (d.constant_id >= 0 && level != d.constant_level) {
         SDL_HapticEffect e = wheel_constant(level);
         SDL_UpdateHapticEffect(d.haptic, d.constant_id, &e);
         d.constant_level = level;

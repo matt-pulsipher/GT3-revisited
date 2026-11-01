@@ -663,6 +663,59 @@ TEST(input_capture_cancel) {
     CHECK(!input.capturing() && input.poll_capture() == std::optional<InputSource>(k));
 }
 
+// A wheel has no dead zone around its centre (public issue 134): its axes bound in the binding
+// editor get none (a stick's get kStickDeadzone), and the wheel's saved sets drop the stick dead
+// zone they were given before. The pad keeps each axis at its full resolution next to its byte.
+TEST(input_wheel_axes_no_deadzone) {
+    auto src = [](const char* s) {
+        InputSource out;
+        CHECK(InputSource::parse(s, out));
+        return out;
+    };
+    auto deadzone = [](const Profile& p, const char* target) {
+        PadTarget t;
+        CHECK(PadTarget::parse(target, t));
+        for (const Binding& b : p.bindings)
+            if (b.target == t) return b.options.deadzone;
+        return -1.0f;
+    };
+    PadTarget steer;
+    CHECK(PadTarget::parse("LX", steer));
+    PlayerBindings b;
+    CHECK(b.bind(DeviceKind::Wheel, true, steer, src("joy.axis0"), true, true));
+    CHECK(deadzone(b.set(DeviceKind::Wheel, true, BindingSet::Controller), "LX") == 0);
+    CHECK(b.bind(DeviceKind::Joystick, true, steer, src("joy.axis0"), true));
+    CHECK(deadzone(b.set(DeviceKind::Joystick, true, BindingSet::Controller), "LX") == kStickDeadzone);
+    CHECK(b.bind(DeviceKind::Pad, true, steer, src("pad.leftx"), true));
+    CHECK(deadzone(b.set(DeviceKind::Pad, true, BindingSet::Controller), "LX") == kStickDeadzone);
+    PlayerBindings old;
+    old.load(IniDocument::parse("[player1.wheel.race]\nLX = joy.axis0 deadzone=0.08\nCross = joy.axis1 pedal invert\n"
+                                "[player1.wheel.bindings]\nLX = joy.axis0 deadzone=0.08\nLY = joy.axis3 deadzone=0.2\n"
+                                "[player1.joystick.race]\nLX = joy.axis0 deadzone=0.08\n"),
+             "player1");
+    CHECK(deadzone(old.set(DeviceKind::Wheel, true, BindingSet::Controller), "LX") == 0);
+    CHECK(deadzone(old.set(DeviceKind::Wheel, false, BindingSet::Controller), "LX") == 0);
+    CHECK(deadzone(old.set(DeviceKind::Wheel, false, BindingSet::Controller), "LY") == 0.2f); // chosen: kept
+    CHECK(deadzone(old.set(DeviceKind::Joystick, true, BindingSet::Controller), "LX") == kStickDeadzone);
+
+    // The fine axis: what set_axis set, while the byte is still its byte; a byte set alone reads as
+    // itself (every byte back to the same byte). A merge keeps the axis furthest from rest, fine
+    // value with it.
+    PadState p;
+    p.set_axis(PadAxis::LX, 1.0f / 450.0f); // a degree on a 900-degree wheel
+    CHECK(p.axis(PadAxis::LX) == 128 && p.axis_fine(PadAxis::LX) == 1.0f / 450.0f);
+    p.set_axis(PadAxis::LX, -2.0f);
+    CHECK(p.axis(PadAxis::LX) == 0 && p.axis_fine(PadAxis::LX) == -1.0f);
+    for (int v = 0; v < 256; ++v) {
+        p.axes[size_t(PadAxis::LX)] = u8(v);
+        CHECK(int(PadState::axis_byte(p.axis_fine(PadAxis::LX))) == v);
+    }
+    PadState rest, nudged;
+    nudged.set_axis(PadAxis::LX, -0.001f);
+    const PadState m = merge_pads({rest, nudged});
+    CHECK(m.axis(PadAxis::LX) == nudged.axis(PadAxis::LX) && m.axis_fine(PadAxis::LX) == -0.001f);
+}
+
 // A button or key on a whole stick axis (Steer, the menu sticks) could push it only one way: it is
 // refused, and the axis keeps its inputs (the keyboard's A / D halves included). Tilt sits in the
 // keyboard's set, so it is read whatever the controller, a phone with no pad included.

@@ -382,7 +382,7 @@ void Profile::remove_target(const PadTarget& target) {
     std::erase_if(bindings, [&](const Binding& b) { return b.target == target; });
 }
 
-void Profile::bind(const PadTarget& target, const InputSource& source, bool replace) {
+void Profile::bind(const PadTarget& target, const InputSource& source, bool replace, bool wheel) {
     // Clear both the full axis and its halves when replacing an axis binding.
     if (replace) {
         remove_target(target);
@@ -403,8 +403,8 @@ void Profile::bind(const PadTarget& target, const InputSource& source, bool repl
     // A full stick axis bound to a full pad axis drops the captured half.
     if (target.kind == PadTarget::Kind::Axis && target.half == InputSource::Half::Full && source.is_analog())
         b.source.half = InputSource::Half::Full;
-    if (source.kind == InputSource::Kind::PadAxis || source.kind == InputSource::Kind::JoyAxis)
-        if (target.kind == PadTarget::Kind::Axis) b.options.deadzone = 0.08f;
+    if (!wheel && (source.kind == InputSource::Kind::PadAxis || source.kind == InputSource::Kind::JoyAxis))
+        if (target.kind == PadTarget::Kind::Axis) b.options.deadzone = kStickDeadzone;
     bindings.push_back(b);
     name = "custom";
 }
@@ -884,7 +884,7 @@ Profile PlayerBindings::combined(DeviceKind kind, bool race) const {
 }
 
 bool PlayerBindings::bind(DeviceKind kind, bool race, const PadTarget& target, const InputSource& source,
-                          bool replace) {
+                          bool replace, bool wheel) {
     if (target.kind == PadTarget::Kind::Axis && target.half == InputSource::Half::Full && !source.is_analog())
         return false;
     begin_custom(kind, race);
@@ -892,7 +892,7 @@ bool PlayerBindings::bind(DeviceKind kind, bool race, const PadTarget& target, c
     if (s == BindingSet::Controller && kind == DeviceKind::Keyboard) kind = controller_kind(source);
     std::optional<Profile>& c = slot(kind, race, s);
     if (!c) c = set(kind, race, s); // as it stands (under "gt3", the menu's)
-    c->bind(target, source, replace);
+    c->bind(target, source, replace, wheel);
     return true;
 }
 
@@ -926,6 +926,12 @@ void PlayerBindings::load(const IniDocument& cfg, const std::string& sec) {
                        read(sec + ".joystick.bindings", BindingSet::Controller)};
     controller_race = {read(sec + ".race", BindingSet::Controller), read(sec + ".wheel.race", BindingSet::Controller),
                        read(sec + ".joystick.race", BindingSet::Controller)};
+    for (std::optional<Profile>* p : {&controller_menu[1], &controller_race[1]})
+        if (*p)
+            for (Binding& b : (*p)->bindings)
+                if (b.source.kind == InputSource::Kind::JoyAxis && b.target.kind == PadTarget::Kind::Axis &&
+                    b.options.deadzone == kStickDeadzone)
+                    b.options.deadzone = 0;
     keyboard_menu = read(sec + ".keyboard.bindings", BindingSet::Keyboard);
     keyboard_race = read(sec + ".keyboard.race", BindingSet::Keyboard);
     race_custom_on = to_lower(cfg.get(sec, "race_custom").value_or("on")) != "off";

@@ -285,6 +285,7 @@ private:
     std::string tag_of(SDL_JoystickID id) const;
     std::string capture_tag(SDL_JoystickID id) const; // empty for the capturing player's Controller
     const Device* tagged_steering(const Player& p) const; // a tagged wheel Steer is bound to
+    bool wheel_source(const Player& p, const InputSource& source) const; // a wheel's axis
     // The source's value, or nothing when it can't be read: its device, axis, button or hat
     // isn't connected, or it is a key (or mouse button) and `keyboard` is off.
     std::optional<float> read_source(const Player& p, const Device* dev, bool keyboard, const InputSource& src) const;

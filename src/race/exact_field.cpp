@@ -26,8 +26,8 @@ namespace gt3r::race {
 namespace {
 
 // The race pad (the player's race layout, buttons in GT3's type A meanings) as the device object holds it after its read:
-// the analog pad with pressure buttons (pad type 8), or the steering wheel's axes (the wheel on the stick's x, the pedals on
-// Cross and Square).
+// the analog pad with pressure buttons (pad type 8), or the steering wheel's axes (the wheel on the stick's x at its full
+// resolution, as the GT Force's 10 bits; the pedals on Cross and Square).
 // A race pad button's pressure (held without a pressure report: all the way).
 u8 pressure(const PadState& p, PadButton b) {
     if (!p.down(b)) return 0;
@@ -56,7 +56,7 @@ ex::PadReading pad_reading(const PadState& p, const ExactHuman& h) {
                  press(PadButton::L1), press(PadButton::R1), press(PadButton::L2), press(PadButton::R2)};
     if (wheel) {
         r.type = 0, r.wheel = 1;
-        r.wheel_pos = u16(p.axis(PadAxis::LX) * 4);
+        r.wheel_pos = u16(std::clamp(std::lround((p.axis_fine(PadAxis::LX) + 1.0f) * 512.0f), 0L, 1023L));
         r.wheel_throttle = u8(255 - press(PadButton::Cross));
         r.wheel_brake = u8(255 - press(PadButton::Square));
     }
@@ -78,7 +78,8 @@ u16 frame_value(float u, const std::function<ex::F(ex::F)>& shape) {
 }
 
 // A player's frame from the race pad: the pad as GT3 reads it (ExactHuman::original_response), or, by default, the same
-// frame with its analog axes linear in the race pad's: the stick's (or the wheel's) x straight to the steering, the
+// frame with its analog axes linear in the race pad's: the stick's (or the wheel's) x straight to the steering at its full
+// resolution (PadState::axis_fine: a wheel's every step, not the byte's 256 over its whole turn), the
 // d-pad's pressures to it as GT3 steers with the d-pad (kind 3), and each pressure (Cross, Square, Circle, Triangle)
 // to the frame value whose throttle, brake, handbrake or back axis after phase 3's shaping (its analog step x + c (1 - x),
 // a wheel's pedal curves) is that pressure's fraction (from c on: the shaping's own least step).
@@ -93,9 +94,7 @@ ex::PadFrame pad_frame(const PadState& p, const ExactHuman& h, const ex::Program
         const int s = int(pressure(p, PadButton::Left)) - int(pressure(p, PadButton::Right));
         f.steer = s16(std::lround(float(s) * 4096.0f / 255.0f));
     } else if (f.kind == 2 || f.kind == 4) {
-        const int lx = p.axis(PadAxis::LX);
-        const float v = lx < 128 ? float(128 - lx) / 128.0f : -float(lx - 128) / 127.0f; // left positive
-        f.steer = s16(std::lround(v * 4096.0f));
+        f.steer = s16(std::lround(-p.axis_fine(PadAxis::LX) * 4096.0f)); // left positive
     }
     auto pedal = [&](PadButton b, u16 ex::PadFrame::*field, u8 flag, const std::function<ex::F(ex::F)>& shape) {
         f.flags = u8(f.flags | flag);
