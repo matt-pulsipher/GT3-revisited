@@ -11,6 +11,7 @@
 #include "game/gt_save.h"
 #include "platform/aspect.h"
 #include "platform/ios_files.h"
+#include "platform/music_folder.h"
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
 #include "platform/mac_layer.h"
@@ -75,8 +76,10 @@ bool App::init(int argc, char** argv) {
     SDL_CreateDirectory(mods_dir().c_str());
     config_path_ = data_dir_ + "config.ini";
     if (auto cfg = IniDocument::load(config_path_)) config_ = std::move(*cfg);
-    // iOS: the remembered disc images readable again (another install's folder, picked files).
-    if (platform::restore_disc_access(config_, data_dir_) && !config_.save(config_path_))
+    // iOS: the remembered disc images and music folder readable again (another install's
+    // folder, picked ones).
+    const bool restored = platform::restore_disc_access(config_, data_dir_);
+    if ((platform::restore_music_access(config_, data_dir_) || restored) && !config_.save(config_path_))
         LOG_WARN("Could not save %s", config_path_.c_str());
     LOG_INFO("User data: %s", data_dir_.c_str());
     set_speed_unit(parse_speed_unit(config_.get("race", "units").value_or(""))); // menus and races
@@ -189,6 +192,10 @@ bool App::init(int argc, char** argv) {
     input_ = std::make_unique<InputManager>();
     input_->load(config_);
     touch_.load(config_);
+    SDL_CreateDirectory(default_music_dir().c_str());
+    music_.set_playlist_file(data_dir_ + "music_playlist.txt");
+    music_.set_song_list_file(data_dir_ + "music_songs.txt");
+    follow_music_folder(false);
     audio_ = std::make_unique<AudioEngine>(config_.get("audio", "device").value_or(""));
     if (auto vol = config_.get("audio", "music_volume")) audio_->set_music_volume(std::strtof(vol->c_str(), nullptr));
     if (auto vol = config_.get("audio", "sfx_volume")) audio_->set_sfx_volume(std::strtof(vol->c_str(), nullptr));
@@ -328,6 +335,7 @@ void App::rescan_mods() {
     if (!vfs_) return;
     vfs_->scan_mods(mods_dir(), &config_);
     game::reload_gt_mode_data(); // loaded at the first title menu, with the mods of then
+    measure_disc_music();
 }
 
 void App::set_mod_enabled(const std::string& id, bool enabled) {
@@ -336,6 +344,23 @@ void App::set_mod_enabled(const std::string& id, bool enabled) {
     if (!vfs_) return;
     vfs_->set_mod_enabled(id, enabled);
     game::reload_gt_mode_data();
+    measure_disc_music();
+}
+
+void App::measure_disc_music() {
+    if (!vfs_ || !audio_) return;
+    std::vector<race::MusicLibrary::StreamOpener> songs;
+    std::string names;
+    for (const std::string& file : audio_->bgm().files(*vfs_, bgm::kRace)) {
+        const std::string path = "bgm/" + file;
+        std::optional<Vfs::Stream> stream = vfs_->open_stream(path);
+        if (!stream) continue;
+        names += path + ':' + std::to_string(stream->size) + '\n';
+        songs.push_back([read = stream->read] { return open_ads_music(read); });
+    }
+    char key[24];
+    std::snprintf(key, sizeof(key), "%016llx", static_cast<unsigned long long>(race::custom_song_id(names, 0)));
+    music_.set_disc_songs(songs.empty() ? std::string() : key, std::move(songs));
 }
 
 std::string App::open_disc(const std::string& path) {
@@ -347,6 +372,7 @@ std::string App::open_disc(const std::string& path) {
         vfs_ = std::make_unique<Vfs>(&disc_->volume());
         vfs_->scan_mods(mods_dir(), &config_);
         apply_language();
+        measure_disc_music();
         config_.set("game", "disc", full);
         platform::save_recent_discs(config_, platform::push_recent_disc(recent_discs(), full));
         save_config();
@@ -536,6 +562,7 @@ void App::reset_dynamic_scale() {
 
 void App::close_disc() {
     if (audio_) audio_->stop_music();
+    music_.set_disc_songs({}, {}); // its songs' measuring reads this disc
     game::close_gt_mode(); // its data, reader and save library belong to this disc
     vfs_.reset();
     disc_.reset();
@@ -630,6 +657,7 @@ SDL_AppResult App::iterate() {
     }
 
     updates().poll(*this);
+    music_.poll();
     apply_screen_changes();
     Screen* top = screens_.empty() ? nullptr : screens_.back().get();
     updates().frame(*this, top && top->update_prompts());
@@ -792,6 +820,12 @@ SDL_AppResult App::event(const SDL_Event& e) {
         }
     }
     if (e.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED && limit_60fps()) apply_frame_limit(); // another refresh rate
+    // Songs copied in while the game was away (the Files app on phones), and music access
+    // allowed or taken back in Android's settings meanwhile.
+    if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) follow_music_folder(true);
+    // Phones and tablets: no songs measured while the game is in the background.
+    if (platform::is_mobile() && (e.type == SDL_EVENT_WILL_ENTER_BACKGROUND || e.type == SDL_EVENT_DID_ENTER_FOREGROUND))
+        music_.set_away(e.type == SDL_EVENT_WILL_ENTER_BACKGROUND);
     if (e.type == SDL_EVENT_WINDOW_SAFE_AREA_CHANGED || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
         e.type == SDL_EVENT_DID_ENTER_FOREGROUND)
         display_insets_.reset(), insets_retry_ = 0; // re-query (rotation, foldables)
@@ -899,6 +933,7 @@ void App::draw_phone_mask() {
     SDL_RendererLogicalPresentation mode;
     SDL_GetRenderLogicalPresentation(renderer_, &lw, &lh, &mode);
     SDL_SetRenderLogicalPresentation(renderer_, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+    clip_to_whole_window(renderer_);
     // Rounded corners (radius 113 px at 1080 px) and the punch-hole camera.
     const float k = float(ph) / 1080.0f, rad = 113 * k;
     SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
@@ -914,6 +949,7 @@ void App::draw_phone_mask() {
         float w = std::sqrt(std::max(0.0f, cr * cr - y * y));
         SDL_RenderLine(renderer_, cx - w, cy + y, cx + w, cy + y);
     }
+    SDL_SetRenderClipRect(renderer_, nullptr);
     SDL_SetRenderLogicalPresentation(renderer_, lw, lh, mode);
 }
 
@@ -1122,7 +1158,31 @@ void App::xr_pointer() {
 }
 #endif
 
+std::string App::music_folder() const {
+    const std::string f = config_.get("music", "folder").value_or("");
+    return f.empty() ? default_music_dir() : f;
+}
+
+bool App::music_folder_chosen() const { return !config_.get("music", "folder").value_or("").empty(); }
+
+void App::set_music_folder(const std::string& path) {
+    // The game's own folder picked in a picker (Android's and iOS's show it) is the default.
+    if (path.empty() || race::same_folder(path, default_music_dir())) config_.remove("music", "folder");
+    else config_.set("music", "folder", path);
+    save_config();
+    follow_music_folder(false);
+}
+
+void App::follow_music_folder(bool rescan) {
+    const std::string folder = music_folder();
+    music_access_ = platform::music_access(folder, data_dir_);
+    if (!music_.set_folder(music_access_ ? folder : std::string()) && rescan) music_.rescan();
+}
+
+bool App::show_song() const { return to_lower(config_.get("music", "show_song").value_or("on")) != "off"; }
+
 void App::shutdown() {
+    music_.cancel(); // a folder scan's thread reads files through SDL
     remember_race_scale();
     if (input_) save_config();
     screens_.clear();

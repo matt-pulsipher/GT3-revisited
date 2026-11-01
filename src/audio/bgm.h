@@ -72,8 +72,13 @@ public:
     // Starts `id` (restarting it if it already plays) at request level `volume`.
     // loop: streams repeat (menus, presentations) or play once (race tracks,
     // jingles; the game's play flag). Sequences always loop. Returns false if
-    // nothing could play.
-    bool play(AudioEngine& audio, Vfs& vfs, int id, int index = -1, bool loop = true, float volume = kJingleVolume);
+    // nothing could play. `resume` (AudioEngine::play_music): false keeps a paused race silent.
+    bool play(AudioEngine& audio, Vfs& vfs, int id, int index = -1, bool loop = true, float volume = kJingleVolume,
+              bool resume = true);
+    // Ours: one of the player's own music files (a host path) as race song `id` (kRace): it
+    // counts as that id, without a track record (no markers). `trim`: its loudness gain.
+    bool play_file(AudioEngine& audio, const std::string& path, int id, bool loop, float volume, bool resume = true,
+                   float trim = 1.0f);
     // Like play(), but keeps the current music (and its level) when it is the same piece.
     bool play_if_different(AudioEngine& audio, Vfs& vfs, int id, int index = -1, bool loop = true,
                            float volume = kJingleVolume);

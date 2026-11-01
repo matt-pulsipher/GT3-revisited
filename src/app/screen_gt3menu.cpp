@@ -44,6 +44,7 @@
 #include <deque>
 #include <map>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace gt3r {
@@ -81,6 +82,8 @@ MenuKeys keys_from_pad(const PadState& pad) {
     set(MenuKey::Select, pad.down(PadButton::Select));
     set(MenuKey::L1, pad.down(PadButton::L1));
     set(MenuKey::R1, pad.down(PadButton::R1));
+    set(MenuKey::L2, pad.down(PadButton::L2));
+    set(MenuKey::R2, pad.down(PadButton::R2));
     return k;
 }
 
@@ -93,6 +96,10 @@ MenuKeys key_from_name(const std::string& s) {
     if (s == "triangle" || s == "square" || s == "back") return key_bit(MenuKey::Cancel);
     if (s == "start") return key_bit(MenuKey::Start);
     if (s == "select") return key_bit(MenuKey::Select);
+    if (s == "l1") return key_bit(MenuKey::L1);
+    if (s == "r1") return key_bit(MenuKey::R1);
+    if (s == "l2") return key_bit(MenuKey::L2);
+    if (s == "r2") return key_bit(MenuKey::R2);
     return 0;
 }
 
@@ -118,12 +125,28 @@ public:
         // events it makes from touches) focuses what it is over; update() hands it to the menu.
         if (e.type == SDL_EVENT_MOUSE_MOTION && e.motion.which != SDL_TOUCH_MOUSEID && !e.motion.state)
             hover_ = SDL_FPoint{e.motion.x, e.motion.y};
+        // A press that moves past the tap distance drags (ours: the music list scrolls with it).
+        if (e.type == SDL_EVENT_MOUSE_MOTION && press_ && (e.motion.state & SDL_BUTTON_LMASK)) {
+            const SDL_FPoint at{e.motion.x, e.motion.y};
+            const float dx = at.x - press_->x, dy = at.y - press_->y;
+            if (dragging_ || dx * dx + dy * dy > 12.0f * 12.0f) {
+                drags_.push_back({drag_from_.value_or(*press_), at});
+                drag_from_ = at;
+                dragging_ = true;
+            }
+        }
+        // The wheel: three rows a notch.
+        if (e.type == SDL_EVENT_MOUSE_WHEEL && e.wheel.y != 0)
+            wheels_.push_back({SDL_FPoint{e.wheel.mouse_x, e.wheel.mouse_y}, -e.wheel.y * 72.0f});
         if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
             press_ = SDL_FPoint{e.button.x, e.button.y};
+            drag_from_.reset();
+            dragging_ = false;
         } else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && e.button.button == SDL_BUTTON_LEFT && press_) {
             float dx = e.button.x - press_->x, dy = e.button.y - press_->y;
-            if (dx * dx + dy * dy <= 12.0f * 12.0f) taps_.push_back(*press_);
+            if (!dragging_ && dx * dx + dy * dy <= 12.0f * 12.0f) taps_.push_back(*press_);
             press_.reset();
+            dragging_ = false;
         } else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && e.button.button == SDL_BUTTON_RIGHT &&
                    e.button.which != SDL_TOUCH_MOUSEID) {
             back_click_ = true; // a right click goes back, as in our own screens
@@ -166,6 +189,8 @@ public:
         }
         if (frozen_) {
             taps_.clear();
+            drags_.clear();
+            wheels_.clear();
             hover_.reset();
             back_click_ = false;
             return;
@@ -174,6 +199,14 @@ public:
             if (float mx, my; ui_to_menu(app.ui(), *hover_, mx, my)) flow_->hover(mx, my);
             hover_.reset();
         }
+        // Drags and the wheel scroll the music list (menu units, y up: a drag up moves it up).
+        for (const auto& [from, to] : drags_)
+            if (float x0, y0, x1, y1; ui_to_menu(app.ui(), from, x0, y0) && ui_to_menu(app.ui(), to, x1, y1))
+                flow_->scroll(x0, y0, y1 - y0);
+        drags_.clear();
+        for (const auto& [at, dy] : wheels_)
+            if (float mx, my; ui_to_menu(app.ui(), at, mx, my)) flow_->scroll(mx, my, dy);
+        wheels_.clear();
         const bool title = on_title();
         const UiRect gt3r_button = gt3r_menu_button(app);
         for (SDL_FPoint p : taps_) {
@@ -463,10 +496,17 @@ private:
         }
         // The Options music list's preview: the focused race song's intro, looping, at level 1.0,
         // whatever the Menu BGM option (menus §10.1).
+        // Ours: one of the player's songs from its start.
         if (auto p = flow_->take_preview()) {
             menu_music_.clear();
-            if (*p < 0) app.audio().bgm().stop(app.audio());
-            else app.audio().bgm().play_if_different(app.audio(), *app.vfs(), bgm::kRace, *p | bgm::kIntro, true, 1.0f);
+            if (!p->file.empty()) {
+                const race::CustomSong* song = app.music_library().find_path(p->file);
+                app.audio().bgm().play_file(app.audio(), p->file, bgm::kRace, true, 1.0f, true,
+                                            song ? app.music_library().gain(*song) : 1.0f);
+                if (song) app.music_library().want_measured(song->id); // for its next play
+            }
+            else if (p->track < 0) app.audio().bgm().stop(app.audio());
+            else app.audio().bgm().play_if_different(app.audio(), *app.vfs(), bgm::kRace, p->track | bgm::kIntro, true, 1.0f);
         }
         if (auto r = flow_->take_request()) start_game(app, *r);
         if (flow_->take_controller_settings()) {
@@ -488,6 +528,7 @@ private:
         sounds_.set_enabled(se);
     }
     void connect_options(App& app) {
+        flow_->set_music_library(&app.music_library());
         flow_->set_options(&app.config(), [this, &app] {
             app.save_config();
             apply_options(app);
@@ -643,6 +684,12 @@ private:
     std::vector<SDL_FPoint> taps_;    // taps since the last update()
     std::optional<SDL_FPoint> hover_; // the hovering pointer's last move since the last update()
     bool back_click_ = false;         // a right click since the last update(): Cancel
+    // Ours: a press dragged past the tap distance, its moves since the last update(), the
+    // wheel's (where, layout units).
+    bool dragging_ = false;
+    std::optional<SDL_FPoint> drag_from_;
+    std::vector<std::pair<SDL_FPoint, SDL_FPoint>> drags_;
+    std::vector<std::pair<SDL_FPoint, float>> wheels_;
     bool in_game_ = false;
     bool frozen_ = false;
     std::deque<MenuKeys> script_;

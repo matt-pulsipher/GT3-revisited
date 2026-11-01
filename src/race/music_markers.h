@@ -14,6 +14,9 @@
 // once on its first frame, cursors back to 0 and t = the first marker. Without a marked
 // song (jingles, licence runs, an empty playlist, a stop) every interval is "none" (FLT_MAX)
 // and no event fires.
+//
+// Ours: a race song without markers of its own (the player's music, race/custom_music.h) gets
+// fallback_markers(), so the replay cameras keep cutting at the pace of the disc's songs.
 
 #include "formats/sound/mads.h"
 
@@ -23,6 +26,15 @@
 #include <utility>
 
 namespace gt3r::race {
+
+// Markers for a race song that has none, at the disc's race songs' pace (their medians: a beat
+// 0.46 s, a phrase of four beats 1.82 s, a cut point 1.46 s apart, a mean of 1.56 s): from the
+// song's first beat after its start (its first frame fires every track already) a steady 130
+// beats a minute, track 1 every beat, track 2 every four beats,
+// tracks 3 and 4 the same cut points 1, 2, 4 or 8 beats apart (drawn 15 / 25 / 45 / 15 % on
+// `seed`: a mean of 1.69 s). Up to `length` seconds (30 minutes when it is not known), sample
+// positions at 1 kHz. Not timed to the music itself: the cuts keep a musical rhythm only.
+sound::MadsMarkers fallback_markers(double length, u64 seed);
 
 class MusicMarkers {
 public:

@@ -403,7 +403,8 @@ void MenuController::tick(MenuKeys held) {
 
     // Auto-repeat: one shared counter, reset by any new press.
     const MenuKeys repeatable = key_bit(MenuKey::Up) | key_bit(MenuKey::Down) | key_bit(MenuKey::Left) |
-                                key_bit(MenuKey::Right) | key_bit(MenuKey::L1) | key_bit(MenuKey::R1);
+                                key_bit(MenuKey::Right) | key_bit(MenuKey::L1) | key_bit(MenuKey::R1) |
+                                key_bit(MenuKey::L2) | key_bit(MenuKey::R2);
     MenuKeys fired = pressed & repeatable;
     if (fired) {
         repeat_counter_ = 0;

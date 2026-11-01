@@ -421,8 +421,17 @@ void RaceScreen::update_drive(App& app, double dt) {
             }
     }
     toast_time_ = std::max(0.0, toast_time_ - dt);
+    song_shown_ = std::max(0.0, song_shown_ - dt);
     lamps_.tick(dt);
     if (app.vfs()) music_cues(app);
+    song_controls(app);
+    // Screenshots: a Next song, then the pause window, at set race times.
+    if (preset_.skip_at > 0 && race_time_ >= preset_.skip_at) preset_.skip_at = 0, skip_song(app, 1);
+    if (preset_.pause_at > 0 && race_time_ >= preset_.pause_at && !paused_ && !quick_) {
+        preset_.pause_at = 0;
+        open_pause(app);
+        return;
+    }
     if (quick_) {
         if (preview_) { // the demonstration runs behind the menu, looping
             int n = step_.advance(dt);

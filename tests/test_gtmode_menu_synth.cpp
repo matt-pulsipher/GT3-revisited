@@ -13,11 +13,15 @@
 #include "game/save_library.h"
 #include "menu/flow/game_flow.h"
 #include "menu/flow/gt_mode_hooks.h"
+#include "race/custom_music.h"
 #include "race/time_text.h"
 #include "vfs/vfs.h"
 
+#include <SDL3/SDL_timer.h>
+
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
@@ -31,6 +35,12 @@ namespace synth = gt3r::test::gtsynth;
 namespace w = gt3r::test::gtsynth::world;
 
 namespace {
+
+// The flow's music list preview as a track index (-1 stop), or -99 when none was asked for.
+int preview_track(GameFlow& f) {
+    const std::optional<GameFlow::MusicPreview> p = f.take_preview();
+    return p ? p->track : -99;
+}
 
 void set_env(const char* name, const char* value) {
 #ifdef _WIN32
@@ -2493,15 +2503,15 @@ TEST(gtmode_synth_options_music_list) {
     CHECK(page(f) == "music/music" && f.music_list() != nullptr);
     if (!f.music_list()) return;
     const MusicListPage& m = *f.music_list();
-    CHECK(f.take_preview() == 0 && m.rows() == 4 && m.focus() == 0);
+    CHECK(preview_track(f) == 0 && m.rows() == 4 && m.focus() == 0);
     f.take_sounds();
     press(f, MenuKey::Up);
     CHECK(has_sound(f.take_sounds(), "disable") && page(f) == "music/music");
     press(f, MenuKey::Down);
-    CHECK(m.focus() == 1 && f.take_preview() == 1 && has_sound(f.take_sounds(), "cursor"));
+    CHECK(m.focus() == 1 && preview_track(f) == 1 && has_sound(f.take_sounds(), "cursor"));
     // Out of the list: the preview stops.
     press(f, MenuKey::Confirm);
-    CHECK(!m.songs()[1].listed && f.take_preview() == -1 && has_sound(f.take_sounds(), "ok"));
+    CHECK(!m.songs()[1].listed && preview_track(f) == -1 && has_sound(f.take_sounds(), "ok"));
     // Order.
     press(f, MenuKey::Down);
     press(f, MenuKey::Down);
@@ -2509,7 +2519,7 @@ TEST(gtmode_synth_options_music_list) {
     CHECK(m.focus() == 3 && !m.shuffle());
     // Cancel keeps the edit (and stops the music), back on the top page.
     press(f, MenuKey::Cancel);
-    CHECK(page(f) == "option" && changed == 1 && f.take_preview() == -1 && !f.music_list());
+    CHECK(page(f) == "option" && changed == 1 && preview_track(f) == -1 && !f.music_list());
     std::optional<std::string> stored = cfg.get("options", "music_playlist");
     std::optional<race::RacePlaylist> p = stored ? race::RacePlaylist::from_text(*stored) : std::nullopt;
     CHECK(p && p->songs().size() == 3 && !p->shuffle() && p->cursor() == 0);
@@ -2521,7 +2531,7 @@ TEST(gtmode_synth_options_music_list) {
     // Again: the stored list; a lifted song's Cancel drops the edit.
     choose(f, "music");
     CHECK(f.music_list() && !f.music_list()->songs()[1].listed && !f.music_list()->shuffle());
-    CHECK(f.take_preview() == 0);
+    CHECK(preview_track(f) == 0);
     press(f, MenuKey::Right);
     press(f, MenuKey::Confirm);
     press(f, MenuKey::Down);
@@ -2532,7 +2542,7 @@ TEST(gtmode_synth_options_music_list) {
     choose(f, "music");
     const float x = 28 + 300, top = 44 + 308;
     CHECK(f.hover(x, top - 24 * 2 - 12) && f.music_list() && f.music_list()->focus() == 2);
-    CHECK(f.take_preview() == 2);
+    CHECK(preview_track(f) == 2);
     CHECK(f.tap(x, top - 24 * 2 - 12) && f.music_list() && f.music_list()->lifted());
     CHECK(f.tap(x, top - 12) && f.music_list()->focus() == 0);
     CHECK(f.tap(x, top - 12) && !f.music_list()->lifted());
@@ -3087,4 +3097,67 @@ TEST(gtmode_synth_prizes_before_the_replay) {
     p = h.presentation();
     CHECK(p && p->page == "gtmode_mini" && game::presentation_model("gtmode_mini") == "race/g_normal_silver.prm");
     CHECK(!h.presentation());
+}
+
+// Ours: the music list's tabs through the menus with the player's music (race/custom_music.h):
+// none without songs; Original / Custom / Both, each choice kept in [options] music_source and
+// the edit so far in its playlist; Both's two sets back into their own playlists, its Order /
+// Shuffle into [options] music_mix; a song of the player's previewed from its file.
+TEST(gtmode_synth_options_music_tabs) {
+    World world;
+    GameFlow f(world.read, "US");
+    IniDocument cfg;
+    f.set_options(&cfg, [] {});
+    const std::filesystem::path dir = test::temp_dir("synth_music");
+    for (const char* name : {"a.wav", "b.wav"}) {
+        // A 16-bit mono WAV of 4 silent frames.
+        const unsigned char wav[52] = {'R', 'I', 'F', 'F', 44, 0, 0, 0, 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ', 16, 0, 0, 0,
+                                       1, 0, 1, 0, 0x40, 0x1F, 0, 0, 0x80, 0x3E, 0, 0, 2, 0, 16, 0, 'd', 'a', 't', 'a', 8, 0, 0, 0};
+        std::ofstream(dir / name, std::ios::binary).write(reinterpret_cast<const char*>(wav), sizeof wav);
+    }
+    race::MusicLibrary lib;
+    lib.set_playlist_file((test::temp_root() / "synth_music_playlist.txt").string());
+    f.set_music_library(&lib);
+    CHECK(start_title(f) != nullptr);
+    choose(f, "option");
+    settle(f);
+    CHECK(f.controller()->set_focus("music"));
+    // No songs yet: no tabs.
+    press(f, MenuKey::Confirm);
+    CHECK(f.music_list() && !f.music_list()->tabs_shown());
+    press(f, MenuKey::Cancel);
+    lib.set_folder(dir.string());
+    for (int i = 0; i < 500 && !lib.poll(); ++i) SDL_Delay(5);
+    CHECK(lib.songs().size() == 2);
+    choose(f, "music");
+    const MusicListPage* m = f.music_list();
+    CHECK(m && m->tabs_shown() && m->tab() == 0 && m->rows() == 4);
+    if (!m) return;
+    // Custom: the player's songs, the cursor on the tabs.
+    press(f, MenuKey::R1);
+    m = f.music_list();
+    CHECK(cfg.get("options", "music_source") == "custom" && m && m->tab() == 1 && m->rows() == 3 && m->focus() == -1);
+    preview_track(f);
+    press(f, MenuKey::Down);
+    const std::optional<GameFlow::MusicPreview> pv = f.take_preview();
+    CHECK(pv && std::filesystem::path(pv->file).lexically_normal() == (dir / "a.wav").lexically_normal());
+    press(f, MenuKey::Confirm); // the first song out of the list
+    // Both: the edit kept; the disc's three songs, then the two.
+    press(f, MenuKey::R1);
+    m = f.music_list();
+    CHECK(cfg.get("options", "music_source") == "both" && m && m->tab() == 2 && m->rows() == 6);
+    CHECK(!lib.playlist().songs()[0].listed && lib.playlist().songs()[1].listed);
+    if (!m) return;
+    CHECK(!m->songs()[3].listed && m->text(3) == "a" && m->songs()[0].listed);
+    for (int i = 0; i < 6; ++i) press(f, MenuKey::Down);
+    press(f, MenuKey::Left); // Order: the mix takes turns
+    CHECK(m->focus() == 5 && !m->shuffle());
+    press(f, MenuKey::Cancel);
+    CHECK(page(f) == "option" && cfg.get("options", "music_mix") == "order");
+    std::optional<race::RacePlaylist> stock = race::RacePlaylist::from_text(cfg.get("options", "music_playlist").value_or(""));
+    CHECK(stock && stock->songs().size() == 3 && stock->shuffle());
+    CHECK(lib.playlist().songs().size() == 2 && !lib.playlist().songs()[0].listed);
+    // Back on the page: Both again.
+    choose(f, "music");
+    CHECK(f.music_list() && f.music_list()->tab() == 2);
 }

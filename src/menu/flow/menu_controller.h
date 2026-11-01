@@ -24,7 +24,7 @@ namespace gt3r::menu::flow {
 // Logical menu keys. The original merges the pad into these: Confirm =
 // Circle or Cross, Cancel = Triangle or Square (no regional swap), the left
 // stick doubles the D-pad.
-enum class MenuKey : u8 { Up, Down, Left, Right, Confirm, Cancel, Start, Select, L1, R1, Count };
+enum class MenuKey : u8 { Up, Down, Left, Right, Confirm, Cancel, Start, Select, L1, R1, L2, R2, Count };
 using MenuKeys = u16; // bit (1 << MenuKey)
 constexpr MenuKeys key_bit(MenuKey k) { return MenuKeys(1u << unsigned(k)); }
 

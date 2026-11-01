@@ -35,8 +35,8 @@ std::string format_float(float v) {
 }
 
 // Placement keys (TouchConfig::placements) of each layout's controls, in config.ini order.
-constexpr const char* kDriveKeys[] = {"drive.gas",       "drive.brake", "drive.up",     "drive.down",
-                                      "drive.handbrake", "drive.pause", "drive.camera", "drive.steer"};
+constexpr const char* kDriveKeys[] = {"drive.gas",   "drive.brake",  "drive.up",    "drive.down", "drive.handbrake",
+                                      "drive.pause", "drive.camera", "drive.steer", "drive.music"};
 constexpr const char* kMenuKeys[] = {"menu.dpad", "menu.buttons", "menu.l1", "menu.r1", "menu.select", "menu.start"};
 
 std::string_view layout_prefix(TouchLayout layout) {
@@ -115,6 +115,8 @@ TouchPlacement TouchPlacement::parse(std::string_view s) {
             p.scale = std::clamp(v, kMinScale, kMaxScale), ++i;
         } else if (t == "hidden") {
             p.hidden = true;
+        } else if (t == "shown") {
+            p.shown = true;
         }
     }
     if (!have_y) p.ax = AnchorX::Default; // half a position: the default one
@@ -133,6 +135,7 @@ std::string TouchPlacement::to_string() const {
     }
     if (scale != 1.0f) part("size " + format_float(scale));
     if (hidden) part("hidden");
+    else if (shown) part("shown");
     return out;
 }
 
@@ -147,6 +150,13 @@ void TouchConfig::set_placement(std::string_view key, const TouchPlacement& p) {
     } else {
         placements.insert_or_assign(std::string(key), p);
     }
+}
+
+bool TouchConfig::default_hidden(std::string_view key) const { return key == "drive.music"; }
+
+bool TouchConfig::hidden(std::string_view key) const {
+    const TouchPlacement p = placement(key);
+    return p.hidden || (default_hidden(key) && !p.shown);
 }
 
 void TouchConfig::reset_placements(TouchLayout layout) {
@@ -311,6 +321,14 @@ void TouchControls::build_layout() {
         const float sr = 15 * s;
         add(button(cx_mid, mT + sr, sr, PadButton::Start, "||"), "drive.pause");
         add(button(cx_mid + 2.6f * sr, mT + sr, sr, PadButton::R1, "CAM"), "drive.camera");
+        // Ours: the song buttons, left of the pause button as the camera is right of it.
+        for (TouchAction act : {TouchAction::PreviousSong, TouchAction::NextSong}) {
+            Widget w = button(cx_mid - (act == TouchAction::PreviousSong ? 5.4f : 2.8f) * sr, mT + sr, sr,
+                              PadButton::Start, "");
+            w.kind = Widget::Kind::Action;
+            w.action = act;
+            add(w, "drive.music");
+        }
     } else if (layout_ == TouchLayout::Menu) {
         const float half = 54 * s;
         Widget pad;
@@ -333,6 +351,8 @@ void TouchControls::build_layout() {
         add(rect_button(cx_mid + 4, mT, bw, bh, PadButton::Start, "START"), "menu.start");
     }
     apply_placements(A);
+    for (Widget& w : widgets_)
+        if (*w.key) w.hidden = cfg_.hidden(w.key);
     if (cfg_.left_handed) {
         for (Widget& w : widgets_) w.x = w.shape == Widget::Shape::Circle ? A.L + A.R - w.x : A.L + A.R - w.x - w.w;
         // The steering buttons trade places, so Left stays on the left.
@@ -341,6 +361,11 @@ void TouchControls::build_layout() {
         for (Widget& w : widgets_)
             if (std::string_view(w.key) == "drive.steer") (w.button == PadButton::Left ? left : right) = &w;
         if (left && right) std::swap(left->x, right->x);
+        Widget* prev = nullptr;
+        Widget* next = nullptr;
+        for (Widget& w : widgets_)
+            if (w.kind == Widget::Kind::Action) (w.action == TouchAction::PreviousSong ? prev : next) = &w;
+        if (prev && next) std::swap(prev->x, next->x);
     }
 }
 
@@ -373,7 +398,6 @@ void TouchControls::apply_placements(const Area& a) {
             const float ncx = nx + (cx - gx) * k, ncy = ny + (cy - gy) * k;
             w.w *= k, w.h *= k;
             w.x = round ? ncx : ncx - w.w / 2, w.y = round ? ncy : ncy - w.h / 2;
-            w.hidden = p.hidden;
         }
     }
 }
@@ -551,10 +575,12 @@ void TouchControls::finger_move(u64 id, float x, float y, float pressure) {
     if (!f) return;
     f->x = x, f->y = y, f->pressure = pressure;
     // Buttons and pedals follow a sliding finger (brake -> gas, D-pad -> face
-    // buttons); the steering zone keeps its finger.
-    if (widgets_[size_t(f->widget)].kind == Widget::Kind::Steering) return;
+    // buttons); the steering zone and the song buttons keep theirs, and a sliding finger
+    // never skips a song.
+    using K = Widget::Kind;
+    if (widgets_[size_t(f->widget)].kind == K::Steering || widgets_[size_t(f->widget)].kind == K::Action) return;
     int w = widget_at(x, y);
-    if (w >= 0 && widgets_[size_t(w)].kind != Widget::Kind::Steering) f->widget = w;
+    if (w >= 0 && widgets_[size_t(w)].kind != K::Steering && widgets_[size_t(w)].kind != K::Action) f->widget = w;
 }
 
 void TouchControls::finger_up(u64 id) {
@@ -569,6 +595,7 @@ void TouchControls::finger_up(u64 id) {
 void TouchControls::release_all() {
     fingers_.clear();
     pad_ = PadState{};
+    held_actions_ = pressed_actions_ = 0;
 }
 
 void TouchControls::note_other_input() {
@@ -592,6 +619,8 @@ void TouchControls::update(double, float tilt) {
         w.active = false;
         w.value = 0.0f;
     }
+    const u8 was_held = held_actions_;
+    held_actions_ = pressed_actions_ = 0;
     if (!visible()) {
         fingers_.clear();
         return;
@@ -603,6 +632,10 @@ void TouchControls::update(double, float tilt) {
         switch (w.kind) {
         case Widget::Kind::Button:
             press(pad_, w.button, 1.0f);
+            w.active = true;
+            break;
+        case Widget::Kind::Action:
+            held_actions_ = u8(held_actions_ | (1u << unsigned(w.action)));
             w.active = true;
             break;
         case Widget::Kind::Pedal: {
@@ -642,6 +675,7 @@ void TouchControls::update(double, float tilt) {
             if (w.kind == Widget::Kind::Steering) w.value = lx;
     }
     pad_.axes[size_t(PadAxis::LX)] = u8(std::lround((std::clamp(lx, -1.0f, 1.0f) + 1.0f) * 127.5f));
+    pressed_actions_ = u8(held_actions_ & ~was_held);
     std::erase_if(fingers_, [](const Finger& f) { return f.released; });
     for (Finger& f : fingers_) f.seen = true;
 }

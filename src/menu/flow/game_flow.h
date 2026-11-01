@@ -18,6 +18,7 @@
 #include "menu/flow/screen_transition.h"
 #include "menu/flow/text_box.h"
 #include "menu/flow/theater_page.h"
+#include "race/custom_music.h"
 
 #include <map>
 #include <memory>
@@ -88,6 +89,9 @@ public:
     // A hovering pointer (mouse, VR controller) at a point: focuses the item under it where
     // items stay put (MenuController::hover, the GT Mode garage rows), so a click confirms.
     bool hover(float x, float y);
+    // Ours: a drag or the mouse wheel at a point, `dy` layout units (y up): scrolls the music
+    // list under it (MusicListPage::scroll_by). False where nothing scrolls.
+    bool scroll(float x, float y, float dy);
     // Ours: the pointer's back (a right click), Cancel for one frame like a tap's key.
     void back() {
         if (ctl_ && !switching() && !waiting_game_) injected_ |= key_bit(MenuKey::Cancel);
@@ -103,8 +107,13 @@ public:
     std::optional<std::string> take_music();
     // The Options music list's preview (menus §10.1, after take_music): a race song's track
     // index in its group (bgm::kRace; its intro, looping, level 1.0, not gated by the Menu
-    // BGM option), or -1 to stop the music.
-    std::optional<int> take_preview() { return std::exchange(preview_request_, std::nullopt); }
+    // BGM option), or -1 to stop the music. Ours: or one of the player's songs (`file`, a host
+    // path), from its start, looping, at the same level.
+    struct MusicPreview {
+        int track = -1;
+        std::string file;
+    };
+    std::optional<MusicPreview> take_preview() { return std::exchange(preview_request_, std::nullopt); }
     // Background movie for "mpeg" widgets: a VOL path, or "" to stop.
     std::optional<std::string> take_movie();
     // A full-screen transition the screen should start now over the last
@@ -125,6 +134,9 @@ public:
         options_ = cfg;
         options_changed_ = std::move(changed);
     }
+    // Ours: the player's own music (race/custom_music.h), for the Options music list's tabs
+    // Original / Custom / Both ([options] music_source, music_mix). Null: the disc's list only.
+    void set_music_library(race::MusicLibrary* lib) { music_lib_ = lib; }
     // Ours: the Key Configuration page (option "key/key") shows a "Controller Settings" button in
     // place of the original's DualShock 2 table; it was chosen (Confirm, or a tap on it). The
     // screen opens our controller settings over the menus, which stay on the page and carry on
@@ -287,11 +299,21 @@ private:
     std::vector<MusicTrack> race_tracks_;
     bool race_tracks_loaded_ = false;
     MusicListPage music_page_, music_view_;
-    std::optional<int> preview_request_;
+    std::optional<MusicPreview> preview_request_;
     std::optional<std::string> language_choice_;
     const std::vector<MusicTrack>& race_tracks();
+    // Ours (the tabs): the source the list shows now (the chosen one, Original without custom
+    // songs), the player's songs as tracks, the edited list into its playlists, a page's preview.
+    race::MusicSource music_source() const;
+    std::vector<MusicTrack> custom_tracks() const;
+    void commit_music_list();
+    void take_page_preview(MusicListPage& page);
+    race::MusicLibrary* music_lib_ = nullptr;
+    race::MusicSource music_shown_ = race::MusicSource::Original; // the editable page's list
+    std::vector<MusicTrack> music_tracks_;                         // ... and its tracks
     race::RacePlaylist music_playlist(); // [options] music_playlist, or a new list (stored)
-    void open_music_list(bool editable);
+    // `tabs_focused`: the cursor on the tabs (a tab was just chosen).
+    void open_music_list(bool editable, bool tabs_focused = false);
     bool music_list_active() const;      // the page is up and takes input
     bool music_list_area(SDL_FRect& area) const;
     void option_draws(std::vector<ElementDraw>& out) const;

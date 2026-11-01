@@ -1,37 +1,11 @@
 #include "platform/user_files.h"
 
+#include "platform/android_activity.h"
 #include "platform/recent_discs.h"
 
 #include <SDL3/SDL.h>
 
-#if defined(SDL_PLATFORM_ANDROID)
-#include <jni.h>
-#endif
-
 namespace gt3r::platform {
-
-#if defined(SDL_PLATFORM_ANDROID)
-namespace {
-
-// Calls a GT3Activity method taking one String; `call` gets the env, activity and method.
-template <typename F>
-auto with_activity_method(const char* name, const char* sig, F&& call) -> decltype(call(nullptr, nullptr, nullptr)) {
-    using R = decltype(call(nullptr, nullptr, nullptr));
-    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
-    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
-    if (!env || !activity) return R{};
-    R out{};
-    jclass cls = env->GetObjectClass(activity);
-    jmethodID m = cls ? env->GetMethodID(cls, name, sig) : nullptr;
-    if (m) out = call(env, activity, m);
-    if (env->ExceptionCheck()) env->ExceptionClear();
-    if (cls) env->DeleteLocalRef(cls);
-    env->DeleteLocalRef(activity);
-    return out;
-}
-
-} // namespace
-#endif
 
 bool open_user_folder(const std::string& dir, const std::string& data_dir) {
 #if defined(SDL_PLATFORM_ANDROID)
@@ -67,15 +41,7 @@ std::string picked_file_name(const std::string& path) {
                                                     jstring s = env->NewStringUTF(path.c_str());
                                                     auto r = static_cast<jstring>(env->CallObjectMethod(act, m, s));
                                                     env->DeleteLocalRef(s);
-                                                    std::string out;
-                                                    if (r && !env->ExceptionCheck()) {
-                                                        if (const char* c = env->GetStringUTFChars(r, nullptr)) {
-                                                            out = c;
-                                                            env->ReleaseStringUTFChars(r, c);
-                                                        }
-                                                    }
-                                                    if (r) env->DeleteLocalRef(r);
-                                                    return out;
+                                                    return take_java_string(env, r);
                                                 });
         if (!name.empty()) return name;
     }

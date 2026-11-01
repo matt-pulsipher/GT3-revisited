@@ -340,6 +340,40 @@ cut to a new shot instead (presentation §G3). On a quick menu's main page,
 Triangle or Square leave at once as its EXIT, except in championships
 (presentation §C2).
 
+### Song controls
+
+Ours, with the [player's own music](../README.md#your-music) or the disc's: in a
+race whose music is playing (not licence tests, the attract demo, jingles or the
+quick menus' music, and not with Race BGM off), **Next song** and **Previous
+song** skip through the race songs. Previous goes back through the songs played
+(the first one starts over), then Next and the songs' ends go forward through them
+again before new ones come from the playlist. They work three ways:
+
+- **Chords** (Settings → Controls → Player N song controls; none by default):
+  one to four inputs held together, the last one pressed fires it. A chord is
+  keys, or one controller's buttons, triggers and stick directions; it may share
+  inputs with other controls, which then also do their own thing (Select + R1
+  also changes the view). Cross on the row, then hold the inputs and let go;
+  Square adds another chord, Select (Delete) clears the highlighted column.
+  Saved per player:
+
+  ```ini
+  [player1.actions]
+  next_song = pad.back+pad.rightshoulder | key.]
+  previous_song = pad.back+pad.leftshoulder
+  ```
+
+- **The pause screen** shows the song (title and artist) under the pause window,
+  with the menu pad's L1 / R1 to skip, labelled with the inputs they are on. The
+  music stays paused, as in GT3: a song chosen there starts when the race goes on.
+  Settings → Audio → **Song on the pause screen** (`[music] show_song = off`)
+  hides it, and L1 / R1 then do nothing there.
+- **Touch**: the driving layout's song buttons (`drive.music`, above), hidden until shown in
+  Settings → Touch → Customize layout (to keep the driving layout to the race's controls).
+
+A skip while driving shows the new song under the mirror for four seconds (also
+hidden with Song on the pause screen off).
+
 ## Force feedback (`ffb`)
 
 **Settings → Rumble & feedback** holds each player's **Rumble**, **Phone
@@ -390,7 +424,7 @@ Each screen picks a layout:
 | Layout | Controls |
 |---|---|
 | Menu (default) | D-pad (slide between directions), Cross / Circle / Square / Triangle, L1, R1, Select, Start. Taps away from the controls go to the screen underneath |
-| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). With `steering = buttons`, Left and Right buttons in the bottom corner instead (a thumb can rock from one to the other): they press the race pad's D-pad, so the car steers as GT3 steers with a DualShock 2's D-pad (full lock, turned in at its slow digital rate and let back faster). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, handbrake (Circle), and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls) |
+| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). With `steering = buttons`, Left and Right buttons in the bottom corner instead (a thumb can rock from one to the other): they press the race pad's D-pad, so the car steers as GT3 steers with a DualShock 2's D-pad (full lock, turned in at its slow digital rate and let back faster). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, handbrake (Circle), and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls). Left of pause, Previous / Next song (the [song controls](#song-controls)): hidden until shown in the layout editor |
 
 ```ini
 [touch]
@@ -427,10 +461,11 @@ Each changed control is one `[touch]` key, `drive.<control>` or
 
 | Layout | Controls |
 |---|---|
-| `drive.` | `gas`, `brake`, `up`, `down`, `handbrake`, `pause`, `camera`, `steer` (the steering buttons) |
+| `drive.` | `gas`, `brake`, `up`, `down`, `handbrake`, `pause`, `camera`, `steer` (the steering buttons), `music` (Previous / Next song) |
 | `menu.` | `dpad`, `buttons` (Cross, Circle, Square, Triangle), `l1`, `r1`, `select`, `start` |
 
-The value is `[left|center|right <x> top|bottom <y>] [size <s>] [hidden]`:
+The value is `[left|center|right <x> top|bottom <y>] [size <s>] [hidden|shown]`
+(`shown`: the song buttons, which are hidden by default, shown):
 the control's centre `x` units in from the left or right edge (or from the
 screen's centre line, + = right) and `y` in from the top or bottom edge of
 the area the controls keep to (the screen less a 14-unit margin, the cutout

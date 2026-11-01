@@ -1,12 +1,18 @@
 package org.gt3revisited.gt3r;
 
+import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.os.storage.StorageManager;
+import android.os.storage.StorageVolume;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.DisplayCutout;
 import android.view.RoundedCorner;
@@ -14,6 +20,8 @@ import android.view.View;
 import android.view.WindowInsets;
 
 import org.libsdl.app.SDLActivity;
+
+import java.io.File;
 
 /** Hosts the native engine. SDL is statically linked into libmain.so. */
 public class GT3Activity extends SDLActivity {
@@ -43,6 +51,12 @@ public class GT3Activity extends SDLActivity {
     // recent-discs list) still opens next launch.
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_MUSIC_FOLDER) {
+            Uri tree = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            String path = tree != null ? treePath(tree) : null;
+            folderPick = tree == null ? "C" : path != null ? "P" + path : "E";
+            return;
+        }
         if (resultCode == RESULT_OK && data != null && data.getData() != null
                 && (data.getFlags() & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0) {
             Uri uri = data.getData();
@@ -53,6 +67,119 @@ public class GT3Activity extends SDLActivity {
             }
         }
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    // The music folder (src/platform/music_folder.h): the scan reads it by its path, so the
+    // game needs the permission to read audio files outside its own storage, and a folder the
+    // system's picker can name a path for.
+    private static final int REQUEST_MUSIC_FOLDER = 0x6733;
+    private static final int REQUEST_MUSIC_ACCESS = 0x6734;
+    private static final String EXTERNAL_STORAGE = "com.android.externalstorage.documents";
+    private volatile String folderPick; // the picker's answer for takeFolderPick
+
+    private static String musicPermission() {
+        return Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE;
+    }
+
+    /** Called from native code: whether the game may read audio files outside its own storage. */
+    public boolean hasMusicAccess() {
+        return checkSelfPermission(musicPermission()) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Called from native code: asks for the permission to read audio files when the game doesn't
+     * have it, then shows the system's folder picker (at Music). The answer comes from
+     * takeFolderPick.
+     */
+    public boolean pickMusicFolder() {
+        folderPick = null;
+        runOnUiThread(() -> {
+            if (hasMusicAccess()) showFolderPicker();
+            else requestPermissions(new String[] {musicPermission()}, REQUEST_MUSIC_ACCESS);
+        });
+        return true;
+    }
+
+    /**
+     * Called from native code while the picker is open: null until it is answered, then "P" and
+     * the folder's path, "C" (cancelled), "A" (reading audio files not allowed), "E" (a folder
+     * with no path: another app's provider) or "F" (no picker on this device).
+     */
+    public String takeFolderPick() {
+        String a = folderPick;
+        if (a != null) folderPick = null;
+        return a;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode != REQUEST_MUSIC_ACCESS) {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+            return;
+        }
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) showFolderPicker();
+        else folderPick = "A";
+    }
+
+    private void showFolderPicker() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        if (Build.VERSION.SDK_INT >= 26)
+            i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE, "primary:Music"));
+        try {
+            startActivityForResult(i, REQUEST_MUSIC_FOLDER);
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Log.i("GT3R", "No folder picker: " + e);
+            folderPick = "F";
+        }
+    }
+
+    // The path of a folder from the system's picker: the device's storage or a memory card
+    // (document ids "primary:Music/Rock", "1234-ABCD:Music"), a Downloads folder ("raw:" ids),
+    // or this app's own folder (GT3DocumentsProvider); null for other providers.
+    private String treePath(Uri tree) {
+        String id;
+        try {
+            id = DocumentsContract.getTreeDocumentId(tree);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        String authority = tree.getAuthority();
+        if (EXTERNAL_STORAGE.equals(authority)) {
+            int colon = id.indexOf(':');
+            if (colon < 0) return null;
+            String volume = id.substring(0, colon), rel = id.substring(colon + 1);
+            File base = null;
+            if (volume.equals("primary")) base = Environment.getExternalStorageDirectory();
+            else if (volume.equals("home")) base = new File(Environment.getExternalStorageDirectory(), Environment.DIRECTORY_DOCUMENTS);
+            else {
+                if (Build.VERSION.SDK_INT >= 30) {
+                    StorageManager sm = getSystemService(StorageManager.class);
+                    for (StorageVolume v : sm.getStorageVolumes())
+                        if (volume.equalsIgnoreCase(v.getUuid()) && v.getDirectory() != null) base = v.getDirectory();
+                }
+                if (base == null) base = new File("/storage/" + volume);
+            }
+            return rel.isEmpty() ? base.getPath() : new File(base, rel).getPath();
+        }
+        if (id.startsWith("raw:")) return id.substring(4);
+        if (GT3DocumentsProvider.authority(this).equals(authority)) {
+            String root = GT3DocumentsProvider.ROOT_ID;
+            if (id.equals(root)) return getFilesDir().getPath();
+            if (id.startsWith(root + "/")) return new File(getFilesDir(), id.substring(root.length() + 1)).getPath();
+        }
+        return null;
+    }
+
+    /** Called from native code: the game's page in Android's settings (its permissions). */
+    public boolean openAppSettings() {
+        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null));
+        try {
+            startActivity(i);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Log.i("GT3R", "No app settings: " + e);
+            return false;
+        }
     }
 
     /**

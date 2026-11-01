@@ -1381,6 +1381,28 @@ With a song lifted, a tap on another row carries the song there (as far as
 the last song) and a tap on it puts it down (tests `music_list_page_*`,
 `gtmode_synth_options_music_list`).
 
+**Tabs (ours).** With songs in the player's music folder, a row of tabs sits
+above the list, in its art (a title box per tab, the chosen one focused), and
+the list's window is one Order / Shuffle row shorter under it: **Original**
+(the disc's playlist, as above), **Custom** (the player's songs, a playlist of
+the same kind) and **Both** (the disc's songs, then the player's; Order /
+Shuffle there is the mix's, music §2.3). At the row's right end are the last
+row's Order and Shuffle buttons again, the same choice, so a long list doesn't
+put it out of reach. Up from the first song reaches the row; Left / Right move
+along it (SE `cursor`, `disable` at an end) and Confirm takes the tab (SE
+`cursor`) or the mode (SE `ok`) under the cursor, which pulses; L1 / R1 choose
+a tab from anywhere; a tap takes one at once (nothing with a song lifted). A
+tab keeps the edit so far and opens its list with the cursor on the row. In
+Both a lifted song stays among its own set. The player's titles are shown in
+plain letters (accents dropped), and a song is previewed from its start (test
+`music_list_tabs`).
+
+**Long lists (ours).** L2 / R2 move the cursor a window of rows less one up or
+down (to the first song or the Order / Shuffle row at the ends; SE `cursor`,
+`disable` there), and carry a lifted song as far, within its set; a drag over
+the list or the mouse wheel (three rows a notch) scrolls it without moving the
+cursor (test `music_list_long_lists`).
+
 ## §11 Race quick menus
 
 Around a run the race screen shows GT3's **quick menu**, a row of icons

@@ -1,11 +1,12 @@
 #pragma once
 
-// iOS: files the player keeps outside the app (iCloud Drive, On My iPhone, other file providers)
-// are read where they are, never copied (a disc image is 3.9 GB). The system's document picker
-// hands the app a security-scoped URL: readable only after startAccessingSecurityScopedResource,
-// and only in this run. A bookmark of it (kept in the app's user defaults, keyed by the path)
-// gives the access back in later runs. Files in the app's own folder (the user data folder,
-// Documents) need neither.
+// iOS: files (and the music folder) the player keeps outside the app (iCloud Drive, On My iPhone,
+// other file providers) are read where they are, never copied (a disc image is 3.9 GB). The
+// system's document picker hands the app a security-scoped URL: readable only after
+// startAccessingSecurityScopedResource, and only in this run (a folder's with everything in
+// it). A bookmark of it (kept in the app's user defaults, keyed by the path) gives the access
+// back in later runs. Files in the app's own folder (the user data folder, Documents) need
+// neither.
 
 #include "base/config.h"
 
@@ -24,6 +25,8 @@ namespace gt3r::platform {
 // and elsewhere: SDL has no file dialog on iOS.
 bool show_document_picker(SDL_Window* window, const SDL_DialogFileFilter* filters, int count,
                           std::function<void(std::string path)> done);
+// iOS: the same for one folder (the music folder, read where it is).
+bool show_folder_picker(SDL_Window* window, std::function<void(std::string path)> done);
 
 // iOS: makes the remembered disc images ([game] disc and recent1..5) readable before they are
 // opened or listed: picked files get their access back from their bookmarks (also those in
@@ -31,5 +34,7 @@ bool show_document_picker(SDL_Window* window, const SDL_DialogFileFilter* filter
 // from an earlier install are moved to this one's (rebase_app_container_path). True when a path
 // in `cfg` changed (for the caller to save). No-op elsewhere.
 bool restore_disc_access(IniDocument& cfg, const std::string& data_dir);
+// iOS: the same for the music folder ([music] folder). No-op elsewhere.
+bool restore_music_access(IniDocument& cfg, const std::string& data_dir);
 
 } // namespace gt3r::platform

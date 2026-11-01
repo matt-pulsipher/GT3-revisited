@@ -10,19 +10,21 @@
 
 namespace gt3r::race {
 
-RacePlaylist RacePlaylist::with_songs(const std::vector<u64>& ids, u16 seed) {
+RacePlaylist RacePlaylist::with_songs(const std::vector<u64>& ids, u16 seed, size_t limit) {
     RacePlaylist p;
-    for (size_t i = 0; i < ids.size() && i < kMaxSongs; ++i) p.songs_.push_back(Song{ids[i]});
+    p.limit_ = limit;
+    for (size_t i = 0; i < ids.size() && i < limit; ++i) p.songs_.push_back(Song{ids[i]});
     p.seed_ = seed;
     p.set_shuffle(true);
     return p;
 }
 
-RacePlaylist RacePlaylist::stored_or_new(const std::optional<std::string>& stored, const std::vector<u64>& ids) {
+RacePlaylist RacePlaylist::stored_or_new(const std::optional<std::string>& stored, const std::vector<u64>& ids,
+                                         size_t limit) {
     if (stored)
-        if (std::optional<RacePlaylist> p = from_text(*stored)) return std::move(*p);
+        if (std::optional<RacePlaylist> p = from_text(*stored, limit)) return std::move(*p);
     // A new list's seed is an integer draw on the shared generator (gt_mode §20.1).
-    return with_songs(ids, u16(shared_random().int31()));
+    return with_songs(ids, u16(shared_random().int31()), limit);
 }
 
 void RacePlaylist::set_shuffle(bool on) {
@@ -31,8 +33,32 @@ void RacePlaylist::set_shuffle(bool on) {
 }
 
 void RacePlaylist::commit(const std::vector<Song>& songs, bool shuffle) {
-    songs_.assign(songs.begin(), songs.begin() + std::ptrdiff_t(std::min(songs.size(), kMaxSongs)));
+    songs_.assign(songs.begin(), songs.begin() + std::ptrdiff_t(std::min(songs.size(), limit_)));
     set_shuffle(shuffle);
+}
+
+bool RacePlaylist::sync(const std::vector<u64>& ids) {
+    std::vector<u64> wanted(ids.begin(), ids.begin() + std::ptrdiff_t(std::min(ids.size(), limit_)));
+    std::vector<u64> sorted = wanted;
+    std::sort(sorted.begin(), sorted.end());
+    std::vector<Song> kept;
+    std::vector<u64> have;
+    for (const Song& s : songs_)
+        if (std::binary_search(sorted.begin(), sorted.end(), s.id)) kept.push_back(s), have.push_back(s.id);
+    std::sort(have.begin(), have.end());
+    for (u64 id : wanted)
+        if (!std::binary_search(have.begin(), have.end(), id)) kept.push_back(Song{id});
+    if (kept.size() == songs_.size() && std::equal(kept.begin(), kept.end(), songs_.begin(),
+                                                   [](const Song& a, const Song& b) { return a.id == b.id; }))
+        return false;
+    songs_ = std::move(kept);
+    rebuild();
+    return true;
+}
+
+size_t RacePlaylist::remaining() const {
+    if (none_) return 0;
+    return size_t(std::count_if(songs_.begin(), songs_.end(), [](const Song& s) { return s.listed && !s.played; }));
 }
 
 void RacePlaylist::rebuild() {
@@ -83,6 +109,11 @@ std::optional<size_t> RacePlaylist::next() {
     return std::nullopt;
 }
 
+std::optional<size_t> RacePlaylist::peek() const {
+    RacePlaylist copy = *this; // next() is deterministic: the new pass's order comes from the seed
+    return copy.next();
+}
+
 int RacePlaylist::track_index(u64 id, const std::vector<u64>& group) {
     auto it = std::find(group.begin(), group.end(), id);
     return it == group.end() ? 0 : int(it - group.begin());
@@ -99,7 +130,7 @@ std::string RacePlaylist::to_text() const {
     return o.str();
 }
 
-std::optional<RacePlaylist> RacePlaylist::from_text(std::string_view text) {
+std::optional<RacePlaylist> RacePlaylist::from_text(std::string_view text, size_t limit) {
     std::istringstream in{std::string(text)};
     int version = 0;
     unsigned cursor = 0, shuffle = 0, none = 0, seed = 0;
@@ -107,6 +138,7 @@ std::optional<RacePlaylist> RacePlaylist::from_text(std::string_view text) {
         none > 1 || seed > 0xFFFF)
         return std::nullopt;
     RacePlaylist p;
+    p.limit_ = limit;
     p.cursor_ = u16(cursor);
     p.shuffle_ = shuffle != 0;
     p.none_ = none != 0;
@@ -115,7 +147,7 @@ std::optional<RacePlaylist> RacePlaylist::from_text(std::string_view text) {
     while (in >> tok) {
         unsigned long long id = 0;
         int listed = 0, played = 0, order = 0;
-        if (p.songs_.size() >= kMaxSongs ||
+        if (p.songs_.size() >= limit ||
             std::sscanf(tok.c_str(), "%llx:%d:%d:%d", &id, &listed, &played, &order) != 4 || order < -32768 ||
             order > 32767)
             return std::nullopt;

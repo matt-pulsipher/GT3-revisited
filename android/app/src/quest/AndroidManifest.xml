@@ -23,6 +23,11 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Online battle (UDP; docs/dev/ONLINE.md) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A music folder outside the game's storage, read by its path (src/platform/music_folder.h);
+         asked for only when the player chooses one. Android 10 reads paths only with
+         requestLegacyExternalStorage. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <queries>
         <provider android:authorities="org.khronos.openxr.runtime_broker;org.khronos.openxr.system_runtime_broker" />
@@ -38,6 +43,7 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true"
         android:isGame="true"

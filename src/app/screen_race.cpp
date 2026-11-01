@@ -276,6 +276,13 @@ void RaceScreen::init(App& app) {
     menu_music_on_ = preset_.music && menu::flow::option_value(&app.config(), "menu_bgm") != "off";
     // The race playlist (the options' music list, music §2.3), kept in [options].
     music_.load_playlist(app.audio(), *app.vfs(), app.config().get("options", "music_playlist"));
+    // Ours: the player's own songs, from the Options music list's Original / Custom / Both.
+    music_.set_custom(&app.music_library(), race::parse_music_source(app.config().get("options", "music_source").value_or("")),
+                      app.config().get("options", "music_mix").value_or("shuffle") != "order");
+    // Ours, [music] next_race = same (the default): the run starts with the song the last one
+    // ended on, from its start; next: a new song, as GT3 takes one every run.
+    if (app.config().get("music", "next_race").value_or("same") != "next")
+        music_.set_first_song(app.config().get("music", "race_song").value_or(""));
     rumble_on_ = menu::flow::option_value(&app.config(), "vib1") != "off";
     rumble2_on_ = menu::flow::option_value(&app.config(), "vib2") != "off";
     // Options (the original's options record): race / replay SE, ghost, wide mode (2P split).

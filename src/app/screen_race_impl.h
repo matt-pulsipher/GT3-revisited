@@ -121,6 +121,7 @@ struct DebugPreset {
     bool demo_drive = false; // tests: the player's run driven by the disc's demo inputs (judged as a real run)
     double leave = 0; // tests: back to the menus this many seconds after the finish (posts the result)
     int exit_laps = 0; // screenshots: a run ends as the pause menu's Exit once it has this many laps
+    double pause_at = 0, skip_at = 0; // screenshots: the pause window / a Next song at this race time (s)
     std::string replay; // file to watch ("last" = newest)
     std::string event;  // race against the event's opponents (e.g. AEAT0001)
     bool two_player = false; // 2P battle (split screen, pad 2)
@@ -369,6 +370,14 @@ private:
 
     // Race audio (screen_race_audio.cpp)
     void music_cues(App& app);
+    // Ours: the race song controls (the Next / Previous song chords, the driving layout's song
+    // buttons; the pause screen's L1 / R1 in update_pause) and the song shown after a skip.
+    void song_controls(App& app);
+    void skip_song(App& app, int dir);
+    static constexpr double kSongShown = 4.0; // seconds a skip while driving shows the new song
+    // The race song (RaceMusic::now_playing) at the bottom of the screen: on the pause screen with
+    // L1 / R1 to skip (`controls`), or after a skip; nothing with Settings' Song on the pause screen off.
+    void draw_song(Ui& ui, bool controls);
     void update_course_ambience(App& app);
     // Every car's tyre loops and the followed cars' collision one-shots, each physics step (sound §7.6).
     void update_tyre_sounds(App& app, const sim::VehicleState& s);
@@ -976,6 +985,7 @@ private:
     bool music_license_failed_ = false; // the live licence run failed (its replay's fail jingle; music §3.1)
     std::string toast_;
     double toast_time_ = 0;
+    double song_shown_ = 0; // draw_song after a skip while driving: seconds left
     bool show_replays_ = false;
     std::vector<ReplayFile> replay_files_;
     int replay_sel_ = 0;

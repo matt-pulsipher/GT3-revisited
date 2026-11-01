@@ -26,7 +26,7 @@ constexpr ControlName kNames[] = {
     {"drive.down", "Shift down"},     {"drive.handbrake", "Handbrake"}, {"drive.pause", "Pause"},
     {"drive.camera", "Camera"},       {"drive.steer", "Steering"},      {"menu.dpad", "D-pad"},
     {"menu.buttons", "Face buttons"}, {"menu.l1", "L1"},                {"menu.r1", "R1"},
-    {"menu.select", "Select"},        {"menu.start", "Start"},
+    {"menu.select", "Select"},        {"menu.start", "Start"},          {"drive.music", "Song buttons"},
 };
 
 std::string_view control_name(std::string_view key) {
@@ -278,7 +278,15 @@ private:
         case kDone: leave(app); break;
         case kSmaller: p.scale = snap_scale(p.scale - kScaleStep), edit(p); break;
         case kBigger: p.scale = snap_scale(p.scale + kScaleStep), edit(p); break;
-        case kHide: p.hidden = !p.hidden, edit(p); break;
+        case kHide: {
+            // A control hidden by default (the song buttons) is shown for good, and hidden again
+            // by its default.
+            const bool hide = !cfg_.hidden(sel_);
+            p.hidden = hide && !cfg_.default_hidden(sel_);
+            p.shown = !hide && cfg_.default_hidden(sel_);
+            edit(p);
+            break;
+        }
         case kResetOne: edit(TouchPlacement{}); break;
         }
     }
@@ -408,7 +416,7 @@ private:
         if (sel_.empty()) return;
         y += kRow + kPad, rx = panel_.right() - kPad;
         add(rx, 50, kResetOne, "Reset", false, true);
-        add(rx, 50, kHide, cfg_.placement(sel_).hidden ? "Show" : "Hide", false, true);
+        add(rx, 50, kHide, cfg_.hidden(sel_) ? "Show" : "Hide", false, true);
         add(rx, 30, kBigger, "+", false, true);
         rx -= 42 + kGap; // the size between - and +
         add(rx, 30, kSmaller, "-", false, true);

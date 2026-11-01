@@ -159,9 +159,11 @@ id content_types(const SDL_DialogFileFilter* filters, int count) {
 } // namespace
 #endif
 
-bool show_document_picker(SDL_Window* window, const SDL_DialogFileFilter* filters, int count,
-                          std::function<void(std::string path)> done) {
 #if defined(SDL_PLATFORM_IOS)
+namespace {
+
+// The picker over `window`, for one item of `types`.
+bool present_picker(SDL_Window* window, id types, std::function<void(std::string path)> done) {
     if (g_picking || !window) return false;
     id ui_window = static_cast<id>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr));
     id vc = ui_window ? send(ui_window, "rootViewController") : nullptr;
@@ -169,8 +171,7 @@ bool show_document_picker(SDL_Window* window, const SDL_DialogFileFilter* filter
     if (!vc) return false;
     // asCopy NO: the file is opened where it is (a copy would be another 3.9 GB in the app).
     id picker = reinterpret_cast<id (*)(id, SEL, id, BOOL)>(objc_msgSend)(
-        send(cls("UIDocumentPickerViewController"), "alloc"), sel_registerName("initForOpeningContentTypes:asCopy:"),
-        content_types(filters, count), NO);
+        send(cls("UIDocumentPickerViewController"), "alloc"), sel_registerName("initForOpeningContentTypes:asCopy:"), types, NO);
     if (!picker) return false;
     call(picker, "setDelegate:", picker_delegate());
     call(picker, "setAllowsMultipleSelection:", NO);
@@ -180,8 +181,28 @@ bool show_document_picker(SDL_Window* window, const SDL_DialogFileFilter* filter
         vc, sel_registerName("presentViewController:animated:completion:"), picker, YES, nullptr);
     call(picker, "release"); // the presenting controller keeps it while it is shown
     return true;
+}
+
+} // namespace
+#endif
+
+bool show_document_picker(SDL_Window* window, const SDL_DialogFileFilter* filters, int count,
+                          std::function<void(std::string path)> done) {
+#if defined(SDL_PLATFORM_IOS)
+    return present_picker(window, content_types(filters, count), std::move(done));
 #else
     (void)window, (void)filters, (void)count, (void)done;
+    return false;
+#endif
+}
+
+bool show_folder_picker(SDL_Window* window, std::function<void(std::string path)> done) {
+#if defined(SDL_PLATFORM_IOS)
+    id types = send(cls("NSMutableArray"), "array");
+    if (id folder = send(cls("UTType"), "typeWithIdentifier:", ns_string("public.folder"))) call(types, "addObject:", folder);
+    return present_picker(window, types, std::move(done));
+#else
+    (void)window, (void)done;
     return false;
 #endif
 }
@@ -202,6 +223,21 @@ bool restore_disc_access(IniDocument& cfg, const std::string& data_dir) {
     for (const std::string& p : list) now.push_back(restore(p));
     if (now != list) save_recent_discs(cfg, now), changed = true;
     return changed;
+#else
+    (void)cfg, (void)data_dir;
+    return false;
+#endif
+}
+
+
+bool restore_music_access(IniDocument& cfg, const std::string& data_dir) {
+#if defined(SDL_PLATFORM_IOS)
+    auto folder = cfg.get("music", "folder");
+    if (!folder || folder->empty()) return false;
+    std::string path = restored_path(*folder, data_dir);
+    if (path == *folder) return false;
+    cfg.set("music", "folder", path);
+    return true;
 #else
     (void)cfg, (void)data_dir;
     return false;

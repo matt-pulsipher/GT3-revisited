@@ -142,6 +142,19 @@ and screenshots out; the Mods screen's **Open folder** opens it there
 (`GT3Activity.openUserFolder`). `GT3R_MOD_ZIP=<archive>` makes the Mods screen install
 that archive as if picked, for testing without the file picker.
 
+A music folder outside it (Settings → Audio → Music folder; `platform/music_folder.h`) is
+read by its path like everywhere else, not through the documents API: the game asks for
+`READ_MEDIA_AUDIO` (`READ_EXTERNAL_STORAGE` before Android 13; Android 10 needs
+`requestLegacyExternalStorage`), which lets an app read audio files by path from Android 11
+on, then shows the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`).
+`GT3Activity.treePath` turns the picked folder into a path: the device's storage and memory
+cards (`primary:` and volume ids), Downloads' `raw:` ids and the game's own folder; folders of
+other providers (cloud drives) have none and are refused. Without the permission (refused, or
+taken back in Android's settings) the library reads no folder, which keeps the playlist; the
+**Allow music access** row opens the game's page in Android's settings. To test without the
+picker's dialogs: `adb shell pm grant <package> android.permission.READ_MEDIA_AUDIO` and set
+`[music] folder` in `config.ini`.
+
 Useful checks: `adb emu sensor set acceleration x:y:z` for tilt steering,
 `settings put system user_rotation N` (with `accelerometer_rotation 0`)
 for orientation, `logcat --pid=$(pidof org.gt3revisited.gt3r)` for the
@@ -212,7 +225,8 @@ providers), and a bookmark of it in the app's user defaults opens it again at th
 An image copied into the GT3 Revisited folder needs no
 bookmark; its saved path is moved into the next install's folder, which iOS names anew
 (`rebase_app_container_path`). No document type is declared: opening an image from the Files
-app would copy it into the app.
+app would copy it into the app. The music folder is picked the same way (a folder in the
+document picker) and keeps its access with a bookmark too (`restore_music_access`).
 
 The simulator needs its own build tree (the SDK is chosen at configure time):
 
