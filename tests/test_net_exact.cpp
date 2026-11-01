@@ -118,7 +118,7 @@ bool make_machine(Machine& m, const std::string& course, const std::string& mine
     cfg.remote.push_back(rm);
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = course;
     o.kind = ex::Conductor::BattleMP;
     o.config = config; // 3: the race's AI drives the player's car (GT3R_RACE auto=1)
@@ -380,7 +380,7 @@ TEST(net_exact_lobby_digest_is_the_race_params) {
         cfg.remote.push_back(rm);
         race::ExactFieldOptions o;
         o.data = program();
-        o.course_file = *file;
+        o.course_file = std::make_shared<const Bytes>(*file);
         o.course = "trialmt";
         o.kind = ex::Conductor::BattleMP;
         o.laps = 1;

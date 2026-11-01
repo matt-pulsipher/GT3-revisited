@@ -657,12 +657,54 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         }
     }
 
+    // A draw waits until the next one: while nothing changes in between (pipeline, buffers,
+    // uniforms, textures) and the next primitive's indices continue its own in the same mesh,
+    // the two are one draw. State is only set when it differs from what the pass has, and any
+    // change sends the waiting draw first.
+    struct PendingDraw {
+        u32 first = 0, count = 0;
+        s32 vertex_offset = 0;
+    } pending;
+    auto flush = [&] {
+        if (pending.count == 0) return;
+        SDL_DrawGPUIndexedPrimitives(pass, pending.count, 1, pending.first, pending.vertex_offset, 0);
+        ++stats_.draw_calls;
+        pending.count = 0;
+    };
     SDL_GPUGraphicsPipeline* bound = nullptr;
     auto bind = [&](const PipelineKey& key) {
         SDL_GPUGraphicsPipeline* p = ctx_.pipeline(key);
-        if (p && p != bound) SDL_BindGPUGraphicsPipeline(pass, p);
+        if (p && p != bound) flush(), SDL_BindGPUGraphicsPipeline(pass, p);
         if (p) bound = p;
         return p != nullptr;
+    };
+    SDL_GPUTextureSamplerBinding bound_sbs[3]{};
+    bool sbs_bound = false;
+    auto bind_samplers = [&](const SDL_GPUTextureSamplerBinding (&sbs)[3]) {
+        bool same = sbs_bound;
+        for (int i = 0; i < 3 && same; ++i)
+            same = sbs[i].texture == bound_sbs[i].texture && sbs[i].sampler == bound_sbs[i].sampler;
+        if (same) return;
+        flush();
+        SDL_BindGPUFragmentSamplers(pass, 0, sbs, 3);
+        std::copy(std::begin(sbs), std::end(sbs), bound_sbs);
+        sbs_bound = true;
+    };
+    VertexLighting pushed_vl{};
+    bool vl_pushed = false;
+    auto push_lighting = [&](const VertexLighting& vl) {
+        if (vl_pushed && std::memcmp(&vl, &pushed_vl, sizeof(vl)) == 0) return;
+        flush();
+        SDL_PushGPUVertexUniformData(cmd, 1, &vl, sizeof(vl));
+        pushed_vl = vl, vl_pushed = true;
+    };
+    FragmentUniforms pushed_fu{};
+    bool fu_pushed = false;
+    auto push_fragment = [&](const FragmentUniforms& u) {
+        if (fu_pushed && std::memcmp(&u, &pushed_fu, sizeof(u)) == 0) return;
+        flush();
+        SDL_PushGPUFragmentUniformData(cmd, 0, &u, sizeof(u));
+        pushed_fu = u, fu_pushed = true;
     };
     const GpuModel* bound_model = nullptr;
     const Visible* pushed = nullptr;
@@ -670,6 +712,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     auto use_mesh = [&](const Visible& v, bool lines) {
         const GpuModel* model = v.item->model;
         if (model != bound_model) {
+            flush();
             SDL_GPUBufferBinding vb{model->vertex_buffer(), 0};
             SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
             SDL_GPUBufferBinding ib{model->index_buffer(), 0};
@@ -685,6 +728,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         std::copy(nm.m.begin(), nm.m.end(), vu.normal_mat);
         for (int i = 0; i < 4; ++i) vu.view_z[i] = view.at(2, i);
         vu.fog[0] = opt.fog_start, vu.fog[1] = opt.fog_max, vu.fog[2] = opt.fog_gt3 ? 1.0f : 0.0f;
+        flush();
         SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
         pushed = &v;
         pushed_lines = lines;
@@ -693,10 +737,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     // alpha test (with depth write, in the opaque phase), 2 = the failing ones (blended,
     // no depth write, in the blended phase). 0 = whole primitive.
     // Per-vertex lighting off until a primitive needs it (slot 1 of the vertex uniforms).
-    {
-        VertexLighting off{};
-        SDL_PushGPUVertexUniformData(cmd, 1, &off, sizeof(off));
-    }
+    push_lighting(VertexLighting{});
     bool vl_on = false;
     auto draw_prim = [&](const Visible& v, const scene::Primitive& p, int half = 0) {
         bool background = v.item->background;
@@ -739,7 +780,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             textured = t.texture != nullptr;
         }
         SDL_GPUTextureSamplerBinding sbs[3] = {sb, {env_tex, ctx_.sampler(true, true)}, sphere_sb};
-        SDL_BindGPUFragmentSamplers(pass, 0, sbs, 3);
+        bind_samplers(sbs);
         bool blended_prim = key.blend != BlendMode::Opaque;
         // Transparent pictures (composited over the 2D frame): opaque primitives cover fully,
         // whatever their texel alpha (which is reflectivity there).
@@ -892,13 +933,18 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                 std::copy(std::begin(fu.mat_specular), std::end(fu.mat_specular), vl.mat_specular);
                 std::copy(std::begin(fu.mat_emission), std::end(fu.mat_emission), vl.mat_emission);
             }
-            SDL_PushGPUVertexUniformData(cmd, 1, &vl, sizeof(vl));
+            push_lighting(vl);
             vl_on = vertex_lit || vertex_env;
         }
-        SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
-        SDL_DrawGPUIndexedPrimitives(pass, p.index_count, 1, v.mesh->index_offset + p.first_index,
-                                     v.mesh->vertex_offset, 0);
-        ++stats_.draw_calls;
+        push_fragment(fu);
+        const u32 first = v.mesh->index_offset + p.first_index;
+        if (pending.count > 0 && pending.first + pending.count == first &&
+            pending.vertex_offset == v.mesh->vertex_offset)
+            pending.count += p.index_count;
+        else {
+            flush();
+            pending = {first, p.index_count, v.mesh->vertex_offset};
+        }
         stats_.triangles += p.index_count / 3;
     };
     auto prim_blended = [](const scene::Primitive& p) {
@@ -951,6 +997,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         std::stable_sort(blended.begin(), blended.end(),
                          [](const Visible* a, const Visible* b) { return a->dist > b->dist; });
     for (const Visible* v : blended) draw_blended(*v);
+    flush();
     // Wireframe.
     if (opt.wire != WireMode::Off)
         for (const Visible& v : vis) {
@@ -959,10 +1006,10 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             use_mesh(v, true);
             SDL_GPUTextureSamplerBinding sbs[3] = {{ctx_.white_texture(), ctx_.sampler(false, false)},
                                                    {env_tex, ctx_.sampler(true, true)}, sphere_sb};
-            SDL_BindGPUFragmentSamplers(pass, 0, sbs, 3);
+            bind_samplers(sbs);
             fu.params[0] = -1, fu.params[1] = 1, fu.params[2] = 0, fu.params[3] = 1;
             fu.fog_color[3] = 0;
-            SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
+            push_fragment(fu);
             SDL_DrawGPUIndexedPrimitives(pass, v.mesh->line_count, 1, v.mesh->index_offset + v.mesh->line_first,
                                          v.mesh->vertex_offset, 0);
             ++stats_.draw_calls;

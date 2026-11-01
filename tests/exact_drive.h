@@ -43,7 +43,7 @@ inline StraightRun straight_run(Disc& disc, const data::CarDatabase& db, const s
     cfg.event = "M1000";
     cfg.max_opponents = 0;
     cfg.exact.data = data;
-    cfg.exact.course_file = *file;
+    cfg.exact.course_file = std::make_shared<const Bytes>(*file);
     cfg.exact.course = ev->course;
     cfg.exact.kind = sim::exact::Conductor::MachineTest;
     cfg.exact.player.car = {car};

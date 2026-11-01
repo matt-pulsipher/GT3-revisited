@@ -128,7 +128,7 @@ LockstepRun lockstep(const std::string& event, std::string car, ex::Conductor ki
     cfg.max_opponents = battle ? 0 : std::max(0, std::min(int(ev->cars_in_race) - 1, 5));
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = kind;
     o.laps = laps;
@@ -315,7 +315,7 @@ TEST(exact_game_pad_replay) {
     cfg.event = ev->label;
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.laps = ev->laps;
     o.player.car.label = cfg_player;
@@ -395,7 +395,7 @@ TEST(exact_game_rules) {
         race::ExactFieldOptions o;
         o.data = program();
         o.rules = rules;
-        o.course_file = *file;
+        o.course_file = std::make_shared<const Bytes>(*file);
         o.course = ev->course;
         o.kind = ex::Conductor::SinglePlayer;
         o.laps = ev->laps;

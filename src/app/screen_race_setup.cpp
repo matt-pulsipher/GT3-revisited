@@ -51,7 +51,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
     Uint64 t0 = SDL_GetPerformanceCounter();
     try {
         std::string path = course_path(*app.vfs(), ce.label);
-        std::optional<Bytes> course = app.vfs()->read(path);
+        std::optional<Bytes> read = app.vfs()->read(path);
+        std::shared_ptr<const Bytes> course = read ? std::make_shared<const Bytes>(std::move(*read)) : nullptr;
         // The car models' time of day from the course's Env0 flags: bit 19 eve,
         // else bit 15 night, else day.
         car_folder_ = "cars/day/";
@@ -67,7 +68,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
             }
         }
         if (!course) throw FormatError("missing " + path);
-        course_bytes_ = *course;
+        course_bytes_ = course;
         car_ = car_setup_from_database(db_, ca.label);
         if (replay && !replay->car_model.empty()) launch_model_ = replay->car_model;
         std::string model = launch_model_.empty() ? ca.model : launch_model_;

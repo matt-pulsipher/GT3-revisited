@@ -935,7 +935,7 @@ TEST(race_field_event) {
     FieldConfig cfg;
     cfg.event = "AEAT0001";
     cfg.exact.data = program();
-    cfg.exact.course_file = course;
+    cfg.exact.course_file = std::make_shared<const Bytes>(course);
     cfg.exact.course = "trialmt";
     cfg.exact.laps = 2;
     cfg.exact.player.car = {"r34_gtr_v_99"};
@@ -1004,7 +1004,7 @@ TEST(race_gt_grid_disc) {
         cfg.grid_by_power = true;
         cfg.grid_hp = hp;
         cfg.exact.data = d;
-        cfg.exact.course_file = course;
+        cfg.exact.course_file = std::make_shared<const Bytes>(course);
         cfg.exact.course = ev->course;
         cfg.exact.laps = ev->laps;
         cfg.exact.player.car = {"r34_gtr_v_99"};
@@ -1554,7 +1554,7 @@ TEST(race_two_player_drift_disc) {
     FieldConfig cfg;
     cfg.max_opponents = 0;
     cfg.exact.data = program();
-    cfg.exact.course_file = course;
+    cfg.exact.course_file = std::make_shared<const Bytes>(course);
     cfg.exact.course = "trialmt";
     cfg.exact.kind = sim::exact::Conductor::Battle2P;
     cfg.exact.laps = 2;

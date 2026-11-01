@@ -70,7 +70,8 @@ struct ExactFieldOptions {
     // drives); online races and the game's demos (attract, quick-menu demonstration, licence demonstrations) NTSC-U's, on a copy
     // of `data` with that behaviour. Every race steps 60 times a second (tick_hz).
     std::optional<sim::Program> rules;
-    Bytes course_file;          // the course file (its road, AI lines, driver sets, Env0)
+    std::shared_ptr<const Bytes> course_file; // the course file (its road, AI lines, driver sets, Env0), shared
+    ByteSpan course_bytes() const { return course_file ? ByteSpan(*course_file) : ByteSpan{}; }
     std::string course;         // its label (the course record's category)
     sim::exact::Conductor kind{}; // the race mode (SinglePlayer, Battle2P, ...)
     u8 config = 0;              // the race-flow byte (the race's play kind): 0 live, 2 the attract demo (every car a CPU car),
