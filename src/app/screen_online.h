@@ -21,6 +21,7 @@ struct OnlineLaunch {
     int laps = 2;
     std::vector<unsigned char> car_info; // game::OnlineCar (garage cars: parts and settings)
     bool manual = false;
+    bool asm_on = true, tcs_on = true; // the Options' ASM / TCS ([options] assist_asm / assist_tcs)
 };
 
 std::unique_ptr<Screen> make_online_lobby_screen();                    // screen_online.cpp

@@ -869,7 +869,7 @@ from the shift-up rpm (the setup's upshift rpm, else the rev limit - 500).
   is centered at (435, 430) onboard; remote it starts at x 495 (pushed), y 410.
   - The ASM and TCS lamps show the car's own aid states, which the race sets
     every tick. ASM is lit while the car has ASM on (it does not blink). The
-    Options menu's ASM / TCS off (arcade single race, free run, 2P battle) build
+    Options menu's ASM / TCS off (arcade single race, free run, 2P battle, online battle) build
     the player's car for the race without that aid, so its lamp stays out.
   - TCS is lit while the car has TCS on, and blinks while it cuts the throttle.
     The blink counter adds 21 per frame and the lamp is lit while the counter is
