@@ -722,6 +722,110 @@ std::string_view device_kind_preset(DeviceKind k) {
     }
 }
 
+namespace {
+
+// A chord input's device tag in the config: %20 for spaces, %25 '%', %7C '|', %2B '+'.
+std::string escape_tag(std::string_view tag) {
+    std::string out;
+    for (char c : tag) {
+        if (c == ' ') out += "%20";
+        else if (c == '%') out += "%25";
+        else if (c == '|') out += "%7C";
+        else if (c == '+') out += "%2B";
+        else out += c;
+    }
+    return out;
+}
+
+std::string unescape_tag(std::string_view enc) {
+    std::string out;
+    for (size_t i = 0; i < enc.size(); ++i) {
+        if (enc[i] == '%' && i + 2 < enc.size()) {
+            out += char(std::strtol(std::string(enc.substr(i + 1, 2)).c_str(), nullptr, 16));
+            i += 2;
+        } else {
+            out += enc[i];
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+std::string_view pad_action_key(PadAction a) { return a == PadAction::NextSong ? "next_song" : "previous_song"; }
+std::string_view pad_action_name(PadAction a) { return a == PadAction::NextSong ? "Next song" : "Previous song"; }
+
+std::string Chord::to_string() const {
+    std::string out;
+    for (const InputSource& s : inputs) out += (out.empty() ? "" : "+") + s.to_string();
+    return out;
+}
+
+bool Chord::parse(std::string_view text, Chord& out) {
+    out = Chord{};
+    for (std::string_view part : split(text, '+')) {
+        part = trim(part);
+        // A device tag (" device=<tag>") goes with the input it follows.
+        std::string device;
+        if (size_t d = part.find(" device="); d != std::string_view::npos) {
+            device = unescape_tag(trim(part.substr(d + 8)));
+            part = trim(part.substr(0, d));
+        }
+        InputSource s;
+        if (part.empty() || !InputSource::parse(part, s) || s.kind == InputSource::Kind::None) return false;
+        s.device = device;
+        if (!out.inputs.empty() && binding_set(s) != out.set()) return false;
+        if (std::find(out.inputs.begin(), out.inputs.end(), s) == out.inputs.end()) out.inputs.push_back(s);
+        if (out.inputs.size() > kMaxInputs) return false;
+    }
+    return !out.inputs.empty();
+}
+
+bool chord_input_held(const InputSource& s, float v) {
+    if (!s.is_analog()) return v >= 0.5f;
+    if (s.half == InputSource::Half::Negative) return v <= -0.5f;
+    return v >= 0.5f; // a trigger (0..1) or a stick's positive half
+}
+
+void ActionBindings::bind(PadAction a, const Chord& c, bool replace) {
+    std::vector<Chord>& v = chords[static_cast<size_t>(a)];
+    if (replace) std::erase_if(v, [&](const Chord& x) { return x.set() == c.set(); });
+    if (std::find(v.begin(), v.end(), c) == v.end()) v.push_back(c);
+}
+
+void ActionBindings::clear(PadAction a, BindingSet s) {
+    std::erase_if(chords[static_cast<size_t>(a)], [&](const Chord& x) { return x.set() == s; });
+}
+
+void ActionBindings::load(const IniDocument& cfg, const std::string& sec) {
+    for (auto& v : chords) v.clear();
+    const IniDocument::Section* section = cfg.find(sec + ".actions");
+    if (!section) return;
+    for (const auto& [key, value] : section->entries)
+        for (size_t i = 0; i < kPadActionCount; ++i)
+            if (to_lower(key) == pad_action_key(PadAction(i)))
+                for (std::string_view alt : split(value, '|')) {
+                    Chord c;
+                    if (Chord::parse(alt, c)) bind(PadAction(i), c, false);
+                }
+}
+
+void ActionBindings::save(IniDocument& cfg, const std::string& sec) const {
+    const std::string name = sec + ".actions";
+    std::erase_if(cfg.sections(), [&](const IniDocument::Section& s) { return s.name == name; });
+    for (size_t i = 0; i < kPadActionCount; ++i) {
+        if (chords[i].empty()) continue;
+        std::string line;
+        for (const Chord& c : chords[i]) {
+            std::string part;
+            for (const InputSource& s : c.inputs)
+                part += (part.empty() ? "" : "+") + s.to_string() + (s.device.empty() ? "" : " device=" + escape_tag(s.device));
+            line += (line.empty() ? "" : " | ") + part;
+        }
+        cfg.get_or_add(name).entries.emplace_back(std::string(pad_action_key(PadAction(i))), line);
+    }
+}
+
 BindingSet binding_set(const InputSource& s) {
     return s.kind == InputSource::Kind::Key || s.kind == InputSource::Kind::Mouse || s.kind == InputSource::Kind::Tilt
                ? BindingSet::Keyboard

@@ -866,6 +866,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         ui.text(W / 2 - w / 2 + 8, 85, toast_, colors::kText);
     }
     if (paused_) render_pause(ui);
+    else if (song_shown_ > 0) draw_song(ui, false);
 }
 
 // GT3's wet-road reflection (docs/dev/RACE.md) for the main view: the buffer (slot 9, mirrored cars, lamp

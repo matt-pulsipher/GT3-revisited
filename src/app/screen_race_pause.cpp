@@ -38,6 +38,12 @@ void RaceScreen::open_pause(App& app) {
 
 void RaceScreen::update_pause(App& app, double dt) {
     const MenuInput& m = app.menu();
+    // Ours: L1 / R1 skip the race song shown at the bottom (draw_song); the paused music stays
+    // silent until the race goes on.
+    if (!replay_opts_open_ && app.show_song()) {
+        if (m.pressed(PadButton::R1)) skip_song(app, 1);
+        else if (m.pressed(PadButton::L1)) skip_song(app, -1);
+    }
     if (replay_opts_open_) {
         // REPLAY OPTIONS: 60 Hz ticks; each applied change takes effect (and is stored) at once.
         replay_opts_acc_ += dt;
@@ -163,6 +169,7 @@ void RaceScreen::render_pause(Ui& ui) {
             hud_.draw_pause(ui.renderer(), pause_menu_.cursor(), original_res_ ? &frame_rect_ : nullptr, original_res_);
             online_pause_note(ui);
         }
+        draw_song(ui, true);
         return;
     }
     ui.fill(0, 0, W, H, Color{0, 0, 0, 120});
@@ -179,6 +186,81 @@ void RaceScreen::render_pause(Ui& ui) {
         if (s == "Camera") s += std::string(": ") + camera_mode_name(camera_.mode());
         if (s == "Gearbox") s += controls_.config().automatic ? ": AT" : ": MT";
         ui.text(x, y + float(i) * 16, s, colors::kText);
+    }
+    draw_song(ui, true);
+}
+
+namespace {
+
+// What the player presses for menu button `b` (the pause screen's hints): the touch control's
+// label while the touch controls show, else the first input their menu buttons bind to it, the
+// keyboard's when no controller is in use.
+std::string button_hint(App& app, PadButton b) {
+    if (app.touch().controls().visible()) return std::string(pad_button_name(b));
+    InputManager& in = app.input();
+    for (BindingSet set : {BindingSet::Controller, BindingSet::Keyboard}) {
+        if (set == BindingSet::Controller && in.kind(0) == DeviceKind::Keyboard) continue;
+        for (const Binding& bd : in.bindings(0, false, set).bindings)
+            if (bd.target.kind == PadTarget::Kind::Button && bd.target.button == b) {
+                std::string name = in.describe(0, bd.source);
+                if (name.rfind("Key ", 0) == 0) name.erase(0, 4); // "Q", not "Key Q"
+                return name;
+            }
+    }
+    return std::string(pad_button_name(b));
+}
+
+// |<< or >>| (Previous / Next), `h` units high, centred on (cx, cy).
+void skip_icon(Ui& ui, float cx, float cy, float h, bool next, Color c) {
+    const float tw = h * 0.55f, bw = std::max(1.0f, h * 0.16f), left = cx - (2 * tw + bw) / 2;
+    auto x = [&](float v) { return next ? v : 2 * cx - v; };
+    const SDL_FColor fc{c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f};
+    for (int i = 0; i < 2; ++i) {
+        const float back = left + float(i) * tw;
+        const SDL_Vertex v[3] = {{{x(back + tw), cy}, fc, {0, 0}}, {{x(back), cy - h / 2}, fc, {0, 0}}, {{x(back), cy + h / 2}, fc, {0, 0}}};
+        SDL_RenderGeometry(ui.renderer(), nullptr, v, 3, nullptr, 0);
+    }
+    const float bar = x(left + 2 * tw);
+    ui.fill(next ? bar : bar - bw, cy - h / 2, bw, h, c);
+}
+
+} // namespace
+
+void RaceScreen::draw_song(Ui& ui, bool controls) {
+    if (!app_ || !app_->show_song()) return;
+    const std::optional<RaceMusic::SongInfo> song = music_.now_playing(app_->audio());
+    if (!song) return;
+    const float W = ui.width(), H = ui.height();
+    const std::string prev = controls ? button_hint(*app_, PadButton::L1) : "", next = controls ? button_hint(*app_, PadButton::R1) : "";
+    // The hints' width beside the song: "<button>  |<<  Previous" each side.
+    const float side = controls ? std::ceil(std::max(Ui::text_width(prev + "  Previous"), Ui::text_width("Next  " + next))) + 22 : 0;
+    const float text_w = std::max(Ui::text_width(song->title), Ui::text_width(song->artist));
+    const float pw = std::min(W - 24, std::max(controls ? 300.0f : 160.0f, std::ceil(text_w) + 2 * side + 32));
+    // Under the pause window (GT3's sit around the middle), clear of the HUD's gauges; after a
+    // skip while driving, at the top, under the rear-view mirror's place.
+    const float ph = song->artist.empty() ? 22.0f : 32.0f, px = std::floor((W - pw) / 2);
+    const float py = std::floor(controls ? H * 0.58f : H * 0.2f);
+    ui.fill_round(px, py, pw, ph, 6, Color{12, 14, 20, 215});
+    ui.frame_round(px, py, pw, ph, 6, 1, Color{255, 255, 255, 40});
+    const float mid = py + ph / 2, ty = std::floor(mid - Ui::kChar / 2.0f);
+    if (controls) {
+        const float lx = px + 10;
+        ui.text(lx, ty, prev, colors::kAccent);
+        const float ix = lx + Ui::text_width(prev) + 12;
+        skip_icon(ui, ix, mid, 8, false, colors::kText);
+        ui.text(ix + 10, ty, "Previous", colors::kDim);
+        const float rx = px + pw - 10;
+        ui.text_right(rx, ty, next, colors::kAccent);
+        const float nx = rx - Ui::text_width(next) - 12;
+        skip_icon(ui, nx, mid, 8, true, colors::kText);
+        ui.text_right(nx - 10, ty, "Next", colors::kDim);
+    }
+    const float cw = pw - 2 * side - 16, cx = px + side + 8;
+    if (song->artist.empty()) {
+        ui.text_center_in(cx, cw, ty, Ui::elide(song->title, cw), colors::kText);
+    } else {
+        ui.text_center_in(cx, cw, py + 5, Ui::elide(song->title, cw), colors::kText);
+        ui.text_center_in(cx, cw, py + 18, Ui::elide(song->artist, cw), colors::kDim);
     }
 }
 

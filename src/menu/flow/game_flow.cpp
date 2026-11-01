@@ -412,7 +412,7 @@ bool GameFlow::tap(float x, float y) {
     }
     if (SDL_FRect area; music_list_active() && music_list_area(area)) {
         const bool used = music_page_.tap(area, x, y, sounds_);
-        if (std::optional<int> p = music_page_.take_preview()) preview_request_ = p;
+        take_page_preview(music_page_);
         return used;
     }
     if (gt_active())
@@ -443,13 +443,19 @@ bool GameFlow::tap(float x, float y) {
     return false;
 }
 
+bool GameFlow::scroll(float x, float y, float dy) {
+    if (!ctl_ || switching() || waiting_game_ || ctl_->busy() || ctl_->ignoring_control()) return false;
+    SDL_FRect area;
+    return music_list_active() && music_list_area(area) && music_page_.scroll_by(area, x, y, dy);
+}
+
 bool GameFlow::hover(float x, float y) {
     if (!ctl_ || switching() || waiting_game_ || ctl_->busy() || ctl_->ignoring_control()) return false;
     if (control_ == "memorycard" && save_mode_ && !name_mode_ && !theater_mode_)
         return save_page_.hover(ctl_->page(), x, y, sounds_);
     if (SDL_FRect area; music_list_active() && music_list_area(area)) {
         const bool used = music_page_.hover(area, x, y, sounds_);
-        if (std::optional<int> p = music_page_.take_preview()) preview_request_ = p;
+        take_page_preview(music_page_);
         return used;
     }
     if (gt_active())
@@ -582,7 +588,14 @@ void GameFlow::tick(MenuKeys held) {
     // page's, handled with its back action below).
     if (music_list_active()) {
         music_page_.tick(ctl_->fired(), ctl_->pressed(), sounds_);
-        if (std::optional<int> p = music_page_.take_preview()) preview_request_ = p;
+        take_page_preview(music_page_);
+    }
+    // Ours: a tab chosen on the music list: the edit so far kept, the other list opened.
+    if (std::optional<int> t = music_page_.take_tab(); t && music_page_.is_open() && options_) {
+        commit_music_list();
+        options_->set("options", "music_source", race::music_source_name(race::MusicSource(*t)));
+        if (options_changed_) options_changed_();
+        open_music_list(true, true);
     }
     // Options, 2P battle page: Left / Right on the laps slider change the laps (1..99).
     if (control_ == "option" && options_ && ctl_->has_page() && ctl_->page_name() == "split/split" && !ctl_->busy()) {
@@ -1024,7 +1037,21 @@ race::RacePlaylist GameFlow::music_playlist() {
     return p;
 }
 
-void GameFlow::open_music_list(bool editable) {
+race::MusicSource GameFlow::music_source() const {
+    const std::string chosen = options_ ? options_->get("options", "music_source").value_or("") : "";
+    return race::effective_music_source(race::parse_music_source(chosen), music_lib_ && music_lib_->has_songs());
+}
+
+std::vector<MusicTrack> GameFlow::custom_tracks() const {
+    std::vector<MusicTrack> out;
+    if (!music_lib_) return out;
+    // The game's fonts: the titles in plain letters (menu_ascii).
+    for (const race::CustomSong& s : music_lib_->songs())
+        out.push_back({s.id, race::menu_ascii(s.title), race::menu_ascii(s.artist), s.path});
+    return out;
+}
+
+void GameFlow::open_music_list(bool editable, bool tabs_focused) {
     MusicListPage& page = editable ? music_page_ : music_view_;
     if (!ctl_ || !ctl_->page()) return;
     const MenuSet::PageRef ref = ctl_->page();
@@ -1034,9 +1061,77 @@ void GameFlow::open_music_list(bool editable) {
     for (const Layer& l : ref.layout().layers)
         for (const Element& w : l.widgets)
             if (w.widget_class && *w.widget_class == cls) view_h = w.h;
-    page.open(music_playlist(), race_tracks(), editable, MusicListPage::Layout::from(hidden, view_h));
-    if (editable)
-        if (std::optional<int> p = page.take_preview()) preview_request_ = p;
+    // Ours: the list of the source chosen on the tabs (Original: the disc's, as the original).
+    const race::MusicSource src = music_source();
+    race::RacePlaylist list = music_playlist();
+    std::vector<MusicTrack> tracks = race_tracks();
+    int split = -1;
+    if (src == race::MusicSource::Custom) {
+        list = music_lib_->playlist();
+        tracks = custom_tracks();
+    } else if (src == race::MusicSource::Both) {
+        // The disc's songs, then the player's; Order / Shuffle is the mix's (custom_music.h).
+        std::vector<race::RacePlaylist::Song> songs = list.songs();
+        split = int(songs.size());
+        for (const race::RacePlaylist::Song& s : music_lib_->playlist().songs()) songs.push_back(s);
+        list = race::RacePlaylist::with_songs({}, 0, race::RacePlaylist::kMaxSongs + race::RacePlaylist::kMaxCustomSongs);
+        list.commit(songs, !options_ || options_->get("options", "music_mix").value_or("shuffle") != "order");
+        for (MusicTrack& t : custom_tracks()) tracks.push_back(std::move(t));
+    }
+    if (editable) music_shown_ = src, music_tracks_ = tracks;
+    page.open(list, std::move(tracks), editable, MusicListPage::Layout::from(hidden, view_h));
+    if (editable) {
+        if (music_lib_ && music_lib_->has_songs()) page.set_tabs({"Original", "Custom", "Both"}, int(src), tabs_focused);
+        page.set_split(split);
+        take_page_preview(page);
+    }
+}
+
+void GameFlow::commit_music_list() {
+    if (!music_page_.is_open() || music_page_.lifted() || !options_) return;
+    race::RacePlaylist stock = music_playlist();
+    const std::vector<race::RacePlaylist::Song>& songs = music_page_.songs();
+    switch (music_shown_) {
+    case race::MusicSource::Original:
+        music_page_.commit(stock);
+        break;
+    case race::MusicSource::Custom:
+        if (!music_lib_) return;
+        music_page_.commit(music_lib_->playlist());
+        music_lib_->save_playlist();
+        break;
+    case race::MusicSource::Both: {
+        if (!music_lib_) return;
+        // Each set of songs back into its own playlist, keeping that one's Order / Shuffle.
+        const size_t split = std::min(stock.songs().size(), songs.size());
+        stock.commit({songs.begin(), songs.begin() + std::ptrdiff_t(split)}, stock.shuffle());
+        race::RacePlaylist& mine = music_lib_->playlist();
+        mine.commit({songs.begin() + std::ptrdiff_t(split), songs.end()}, mine.shuffle());
+        music_lib_->save_playlist();
+        options_->set("options", "music_mix", music_page_.shuffle() ? "shuffle" : "order");
+        break;
+    }
+    }
+    options_->set("options", "music_playlist", stock.to_text());
+    if (options_changed_) options_changed_();
+}
+
+void GameFlow::take_page_preview(MusicListPage& page) {
+    const std::optional<int> p = page.take_preview();
+    if (!p) return;
+    MusicPreview pv;
+    if (&page == &music_page_ && *p >= 0 && size_t(*p) < music_tracks_.size()) {
+        const MusicTrack& t = music_tracks_[size_t(*p)];
+        if (!t.file.empty()) {
+            pv.file = t.file;
+        } else {
+            const std::vector<MusicTrack>& disc = race_tracks();
+            for (size_t i = 0; i < disc.size(); ++i)
+                if (disc[i].id == t.id) pv.track = int(i);
+            if (pv.track < 0) pv.track = 0; // not on the disc: the group's first song stands in
+        }
+    }
+    preview_request_ = pv;
 }
 
 bool GameFlow::music_list_active() const {
@@ -1066,14 +1161,9 @@ void GameFlow::handle_option(const MenuEvent& e) {
         return;
     }
     if (e.kind == K::BackAction && e.action == "stop_music") {
-        if (music_page_.is_open() && !music_page_.lifted() && options_) {
-            race::RacePlaylist p = music_playlist();
-            music_page_.commit(p);
-            options_->set("options", "music_playlist", p.to_text());
-            if (options_changed_) options_changed_();
-        }
+        commit_music_list();
         music_page_.close();
-        preview_request_ = -1;
+        preview_request_ = MusicPreview{};
         return;
     }
     if (e.kind == K::Exit) {

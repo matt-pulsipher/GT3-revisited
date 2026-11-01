@@ -15,6 +15,7 @@
 #include "audio/bgm.h"
 #include "audio/engine_sound.h"
 #include "base/bytes.h"
+#include "race/custom_music.h"
 #include "race/music_markers.h"
 #include "race/race_playlist.h"
 #include "sim/sim_types.h"
@@ -22,6 +23,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -81,6 +83,11 @@ private:
 // (RaceMusicLevel), so the playlist advances and the song's markers keep timing the
 // replay cuts. The quick menus follow the Menu BGM switch.
 // cues() drives the event-completion states every frame; step_markers() the markers.
+// Ours: the race songs may also be the player's own (custom_music.h: the Options music list's
+// Original / Custom / Both), and skip() moves to the next or previous song (the pause screen's
+// L1 / R1, the Next / Previous song controls). The songs played are remembered in order, so
+// Previous goes back through them and Next, and a song's end, then forward again before new
+// songs are taken from the playlists.
 class RaceMusic {
 public:
     // Race: every one-player race and solo run; TwoPlayer: 2P battle (the
@@ -96,7 +103,7 @@ public:
         bool menu_music_on = true;  // the Menu BGM switch: the quick menus' music
         Kind kind = Kind::Race;
         bool replay = false;        // a replay of the run: race songs at the replay level
-        bool songs = true;          // the race playlist has a song in the list
+        bool songs = true;          // the race playlist (has_songs()) has a song in the list
         bool paused = false;
         int start_type = 2;         // event start type (+0x1F3): 1 / 2 have a start jingle
         bool holding = false;       // the cars are held before the start signal
@@ -132,6 +139,37 @@ public:
     const RacePlaylist& playlist() const { return playlist_; }
     // The playlist's text after a race song was taken (to be saved), once; else nothing.
     std::optional<std::string> take_playlist_change();
+    // Ours: the player's own songs (`library`, may be null), the source chosen on the Options
+    // music list and Both's Order / Shuffle (custom_music.h).
+    void set_custom(MusicLibrary* library, MusicSource source, bool mix_shuffle);
+    // The source playing: the one chosen, Original without custom songs.
+    MusicSource source() const;
+    // A song in the list of the source playing (Cues::songs).
+    bool has_songs() const;
+    // The custom playlist changed (a song of it was taken): true once; the caller saves it.
+    bool take_custom_change() { return std::exchange(custom_changed_, false); }
+    // Ours ([music] next_race = same): every run starts with the race song the last one ended
+    // on, from its start, instead of the next song of the list; `text` is the last run's before
+    // this screen (take_song_change's), later runs here (a restart, the replay) take the one
+    // stop() ended. A song that can't play now is passed over: a source that doesn't play it,
+    // out of its list, its file gone. Not called: GT3's rule, a new song every run.
+    void set_first_song(std::string_view text);
+    // The race song that started, once, as text ("disc:<id>" / "yours:<id>", hex); the caller
+    // saves it for the next run.
+    std::optional<std::string> take_song_change();
+
+    // A race song as the pause screen shows it.
+    struct SongInfo {
+        std::string title, artist;
+        bool custom = false;
+    };
+    // Ours: the race song playing (or paused) now, when the race's music is heard: nothing for
+    // jingles, the quick menus' music, the demo track, silence, or the run's BGM switch off.
+    std::optional<SongInfo> now_playing(const AudioEngine& audio) const;
+    // Ours: the next (+1) or previous (-1) race song, at once (Previous with none before it
+    // starts the song over). While the race is paused the new song waits, silent, for the
+    // resume. Only while now_playing() has a song; true when it did something.
+    bool skip(AudioEngine& audio, Vfs& vfs, int dir);
 
     // A new run: the next cues() call starts the music afresh.
     void reset() { seen_ = false; }
@@ -143,7 +181,16 @@ public:
     const MusicMarkers& markers() const { return markers_; }
 
 private:
-    void play_race_song(AudioEngine& audio, Vfs& vfs, float volume);
+    // One song played: one of the disc's (its playlist id) or the player's (custom_song_id).
+    struct Played {
+        bool custom = false;
+        u64 id = 0;
+    };
+    void play_race_song(AudioEngine& audio, Vfs& vfs, float volume, bool resume = true);
+    std::optional<Played> take_next(); // the next song of the source playing
+    bool can_play(const Played& song) const; // set_first_song's song, in the source playing now
+    void ease_trim(AudioEngine& audio);      // the player's song toward its loudness gain
+    bool play(AudioEngine& audio, Vfs& vfs, const Played& song, float volume, bool resume);
     void follow_piece(AudioEngine& audio); // a new piece: its markers (or none)
 
     bool active_ = false;
@@ -160,6 +207,26 @@ private:
     RacePlaylist playlist_;
     std::vector<u64> song_ids_; // the race-song group's files (id codes) in track order
     bool playlist_changed_ = false;
+    // Ours: the player's songs, the songs played (history_[at_] now), the last cues.
+    MusicLibrary* library_ = nullptr;
+    MusicSource chosen_ = MusicSource::Original;
+    bool mix_shuffle_ = true, custom_changed_ = false;
+    bool last_custom_ = true; // Both with Order: the disc's song first
+    std::vector<Played> history_;
+    size_t at_ = 0;
+    // The player's song playing (0: none) and the loudness gain it plays at now, eased to its
+    // level when that is measured (MusicLibrary::want_measured), on bgm generation trim_generation_.
+    u64 trim_id_ = 0;
+    u32 trim_generation_ = 0;
+    float trim_ = 1.0f;
+    u64 trim_ticks_ = 0;
+    std::optional<Played> first_; // the run's first song (set_first_song)
+    bool same_song_ = false;      // set_first_song was called
+    bool run_song_ = false;       // a race song started in this run
+    bool song_changed_ = false;   // a race song started (take_song_change)
+    sound::MadsMarkers fallback_; // the markers of a race song without its own (follow_piece)
+    Cues last_;
+    std::mt19937 rng_{std::random_device{}()};
 };
 
 // Engine notes of the other cars, placed like GT3 does: volume

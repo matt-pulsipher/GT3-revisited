@@ -56,7 +56,7 @@ std::vector<std::string> Player::files(Vfs& vfs, int id) {
     return out;
 }
 
-bool Player::play(AudioEngine& audio, Vfs& vfs, int id, int index, bool loop, float volume) {
+bool Player::play(AudioEngine& audio, Vfs& vfs, int id, int index, bool loop, float volume, bool resume) {
     if (is_sequence(id)) {
         if (!audio.play_sequence(vfs, std::string(kSeqNames[id]), volume)) return false;
         ++generation_;
@@ -84,12 +84,26 @@ bool Player::play(AudioEngine& audio, Vfs& vfs, int id, int index, bool loop, fl
         ++generation_;
         return false;
     }
-    if (!audio.play_music(vfs, path, loop, volume)) return false;
+    if (!audio.play_music(vfs, path, loop, volume, resume)) return false;
     ++generation_;
     track_ = (index >= 0 && (index & kIntro)) ? nullptr : &g[size_t(i)];
     id_ = id;
     index_ = index;
     what_ = path;
+    return true;
+}
+
+bool Player::play_file(AudioEngine& audio, const std::string& path, int id, bool loop, float volume, bool resume,
+                       float trim) {
+    if (!audio.play_music_file(path, loop, volume, resume, trim)) {
+        stop(audio);
+        return false;
+    }
+    ++generation_;
+    track_ = nullptr;
+    id_ = id;
+    index_ = -1;
+    what_ = "file:" + path;
     return true;
 }
 

@@ -9,11 +9,12 @@ namespace gt3r::race_screen {
 
 // The race's music cues (music §2-3), every frame.
 void RaceScreen::music_cues(App& app) {
+    app.music_library().racing(); // songs' loudness measured between races
     RaceMusic::Cues c;
     c.music_on = replaying_ || demo_ || attract_ ? preset_.music && view_settings().bgm_on() : music_on_;
     c.menu_music_on = menu_music_on_;
     c.replay = replaying_;
-    c.songs = music_.playlist().has_songs();
+    c.songs = music_.has_songs();
     bool lic_replay = !license_event_.empty() && !attract_ && (replaying_ || demo_);
     c.kind = lic_replay                       ? RaceMusic::Kind::LicenseReplay
              : demo_ || attract_              ? RaceMusic::Kind::Demo
@@ -59,11 +60,35 @@ void RaceScreen::music_cues(App& app) {
              : prerace_ || !results ? RaceMusic::Menu::Short
                                     : RaceMusic::Menu::Result;
     music_.cues(app.audio(), *app.vfs(), c);
-    // The playlist carries over to the next race: saved whenever a song was taken.
+    // The playlist carries over to the next race: saved whenever a song was taken. So does the
+    // song playing ([music] race_song, for next_race = same), except a demo's.
+    bool save = false;
     if (std::optional<std::string> pl = music_.take_playlist_change()) {
         app.config().set("options", "music_playlist", *pl);
-        app.save_config();
+        save = true;
     }
+    if (std::optional<std::string> song = music_.take_song_change(); song && !demo_ && !attract_) {
+        app.config().set("music", "race_song", *song);
+        save = true;
+    }
+    if (save) app.save_config();
+    if (music_.take_custom_change()) app.music_library().save_playlist();
+}
+
+void RaceScreen::song_controls(App& app) {
+    InputManager& in = app.input();
+    int dir = 0;
+    for (int p = 0; p < InputManager::kMaxPlayers && !dir; ++p)
+        dir = in.action_pressed(p, PadAction::NextSong) ? 1 : in.action_pressed(p, PadAction::PreviousSong) ? -1 : 0;
+    const TouchControls& touch = app.touch().controls();
+    if (touch.action_pressed(TouchAction::NextSong)) dir = 1;
+    else if (touch.action_pressed(TouchAction::PreviousSong)) dir = -1;
+    if (dir) skip_song(app, dir);
+}
+
+void RaceScreen::skip_song(App& app, int dir) {
+    if (!app.vfs() || !music_.skip(app.audio(), *app.vfs(), dir)) return;
+    song_shown_ = paused_ ? 0 : kSongShown;
 }
 
 // CRSS course ambience: one listener per screen, every car's track distance.

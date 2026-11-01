@@ -68,10 +68,10 @@ them, then the state.
 | `screen_race_setup.cpp` | Loading and (re)starting a run: `start`, `build_vehicle` (the run's `RaceField` on the exact core; a race that cannot be set up becomes the error page), `restart` / `reset_run_state`, warp, TV cameras, LOAD GHOST |
 | `screen_race_drive.cpp` | The race loop: `update_drive` (one frame) and `tick` (one race step), the race's AI taking the player's car (autopilot) and scripted inputs, finish detection, gear hint, dirt, pylons, tyre smoke, force feedback |
 | `screen_race_render.cpp` | `render_drive`: 3D views (1P, 2P split, 4:3 frame), draw items, reflections, mirrors, sun / lamps, `hud_data`, the results / licence / time-trial overlays |
-| `screen_race_audio.cpp` | Music cues, course ambience listeners, extra car sound inputs, `silence` |
+| `screen_race_audio.cpp` | Music cues, the song controls (`song_controls`, `skip_song`), course ambience listeners, extra car sound inputs, `silence` |
 | `screen_race_select.cpp` | The standalone selection page: course / car picker and saved-replay list |
 | `screen_race_quick_menu.cpp` | Pre-race and result quick menus (layout per mode, item actions, disabled items), free run before a GT race, the run's records and Top 3 (`record_run`, `fill_top3`), options / settings / records panels |
-| `screen_race_pause.cpp` | The pause window (GT3's PauseMenu, REPLAY OPTIONS, our longer list) |
+| `screen_race_pause.cpp` | The pause window (GT3's PauseMenu, REPLAY OPTIONS, our longer list), the song under it (`draw_song`, L1 / R1) |
 | `screen_race_results.cpp` | Result rows, the result latched and posted to the menus, `leave`, race display strings |
 | `screen_race_replay.cpp` | Recording / playback glue, replay view modes and REPLAY OPTIONS, the replay pad and the followed car, the camera manager's 60 Hz frames (music cut requests, view mode 1's handler), the dissolve and the post pass's grade |
 | `screen_race_post_run.cpp` | After a run: the exit transition, prize / trophy and name entry, the automatic replay, back to the quick menu, its backdrop (play mode 2), pause EXIT (`run_kind`, `after_run`, `return_to_menu`) |
@@ -1482,6 +1482,7 @@ GT3R_RACE="course=trialmt,car=r34_gtr_v_99,cam=0,auto=1,warp=20" \
 | `p2=1`, `car2=<label>`, `split=h\|v` | 2P battle, player 2's car, split layout |
 | `laps=N`, `quick=1`, `qm=<item>` | time trial lap count; open the quick menu after the finish; choose an item |
 | `exit_laps=N` | the live run ends as the pause menu's Exit once it has N laps (screenshots of a free run's record and name entry) |
+| `skip_at=<s>`, `pause_at=<s>` | a Next song, the pause window, at that race time (screenshots of the song display) |
 | `demo=1` | start the demonstration (licence: the disc's demo run) |
 | `theater=<event>` | the Replay Theater's Demonstration of an event (AT010001 .. AT100001, L0B0001 ...) |
 | `script=thr:1@0;steer:-0.3@4` | scripted player input (steer / thr / brk set at times in seconds; `rev:1` / `rev:0` the reverse request, as the back input with the automatic's brake driving it: e.g. `brk:0.6@5;rev:1@5`) |

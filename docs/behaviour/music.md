@@ -268,12 +268,67 @@ Shuffle) and a 16-bit seed.
   makes one. A stored order with no song at the cursor's place starts a new
   pass instead of waiting.
 
+**The player's own songs (ours,** `race/custom_music.h`**).** MP3, FLAC and
+WAV files in the player's music folder play as race songs too, chosen on the
+Options music list's tabs (menus §10.1, `[options] music_source`):
+
+- **Original**: the race playlist above, unchanged.
+- **Custom**: a playlist of the same kind over the player's songs (up to
+  10,000, kept in `music_playlist.txt` in the user data folder), with its own
+  Order / Shuffle; songs added to the folder join at the end in the list,
+  songs gone leave, and either starts a new pass. A song's id is a hash of its
+  folder's name, its file name and its size, so a moved album folder keeps
+  its songs' places and marks; a folder that can't be read (a drive
+  unplugged) leaves the playlist as it is.
+- **The scan** (`MusicLibrary::scan`, on a thread of its own at start, on a
+  folder change, back in the foreground and on request): every folder in name
+  order, linked folders too, each once (a link back up can't loop), 32 deep
+  at most, names starting with `.` skipped, unreadable folders passed over,
+  a file reached through two links once, files that don't open counted and
+  left out, the first 10,000 songs in that order kept. A new scan asked for
+  while one runs stops it and starts after it.
+- **Both**: each next song comes from one of the two playlists. With Shuffle
+  (`[options] music_mix`) the player's playlist is chosen with the chance
+  of its songs still to come in its pass among all songs still to come;
+  with Order the two take turns. A playlist with no song in its list is
+  passed over.
+- Without songs in the folder Original plays, whatever was chosen. The
+  player's songs play at the race songs' levels, with fallback markers for
+  the replay cameras (§8).
+- **Loudness.** The player's songs are brought to the disc's race songs'
+  loudness: integrated loudness after ITU-R BS.1770-4 (`audio/loudness.h`)
+  of every disc race song (with mods), averaged, measured once on a thread
+  of the library between races, and of each of the player's songs as it
+  comes: when it starts, if it isn't measured yet (it plays as it is and
+  eases to its level, 6 dB a second, once measured), and the next song of
+  its list while one plays. A song plays at the average's level over its
+  own, from -20 to +12 dB, and at most so far up that its loudest sample
+  matches a full-scale disc song at the replay level, the loudest the game
+  streams music at. The disc's songs play as GT3 plays them. The songs found and their loudness are kept in
+  `music_songs.txt` (the disc's average with its songs' names and sizes),
+  so the next start has them before its scan lands.
+- **Next race (ours,** `[music] next_race`**).** With `same`, the default, a
+  run (a race, a restart, the replay) starts with the race song the last
+  run ended on, from its start (`[music] race_song`, saved whenever a race
+  song starts, not by demos), instead of taking the next song; it is passed
+  over when the source playing doesn't play it, it is out of its list, or
+  its file is gone. With `next` every run takes a new song, GT3's rule.
+- **Skips.** Next / Previous song (INPUT "Song controls") stop the song and
+  play another, only while a race song is heard (not a jingle, the demo
+  track, the quick menus' music, nor with the run's BGM switch off). The
+  songs played are remembered: Previous goes back through them (the first
+  one starts over), and Next or a song's end goes forward through them
+  before the playlists give new ones. A skip on the pause screen starts the
+  new song paused: it plays when the race goes on (§2.4).
+
 ### §2.4 Pause
 
 Opening the pause window pauses the streamed music where it is; closing it
 resumes it (`AudioEngine::pause_music` / `resume_music`). While paused no
 start, finish or song cue is acted on (a quick menu opening still is). Starting a new piece always un-pauses the output, so
-leaving a race from the pause menu does not leave the next music silent.
+leaving a race from the pause menu does not leave the next music silent;
+the one exception is ours, a song skipped to on the pause screen (§2.3),
+which stays paused until the race goes on.
 
 ### §2.5 The replay after a run
 
@@ -582,6 +637,18 @@ ahead), for every track with markers:
 
 Without a marked song (jingles, license runs, an empty playlist, silence)
 no event fires and every interval is "none".
+
+**Fallback markers (ours).** A race song without markers of its own (the
+player's music, §2.3) gets generated ones (`race::fallback_markers`), so the
+replay cameras keep cutting at the disc songs' pace instead of on their
+2-second countdown (presentation §G14). The disc's race songs have a median
+beat of 0.46 s, phrases of four beats (1.82 s) and cut points a median 1.46 s
+apart (mean 1.56 s). The fallback is a steady 130 beats a minute from the first
+beat after the song's start: track 1 every beat, track 2 every four beats, and
+tracks 3 and 4 the same cut points 1, 2, 4 or 8 beats apart (15 / 25 / 45 / 15 %,
+a mean of 1.69 s), drawn on the song's id so a song always gets the same ones.
+They follow the song's length (30 minutes when the file doesn't say). They keep
+a musical rhythm but aren't timed to the song itself.
 
 ## §9 Music jukebox
 

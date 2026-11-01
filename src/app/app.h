@@ -8,6 +8,7 @@
 #include "input/input_manager.h"
 #include "platform/aspect.h"
 #include "platform/display_insets.h"
+#include "race/custom_music.h"
 #include "render/dynamic_scale.h"
 #include "render/gpu_context.h"
 #include "vfs/vfs.h"
@@ -144,6 +145,24 @@ public:
 #endif
     const std::string& data_dir() const { return data_dir_; }
     std::string mods_dir() const { return data_dir_ + "mods"; }
+    // The player's own race music (race/custom_music.h): [music] folder, by default the user data
+    // folder's music/ (made at the first start, so the Files app shows it on phones). Scanned at
+    // start, when the folder changes and when the app comes back to the foreground.
+    race::MusicLibrary& music_library() { return music_; }
+    std::string default_music_dir() const { return data_dir_ + "music/"; }
+    std::string music_folder() const; // [music] folder, or default_music_dir()
+    bool music_folder_chosen() const;  // [music] folder is set (not the default)
+    void set_music_folder(const std::string& path); // empty: the default; saved, scanned
+    // The game may read the music folder (platform/music_folder.h: Android's permission to read
+    // audio files, which the player can turn off in its settings), as of the last follow.
+    bool music_access() const { return music_access_; }
+    // Points the library at the music folder, or at none without access: that keeps the playlist
+    // (as for a folder that is gone), where an unreadable folder could look empty and drop the
+    // player's songs from it. `rescan`: read the folder again when it is the same.
+    void follow_music_folder(bool rescan);
+    // [music] show_song = on | off (default on): the race song on the pause screen (with L1 / R1
+    // to skip) and for a moment after a skip.
+    bool show_song() const;
     // Scans the mods folder again (after an install, a removal or a visit to the file manager),
     // or turns a mod on or off and keeps that in the config; the game's next start (title menu,
     // GT Mode, arcade) has the mods as they are now.
@@ -213,6 +232,10 @@ private:
     std::string config_path_;
     MenuInput menu_;
     TouchOverlay touch_;
+    race::MusicLibrary music_;
+    bool music_access_ = true;
+    // The disc's race songs (with mods) to the library, to measure their loudness.
+    void measure_disc_music();
     std::vector<std::unique_ptr<Screen>> screens_;
     std::vector<std::unique_ptr<Screen>> pending_;
     int pops_ = 0;

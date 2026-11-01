@@ -1,7 +1,9 @@
 // Fuzz targets for every reader that sees untrusted bytes: files in downloaded mod car
-// packages (PNG, glTF, JSON, car definitions, the package container) and network input
-// (game datagram payloads, car descriptors, rendezvous messages, version strings and the relay's
-// versions file). docs/dev/ONLINE.md "Fuzzing".
+// packages (PNG, glTF, JSON, car definitions, the package container), the player's own music
+// (tags, the MP3 / FLAC / WAV decoders and their loudness, the remembered song list) and
+// network input (game datagram payloads, car descriptors, rendezvous messages, version
+// strings and the relay's versions file).
+// docs/dev/ONLINE.md "Fuzzing".
 //
 // Build in a separate tree with sanitizers:
 //   cmake -S . -B build-fuzz -DGT3R_FUZZ=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -9,11 +11,14 @@
 //         -DCMAKE_C_FLAGS="-fsanitize=address,undefined"
 //   cmake --build build-fuzz --target gt3r_fuzz
 //   build-fuzz/gt3r_fuzz all 60          # every target, 60 s each (built-in mutation fuzzer)
-//   build-fuzz/gt3r_fuzz glb 600 crash.bin  # one target; extra files are replayed first
+//   build-fuzz/gt3r_fuzz glb 600 crash.bin  # one target; extra files are replayed first (and
+//                                          # mutated: real MP3 / FLAC files seed music_decode)
 //
 // With clang's libFuzzer (Linux): add -DGT3R_LIBFUZZER=ON and run
 //   GT3R_FUZZ_TARGET=glb build-fuzz/gt3r_fuzz corpus/  (coverage guided)
 
+#include "audio/loudness.h"
+#include "audio/music_file.h"
 #include "formats/json.h"
 #include "formats/model/gltf.h"
 #include "formats/png_reader.h"
@@ -25,12 +30,16 @@
 #include "net/relay_server.h"
 #include "net/rendezvous.h"
 #include "net/session.h"
+#include "race/custom_music.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
@@ -46,6 +55,91 @@ struct Target {
 };
 
 Bytes text(const std::string& s) { return Bytes(s.begin(), s.end()); }
+
+// A WAV file: `format` 1 PCM / 3 float, `bits` per sample, 4 frames, optional LIST INFO title.
+Bytes tiny_wav(u16 format, u16 channels, u16 bits, const std::string& title = "") {
+    auto u16le = [](Bytes& b, u16 v) { b.push_back(u8(v)), b.push_back(u8(v >> 8)); };
+    auto u32le = [](Bytes& b, u32 v) {
+        for (int i = 0; i < 4; ++i) b.push_back(u8(v >> (8 * i)));
+    };
+    Bytes data(size_t(4 * channels * bits / 8), 0x40);
+    Bytes list;
+    if (!title.empty()) {
+        list = text("INFOINAM");
+        u32le(list, u32(title.size() + 1));
+        list.insert(list.end(), title.begin(), title.end());
+        list.push_back(0);
+        if (list.size() & 1) list.push_back(0);
+    }
+    Bytes b = text("RIFF");
+    u32le(b, u32(36 + data.size() + (list.empty() ? 0 : 8 + list.size())));
+    const Bytes wave = text("WAVEfmt ");
+    b.insert(b.end(), wave.begin(), wave.end());
+    u32le(b, 16);
+    u16le(b, format);
+    u16le(b, channels);
+    u32le(b, 44100);
+    u32le(b, 44100u * channels * bits / 8);
+    u16le(b, u16(channels * bits / 8));
+    u16le(b, bits);
+    const Bytes d = text("data");
+    b.insert(b.end(), d.begin(), d.end());
+    u32le(b, u32(data.size()));
+    b.insert(b.end(), data.begin(), data.end());
+    if (!list.empty()) {
+        const Bytes l = text("LIST");
+        b.insert(b.end(), l.begin(), l.end());
+        u32le(b, u32(list.size()));
+        b.insert(b.end(), list.begin(), list.end());
+    }
+    return b;
+}
+
+// An ID3v2.3 tag with a title and an artist (Latin-1, UTF-16), then `rest`.
+Bytes tiny_id3(const Bytes& rest) {
+    Bytes body;
+    auto frame = [&](const char* id, Bytes v) {
+        body.insert(body.end(), id, id + 4);
+        for (int i = 3; i >= 0; --i) body.push_back(u8(v.size() >> (8 * i)));
+        body.push_back(0), body.push_back(0);
+        body.insert(body.end(), v.begin(), v.end());
+    };
+    frame("TIT2", {0, 'T', 'i', 't', 'l', 'e'});
+    frame("TPE1", {1, 0xFF, 0xFE, 'A', 0, 'r', 0});
+    Bytes b = text("ID3");
+    b.push_back(3), b.push_back(0), b.push_back(0);
+    for (int i = 3; i >= 0; --i) b.push_back(u8((body.size() >> (7 * i)) & 0x7F));
+    b.insert(b.end(), body.begin(), body.end());
+    b.insert(b.end(), rest.begin(), rest.end());
+    return b;
+}
+
+// fLaC with STREAMINFO and a Vorbis comment block (tags only: no audio frames).
+Bytes tiny_flac_tags() {
+    Bytes b = text("fLaC");
+    b.push_back(0), b.push_back(0), b.push_back(0), b.push_back(34);
+    b.insert(b.end(), 34, 0);
+    Bytes vc = {3, 0, 0, 0, 'v', 'e', 'n', 1, 0, 0, 0, 7, 0, 0, 0};
+    const Bytes c = text("TITLE=x");
+    vc.insert(vc.end(), c.begin(), c.end());
+    b.push_back(0x84), b.push_back(0), b.push_back(0), b.push_back(u8(vc.size()));
+    b.insert(b.end(), vc.begin(), vc.end());
+    return b;
+}
+
+// Byte 0 picks the format (bits 0-1: MP3, FLAC, WAV, MP3) and for decoding a loop (bit 2).
+MusicFileType fuzz_music_type(ByteSpan d) {
+    static const MusicFileType kTypes[4] = {MusicFileType::Mp3, MusicFileType::Flac, MusicFileType::Wav,
+                                            MusicFileType::Mp3};
+    return d.empty() ? MusicFileType::Mp3 : kTypes[d[0] & 3];
+}
+
+// A seed file as an input: its type byte, then the file.
+Bytes music_input(u8 type, const Bytes& file) {
+    Bytes b{type};
+    b.insert(b.end(), file.begin(), file.end());
+    return b;
+}
 
 Bytes tiny_glb() {
     std::vector<float> pos = {0, 0, 0, 1, 0, 0, 0, 1, 0};
@@ -112,6 +206,67 @@ std::vector<Target> targets() {
              } catch (const std::exception&) {}
          },
          [] { return std::vector<Bytes>{tiny_glb()}; }},
+        {"music_tags", // byte 0: the format; then the file's start (its last 128 bytes are an MP3's tail)
+         [](ByteSpan d) {
+             if (d.empty()) return;
+             const ByteSpan file = d.subspan(1);
+             const MusicTags t = parse_music_tags(fuzz_music_type(d), file, file.last(std::min<size_t>(file.size(), 128)));
+             if (t.title.size() > file.size() * 4 + 8 || t.artist.size() > file.size() * 4 + 8) std::abort();
+         },
+         [] {
+             return std::vector<Bytes>{music_input(0, tiny_id3(Bytes(160, 0))), music_input(1, tiny_flac_tags()),
+                                       music_input(2, tiny_wav(1, 2, 16, "Seed")),
+                                       music_input(0, tiny_id3(tiny_flac_tags()))};
+         }},
+        {"music_decode", // byte 0: the format and a loop; then the file, decoded up to 64k frames
+         [](ByteSpan d) {
+             if (d.empty()) return;
+             auto file = std::make_shared<const Bytes>(d.begin() + 1, d.end());
+             std::unique_ptr<MusicStream> s = open_music_memory(file, fuzz_music_type(d), (d[0] & 4) != 0);
+             if (!s) return;
+             if (s->channels() < 1 || s->channels() > 8 || s->sample_rate() < 8000) std::abort(); // open_music_memory's check
+             std::vector<s16> buf(1024 * s->channels());
+             for (size_t total = 0; total < 65536;) {
+                 const size_t n = s->read(buf.data(), 1024);
+                 if (n == 0) break;
+                 if (n > 1024) std::abort();
+                 total += n;
+             }
+             (void)s->position_seconds();
+             (void)s->total_frames();
+             // Its loudness, from the start again (as the library measures it).
+             if (std::unique_ptr<MusicStream> m = open_music_memory(file, fuzz_music_type(d), false))
+                 if (std::optional<Loudness> l = measure_loudness(*m); l && (!std::isfinite(l->lufs) || l->peak > 1.0f))
+                     std::abort();
+         },
+         [] {
+             return std::vector<Bytes>{music_input(2, tiny_wav(1, 2, 16)), music_input(6, tiny_wav(1, 1, 8)),
+                                       music_input(2, tiny_wav(1, 6, 24)), music_input(2, tiny_wav(3, 2, 32)),
+                                       music_input(2, tiny_wav(0xFFFE, 2, 16)), music_input(0, tiny_id3(Bytes(400, 0xFF)))};
+         }},
+        {"song_list", // the remembered songs (music_songs.txt), a file in the user data folder
+         [](ByteSpan d) {
+             const std::string_view text(reinterpret_cast<const char*>(d.data()), d.size());
+             std::optional<race::MusicLibrary::SongList> list = race::MusicLibrary::parse_song_list(text);
+             if (!list) return;
+             if (list->songs.size() > race::RacePlaylist::kMaxCustomSongs) std::abort();
+             // Written back and read again: the same songs.
+             std::optional<race::MusicLibrary::SongList> again = race::MusicLibrary::parse_song_list(
+                 race::MusicLibrary::song_list_text(list->folder, list->songs, list->disc_key, list->disc_lufs));
+             if (!again || again->songs.size() != list->songs.size() || again->folder != list->folder) std::abort();
+             for (size_t i = 0; i < list->songs.size(); ++i)
+                 if (again->songs[i].path != list->songs[i].path || again->songs[i].title != list->songs[i].title ||
+                     again->songs[i].id != list->songs[i].id)
+                     std::abort();
+         },
+         [] {
+             race::CustomSong s;
+             s.id = 0x1234, s.path = "/m/a\tb.wav", s.rel = "a\tb.wav", s.title = "A\tB", s.artist = "C\nD";
+             race::CustomSong m = s;
+             m.id = 0x5678, m.measured = true, m.lufs = -12.5f, m.peak = 0.9f;
+             const std::string t = race::MusicLibrary::song_list_text("/m/", {s, m}, "key", -14.0f);
+             return std::vector<Bytes>{Bytes(t.begin(), t.end())};
+         }},
         {"json",
          [](ByteSpan d) {
              try {
@@ -372,6 +527,16 @@ int run_target(const Target& t, double seconds, const std::vector<std::string>& 
     }
     std::vector<Bytes> pool = t.seeds();
     for (const Bytes& s : pool) t.run(s);
+    for (const std::string& f : files) // the replayed files seed the mutations too
+        if (std::optional<Bytes> b = [&]() -> std::optional<Bytes> {
+                FILE* fp = std::fopen(f.c_str(), "rb");
+                if (!fp) return std::nullopt;
+                Bytes out;
+                for (int c; (c = std::fgetc(fp)) != EOF;) out.push_back(u8(c));
+                std::fclose(fp);
+                return out;
+            }())
+            pool.push_back(std::move(*b));
     std::mt19937_64 rng(std::random_device{}());
     auto start = std::chrono::steady_clock::now();
     u64 runs = 0;

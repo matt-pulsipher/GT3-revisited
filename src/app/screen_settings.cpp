@@ -15,8 +15,10 @@
 #include "disc/region.h"
 #include "menu/flow/menu_sound.h"
 #include "net/session.h"
+#include "platform/music_folder.h"
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
+#include "platform/user_files.h"
 #include "race/exact_setup.h"
 #include "sim/exact/program_data.h"
 
@@ -24,8 +26,10 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gt3r {
@@ -60,6 +64,7 @@ struct Row {
     int player = 0;
     bool race = false;
     PadTarget target;
+    int action = -1; // a PadAction's chords (its meter: the chord held) instead of `target`
     std::string keys;
     std::function<void()> append, clear;
 
@@ -85,6 +90,9 @@ public:
     }
 
     void on_event(App& app, const SDL_Event& e) override {
+        // Back from Android's settings, where music access may have been allowed: the next pick
+        // asks again.
+        if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) access_refused_ = false;
         build(app);
         if (confirm_.active) { // a tap answers the replace-Custom question
             if (gesture_.feed(e) == Gesture::Result::Tap) {
@@ -206,6 +214,7 @@ public:
     }
 
     void update(App& app, double dt) override {
+        poll_folder_pick(app);
         build(app);
         // A test sound on the new output device once a switch has landed (sound §1.1).
         if (const SDL_AudioDeviceID d = app.audio().output_device_id(); d != heard_device_) {
@@ -314,7 +323,7 @@ public:
         }
         for (size_t i = 0; i < lines.size(); ++i) ui.text(S.x + 8, dy + 4 + float(i) * 11, lines[i], colors::kText);
         if (!touch) ui.footer(footer_hint());
-        if (capture_.state != Capture::State::Idle) draw_capture(ui);
+        if (capture_.state != Capture::State::Idle) draw_capture(app.input(), ui);
         if (confirm_.active) draw_confirm(ui);
     }
 
@@ -856,6 +865,111 @@ private:
                    a->save_config();
                });
         if (!au.ok()) info("Audio device", "Not available", "No audio output device was found.");
+        // Ours ([music] next_race; race/race_audio.h RaceMusic::set_first_song).
+        const bool same = to_lower(app.config().get("music", "next_race").value_or("same")) != "next";
+        choice("Next race starts with",
+               "The same song: a race, a restart or a replay starts with the song the last one ended on, from its "
+               "start. The next song: a new song from the list every time, as GT3 does.",
+               {"The same song", "The next song"}, same ? 0 : 1, [a](int i) {
+                   a->config().set("music", "next_race", i == 1 ? "next" : "same");
+                   a->save_config();
+               });
+        build_music(app);
+    }
+
+    // Your music (race/custom_music.h): the folder, what is in it, the pause screen's song.
+    void build_music(App& app) {
+        App* a = &app;
+        heading("Your music");
+        const race::MusicLibrary& lib = app.music_library();
+        const std::string folder = app.music_folder();
+        const bool chosen = app.music_folder_chosen();
+        const char* formats = "MP3, FLAC and WAV files in it (and its folders) play as race songs beside the game's. "
+                              "Choose them on the Options page's Favorite Music List: Original, Custom or Both.";
+        // Phones and tablets: the chosen folder by its name (its path is long), the game's as the
+        // Files app shows it.
+        const bool mobile = platform::is_mobile();
+        std::string shown = folder;
+        while (shown.size() > 1 && (shown.back() == '/' || shown.back() == '\\')) shown.pop_back();
+        if (mobile) shown = shown.substr(shown.find_last_of("/\\") + 1);
+        action("Music folder", std::string("Cross: choose another folder; its songs play where they are. ") + formats,
+               chosen ? shown : mobile ? "GT3 Revisited > music" : "Game's music folder", [this, a] { choose_music_folder(*a); });
+        if (chosen)
+            action("Use the game's music folder", "Back to the music folder in the game's user data folder.", "",
+                   [a] { a->set_music_folder(""); });
+        // Phones and tablets open only the game's folder (in the Files app).
+        if (!mobile || !chosen)
+            action("Open music folder",
+                   mobile ? "Opens it in the Files app (GT3 Revisited > music), to copy songs in."
+                          : "Shows it in the file manager, to copy songs in.",
+                   "", [this, a] { open_music_folder(*a); });
+        // Android: reading audio files not allowed (refused, or turned off in its settings).
+        if (access_refused_ || (chosen && !app.music_access()))
+            action("Allow music access", "Opens Android's settings for the game: Permissions > Music and audio > Allow.", "",
+                   [this] {
+                       if (platform::open_app_settings()) return;
+                       note_ = "Could not open Android's settings";
+                       note_left_ = 4;
+                   });
+        std::string songs = lib.scanning() ? "Looking for songs..."
+                            : lib.has_songs() ? std::to_string(lib.songs().size()) + (lib.songs().size() == 1 ? " song" : " songs")
+                                              : "None yet";
+        // Files in other formats (AAC, Ogg...) and damaged ones are skipped: say so, as they are
+        // missing from the list.
+        if (!lib.scanning()) {
+            if (chosen && !app.music_access()) songs = "Music access is off";
+            else if (!lib.folder_found() && !app.music_folder().empty()) songs = "Folder not found";
+            else if (lib.capped()) songs += " (the first ones kept)";
+            const size_t skipped = lib.unplayable() + lib.broken();
+            if (skipped)
+                songs += " (" + std::to_string(skipped) + (skipped == 1 ? " file" : " files") + " skipped: " +
+                         (lib.broken() ? "damaged, or not MP3, FLAC or WAV)" : "not MP3, FLAC or WAV)");
+        }
+        info("Songs", songs);
+        action("Look for new songs", "Reads the music folder again.", "", [a] { a->music_library().rescan(); });
+        toggle("Song on the pause screen",
+               "The race song's title and artist on the pause screen, with L1 / R1 to skip, and for a moment after "
+               "a skip while driving.",
+               app.show_song(), [a](bool v) {
+                   a->config().set("music", "show_song", v ? "on" : "off");
+                   a->save_config();
+               });
+    }
+
+    void open_music_folder(App& app) {
+        if (platform::open_user_folder(app.music_folder(), app.data_dir())) return;
+        note_ = "Could not open " + app.music_folder();
+        note_left_ = 4;
+    }
+
+    void choose_music_folder(App& app) {
+        if (folder_picking_) return;
+        if (!platform::start_folder_pick(app.window(), app.music_folder())) {
+            note_ = "Could not show a folder picker";
+            note_left_ = 4;
+            return;
+        }
+        folder_picking_ = true;
+        app.input().hold_background(true); // macOS: the dialog's sheet takes the window's focus
+    }
+
+    void poll_folder_pick(App& app) {
+        // Also a picker left open by an earlier Settings page: it is answered here.
+        std::optional<platform::FolderAnswer> answer = platform::take_folder_pick();
+        if (!answer) return;
+        folder_picking_ = false;
+        app.input().hold_background(false);
+        using Kind = platform::FolderAnswer::Kind;
+        access_refused_ = answer->kind == Kind::NoAccess;
+        switch (answer->kind) {
+        case Kind::Picked: app.set_music_folder(answer->path); return;
+        case Kind::Cancelled: break;
+        case Kind::NoAccess: note_ = "Music access not allowed: Allow music access opens Android's settings"; break;
+        case Kind::Elsewhere: note_ = "Choose a folder on this device or its memory card (not in a cloud drive)"; break;
+        case Kind::Failed: note_ = "Could not show a folder picker"; break;
+        }
+        if (answer->kind != Kind::Cancelled) note_left_ = 6;
+        app.follow_music_folder(false); // access may have been allowed before a cancel
     }
 
     void build_controls(App& app) {
@@ -997,6 +1111,9 @@ private:
             r.desc = "GT3 original: the race reads the menu buttons, so this is " + target_name(t) +
                      "'s. Editing it makes custom race controls from GT3 original plus the change.";
         }
+        // Ours: the race song controls (chords), whatever the race layout.
+        heading(who + "song controls").columns = true;
+        for (PadAction act : {PadAction::NextSong, PadAction::PreviousSong}) action_binding(app, p, act);
         heading(who + "menu buttons").columns = true;
         {
             static const char* const kKinds[] = {"Controller layout", "Wheel layout", "Keyboard layout",
@@ -1070,6 +1187,35 @@ private:
         return r;
     }
 
+    // A song control's chords, in the two columns like a button's inputs.
+    Row& action_binding(App& app, int p, PadAction act) {
+        App* a = &app;
+        InputManager& in = app.input();
+        const std::string label(pad_action_name(act));
+        Row& r = add(Row::Kind::Binding, label,
+                     "In races, while a race song plays. Cross, then hold the inputs together and let go: keys, or a "
+                     "controller's buttons, triggers and stick directions (up to 4; they may share other controls). "
+                     "Square adds one. Select clears the highlighted column (Left/Right).");
+        r.player = p;
+        r.action = int(act);
+        auto chords = [&](BindingSet set) {
+            std::string out;
+            for (const Chord& c : in.actions(p).of(act))
+                if (c.set() == set) out += (out.empty() ? "" : ", ") + in.describe(p, c);
+            return out;
+        };
+        r.value = in.kind(p) == DeviceKind::Keyboard ? "" : chords(BindingSet::Controller);
+        r.keys = chords(BindingSet::Keyboard);
+        r.activate = [this, p, act, label] { start_chord_capture(p, act, false, label); };
+        r.append = [this, p, act, label] { start_chord_capture(p, act, true, label); };
+        r.change = [this](int d) { column_ = d > 0 ? 1 : 0; };
+        r.clear = [a, this, p, act] {
+            a->input().clear_action(p, act, column_ == 0 ? BindingSet::Controller : BindingSet::Keyboard);
+            a->save_config();
+        };
+        return r;
+    }
+
     // An edit while a layout is chosen makes new custom bindings from it plus the edit. When custom
     // ones are kept, that replaces them: ask first, Cancel focused.
     void guard_edit(App& app, int p, bool race, std::function<void()> edit) {
@@ -1125,10 +1271,15 @@ private:
         PadTarget target;
         std::string what;
         double timer = 0;
+        int action = -1; // a PadAction's chord
     };
 
     void start_capture(int player, bool race, const PadTarget& t, bool append, const std::string& what) {
         capture_ = Capture{Capture::State::WaitRelease, player, race, append, t, what, 1.5};
+    }
+
+    void start_chord_capture(int player, PadAction act, bool append, const std::string& what) {
+        capture_ = Capture{Capture::State::WaitRelease, player, false, append, PadTarget{}, what, 1.5, int(act)};
     }
 
     void update_capture(App& app, double dt) {
@@ -1143,10 +1294,21 @@ private:
                 return rest;
             };
             if ((at_rest(in.any_device_pad()) && at_rest(in.pad(capture_.player))) || capture_.timer <= 0) {
-                in.begin_capture(capture_.player); // another device than theirs is named on the binding
+                // Another device than theirs is named on the binding.
+                if (capture_.action >= 0) in.begin_chord_capture(capture_.player);
+                else in.begin_capture(capture_.player);
                 capture_.state = Capture::State::Capturing;
                 capture_.timer = 6.0;
             }
+            return;
+        }
+        if (capture_.action >= 0) {
+            if (std::optional<Chord> c = in.poll_chord()) {
+                in.bind_action(capture_.player, PadAction(capture_.action), *c, !capture_.append);
+            } else if (in.capturing() && (capture_.timer > 0 || !in.chord_so_far().empty())) {
+                return; // still waiting, or the chord is still held
+            }
+            end_capture(app);
             return;
         }
         if (auto src = in.poll_capture()) {
@@ -1170,12 +1332,26 @@ private:
         app.save_config();
     }
 
-    void draw_capture(Ui& ui) const {
+    void draw_capture(const InputManager& in, Ui& ui) const {
         const float w = 400, h = 70, x = std::floor((ui.width() - w) / 2), y = std::floor((ui.height() - h) / 2);
         ui.fill(x, y, w, h, colors::kPanel);
         ui.frame(x, y, w, h, colors::kAccent);
         if (capture_.state == Capture::State::WaitRelease) {
             ui.text_center_in(x, w, y + 20, "Release all inputs...", colors::kText);
+            return;
+        }
+        if (capture_.action >= 0) {
+            ui.text_center_in(x, w, y + 12, (capture_.append ? "Add inputs for " : "Inputs for ") + capture_.what,
+                              colors::kAccent);
+            const std::vector<InputSource>& held = in.chord_so_far();
+            std::string so_far;
+            for (const InputSource& s : held) so_far += (so_far.empty() ? "" : " + ") + in.describe(capture_.player, s);
+            ui.text_center_in(x, w, y + 28,
+                              held.empty() ? "Hold them together, then let go" : Ui::elide(so_far + "  (let go to finish)", w - 16),
+                              held.empty() ? colors::kDim : colors::kText);
+            ui.text_center_in(x, w, y + 44,
+                              "Cancels in " + std::to_string(int(std::ceil(std::max(0.0, capture_.timer)))) + "s (Esc, Back or a tap: now)",
+                              colors::kDim);
             return;
         }
         ui.text_center_in(x, w, y + 12, (capture_.append ? "Add input for " : "Press input for ") + capture_.what,
@@ -1619,7 +1795,10 @@ private:
             const InputManager& in = app.input();
             const PadState& pad = r.race ? in.race_pad(r.player) : in.pad(r.player);
             const float mx = vx - meter_w, mw = 44, my = std::floor(cy - 3);
-            if (r.target.kind == PadTarget::Kind::Button) {
+            if (r.action >= 0) {
+                const bool held = in.action_held(r.player, PadAction(r.action));
+                ui.bar(mx, my, mw, 6, held ? 1.0f : 0.0f, held ? colors::kGood : colors::kDim);
+            } else if (r.target.kind == PadTarget::Kind::Button) {
                 ui.bar(mx, my, mw, 6, pad.press(r.target.button) / 255.0f, pad.down(r.target.button) ? colors::kGood : colors::kDim);
             } else {
                 const float v = std::clamp(pad.axis_f(r.target.axis), -1.0f, 1.0f), c = mx + mw / 2, w = mw / 2 * v;
@@ -1657,6 +1836,8 @@ private:
     Press press_;
     Layout lay_;
     Capture capture_;    // a binding being captured (Controls)
+    bool folder_picking_ = false; // the music folder's picker is open
+    bool access_refused_ = false; // Android: music access refused at the last pick
     struct Confirm {
         bool active = false, replace = false; // replace: the focused answer (Cancel first)
         std::string text;

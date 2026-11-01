@@ -4,6 +4,7 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_rect.h>
+#include <SDL3/SDL_render.h>
 
 #include <functional>
 
@@ -63,5 +64,12 @@ private:
 
 // The controls of `c` as the overlay draws them, shifted by (dx, dy) UI units; hidden ones left out.
 void draw_touch_controls(Ui& ui, const TouchControls& c, float dx, float dy);
+
+// Clips drawing to the whole window, in the renderer's coordinates as they are now (the logical
+// presentation off), for drawing in the bars beside the game area; clear it after. SDL's GPU
+// renderer keeps the scissor of the viewport it had when a clip was turned off and something
+// was drawn (the pause window's art, then the song under it), so without a clip of their own
+// the touch controls in the bars were cut off at the race picture's edges.
+void clip_to_whole_window(SDL_Renderer* r);
 
 } // namespace gt3r

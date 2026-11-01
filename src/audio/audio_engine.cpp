@@ -1,9 +1,11 @@
 #include "audio/audio_engine.h"
 
+#include "audio/music_file.h"
 #include "base/log.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <vector>
 
@@ -27,6 +29,20 @@ SDL_AudioDeviceID find_playback_device(const std::string& name) {
     SDL_free(ids);
     return found;
 }
+
+// The game's .ads streams as music.
+class AdsMusic : public MusicStream {
+public:
+    explicit AdsMusic(std::unique_ptr<AdsStream> s) : s_(std::move(s)) {}
+    u32 sample_rate() const override { return s_->header().sample_rate; }
+    u32 channels() const override { return s_->header().channels; }
+    u64 total_frames() const override { return s_->header().total_frames(); }
+    size_t read(s16* out, size_t frames) override { return s_->read(out, frames); }
+    double position_seconds() const override { return s_->position_seconds(); }
+
+private:
+    std::unique_ptr<AdsStream> s_;
+};
 
 // Opens a device for each stream on physical device `phys`; false (none left open) if either fails.
 bool open_pair(SDL_AudioDeviceID phys, SDL_AudioDeviceID& music, SDL_AudioDeviceID& voices) {
@@ -70,7 +86,7 @@ AudioEngine::AudioEngine(const std::string& device) : device_name_(device) {
         music_stream_ = sfx_stream_ = nullptr;
         return;
     }
-    SDL_SetAudioStreamGain(music_stream_, stream_output_gain(stream_level_, music_volume_));
+    SDL_SetAudioStreamGain(music_stream_, stream_output_gain(stream_level_, music_volume_) * stream_trim_);
     // The voices play at unity gain: the volumes are the mixer's bus gains.
 }
 
@@ -236,9 +252,8 @@ void SDLCALL AudioEngine::feed_voices(void* user, SDL_AudioStream* stream, int a
     SDL_PutAudioStreamData(stream, buf.data(), int(buf.size() * sizeof(s16)));
 }
 
-bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float volume) {
+bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float volume, bool resume) {
     if (!music_stream_) return false;
-    sequencer_.stop(voices_);
     std::unique_ptr<AdsStream> stream;
     std::shared_ptr<Bytes> data;
     try {
@@ -266,9 +281,30 @@ bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float
         LOG_ERROR("Cannot play %s: %s", path.c_str(), ex.what());
         return false;
     }
+    start_stream(std::make_unique<AdsMusic>(std::move(stream)), std::move(data), volume, resume, path);
+    return true;
+}
 
-    const AdsHeader& h = stream->header();
-    SDL_AudioSpec in{SDL_AUDIO_S16, int(h.channels), int(h.sample_rate)};
+bool AudioEngine::play_music_file(const std::string& path, bool loop, float volume, bool resume, float trim) {
+    if (!music_stream_) return false;
+    std::unique_ptr<MusicStream> stream = open_music_file(path, loop);
+    if (!stream) return false;
+    start_stream(std::move(stream), nullptr, volume, resume, path, trim);
+    return true;
+}
+
+std::unique_ptr<MusicStream> open_ads_music(AdsStream::ReadFn read) {
+    Bytes head(AdsHeader::kHeaderBytes);
+    read(0, head.data(), head.size());
+    return std::make_unique<AdsMusic>(std::make_unique<AdsStream>(AdsHeader::parse(head), std::move(read), false));
+}
+
+void AudioEngine::start_stream(std::unique_ptr<MusicStream> stream, std::shared_ptr<Bytes> data, float volume,
+                               bool resume, const std::string& what, float trim) {
+    sequencer_.stop(voices_);
+    const u32 rate = stream->sample_rate(), channels = stream->channels();
+    SDL_AudioSpec in{SDL_AUDIO_S16, int(channels), int(rate)};
+    const double length = rate ? double(stream->total_frames()) / rate : 0.0;
     // Lock order matches the audio thread's: SDL device -> SDL stream -> mutex_ (feed() runs
     // with the stream lock held). So the stream is locked before mutex_, and the device call
     // below is made with neither held; otherwise the two threads can deadlock.
@@ -277,23 +313,28 @@ bool AudioEngine::play_music(Vfs& vfs, const std::string& path, bool loop, float
         std::lock_guard lock(mutex_);
         SDL_ClearAudioStream(music_stream_);
         SDL_SetAudioStreamFormat(music_stream_, &in, nullptr);
-        music_length_ = double(h.total_frames()) / h.sample_rate;
+        music_length_ = length;
         music_ = std::move(stream);
         music_data_ = std::move(data);
         music_finished_ = false;
         stream_level_ = volume;
+        stream_trim_ = trim;
     }
     SDL_UnlockAudioStream(music_stream_);
-    SDL_SetAudioStreamGain(music_stream_, stream_output_gain(volume, music_volume_));
-    // A new piece always plays: a pause (the race pause) ends with the piece it paused.
+    SDL_SetAudioStreamGain(music_stream_, stream_output_gain(volume, music_volume_) * trim);
+    // A new piece plays at once: a pause (the race pause) ends with the piece it paused.
     // Without this, leaving a race from its pause menu left the device paused and the
-    // next race's music silent until the next pause / resume.
-    {
+    // next race's music silent until the next pause / resume. Only a piece chosen while the
+    // race is paused (a skip on the pause screen) waits for the race's resume.
+    if (resume) {
         std::lock_guard dl(device_mutex_);
         SDL_ResumeAudioStreamDevice(music_stream_);
     }
-    LOG_INFO("Playing %s (%u Hz, %u ch, %.0f s)", path.c_str(), h.sample_rate, h.channels, music_length_);
-    return true;
+    if (trim != 1.0f)
+        LOG_INFO("Playing %s (%u Hz, %u ch, %.0f s, %+.1f dB)", what.c_str(), rate, channels, length,
+                 20.0 * std::log10(double(trim)));
+    else
+        LOG_INFO("Playing %s (%u Hz, %u ch, %.0f s)", what.c_str(), rate, channels, length);
 }
 
 void AudioEngine::stop_stream() {
@@ -347,8 +388,8 @@ double AudioEngine::music_audible_position() const {
         std::lock_guard lock(mutex_);
         if (!music_) return 0.0;
         pos = music_->position_seconds();
-        rate = music_->header().sample_rate;
-        ch = music_->header().channels;
+        rate = music_->sample_rate();
+        ch = music_->channels();
     }
     if (rate <= 0 || ch == 0) return pos;
     // Queued input (S16 at the stream's rate), then the device's own buffer.
@@ -362,12 +403,25 @@ double AudioEngine::music_audible_position() const {
 }
 
 void AudioEngine::set_stream_level(float level) {
+    float trim;
     {
         std::lock_guard lock(mutex_);
         if (stream_level_ == level) return;
         stream_level_ = level;
+        trim = stream_trim_;
     }
-    if (music_stream_) SDL_SetAudioStreamGain(music_stream_, stream_output_gain(level, music_volume_));
+    if (music_stream_) SDL_SetAudioStreamGain(music_stream_, stream_output_gain(level, music_volume_) * trim);
+}
+
+void AudioEngine::set_stream_trim(float trim) {
+    float level;
+    {
+        std::lock_guard lock(mutex_);
+        if (stream_trim_ == trim) return;
+        stream_trim_ = trim;
+        level = stream_level_;
+    }
+    if (music_stream_) SDL_SetAudioStreamGain(music_stream_, stream_output_gain(level, music_volume_) * trim);
 }
 
 double AudioEngine::music_length() const {
@@ -379,12 +433,13 @@ double AudioEngine::music_length() const {
 
 void AudioEngine::set_music_volume(float v) {
     music_volume_ = std::clamp(v, 0.0f, 1.0f);
-    float level;
+    float level, trim;
     {
         std::lock_guard lock(mutex_);
         level = stream_level_;
+        trim = stream_trim_;
     }
-    if (music_stream_) SDL_SetAudioStreamGain(music_stream_, stream_output_gain(level, music_volume_));
+    if (music_stream_) SDL_SetAudioStreamGain(music_stream_, stream_output_gain(level, music_volume_) * trim);
     voices_.set_bus_gain(VoiceBus::Music, music_volume_);
 }
 
@@ -392,7 +447,7 @@ void SDLCALL AudioEngine::feed(void* user, SDL_AudioStream* stream, int addition
     auto* self = static_cast<AudioEngine*>(user);
     std::lock_guard lock(self->mutex_);
     if (!self->music_ || self->music_finished_ || additional <= 0) return;
-    const u32 ch = self->music_->header().channels;
+    const u32 ch = self->music_->channels();
     size_t frames = size_t(additional) / (2 * ch) + 1;
     std::vector<s16> buf(frames * ch);
     try {

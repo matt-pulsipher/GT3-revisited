@@ -1,6 +1,38 @@
 #include "race/music_markers.h"
 
+#include <algorithm>
+#include <cmath>
+#include <random>
+
 namespace gt3r::race {
+
+sound::MadsMarkers fallback_markers(double length, u64 seed) {
+    constexpr u32 kRate = 1000;
+    constexpr double kBeat = 60.0 / 130.0;
+    sound::MadsMarkers m;
+    m.rate = kRate;
+    if (!(length > 0)) length = 30 * 60;
+    m.length = u32(std::min(length, 6.0 * 3600) * kRate);
+    const int beats = int(length / kBeat);
+    std::mt19937_64 rng(seed);
+    auto spacing = [&rng] {
+        const u64 roll = rng() % 100;
+        return roll < 15 ? 1 : roll < 40 ? 2 : roll < 85 ? 4 : 8;
+    };
+    // From the first beat after the start: the song's first frame already fires every track.
+    int next_cut = spacing();
+    for (int b = 1; b < beats; ++b) {
+        const u32 at = u32(std::lround(b * kBeat * kRate));
+        m.tracks[1].push_back(at);
+        if (b % 4 == 0) m.tracks[2].push_back(at);
+        if (b == next_cut) {
+            m.tracks[3].push_back(at);
+            next_cut += spacing();
+        }
+    }
+    m.tracks[4] = m.tracks[3];
+    return m;
+}
 
 void MusicMarkers::start(const sound::MadsMarkers* song) {
     song_.reset();

@@ -15,6 +15,8 @@
 //     whose first free place from k on (wrapping) gets order i; one more draw
 //     stores the next seed, trunc(unit x 32768).
 //   - with no song in the list, next() gives nothing and no race song plays.
+// Ours: the player's own music keeps a list of the same kind (limit kMaxCustomSongs, ids
+// custom_song_id), kept in step with their music folder by sync().
 // SDL-free.
 
 #include "base/bytes.h"
@@ -29,6 +31,7 @@ namespace gt3r::race {
 class RacePlaylist {
 public:
     static constexpr size_t kMaxSongs = 64;
+    static constexpr size_t kMaxCustomSongs = 10000; // the player's own music (orders are s16)
 
     struct Song {
         u64 id = 0;          // db::id_hash of the song's file name
@@ -40,14 +43,19 @@ public:
 
     // A new game's list: the race songs in group order (at most 64), all in the
     // list, shuffle on, the first order built from `seed`.
-    static RacePlaylist with_songs(const std::vector<u64>& ids, u16 seed);
+    // `limit`: the most songs the list holds (kMaxSongs, or kMaxCustomSongs for the player's own).
+    static RacePlaylist with_songs(const std::vector<u64>& ids, u16 seed, size_t limit = kMaxSongs);
     // The stored list (its saved text, to_text()) when there is a valid one, else a new
     // list of `ids` whose seed is an integer draw on the shared generator.
-    static RacePlaylist stored_or_new(const std::optional<std::string>& stored, const std::vector<u64>& ids);
+    static RacePlaylist stored_or_new(const std::optional<std::string>& stored, const std::vector<u64>& ids,
+                                      size_t limit = kMaxSongs);
 
     // The next song to play: an index into songs(), or nothing when no song is in
     // the list.
     std::optional<size_t> next();
+    // Ours: the song next() would take now (a new pass's first when this one is over), without
+    // taking it.
+    std::optional<size_t> peek() const;
     // A new pass: played marks from the list marks, a new order, the cursor at 0.
     void rebuild();
     // The shuffle switch, then a rebuild.
@@ -59,6 +67,12 @@ public:
     void set_listed(size_t i, bool on) {
         if (i < songs_.size()) songs_[i].listed = on;
     }
+    // Ours (the player's own music): the songs become `ids`: songs no longer there leave, the
+    // others keep their place, marks and order, new ones join at the end in the list. Any
+    // change starts a new pass (rebuild). True when the songs changed.
+    bool sync(const std::vector<u64>& ids);
+    // Songs still to come in this pass: listed and not played.
+    size_t remaining() const;
 
     bool has_songs() const { return !none_; }
     bool shuffle() const { return shuffle_; }
@@ -73,7 +87,7 @@ public:
     // Stored form ([options] music_playlist):
     //   "1 <cursor> <shuffle 0|1> <none 0|1> <seed> <id hex>:<listed>:<played>:<order> ..."
     std::string to_text() const;
-    static std::optional<RacePlaylist> from_text(std::string_view text); // nothing if malformed
+    static std::optional<RacePlaylist> from_text(std::string_view text, size_t limit = kMaxSongs); // nothing if malformed
 
     bool operator==(const RacePlaylist&) const = default;
 
@@ -83,6 +97,7 @@ private:
     bool shuffle_ = true;
     bool none_ = true; // no song in the list (set by rebuild)
     u16 seed_ = 0;
+    size_t limit_ = kMaxSongs;
 };
 
 } // namespace gt3r::race

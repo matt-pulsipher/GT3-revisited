@@ -32,7 +32,12 @@ class IniDocument;
 //   left_handed = off      ; mirror the layout (pedals on the left)
 //   drive.gas  = right 40 bottom 66 size 1.2 ; a control moved / resized / hidden in the
 //   menu.dpad  = hidden                      ; layout editor (TouchPlacement)
+//   drive.music = shown                      ; the song buttons, shown though hidden by default
 enum class TouchLayout : u8 { None, Menu, Driving };
+
+// Ours: what a touch control does besides pressing the pad: the driving layout's song buttons
+// (the race's Previous / Next song, as the controls' chords do).
+enum class TouchAction : u8 { None, PreviousSong, NextSong };
 
 // Rectangle in UI units (Ui::kWidth x Ui::kHeight space).
 struct TouchRect {
@@ -55,10 +60,11 @@ struct TouchPlacement {
     float x = 0, y = 0;
     float scale = 1.0f; // on top of TouchConfig::size
     bool hidden = false;
+    bool shown = false; // shown though hidden by default (TouchConfig::default_hidden)
 
     static constexpr float kMinScale = 0.5f, kMaxScale = 2.0f;
     bool moved() const { return ax != AnchorX::Default; }
-    bool is_default() const { return !moved() && scale == 1.0f && !hidden; }
+    bool is_default() const { return !moved() && scale == 1.0f && !hidden && !shown; }
     bool operator==(const TouchPlacement&) const = default;
     static TouchPlacement parse(std::string_view s);
     std::string to_string() const;
@@ -86,6 +92,11 @@ struct TouchConfig {
     TouchPlacement placement(std::string_view key) const;
     // Sets (or with a default placement drops) `key`'s placement.
     void set_placement(std::string_view key, const TouchPlacement& p);
+    // A control left out unless shown in the layout editor: the song buttons (drive.music), so the
+    // driving layout has no more controls than the race needs.
+    bool default_hidden(std::string_view key) const;
+    // Whether `key` is hidden: hidden in the editor, or hidden by default and never shown.
+    bool hidden(std::string_view key) const;
     // Drops every placement of a layout ("drive." or "menu." keys).
     void reset_placements(TouchLayout layout);
     bool customized(TouchLayout layout) const;
@@ -99,7 +110,7 @@ public:
     // What the overlay draws. Coordinates are UI units; circles use (x, y) as
     // the centre and w as the radius.
     struct Widget {
-        enum class Kind : u8 { Button, DPad, Pedal, Steering };
+        enum class Kind : u8 { Button, DPad, Pedal, Steering, Action };
         enum class Shape : u8 { Rect, Circle };
         Kind kind = Kind::Button;
         Shape shape = Shape::Circle;
@@ -109,6 +120,7 @@ public:
         const char* key = "";
         bool hidden = false; // hidden in the layout editor: not drawn, takes no touches
         PadButton button = PadButton::Cross; // Button / Pedal
+        TouchAction action = TouchAction::None; // Action
         std::string label;                   // short text; empty for face-button symbols
         bool active = false;                 // currently held
         float value = 0.0f;                  // pedal pressure / steering -1..1
@@ -175,6 +187,8 @@ public:
     void update(double dt, float tilt);
     // Contribution to player 1's pad; neutral when hidden.
     const PadState& pad() const { return pad_; }
+    // An action control pressed down in the last update() (one frame per press).
+    bool action_pressed(TouchAction a) const { return a != TouchAction::None && (pressed_actions_ & (1u << unsigned(a))); }
     const std::vector<Widget>& widgets() const { return widgets_; }
 
 private:
@@ -210,6 +224,7 @@ private:
     std::vector<Widget> widgets_;
     std::vector<Finger> fingers_;
     PadState pad_;
+    u8 held_actions_ = 0, pressed_actions_ = 0; // bit (1 << TouchAction)
 };
 
 } // namespace gt3r

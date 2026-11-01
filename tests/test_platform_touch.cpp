@@ -1120,7 +1120,8 @@ TEST(touch_control_bounds) {
     CHECK(t.control_bounds().empty()); // hidden
     t.note_touch();
     const std::vector<TouchRect> b = t.control_bounds();
-    CHECK(b.size() + 1 == t.widgets().size()); // all but the steering zone
+    // All but the steering zone and the song buttons (hidden without custom music).
+    CHECK(b.size() + 3 == t.widgets().size());
     const Widget gas = *find_widget(t, Widget::Kind::Pedal, PadButton::Cross);
     const Widget up = *find_widget(t, Widget::Kind::Button, PadButton::R2);
     bool gas_seen = false, up_seen = false;

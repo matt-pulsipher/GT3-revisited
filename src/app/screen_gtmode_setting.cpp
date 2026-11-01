@@ -56,6 +56,8 @@ MenuKeys setting_keys(const PadState& pad) {
     set(MenuKey::Start, pad.down(PadButton::Start));
     set(MenuKey::L1, pad.down(PadButton::L1));
     set(MenuKey::R1, pad.down(PadButton::R1));
+    set(MenuKey::L2, pad.down(PadButton::L2));
+    set(MenuKey::R2, pad.down(PadButton::R2));
     return k;
 }
 
@@ -68,6 +70,8 @@ MenuKeys script_key(const std::string& s) {
     if (s == "triangle" || s == "back") return key_bit(MenuKey::Cancel);
     if (s == "l1") return key_bit(MenuKey::L1);
     if (s == "r1") return key_bit(MenuKey::R1);
+    if (s == "l2") return key_bit(MenuKey::L2);
+    if (s == "r2") return key_bit(MenuKey::R2);
     return 0;
 }
 

@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">GT3 Revisited</string>
     <!-- Under the app's entry in the Files app (GT3DocumentsProvider) -->
-    <string name="documents_summary">Mods, screenshots and settings</string>
+    <string name="documents_summary">Mods, music, screenshots and settings</string>
 </resources>

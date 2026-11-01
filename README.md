@@ -159,7 +159,46 @@ beside it instead.
 | `saves/` | GT Mode saves (below) |
 | `replays/` | saved replays (`.gt3replay`), listed by the Replay Theater and Time trial |
 | `mods/` | installed mods ([MODDING](docs/MODDING.md)) |
+| `music/` | your own race music (below), unless Settings chooses another folder |
+| `music_playlist.txt` | your songs' playlist (their order and check marks) |
+| `music_songs.txt` | your songs as the last scan found them, and how loud each is (so the next start has them at once) |
 | `screenshots/` | F12 screenshots |
+
+### Your music
+
+Your own MP3, FLAC and WAV files can play as race songs. Put them in the user
+data folder's `music/` (at any depth; on phones and tablets the Files app shows
+it as GT3 Revisited > music), or choose the folder they're in with **Settings →
+Audio → Music folder**: they play from there, nothing is copied. On Android the
+game asks to read your music files, and the folder has to be on the device or
+its memory card (not in a cloud drive's app); if you take that permission back
+in Android's settings, Settings says so and your playlist waits for it. On iOS
+the folder is picked as in the Files app (On My iPhone, iCloud Drive). Titles and artists come from the files'
+tags (ID3, FLAC comments, WAV INFO), otherwise from the file name. AAC (`.m4a`),
+Ogg and other formats don't play, nor do damaged files; Settings counts the files
+it skipped. Every folder inside is searched, linked folders too (32 levels deep at
+most; names starting with `.` are skipped), up to 10,000 songs (the first ones in
+name order). Moving an album's folder keeps its songs' check marks and order. If
+the music folder can't be read (a drive unplugged), your playlist is kept for when
+it's back. The songs found are remembered, so the next start has them at once,
+before it has looked through the folder again.
+
+Your songs play as loud as the disc's race songs: the game turns each one up or
+down to the disc songs' average, by at most 12 dB up (less when that would
+clip) and 20 dB down. A song is measured the first time it plays (it eases to
+its level a moment after it starts) and the next song in your list while it
+plays, so most start at the right level; what was measured is remembered.
+
+The game's **Options → Favorite Music List** then has three tabs over the list
+(Up from the first song, or L1 / R1): **Original** plays the disc's race songs
+as the original does, **Custom** only yours, **Both** the two lists mixed song
+by song (Shuffle draws from both evenly; Order takes turns, one of each). Each
+tab's list is edited as the original's is: check marks, the order, Order /
+Shuffle (also at the right of the tab row, so it's in reach of a long list).
+L2 / R2 jump a screen of songs at a time; a drag or the mouse wheel scrolls.
+Without songs in the folder the tabs are hidden and the disc's list plays. In races, the pause screen shows the song with L1 / R1 to skip, and
+Next / Previous song can be bound to chords or touch buttons
+([INPUT](docs/INPUT.md#song-controls)).
 
 ### Settings
 
@@ -193,6 +232,10 @@ are only there:
 | `[audio] device` | device name | output device (Windows, macOS, Linux); absent: the system default. A device that isn't connected plays on the default until it is |
 | `[audio] music_volume`, `sfx_volume` | `0.0`..`1.0` | |
 | `[audio] surround_cue` | `on` / `off` | GT3's rear-channel phase cue for Pro Logic decoders |
+| `[music] folder` | path | your music folder (absent: the user data folder's `music/`; Settings → Audio) |
+| `[music] show_song` | `on` / `off` | the race song on the pause screen, with L1 / R1 to skip (default on) |
+| `[music] next_race` | `same` / `next` | same (default): a race, restart or replay starts with the song the last one ended on, from its start; next: a new song every time, as GT3 does (Settings → Audio → Next race starts with) |
+| `[music] race_song` | text | the race song playing last (`disc:` or `yours:` and its id), for `next_race = same` |
 | `[race] views` | `all` / `gt3` | race views: GT3's plus bumper without mirror and far chase, or GT3's only |
 | `[race] camera_shake` | `on` / `off` | GT3's in-car vibration |
 | `[race] units` | `kmh` / `mph` | speed unit in races and menus (absent: the disc's, mph on the North American disc, km/h on the European and Japanese ones) |
@@ -200,11 +243,12 @@ are only there:
 | `[race] analog_response` | `linear` / `original` | sticks, triggers, wheels, touch and tilt: a linear response (default) or GT3's DualShock 2 curves (Settings → Controls) |
 | `[input] background` | `on` / `off` | desktop: controllers and wheels keep driving the game while another window is in front, e.g. on a second monitor (default off; Settings → Controls). The keyboard works only in the game's window |
 | `[player1]`, `[player2]` | `controller` (auto, a device name, or keyboard), `keyboard`, `race`, `rumble` (auto, modern, gt3); `phone_vibration` (player 1, Android) | see [INPUT](docs/INPUT.md#controller) |
+| `[player1.actions]`, `[player2.actions]` | `next_song`, `previous_song` | the song controls' chords ([INPUT](docs/INPUT.md#song-controls)) |
 | `[ffb]` | see [INPUT](docs/INPUT.md) | DualSense/Xbox triggers and wheel force feedback |
 | `[touch]` | see [INPUT](docs/INPUT.md#touch-controls-phones-and-tablets) | on-screen controls on phones and tablets; Customize layout moves, resizes and hides each one |
 | `[online] server` | host name | relay server (default `gt3r.gameversions.com`; set in the lobby) |
 | `[online] update_check` | `on` / `off` | ask the relay server for a newer version at startup (Settings → Online) |
-| `[options]` | | the game's own Options menu (set in game) |
+| `[options]` | | the game's own Options menu (set in game); ours: `music_source` (`original` / `custom` / `both`) and `music_mix` (Both's `order` / `shuffle`), the music list's tabs |
 | `[mods]` | | see [MODDING](docs/MODDING.md) |
 
 ### Saves
@@ -461,6 +505,9 @@ original program's code in any form.
   your disc.
 - [stb_truetype](https://github.com/nothings/stb) v1.26 by Sean Barrett,
   public domain (or MIT), rasterises that font.
+- [dr_mp3, dr_flac and dr_wav](https://github.com/mackron/dr_libs) by David
+  Reid, public domain (or MIT-0), decode your own music
+  ([third_party/dr_libs](third_party/dr_libs)).
 - [SDL 3](https://libsdl.org) and [zlib](https://zlib.net), zlib License,
   fetched at build time (Windows builds ship `SDL3.dll`).
 - The [Khronos](https://github.com/KhronosGroup/OpenGL-Registry) OpenGL ES 3.0

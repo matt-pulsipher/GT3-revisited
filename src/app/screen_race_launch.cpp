@@ -52,6 +52,8 @@ DebugPreset read_preset() {
         else if (k == "quick") p.quick = v != "0";
         else if (k == "laps") p.laps = std::atoi(v.c_str());
         else if (k == "exit_laps") p.exit_laps = std::atoi(v.c_str());
+        else if (k == "pause_at") p.pause_at = std::atof(v.c_str());
+        else if (k == "skip_at") p.skip_at = std::atof(v.c_str());
         else if (k == "split") p.split = v;
         else if (k == "car2") p.car2 = v;
         else if (k == "qm") p.qm = v;

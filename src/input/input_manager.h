@@ -201,13 +201,41 @@ public:
     // PlayStation pad, "A" on Xbox, "Right paddle").
     std::string describe(int player, const InputSource& src) const;
 
+    // Ours: the player's chords for actions beyond the pad's buttons (bindings.h PadAction),
+    // saved in [playerN.actions]. Pressed: the chord went down in the last update() (once per
+    // press); held: it is down.
+    const ActionBindings& actions(int player) const { return players_[player].actions; }
+    void bind_action(int player, PadAction a, const Chord& c, bool replace) {
+        players_[player].actions.bind(a, c, replace);
+        players_[player].chord_down[size_t(a)].clear(); // held now: fires on the next press
+    }
+    void clear_action(int player, PadAction a, BindingSet s) {
+        players_[player].actions.clear(a, s);
+        players_[player].chord_down[size_t(a)].clear();
+    }
+    bool action_pressed(int player, PadAction a) const { return players_[player].actions_pressed & (1u << unsigned(a)); }
+    bool action_held(int player, PadAction a) const { return players_[player].actions_held & (1u << unsigned(a)); }
+    // A label for a chord on this player's device ("Select + R1"), describe()'s names joined.
+    std::string describe(int player, const Chord& c) const;
+
+    // Chord capture (Settings): the inputs pressed from now on, one set only (keys, or the
+    // controllers'), until all of them are let go; poll_chord() returns them once. Esc or Back
+    // before any other input cancels (capturing() turns false, nothing returned).
+    void begin_chord_capture(int player = 0);
+    std::optional<Chord> poll_chord();
+    // The inputs held down so far in a chord capture.
+    const std::vector<InputSource>& chord_so_far() const { return chord_inputs_; }
+
     // Remap support: arms capture; the next deliberate input on any device is returned once by
     // poll_capture(). Esc and Android Back cancel it instead (capturing() turns false, nothing
     // returned). Mouse buttons aren't captured.
     // `player`: an input from another device than that player's Controller is tagged with it
     // (InputSource::device); their own Controller's stays untagged.
     void begin_capture(int player = 0);
-    void cancel_capture() { capturing_ = false; }
+    void cancel_capture() {
+        capturing_ = chord_capture_ = false;
+        chord_inputs_.clear();
+    }
     bool capturing() const { return capturing_; }
     std::optional<InputSource> poll_capture();
 
@@ -239,6 +267,9 @@ private:
         PadRumble rumble;
         float tilt = 0.0f;
         PadState overlay; // set_overlay()
+        ActionBindings actions;
+        u8 actions_held = 0, actions_pressed = 0; // bit (1 << PadAction)
+        std::array<std::vector<bool>, kPadActionCount> chord_down; // per chord, last update()
         ForceFeedbackState ffb;
         double ffb_age = 1e9; // seconds since set_force_feedback()
     };
@@ -263,6 +294,10 @@ private:
     void evaluate_profile(const Player& p, const Device* dev, bool keyboard, const Profile& prof,
                           std::vector<float>& ramps, PadState& out, double dt) const;
     void evaluate_any_device(double dt); // any_device_pad()
+    void evaluate_actions(Player& p, bool keyboard);
+    // A chord capture's new input (from an event or a moved axis), if it fits the chord.
+    void add_chord_input(const InputSource& s);
+    void update_chord_capture();
     void update_tilt(Player& p, const Device* dev);
     int brake_trigger(const Player& p) const; // SDL trigger axis bound to the brake, or -1
     void vibrate_phone(float strength);       // 0 stops it
@@ -288,6 +323,9 @@ private:
     std::vector<bool> key_latch_;
 
     bool capturing_ = false;
+    bool chord_capture_ = false; // capturing_ is on for a chord (begin_chord_capture)
+    std::vector<InputSource> chord_inputs_;
+    std::optional<Chord> captured_chord_;
     int capture_player_ = 0;
     std::optional<InputSource> captured_;
     std::vector<std::pair<SDL_JoystickID, std::vector<float>>> capture_baseline_;

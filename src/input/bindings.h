@@ -155,6 +155,41 @@ std::string_view device_kind_preset(DeviceKind k);
 enum class BindingSet : u8 { Controller, Keyboard };
 BindingSet binding_set(const InputSource& s); // Keyboard for keys, mouse buttons and tilt
 
+// Ours: things a player does that are none of the DualShock 2's buttons, each bound to chords
+// (Settings -> Controls, [playerN.actions]; none by default). The race's song controls.
+enum class PadAction : u8 { NextSong, PreviousSong, Count };
+constexpr size_t kPadActionCount = static_cast<size_t>(PadAction::Count);
+std::string_view pad_action_key(PadAction a);  // its config key: "next_song", "previous_song"
+std::string_view pad_action_name(PadAction a); // as Settings names it: "Next song", "Previous song"
+
+// Inputs held together: one to four of one set (keys, or one controller's buttons, triggers and
+// stick directions). It fires when the last of them goes down; a chord may share inputs with
+// other controls, which then also do their own thing. "pad.back+pad.rightshoulder".
+struct Chord {
+    static constexpr size_t kMaxInputs = 4;
+    std::vector<InputSource> inputs;
+
+    BindingSet set() const { return inputs.empty() ? BindingSet::Controller : binding_set(inputs.front()); }
+    std::string to_string() const;
+    static bool parse(std::string_view text, Chord& out); // false: empty, too long, mixed sets or unknown
+    bool operator==(const Chord&) const = default;
+};
+// Whether a source's value (InputManager's, normalised) holds it down as part of a chord:
+// buttons and keys pressed, a trigger or stick half past half way.
+bool chord_input_held(const InputSource& s, float value);
+
+// A player's chords, per action ("next_song = pad.back+pad.rightshoulder | key.rightbracket").
+struct ActionBindings {
+    std::array<std::vector<Chord>, kPadActionCount> chords;
+
+    const std::vector<Chord>& of(PadAction a) const { return chords[static_cast<size_t>(a)]; }
+    // `c` for `a`: added, or with `replace` instead of the chords of its own set (the other set's stay).
+    void bind(PadAction a, const Chord& c, bool replace);
+    void clear(PadAction a, BindingSet s);
+    void load(const IniDocument& cfg, const std::string& sec); // [<sec>.actions]
+    void save(IniDocument& cfg, const std::string& sec) const;
+};
+
 // A player's bindings: the controller's, one set per kind of controller (pad, wheel, joystick),
 // and the keyboard's, one set whatever the controller; menus and races each. A set is its layout's
 // part (make_preset, make_race_preset "modern"; player 2's keyboard keys around I / J / K / L)

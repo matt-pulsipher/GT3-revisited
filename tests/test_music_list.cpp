@@ -21,6 +21,12 @@ using race::RacePlaylist;
 
 namespace {
 
+// The flow's music list preview as a track index (-1 stop), or -99 when none was asked for.
+int preview_track(GameFlow& f) {
+    const std::optional<GameFlow::MusicPreview> p = f.take_preview();
+    return p ? p->track : -99;
+}
+
 const std::vector<u64> kIds = {0x1111, 0x2222, 0x3333, 0x4444, 0x5555};
 
 std::vector<MusicTrack> tracks() {
@@ -226,7 +232,7 @@ TEST(music_list_disc_songs) {
     const MusicListPage* m = f.music_list();
     CHECK(m != nullptr);
     if (!m) return;
-    CHECK(f.take_preview() == 0);
+    CHECK(preview_track(f) == 0);
     CHECK(m->rows() == int(group.size()) + 1);
     // The new list is kept in the options for the race.
     CHECK(cfg.get("options", "music_playlist").has_value());

@@ -24,6 +24,18 @@
 // Pointer (our addition): hovering a row moves the cursor there (the list holds still); a
 // tap moves the cursor there, or acts like Confirm on the cursor's place; with a song
 // lifted a tap carries it to the tapped row, a tap on it puts it down.
+// Tabs (ours, with the player's own music: race/custom_music.h): a row above the list with the
+// tabs (Original / Custom / Both) and, at its right, Order / Shuffle again (the same choice as
+// the last row's, which a long list puts out of reach); the list's window is one mode row
+// shorter under it. Up from the first song reaches the row; Left / Right move along it (SE
+// "cursor", "disable" at an end) and Confirm takes what the cursor is on: a tab (SE "cursor";
+// never with a song lifted) or Order / Shuffle (SE "ok"); a tap takes one at once; L1 / R1
+// choose a tab from anywhere. The flow takes the tab (take_tab) and opens the page again on
+// the other list. Both lists one set of songs after another (set_split): a lifted song moves
+// only within its own set.
+// Long lists (ours): L2 / R2 move the cursor (or carry a lifted song) a window of rows up or
+// down (SE "cursor", "disable" at an end); a drag over the list or the mouse wheel scrolls it
+// without moving the cursor.
 //
 // SDL-free and frame based like MenuController.
 
@@ -33,6 +45,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gt3r::menu::flow {
@@ -41,6 +54,7 @@ namespace gt3r::menu::flow {
 struct MusicTrack {
     u64 id = 0; // db::id_hash of its file name
     std::string title, artist;
+    std::string file = {}; // ours: one of the player's songs (a host path); empty for the disc's
 };
 
 // The rows' parts, from the page's hidden art (`label_check_box`, `check_box`, `label_box`,
@@ -66,6 +80,14 @@ public:
     // `editable`: the page's own list (cursor, preview); else the top page's view of it.
     void open(const race::RacePlaylist& list, std::vector<MusicTrack> tracks, bool editable,
               const Layout& layout = {});
+    // Ours: the tabs (none with fewer than two names), the one chosen, the cursor on them.
+    void set_tabs(std::vector<std::string> names, int chosen, bool focused);
+    // Ours: rows from `split` on are the second set of songs (Both).
+    void set_split(int split) { split_ = split; }
+    // The tab chosen since the last call (to open its list).
+    std::optional<int> take_tab() { return std::exchange(tab_request_, std::nullopt); }
+    int tab() const { return tab_; }
+    bool tabs_shown() const { return tabs_.size() > 1; }
     void close() { open_ = false; }
     bool is_open() const { return open_; }
 
@@ -83,13 +105,17 @@ public:
     // Pointer in layout units (y up) over the list drawn in `area` (the widget's box).
     bool hover(const SDL_FRect& area, float x, float y, std::vector<std::string>& sounds);
     bool tap(const SDL_FRect& area, float x, float y, std::vector<std::string>& sounds);
+    // Ours: the list scrolled by `dy` layout units (up: the rows move up) under a drag or the
+    // wheel at (x, y); false when the point is off the list.
+    bool scroll_by(const SDL_FRect& area, float x, float y, float dy);
 
     // The rows over the widget `w` (its draw), with the page's hidden art (`hidden`).
     void draw(const Layer* hidden, const ElementDraw& w, std::vector<ElementDraw>& out) const;
 
     // State.
     int rows() const { return int(songs_.size()) + 1; } // the songs and the Order / Shuffle row
-    int focus() const { return focus_; }
+    int focus() const { return focus_; }                // -1: the tabs
+    int top_column() const { return top_col_; }         // on the tabs: a tab, then Order, Shuffle
     int column(int row) const { return row >= 0 && row < int(columns_.size()) ? columns_[size_t(row)] : 0; }
     bool shuffle() const { return mode_ == 1; }
     const std::vector<Song>& songs() const { return songs_; }
@@ -101,6 +127,13 @@ public:
 
 private:
     float row_top(int row) const { return layout_.row_h * float(row); } // from the list's top, down
+    float tabs_h() const { return tabs_shown() ? layout_.mode_h : 0; }
+    float view_h() const { return layout_.view_h - tabs_h(); } // the list's window under the tabs
+    void choose_tab(int tab, std::vector<std::string>& sounds);
+    int top_items() const { return int(tabs_.size()) + 2; } // the tabs, Order, Shuffle
+    int tab_at(const SDL_FRect& area, float x) const;      // the item under x on the tab row, or -1
+    SDL_FRect tab_box(const SDL_FRect& area, int i) const; // item i: a tab, then Order, Shuffle
+    void jump(int d, std::vector<std::string>& sounds);    // L2 / R2
     float row_height(int row) const { return row < int(songs_.size()) ? layout_.row_h : layout_.mode_h; }
     void move(int d, std::vector<std::string>& sounds);
     void side(int d, std::vector<std::string>& sounds);
@@ -121,7 +154,12 @@ private:
     std::optional<int> preview_;
     float scroll_ = 0, scroll_target_ = 0, scroll_step_ = 0;
     float pulse_ = 0, lift_pulse_ = 0; // the highlight's 30-frame pulse (0.5 -> 0)
-    int pulse_row_ = -1;
+    int pulse_row_ = -2;
+    std::vector<std::string> tabs_;
+    int tab_ = 0, split_ = -1;
+    int top_col_ = 0; // the cursor's item on the tab row
+    std::optional<int> tab_request_;
+    mutable Element tab_part_[2]; // label_box / label_focus with centred text (draw)
 };
 
 } // namespace gt3r::menu::flow

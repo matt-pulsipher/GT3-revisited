@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/bgm.h"
+#include "audio/music_stream.h"
 #include "audio/sequencer.h"
 #include "audio/voice_mixer.h"
 #include "formats/ads.h"
@@ -35,6 +36,11 @@ class Vfs;
 // mixer's Effects bus only.
 // Output device (sound §1.1): both streams play on the chosen playback device, or the system
 // default when none is chosen or the chosen one is not connected.
+// An .ads stream read through `read` (offsets from the file's start; a Vfs::Stream's reader),
+// once through, as a MusicStream: the race songs' loudness is measured through it
+// (race/custom_music.h). Throws FormatError when it is no .ads.
+std::unique_ptr<MusicStream> open_ads_music(AdsStream::ReadFn read);
+
 class AudioEngine {
 public:
     // `device`: the output device's name (config [audio] device); empty for the system default.
@@ -61,7 +67,12 @@ public:
     void device_event(const SDL_Event& e);
 
     // Streams an .ads file through the VFS (mods may replace it) at request level `volume`.
-    bool play_music(Vfs& vfs, const std::string& path, bool loop, float volume = 1.0f);
+    // `resume` false: a race paused on its pause screen stays silent (the new piece waits for
+    // resume_music()); otherwise a new piece always plays.
+    bool play_music(Vfs& vfs, const std::string& path, bool loop, float volume = 1.0f, bool resume = true);
+    // The same for one of the player's own music files (a host path; music_file.h), its samples
+    // scaled by `trim` (its loudness gain, race/custom_music.h) on top of the level.
+    bool play_music_file(const std::string& path, bool loop, float volume = 1.0f, bool resume = true, float trim = 1.0f);
     // Plays sequence `index` of music/music.seq with music/music.ins (loaded
     // on first use through the VFS) at request level `volume`. Sequences loop forever.
     bool play_sequence(Vfs& vfs, int index, float volume = 1.0f);
@@ -75,6 +86,7 @@ public:
     // The game's BGM layer (ids, restart rules). Shared
     // by menus, race and presentations so "play if different" sees one state.
     bgm::Player& bgm() { return bgm_; }
+    const bgm::Player& bgm() const { return bgm_; }
 
     void stop_music(); // stream and sequence
     // Pauses / resumes the streamed music where it is (the race pause).
@@ -89,6 +101,12 @@ public:
     // The current stream's request level, changed without restarting it (the race music's
     // per-frame level, music §2.1).
     void set_stream_level(float level);
+    // The current stream's own gain (play_music_file's trim), changed while it plays.
+    void set_stream_trim(float trim);
+    float stream_trim() const {
+        std::lock_guard lock(mutex_);
+        return stream_trim_;
+    }
     double music_length() const; // stream length; for a sequence, one pass of its loop
     // The Music volume setting (0..1): streams and the mixer's music bus.
     void set_music_volume(float v);
@@ -108,6 +126,8 @@ public:
 
 private:
     bool load_sequences(Vfs& vfs);
+    void start_stream(std::unique_ptr<MusicStream> stream, std::shared_ptr<Bytes> data, float volume, bool resume,
+                      const std::string& what, float trim = 1.0f);
     void stop_stream();
     // Puts both streams on physical device `phys`, else on the default; false if neither opens.
     bool use_device(SDL_AudioDeviceID phys);
@@ -120,11 +140,12 @@ private:
 
     SDL_AudioStream* music_stream_ = nullptr;
     mutable std::mutex mutex_;
-    std::unique_ptr<AdsStream> music_;
+    std::unique_ptr<MusicStream> music_;
     std::shared_ptr<Bytes> music_data_; // backing store when not streamed from disc
     double music_length_ = 0.0;
     float music_volume_ = 0.8f;
     float stream_level_ = 1.0f; // the current stream request's level
+    float stream_trim_ = 1.0f;  // the current stream's own gain (a music file's loudness)
     bool music_finished_ = false;
 
     VoiceMixer voices_;

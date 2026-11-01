@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gt3r::race {
 
@@ -47,6 +49,9 @@ void RaceMusic::stop(AudioEngine& audio) {
     seen_ = false;
     race_piece_ = marked_request_ = false;
     follow_piece(audio);
+    // The next run here starts with this run's last song (set_first_song).
+    if (same_song_ && run_song_ && at_ < history_.size()) first_ = history_[at_];
+    run_song_ = false;
 }
 
 std::vector<RaceMusic::Action> RaceMusic::decide(const Cues& c, bool music_playing) {
@@ -152,20 +157,168 @@ std::optional<std::string> RaceMusic::take_playlist_change() {
     return playlist_.to_text();
 }
 
-void RaceMusic::play_race_song(AudioEngine& audio, Vfs& vfs, float volume) {
-    std::optional<size_t> k = playlist_.next();
-    if (!k) { // no song in the list: no race music
-        audio.bgm().stop(audio);
-        level_.stop();
-        return;
+void RaceMusic::set_custom(MusicLibrary* library, MusicSource source, bool mix_shuffle) {
+    library_ = library;
+    chosen_ = source;
+    mix_shuffle_ = mix_shuffle;
+}
+
+MusicSource RaceMusic::source() const { return effective_music_source(chosen_, library_ && library_->has_songs()); }
+
+bool RaceMusic::has_songs() const {
+    switch (source()) {
+    case MusicSource::Original: return playlist_.has_songs();
+    case MusicSource::Custom: return library_->playlist().has_songs();
+    case MusicSource::Both: return playlist_.has_songs() || library_->playlist().has_songs();
     }
-    playlist_changed_ = true;
-    int track = RacePlaylist::track_index(playlist_.songs()[*k].id, song_ids_);
-    audio.bgm().play(audio, vfs, bgm::kRace, track, false, volume);
+    return false;
+}
+
+std::optional<RaceMusic::Played> RaceMusic::take_next() {
+    const MusicSource src = source();
+    bool custom = src == MusicSource::Custom;
+    if (src == MusicSource::Both) {
+        RacePlaylist& mine = library_->playlist();
+        custom = pick_custom(mix_shuffle_, playlist_.remaining(), mine.remaining(), playlist_.has_songs(),
+                             mine.has_songs(), last_custom_, std::uniform_real_distribution<double>(0, 1)(rng_));
+    }
+    RacePlaylist& list = custom ? library_->playlist() : playlist_;
+    std::optional<size_t> k = list.next();
+    if (!k) return std::nullopt;
+    (custom ? custom_changed_ : playlist_changed_) = true;
+    last_custom_ = custom;
+    return Played{custom, list.songs()[*k].id};
+}
+
+bool RaceMusic::play(AudioEngine& audio, Vfs& vfs, const Played& song, float volume, bool resume) {
+    bool ok;
+    trim_id_ = 0;
+    if (!song.custom) {
+        const int track = RacePlaylist::track_index(song.id, song_ids_);
+        ok = audio.bgm().play(audio, vfs, bgm::kRace, track, false, volume, resume);
+    } else {
+        const CustomSong* s = library_ ? library_->find(song.id) : nullptr;
+        trim_ = s ? library_->gain(*s) : 1.0f;
+        ok = s && audio.bgm().play_file(audio, s->path, bgm::kRace, false, volume, resume, trim_);
+        if (ok) trim_id_ = song.id, trim_generation_ = audio.bgm().generation(), trim_ticks_ = SDL_GetTicks();
+    }
+    song_changed_ |= ok;
+    run_song_ |= ok;
+    // The player's songs are measured as they come: the next one of the list ahead of time,
+    // this one (if it isn't yet) before it.
+    if (ok && library_ && source() != MusicSource::Original) {
+        if (std::optional<size_t> k = library_->playlist().peek()) library_->want_measured(library_->playlist().songs()[*k].id);
+        if (song.custom) library_->want_measured(song.id);
+    }
+    return ok;
+}
+
+void RaceMusic::ease_trim(AudioEngine& audio) {
+    const u64 now = SDL_GetTicks();
+    const double dt = std::min(double(now - trim_ticks_) / 1000.0, 0.1);
+    trim_ticks_ = now;
+    if (!trim_id_ || !library_ || audio.bgm().generation() != trim_generation_) return;
+    const CustomSong* s = library_->find(trim_id_);
+    if (!s) return;
+    const float target = library_->gain(*s);
+    if (target == trim_) return;
+    const float step = std::pow(10.0f, float(6.0 * dt / 20.0)); // 6 dB a second
+    trim_ = target > trim_ ? std::min(target, trim_ * step) : std::max(target, trim_ / step);
+    audio.set_stream_trim(trim_);
+}
+
+void RaceMusic::set_first_song(std::string_view text) {
+    same_song_ = true;
+    first_.reset();
+    const bool custom = text.substr(0, 6) == "yours:";
+    if (!custom && text.substr(0, 5) != "disc:") return;
+    const std::string hex(text.substr(custom ? 6 : 5));
+    char* end = nullptr;
+    const u64 id = std::strtoull(hex.c_str(), &end, 16);
+    if (!hex.empty() && end == hex.c_str() + hex.size()) first_ = Played{custom, id};
+}
+
+std::optional<std::string> RaceMusic::take_song_change() {
+    if (!std::exchange(song_changed_, false) || at_ >= history_.size()) return std::nullopt;
+    const Played& p = history_[at_];
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "%s:%llx", p.custom ? "yours" : "disc", static_cast<unsigned long long>(p.id));
+    return std::string(buf);
+}
+
+bool RaceMusic::can_play(const Played& song) const {
+    const MusicSource src = source();
+    const RacePlaylist* list = nullptr;
+    if (song.custom && src != MusicSource::Original && library_ && library_->find(song.id)) list = &library_->playlist();
+    if (!song.custom && src != MusicSource::Custom &&
+        std::find(song_ids_.begin(), song_ids_.end(), song.id) != song_ids_.end())
+        list = &playlist_;
+    return list && std::any_of(list->songs().begin(), list->songs().end(),
+                               [&](const RacePlaylist::Song& s) { return s.id == song.id && s.listed; });
+}
+
+void RaceMusic::play_race_song(AudioEngine& audio, Vfs& vfs, float volume, bool resume) {
+    // Forward through the songs played first (after a Previous), then new ones from the playlists.
+    // A song that no longer plays (a file gone) is passed over.
+    for (int guard = 0; guard < 8; ++guard) {
+        std::optional<Played> first = run_song_ ? std::nullopt : std::exchange(first_, std::nullopt);
+        if (first && can_play(*first)) {
+            // The run's first song: the one the last run ended on, from its start (set_first_song).
+            history_.resize(std::min(history_.size(), at_ + 1));
+            history_.push_back(*first);
+            at_ = history_.size() - 1;
+        } else if (at_ + 1 < history_.size()) {
+            ++at_;
+        } else {
+            std::optional<Played> next = take_next();
+            if (!next) { // no song in the list: no race music
+                audio.bgm().stop(audio);
+                level_.stop();
+                return;
+            }
+            history_.push_back(*next);
+            constexpr size_t kKept = 200;
+            if (history_.size() > kKept) history_.erase(history_.begin(), history_.end() - std::ptrdiff_t(kKept));
+            at_ = history_.size() - 1;
+        }
+        if (play(audio, vfs, history_[at_], volume, resume)) return;
+    }
+}
+
+std::optional<RaceMusic::SongInfo> RaceMusic::now_playing(const AudioEngine& audio) const {
+    if (!active_ || !race_piece_ || !marked_request_ || audio.bgm().current() != bgm::kRace) return std::nullopt;
+    if (level_.base(last_.music_on) == 0 || history_.empty() || !audio.bgm().playing(audio)) return std::nullopt;
+    const Played& p = history_[at_];
+    SongInfo info;
+    info.custom = p.custom;
+    if (p.custom) {
+        const CustomSong* s = library_ ? library_->find(p.id) : nullptr;
+        if (!s) return std::nullopt;
+        info.title = s->title, info.artist = s->artist;
+    } else if (const sound::MadsTrack* t = audio.bgm().current_track()) {
+        info.title = t->title, info.artist = t->artist;
+    }
+    return info;
+}
+
+bool RaceMusic::skip(AudioEngine& audio, Vfs& vfs, int dir) {
+    if (!now_playing(audio) || dir == 0) return false;
+    const float v = level_.request(last_.music_on, last_.replay ? bgm::kReplaySongVolume : bgm::kRaceSongVolume);
+    const bool resume = !last_.paused;
+    marked_request_ = race_piece_ = true;
+    if (dir > 0) {
+        play_race_song(audio, vfs, v, resume);
+    } else {
+        if (at_ > 0) --at_;
+        if (!play(audio, vfs, history_[at_], v, resume)) play_race_song(audio, vfs, v, resume);
+    }
+    follow_piece(audio);
+    return true;
 }
 
 void RaceMusic::cues(AudioEngine& audio, Vfs& vfs, const Cues& c) {
     active_ = true;
+    last_ = c;
     for (const Action& a : decide(c, audio.bgm().playing(audio))) {
         switch (a.op) {
         case Action::Op::Play: {
@@ -194,6 +347,7 @@ void RaceMusic::cues(AudioEngine& audio, Vfs& vfs, const Cues& c) {
     }
     // Every frame the race's stream plays at the base level: the switch silences it at once.
     if (race_piece_ && c.menu == Menu::None) audio.set_stream_level(level_.base(c.music_on));
+    ease_trim(audio);
 }
 
 void RaceMusic::follow_piece(AudioEngine& audio) {
@@ -201,6 +355,14 @@ void RaceMusic::follow_piece(AudioEngine& audio) {
     if (g == generation_) return;
     generation_ = g;
     const sound::MadsTrack* t = audio.bgm().current_track();
+    // Ours: a race song without markers (one of the player's) gets the fallback ones, so the
+    // replay cameras cut at the disc songs' pace rather than on their 2 s countdown.
+    if (marked_request_ && audio.bgm().current() == bgm::kRace && (!t || !t->markers.any())) {
+        const u64 seed = !history_.empty() ? history_[at_].id : 0;
+        fallback_ = fallback_markers(audio.music_length(), seed);
+        markers_.start(&fallback_);
+        return;
+    }
     markers_.start(marked_request_ && t ? &t->markers : nullptr);
 }
 

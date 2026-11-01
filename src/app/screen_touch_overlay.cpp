@@ -136,6 +136,21 @@ void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
             }
             break;
         }
+        case Widget::Kind::Action: {
+            // Ours: the song buttons, |<< and >>|.
+            body(ui, w, a, std::min(w.w, w.h) / 2);
+            const bool next = w.action == TouchAction::NextSong;
+            const float tw = w.w * 0.36f, h = w.w * 0.3f, bw = std::max(1.4f, w.w * 0.1f);
+            const float left = w.x - (2 * tw + bw) / 2;
+            auto x = [&](float v) { return next ? v : 2 * w.x - v; }; // Previous: the mirror image
+            for (int i = 0; i < 2; ++i) {
+                const float back = left + float(i) * tw;
+                triangle(r, x(back + tw), w.y, x(back), w.y - h, x(back), w.y + h, fg);
+            }
+            const float bar = x(left + 2 * tw);
+            ui.fill(next ? bar : bar - bw, w.y - h, bw, 2 * h, fg);
+            break;
+        }
         case Widget::Kind::Pedal: {
             const bool gas = w.button == PadButton::Cross;
             const Color tint = gas ? kGas : kBrake;
@@ -274,12 +289,27 @@ void lay_out(TouchControls& c, const WindowSpace& w) {
 
 // Draw in UI units across the whole window: the logical presentation (which clips to the
 // game area) off while `draw` runs.
+} // namespace
+
+void clip_to_whole_window(SDL_Renderer* r) {
+    int ow = 0, oh = 0;
+    float sx = 1, sy = 1;
+    SDL_GetRenderOutputSize(r, &ow, &oh);
+    SDL_GetRenderScale(r, &sx, &sy);
+    const SDL_Rect whole{0, 0, int(std::ceil(float(ow) / sx)), int(std::ceil(float(oh) / sy))};
+    SDL_SetRenderClipRect(r, &whole);
+}
+
+namespace {
+
 template <class F> void with_whole_window(SDL_Renderer* r, const WindowSpace& w, F&& draw) {
     if (w.logical) {
         SDL_SetRenderLogicalPresentation(r, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
         SDL_SetRenderScale(r, w.k, w.k);
     }
+    clip_to_whole_window(r);
     draw(w.ox, w.oy);
+    SDL_SetRenderClipRect(r, nullptr);
     if (w.logical) {
         SDL_SetRenderScale(r, 1, 1);
         SDL_SetRenderLogicalPresentation(r, w.lw, w.lh, w.mode);

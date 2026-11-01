@@ -96,6 +96,8 @@ void InputManager::load(const IniDocument& cfg) {
         bool controller_inputs = false;
         if (controller) p.bindings.load(cfg, sec);
         else controller_inputs = p.bindings.load_old(cfg, sec);
+        p.actions.load(cfg, sec);
+        for (auto& d : p.chord_down) d.clear();
         p.bindings.race_layout = initial_race_layout(cfg, sec, preset);
         // keyboard: Keyboard only, unless its custom bindings had controller inputs (its device
         // stays). wheel with a named device: that device keeps the wheel layout whatever SDL says.
@@ -129,6 +131,7 @@ void InputManager::save(IniDocument& cfg) const {
         cfg.set(sec, "rumble", p.rumble_mode);
         cfg.set(sec, "race", p.bindings.race_layout);
         p.bindings.save(cfg, sec);
+        p.actions.save(cfg, sec);
     }
     cfg.set("input", "background", background_ ? "on" : "off");
 }
@@ -418,24 +421,39 @@ void InputManager::handle_event(const SDL_Event& e) {
             key_latch_[size_t(e.key.scancode)] = true;
         }
         if (capturing_ && !e.key.repeat) {
-            // Esc and Android Back cancel the capture.
-            if (e.key.scancode != SDL_SCANCODE_ESCAPE && e.key.scancode != SDL_SCANCODE_AC_BACK)
-                captured_ = InputSource{InputSource::Kind::Key, int(e.key.scancode)};
+            // Esc and Android Back cancel the capture (a chord's before anything else is held).
+            const bool back = e.key.scancode == SDL_SCANCODE_ESCAPE || e.key.scancode == SDL_SCANCODE_AC_BACK;
+            if (chord_capture_) {
+                if (!back) add_chord_input(InputSource{InputSource::Kind::Key, int(e.key.scancode)});
+                else if (chord_inputs_.empty()) capturing_ = chord_capture_ = false;
+                break;
+            }
+            if (!back) captured_ = InputSource{InputSource::Kind::Key, int(e.key.scancode)};
             capturing_ = false;
         }
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         if (capturing_) {
-            captured_ = InputSource{InputSource::Kind::PadButton, int(e.gbutton.button)};
-            captured_->device = capture_tag(e.gbutton.which);
+            InputSource s{InputSource::Kind::PadButton, int(e.gbutton.button)};
+            s.device = capture_tag(e.gbutton.which);
+            if (chord_capture_) {
+                add_chord_input(s);
+                break;
+            }
+            captured_ = s;
             capturing_ = false;
         }
         break;
     case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
         // Gamepads report through the gamepad event above.
         if (capturing_ && !SDL_IsGamepad(e.jbutton.which)) {
-            captured_ = InputSource{InputSource::Kind::JoyButton, int(e.jbutton.button)};
-            captured_->device = capture_tag(e.jbutton.which);
+            InputSource s{InputSource::Kind::JoyButton, int(e.jbutton.button)};
+            s.device = capture_tag(e.jbutton.which);
+            if (chord_capture_) {
+                add_chord_input(s);
+                break;
+            }
+            captured_ = s;
             capturing_ = false;
         }
         break;
@@ -444,8 +462,13 @@ void InputManager::handle_event(const SDL_Event& e) {
             u8 v = e.jhat.value;
             u8 dir = (v & SDL_HAT_UP) ? SDL_HAT_UP : (v & SDL_HAT_RIGHT) ? SDL_HAT_RIGHT
                    : (v & SDL_HAT_DOWN) ? SDL_HAT_DOWN : SDL_HAT_LEFT;
-            captured_ = InputSource{InputSource::Kind::JoyHat, int(e.jhat.hat), dir};
-            captured_->device = capture_tag(e.jhat.which);
+            InputSource s{InputSource::Kind::JoyHat, int(e.jhat.hat), dir};
+            s.device = capture_tag(e.jhat.which);
+            if (chord_capture_) {
+                add_chord_input(s);
+                break;
+            }
+            captured_ = s;
             capturing_ = false;
         }
         break;
@@ -453,9 +476,81 @@ void InputManager::handle_event(const SDL_Event& e) {
     }
 }
 
+void InputManager::begin_chord_capture(int player) {
+    begin_capture(player);
+    chord_capture_ = true;
+}
+
+std::optional<Chord> InputManager::poll_chord() { return std::exchange(captured_chord_, std::nullopt); }
+
+void InputManager::add_chord_input(const InputSource& s) {
+    if (chord_inputs_.size() >= Chord::kMaxInputs) return;
+    if (!chord_inputs_.empty() && binding_set(s) != binding_set(chord_inputs_.front())) return; // one set
+    if (std::find(chord_inputs_.begin(), chord_inputs_.end(), s) == chord_inputs_.end()) chord_inputs_.push_back(s);
+}
+
+void InputManager::update_chord_capture() {
+    // Axes: each moved past half way from where it rested (a trigger, a stick direction, a pedal).
+    for (const auto& [id, base] : capture_baseline_) {
+        const Device* d = find_device(id);
+        if (!d) continue;
+        for (size_t a = 0; a < base.size(); ++a) {
+            const float v = d->gamepad ? normalize_axis(SDL_GetGamepadAxis(d->gamepad, SDL_GamepadAxis(a)))
+                                       : normalize_axis(SDL_GetJoystickAxis(d->joystick, int(a)));
+            const float delta = v - base[a];
+            if (std::fabs(delta) < 0.5f) continue;
+            InputSource s;
+            s.kind = d->gamepad ? InputSource::Kind::PadAxis : InputSource::Kind::JoyAxis;
+            s.code = int(a);
+            const bool trigger = d->gamepad && (a == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || a == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+            s.half = trigger ? InputSource::Half::Full : delta > 0 ? InputSource::Half::Positive : InputSource::Half::Negative;
+            s.device = capture_tag(id);
+            if (chord_input_held(s, v)) add_chord_input(s);
+        }
+    }
+    if (chord_inputs_.empty()) return;
+    // Done when every input is let go.
+    const Player& p = players_[capture_player_];
+    const Device* dev = find_device(p.device);
+    for (const InputSource& s : chord_inputs_)
+        if (std::optional<float> v = read_source(p, dev, true, s); v && chord_input_held(s, *v)) return;
+    captured_chord_ = Chord{chord_inputs_};
+    chord_inputs_.clear();
+    capturing_ = chord_capture_ = false;
+}
+
+void InputManager::evaluate_actions(Player& p, bool keyboard) {
+    const Device* dev = find_device(p.device);
+    p.actions_held = p.actions_pressed = 0;
+    for (size_t a = 0; a < kPadActionCount; ++a) {
+        const std::vector<Chord>& chords = p.actions.chords[a];
+        std::vector<bool>& was = p.chord_down[a];
+        was.resize(chords.size(), true); // a chord bound while held fires on its next press
+        for (size_t c = 0; c < chords.size(); ++c) {
+            bool down = !chords[c].inputs.empty();
+            for (const InputSource& s : chords[c].inputs) {
+                std::optional<float> v = read_source(p, dev, keyboard, s);
+                down = down && v && chord_input_held(s, *v);
+            }
+            if (down) p.actions_held = u8(p.actions_held | (1u << a));
+            if (down && !was[c]) p.actions_pressed = u8(p.actions_pressed | (1u << a));
+            was[c] = down;
+        }
+    }
+}
+
+std::string InputManager::describe(int player, const Chord& c) const {
+    std::string out;
+    for (const InputSource& s : c.inputs) out += (out.empty() ? "" : " + ") + describe(player, s);
+    return out;
+}
+
 void InputManager::begin_capture(int player) {
     capture_player_ = std::clamp(player, 0, kMaxPlayers - 1);
     capturing_ = true;
+    chord_capture_ = false;
+    chord_inputs_.clear();
+    captured_chord_.reset();
     captured_.reset();
     // Record resting positions so pedals that rest at +/-1 and slightly
     // off-center sticks don't register as input.
@@ -640,7 +735,9 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
 }
 
 void InputManager::update(double dt) {
-    if (capturing_) {
+    if (capturing_ && chord_capture_) {
+        update_chord_capture();
+    } else if (capturing_) {
         // Analog capture: the axis that moved furthest from its resting value.
         float best = kCaptureAxisDelta;
         for (const auto& [id, base] : capture_baseline_) {
@@ -664,7 +761,11 @@ void InputManager::update(double dt) {
         }
         if (captured_) capturing_ = false;
     }
-    for (Player& p : players_) evaluate(p, dt);
+    for (Player& p : players_) {
+        evaluate(p, dt);
+        if (capturing_) p.actions_held = p.actions_pressed = 0; // the capture takes every input
+        else evaluate_actions(p, keyboard_active(int(&p - players_.data())));
+    }
     evaluate_any_device(dt);
     {
         const Device* d = find_device(players_[0].device);
