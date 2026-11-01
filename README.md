@@ -375,7 +375,7 @@ cmake --build build -j
   `gt3r`. SDL3 is fetched automatically, or install it with vcpkg. 3D uses
   Vulkan, or OpenGL ES 3.0 on GPUs without it: the driver's, or ANGLE's when
   `-DGT3R_ANGLE_DIR=<folder>` points at a folder with its DLLs and license
-  (`vcpkg install angle:x64-windows-angle --overlay-triplets=packaging/vcpkg-triplets`;
+  (`pwsh packaging/angle.ps1` builds them into `angle\` with vcpkg;
   [RENDERING](docs/dev/RENDERING.md#opengl-es)).
 - **Linux**: install your distro's SDL3 development package, or let CMake
   fetch and build it. Building SDL needs its window, audio and input

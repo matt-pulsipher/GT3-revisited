@@ -168,7 +168,7 @@ builds with `GT3R_GLES` (Windows and Linux by default) include it.
   OpenGL ES (driver) (`[video] gpu = gles_driver`, `--gles-driver`) asks for the
   driver's instead; SDL still uses ANGLE for a driver without OpenGL ES 3.0
   contexts. `SDL_OPENGL_ES_DRIVER=0` or `1` in the environment overrides both. Release packages ship it: CI builds
-  ANGLE with vcpkg's `angle` port, and `-DGT3R_ANGLE_DIR=<folder>` copies a
+  ANGLE with vcpkg's `angle` port (`packaging/angle.ps1`, kept in CI's cache), and `-DGT3R_ANGLE_DIR=<folder>` copies a
   build next to the game and into the package. Without ANGLE, NVIDIA and AMD
   drivers offer OpenGL ES 3.0 contexts themselves (NVIDIA from GeForce 400 on);
   older Intel ones do not.

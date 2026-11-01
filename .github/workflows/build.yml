@@ -78,6 +78,26 @@ jobs:
       - name: Build app (unsigned)
         run: cmake --build build-ios --config Release --target gt3r -- -quiet
 
+  # ANGLE for the Windows package (packaging/angle.ps1, ~18 min), kept in the cache from master: a
+  # tag's run restores only its own tag's caches and the default branch's. Built again when the
+  # script or the triplets change; every other push just restores it, which also keeps it from
+  # expiring (7 days unused).
+  angle-cache:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: ANGLE (cached)
+        id: angle
+        uses: actions/cache@v4
+        with:
+          path: angle
+          key: angle-windows-${{ hashFiles('packaging/angle.ps1', 'packaging/vcpkg-triplets/**') }}
+      - name: ANGLE
+        if: steps.angle.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: ./packaging/angle.ps1
+
   package:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     strategy:
@@ -104,22 +124,19 @@ jobs:
             libwayland-dev libdecor-0-dev libxkbcommon-dev libegl1-mesa-dev libdrm-dev libgbm-dev \
             libudev-dev libdbus-1-dev zlib1g-dev
       # Windows: ANGLE (OpenGL ES on Direct3D 11) for the 3D renderer on GPUs without Vulkan
-      # (docs/dev/RENDERING.md "OpenGL ES"), from vcpkg's angle port at a pinned vcpkg commit with
-      # the C runtime and zlib linked in (packaging/vcpkg-triplets); it ships next to gt3r.exe.
-      - name: ANGLE (Windows)
+      # (docs/dev/RENDERING.md "OpenGL ES", packaging/angle.ps1); it ships next to gt3r.exe.
+      # Restored from the cache that job angle-cache keeps, built here when the cache has none.
+      - name: ANGLE (Windows, cached)
+        id: angle
         if: runner.os == 'Windows'
+        uses: actions/cache/restore@v4
+        with:
+          path: angle
+          key: angle-windows-${{ hashFiles('packaging/angle.ps1', 'packaging/vcpkg-triplets/**') }}
+      - name: ANGLE (Windows)
+        if: runner.os == 'Windows' && steps.angle.outputs.cache-hit != 'true'
         shell: pwsh
-        run: |
-          $vc = "$env:RUNNER_TEMP\vcpkg"
-          git clone --quiet https://github.com/microsoft/vcpkg $vc
-          git -C $vc checkout --quiet 9a5dfef5d1a0438a7d24856a85bd60f309d355e9
-          & "$vc\bootstrap-vcpkg.bat" -disableMetrics
-          & "$vc\vcpkg.exe" install angle:x64-windows-angle --overlay-triplets=packaging/vcpkg-triplets --disable-metrics
-          if ($LASTEXITCODE) { exit 1 }
-          $inst = "$vc\installed\x64-windows-angle"
-          New-Item -ItemType Directory angle | Out-Null
-          Copy-Item "$inst\bin\libEGL.dll", "$inst\bin\libGLESv2.dll" angle
-          Copy-Item "$inst\share\angle\copyright" angle\LICENSE-ANGLE.txt
+        run: ./packaging/angle.ps1
       - name: Configure
         shell: bash
         run: |
