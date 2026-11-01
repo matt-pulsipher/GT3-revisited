@@ -117,7 +117,7 @@ SoloRun solo(const std::string& event, ex::Conductor kind, int max_steps, int mi
     cfg.event = event;
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = kind;
     o.laps = ev->laps;
@@ -184,7 +184,7 @@ std::optional<ex::SoloRecorders> played_recorders(const std::string& event, std:
     cfg.event = event;
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = rec->kind;
     o.playback = rec;
@@ -273,7 +273,7 @@ TEST(exact_game_free_practice_field) {
         cfg.grid_by_power = true;
         race::ExactFieldOptions o;
         o.data = data;
-        o.course_file = *file;
+        o.course_file = std::make_shared<const Bytes>(*file);
         o.course = ev->course;
         o.kind = kind;
         o.laps = kind == ex::Conductor::FreePractice ? 0 : ev->laps;
@@ -408,7 +408,7 @@ TEST(exact_game_logger_pass) {
     cfg.event = "AT020001";
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = ex::Conductor::TimeTrial;
     o.player.car = {ev->entries[0]};
@@ -476,7 +476,7 @@ TEST(exact_game_analysis) {
     cfg.event = "AT020001";
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = ex::Conductor::TimeTrial;
     o.player.car = {car};
@@ -565,7 +565,7 @@ TEST(exact_game_exit_as_finish) {
     cfg.event = "AT040001";
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = ex::Conductor::FreeRun;
     o.player.car = {ev->entries.empty() ? "r34_gtr_v_99" : ev->entries[0]};

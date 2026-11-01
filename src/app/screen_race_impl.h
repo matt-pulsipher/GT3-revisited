@@ -584,7 +584,8 @@ private:
     // The same car for the exact core (its equipment: the label with the parts and settings or tyres it came with), and
     // player 2's; unset: the car entry's label.
     std::optional<ExactCarSource> launch_source_, launch_source2_;
-    Bytes course_bytes_; // the run's course file (the exact core's course)
+    // The run's course file (the exact core's course), shared with the race options.
+    std::shared_ptr<const Bytes> course_bytes_ = std::make_shared<const Bytes>();
     // The program's data every race runs on (sim::exact::ProgramData: the disc's program, the tables as values); false with
     // error_ set when there is none (no disc, or its program cannot be decoded).
     bool load_program_data(App& app);

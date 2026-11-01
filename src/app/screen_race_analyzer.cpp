@@ -21,7 +21,7 @@ void RaceScreen::load_analyzer(App& app) {
     // distance.
     if (replaying_ && replay_.exact && load_program_data(app)) {
         try {
-            const std::shared_ptr<const sim::exact::RaceCourse> c = exact_course(course_bytes_, label, *exact_data_);
+            const std::shared_ptr<const sim::exact::RaceCourse> c = exact_course(*course_bytes_, label, *exact_data_);
             const sim::exact::CourseQuery& q = *c->query;
             len = q.lap_length().host();
             sectors = {0.0f};

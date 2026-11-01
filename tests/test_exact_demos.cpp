@@ -146,7 +146,7 @@ TEST(exact_demo_licence_cars) {
     cfg.event = ev->label;
     cfg.max_opponents = 0;
     cfg.exact.data = std::make_shared<const ex::ProgramData>(d);
-    cfg.exact.course_file = *file;
+    cfg.exact.course_file = std::make_shared<const Bytes>(*file);
     cfg.exact.course = ev->course;
     cfg.exact.kind = ex::Conductor::License;
     cfg.exact.player.car = {game::license_car(db, *ev, vfs.language()).entry};

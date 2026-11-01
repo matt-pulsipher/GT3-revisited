@@ -19,7 +19,7 @@ void RaceScreen::start_free_run(App& app) {
     {
         std::shared_ptr<const sim::exact::RaceCourse> c;
         if (load_program_data(app)) try {
-                c = exact_course(course_bytes_, courses_[size_t(course_sel_)].label, *exact_data_);
+                c = exact_course(*course_bytes_, courses_[size_t(course_sel_)].label, *exact_data_);
             } catch (const std::exception& e) {
                 LOG_WARN("Race: free run: %s", e.what());
             }

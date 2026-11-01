@@ -80,7 +80,7 @@ struct TestCourse {
     std::shared_ptr<const ex::ProgramData> data;
     std::unique_ptr<Vfs> vfs;
     std::string course;
-    Bytes file;
+    std::shared_ptr<const Bytes> file;
     std::unique_ptr<race::RaceTrack> track;
     std::string error;
 
@@ -97,8 +97,8 @@ struct TestCourse {
             const std::string path = course_file_path(*vfs, course);
             std::optional<Bytes> f = path.empty() ? std::nullopt : vfs->read(path);
             if (!f) throw FormatError("no course file for " + course);
-            file = *f;
-            track = race::make_track(*vfs, file, course);
+            file = std::make_shared<const Bytes>(std::move(*f));
+            track = race::make_track(*vfs, *file, course);
         } catch (const std::exception& e) {
             error = e.what();
             return false;

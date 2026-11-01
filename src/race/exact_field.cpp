@@ -211,7 +211,7 @@ public:
         const bool battle = opts_.kind == ex::Conductor::Battle2P;
         humans_ = battle ? 2 : 1;
         try {
-            course_ = exact_course(opts_.course_file, opts_.course, *data_);
+            course_ = exact_course(opts_.course_bytes(), opts_.course, *data_);
         } catch (const std::exception& e) {
             if (error) *error = std::string("exact course: ") + e.what();
             return false;
@@ -439,7 +439,7 @@ public:
         for (size_t j = 0; j < cfg_.remote.size(); ++j) race_->set_posed(first_remote_ + int(j), true);
         rs_ = rs;
         rec_ = std::make_shared<ex::RaceRecord>(ex::RaceRecord::of(rs, opts_.course));
-        rec_->data = exact_data_fingerprint(db, rs.entries, opts_.course_file);
+        rec_->data = exact_data_fingerprint(db, rs.entries, opts_.course_bytes());
         change({0, ex::RaceChange::StartCountdown});
         std::vector<std::string> car_labels;
         const int first_opp = humans_ + (ghost_entry ? 1 : 0);
@@ -470,7 +470,7 @@ public:
             d->set_behaviour(r.behaviour);
             data_ = d;
         }
-        if (r.data && r.data != exact_data_fingerprint(db, r.entries, opts_.course_file)) {
+        if (r.data && r.data != exact_data_fingerprint(db, r.entries, opts_.course_bytes())) {
             if (error) *error = "the replay was recorded with other car or course data";
             return false;
         }

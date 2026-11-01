@@ -374,6 +374,14 @@ of the in-order item before it (its opaque meshes after that item's opaque ones,
 ones after that item's blended ones): the course's moving nodes, a model of their own, keep
 their opaque passes under the scenery's translucent ones (fences, light shafts). `View3D::stats()`
 returns meshes drawn/culled, draw calls and triangles of the last draw.
+
+`View3D::encode` sets the pipeline, buffers, textures and uniforms only when they differ from
+what the pass has, and a primitive whose indices continue the previous one's in the same mesh,
+with nothing changed in between, joins its draw: the same triangles in the same order, so the
+picture is the same (Metal and Vulkan byte for byte; ANGLE can differ by 1/255 on a few edge
+pixels, less than its own run-to-run differences). GT3's packets hold 20-30 triangles each: on
+a 6-car Trial Mountain race this cut the draws by about a third (1,668 to 1,106 a frame in the
+main view) and the scene's CPU time by about a quarter.
 `math3d.h` has `rotate_x`, `rotate_z` and `rotate_quat`.
 
 ## API summary

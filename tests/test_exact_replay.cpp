@@ -122,7 +122,7 @@ Result round_trip(const Scenario& sc) {
     cfg.max_opponents = battle ? 0 : std::max(0, std::min(int(ev->cars_in_race) - 1, 5));
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = sc.kind;
     o.config = sc.config;
@@ -304,7 +304,7 @@ TEST(exact_replay_ghost) {
     cfg.max_opponents = 0;
     race::ExactFieldOptions o;
     o.data = program();
-    o.course_file = *file;
+    o.course_file = std::make_shared<const Bytes>(*file);
     o.course = ev->course;
     o.kind = ex::Conductor::TimeTrial;
     o.laps = 1;
