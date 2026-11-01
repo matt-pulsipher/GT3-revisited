@@ -80,6 +80,9 @@ struct Binding {
     std::string source_with_options() const;
 };
 
+// The dead zone a stick bound to an axis gets (Profile::bind).
+constexpr float kStickDeadzone = 0.08f;
+
 struct Profile {
     std::string name;
     std::vector<Binding> bindings;
@@ -89,8 +92,9 @@ struct Profile {
     // Device tags used by these bindings (InputSource::device).
     std::vector<std::string> devices() const;
     // An edit in the binding editor: `source` drives `target`, alone when `replace` (an axis
-    // target drops its halves too). Names the profile "custom".
-    void bind(const PadTarget& target, const InputSource& source, bool replace);
+    // target drops its halves too). A stick on an axis gets a dead zone (kStickDeadzone); a
+    // wheel's axis (`wheel`) none. Names the profile "custom".
+    void bind(const PadTarget& target, const InputSource& source, bool replace, bool wheel = false);
     // No binding reads a controller (pad, joystick or tilt): only keys and mouse buttons drive it.
     bool keyboard_only() const;
 };
@@ -214,8 +218,10 @@ struct PlayerBindings {
     // pad's set (a raw joystick input to the wheel's). Refused (false): a button or key on a whole
     // stick axis, which could only push it one way (keys steer with Steer left / right).
     // Editing while a layout is chosen makes new custom sets from both sets as they stand (under
-    // "gt3" the menu's) plus the edit, replacing kept ones (Settings asks first).
-    bool bind(DeviceKind kind, bool race, const PadTarget& target, const InputSource& source, bool replace);
+    // "gt3" the menu's) plus the edit, replacing kept ones (Settings asks first). `wheel`: the
+    // source is a wheel's (Profile::bind: no dead zone).
+    bool bind(DeviceKind kind, bool race, const PadTarget& target, const InputSource& source, bool replace,
+              bool wheel = false);
     void clear(DeviceKind kind, bool race, const PadTarget& target, BindingSet s);
     void reset(DeviceKind kind, bool race); // the layout chosen; custom sets kept
     void use_custom(bool race);             // the kept custom sets chosen again
@@ -223,7 +229,8 @@ struct PlayerBindings {
 
     std::vector<std::string> devices() const; // device tags any of the sets use
     // [<sec>.bindings] / [<sec>.race] (the pad's), [<sec>.wheel.*], [<sec>.joystick.*] and
-    // [<sec>.keyboard.*].
+    // [<sec>.keyboard.*]. The wheel's sets drop the stick dead zone (kStickDeadzone) earlier
+    // versions gave their axes: a dead zone around the wheel's centre.
     void load(const IniDocument& cfg, const std::string& sec);
     // Configs from before the two sets: one custom profile in [<sec>.bindings] / [<sec>.race],
     // keys and controller inputs together. Each input goes to its type's set: pad inputs the

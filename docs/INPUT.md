@@ -143,7 +143,9 @@ then:
   layout again to get them back), and mouse buttons aren't captured (set them
   in `config.ini`, e.g. `mouse.left`). A button or key on Steer or a stick axis
   is refused: it could push it only one way (bind it to Steer left / Steer
-  right, or the D-pad).
+  right, or the D-pad). A stick captured on Steer or a stick axis gets
+  `deadzone=0.08`; a wheel's axis gets none, and the wheel's saved sets drop the
+  `deadzone=0.08` earlier versions gave it (issue 134).
 - **Square**: add an input instead of replacing
 - **Select** (Delete on the keyboard): clear the highlighted column
 - **Left/Right**: switch between the two columns
@@ -328,7 +330,10 @@ and pressure buttons, wheels, touch and tilt, steer, accelerate, brake and pull
 the handbrake exactly as far as it is moved, after GT3's own shaping (from its
 least step: 10 % of a pedal); `original` keeps GT3's DualShock 2 curves as they
 are (no steering over the stick's inner 29 %, full lock from 88 %; full throttle
-from 18 % of the pressure range, brake 33 %, handbrake 10 %). The physics is the
+from 18 % of the pressure range, brake 33 %, handbrake 10 %). With `linear` the
+steering keeps the device's own resolution, not the DualShock 2 stick's 256 steps
+(a 900° wheel moved in 3.5° steps, a dead zone around its centre; issue 134);
+with `original` a wheel reads as the GT Force's 10 bits. The physics is the
 same either way, and replays keep what the race got. The automatic or manual
 gearbox is the race entry's pedal style (the gearbox setting, as in GT3).
 
@@ -388,7 +393,7 @@ force, impacts) and each player's device turns it into native feedback:
 |---|---|
 | DualSense (PS5) | Adaptive trigger on the trigger bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while ABS is working. Sent with `SDL_SendGamepadEffect` only when the effect changes |
 | Xbox One/Series | Impulse trigger on the brake trigger pulses at ~16 Hz while ABS is working (`SDL_RumbleGamepadTriggers`) |
-| Wheels with force feedback | SDL haptics: a self-centring spring that firms up with speed (light when stopped, full from 120 km/h) and a constant force from the front tyres' lateral load (self-aligning feel) plus a kick on impacts. The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
+| Wheels with force feedback | SDL haptics: a self-centring spring that firms up with speed (light when stopped, full from 120 km/h) and a constant force from the front tyres' lateral load (self-aligning feel; GT3's own steering-wheel force, sent at each of its 1/127 steps) plus a kick on impacts. The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
 
 Effects stop by themselves ~0.25 s after the last update (pause, menus).
 The brake trigger is found from the race bindings: whichever of
