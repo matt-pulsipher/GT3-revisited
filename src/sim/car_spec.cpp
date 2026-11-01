@@ -235,28 +235,38 @@ std::optional<CarSpec> build_car_spec(const data::CarDatabase& db, const std::st
     return std::nullopt;
 }
 
-bool apply_gear_slider(const data::CarDatabase& db, const std::array<u64, 27>& parts, CarSettings& c) {
+std::optional<GearGenerator> gear_generator(const data::CarDatabase& db, const std::array<u64, 27>& parts) {
     const ByteSpan* g = part_record(db, parts, kGear);
     const ByteSpan* er = part_record(db, parts, kEngine);
-    if (!g || g->size() <= 0x29 || !(*g)[0x28] || !er || er->size() < 0x58) return false;
+    if (!g || g->size() <= 0x29 || !(*g)[0x28] || !er || er->size() < 0x58) return std::nullopt;
+    GearGenerator in;
+    in.n = (*g)[0x11];
     // Rev byte = engine +0x45 + engine-balance / NA-tune / turbo adders.
-    int rev = (*er)[0x45];
-    for (int slot : {kEngineBalance, kNaTune}) rev += byte_at(part_record(db, parts, slot), 0x12);
-    rev += byte_at(part_record(db, parts, kTurbo), 0x18);
+    in.rev = (*er)[0x45];
+    for (int slot : {kEngineBalance, kNaTune}) in.rev += byte_at(part_record(db, parts, slot), 0x12);
+    in.rev += byte_at(part_record(db, parts, kTurbo), 0x18);
     auto dt = db.drivetrain(parts[kDrivetrain]);
-    int drive = dt ? dt->drive_type : 0, sys = dt ? dt->awd_system : 0xFE;
-    int axle = (drive == 1 || (drive == 2 && sys == 0)) ? 0 : 1;
-    int rim = 0, wc = 0, ac = 0;
+    in.drive = dt ? dt->drive_type : 0, in.awd_system = dt ? dt->awd_system : 0xFE;
+    int axle = (in.drive == 1 || (in.drive == 2 && in.awd_system == 0)) ? 0 : 1;
     if (auto tr = db.tire(axle ? data::TableId::RearTire : data::TableId::FrontTire, parts[size_t(axle ? kRearTire : kFrontTire)]))
         if (const ByteSpan* sz = db.record(data::TableId::TireSize, tr->size); sz && sz->size() >= 0x0B) {
-            rim = (*sz)[0x08];
-            ac = (*sz)[0x09];
-            wc = (*sz)[0x0A];
+            in.rim = (*sz)[0x08];
+            in.aspect_code = (*sz)[0x09];
+            in.width_code = (*sz)[0x0A];
         }
-    int n = (*g)[0x11];
+    return in;
+}
+
+void generate_gear_ratios(const GearGenerator& in, int final_word, int slider, s16 out[8]) {
+    generate_gear_ratios(in.n, in.rev, final_word, in.rim, in.width_code, in.aspect_code, slider, out, in.drive, in.awd_system);
+}
+
+bool apply_gear_slider(const data::CarDatabase& db, const std::array<u64, 27>& parts, CarSettings& c) {
+    const std::optional<GearGenerator> in = gear_generator(db, parts);
+    if (!in) return false;
     s16 out[8] = {};
-    generate_gear_ratios(n, rev, c.final_drive, rim, wc, ac, c.gear_slider, out, drive, sys);
-    for (int i = 0; i <= std::min(n, 7); ++i) c.gears[size_t(i)] = out[i];
+    generate_gear_ratios(*in, c.final_drive, c.gear_slider, out);
+    for (int i = 0; i <= std::min(in->n, 7); ++i) c.gears[size_t(i)] = out[i];
     return true;
 }
 

@@ -283,6 +283,8 @@ players, each on their own machine:
 - The host's **Car rules** limit the cars: class, production or race cars,
   drivetrain, NA or turbo, stock cars only, a power limit, mod cars. The car
   page can list only the cars allowed.
+- A GT Mode car races only with parts and settings the game's tune shop and
+  settings menu can give it; any other setup (an edited save, say) is refused.
 - Every lobby page works with a mouse, touch or a VR controller's pointer too.
 - Mod cars are offered to the other players as checked downloads.
 - The other players can see your IP address, as in any peer-to-peer game.

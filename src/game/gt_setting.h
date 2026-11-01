@@ -10,8 +10,10 @@
 
 #include "game/gt_mode.h"
 
+#include <array>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace gt3r::game {
 
@@ -77,5 +79,23 @@ const SettingFile* latest_setting_file(const GameState& s, const std::string& ca
 // turbo, suspension, LSD, ASCC, TCSC) is copied only if the file's part for it
 // is the fitted part; returns the number of groups skipped ("load_warning").
 int apply_setting_file(const SettingFile& f, GarageCar& car);
+
+// --- A garage car GT Mode can build (online cars: docs/dev/ONLINE.md "Cars") ---
+
+// The part records GT Mode can fit in part slot `slot` (data::kCarPartTables) of car `car`: its stock part, and the
+// record (find_part) of each goods the car can own and GT Mode fits: owned when the tune shop sells it or it is a stock
+// part's (a front tyre set owns its rear goods), fitted by the shop or the change-parts pages (the dirt tyres are owned,
+// never fitted: the race puts them on). The wheel slot also holds 0 (make_car's; the fitted wheel is GarageCar::wheel).
+std::vector<u64> fittable_parts(const data::CarDatabase& db, const std::string& car, int slot);
+
+// Why `parts` and `settings` are not a garage car of `car` that GT Mode can build ("" = they are one): a part it does
+// not fit (fittable_parts), an NA tune with a turbo kit (fitting one restores the other's stock part), or a setting word
+// that is neither the fitted parts' stock value nor one a Settings page slider can set: the slider's page opens (the
+// locks) and it has two values or more, in its range from the part records. No page sets the motion ratios, the turbo
+// words or the ASM gains past the first. A computed gearbox's ratios are bounded by the generator over every fittable
+// part that feeds it and every final the final slider allows (the reference final and the parts fitted when the ratios
+// were generated do not travel with a car).
+std::string garage_setup_problem(const data::CarDatabase& db, const std::string& car, const std::array<u64, 27>& parts,
+                                 const sim::CarSettings& settings);
 
 } // namespace gt3r::game

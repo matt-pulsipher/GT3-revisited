@@ -967,27 +967,35 @@ private:
     }
     std::string rule_problem(const net::Session& ns) const { return car_problem(ns, car_sel_); }
 
-    // Another player's car on this machine (game::online_car_here), by its descriptor.
-    game::CarHere car_here(const Bytes& info) const {
+    // Another player's car on this machine (game::online_car_here), by its descriptor, and why it is not a legal setup.
+    struct Here {
+        game::CarHere h = game::CarHere::Ok;
+        std::string why;
+    };
+    const Here& car_here(const Bytes& info) const {
         auto it = here_.find(info);
         if (it != here_.end()) return it->second;
-        game::CarHere h = game::CarHere::Ok; // a descriptor this game cannot read: nothing to check
+        Here h; // a descriptor this game cannot read: nothing to check
         if (std::optional<game::OnlineCar> oc = game::decode_online_car(info))
-            h = game::online_car_here(db_, program_.get(), *oc, [this](const std::string& model) {
-                return app_ && app_->vfs() && app_->vfs()->exists("cars/day/" + model);
-            });
-        return here_[info] = h;
+            h.h = game::online_car_here(
+                db_, program_.get(), *oc,
+                [this](const std::string& model) { return app_ && app_->vfs() && app_->vfs()->exists("cars/day/" + model); },
+                &h.why);
+        return here_[info] = std::move(h);
     }
     bool car_blocked(const net::Session& ns, const net::Player& p) const {
         const Bytes* info = int(p.id) == ns.my_id() ? nullptr : ns.car_info(p.id);
-        return info && game::car_here_blocks(car_here(*info));
+        return info && game::car_here_blocks(car_here(*info).h);
     }
     // Why this machine cannot race the lobby: no exact core here, or the first other player's car that cannot race here
-    // ("Bob's car has no model on this disc").
+    // ("Bob's car has no model on this disc", "Bob's car is not a legal setup: front spring rate out of range").
     std::string remote_car_problem(const net::Session& ns) const {
         if (!core_problem_.empty()) return core_problem_;
         for (const net::Player& p : ns.players())
-            if (car_blocked(ns, p)) return p.name + "'s car " + game::car_here_text(car_here(*ns.car_info(p.id)));
+            if (car_blocked(ns, p)) {
+                const Here& h = car_here(*ns.car_info(p.id));
+                return p.name + "'s car " + game::car_here_text(h.h) + (h.why.empty() ? "" : ": " + h.why);
+            }
         return {};
     }
 
@@ -1594,7 +1602,7 @@ private:
     race::CarColors colors_;
     std::vector<Entry> cars_;
     mutable std::vector<std::optional<game::CarFacts>> facts_; // per cars_ entry, built on use
-    mutable std::map<Bytes, game::CarHere> here_;              // other players' cars, by descriptor
+    mutable std::map<Bytes, Here> here_;                       // other players' cars, by descriptor
     std::vector<PickerCourse> courses_;
     PickerArt art_;
     CarPicker car_picker_;

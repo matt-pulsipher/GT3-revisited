@@ -123,6 +123,14 @@ float showroom_top_speed(const CarSpec& spec);
 void generate_gear_ratios(int n, int rev_byte, int final_word, int rim_in, int width_code, int aspect_code, int slider,
                           s16 out[8], int drive, int awd_system);
 
+// The generator's inputs for a car's parts [physics §6.7]: the gear count (gear +0x11), the rev byte, the driven tyre's
+// size codes, the drive type and AWD system. nullopt for an ordinary (stored-ratio) gearbox.
+struct GearGenerator {
+    int n = 0, rev = 0, rim = 0, width_code = 0, aspect_code = 0, drive = 0, awd_system = 0;
+};
+std::optional<GearGenerator> gear_generator(const data::CarDatabase& db, const std::array<u64, 27>& parts);
+void generate_gear_ratios(const GearGenerator& in, int final_word, int slider, s16 out[8]);
+
 // Regenerates the gear words of a computed (adjustable) gearbox from
 // settings.gear_slider and final_drive [physics §6.7] - what the game does when the
 // slider moves; build_car_spec, like the race, uses the gear words as given. Returns

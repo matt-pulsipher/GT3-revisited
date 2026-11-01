@@ -102,14 +102,19 @@ enum class CarHere : u8 {
     Unknown,    // the car, a part of it or its arcade car is not in this database
     Differs,    // this machine builds another spec (the descriptor's digest)
     NoModel,    // this disc has no body model for it
+    Illegal,    // a garage car GT Mode cannot build: a part or a setting no tune shop or Settings page gives it
 };
 // `has_model(model)`: this disc has cars/day/<model>. `d`: this machine's program tables (null: no exact core here, the
-// digest is not compared; such a machine cannot race online anyway). A descriptor without a digest is not compared.
+// digest is not compared; such a machine cannot race online anyway). A descriptor without a digest is not compared. A
+// garage car's parts and settings must be ones GT Mode gives it (garage_setup_problem, in this database); `why` gets
+// the reason ("front spring rate out of range").
 CarHere online_car_here(const data::CarDatabase& db, const sim::exact::ProgramData* d, const OnlineCar& c,
-                        const std::function<bool(const std::string& model)>& has_model);
+                        const std::function<bool(const std::string& model)>& has_model, std::string* why = nullptr);
 // The car cannot race here (the lobby refuses Ready and the start).
-inline bool car_here_blocks(CarHere h) { return h == CarHere::Unknown || h == CarHere::Differs || h == CarHere::NoModel; }
-// "is not on this disc", "is different on this disc", "has no model on this disc" ("" otherwise).
+inline bool car_here_blocks(CarHere h) {
+    return h == CarHere::Unknown || h == CarHere::Differs || h == CarHere::NoModel || h == CarHere::Illegal;
+}
+// "is not on this disc", "is different on this disc", "has no model on this disc", "is not a legal setup" ("" otherwise).
 const char* car_here_text(CarHere h);
 
 // --- Arcade classes ---
@@ -179,6 +184,7 @@ struct CarFacts {
     int arcade_class = 0; // the class list it is in (arcade cars, mod cars with one); 0 = none
     float kg_per_ps = 0;  // weight per power: the spec's mass less 120 kg over its power (built)
     int weight_class = 0; // the class of that weight per power (data::class_by_weight), 1..4
+    std::string setup;    // a garage car GT Mode cannot build: why (garage_setup_problem); "" otherwise
 };
 // `gd` (may be null) gives the arcade class lists.
 CarFacts online_car_facts(const data::CarDatabase& db, const GtData* gd, const OnlineCar& c);
@@ -190,7 +196,8 @@ int car_class(const CarFacts& f, bool dirt_course);
 std::string car_class_text(const CarFacts& f, bool dirt_course);
 
 // Whether a car may race under a lobby's rules; `why` says what breaks them. A car that is not
-// on this machine (a mod car it lacks) passes the checks that need it.
+// on this machine (a mod car it lacks) passes the checks that need it. A garage car GT Mode cannot
+// build (CarFacts::setup) races under no rules.
 bool car_meets_rules(const OnlineCar& c, const CarFacts& f, const CarRules& r, std::string* why = nullptr);
 
 // The garage car's gearbox is a racing one (gear part +0x10 != 0): the transmission whine.
