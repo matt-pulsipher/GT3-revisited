@@ -43,6 +43,12 @@ void each_setting(sim::CarSettings& s, F&& f) {
     for (int& v : s.ascc) f(v);
 }
 
+// A package's identity: 64 lower-case hex digits (its SHA-256).
+bool package_hash(const std::string& h) {
+    return h.size() == 64 &&
+           std::all_of(h.begin(), h.end(), [](char ch) { return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'); });
+}
+
 std::string ascii(const std::string& s) {
     std::string out;
     for (unsigned char c : s)
@@ -73,7 +79,17 @@ Bytes encode_online_car(const OnlineCar& c) {
     } else if (c.kind == OnlineCar::Kind::Arcade) {
         w.str(c.arcade);
     }
-    if (c.digest) w.bytes(*c.digest); // trailing: older games stop reading before it
+    if (!c.digest) return w.data;
+    w.bytes(*c.digest); // trailing: older games stop reading before it
+    // A mod car's donor and a garage mod car's package after the digest: 0.5.0 ignores what follows the digest. Only with
+    // a digest, which the decoder would otherwise take these bytes for (the lobby always sends one).
+    if (c.kind == OnlineCar::Kind::Garage && !c.package.empty()) {
+        w.str(c.package);
+        w.u32_(c.package_size);
+        w.str(c.donor);
+    } else if (c.kind == OnlineCar::Kind::Mod && !c.donor.empty()) {
+        w.str(c.donor);
+    }
     return w.data;
 }
 
@@ -100,10 +116,7 @@ std::optional<OnlineCar> decode_online_car(ByteSpan data) {
     } else if (c.kind == OnlineCar::Kind::Mod) {
         c.package = r.str();
         c.package_size = r.u32_();
-        if (c.package.size() != 64 || !std::all_of(c.package.begin(), c.package.end(), [](char ch) {
-                return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
-            }))
-            return std::nullopt;
+        if (!package_hash(c.package)) return std::nullopt;
     } else if (c.kind == OnlineCar::Kind::Arcade) {
         c.arcade = r.str();
         if (c.arcade.empty()) return std::nullopt;
@@ -113,6 +126,16 @@ std::optional<OnlineCar> decode_online_car(ByteSpan data) {
         c.digest.emplace();
         std::copy(d.begin(), d.end(), c.digest->begin());
     }
+    // A garage mod car's package, a mod car's donor (absent from older games' descriptors: no package, the donor not
+    // known). Anything after them is ignored.
+    if (c.digest && c.kind == OnlineCar::Kind::Garage && r.remaining() > 0) {
+        c.package = r.str();
+        c.package_size = r.u32_();
+        if (!package_hash(c.package)) return std::nullopt;
+        c.donor = r.str();
+    } else if (c.digest && c.kind == OnlineCar::Kind::Mod && r.remaining() > 0) {
+        c.donor = r.str();
+    }
     if (!r.ok() || c.car.empty()) return std::nullopt;
     return c;
 }
@@ -121,7 +144,8 @@ OnlineCar online_car_from_db(const data::CarDatabase& db, const std::string& lab
     OnlineCar c;
     c.car = label;
     c.paint = paint;
-    c.kind = db.mod_car(label) ? OnlineCar::Kind::Mod : OnlineCar::Kind::Disc;
+    c.kind = OnlineCar::Kind::Disc;
+    if (const data::ModCar* m = db.mod_car(label)) c.kind = OnlineCar::Kind::Mod, c.donor = m->donor;
     if (const data::Car* dc = db.car(label)) c.name = ascii(dc->latin_name.empty() ? label : dc->latin_name);
     return c;
 }
@@ -222,9 +246,25 @@ std::optional<std::array<u8, 32>> online_car_digest(const data::CarDatabase& db,
     return sha256(ByteSpan(p->data(), p->size()));
 }
 
+namespace {
+
+// A mod car's donor is a disc car here (add_mod_car takes no mod car as a donor).
+bool donor_here(const data::CarDatabase& db, const std::string& donor) {
+    return !donor.empty() && db.car(donor) && !db.mod_car(donor);
+}
+
+} // namespace
+
+bool mod_download_offered(const data::CarDatabase& db, const OnlineCar& c) {
+    return online_car_is_mod(c) && !c.package.empty() && !db.car(c.car) && donor_here(db, c.donor);
+}
+
 CarHere online_car_here(const data::CarDatabase& db, const sim::exact::ProgramData* d, const OnlineCar& c,
                         const std::function<bool(const std::string& model)>& has_model, std::string* why) {
-    if (c.kind == OnlineCar::Kind::Mod && !db.car(c.car)) return CarHere::ModMissing;
+    // A mod car not installed here: a donor this disc lacks makes it a car not on this disc (nothing is offered). Once
+    // installed it is checked as the others.
+    if (online_car_is_mod(c) && !db.car(c.car))
+        return !c.donor.empty() && !donor_here(db, c.donor) ? CarHere::Unknown : CarHere::ModMissing;
     std::optional<sim::CarSpec> s = online_car_spec(db, c);
     if (!s) // an arcade car of this disc on a base car that builds another spec: different
         return c.kind == OnlineCar::Kind::Arcade && race::arcade_car(db, c.arcade, 0, {}) ? CarHere::Differs : CarHere::Unknown;
@@ -369,6 +409,7 @@ CarFacts online_car_facts(const data::CarDatabase& db, const GtData* gd, const O
     if (c.kind == OnlineCar::Kind::Arcade && gd) f.arcade_class = arcade_class_of(*gd, c.arcade);
     if (c.kind == OnlineCar::Kind::Mod) // a mod car's own [arcade] class
         if (const data::ModCar* m = db.mod_car(c.car)) f.arcade_class = arcade_class_index(m->arcade_class);
+    f.mod = online_car_is_mod(c) || db.mod_car(c.car); // (a garage mod car before its package is filled in)
     if (!car) return f;
     f.known = true;
     f.category = car->bytes.size() > 0xF1 ? car->bytes[0xF1] : 0;
@@ -421,7 +462,7 @@ bool car_meets_rules(const OnlineCar& c, const CarFacts& f, const CarRules& r, s
         if (why) *why = std::move(s);
         return false;
     };
-    if (!r.allow_mods && c.kind == OnlineCar::Kind::Mod) return no("mod cars are not allowed");
+    if (!r.allow_mods && (f.mod || online_car_is_mod(c))) return no("mod cars are not allowed");
     if (!f.known) return true; // a mod car this machine lacks: its owner's lobby checked it
     if (!f.setup.empty()) return no("not a legal setup: " + f.setup);
     // "Class B cars", "rally cars".

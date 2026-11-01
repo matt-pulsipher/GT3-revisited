@@ -177,7 +177,17 @@ std::vector<Target> targets() {
              a.arcade = "nsx_s_zero_97_290";
              a.digest.emplace(); // the trailing spec digest
              a.digest->fill(0x5A);
-             return std::vector<Bytes>{game::encode_online_car(g), game::encode_online_car(m), game::encode_online_car(a)};
+             game::OnlineCar gm = g; // a garage mod car: its package and donor after the digest
+             gm.car = "x";
+             gm.digest = a.digest;
+             gm.package = std::string(64, 'c');
+             gm.package_size = 4096;
+             gm.donor = "legacy_gtb_96";
+             game::OnlineCar md = m; // a mod car's donor after the digest
+             md.digest = a.digest;
+             md.donor = "legacy_gtb_96";
+             return std::vector<Bytes>{game::encode_online_car(g), game::encode_online_car(m), game::encode_online_car(a),
+                                       game::encode_online_car(gm), game::encode_online_car(md)};
          }},
         {"rendezvous",
          [](ByteSpan d) {
