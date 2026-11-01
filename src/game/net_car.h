@@ -7,8 +7,10 @@
 //   engine condition and wheel - about 450 bytes. Every machine rebuilds the exact spec
 //   from its own disc (sim::build_car_spec), so nothing but these choices travels and
 //   every player can check the car.
-// - Mod car: its label plus the SHA-256 of its package (game/mod_package.h); a player
-//   who lacks the car is offered the package from its owner.
+// - Mod car: its label plus the SHA-256 of its package (game/mod_package.h) and its donor
+//   car; a player who lacks the car, and has its donor, is offered the package from its
+//   owner. A mod car bought in GT Mode travels as a garage car that carries its package and
+//   donor too (online_car_is_mod).
 // - Arcade car: a car of the arcade's class lists (database table 35): its label. It races
 //   as the arcade does: the base car with the variant's parts and arcade tyres.
 //
@@ -46,9 +48,11 @@ struct OnlineCar {
     sim::CarSettings settings;
     float engine_wear_m = 0, oil_m = 0; // CarCondition (engine output factor)
     std::string wheel;                  // fitted wheel (wheel/<label>), "" = stock
-    // Mod car.
+    // Mod car (a garage mod car too). A garage car's package and every donor travel after the digest, only with it; older
+    // games' descriptors have none.
     std::string package; // lower-case hex SHA-256 of the car's package
     u32 package_size = 0;
+    std::string donor;   // the disc car under it (data::ModCar::donor); "" = not known
     // Arcade car.
     std::string arcade; // arcade car label (table 35), e.g. "nsx_s_zero_97_290"
     // The owner's online_car_digest (absent from older games' descriptors; a protocol-3 game's held another digest, but
@@ -58,13 +62,23 @@ struct OnlineCar {
 
 constexpr size_t kMaxOnlineCarBytes = 1024;
 
+// A mod car another player can download: one from the lobby's car list, or a garage mod car with its package.
+inline bool online_car_is_mod(const OnlineCar& c) {
+    return c.kind == OnlineCar::Kind::Mod || (c.kind == OnlineCar::Kind::Garage && !c.package.empty());
+}
+// Whether this machine offers another player's mod car for download: a mod car with its package that is not installed
+// here, whose donor is a disc car of this database. One whose donor is not known (an older game's descriptor) is not
+// offered.
+bool mod_download_offered(const data::CarDatabase& db, const OnlineCar& c);
+
 Bytes encode_online_car(const OnlineCar& c);
 std::optional<OnlineCar> decode_online_car(ByteSpan data); // nullopt on malformed input
 
-// A disc or mod car from the database (kind Disc or Mod; a mod car's package fields are
+// A disc or mod car from the database (kind Disc or Mod, a mod car with its donor; its package fields are
 // filled by the caller from game/mod_package.h).
 OnlineCar online_car_from_db(const data::CarDatabase& db, const std::string& label, u8 paint);
-// A GT Mode garage car.
+// A GT Mode garage car (a mod car's donor too; its package fields are filled by the caller, as for a mod car from the
+// database).
 OnlineCar online_car_from_garage(const data::CarDatabase& db, const GarageCar& g);
 // An arcade class car (table 35 label); kind Disc with an empty car when the label is unknown.
 OnlineCar online_car_from_arcade(const data::CarDatabase& db, const std::string& arcade, u8 paint);
@@ -98,8 +112,9 @@ std::optional<std::array<u8, 32>> online_car_digest(const data::CarDatabase& db,
 // Another player's car on this machine.
 enum class CarHere : u8 {
     Ok,
-    ModMissing, // a mod car not installed here: offered for download, else a stand-in
-    Unknown,    // the car, a part of it or its arcade car is not in this database
+    ModMissing, // a mod car not installed here (online_car_is_mod): offered for download (mod_download_offered), else a
+                // stand-in
+    Unknown,    // the car, a part of it, its arcade car or a mod car's donor is not in this database
     Differs,    // this machine builds another spec (the descriptor's digest)
     NoModel,    // this disc has no body model for it
     Illegal,    // a garage car GT Mode cannot build: a part or a setting no tune shop or Settings page gives it
@@ -185,6 +200,7 @@ struct CarFacts {
     float kg_per_ps = 0;  // weight per power: the spec's mass less 120 kg over its power (built)
     int weight_class = 0; // the class of that weight per power (data::class_by_weight), 1..4
     std::string setup;    // a garage car GT Mode cannot build: why (garage_setup_problem); "" otherwise
+    bool mod = false;     // a mod car: the descriptor names one (online_car_is_mod), or it is one in this database
 };
 // `gd` (may be null) gives the arcade class lists.
 CarFacts online_car_facts(const data::CarDatabase& db, const GtData* gd, const OnlineCar& c);
