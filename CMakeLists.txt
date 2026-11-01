@@ -144,8 +144,8 @@ endif()
 target_link_libraries(${GT3R_APP_TARGET} PRIVATE gt3r_engine)
 
 # Windows: ANGLE (OpenGL ES on Direct3D 11) for the OpenGL ES renderer, copied next to gt3r.exe
-# and packaged with it: libEGL.dll, libGLESv2.dll and LICENSE-ANGLE.txt, built with vcpkg as CI's
-# Windows package job does (packaging/vcpkg-triplets). Without it the renderer uses the driver's
+# and packaged with it: libEGL.dll, libGLESv2.dll and LICENSE-ANGLE.txt, built with vcpkg by
+# packaging/angle.ps1 as CI's Windows package does. Without it the renderer uses the driver's
 # OpenGL ES.
 set(GT3R_ANGLE_DIR "" CACHE PATH "Windows: folder with ANGLE's libEGL.dll, libGLESv2.dll and LICENSE-ANGLE.txt")
 if(WIN32 AND GT3R_ANGLE_DIR)

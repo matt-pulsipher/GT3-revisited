@@ -291,7 +291,7 @@ system or Homebrew SDL.
 | Package | Contents | Build |
 |---|---|---|
 | macOS (arm64, macOS 12+) | `gt3r.app` (icon, Info.plist, `.iso` document type, ad-hoc signature), `gt3tool`, README, LICENSE, `Barlow-OFL.txt` | `cmake -S . -B build-rel -DCMAKE_BUILD_TYPE=Release -DGT3R_FETCH_SDL=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0`, build `gt3r gt3tool`, `cmake --install build-rel --prefix dist`, `ditto -c -k --keepParent` |
-| Windows x64 | `gt3r.exe` (icon resource), `gt3tool.exe`, `SDL3.dll`, ANGLE's `libEGL.dll` and `libGLESv2.dll` with `LICENSE-ANGLE.txt`, README, LICENSE, `Barlow-OFL.txt` | same with `-DGT3R_SDL_SHARED=ON -DGT3R_ANGLE_DIR=<ANGLE>` (vcpkg's `angle` port with `packaging/vcpkg-triplets`, [RENDERING](RENDERING.md#opengl-es)); zip |
+| Windows x64 | `gt3r.exe` (icon resource), `gt3tool.exe`, `SDL3.dll`, ANGLE's `libEGL.dll` and `libGLESv2.dll` with `LICENSE-ANGLE.txt`, README, LICENSE, `Barlow-OFL.txt` | same with `-DGT3R_SDL_SHARED=ON -DGT3R_ANGLE_DIR=<ANGLE>` (`packaging/angle.ps1`: vcpkg's `angle` port with `packaging/vcpkg-triplets`, [RENDERING](RENDERING.md#opengl-es)); zip |
 | Linux x86_64 | `bin/gt3r`, `bin/gt3tool`, `share/applications/gt3r.desktop`, icon, README, LICENSE, `Barlow-OFL.txt` (`share/doc/gt3r`) | same; `tar czf` (built on Ubuntu 22.04 for an older glibc) |
 | Android | `gt3r-<tag>-android.apk`, signed with the project's release key (CI secrets; [android/README.md](../../android/README.md#release-signing)) | `./gradlew assembleRelease` |
 | Meta Quest | `gt3r-<tag>-quest.apk`, the VR build, same key | `android/fetch-sdl.sh --xr`, `./gradlew assembleRelease -Pquest` ([VR](VR.md)) |
