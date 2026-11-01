@@ -77,6 +77,9 @@ TEST(ffb_input_manager_without_devices) {
     input.update(0.016);
     input.update(0.5); // times out
     CHECK(input.ffb_config().enabled);
+    input.set_rumble(0, PadRumble{true, 200}); // no device: nothing to rumble
+    ForceFeedback ffb;
+    CHECK(!ffb.drives_wheel(1)); // no wheel effects made: joystick rumble still goes to the device
 }
 
 TEST(phone_vibration_only_without_controller_rumble) {
