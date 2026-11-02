@@ -33,6 +33,10 @@ layout(set = 1, binding = 0) uniform VertexUniforms {
     vec4 fog;        // GT3 fog (z = 1): x distance A, y 1 - minimum visibility b; w > 0: GT3's
                      // guard band (DrawItem::guard_band), w its near plane in eye depth
     vec4 far_clip;   // x > 0: GT3's far plane in eye depth (DrawOptions::far_clip)
+    // The SPIN_COPIES variant (a DrawItem::spin_turn rim's copies, one an instance): instance k
+    // turned by -k x spin_axis.w about the axis spin_axis.xyz through spin_pivot (model space).
+    vec4 spin_axis;
+    vec4 spin_pivot;
 } u;
 
 // GT3's VU lighting, evaluated per vertex (set when the primitive has a scene::Material):
@@ -75,6 +79,9 @@ layout(location = 4) out vec3 v_lit_w;
 // GT3 clips at the guard band in the static draw, or one it does not in the clipped draw; for the
 // other items the depth past GT3's far plane (cut there, as the GPU cuts at its own).
 layout(location = 5) out vec2 v_fog_w;
+#ifdef SPIN_COPIES
+layout(location = 6) flat out int v_copy; // the copy (model.frag's spin_copy_samples)
+#endif
 
 // One vertex as GT3's VU program leaves it: the clip position, the colour and the lighting factor.
 struct Vert {
@@ -193,7 +200,15 @@ void main() {
     // The static draw has this triangle unless the GPU sees it cross the guard band too.
     float drop = outside(a.clip) || outside(b.clip) || outside(c.clip) ? 0.0 : 1.0;
 #else
-    Vert o = vertex(a_pos, a_normal, a_uv, a_color);
+    vec3 pos = a_pos, normal = a_normal;
+#ifdef SPIN_COPIES
+    v_copy = gl_InstanceIndex;
+    float t = -u.spin_axis.w * float(gl_InstanceIndex), co = cos(t), si = sin(t);
+    vec3 ax = u.spin_axis.xyz, d = pos - u.spin_pivot.xyz;
+    pos = u.spin_pivot.xyz + d * co + cross(ax, d) * si + ax * dot(ax, d) * (1.0 - co);
+    normal = normal * co + cross(ax, normal) * si + ax * dot(ax, normal) * (1.0 - co);
+#endif
+    Vert o = vertex(pos, normal, a_uv, a_color);
     gl_Position = o.clip;
     v_world = o.world;
     v_normal = o.normal;

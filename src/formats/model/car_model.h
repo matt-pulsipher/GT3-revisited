@@ -87,7 +87,6 @@ struct CarModelOptions {
     // Showroom wheels in races ([video] showroom_wheels): LOD 0's rims and tyres as the menus
     // draw them, from the car's menu/cars file (its GTTW and GTTR) with the menus' tyres. A
     // fitted wheel's rim is `showroom_wheel` (its menu/wheel/<label>), else `wheel_override`.
-    // LOD 0 then also has the race rims, meshes "wheel_<x>_race" (for the races' spin blurs).
     // Empty = the car file's own at every LOD.
     ByteSpan showroom_car;
     ByteSpan showroom_wheel;
