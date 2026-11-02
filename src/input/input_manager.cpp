@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <utility>
 
 namespace gt3r {
@@ -27,6 +29,20 @@ float normalize_axis(Sint16 v) { return std::clamp(static_cast<float>(v) / kAxis
 
 std::string section_name(int player, const char* suffix = "") {
     return "player" + std::to_string(player + 1) + suffix;
+}
+
+float parse_curve(const std::optional<std::string>& v) {
+    if (!v) return 1.0f;
+    char* end = nullptr;
+    const float f = std::strtof(v->c_str(), &end);
+    return end == v->c_str() ? 1.0f
+                             : std::clamp(f, InputManager::kSteeringCurveMin, InputManager::kSteeringCurveMax);
+}
+
+std::string format_curve(float v) {
+    char b[16];
+    std::snprintf(b, sizeof(b), "%.2f", double(v));
+    return b;
 }
 
 bool contains_ci(const std::string& hay, const std::string& needle) {
@@ -110,6 +126,8 @@ void InputManager::load(const IniDocument& cfg) {
         if (auto kb = cfg.get(sec, "keyboard")) p.keyboard = to_lower(*kb) == "on" || *kb == "1";
         if (i == 0) set_phone_vibration(to_lower(cfg.get(sec, "phone_vibration").value_or("off")) == "on");
         p.rumble_mode = to_lower(cfg.get(sec, "rumble").value_or("auto"));
+        p.steering_curve = parse_curve(cfg.get(sec, "steering_curve"));
+        p.wheel_steering_curve = parse_curve(cfg.get(sec, "wheel_steering_curve"));
     }
     set_background(to_lower(cfg.get("input", "background").value_or("off")) == "on");
     assign_devices();
@@ -130,6 +148,8 @@ void InputManager::save(IniDocument& cfg) const {
         cfg.set(sec, "keyboard", p.keyboard ? "on" : "off");
         if (i == 0) cfg.set(sec, "phone_vibration", phone_vibration_ ? "on" : "off");
         cfg.set(sec, "rumble", p.rumble_mode);
+        cfg.set(sec, "steering_curve", format_curve(p.steering_curve));
+        cfg.set(sec, "wheel_steering_curve", format_curve(p.wheel_steering_curve));
         cfg.set(sec, "race", p.bindings.race_layout);
         p.bindings.save(cfg, sec);
         p.actions.save(cfg, sec);
@@ -172,9 +192,15 @@ void InputManager::reset_bindings(int player) {
     refresh(p);
 }
 
-bool InputManager::bind(int player, const PadTarget& target, const InputSource& source, bool replace) {
+bool InputManager::wheel_source(const Player& p, const InputSource& source) const {
+    if (source.kind != InputSource::Kind::JoyAxis) return false;
+    const Device* d = source.device.empty() ? find_device(p.device) : find_tagged(source.device, p.device);
+    return d && !d->gamepad && d->wheel;
+}
+
+bool InputManager::bind(int player, const PadTarget& target, const InputSource& source, bool replace, float rest) {
     Player& p = players_[player];
-    if (!p.bindings.bind(p.kind, false, target, source, replace)) return false;
+    if (!p.bindings.bind(p.kind, false, target, source, replace, {wheel_source(p, source), rest})) return false;
     if (source.device.empty()) refresh(p);
     else assign_devices(); // the other player's Auto can't keep the device this binding names
     return true;
@@ -197,9 +223,10 @@ const Profile& InputManager::race_profile(int player) const {
     return p.race_reads_menu ? p.menu : p.race;
 }
 
-bool InputManager::bind_race(int player, const PadTarget& target, const InputSource& source, bool replace) {
+bool InputManager::bind_race(int player, const PadTarget& target, const InputSource& source, bool replace,
+                             float rest) {
     Player& p = players_[player];
-    if (!p.bindings.bind(p.kind, true, target, source, replace)) return false;
+    if (!p.bindings.bind(p.kind, true, target, source, replace, {wheel_source(p, source), rest})) return false;
     if (source.device.empty()) refresh(p);
     else assign_devices(); // the other player's Auto can't keep the device this binding names
     return true;
@@ -358,9 +385,20 @@ const InputManager::Device* InputManager::tagged_steering(const Player& p) const
     return nullptr;
 }
 
-bool InputManager::wheel_steering(int player) const {
-    const Player& p = players_[player];
+bool InputManager::wheel_steering(int player) const { return wheel_steering(players_[player]); }
+
+bool InputManager::wheel_steering(const Player& p) const {
     return tagged_steering(p) != nullptr || p.kind == DeviceKind::Wheel;
+}
+
+float InputManager::steering_curve(const Player& p) const {
+    return wheel_steering(p) ? p.wheel_steering_curve : p.steering_curve;
+}
+
+void InputManager::set_steering_curve(int player, float curve) {
+    Player& p = players_[player];
+    curve = std::clamp(std::round(curve * 100.0f) / 100.0f, kSteeringCurveMin, kSteeringCurveMax);
+    (wheel_steering(p) ? p.wheel_steering_curve : p.steering_curve) = curve;
 }
 
 std::string InputManager::describe(int player, const InputSource& src) const {
@@ -553,6 +591,7 @@ void InputManager::begin_capture(int player) {
     chord_inputs_.clear();
     captured_chord_.reset();
     captured_.reset();
+    captured_rest_ = 0.0f;
     // Record resting positions so pedals that rest at +/-1 and slightly
     // off-center sticks don't register as input.
     capture_baseline_.clear();
@@ -568,8 +607,9 @@ void InputManager::begin_capture(int player) {
     }
 }
 
-std::optional<InputSource> InputManager::poll_capture() {
-    auto out = captured_;
+std::optional<InputManager::CapturedInput> InputManager::poll_capture() {
+    if (!captured_) return std::nullopt;
+    CapturedInput out{*captured_, captured_rest_};
     captured_.reset();
     return out;
 }
@@ -637,6 +677,12 @@ void InputManager::evaluate(Player& p, double dt) {
     evaluate_profile(p, dev, keyboard, p.menu, p.ramp_values, p.state, dt);
     if (p.race_reads_menu) p.race_state = p.state;
     else evaluate_profile(p, dev, keyboard, p.race, p.race_ramps, p.race_state, dt);
+    // The steering curve: the race's steering only (the menus read the stick as it is).
+    if (p.steering_curve != 1.0f || p.wheel_steering_curve != 1.0f)
+        if (const float c = steering_curve(p); c != 1.0f) {
+            const float x = p.race_state.axis_fine(PadAxis::LX);
+            p.race_state.set_axis(PadAxis::LX, std::copysign(std::pow(std::fabs(x), c), x));
+        }
 }
 
 void InputManager::evaluate_any_device(double dt) {
@@ -716,7 +762,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
             button_digital[i] = true;
             button_val[i] = std::max(button_val[i], float(ov.pressure[i]) / 255.0f);
         }
-        for (size_t i = 0; i < kPadAxisCount; ++i) axis_val[i] += ov.axis_f(static_cast<PadAxis>(i));
+        for (size_t i = 0; i < kPadAxisCount; ++i) axis_val[i] += ov.axis_fine(static_cast<PadAxis>(i));
     }
 
     s.connected = dev != nullptr || p.keyboard || p.overlay.connected;
@@ -729,10 +775,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
         else
             s.pressure[i] = pressed ? 255 : 0;
     }
-    for (size_t i = 0; i < kPadAxisCount; ++i) {
-        float v = std::clamp(axis_val[i], -1.0f, 1.0f);
-        s.axes[i] = u8(std::lround((v + 1.0f) * 127.5f));
-    }
+    for (size_t i = 0; i < kPadAxisCount; ++i) s.set_axis(static_cast<PadAxis>(i), axis_val[i]);
 }
 
 void InputManager::update(double dt) {
@@ -758,6 +801,7 @@ void InputManager::update(double dt) {
                                  : (delta > 0 ? InputSource::Half::Positive : InputSource::Half::Negative);
                 s.device = capture_tag(id);
                 captured_ = s;
+                captured_rest_ = base[a];
             }
         }
         if (captured_) capturing_ = false;
@@ -867,13 +911,14 @@ int pick_auto_device(const std::vector<AutoRank>& devices) {
 
 PadState merge_pads(const std::vector<PadState>& pads) {
     PadState out;
-    auto off_rest = [](u8 v) { return std::abs(int(v) - 128); };
     for (const PadState& p : pads) {
         out.connected |= p.connected;
         out.buttons |= p.buttons;
         for (size_t i = 0; i < kPadButtonCount; ++i) out.pressure[i] = std::max(out.pressure[i], p.pressure[i]);
-        for (size_t i = 0; i < kPadAxisCount; ++i)
-            if (off_rest(p.axes[i]) > off_rest(out.axes[i])) out.axes[i] = p.axes[i];
+        for (size_t i = 0; i < kPadAxisCount; ++i) {
+            const PadAxis a = static_cast<PadAxis>(i);
+            if (std::fabs(p.axis_fine(a)) > std::fabs(out.axis_fine(a))) out.axes[i] = p.axes[i], out.fine[i] = p.fine[i];
+        }
     }
     return out;
 }

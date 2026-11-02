@@ -660,7 +660,173 @@ TEST(input_capture_cancel) {
     key(SDL_SCANCODE_K);
     InputSource k;
     CHECK(InputSource::parse("key.K", k));
-    CHECK(!input.capturing() && input.poll_capture() == std::optional<InputSource>(k));
+    const std::optional<InputManager::CapturedInput> c = input.poll_capture();
+    CHECK(!input.capturing() && c && c->source == k && c->rest == 0);
+}
+
+// A wheel has no dead zone around its centre (public issue 134): its axes bound in the binding
+// editor get none (a stick's get kStickDeadzone), and the wheel's saved sets drop the stick dead
+// zone they were given before. The pad keeps each axis at its full resolution next to its byte.
+TEST(input_wheel_axes_no_deadzone) {
+    auto src = [](const char* s) {
+        InputSource out;
+        CHECK(InputSource::parse(s, out));
+        return out;
+    };
+    auto deadzone = [](const Profile& p, const char* target) {
+        PadTarget t;
+        CHECK(PadTarget::parse(target, t));
+        for (const Binding& b : p.bindings)
+            if (b.target == t) return b.options.deadzone;
+        return -1.0f;
+    };
+    PadTarget steer;
+    CHECK(PadTarget::parse("LX", steer));
+    PlayerBindings b;
+    CHECK(b.bind(DeviceKind::Wheel, true, steer, src("joy.axis0"), true, AxisInfo{true}));
+    CHECK(deadzone(b.set(DeviceKind::Wheel, true, BindingSet::Controller), "LX") == 0);
+    CHECK(b.bind(DeviceKind::Joystick, true, steer, src("joy.axis0"), true));
+    CHECK(deadzone(b.set(DeviceKind::Joystick, true, BindingSet::Controller), "LX") == kStickDeadzone);
+    CHECK(b.bind(DeviceKind::Pad, true, steer, src("pad.leftx"), true));
+    CHECK(deadzone(b.set(DeviceKind::Pad, true, BindingSet::Controller), "LX") == kStickDeadzone);
+    PlayerBindings old;
+    old.load(IniDocument::parse("[player1.wheel.race]\nLX = joy.axis0 deadzone=0.08\nCross = joy.axis1 pedal invert\n"
+                                "[player1.wheel.bindings]\nLX = joy.axis0 deadzone=0.08\nLY = joy.axis3 deadzone=0.2\n"
+                                "[player1.joystick.race]\nLX = joy.axis0 deadzone=0.08\n"),
+             "player1");
+    CHECK(deadzone(old.set(DeviceKind::Wheel, true, BindingSet::Controller), "LX") == 0);
+    CHECK(deadzone(old.set(DeviceKind::Wheel, false, BindingSet::Controller), "LX") == 0);
+    CHECK(deadzone(old.set(DeviceKind::Wheel, false, BindingSet::Controller), "LY") == 0.2f); // chosen: kept
+    CHECK(deadzone(old.set(DeviceKind::Joystick, true, BindingSet::Controller), "LX") == kStickDeadzone);
+
+    // The fine axis: what set_axis set, while the byte is still its byte; a byte set alone reads as
+    // itself (every byte back to the same byte). A merge keeps the axis furthest from rest, fine
+    // value with it.
+    PadState p;
+    p.set_axis(PadAxis::LX, 1.0f / 450.0f); // a degree on a 900-degree wheel
+    CHECK(p.axis(PadAxis::LX) == 128 && p.axis_fine(PadAxis::LX) == 1.0f / 450.0f);
+    p.set_axis(PadAxis::LX, -2.0f);
+    CHECK(p.axis(PadAxis::LX) == 0 && p.axis_fine(PadAxis::LX) == -1.0f);
+    for (int v = 0; v < 256; ++v) {
+        p.axes[size_t(PadAxis::LX)] = u8(v);
+        CHECK(int(PadState::axis_byte(p.axis_fine(PadAxis::LX))) == v);
+    }
+    PadState rest, nudged;
+    nudged.set_axis(PadAxis::LX, -0.001f);
+    const PadState m = merge_pads({rest, nudged});
+    CHECK(m.axis(PadAxis::LX) == nudged.axis(PadAxis::LX) && m.axis_fine(PadAxis::LX) == -0.001f);
+}
+
+// A pedal bound in the binding editor reads over its whole travel (public issue 134): the axis
+// rests at an end, so the capture's half (past the middle) would leave the first half of the
+// travel dead. An axis resting in the middle (combined pedals, a stick) keeps its half.
+TEST(input_pedal_whole_travel) {
+    auto src = [](const char* s) {
+        InputSource out;
+        CHECK(InputSource::parse(s, out));
+        return out;
+    };
+    auto find = [](const Profile& p, const char* target) {
+        PadTarget t;
+        CHECK(PadTarget::parse(target, t));
+        for (const Binding& b : p.bindings)
+            if (b.target == t) return b;
+        return Binding{};
+    };
+    PadTarget gas, brake, steer, look;
+    CHECK(PadTarget::parse("Cross", gas) && PadTarget::parse("Square", brake) && PadTarget::parse("LX", steer) &&
+          PadTarget::parse("RY+", look));
+    Profile p;
+    p.bind(gas, src("joy.axis1+"), true, AxisInfo{true, -1.0f}); // rests at -1
+    p.bind(brake, src("joy.axis2-"), true, AxisInfo{true, 0.98f}); // rests at +1
+    Binding g = find(p, "Cross"), b = find(p, "Square");
+    CHECK(g.source.half == InputSource::Half::Full && g.options.pedal && !g.options.invert);
+    CHECK(b.source.half == InputSource::Half::Full && b.options.pedal && b.options.invert);
+    CHECK(g.source_with_options() == "joy.axis1 pedal" && b.source_with_options() == "joy.axis2 invert pedal");
+    p.bind(look, src("joy.axis3+"), true, AxisInfo{false, -1.0f}); // a half axis too, no dead zone
+    Binding l = find(p, "RY+");
+    CHECK(l.options.pedal && l.options.deadzone == 0);
+    p.bind(gas, src("joy.axis1+"), true, AxisInfo{true, 0.0f}); // combined pedals: the half
+    g = find(p, "Cross");
+    CHECK(g.source.half == InputSource::Half::Positive && !g.options.pedal);
+    p.bind(steer, src("joy.axis0-"), true, AxisInfo{true, -1.0f}); // a whole axis: as it reads
+    CHECK(!find(p, "LX").options.pedal);
+}
+
+// A wheel's pedals captured in Settings and the steering curve, on SDL's virtual wheel: half a
+// pedal's travel is half pressure, and the race (not the menus) steers through the wheel's curve,
+// kept apart from other controllers' and saved per player.
+TEST(input_virtual_wheel_pedals_and_steering_curve) {
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
+    int connected = 0;
+    SDL_free(SDL_GetJoysticks(&connected));
+    if (connected > 0) { // a real device would be player 1, not the test's
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+        SKIP("a controller is connected");
+    }
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_WHEEL;
+    desc.name = "Test Wheel";
+    desc.naxes = 3;
+    desc.nbuttons = 10;
+    const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+    SDL_Joystick* wheel = id ? SDL_OpenJoystick(id) : nullptr;
+    CHECK(wheel != nullptr);
+    if (wheel) {
+        InputManager in;
+        in.set_background(true); // no window has the focus here
+        auto axis = [&](int a, Sint16 v) { SDL_SetJoystickVirtualAxis(wheel, a, v); };
+        auto frame = [&] {
+            SDL_UpdateJoysticks();
+            for (SDL_Event e; SDL_PollEvent(&e);) in.handle_event(e);
+            in.update(1.0 / 60);
+        };
+        axis(1, -32768), axis(2, 32767); // gas rests at -1, brake at +1
+        frame();
+        CHECK(in.kind(0) == DeviceKind::Wheel && in.wheel_steering(0));
+        auto capture = [&](int a, Sint16 to, const char* target) {
+            in.begin_capture(0);
+            axis(a, to);
+            frame();
+            std::optional<InputManager::CapturedInput> c = in.poll_capture();
+            CHECK(c && c->source.kind == InputSource::Kind::JoyAxis && c->source.code == a);
+            PadTarget t;
+            CHECK(PadTarget::parse(target, t));
+            if (c) CHECK(in.bind_race(0, t, c->source, true, c->rest));
+        };
+        capture(1, 32767, "Cross");
+        capture(2, -32768, "Square");
+        axis(1, 0), axis(2, 0); // both half way down
+        frame();
+        CHECK(in.race_pad(0).press(PadButton::Cross) == 128 && in.race_pad(0).press(PadButton::Square) == 128);
+        axis(1, -32768), axis(2, 32767);
+        frame();
+        CHECK(!in.race_pad(0).down(PadButton::Cross) && !in.race_pad(0).down(PadButton::Square));
+
+        CHECK(in.steering_curve(0) == 1.0f);
+        in.set_steering_curve(0, 2.0f);
+        axis(0, 16384); // half lock to the right
+        frame();
+        CHECK(std::fabs(in.race_pad(0).axis_fine(PadAxis::LX) - 0.25f) < 0.001f);
+        CHECK(std::fabs(in.pad(0).axis_fine(PadAxis::LX) - 0.5f) < 0.001f); // the menus: as it is
+        axis(0, -32768);
+        frame();
+        CHECK(in.race_pad(0).axis_fine(PadAxis::LX) == -1.0f); // full lock stays full lock
+        IniDocument cfg;
+        in.save(cfg);
+        CHECK(cfg.get("player1", "wheel_steering_curve") == "2.00" && cfg.get("player1", "steering_curve") == "1.00");
+        cfg.set("player1", "steering_curve", "9");
+        InputManager again;
+        again.load(cfg);
+        CHECK(again.steering_curve(0) == 2.0f);
+        again.set_device_filter(0, InputManager::kKeyboardOnly); // not the wheel: the other curve
+        CHECK(again.steering_curve(0) == InputManager::kSteeringCurveMax);
+        in.set_background(false);
+        SDL_CloseJoystick(wheel);
+    }
+    if (id) SDL_DetachVirtualJoystick(id);
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
 }
 
 // A button or key on a whole stick axis (Steer, the menu sticks) could push it only one way: it is

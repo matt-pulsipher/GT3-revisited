@@ -32,6 +32,10 @@ struct PadState {
     u16 buttons = 0;                            // bit set = pressed
     std::array<u8, kPadButtonCount> pressure{}; // 0..255 (digital buttons: 0 or 255)
     std::array<u8, kPadAxisCount> axes{128, 128, 128, 128}; // 0..255, 128 = center
+    // The axes before their 8-bit read (-1..1), for inputs finer than a DualShock 2's stick (a
+    // wheel's 256 steps would be ~3.5 degrees each on a 900-degree wheel). It counts only where it
+    // reads as the byte (set_axis); whatever sets the byte alone leaves it stale.
+    std::array<float, kPadAxisCount> fine{};
     bool connected = false;
 
     bool down(PadButton b) const { return buttons & (1u << static_cast<unsigned>(b)); }
@@ -39,6 +43,11 @@ struct PadState {
     u8 axis(PadAxis a) const { return axes[static_cast<size_t>(a)]; }
     // -1..1 convenience for engine code.
     float axis_f(PadAxis a) const { return (static_cast<float>(axis(a)) - 128.0f) / 127.0f; }
+    // An axis at its full resolution, -1..1: its fine value, or the byte's (-1 at 0, 1 at 255).
+    float axis_fine(PadAxis a) const;
+    // Both: v (-1..1) and its byte.
+    void set_axis(PadAxis a, float v);
+    static u8 axis_byte(float v);
 };
 
 // Rumble request from the game: DS2 small motor is on/off, large is 0..255.

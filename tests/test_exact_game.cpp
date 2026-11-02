@@ -297,6 +297,34 @@ TEST(exact_game_pad_read) {
     CHECK(race::exact_pad_frame(pad, lin, *d).throttle == 1);
 }
 
+// A wheel's steering at its full resolution (public issue 134: a 900-degree wheel moved the race pad's byte every ~3.5
+// degrees, a dead zone around the centre): the linear response steers by the wheel's every step, both ways from the
+// centre; the original response reads it as the GT Force's 10 bits. The steering needs no disc.
+TEST(exact_game_wheel_steering_resolution) {
+    const ex::ProgramData d = ex::ProgramData::synthetic();
+    race::ExactHuman wheel, orig, stick;
+    wheel.wheel = orig.wheel = true;
+    orig.original_response = true;
+    PadState pad = neutral_pad();
+    for (const race::ExactHuman* h : {&wheel, &orig, &stick}) CHECK(race::exact_pad_frame(pad, *h, d).steer == 0);
+    // A degree right of the centre on a 900-degree wheel: inside the byte's centre step (128), not the steering's.
+    pad.set_axis(PadAxis::LX, 1.0f / 450.0f);
+    CHECK(pad.axis(PadAxis::LX) == 128);
+    ex::PadFrame f = race::exact_pad_frame(pad, wheel, d);
+    CHECK(f.kind == 4 && f.steer == -9); // 4096 / 450, right negative
+    CHECK(race::exact_pad_frame(pad, stick, d).steer == -9);
+    CHECK(race::exact_pad_frame(pad, orig, d).steer == -9); // (0x200 - 513) x 9
+    pad.set_axis(PadAxis::LX, -1.0f / 450.0f);
+    CHECK(race::exact_pad_frame(pad, wheel, d).steer == 9);
+    pad.set_axis(PadAxis::LX, -1.0f);
+    CHECK(race::exact_pad_frame(pad, wheel, d).steer == 4096 && race::exact_pad_frame(pad, orig, d).steer == 4096);
+    pad.set_axis(PadAxis::LX, 1.0f);
+    CHECK(race::exact_pad_frame(pad, wheel, d).steer == -4096);
+    // A byte set alone (fine value stale): the byte's steering, as before.
+    pad.axes[size_t(PadAxis::LX)] = 112;
+    CHECK(race::exact_pad_frame(pad, wheel, d).steer == 512 && race::exact_pad_frame(pad, orig, d).steer == (0x200 - 448) * 9);
+}
+
 // A run on the race pad (the pad read) and its replay: the recorded inputs, made from the frames the pad read gave as the
 // race screen records them, give the same race when stepped as inputs (race::exact_inputs_frame).
 TEST(exact_game_pad_replay) {

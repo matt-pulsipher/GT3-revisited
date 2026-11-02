@@ -162,7 +162,9 @@ public:
     void use_custom(int player, bool race);
     // Edits (PlayerBindings::bind): the source's own set takes it, the other keeps its bindings.
     // Saved to [playerN.bindings] (the pad's), [playerN.wheel.bindings], [playerN.keyboard.bindings].
-    bool bind(int player, const PadTarget& target, const InputSource& source, bool replace); // PlayerBindings::bind
+    // `rest`: where a captured axis rested (CapturedInput), so a pedal reads over its whole travel.
+    bool bind(int player, const PadTarget& target, const InputSource& source, bool replace,
+              float rest = 0.0f); // PlayerBindings::bind
     void clear_target(int player, const PadTarget& target, BindingSet set);
     // Race controls (see make_race_preset), one layout per player for whichever kind is in use.
     // Editing a race binding makes that set's race bindings custom ([playerN.race] ...); under
@@ -172,12 +174,18 @@ public:
     bool race_uses_menu_pad(int player) const { return players_[player].race_reads_menu; }
     bool is_race_custom(int player) const;
     const Profile& race_profile(int player) const; // the effective one (gt3: the menu profile)
-    bool bind_race(int player, const PadTarget& target, const InputSource& source, bool replace);
+    bool bind_race(int player, const PadTarget& target, const InputSource& source, bool replace, float rest = 0.0f);
     void clear_race_target(int player, const PadTarget& target, BindingSet set);
     std::string device_name(int player) const; // "Keyboard" (or "No device") without one
     // Races steer with GT3's wheel path: the device Steer (LX) is bound to is a wheel (a tagged
     // binding's device, otherwise the Controller's kind).
     bool wheel_steering(int player) const;
+    // [playerN] steering_curve / wheel_steering_curve: the race's steering is |x|^curve (1: as far
+    // as the player steers; above 1 finer near the centre, below 1 quicker off it; full lock stays
+    // at the end). A wheel (wheel_steering) has its own; these get and set the one in use.
+    static constexpr float kSteeringCurveMin = 0.5f, kSteeringCurveMax = 2.5f;
+    float steering_curve(int player) const { return steering_curve(players_[player]); }
+    void set_steering_curve(int player, float curve);
     // [playerN] controller: "auto" (pick_auto_device), part of a device name (any device,
     // whatever its type), or kKeyboardOnly. Reassigns devices.
     static constexpr const char* kKeyboardOnly = "keyboard";
@@ -237,7 +245,13 @@ public:
         chord_inputs_.clear();
     }
     bool capturing() const { return capturing_; }
-    std::optional<InputSource> poll_capture();
+    // The input poll_capture() returns, and where an axis rested before it moved (-1..1; 0 for
+    // anything else).
+    struct CapturedInput {
+        InputSource source;
+        float rest = 0.0f;
+    };
+    std::optional<CapturedInput> poll_capture();
 
 private:
     struct Device {
@@ -255,6 +269,7 @@ private:
         std::string wheel_device; // [playerN] wheel_device: a named device that is a wheel (0.3 preset = wheel)
         bool keyboard = true;
         std::string rumble_mode = "auto"; // [playerN] rumble
+        float steering_curve = 1.0f, wheel_steering_curve = 1.0f; // [playerN]
         SDL_JoystickID device = 0; // 0 = none
         DeviceKind kind = DeviceKind::Keyboard; // of `device` (assign_devices)
         PlayerBindings bindings;
@@ -285,6 +300,9 @@ private:
     std::string tag_of(SDL_JoystickID id) const;
     std::string capture_tag(SDL_JoystickID id) const; // empty for the capturing player's Controller
     const Device* tagged_steering(const Player& p) const; // a tagged wheel Steer is bound to
+    bool wheel_source(const Player& p, const InputSource& source) const; // a wheel's axis
+    bool wheel_steering(const Player& p) const;
+    float steering_curve(const Player& p) const;
     // The source's value, or nothing when it can't be read: its device, axis, button or hat
     // isn't connected, or it is a key (or mouse button) and `keyboard` is off.
     std::optional<float> read_source(const Player& p, const Device* dev, bool keyboard, const InputSource& src) const;
@@ -328,6 +346,7 @@ private:
     std::optional<Chord> captured_chord_;
     int capture_player_ = 0;
     std::optional<InputSource> captured_;
+    float captured_rest_ = 0.0f; // CapturedInput::rest
     std::vector<std::pair<SDL_JoystickID, std::vector<float>>> capture_baseline_;
 };
 
