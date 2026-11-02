@@ -270,6 +270,14 @@ private:
     void seed_vehicle_condition(const sim::EngineCondition& c, bool live);
     sim::EngineCondition live_condition() const;
     std::optional<Bytes> read_car(App& app, const std::string& model) const;
+    // [video] showroom_wheels: the model's menu/cars file and a fitted wheel's
+    // menu/wheel/<label> (CarVisual's showroom_car, showroom_wheel); none when off.
+    struct ShowroomFiles {
+        std::optional<Bytes> car, wheel;
+        ByteSpan car_span() const { return car ? ByteSpan(*car) : ByteSpan{}; }
+        ByteSpan wheel_span() const { return wheel ? ByteSpan(*wheel) : ByteSpan{}; }
+    };
+    ShowroomFiles read_showroom(App& app, const std::string& model, const std::string& wheel) const;
     // A car model's spark points (GTCI +0x58 / +0x5C of read_car's model): ExactFieldOptions::spark_points. Kept by folder
     // and model (every restart builds the race again).
     std::vector<sim::exact::SparkPoint> car_spark_points(App& app, const std::string& model) const;
@@ -691,6 +699,7 @@ private:
     bool env_cube_on_ = true; // [video] car_reflections
     bool shadows_on_ = true;  // [video] car_shadows
     bool full_car_detail_ = false; // [video] full_car_detail (CarVisual::set_full_detail)
+    bool showroom_wheels_ = false; // [video] showroom_wheels (read_showroom)
     std::vector<render::DrawItem> env_items_;
     bool env_gt3_scene_ = false; // the map holds GT3's reflection scene: use GT3's lookup
     std::vector<RecordEntry> records_;

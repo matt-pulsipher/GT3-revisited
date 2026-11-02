@@ -80,10 +80,17 @@ struct CarModelOptions {
     bool reflection = true;    // include the environment-map (reflection) passes
     int paint = 0;             // colour index into the car's list in database/carcolor.db
     bool wheels = true;        // add wheels + generated tyres
-    bool menu_tyres = false;   // the menus' tyres (30 segments); else the race's for each LOD (tyre_model.h)
+    bool menu_tyres = false;   // the menus' tyres (30 segments) and brake parts; else the race's tyres for each LOD (tyre_model.h)
     // Another wheel to fit instead of the car's own: the contents of a wheel/<label>
     // file (the same GTTW format as the car file's wheel section). Empty = stock.
     ByteSpan wheel_override;
+    // Showroom wheels in races ([video] showroom_wheels): LOD 0's rims and tyres as the menus
+    // draw them, from the car's menu/cars file (its GTTW and GTTR) with the menus' tyres. A
+    // fitted wheel's rim is `showroom_wheel` (its menu/wheel/<label>), else `wheel_override`.
+    // LOD 0 then also has the race rims, meshes "wheel_<x>_race" (for the races' spin blurs).
+    // Empty = the car file's own at every LOD.
+    ByteSpan showroom_car;
+    ByteSpan showroom_wheel;
     std::optional<WheelSpec> wheel_spec; // placement; estimated from the body when absent
     bool brake = false;        // the brake-lamp branch of the node programs (lit lenses)
     CarBodyMod body_mod;       // mod cars: stretched or replaced body

@@ -145,7 +145,12 @@ Env0 +0xAB0/+0xAB8), normal alpha blend, no depth writes, lifted 2 cm with a
 small depth bias. Node 5 is not a shadow: two flat textured quads ahead of
 the nose (texture set 4 on the R34), the headlamp pool, drawn additively only
 when Env0 +0x58 is non-zero (night and dusk courses). Nodes 2..4 are empty
-(`00`). Each has 3 or 4 LODs. Op 0x07 picks the LOD from the projected size of a sphere (always radius
+(`00`) in race car files. In `menu/cars` files node 1 is empty, node 6 is a
+textured footprint quad (the showroom shadow), and nodes 2 and 3 hold the
+front and rear axles' brake disc and caliper (about 80 triangles each). They
+are modelled for a left wheel, in the rim's unit frame (x about 0.31..0.54
+inboard of the rim face, radius about 0.64), and drawn with the wheels (see
+"Brake parts" below). Each has 3 or 4 LODs. Op 0x07 picks the LOD from the projected size of a sphere (always radius
 3.0 on disc); car models use 3 levels. Wheels have 1 node with 4 LODs. Every car has 4 texture sets, one per
 body LOD plus one for the shadow.
 
@@ -486,11 +491,40 @@ reproduced; GT3 Revisited uses the body's level.)
 For the SLK 230's front 205/55R16 in the menus: R 0.316, b 0.231, h 0.021;
 the outer face at −0.1015 m from the hub.
 
-## Brake parts (`brake_model.*`)
+**Showroom wheels in races** (ours; `[video] showroom_wheels`): race level 0
+takes the menus' wheel in place of the race's: the `menu/cars` file's rim
+(GTTW) and tyre texture (GTTR, 256x128), or a fitted wheel's
+`menu/wheel/<label>` (its race `wheel/<label>` when there is none), with the
+menus' tyre detail. Levels 1 and 2 keep the race's. Placement is the same for
+both, so the menus' wheel sits where the race's would
+(`CarModelOptions::showroom_car`, `showroom_wheel`). Across the 286 cars of
+NTSC-U 1.10 the menus' rims have a median of 1,413 triangles against 112 for
+race level 0: about 5,200 more triangles a car with four wheels. Level 0 also
+keeps the race rims, meshes `wheel_<x>_race`: the races draw them while a
+wheel spins fast enough for GT3's rim blur (wheel spin blur, below), which is
+made for a flat rim's image. The menus' and the race files' GTTR repeats,
+flags and shininess are the same on every car, so the tread blur reads the
+menus' tyre as it does the race's.
+
+## Brake parts (menus)
+
+A menu car shows its own brake disc and caliper through the spokes: body
+node 2 on the front wheels, node 3 on the rear, drawn in the wheel's frame
+right after the rim, with the rim's placement (scaled by b = R − 0.75·sw, at
+x = −W/2). They turn and steer with the wheel. A right wheel's parts are
+mirrored in z before its half turn about Y, so they are the left wheel's
+mirrored in x about the hub (the caliper at the same end of the car on both
+sides), whether or not the wheel mirrors its rim (GTTW bit 2). The game skips
+them while the camera is inboard of the rim face, where the tyre's inner disc
+hides them anyway; ours always draws them (`CarModelOptions::menu_tyres`:
+meshes `wheel_<x>_brake`). Races draw no body nodes 2 and 3: their brake
+parts come from `race/brake.bin` instead (below).
+
+## Brake parts (races, `brake_model.*`)
 
 In a race the game draws brake parts inside each wheel, seen between the spokes: a rotor
-image, a caliper image and, when hot, the rotor's glow. The menus' wheels have none (their
-car files have their own brake geometry in nodes 2 and 3).
+image, a caliper image and, when hot, the rotor's glow. The menus' wheels have none of these:
+they show the car file's own brake geometry, nodes 2 and 3 (above).
 
 `race/brake.bin` ("GTBR", 45,488 bytes; loaded before every race):
 

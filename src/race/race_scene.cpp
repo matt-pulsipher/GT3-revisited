@@ -293,12 +293,15 @@ void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::
 }
 
 CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::string& model, const WheelSpec& ws,
-                     int paint, ByteSpan wheel_file, const CarBodyMod& body_mod)
+                     int paint, ByteSpan wheel_file, const CarBodyMod& body_mod, ByteSpan showroom_car,
+                     ByteSpan showroom_wheel)
     : ctx_(&ctx) {
     mounts_ = car_camera_mounts(car_file);
     CarModelOptions opt;
     opt.body_mod = body_mod;
     opt.wheel_override = wheel_file;
+    opt.showroom_car = showroom_car;
+    opt.showroom_wheel = showroom_wheel;
     opt.lod = -1;
     opt.wheels = true;
     opt.effects = true; // shadow nodes
@@ -409,6 +412,14 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
                 rim.textures.push_back(*rim_spin);
             }
             rims_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, rim);
+        }
+        scene::Model race_rim = hub_model(n + "_race");
+        if (!race_rim.meshes.empty()) {
+            if (rim_spin) {
+                race_rim_spin_texture_ = int(race_rim.textures.size());
+                race_rim.textures.push_back(*rim_spin);
+            }
+            race_rims_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, race_rim);
         }
         scene::Model tyre = hub_model(n + "_tyre");
         if (!tyre.meshes.empty()) tyres_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, tyre);
@@ -588,8 +599,9 @@ CarVisual::WheelLook CarVisual::wheel_look(int i, const render::Mat4& at, const 
         out.tread_shifts = tread_blur_shifts(turn, tyre_repeats_, right);
     }
     if (outer && detail < 3) {
+        out.spinning = rim_spinning_image(turn);
         if (look.focus) out.rim = 1, out.rim_angles = rim_blur_angles(turn, right);
-        else if (rim_spin_texture_ >= 0 && rim_spinning_image(turn)) out.rim = 2;
+        else if (rim_spin_texture_ >= 0 && out.spinning) out.rim = 2;
     }
     return out;
 }
@@ -663,17 +675,23 @@ void CarVisual::add_body_items(std::vector<render::DrawItem>& items, const sim::
             it.no_fog = true;
             items.push_back(it);
         }
-        if (rims_[k]) {
-            render::DrawItem it = styled({rims_[k].get(), spun, lod});
-            if (wl.rim == 1) {
+        // Showroom wheels at LOD 0: the modelled rim, drawn sharp, until the wheel turns past the
+        // spinning image's 3 degrees a frame; then the race rim with GT3's blur or spinning image
+        // (both made for its flat image).
+        const bool modelled = lod == 0 && race_rims_[k];
+        const bool race_rim = modelled && wl.rim != 0 && wl.spinning;
+        const int rim_fx = modelled && !race_rim ? 0 : wl.rim;
+        if (const render::GpuModel* rim = race_rim ? race_rims_[k].get() : rims_[k].get()) {
+            render::DrawItem it = styled({rim, spun, lod});
+            if (rim_fx == 1) {
                 it.wheel_blur = 2;
                 it.wheel_blur_lod = rim_blur_lod(rim_width_);
                 // GT3 tests the blurred image's own alpha (the spokes' coverage x 0x80) at the rim
                 // programs' AREF 0x20; our rims' cut-out copies (alpha 0 or 1) average to the coverage.
                 it.wheel_blur_alpha_ref = 0x20 / 128.0f;
                 it.wheel_steps = wl.rim_angles;
-            } else if (wl.rim == 2) {
-                it.texture = rims_[k]->textures()[size_t(rim_spin_texture_)].texture;
+            } else if (rim_fx == 2) {
+                it.texture = rim->textures()[size_t(race_rim ? race_rim_spin_texture_ : rim_spin_texture_)].texture;
             }
             items.push_back(it);
         }

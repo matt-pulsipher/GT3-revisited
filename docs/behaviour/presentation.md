@@ -2624,6 +2624,13 @@ k = 0, so no glare is drawn.
   full detail under 30 m, the second level under 80 m, the third beyond.
   `[video] full_car_detail = on` (the default except on phones and tablets) draws
   every car in full detail at any distance.
+- **Wheels.** GT3's races draw the race wheels (`wheel/`): flat rims with the
+  spokes painted on and cut out, and simpler tyres; only the menus load the
+  modelled rims and finer tyres (`menu/cars`, `menu/wheel`). Ours draws the
+  menus' wheels at full detail with `[video] showroom_wheels = on` (the default
+  except on phones and tablets). Their modelled rims are drawn sharp until a
+  wheel turns more than 3 degrees a frame, where GT3 blurs a rim or shows its
+  spinning image; past that, ours draws the race rim with them, as GT3 does.
 - Ours: `DrawItem::in_order` draws an item whole at its place (its opaque
   meshes, then its blended ones in model order) before later items' opaque
   meshes: the course scenery, the wet-road frame passes and each car shadow.
