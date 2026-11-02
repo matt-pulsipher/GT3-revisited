@@ -522,6 +522,10 @@ on the left / right third step through the entries. The online lobby's pages wor
 way: rows and tiles follow a hovering mouse, a finger's first tap focuses, "<" ">" and the
 footer's actions are buttons (docs/dev/ONLINE.md "Pickers").
 
+On desktop the mouse cursor hides over the game's window after 2 seconds without mouse use
+(`App::idle_cursor`) and comes back with the next move, click or wheel turn; a touch doesn't
+bring it back.
+
 Screens choose their layout by overriding `Screen::touch_layout()`
 (`TouchLayout::Menu`, `Driving` or `None`). On desktop, `GT3R_PHONE=1`
 opens a window shaped like a 20:9 phone (cutout, rounded corners, phone UI
