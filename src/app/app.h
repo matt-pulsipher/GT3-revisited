@@ -245,6 +245,11 @@ private:
     int pops_ = 0;
     bool quit_ = false;
     Uint64 last_ticks_ = 0;
+    // Desktop: the mouse cursor hides over the window after a moment without mouse use and
+    // comes back with the next move, click or wheel turn (App::idle_cursor).
+    Uint64 mouse_used_ns_ = 0;
+    bool cursor_hidden_ = false;
+    void idle_cursor(Uint64 now);
 
     SDL_Mutex* dialog_mutex_ = nullptr;
     std::string dialog_result_;

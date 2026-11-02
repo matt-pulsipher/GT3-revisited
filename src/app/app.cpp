@@ -639,6 +639,7 @@ SDL_AppResult App::iterate() {
 #endif
     double dt = frame_s;
     last_ticks_ = now;
+    idle_cursor(now);
     ++fps_frames_, fps_time_ += frame_s;
     if (fps_time_ >= 0.5) fps_shown_ = fps_frames_ / fps_time_, fps_frames_ = 0, fps_time_ = 0;
     if (dt > 0.1) dt = 0.1;
@@ -805,11 +806,28 @@ SDL_AppResult App::iterate() {
     return quit_ ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
 }
 
+void App::idle_cursor(Uint64 now) {
+    if (platform::is_mobile() || cursor_hidden_) return; // phones and tablets: no cursor
+    if (mouse_used_ns_ == 0) mouse_used_ns_ = now;
+    if (now - mouse_used_ns_ < 2'000'000'000) return; // 2 s
+    SDL_HideCursor();
+    cursor_hidden_ = true;
+}
+
 SDL_AppResult App::event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_QUIT) return SDL_APP_SUCCESS;
     // Android may end a backgrounded app without a quit.
     if (e.type == SDL_EVENT_WILL_ENTER_BACKGROUND || e.type == SDL_EVENT_TERMINATING) remember_race_scale();
     input_->handle_event(e);
+    // The real mouse (not SDL's mouse made from a touch) brings the cursor back.
+    const bool mouse_used = (e.type == SDL_EVENT_MOUSE_MOTION && e.motion.which != SDL_TOUCH_MOUSEID) ||
+                            ((e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+                             e.button.which != SDL_TOUCH_MOUSEID) ||
+                            (e.type == SDL_EVENT_MOUSE_WHEEL && e.wheel.which != SDL_TOUCH_MOUSEID);
+    if (mouse_used) {
+        mouse_used_ns_ = SDL_GetTicksNS();
+        if (cursor_hidden_) SDL_ShowCursor(), cursor_hidden_ = false;
+    }
     if (audio_ && (e.type == SDL_EVENT_AUDIO_DEVICE_ADDED || e.type == SDL_EVENT_AUDIO_DEVICE_REMOVED)) audio_->device_event(e);
     if (e.type == SDL_EVENT_DROP_FILE && e.drop.data && (screens_.empty() || !screens_.back()->takes_dropped_file(e.drop.data)))
         set_dialog_result(e.drop.data);
