@@ -128,10 +128,10 @@ full travel (keyboards).
 
 Rumble (`race::RumbleModel`, `InputManager::set_rumble`): each step computes two
 outputs and each player's Rumble setting picks one (`InputManager::gt3_rumble`:
-`[playerN] rumble`; `auto` takes GT3 original on a DualSense, Modern on other
-controllers; `race_rumble_mode`). GT3 original (physics §1.2), as GT3 drives a
-DualShock 2: each race step's vibration level (`VehicleTelemetry::pad_rumble`,
-0-127, set in phase 12 from the front tires' drive and brake forces, the dampers and
+`[playerN] rumble`; `auto`, the default, is Modern; `race_rumble_mode`). GT3
+original (physics §1.2), as GT3 drives a DualShock 2: each race step's vibration
+level (`VehicleTelemetry::pad_rumble`, 0-127, set in phase 12 from the front tires'
+drive and brake forces, the dampers and
 curbs under the front wheels, and a hit's rumble) goes to the large motor as it is, so
 at most about half strength; the small motor never runs. Modern (ours) runs both
 motors for everything with a lean (`RumbleModel::rumble`): the body level on the

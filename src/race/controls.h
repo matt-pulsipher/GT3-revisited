@@ -64,7 +64,7 @@ private:
 };
 
 // The controller's motors in a race, two ways; each player's Rumble setting picks one
-// (InputManager::gt3_rumble: Auto takes GT3 original on a DualSense, Modern elsewhere).
+// (InputManager::gt3_rumble: Auto is Modern).
 // - GT3 original, as GT3 drives a DualShock 2 (physics §1.2, phase 12's pad vibration): each race
 //   step's vibration level (VehicleTelemetry::pad_rumble, 0..127) goes to the large motor as it is
 //   and the small motor never runs. Most controllers' motors play its low levels much stronger

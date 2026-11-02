@@ -56,9 +56,8 @@ float phone_vibration_strength(const PadRumble& r);
 PadRumble dualsense_rumble(const PadRumble& r);
 
 // The race rumble ([playerN] rumble; race::RumbleModel): "gt3" GT3 original, "modern" ours, "auto"
-// (or anything else) GT3 original on a DualSense, whose motors play GT3's levels as a DualShock 2
-// did, and Modern on every other controller, where GT3's low levels buzz all the time.
-bool gt3_rumble(std::string_view mode, bool dualsense);
+// (the default, or anything else) Modern on every controller.
+bool gt3_rumble(std::string_view mode);
 
 // What a device is to Auto: one SDL identifies as a wheel, a gamepad SDL maps, or any other
 // joystick (flight sticks, but also odd HID devices such as some keyboards, mice and macro pads).
@@ -123,12 +122,12 @@ public:
     static bool phone_vibration_available();
     bool phone_vibration() const { return phone_vibration_; }
     void set_phone_vibration(bool on);
-    // [playerN] rumble (auto | modern | gt3), whether the player's device is a DualSense, and
-    // whether their race rumble is GT3 original now (gt3_rumble with the device in use).
+    // [playerN] rumble (auto | modern | gt3), whether the player's device is a DualSense (Modern's mix
+    // for it), and whether their race rumble is GT3 original (gt3_rumble).
     const std::string& rumble_mode(int player) const { return players_[player].rumble_mode; }
     void set_rumble_mode(int player, std::string mode) { players_[player].rumble_mode = std::move(mode); }
     bool dualsense(int player) const;
-    bool gt3_rumble(int player) const { return gt3r::gt3_rumble(players_[player].rumble_mode, dualsense(player)); }
+    bool gt3_rumble(int player) const { return gt3r::gt3_rumble(players_[player].rumble_mode); }
     // Impulse triggers on Xbox One/Series pads (0..1 each). No-op elsewhere.
     void set_trigger_rumble(int player, float left, float right);
     // Driving feedback for this frame (call every frame while driving):
@@ -263,7 +262,7 @@ private:
         std::string name;
         bool has_accel = false;
         bool wheel = false; // SDL identifies it as a wheel (Auto takes it first)
-        bool dualsense = false; // a PlayStation 5 controller (the Auto rumble's GT3 original)
+        bool dualsense = false; // a PlayStation 5 controller (Modern rumble's mix for it, dualsense_rumble)
         std::string serial, path; // for device tags (DeviceId); empty when not reported
     };
     struct Player {

@@ -153,11 +153,9 @@ TEST(dualsense_rumble_right_grip) {
 }
 
 TEST(race_rumble_mode) {
-    // Auto: GT3 original on a DualSense, Modern on anything else; gt3 / modern whatever the device.
-    CHECK(gt3_rumble("auto", true) && !gt3_rumble("auto", false));
-    CHECK(gt3_rumble("gt3", false) && gt3_rumble("gt3", true));
-    CHECK(!gt3_rumble("modern", true) && !gt3_rumble("modern", false));
-    CHECK(!gt3_rumble("", false) && gt3_rumble("", true)); // an unknown value reads as auto
+    // Auto: Modern on every controller, the DualSense too; gt3 is GT3 original.
+    CHECK(!gt3_rumble("auto") && !gt3_rumble("modern") && gt3_rumble("gt3"));
+    CHECK(!gt3_rumble("")); // an unknown value reads as auto
     // Per player, auto by default; no device is no DualSense.
     InputManager input;
     CHECK(input.rumble_mode(0) == "auto" && input.rumble_mode(1) == "auto");

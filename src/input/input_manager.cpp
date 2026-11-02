@@ -860,11 +860,7 @@ PadRumble dualsense_rumble(const PadRumble& r) {
     return out;
 }
 
-bool gt3_rumble(std::string_view mode, bool dualsense) {
-    if (mode == "gt3") return true;
-    if (mode == "modern") return false;
-    return dualsense;
-}
+bool gt3_rumble(std::string_view mode) { return mode == "gt3"; }
 
 bool InputManager::dualsense(int player) const {
     const Device* d = find_device(players_[player].device);

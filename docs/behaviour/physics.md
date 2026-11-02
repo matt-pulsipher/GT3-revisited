@@ -185,7 +185,7 @@ most 127:
 After every step the race sends the level of a car the pad drives to its controller's large
 motor as it is (so at most about half strength); the small motor never runs. A car the AI
 drives (a run-up, after the finish) sends nothing, and its controller's motors stop. This is
-the Rumble setting's GT3 original (Auto plays it on a DualSense); its Modern rumble and the
+the Rumble setting's GT3 original; its Modern rumble (Auto) and the
 triggers' ABS and wheelspin effects are the engine's own (`docs/INPUT.md`).
 
 ### §1.3 State, frames and the ground query
