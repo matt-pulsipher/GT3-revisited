@@ -63,6 +63,9 @@ struct PipelineKey {
     // The corners of triangles GT3 clips at the guard band (render/guard_band.h): View3D's
     // ClipVertex layout and model.vert built with CLIPPED.
     bool clipped = false;
+    // A modelled rim's turned copies (DrawItem::spin_turn): model.vert's and model.frag's
+    // SPIN_COPIES variants.
+    bool spin_copy = false;
     auto operator<=>(const PipelineKey&) const = default;
 };
 
@@ -104,6 +107,8 @@ public:
     static constexpr SDL_GPUTextureFormat kColorFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     SDL_GPUTextureFormat depth_format() const { return depth_format_; }
     SDL_GPUSampleCount sample_count() const { return samples_; }
+    // The SPIN_COPIES shader variants were created (PipelineKey::spin_copy).
+    bool spin_copies() const { return vs_copy_ && fs_copy_; }
     int msaa() const { return 1 << int(samples_); }
     // The MSAA levels the GPU draws the 3D pass with (1 = off), lowest first.
     std::vector<int> msaa_levels() const;
@@ -155,7 +160,7 @@ public:
 private:
     GpuContext() = default;
     bool init(SDL_Window* window, const GpuOptions& options);
-    enum class Stage : u8 { Vertex, ClippedVertex, Fragment };
+    enum class Stage : u8 { Vertex, ClippedVertex, Fragment, CopyVertex, CopyFragment };
     SDL_GPUShader* make_shader(Stage stage);
     bool create_samplers();
     void release_samplers();
@@ -181,6 +186,8 @@ private:
     SDL_GPUShader* vs_ = nullptr;
     SDL_GPUShader* vs_clipped_ = nullptr;
     SDL_GPUShader* fs_ = nullptr;
+    // model.vert's and model.frag's SPIN_COPIES variants (null: spin_turn items drawn plain)
+    SDL_GPUShader *vs_copy_ = nullptr, *fs_copy_ = nullptr;
     SDL_GPUSampler* samplers_[8] = {};
     SDL_GPUTexture* white_ = nullptr;
     SDL_GPUTextureFormat depth_format_ = SDL_GPU_TEXTUREFORMAT_D16_UNORM;

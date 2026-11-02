@@ -5,7 +5,9 @@
 #include "render/guard_band.h"
 #include "render/shaders/generated/model_clip_vert.h"
 #include "render/shaders/generated/model_frag.h"
+#include "render/shaders/generated/model_frag_copy.h"
 #include "render/shaders/generated/model_vert.h"
+#include "render/shaders/generated/model_vert_copy.h"
 #include "scene/model.h"
 
 #include <algorithm>
@@ -151,6 +153,8 @@ bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
     vs_clipped_ = make_shader(Stage::ClippedVertex);
     fs_ = make_shader(Stage::Fragment);
     if (!vs_ || !vs_clipped_ || !fs_) return false;
+    vs_copy_ = make_shader(Stage::CopyVertex);
+    fs_copy_ = make_shader(Stage::CopyFragment);
 
     for (SDL_GPUTextureFormat f :
          {SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTUREFORMAT_D24_UNORM, SDL_GPU_TEXTUREFORMAT_D16_UNORM})
@@ -188,6 +192,8 @@ GpuContext::~GpuContext() {
         for (auto& [t, shared] : shared_textures_) SDL_ReleaseGPUTexture(device_, t);
         if (vs_) SDL_ReleaseGPUShader(device_, vs_);
         if (vs_clipped_) SDL_ReleaseGPUShader(device_, vs_clipped_);
+        if (vs_copy_) SDL_ReleaseGPUShader(device_, vs_copy_);
+        if (fs_copy_) SDL_ReleaseGPUShader(device_, fs_copy_);
         if (fs_) SDL_ReleaseGPUShader(device_, fs_);
     }
     if (renderer_) SDL_DestroyRenderer(renderer_); // releases the window claim
@@ -196,8 +202,19 @@ GpuContext::~GpuContext() {
 
 SDL_GPUShader* GpuContext::make_shader(Stage stage) {
     using namespace shaders;
-    const bool vertex = stage != Stage::Fragment;
-    const bool clipped = stage == Stage::ClippedVertex;
+    // Each stage's generated shader (render/shaders/generated), in Stage order.
+    struct Code {
+        const unsigned char* spv;
+        size_t spv_size;
+        const char *msl, *gles, *gles_blocks, *gles_samplers;
+    };
+#define GT3R_SHADER_CODE(n) {n##_spv, sizeof(n##_spv), n##_msl, n##_gles, n##_gles_blocks, n##_gles_samplers}
+    static const Code kCode[] = {GT3R_SHADER_CODE(model_vert), GT3R_SHADER_CODE(model_clip_vert),
+                                 GT3R_SHADER_CODE(model_frag), GT3R_SHADER_CODE(model_vert_copy),
+                                 GT3R_SHADER_CODE(model_frag_copy)};
+#undef GT3R_SHADER_CODE
+    const Code& code = kCode[size_t(stage)];
+    const bool vertex = stage != Stage::Fragment && stage != Stage::CopyFragment;
     SDL_GPUShaderCreateInfo info{};
     SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device_);
     SDL_PropertiesID props = 0;
@@ -205,34 +222,24 @@ SDL_GPUShader* GpuContext::make_shader(Stage stage) {
     if (formats & SDL_GPU_SHADERFORMAT_PRIVATE) {
         // OpenGL ES (gpu_gles.h): GLSL ES source, with its block and sampler names.
         props = SDL_CreateProperties();
-        SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_UNIFORM_BLOCKS,
-                              clipped  ? model_clip_vert_gles_blocks
-                              : vertex ? model_vert_gles_blocks
-                                       : model_frag_gles_blocks);
-        SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_SAMPLERS,
-                              clipped  ? model_clip_vert_gles_samplers
-                              : vertex ? model_vert_gles_samplers
-                                       : model_frag_gles_samplers);
+        SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_UNIFORM_BLOCKS, code.gles_blocks);
+        SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_SAMPLERS, code.gles_samplers);
         info.props = props;
         info.format = SDL_GPU_SHADERFORMAT_PRIVATE;
-        const char* src = clipped ? model_clip_vert_gles : vertex ? model_vert_gles : model_frag_gles;
-        info.code = reinterpret_cast<const Uint8*>(src);
-        info.code_size = std::strlen(src);
+        info.code = reinterpret_cast<const Uint8*>(code.gles);
+        info.code_size = std::strlen(code.gles);
         info.entrypoint = "main";
     } else
 #endif
     if (formats & SDL_GPU_SHADERFORMAT_SPIRV) {
         info.format = SDL_GPU_SHADERFORMAT_SPIRV;
-        info.code = clipped ? model_clip_vert_spv : vertex ? model_vert_spv : model_frag_spv;
-        info.code_size = clipped  ? sizeof(model_clip_vert_spv)
-                         : vertex ? sizeof(model_vert_spv)
-                                  : sizeof(model_frag_spv);
+        info.code = code.spv;
+        info.code_size = code.spv_size;
         info.entrypoint = "main";
     } else if (formats & SDL_GPU_SHADERFORMAT_MSL) {
         info.format = SDL_GPU_SHADERFORMAT_MSL;
-        const char* src = clipped ? model_clip_vert_msl : vertex ? model_vert_msl : model_frag_msl;
-        info.code = reinterpret_cast<const Uint8*>(src);
-        info.code_size = std::strlen(src);
+        info.code = reinterpret_cast<const Uint8*>(code.msl);
+        info.code_size = std::strlen(code.msl);
         info.entrypoint = "main0";
     } else {
         LOG_WARN("GPU driver %s accepts none of our shader formats", driver_name());
@@ -382,9 +389,18 @@ std::vector<PipelineKey> warm_keys() {
             k.clipped = true;
             keys.push_back(k);
         }
+    // The showroom rims' turned copies (DrawItem::spin_turn): their opaque and blended passes.
+    for (BlendMode b : {BlendMode::Opaque, BlendMode::Alpha, BlendMode::Additive})
+        for (CullMode c : {CullMode::Back, CullMode::None}) {
+            PipelineKey k;
+            k.blend = b, k.depth_write = b != BlendMode::Additive, k.cull = c, k.spin_copy = true;
+            keys.push_back(k);
+        }
     // The replay depth of field's downsampled pictures (View3D::encode_dof).
     PipelineKey single;
     single.cull = CullMode::None, single.depth_write = false, single.single = true;
+    keys.push_back(single);
+    single.blend = BlendMode::Alpha; // (and the spin copies' filter, View3D::spin_resolve)
     keys.push_back(single);
     return keys;
 }
@@ -401,6 +417,7 @@ void GpuContext::warm_pipelines() {
         int made = 0;
         for (const PipelineKey& k : keys) {
             if (warm_stop_) return;
+            if (k.spin_copy && !spin_copies()) continue;
             made += build_pipeline(k);
         }
         LOG_INFO("3D pipelines warmed: %d in %.0f ms", made, double(SDL_GetTicksNS() - t0) / 1e6);
@@ -429,9 +446,9 @@ SDL_GPUGraphicsPipeline* GpuContext::pipeline(const PipelineKey& key) {
     const u64 t0 = SDL_GetTicksNS();
     SDL_GPUGraphicsPipeline* p = create_pipeline(key);
     LOG_INFO("3D pipeline built on first use in %.0f ms: blend %d, cull %d, depth write %d, lines %d, coverage %d, "
-             "alpha %d",
+             "alpha %d, spin copy %d",
              double(SDL_GetTicksNS() - t0) / 1e6, int(key.blend), int(key.cull), int(key.depth_write), int(key.lines),
-             int(key.coverage), int(key.alpha));
+             int(key.coverage), int(key.alpha), int(key.spin_copy));
     std::lock_guard lock(pipelines_mutex_);
     auto [it, added] = pipelines_.emplace(key, p); // failures too, so we don't retry every frame
     if (!added && p) SDL_ReleaseGPUGraphicsPipeline(device_, p); // the warm-up made it meanwhile
@@ -533,8 +550,8 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     }
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
-    info.vertex_shader = key.clipped ? vs_clipped_ : vs_;
-    info.fragment_shader = fs_;
+    info.vertex_shader = key.clipped ? vs_clipped_ : key.spin_copy ? vs_copy_ : vs_;
+    info.fragment_shader = key.spin_copy ? fs_copy_ : fs_;
     info.vertex_input_state.vertex_buffer_descriptions = &vb;
     info.vertex_input_state.num_vertex_buffers = 1;
     info.vertex_input_state.vertex_attributes = attrs;

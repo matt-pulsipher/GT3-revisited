@@ -29,6 +29,8 @@ struct VertexUniforms {
     float fog[4];    // GT3 fog: x distance A, y 1 - minimum visibility, z = 1 on; w > 0: GT3's
                      // guard band (DrawItem::guard_band), its near plane in the item's eye space
     float far_clip[4]; // x > 0: GT3's far plane in the item's eye space (DrawOptions::far_clip)
+    float spin_axis[4];  // DrawItem::spin_turn's copies (model space): the axle, w the turn between copies
+    float spin_pivot[4]; // a point on the axle
 };
 // model.vert's VertexLighting (slot 1): GT3's VU lighting per vertex.
 struct VertexLighting {
@@ -87,7 +89,7 @@ struct FragmentUniforms {
     float output[4]; // x = 1: quantise the colour to 5 bits per channel (DrawOptions::quantize_rgb5);
                      // y = 1: the vertex colour is linear in screen space (DrawItem::guard_band);
                      // z = 1: the bound texture filtered as the GS does (DrawItem::gs_bilinear)
-    float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level
+    float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level; w spin copies' cells
     float wheel_steps[4]; // DrawItem::wheel_steps
 };
 
@@ -275,6 +277,20 @@ u8 gs_bilinear_texel(const u8* px, int w, int h, float u, float v) {
     const int x = int(iu), y = int(iv);
     return u8(lerp(lerp(at(x, y), at(x + 1, y), fu), lerp(at(x, y + 1), at(x + 1, y + 1), fu), fv));
 }
+
+int spin_copy_at(int x, int y, int sample, int cells) {
+    static constexpr int kCells[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
+    return kCells[(y & 3) * 4 + (x & 3)] * cells / 16 + cells * sample;
+}
+
+int spin_copy_count(float spread_px, float radius_px, int samples) {
+    int n = std::max(samples, 1);
+    const float most = std::min(64.0f, radius_px / 1.5f); // (copies 1.5 pixels apart over a radian)
+    while (2 * n <= most && n < 16 * samples && spread_px > 1.5f * float(n)) n *= 2;
+    return n;
+}
+
+int spin_copy_period(int cells) { return cells <= 1 ? 1 : cells <= 4 ? 2 : 4; }
 
 std::array<u8, 3> sheen_vertex_bytes(const scene::Material& m, const Vec3& light, const float light_spec[3],
                                      const Vec3& viewer, const Vec3& pos, const Vec3& normal) {
@@ -598,7 +614,10 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     SDL_SetGPUViewport(pass, &used_viewport);
     SDL_SetGPUScissor(pass, &used_rect);
     frame_alpha_written_ = false;
+    spin_rects_.clear();
+    spin_px_ = 0.5f * float(pw);
     encode(cmd, pass, view, proj, eye, items, opt, Items::Early);
+    spin_px_ = 0;
     if (!after_pass) encode_after_scene(cmd, pass, view, proj, eye, items, opt, screen);
     SDL_EndGPURenderPass(pass);
     if (dof) encode_dof(cmd, opt, proj, aspect, staged, cycle);
@@ -646,6 +665,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         SDL_EndGPURenderPass(pass);
     }
     guard_on_ = false; // (the other entry points draw every triangle themselves)
+    if (!spin_rects_.empty()) spin_resolve(cmd, staged, pw, ph, cycle);
     if (post) {
         // The finished picture (graded), then the frozen one and the last one over it.
         SDL_GPUColorTargetInfo pt{};
@@ -1141,6 +1161,48 @@ void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass,
     ++stats_.draw_calls;
 }
 
+// A modelled rim's turned copies (DrawItem::spin_turn) leave each pixel the mean of the copies its
+// samples hold, a different set from its neighbours' over a 2 x 2 or 4 x 4 cell pattern. Over each
+// rim's place on screen the picture is then filtered by a kernel that weighs every cell alike
+// (spin_copy_period's taps, from a copy of the picture): the mean of all the copies, at the weight
+// of how far apart a pixel's own copies lie at the rim's edge (1 from a pixel on), so a rim hardly
+// turning keeps its sharpness. The heat haze's copy of the picture is free by then and is reused.
+void View3D::spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle) {
+    const int samples = ctx_.gles() ? 1 : ctx_.msaa(); // (the OpenGL ES variant has no sample masks)
+    auto weight_of = [&](const SpinRect& s) { return s.period < 2 ? 0.0f : std::min(s.spread_px / float(samples), 1.0f); };
+    if (std::none_of(spin_rects_.begin(), spin_rects_.end(), [&](const SpinRect& s) { return weight_of(s) >= 0.02f; }))
+        return; // (a copy a sample: nothing to even out)
+    if (!ensure_post(&haze_src_) || !ensure_quad()) return;
+    copy_picture(cmd, picture, haze_src_, pw, ph, cycle);
+    SDL_GPUColorTargetInfo t{};
+    t.texture = picture;
+    t.load_op = SDL_GPU_LOADOP_LOAD;
+    t.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &t, 1, nullptr);
+    if (!pass) return;
+    const SDL_GPUViewport vp{0, 0, float(pw), float(ph), 0, 1};
+    SDL_SetGPUViewport(pass, &vp);
+    const float W = float(width_), H = float(height_);
+    Resample r;
+    r.scale[0] = float(pw) / W, r.scale[1] = float(ph) / H;
+    r.clamp[0] = 0.5f / W, r.clamp[1] = 0.5f / H;
+    r.clamp[2] = (float(pw) - 0.5f) / W, r.clamp[3] = (float(ph) - 0.5f) / H;
+    r.step[0] = 1.0f / W, r.step[1] = 1.0f / H;
+    for (const SpinRect& s : spin_rects_) {
+        const float weight = weight_of(s);
+        r.taps[0] = r.taps[1] = float(s.period);
+        const int x0 = std::clamp(int(std::floor((s.x0 * 0.5f + 0.5f) * float(pw))), 0, pw);
+        const int x1 = std::clamp(int(std::ceil((s.x1 * 0.5f + 0.5f) * float(pw))), 0, pw);
+        const int y0 = std::clamp(int(std::floor((0.5f - s.y1 * 0.5f) * float(ph))), 0, ph);
+        const int y1 = std::clamp(int(std::ceil((0.5f - s.y0 * 0.5f) * float(ph))), 0, ph);
+        if (weight < 0.02f || x1 <= x0 || y1 <= y0) continue;
+        const SDL_Rect sc{x0, y0, x1 - x0, y1 - y0};
+        SDL_SetGPUScissor(pass, &sc);
+        encode_resample(cmd, pass, haze_src_, r, weight, 0.0f, true);
+    }
+    SDL_EndGPURenderPass(pass);
+}
+
 // presentation §G17. The GS samples a pixel at its corner, the bilinear filter at the
 // coordinate - 0.5: GT3's coordinates (+0.5 +0.5 in the pyramid, -0.5 +0.5 in the layers) make
 // each level the mean of 2 x 2 texels of the one before, or of 2 x 1 / 1 x 2 where an axis keeps
@@ -1399,6 +1461,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         const GpuModel::MeshInfo* mesh;
         Mat4 world;
         float dist;
+        int copies = 0, cells = 0; // a DrawItem::spin_turn item's turned copies (instances)
     };
     std::vector<Visible> vis;
     stats_ = {};
@@ -1419,7 +1482,39 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                 continue;
             }
             ++stats_.meshes_drawn;
-            vis.push_back({&item, &mesh, m.world, m.dist});
+            if (item.spin_turn == 0 || !ctx_.spin_copies()) {
+                vis.push_back({&item, &mesh, m.world, m.dist});
+                continue;
+            }
+            // A spinning modelled rim: copies turned about the item's x axis, as many as its size on
+            // screen asks (the mesh's bounding sphere, widened by its nearest depth). Views without
+            // spin_resolve (VR eyes, offscreen buffers, the reflection cube) draw one a sample.
+            const int samples = ctx_.gles() ? 1 : ctx_.msaa(); // (the OpenGL ES variant has no sample masks)
+            const Vec3 c = m.center;
+            const float r = m.radius;
+            const float cw = view_proj.at(3, 0) * c.x + view_proj.at(3, 1) * c.y + view_proj.at(3, 2) * c.z +
+                             view_proj.at(3, 3);
+            const float sx = std::fabs(proj.at(0, 0)), sy = std::fabs(proj.at(1, 1));
+            const bool in_front = cw - r > 1e-3f;
+            const float radius_px = in_front ? r * sx / cw * spin_px_ : 0.0f;
+            const float spread_px = radius_px * std::fabs(item.spin_turn);
+            const int n = spin_px_ > 0 ? spin_copy_count(spread_px, radius_px, samples) : samples;
+            const int cells = std::max(n / samples, 1);
+            vis.push_back({&item, &mesh, m.world, m.dist, n, cells});
+            if (spin_px_ > 0 && in_front) {
+                const Vec3 cc = view_proj.transform_point(c);
+                const float rx = 1.1f * r * sx / (cw - r), ry = 1.1f * r * sy / (cw - r);
+                SpinRect s{&item, cc.x / cw - rx, cc.y / cw - ry, cc.x / cw + rx, cc.y / cw + ry, spread_px,
+                           spin_copy_period(cells)};
+                if (!spin_rects_.empty() && spin_rects_.back().item == &item) {
+                    SpinRect& u = spin_rects_.back(); // another mesh of the same rim
+                    u.x0 = std::min(u.x0, s.x0), u.y0 = std::min(u.y0, s.y0);
+                    u.x1 = std::max(u.x1, s.x1), u.y1 = std::max(u.y1, s.y1);
+                    u.spread_px = std::max(u.spread_px, s.spread_px), u.period = std::max(u.period, s.period);
+                } else {
+                    spin_rects_.push_back(s);
+                }
+            }
         }
     }
 
@@ -1430,10 +1525,11 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     struct PendingDraw {
         u32 first = 0, count = 0;
         s32 vertex_offset = 0;
+        u32 instances = 1;
     } pending;
     auto flush = [&] {
         if (pending.count == 0) return;
-        SDL_DrawGPUIndexedPrimitives(pass, pending.count, 1, pending.first, pending.vertex_offset, 0);
+        SDL_DrawGPUIndexedPrimitives(pass, pending.count, pending.instances, pending.first, pending.vertex_offset, 0);
         ++stats_.draw_calls;
         pending.count = 0;
     };
@@ -1494,6 +1590,13 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         std::copy(nm.m.begin(), nm.m.end(), vu.normal_mat);
         for (int i = 0; i < 4; ++i) vu.view_z[i] = view.at(2, i);
         vu.fog[0] = opt.fog_start, vu.fog[1] = opt.fog_max, vu.fog[2] = opt.fog_gt3 ? 1.0f : 0.0f;
+        if (v.copies > 0) { // the item's x axis through its origin, in the mesh's frame
+            const Mat4 to_mesh = inverse(v.mesh->transform);
+            const Vec3 o = to_mesh.transform_point({0, 0, 0}), a = normalize(to_mesh.transform_point({1, 0, 0}) - o);
+            vu.spin_axis[0] = a.x, vu.spin_axis[1] = a.y, vu.spin_axis[2] = a.z;
+            vu.spin_axis[3] = v.item->spin_turn / float(v.copies);
+            vu.spin_pivot[0] = o.x, vu.spin_pivot[1] = o.y, vu.spin_pivot[2] = o.z;
+        }
         // GT3's near plane in the item's eye space (the backdrop's modelview scale: s x the depth).
         if (guard_on_ && v.item->guard_band && !lines)
             vu.fog[3] = opt.guard_near / std::max(v.item->modelview_scale, 1e-6f);
@@ -1523,6 +1626,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             key.cull = key.cull == CullMode::Back ? CullMode::Front : CullMode::Back;
         key.depth_write = !(p.flags & scene::kNoDepthWrite) && !background && half != 2;
         key.coverage = opt.clear[3] < 1.0f;
+        key.spin_copy = v.copies > 0;
         bool faded = v.item->alpha < 1.0f;
         if (faded && key.blend == BlendMode::Opaque) key.blend = BlendMode::Alpha;
         if (v.item->dest_alpha_blend && key.blend != BlendMode::Opaque)
@@ -1649,6 +1753,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         fu.wheel_blur[0] = textured ? float(v.item->wheel_blur) : 0.0f;
         fu.wheel_blur[1] = v.item->wheel_blur_lod;
         for (int i = 0; i < 4; ++i) fu.wheel_steps[i] = v.item->wheel_steps[size_t(i)];
+        fu.wheel_blur[3] = key.spin_copy ? float(v.cells) : 0.0f;
         fu.tint[3] = std::max(v.item->alpha, 0.0f); // > 1 (blended items): the blend clamps
         fu.tint[0] = fu.tint[1] = fu.tint[2] = v.item->tint;
         const bool guard = guard_on_ && v.item->guard_band;
@@ -1720,14 +1825,15 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         }
         push_fragment(fu);
         const u32 first = v.mesh->index_offset + p.first_index;
+        const u32 instances = u32(std::max(v.copies, 1));
         if (pending.count > 0 && pending.first + pending.count == first &&
-            pending.vertex_offset == v.mesh->vertex_offset)
+            pending.vertex_offset == v.mesh->vertex_offset && pending.instances == instances)
             pending.count += p.index_count;
         else {
             flush();
-            pending = {first, p.index_count, v.mesh->vertex_offset};
+            pending = {first, p.index_count, v.mesh->vertex_offset, instances};
         }
-        stats_.triangles += p.index_count / 3;
+        stats_.triangles += p.index_count / 3 * instances;
         // The triangles GT3 clips at the guard band: their pieces (upload_clipped), in place of the
         // ones the draw above leaves out (model.vert).
         if (!guard) return;
