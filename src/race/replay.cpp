@@ -4,12 +4,11 @@
 #include "base/log.h"
 #include "sim/exact/race_record.h"
 
-#include <SDL3/SDL.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <ctime>
+#include <string_view>
 
 namespace gt3r::race {
 
@@ -347,15 +346,14 @@ sim::ControlInputs ReplayPlayer::next_inputs() {
 }
 
 std::optional<std::string> save_replay(const Replay& r, const std::string& dir) {
-    SDL_CreateDirectory(dir.c_str());
+    host_make_dir(dir);
     std::time_t now = std::time(nullptr);
     char stamp[32];
     std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
     const std::string base = dir + (dir.empty() || dir.back() == '/' ? "" : "/") + r.course + "_" + r.car + "_";
     std::string path = base + stamp + ".gt3replay";
     // Two saves in the same second: the next free second's stamp (names stay sortable).
-    SDL_PathInfo info;
-    for (int i = 1; i < 60 && SDL_GetPathInfo(path.c_str(), &info); ++i) {
+    for (int i = 1; i < 60 && host_path_exists(path); ++i) {
         std::time_t t = now + i;
         std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&t));
         path = base + stamp + ".gt3replay";
@@ -370,14 +368,12 @@ std::optional<std::string> save_replay(const Replay& r, const std::string& dir) 
 
 std::vector<ReplayFile> list_replays(const std::string& dir) {
     std::vector<ReplayFile> out;
-    int count = 0;
-    char** names = SDL_GlobDirectory(dir.c_str(), "*.gt3replay", 0, &count);
-    if (!names) return out;
-    for (int i = 0; i < count; ++i) {
-        std::string n = names[i];
-        out.push_back({dir + (dir.empty() || dir.back() == '/' ? "" : "/") + n, n});
+    constexpr std::string_view kExt = ".gt3replay";
+    for (const HostDirEntry& e : host_dir_entries(dir)) {
+        if (e.dir || e.name.size() <= kExt.size() || e.name.compare(e.name.size() - kExt.size(), kExt.size(), kExt) != 0)
+            continue;
+        out.push_back({dir + (dir.empty() || dir.back() == '/' ? "" : "/") + e.name, e.name});
     }
-    SDL_free(names);
     // File names end in a timestamp: newest first by name order within a course/car, then overall by stamp.
     auto stamp = [](const std::string& n) { return n.size() > 25 ? n.substr(n.size() - 25) : n; };
     std::sort(out.begin(), out.end(), [&](const ReplayFile& a, const ReplayFile& b) { return stamp(a.name) > stamp(b.name); });

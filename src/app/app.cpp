@@ -9,6 +9,8 @@
 #include "formats/png_writer.h"
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
+#include "game/save_folder.h"
+#include "platform/document_tree.h"
 #include "platform/aspect.h"
 #include "platform/ios_files.h"
 #include "platform/music_folder.h"
@@ -76,12 +78,18 @@ bool App::init(int argc, char** argv) {
     SDL_CreateDirectory(mods_dir().c_str());
     config_path_ = data_dir_ + "config.ini";
     if (auto cfg = IniDocument::load(config_path_)) config_ = std::move(*cfg);
-    // iOS: the remembered disc images and music folder readable again (another install's
-    // folder, picked ones).
-    const bool restored = platform::restore_disc_access(config_, data_dir_);
-    if ((platform::restore_music_access(config_, data_dir_) || restored) && !config_.save(config_path_))
-        LOG_WARN("Could not save %s", config_path_.c_str());
+    // iOS: the remembered disc images, music folder and save folder readable again (another
+    // install's folder, picked ones).
+    bool restored = platform::restore_disc_access(config_, data_dir_);
+    restored = platform::restore_folder_access(config_, "music", "folder", data_dir_) || restored;
+    restored = platform::restore_folder_access(config_, "saves", "folder", data_dir_) || restored;
+    if (restored && !config_.save(config_path_)) LOG_WARN("Could not save %s", config_path_.c_str());
     LOG_INFO("User data: %s", data_dir_.c_str());
+    game::set_save_folder(config_.get("saves", "folder").value_or(""));
+    if (save_folder_chosen()) {
+        LOG_INFO("Save folder: %s", save_folder().c_str());
+        if (!save_folder_reachable()) LOG_WARN("The save folder cannot be reached: %s", save_folder().c_str());
+    }
     set_speed_unit(parse_speed_unit(config_.get("race", "units").value_or(""))); // menus and races
 
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight"); // mobile: racing is landscape
@@ -1199,6 +1207,46 @@ void App::follow_music_folder(bool rescan) {
     const std::string folder = music_folder();
     music_access_ = platform::music_access(folder, data_dir_);
     if (!music_.set_folder(music_access_ ? folder : std::string()) && rescan) music_.rescan();
+}
+
+std::string App::save_folder() const { return game::save_folder(); }
+
+bool App::save_folder_chosen() const { return game::save_folder_chosen(); }
+
+bool App::set_save_folder(const std::string& path, game::SaveFolderCopy* copied) {
+    // The user data folder picked in a picker (Android's and iOS's show it) is the default.
+    const bool own = path.empty() || game::same_save_folder(path, data_dir_);
+    const std::string from = save_folder(), to = own ? data_dir_ : path;
+    if (copied) *copied = {};
+    if (game::same_save_folder(from, to)) return true;
+    const game::SaveFolderCopy c = game::copy_save_folder(from, to);
+    if (copied) *copied = c;
+    if (!c.ok) {
+        LOG_WARN("Save folder: could not copy the saves and replays into %s: %s", to.c_str(), SDL_GetError());
+        return false;
+    }
+    LOG_INFO("Save folder: %s (%d saves, %d replays copied in)", to.c_str(), c.saves, c.replays);
+#if defined(SDL_PLATFORM_ANDROID)
+    // The access to a picked folder the game leaves.
+    if (const std::string old = platform::document_tree_of(from); !old.empty() && old != platform::document_tree_of(to))
+        platform::forget_document_tree(old);
+#endif
+    if (own) config_.remove("saves", "folder");
+    else config_.set("saves", "folder", path);
+    save_config();
+    game::set_save_folder(own ? std::string() : path);
+    game::close_gt_mode(); // its session and save library are the other folder's
+    return true;
+}
+
+bool App::save_folder_reachable() const {
+    if (!save_folder_chosen()) return true;
+    const std::string dir = save_folder();
+#if defined(SDL_PLATFORM_ANDROID)
+    if (const std::string tree = platform::document_tree_of(dir); !tree.empty())
+        return platform::document_tree_access(tree) && host_is_directory(tree);
+#endif
+    return host_is_directory(dir);
 }
 
 bool App::show_song() const { return to_lower(config_.get("music", "show_song").value_or("on")) != "off"; }

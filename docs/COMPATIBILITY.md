@@ -23,10 +23,10 @@ The race physics is Gran Turismo 3's own, with its values built in. It
 recognizes each release by the code of the disc's program, so another build of
 the game gets its own release's rules as long as that code matches one of the
 releases above; a part that is unlike every release uses the US rules, and
-Settings > Game disc > Race physics says so (details in the log).
+Settings > Disc & saves > Race physics says so (details in the log).
 
 Other games on the same engine, such as GT Concept, open too. Their races will
-use Gran Turismo 3's physics (Settings > Game disc shows "Race physics: Gran
+use Gran Turismo 3's physics (Settings > Disc & saves shows "Race physics: Gran
 Turismo 3 (this disc's own physics isn't supported yet)"); their own physics
 is planned. Their car database isn't supported yet either, so most of them
 can't race yet: the game says "This disc's car database isn't supported yet".
@@ -36,7 +36,7 @@ Gran Turismo 3's format, which the game reads, so it races.
 A disc image that is shorter than the disc says it should be (a dump that
 stopped early) opens with the message "This disc image is incomplete (2.47 of
 3.67 GB). Make the image again from your disc." on the start screen and under
-Settings > Game disc.
+Settings > Disc & saves.
 
 ## Regions
 
@@ -69,7 +69,7 @@ The game's language decides the rest, as in the original releases:
 - In Japanese every price, prize and game-config sum is × 100 (a new GT Mode
   game starts with 1,500,000 Cr.) and record dates read YY/MM/DD.
 - A PAL disc asks for the language at the first start (the disc's own language
-  page); Settings > Game disc changes it later. The choice is kept per region in
+  page); Settings > Disc & saves changes it later. The choice is kept per region in
   `config.ini` (`[gt3menu] lang_eu`). NTSC-U and NTSC-J discs run in their own
   language only, as the originals do.
 - Each region keeps its own GT Mode saves (`saves/` for NTSC-U, `saves/jp/`,

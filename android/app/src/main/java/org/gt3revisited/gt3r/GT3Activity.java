@@ -57,6 +57,14 @@ public class GT3Activity extends SDLActivity {
             folderPick = tree == null ? "C" : path != null ? "P" + path : "E";
             return;
         }
+        if (requestCode == REQUEST_SAVE_FOLDER) {
+            Uri tree = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            // This app's own folder by its path (no documents API needed there); any other by
+            // its tree, which the game keeps the access to.
+            String own = tree != null && GT3DocumentsProvider.authority(this).equals(tree.getAuthority()) ? treePath(tree) : null;
+            folderPick = tree == null ? "C" : own != null ? "P" + own : documents().keep(tree) ? "T" + tree : "K";
+            return;
+        }
         if (resultCode == RESULT_OK && data != null && data.getData() != null
                 && (data.getFlags() & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0) {
             Uri uri = data.getData();
@@ -119,6 +127,63 @@ public class GT3Activity extends SDLActivity {
         }
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) showFolderPicker();
         else folderPick = "A";
+    }
+
+    // The save folder (src/game/save_folder.h): any folder the system's picker offers, kept
+    // across runs (a persisted read and write permission) and used through its provider
+    // (DocumentTree).
+    private static final int REQUEST_SAVE_FOLDER = 0x6735;
+    private DocumentTree documentTree;
+
+    private synchronized DocumentTree documents() {
+        if (documentTree == null) documentTree = new DocumentTree(getContentResolver());
+        return documentTree;
+    }
+
+    /**
+     * Called from native code: shows the system's folder picker for the save folder, at `start`
+     * (a folder picked before) when it is one. The answer comes from takeFolderPick: "T" and the
+     * folder's tree URI, "P" and a path (a folder of this app's own storage), "C" (cancelled),
+     * "K" (its provider doesn't let the game keep using it) or "F" (no picker).
+     */
+    public boolean pickSaveFolder(String start) {
+        folderPick = null;
+        runOnUiThread(() -> {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                       | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            if (Build.VERSION.SDK_INT >= 26 && start != null && start.startsWith("content://")) {
+                try {
+                    Uri tree = Uri.parse(start);
+                    i.putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+                               DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)));
+                } catch (IllegalArgumentException e) {
+                    Log.i("GT3R", "Not a folder: " + start);
+                }
+            }
+            try {
+                startActivityForResult(i, REQUEST_SAVE_FOLDER);
+            } catch (ActivityNotFoundException | SecurityException e) {
+                Log.i("GT3R", "No folder picker: " + e);
+                folderPick = "F";
+            }
+        });
+        return true;
+    }
+
+    // Called from native code (src/platform/document_tree.cpp): the picked folder's files by
+    // their paths (DocumentTree).
+    public String docUri(String path) { return documents().uri(path); }
+    public String docInfo(String path) { return documents().info(path); }
+    public String[] docList(String dir) { return documents().list(dir); }
+    public String docCreate(String path, boolean dir) { return documents().create(path, dir); }
+    public boolean docRemove(String path) { return documents().remove(path); }
+    public boolean docRename(String from, String to) { return documents().rename(from, to); }
+    public String docTreeName(String tree) { return documents().treeName(tree); }
+    public boolean docTreeAccess(String tree) { return documents().hasAccess(tree); }
+    public boolean docForgetTree(String tree) {
+        documents().release(tree);
+        return true;
     }
 
     private void showFolderPicker() {

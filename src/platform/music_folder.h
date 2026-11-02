@@ -9,6 +9,9 @@
 //            READ_EXTERNAL_STORAGE before Android 13: Android 11 and later then let apps read
 //            audio files by their paths). The folder must be on the device's storage or a
 //            memory card, not in another app's provider (a cloud drive).
+// The save folder (game/save_folder.h) is chosen the same way, but on Android any folder the
+// picker offers goes, read and written through its provider (platform/document_tree.h): its
+// tree URI is the answer's path.
 
 #include <SDL3/SDL_video.h>
 
@@ -17,12 +20,15 @@
 
 namespace gt3r::platform {
 
+enum class FolderUse { Music, Saves };
+
 struct FolderAnswer {
     enum Kind {
         Picked,    // `path`, readable
         Cancelled,
         NoAccess,  // Android: the player didn't allow reading audio files
-        Elsewhere, // Android: a folder of another app's provider, which has no path
+        Elsewhere, // Android: a folder of another app's provider, which has no path (music)
+        NotKept,   // Android: a provider that doesn't let the game keep using its folder (saves)
         Failed,    // no picker could be shown
     } kind = Cancelled;
     std::string path;
@@ -30,7 +36,7 @@ struct FolderAnswer {
 
 // Shows the picker, starting at `start` where the platform can. One at a time: false when one
 // is already open.
-bool start_folder_pick(SDL_Window* window, const std::string& start);
+bool start_folder_pick(SDL_Window* window, const std::string& start, FolderUse use = FolderUse::Music);
 // Each frame while one is open (on the game's thread): the answer once there is one.
 std::optional<FolderAnswer> take_folder_pick();
 

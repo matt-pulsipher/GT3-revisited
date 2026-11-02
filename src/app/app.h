@@ -5,6 +5,7 @@
 #include "audio/audio_engine.h"
 #include "base/config.h"
 #include "disc/disc.h"
+#include "game/save_folder.h"
 #include "input/input_manager.h"
 #include "platform/aspect.h"
 #include "platform/display_insets.h"
@@ -149,6 +150,18 @@ public:
 #endif
     const std::string& data_dir() const { return data_dir_; }
     std::string mods_dir() const { return data_dir_ + "mods"; }
+    // The save folder (game/save_folder.h): [saves] folder, by default the user data folder;
+    // with a trailing separator. GT Mode's saves/ and the replays/ are there.
+    std::string save_folder() const;
+    bool save_folder_chosen() const; // [saves] folder is set (not the user data folder)
+    // Moves to another save folder ("": the user data folder): the saves and replays are copied
+    // in where it has none (game::copy_save_folder), then it is used and kept in the config, and
+    // GT Mode starts again from its saves. False (nothing changed) when they could not be
+    // copied or the folder cannot be written. `copied`: what was copied.
+    bool set_save_folder(const std::string& path, game::SaveFolderCopy* copied = nullptr);
+    // Whether the chosen save folder can be used now (Android: the game keeps its access and
+    // its provider is there; elsewhere: it is there). True for the user data folder.
+    bool save_folder_reachable() const;
     // The player's own race music (race/custom_music.h): [music] folder, by default the user data
     // folder's music/ (made at the first start, so the Files app shows it on phones). Scanned at
     // start, when the folder changes and when the app comes back to the foreground.
@@ -289,7 +302,7 @@ std::unique_ptr<Screen> make_developer_screen(); // Developer options (tools)
 std::unique_ptr<Screen> make_browser_screen(const std::string& open_path = "");
 std::unique_ptr<Screen> make_jukebox_screen();
 std::unique_ptr<Screen> make_mods_screen();
-// Settings; `tab` picks the first page shown (SettingsTab order: 0 Display .. 5 Game disc).
+// Settings; `tab` picks the first page shown (SettingsTab order: 0 Display .. 5 Disc & saves).
 // `to_game`: opened from the game's menus, which it returns to ("Back to game").
 std::unique_ptr<Screen> make_settings_screen(int tab = 0, bool to_game = false);
 constexpr int kSettingsTabControls = 2;

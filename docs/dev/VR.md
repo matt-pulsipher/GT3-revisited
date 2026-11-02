@@ -15,7 +15,7 @@ compiles none of it.
 |---|---|
 | Meta Quest 3 (standalone APK) | ✅ verified: boot movie, menus on the virtual screen, controllers (buttons, sticks, analog triggers), stereo races in the in-car view with the HUD panel and mirror (played by hand, and auto-driven over adb). A steady 90 fps at the recommended 1680x1760 per eye, 4x MSAA (Trial Mountain, in-car): 6.5 ms of GPU and ~3 ms of CPU per frame |
 | Chase views, steering wheel mode, haptics, the menus' pointer | ✅ verified on the Quest 3 (2026-10-19). The pointer's hover focus and the arcade pickers' strip taps (one click chooses) came after that test: covered by disc tests, not yet re-tried in the headset |
-| Disc from the system file picker (the release APK has no `run-as`) | ✅ verified on the Quest 3 (2026-10-19): Settings > Game disc > Browse for a disc image opens the picker over the game; a disc in Download opens through its `content://` URI |
+| Disc from the system file picker (the release APK has no `run-as`) | ✅ verified on the Quest 3 (2026-10-19): Settings > Disc & saves > Browse for a disc image opens the picker over the game; a disc in Download opens through its `content://` URI |
 | Quest 2 / 3S / Pro | ⚠️ unverified (same APK; Quest 2 has less GPU headroom: lower `[vr] resolution` if it misses frames) |
 | Linux + Monado (simulated headset) | ✅ the session, swapchains, frames and stereo races run under Monado's null compositor (below); used for testing without a headset |
 | PC VR (SteamVR, Quest Link) | ⚠️ unverified: desktop builds with `-DGT3R_XR=ON` use the active OpenXR runtime when there is one (Vulkan only: Windows and Linux) |

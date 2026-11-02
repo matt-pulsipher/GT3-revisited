@@ -14,9 +14,9 @@ class Vfs;
 
 namespace gt3r::game {
 
-// Installs the backend. `data_dir`: the user data folder (App::data_dir()); `vfs`: the disc
-// (car / course names and the demonstrations; must outlive the menus).
-void install_replay_theater(std::string data_dir, const Vfs* vfs);
+// Installs the backend. `save_dir`: the save folder (App::save_folder(), game/save_folder.h);
+// `vfs`: the disc (car / course names and the demonstrations; must outlive the menus).
+void install_replay_theater(std::string save_dir, const Vfs* vfs);
 
 // The entries without the menus (tests): kind 0 replays in `replay_dir`, 1 demonstrations.
 std::vector<menu::flow::TheaterEntry> replay_theater_entries(int kind, const std::string& replay_dir, const Vfs* vfs);

@@ -406,7 +406,7 @@ private:
             flow_ = std::make_unique<GameFlow>(vfs_reader(*app.vfs()), lang_);
             flow_->measure_text = font_measure(fonts_);
             connect_options(app);
-            game::install_replay_theater(app.data_dir(), app.vfs()); // Replay Theater files
+            game::install_replay_theater(app.save_folder(), app.vfs()); // Replay Theater files
             install_save_dialogs(app);                                // the save page's file dialogs
             if (language_page_) flow_->start("language", "root");
             else flow_->start();

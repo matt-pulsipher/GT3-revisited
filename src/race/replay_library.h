@@ -1,9 +1,10 @@
 #pragma once
 
 // The saved replays as the Replay Theater lists them: native files in one folder per region,
-// <user data>/replays/ (NTSC-U; replays/jp/, replays/eu/ for the others, whose cars and AI
-// lines differ), where every save from a race lands (time trial, arcade, licence, GT mode,
-// quick race, 2P). No slots and no capacity: as many as the disk holds.
+// <save folder>/replays/ (NTSC-U; replays/jp/, replays/eu/ for the others, whose cars and AI
+// lines differ; the save folder: game/save_folder.h), where every save from a race lands (time
+// trial, arcade, licence, GT mode, quick race, 2P). No slots and no capacity: as many as the
+// disk holds.
 
 #include "disc/region.h"
 #include "race/replay.h"
@@ -13,8 +14,8 @@
 
 namespace gt3r::race {
 
-// <data_dir>/replays, or <data_dir>/replays/<region key> outside NTSC-U.
-std::string replay_dir(const std::string& data_dir, Region region = Region::America);
+// <save_dir>/replays, or <save_dir>/replays/<region key> outside NTSC-U.
+std::string replay_dir(const std::string& save_dir, Region region = Region::America);
 
 struct ReplayEntry {
     std::string path, name; // full path / file name

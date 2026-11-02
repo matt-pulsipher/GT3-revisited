@@ -22,7 +22,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/time_text.h/.cpp` | The menus' time format (`menu_time_text`) and the game's "none" placeholders in the font's long dash (no time, no speed, no date) |
 | `race/machine_test.h/.cpp` | Machine tests: the test from the event, its timing points and goal (`MachineTest`) |
 | `race/lap_events.h/.cpp` | The event display (the pop-ups' queue and timing), race gaps (`PassingOrder`), time trials' best lap and split times (`BestLapSplits`) |
-| `race/replay.h/.cpp` | Replay format, recorder, player, save/list in `<user data>/replays/` |
+| `race/replay.h/.cpp` | Replay format, recorder, player, save/list in `<save folder>/replays/` |
 | `sim/exact/race_record.h/.cpp` | A race on the exact core as a replay keeps it (`RaceRecord`: setup, every car's frames, the game's changes, the end hash), `RacePlayback`, `race_hash` |
 | `race/exact_demo.h/.cpp` | The disc's demo runs as race records (`demo_record`: the race GT3's replay playback builds from the save) |
 | `sim/exact/sparks.h/.cpp`, `race/sparks.h/.cpp` | The race's sparks: the particles in GT3's arithmetic, stepped by `ExactRace::step` (`Sparks`); their draw (`SparkDraw`; see "Sparks") |
@@ -851,7 +851,7 @@ rebuilds its field from the record wherever it is played (`build_vehicle` while 
   (`GameResult::car_condition`); modes without it run every run with a fresh engine.
 - Saving: every race's Save replay (pause list, the quick menus' SAVE / Save replay of GT mode,
   arcade, licence, quick race, 2P) writes at once (a toast, no slot page) to
-  `<user data>/replays/<course>_<car>_<stamp>.gt3replay` (two saves in one second get the next
+  `<save folder>/replays/<course>_<car>_<stamp>.gt3replay` (two saves in one second get the next
   stamp). That folder is all the theater lists: no slots, no capacity limit.
 - Selection screen: Circle lists saved replays; Cross plays one.
 - During playback: the replay cameras, the original's replay pad (see REPLAY OPTIONS below),
@@ -1076,7 +1076,7 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
 
 - **Set-up** (`race/exact_setup.*`): the program data once per CORE.GT3 (`exact_program_data`: GT3's tables, the disc's
   program checked; `race_physics` the one place a disc's physics is chosen: GT3's, `own` false for a program that is not a
-  GT3 release, logged and shown under Settings > Game disc; a program that cannot be read cannot race), the course once per course file (`exact_course`, `sim::exact::RaceCourse`), the
+  GT3 release, logged and shown under Settings > Disc & saves; a program that cannot be read cannot race), the course once per course file (`exact_course`, `sim::exact::RaceCourse`), the
   event record (no event: an empty one, the laps set), the course category, the race mode (single
   player, or the split-screen battle), the start type and countdown from the event (+0x1F3 / +0x1F2;
   battles none), the race's laps, and one race entry per car as GT3's race information holds it: car 0

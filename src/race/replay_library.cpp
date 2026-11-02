@@ -12,8 +12,8 @@
 
 namespace gt3r::race {
 
-std::string replay_dir(const std::string& data_dir, Region region) {
-    std::string d = data_dir;
+std::string replay_dir(const std::string& save_dir, Region region) {
+    std::string d = save_dir;
     if (!d.empty() && d.back() != '/' && d.back() != '\\') d += '/';
     return d + (region == Region::America ? "replays" : std::string("replays/") + region_key(region));
 }
@@ -68,7 +68,7 @@ std::vector<ReplayEntry> list_replay_entries(const std::string& dir) {
 }
 
 bool delete_replay_file(const std::string& path) {
-    bool ok = SDL_RemovePath(path.c_str());
+    bool ok = host_remove(path);
     if (!ok) LOG_WARN("Replays: could not delete %s: %s", path.c_str(), SDL_GetError());
     return ok;
 }
