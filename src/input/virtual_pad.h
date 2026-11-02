@@ -50,9 +50,10 @@ struct PadState {
     static u8 axis_byte(float v);
 };
 
-// Rumble request from the game: DS2 small motor is on/off, large is 0..255.
+// Rumble request from the game: the small (high-frequency) and large (low-frequency) motors, 0..255
+// each. A DS2's small motor is on/off: any level runs it.
 struct PadRumble {
-    bool small = false;
+    u8 small = 0;
     u8 large = 0;
 };
 

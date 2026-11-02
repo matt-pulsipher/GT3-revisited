@@ -224,7 +224,7 @@ public:
         note_left_ -= dt;
         if (rumble_left_ > 0) { // Test rumble
             rumble_left_ -= dt;
-            app.input().set_rumble(rumble_player_, rumble_left_ > 0 ? PadRumble{true, 200} : PadRumble{});
+            app.input().set_rumble(rumble_player_, rumble_left_ > 0 ? PadRumble{200, 200} : PadRumble{});
         }
         if (capture_.state != Capture::State::Idle) {
             update_capture(app, dt);
@@ -1406,16 +1406,15 @@ private:
         for (int p = 0; p < InputManager::kMaxPlayers; ++p) {
             heading(p == 0 ? "Player 1" : "Player 2 (split screen)");
             {
-                // Auto shows what it plays on the controller in use.
+                // Auto shows what it plays.
                 static const char* const kModes[] = {"auto", "modern", "gt3"};
                 const std::string& mode = in.rumble_mode(p);
                 const int midx = mode == "modern" ? 1 : mode == "gt3" ? 2 : 0;
-                const char* const autos = gt3_rumble("auto", in.dualsense(p)) ? "Auto: GT3 original" : "Auto: Modern";
                 choice("Rumble",
-                       "Modern: wall and car hits, curbs, off-road, wheelspin and slides. GT3 original: GT3's own "
-                       "rumble, which most controllers play much stronger than a DualShock 2. Auto: GT3 original on a "
-                       "DualSense.",
-                       {autos, "Modern", "GT3 original"}, midx, [a, p](int i) {
+                       "Modern: both grips, hits and off-road stronger in the left, curbs, wheelspin, slides and "
+                       "locked wheels in the right. GT3 original: GT3's own rumble, which most controllers play "
+                       "much stronger than a DualShock 2.",
+                       {"Auto: Modern", "Modern", "GT3 original"}, midx, [a, p](int i) {
                            a->input().set_rumble_mode(p, kModes[i]);
                            a->save_config();
                        });
@@ -1445,7 +1444,7 @@ private:
             apply(n);
         });
         size_t base = rows_.size();
-        toggle("Trigger effects", "DualSense brake resistance and ABS pulse; Xbox impulse triggers.", c.triggers,
+        toggle("Trigger effects", "DualSense brake resistance, ABS pulse and wheelspin buzz; Xbox impulse triggers.", c.triggers,
                           [apply, c](bool v) {
                               ForceFeedbackConfig n = c;
                               n.triggers = v;

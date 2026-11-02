@@ -49,14 +49,15 @@ class IniDocument;
 // of its own (built-in handheld controls, touch, a controller without motors). A controller that
 // can rumble always rumbles itself and the phone stays still.
 bool use_phone_vibrator(bool enabled, int player, bool device_rumbles);
-// The DS2 rumble as one motor's strength 0..1: the large motor's level, or the small (on/off)
-// motor's 0.6 when stronger.
+// The rumble as one motor's strength 0..1: the stronger motor's level.
 float phone_vibration_strength(const PadRumble& r);
+// The rumble a DualSense is sent: it plays the small motor (the right grip) much lighter than the large one, so
+// the small motor's level is raised 1.75 times (at most full).
+PadRumble dualsense_rumble(const PadRumble& r);
 
 // The race rumble ([playerN] rumble; race::RumbleModel): "gt3" GT3 original, "modern" ours, "auto"
-// (or anything else) GT3 original on a DualSense, whose motors play GT3's levels as a DualShock 2
-// did, and Modern on every other controller, where GT3's low levels buzz all the time.
-bool gt3_rumble(std::string_view mode, bool dualsense);
+// (the default, or anything else) Modern on every controller.
+bool gt3_rumble(std::string_view mode);
 
 // What a device is to Auto: one SDL identifies as a wheel, a gamepad SDL maps, or any other
 // joystick (flight sticks, but also odd HID devices such as some keyboards, mice and macro pads).
@@ -121,17 +122,17 @@ public:
     static bool phone_vibration_available();
     bool phone_vibration() const { return phone_vibration_; }
     void set_phone_vibration(bool on);
-    // [playerN] rumble (auto | modern | gt3), whether the player's device is a DualSense, and
-    // whether their race rumble is GT3 original now (gt3_rumble with the device in use).
+    // [playerN] rumble (auto | modern | gt3), whether the player's device is a DualSense (Modern's mix
+    // for it), and whether their race rumble is GT3 original (gt3_rumble).
     const std::string& rumble_mode(int player) const { return players_[player].rumble_mode; }
     void set_rumble_mode(int player, std::string mode) { players_[player].rumble_mode = std::move(mode); }
     bool dualsense(int player) const;
-    bool gt3_rumble(int player) const { return gt3r::gt3_rumble(players_[player].rumble_mode, dualsense(player)); }
+    bool gt3_rumble(int player) const { return gt3r::gt3_rumble(players_[player].rumble_mode); }
     // Impulse triggers on Xbox One/Series pads (0..1 each). No-op elsewhere.
     void set_trigger_rumble(int player, float left, float right);
     // Driving feedback for this frame (call every frame while driving):
-    // DualSense brake-trigger resistance and ABS pulse, Xbox impulse-trigger
-    // ABS pulse, wheel spring + steering force. Effects stop by themselves
+    // DualSense brake-trigger resistance and ABS pulse and throttle-trigger
+    // wheelspin buzz, Xbox impulse-trigger ABS pulse, wheel spring + steering force. Effects stop by themselves
     // ~0.25 s after the last call. See docs/INPUT.md "Force feedback".
     void set_force_feedback(int player, const ForceFeedbackState& state);
     const ForceFeedbackConfig& ffb_config() const { return ffb_.config(); }
@@ -261,7 +262,7 @@ private:
         std::string name;
         bool has_accel = false;
         bool wheel = false; // SDL identifies it as a wheel (Auto takes it first)
-        bool dualsense = false; // a PlayStation 5 controller (the Auto rumble's GT3 original)
+        bool dualsense = false; // a PlayStation 5 controller (Modern rumble's mix for it, dualsense_rumble)
         std::string serial, path; // for device tags (DeviceId); empty when not reported
     };
     struct Player {
@@ -317,7 +318,8 @@ private:
     void add_chord_input(const InputSource& s);
     void update_chord_capture();
     void update_tilt(Player& p, const Device* dev);
-    int brake_trigger(const Player& p) const; // SDL trigger axis bound to the brake, or -1
+    // SDL trigger axis bound to a pedal (Square the brake, Cross the throttle), or -1.
+    int pedal_trigger(const Player& p, PadButton pedal) const;
     void vibrate_phone(float strength);       // 0 stops it
     void apply_background() const;            // SDL's background hint: background_ or background_held_
 

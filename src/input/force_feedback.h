@@ -9,7 +9,7 @@
 // (pause, menus, screen change). Configuration, [ffb] in config.ini:
 //
 //   enabled  = on      ; master switch
-//   triggers = on      ; DualSense resistance / Xbox impulse triggers on the brake trigger
+//   triggers = on      ; DualSense brake resistance and throttle buzz / Xbox impulse triggers
 //   wheel    = on      ; wheel force feedback (spring + steering force)
 //   strength = 1.0     ; overall wheel force (0..2)
 //   spring   = 0.6     ; self-centring spring at speed (0..1)
@@ -35,6 +35,7 @@ struct ForceFeedbackState {
     bool abs_active = false;
     float steer_force = 0;  // -1..1 force the wheel should apply; positive turns it clockwise (right)
     float jolt = 0;         // 0..1 impact this frame (walls, cars)
+    float wheelspin = 0;    // 0..1 the drive wheels spinning under throttle (race::RumbleModel::wheelspin)
 };
 
 struct ForceFeedbackConfig {
@@ -54,8 +55,14 @@ TriggerEffect trigger_off();
 TriggerEffect trigger_resistance(float start, float force);
 // Vibration at `hz` with amplitude 0..1, from `start`.
 TriggerEffect trigger_vibration(float start, int hz, float amplitude);
-// What the brake trigger should do for a state (pure; unit-tested).
+// What the brake and throttle triggers should do for a state (pure; unit-tested).
 TriggerEffect brake_trigger_effect(const ForceFeedbackState& s, const ForceFeedbackConfig& c);
+TriggerEffect throttle_trigger_effect(const ForceFeedbackState& s, const ForceFeedbackConfig& c);
+// The DualSense effects packet for both triggers (SDL_SendGamepadEffect's payload) with the motors SDL
+// plays in it, 0..255 each (0, 0: none), the way SDL's own packets carry them: `improved` for the
+// rumble emulation of firmware 2.24 and newer, else the older one at half strength.
+using Ds5Packet = std::array<u8, 47>;
+Ds5Packet ds5_trigger_packet(const TriggerEffect& left, const TriggerEffect& right, u8 low, u8 high, bool improved);
 
 // Wheel: spring coefficient and constant-force level, both 0..32767 / +-32767.
 int wheel_spring_coefficient(const ForceFeedbackState& s, const ForceFeedbackConfig& c);
@@ -74,12 +81,15 @@ public:
     void configure(const ForceFeedbackConfig& c) { cfg_ = c; }
     const ForceFeedbackConfig& config() const { return cfg_; }
 
-    // `brake_trigger`: SDL_GAMEPAD_AXIS_LEFT/RIGHT_TRIGGER bound to the brake,
-    // or -1. `joystick` is used for haptics when `gamepad` is null (wheels).
+    // `brake_trigger`, `throttle_trigger`: SDL_GAMEPAD_AXIS_LEFT/RIGHT_TRIGGER bound to the brake
+    // and the throttle, or -1. `joystick` is used for haptics when `gamepad` is null (wheels).
     void apply(SDL_JoystickID id, SDL_Gamepad* gamepad, SDL_Joystick* joystick, int brake_trigger,
-               const ForceFeedbackState& s, double time);
+               int throttle_trigger, const ForceFeedbackState& s, double time);
     void stop(SDL_JoystickID id);
     void forget(SDL_JoystickID id); // device removed (handles closed by SDL)
+    // The motors SDL plays on a gamepad from now on (InputManager::set_rumble, 0..255 each): the
+    // DualSense's trigger packets carry them.
+    void rumbling(SDL_JoystickID id, u8 low, u8 high);
     // Whether the wheel's force effects are ours (a spring or constant force made). Joystick rumble
     // must not reach it then: SDL's DirectInput and macOS rumble resets the device's force
     // feedback the first time it runs, which removes those effects.
@@ -90,8 +100,10 @@ private:
         SDL_JoystickID id = 0;
         SDL_Gamepad* gamepad = nullptr;
         bool active = false;
-        int sent_trigger = -2;       // which trigger got the last DS5 packet
-        ffb::TriggerEffect sent{};   // last DS5 trigger block
+        bool sent_triggers = false;  // a DS5 trigger packet is in effect
+        ffb::TriggerEffect sent_left{}, sent_right{}; // its trigger blocks
+        u8 rumble_low = 0, rumble_high = 0; // the motors SDL plays (rumbling), since rumble_ticks
+        Uint64 rumble_ticks = 0;            // SDL_GetTicks()
         bool impulse_on = false;
         SDL_Haptic* haptic = nullptr;
         bool haptic_tried = false;
@@ -100,6 +112,7 @@ private:
     };
     Dev& dev(SDL_JoystickID id);
     void stop(Dev& d);
+    void send_triggers(Dev& d, const ffb::TriggerEffect& left, const ffb::TriggerEffect& right);
     void apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, bool restart = false);
 
     ForceFeedbackConfig cfg_;

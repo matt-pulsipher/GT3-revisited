@@ -64,17 +64,21 @@ private:
 };
 
 // The controller's motors in a race, two ways; each player's Rumble setting picks one
-// (InputManager::gt3_rumble: Auto takes GT3 original on a DualSense, Modern elsewhere).
+// (InputManager::gt3_rumble: Auto is Modern).
 // - GT3 original, as GT3 drives a DualShock 2 (physics §1.2, phase 12's pad vibration): each race
 //   step's vibration level (VehicleTelemetry::pad_rumble, 0..127) goes to the large motor as it is
 //   and the small motor never runs. Most controllers' motors play its low levels much stronger
 //   than a DualShock 2's, so it buzzes all the time there.
-// - Modern (ours): what the car meets, each on its own: a wall or car hit pulses the large motor
-//   for 0.25 s by its speed change; off-road, wheelspin and a slide (the tyre squeal's slip
-//   intensity, physics §8.3) hold it; curbs pulse the small motor at a rate that follows the speed.
+// - Modern (ours): what the car meets, each on its own, on both motors with a lean: the body on
+//   the large (low-frequency, left) motor and the tyres on the small (high-frequency, right) one,
+//   the other motor at 0.35 of it, or 0.7 on a DualSense, whose motors play in separate grips where
+//   a split reads as a side. A wall or car hit pulses for 0.25 s by its speed change and off-road
+//   holds, leaning large; wheelspin, a slide (the tyre squeal's slip intensity, physics §8.3) and
+//   locked wheels hold, and curbs pulse at a rate that follows the speed, leaning small.
 // Either way a car the pad does not drive (VehicleTelemetry::pad_output: an AI run-up, after the
-// finish) sends nothing, so its motors stop. Ours too: the adaptive triggers (ABS chatter,
-// wheelspin buzz), which a DualShock 2 does not have. Feed it after every step; read
+// finish) sends nothing, so its motors stop. Ours too: the impulse triggers (lock-up chatter,
+// wheelspin buzz), which a DualShock 2 does not have, and the wheelspin for the DualSense's
+// throttle trigger (ForceFeedbackState::wheelspin). Feed it after every step; read
 // rumble()/triggers() and pass them to InputManager.
 class RumbleModel {
 public:
@@ -90,14 +94,16 @@ public:
                 double dt);
     void reset();
 
-    // The motors: GT3 original's (`gt3`) or Modern's.
-    PadRumble rumble(bool gt3) const { return gt3 ? gt3_ : modern_; }
+    // The motors: GT3 original's (`gt3`) or Modern's, mixed for a DualSense (`dualsense`) or another pad.
+    PadRumble rumble(bool gt3, bool dualsense) const;
     float trigger_left() const { return trig_l_; }  // brake trigger: ABS / lock-up
     float trigger_right() const { return trig_r_; } // throttle trigger: wheelspin
+    float wheelspin() const { return spin_; }       // 0..1: the drive wheels spinning under throttle
 
 private:
-    PadRumble gt3_, modern_;
-    float trig_l_ = 0, trig_r_ = 0;
+    PadRumble gt3_;
+    float body_ = 0, tyres_ = 0; // Modern's levels, 0..1
+    float trig_l_ = 0, trig_r_ = 0, spin_ = 0;
     float impact_timer_ = 0, impact_level_ = 0;
     double clock_ = 0;
 };

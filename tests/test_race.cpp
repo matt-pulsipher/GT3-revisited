@@ -406,84 +406,103 @@ TEST(race_rumble) {
     t.pad_output = true;
     const double dt = 1.0 / 60.0;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(true).large == 0 && !rm.rumble(true).small);
-    CHECK(rm.rumble(false).large == 0 && !rm.rumble(false).small);
+    CHECK(rm.rumble(true, false).large == 0 && !rm.rumble(true, false).small);
+    CHECK(rm.rumble(false, false).large == 0 && !rm.rumble(false, false).small);
     // GT3 original: the step's level goes to the large motor as it is (0..127); the small motor never runs.
     // Modern ignores it: nothing happened to the car.
     t.pad_rumble = 100;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(true).large == 100 && !rm.rumble(true).small);
-    CHECK(rm.rumble(false).large == 0 && !rm.rumble(false).small);
+    CHECK(rm.rumble(true, false).large == 100 && !rm.rumble(true, false).small);
+    CHECK(rm.rumble(false, false).large == 0 && !rm.rumble(false, false).small);
     t.pad_rumble = 127;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(true).large == 127);
-    // Modern: a hit pulses the large motor by its speed change for 0.25 s; below 1.5 m/s it is ignored.
+    CHECK(rm.rumble(true, false).large == 127);
+    // Modern: both motors for everything, the body leaning on the large one and the tyres on the small one, the
+    // other motor at 0.35, or 0.7 on a DualSense. A hit pulses by its speed change for 0.25 s; below 1.5 m/s it is
+    // ignored.
+    auto motors = [&rm](u8 large, u8 small, bool dualsense = false) {
+        const PadRumble r = rm.rumble(false, dualsense);
+        return r.large == large && r.small == small;
+    };
+    auto leans_small = [&rm] { // both motors run, the small one stronger
+        const PadRumble r = rm.rumble(false, false);
+        return r.large > 25 && r.large < r.small;
+    };
     ev.impact = 1.0f;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(false).large == 0);
+    CHECK(motors(0, 0));
     ev.impact = 10;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(false).large == 255 && rm.rumble(true).large == 127);
+    CHECK(motors(255, u8(0.35f * 255.0f)) && motors(255, u8(0.7f * 255.0f), true));
+    CHECK(rm.rumble(true, false).large == 127 && rm.rumble(true, true).large == 127);
     ev.impact = 0;
     for (int i = 0; i < 30; ++i) rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(false).large == 0); // the pulse ends
-    // Curbs pulse the small motor; off-road holds the large motor gently.
+    CHECK(motors(0, 0)); // the pulse ends
+    // Curbs pulse both motors, leaning small; off-road holds them gently, leaning large.
     ev.kerb = true;
-    bool on = false, off = false;
+    bool on = false, off = false, other = false;
     for (int i = 0; i < 30; ++i) {
         rm.update(s, &t, ev, in, dt);
-        (rm.rumble(false).small ? on : off) = true;
+        const bool pulse = motors(u8(0.35f * 0.63f * 255.0f), u8(0.63f * 255.0f));
+        if (pulse) CHECK(motors(u8(0.7f * 0.63f * 255.0f), u8(0.63f * 255.0f), true));
+        (pulse ? on : motors(0, 0) ? off : other) = true;
     }
-    CHECK(on && off && !rm.rumble(true).small);
+    CHECK(on && off && !other && !rm.rumble(true, false).small);
     ev.kerb = false, ev.offroad = true;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(false).large > 40 && rm.rumble(false).large < 110);
+    const u8 rough = rm.rumble(false, false).large;
+    CHECK(rough > 40 && rough < 110 && rm.rumble(false, false).small > 0 && rm.rumble(false, false).small < rough);
     ev.offroad = false;
-    // A slide: the tyre squeal's slip intensity past 0.35 grows the large motor, at most 0.35 of full; a wheel in the
-    // air does not count.
+    // A slide: the tyre squeal's slip intensity past 0.35 grows the small motor, at most 0.4 of full; a wheel in
+    // the air does not count.
     for (sim::WheelState& w : s.wheels) w.grounded = true;
     t.smoke = {0.3f, 0.3f, 0.3f, 0.3f};
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(false).large == 0);
+    CHECK(motors(0, 0));
     t.smoke[2] = 0.8f;
     rm.update(s, &t, ev, in, dt);
-    const u8 sliding = rm.rumble(false).large;
-    CHECK(sliding > 30 && sliding < 50);
+    const u8 sliding = rm.rumble(false, false).small;
+    CHECK(sliding > 40 && sliding < 60 && rm.rumble(false, false).large > 0 && rm.rumble(false, false).large < sliding);
     t.smoke[2] = 2.0f;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(false).large == u8(0.35f * 255.0f));
+    CHECK(motors(u8(0.35f * 0.4f * 255.0f), u8(0.4f * 255.0f)));
+    CHECK(motors(u8(0.7f * 0.4f * 255.0f), u8(0.4f * 255.0f), true));
     s.wheels[2].grounded = false;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(false).large == 0);
+    CHECK(motors(0, 0));
     s.wheels[2].grounded = true;
     t.smoke = {};
     // A car the AI drives sends nothing either way: the motors stop. So does a step without telemetry.
     ev.impact = 10, ev.kerb = true;
     t.pad_output = false;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(true).large == 0 && rm.rumble(false).large == 0 && !rm.rumble(false).small);
+    CHECK(rm.rumble(true, false).large == 0 && rm.rumble(false, false).large == 0 && !rm.rumble(false, false).small);
     t.pad_output = true;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.rumble(true).large == 127 && rm.rumble(false).large == 255);
+    CHECK(rm.rumble(true, false).large == 127 && rm.rumble(false, false).large == 255);
     rm.update(s, nullptr, ev, in, dt);
-    CHECK(rm.rumble(true).large == 0 && rm.rumble(false).large == 0);
+    CHECK(rm.rumble(true, false).large == 0 && rm.rumble(false, false).large == 0);
     rm.reset();
     ev = {};
-    // Wheelspin under throttle drives the right trigger (and Modern's large motor).
+    // Wheelspin under throttle drives the right trigger, the DualSense's throttle trigger (wheelspin) and Modern's
+    // motors.
     in.throttle = 1;
     for (sim::WheelState& w : s.wheels) w.slip_ratio = -0.6f; // wheelspin
     rm.update(s, &t, ev, in, dt);
     CHECK(rm.trigger_right() > 0.3f);
     CHECK(rm.trigger_left() == 0);
-    CHECK(rm.rumble(false).large > 40);
-    // Locked wheels under braking (positive slip) chatter on the left trigger.
+    CHECK(rm.wheelspin() > 0.8f);
+    CHECK(rm.rumble(false, false).small > 80 && leans_small());
+    // Locked wheels under braking (positive slip) chatter on the left trigger and hold Modern's motors.
     in.throttle = 0, in.brake = 1;
     for (sim::WheelState& w : s.wheels) w.slip_ratio = 0.7f;
     float peak = 0;
     for (int i = 0; i < 8; ++i) rm.update(s, &t, ev, in, dt), peak = std::max(peak, rm.trigger_left());
-    CHECK(peak > 0.4f && rm.trigger_right() == 0);
+    CHECK(peak > 0.4f && rm.trigger_right() == 0 && rm.wheelspin() == 0);
+    CHECK(rm.rumble(false, false).small > 80 && leans_small());
     rm.reset();
-    CHECK(rm.trigger_right() == 0 && rm.rumble(true).large == 0 && rm.rumble(false).large == 0);
+    CHECK(rm.trigger_right() == 0 && rm.wheelspin() == 0);
+    CHECK(rm.rumble(true, false).large == 0 && rm.rumble(false, false).large == 0);
 }
 
 // Render state decoded from course node programs: alpha-only frame buffer

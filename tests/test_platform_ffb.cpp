@@ -7,6 +7,7 @@
 #include "input/force_feedback.h"
 #include "input/input_manager.h"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace gt3r;
@@ -28,6 +29,40 @@ TEST(ffb_dualsense_brake_trigger) {
     c.triggers = true;
     c.enabled = false;
     CHECK(ffb::brake_trigger_effect(s, c)[0] == 0x05);
+}
+
+TEST(ffb_dualsense_throttle_trigger) {
+    ForceFeedbackConfig c;
+    ForceFeedbackState s;
+    CHECK(ffb::throttle_trigger_effect(s, c) == ffb::trigger_off()); // no wheelspin: free
+    s.wheelspin = 0.2f;
+    ffb::TriggerEffect light = ffb::throttle_trigger_effect(s, c);
+    CHECK(light[0] == 0x06 && light[1] > 0 && light[2] > 0); // a buzz while the wheels spin
+    s.wheelspin = 1;
+    CHECK(ffb::throttle_trigger_effect(s, c)[2] > light[2]); // stronger with more wheelspin
+    c.triggers = false;
+    CHECK(ffb::throttle_trigger_effect(s, c) == ffb::trigger_off());
+    c.triggers = true;
+    c.enabled = false;
+    CHECK(ffb::throttle_trigger_effect(s, c) == ffb::trigger_off());
+}
+
+// The trigger packet keeps the motors SDL plays, as SDL's own packets do (bytes as SDL_hidapi_ps5.c's
+// DS5EffectsState_t): without the rumble bits the pad drops back to its audio haptics and the rumble stops.
+TEST(ffb_dualsense_packet_keeps_rumble) {
+    const ffb::TriggerEffect brake = ffb::trigger_resistance(0.2f, 0.6f), off = ffb::trigger_off();
+    ffb::Ds5Packet p = ffb::ds5_trigger_packet(brake, off, 0, 0, true);
+    CHECK(p[0] == (0x04 | 0x08) && p[2] == 0 && p[3] == 0 && p[38] == 0); // no rumble: triggers only
+    CHECK(std::equal(brake.begin(), brake.end(), p.begin() + 21)); // left trigger block
+    CHECK(std::equal(off.begin(), off.end(), p.begin() + 10));     // right trigger block
+    // Firmware 2.24 on: the improved rumble emulation at full strength.
+    p = ffb::ds5_trigger_packet(brake, off, 200, 100, true);
+    CHECK(p[0] == (0x04 | 0x08 | 0x02) && p[38] == 0x04);
+    CHECK(p[3] == 200 && p[2] == 100); // left (low-frequency) motor, right (high-frequency) motor
+    // Older firmware: the rumble emulation, halved as SDL halves it.
+    p = ffb::ds5_trigger_packet(brake, off, 200, 0, false);
+    CHECK(p[0] == (0x04 | 0x08 | 0x02 | 0x01) && p[38] == 0);
+    CHECK(p[3] == 100 && p[2] == 0);
 }
 
 TEST(ffb_xbox_impulse_pulses_only_with_abs) {
@@ -77,7 +112,7 @@ TEST(ffb_input_manager_without_devices) {
     input.update(0.016);
     input.update(0.5); // times out
     CHECK(input.ffb_config().enabled);
-    input.set_rumble(0, PadRumble{true, 200}); // no device: nothing to rumble
+    input.set_rumble(0, PadRumble{160, 200}); // no device: nothing to rumble
     ForceFeedback ffb;
     CHECK(!ffb.drives_wheel(1)); // no wheel effects made: joystick rumble still goes to the device
 }
@@ -89,14 +124,24 @@ TEST(phone_vibration_only_without_controller_rumble) {
     CHECK(!use_phone_vibrator(true, 0, true));  // a controller that rumbles itself
     CHECK(!use_phone_vibrator(true, 1, false)); // player 2 never shakes the phone
     CHECK(phone_vibration_strength(PadRumble{}) == 0);
-    CHECK(std::fabs(phone_vibration_strength(PadRumble{false, 255}) - 1.0f) < 1e-6f);
-    CHECK(std::fabs(phone_vibration_strength(PadRumble{true, 0}) - 0.6f) < 1e-6f);
-    CHECK(std::fabs(phone_vibration_strength(PadRumble{true, 200}) - 200 / 255.0f) < 1e-6f);
+    CHECK(std::fabs(phone_vibration_strength(PadRumble{0, 255}) - 1.0f) < 1e-6f);
+    CHECK(std::fabs(phone_vibration_strength(PadRumble{153, 0}) - 0.6f) < 1e-6f);
+    CHECK(std::fabs(phone_vibration_strength(PadRumble{160, 200}) - 200 / 255.0f) < 1e-6f);
+}
+
+TEST(dualsense_rumble_right_grip) {
+    // A DualSense gets the small motor (the right grip) 1.75 times stronger, at most full; the large motor as sent.
+    const PadRumble a = dualsense_rumble(PadRumble{100, 120});
+    CHECK(a.small == 175 && a.large == 120);
+    const PadRumble b = dualsense_rumble(PadRumble{200, 0});
+    CHECK(b.small == 255 && b.large == 0);
+    const PadRumble c = dualsense_rumble(PadRumble{});
+    CHECK(c.small == 0 && c.large == 0);
     InputManager input;
     CHECK(!input.phone_vibration());
     input.load(IniDocument::parse("[player1]\nphone_vibration = on\n"));
     CHECK(input.phone_vibration());
-    input.set_rumble(0, PadRumble{true, 200}); // no vibrator off Android: a harmless no-op
+    input.set_rumble(0, PadRumble{160, 200}); // no vibrator off Android: a harmless no-op
     input.set_rumble(0, PadRumble{});
     IniDocument out;
     input.save(out);
@@ -108,11 +153,9 @@ TEST(phone_vibration_only_without_controller_rumble) {
 }
 
 TEST(race_rumble_mode) {
-    // Auto: GT3 original on a DualSense, Modern on anything else; gt3 / modern whatever the device.
-    CHECK(gt3_rumble("auto", true) && !gt3_rumble("auto", false));
-    CHECK(gt3_rumble("gt3", false) && gt3_rumble("gt3", true));
-    CHECK(!gt3_rumble("modern", true) && !gt3_rumble("modern", false));
-    CHECK(!gt3_rumble("", false) && gt3_rumble("", true)); // an unknown value reads as auto
+    // Auto: Modern on every controller, the DualSense too; gt3 is GT3 original.
+    CHECK(!gt3_rumble("auto") && !gt3_rumble("modern") && gt3_rumble("gt3"));
+    CHECK(!gt3_rumble("")); // an unknown value reads as auto
     // Per player, auto by default; no device is no DualSense.
     InputManager input;
     CHECK(input.rumble_mode(0) == "auto" && input.rumble_mode(1) == "auto");

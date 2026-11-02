@@ -32,9 +32,9 @@ generic HID joysticks, wheels and pedals. Devices hot-plug at any time.
 
 | Feature | How it is used |
 |---|---|
-| Rumble | DS2 large motor → low-frequency motor, small motor → high-frequency motor. In races, each player's **Rumble** (Settings → Rumble & feedback, `[playerN] rumble`) picks how the motors run: **GT3 original** (`gt3`) follows GT3's own vibration: each step's level (suspension movement, curbs under the front wheels, the front tires' drive and brake forces, wall hits) on the large motor as GT3 sends it (at most half strength), never the small motor; most controllers play its low levels much stronger than a DualShock 2, so it runs all the time there. **Modern** (`modern`) rumbles for what the car meets: a wall or car hit pulses the large motor for 0.25 s by its speed change, off-road, wheelspin and a slide (the tire squeal) hold it, and curbs pulse the small motor at a rate that follows the speed. **Auto** (`auto`, the default) is GT3 original on a DualSense and Modern on every other controller. Either way, a car the AI drives, as after the finish, does not vibrate |
+| Rumble | DS2 large motor → low-frequency motor, small motor → high-frequency motor. In races, each player's **Rumble** (Settings → Rumble & feedback, `[playerN] rumble`) picks how the motors run: **GT3 original** (`gt3`) follows GT3's own vibration: each step's level (suspension movement, curbs under the front wheels, the front tires' drive and brake forces, wall hits) on the large motor as GT3 sends it (at most half strength), never the small motor; most controllers play its low levels much stronger than a DualShock 2, so it runs all the time there. **Modern** (`modern`) rumbles for what the car meets on both motors, so it is felt in both grips, with a lean: the body stronger on the large motor (the left grip), the tires on the small one (the right grip), the other motor at 35%, or 70% on a DualSense, whose motors play in separate grips where a split feels like a side. A wall or car hit pulses for 0.25 s by its speed change and off-road holds, leaning left; wheelspin, a slide (the tire squeal) and locked wheels hold, and curbs pulse at a rate that follows the speed, leaning right. **Auto** (`auto`, the default) is Modern on every controller. Either way, a car the AI drives, as after the finish, does not vibrate |
 | Phone vibration (Android, off by default) | `[player1] phone_vibration = on` (Settings → Rumble & feedback → Phone vibration): player 1's rumble on the device's own motor, only while the controls driving them have no rumble motor (built-in handheld controls, touch, a controller without motors). A controller that rumbles keeps it; the phone stays still |
-| Impulse triggers (Xbox One/Series) | `InputManager::set_trigger_rumble`, for brake/ABS feedback |
+| Impulse triggers (Xbox One/Series) | `InputManager::set_trigger_rumble`: lock-up and ABS on the brake trigger, wheelspin on the throttle trigger |
 | Player LEDs / light bars | Set to the player number |
 | Button labels | The UI shows Cross/Circle on PlayStation pads and A/B on Xbox pads |
 | Motion sensors | `tilt` source: steer by rolling the controller (DualSense, DS4, Switch Pro, or a phone's own accelerometer on Android and iOS) |
@@ -222,7 +222,7 @@ back to the game; the layout editor's **Done** returns to Settings.
 controller = auto      ; auto, part of a device name ("DualSense", "G29"), or keyboard (only)
 keyboard = on
 race = modern          ; race layout (modern | gt3), used when there is no [player1.race]
-rumble = auto          ; race rumble: auto (GT3 original on a DualSense, else modern) | modern | gt3 (see Native features)
+rumble = auto          ; race rumble: auto (modern) | modern | gt3 (see Native features)
 steering_curve = 1.00  ; race steering = |x|^curve, 0.5..2.5 (see Race controls)
 wheel_steering_curve = 1.00 ; the same for a wheel
 phone_vibration = off  ; Android, player 1 only: rumble on the device's own motor (see Native features)
@@ -400,17 +400,17 @@ players under **Triggers and wheels**.
 
 Beyond DS2 rumble, the race sends a per-frame driving state
 (`InputManager::set_force_feedback`: speed, brake, ABS active, steering
-force, impacts) and each player's device turns it into native feedback:
+force, impacts, wheelspin) and each player's device turns it into native feedback:
 
 | Device | Effect |
 |---|---|
-| DualSense (PS5) | Adaptive trigger on the trigger bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while ABS is working. Sent with `SDL_SendGamepadEffect` only when the effect changes |
+| DualSense (PS5) | Adaptive triggers. The one bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while ABS is working. The one bound to the throttle (Cross): a 35 Hz vibration while the drive wheels spin, stronger with more wheelspin. Both sent in one packet with `SDL_SendGamepadEffect`, only when an effect changes (SDL's trigger rumble does nothing on a DualSense). The packet carries the motors' rumble as SDL's own packets do: without it the controller switches back to its audio haptics and the rumble stops until the next change. A DualSense plays the small motor (the right grip) much lighter than the large one, so its level is sent 1.75 times stronger (at most full; `dualsense_rumble`), and Modern's lean is milder there (see Rumble) |
 | Xbox One/Series | Impulse trigger on the brake trigger pulses at ~16 Hz while ABS is working (`SDL_RumbleGamepadTriggers`) |
 | Wheels with force feedback | SDL haptics: a self-centring spring that firms up with speed (light when stopped, full from 120 km/h) and a constant force from the front tyres' lateral load (self-aligning feel; GT3's own steering-wheel force, sent at each of its 1/127 steps) plus a kick on impacts. The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
 
 Effects stop by themselves ~0.25 s after the last update (pause, menus).
-The brake trigger is found from the race bindings: whichever of
-`pad.lefttrigger` / `pad.righttrigger` drives Square (brake).
+The brake and throttle triggers are found from the race bindings: whichever of
+`pad.lefttrigger` / `pad.righttrigger` drives Square (brake) and Cross (accelerate).
 
 ```ini
 [ffb]
