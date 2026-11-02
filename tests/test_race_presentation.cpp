@@ -182,6 +182,20 @@ TEST(race_speedometer_scale) {
     CHECK(Hud::speed_scale(146.0f, false).n == 3 && Hud::speed_scale(145.0f, false).n == 2);
 }
 
+TEST(race_hud_needle_passes) {
+    // presentation §D1: 8 passes, the first draw (no last angle) all at the angle, jittered by
+    // minus the running sum of the steps.
+    const float dx[8] = {0, -0.5f, 0, -0.5f, 0, -0.5f, 0, -0.5f}, dy[8] = {0, 0, -0.5f, -0.5f, -0.25f, -0.25f, -0.75f, -0.75f};
+    std::array<Hud::NeedlePass, 8> p = Hud::needle_passes(100, Hud::kNoNeedleAngle);
+    for (int k = 0; k < 8; ++k)
+        CHECK(p[size_t(k)].angle == 100 && p[size_t(k)].dx == dx[k] && p[size_t(k)].dy == dy[k]);
+    // Moved 8 degrees since the last draw: passes 1..8 degrees beyond the new angle.
+    p = Hud::needle_passes(100, 92);
+    for (int k = 0; k < 8; ++k) CHECK(p[size_t(k)].angle == 100 + float(k + 1));
+    p = Hud::needle_passes(50, 66); // falling: the passes run below the new angle
+    CHECK(p[0].angle == 48 && p[7].angle == 34);
+}
+
 TEST(race_hud_mode_select) {
     // presentation §D4: each run's layout, the endurance one for 10 laps or more or a time
     // limit (not in a free practice or 2P), the replay / demonstration layouts.
@@ -925,6 +939,7 @@ TEST(race_procedural_cameras) {
         const render::Vec3 a = local(c.eye());
         const float r = std::hypot(a.x, a.z);
         CHECK(r > -0.5f && r < 10.5f && a.y >= 3.0f - 1e-3f && a.y <= 7.0f + 1e-3f);
+        CHECK(near(c.focus(), render::length(a), 1e-3f)); // the depth of field's focus: the eye's distance
         CHECK(c.zoom() >= PC::zoom_of(85.0f) - 1e-3f && c.zoom() <= PC::zoom_of(55.0f) + 1e-3f);
         // Orbit: after its x seconds it holds its end, within 30 degrees of behind the car
         // (+z), 0.1 .. 1.1 m up, the outline + 0.2 .. 5.2 m out (the centre within 0.5 m).
@@ -937,6 +952,8 @@ TEST(race_procedural_cameras) {
         const float az = std::atan2(-e.x, e.z) * 180.0f / 3.14159265f; // 0 = straight behind
         CHECK(std::fabs(az) < 30.0f + 15.0f); // (+ the slid centre's angle)
         CHECK(std::hypot(e.x, e.z) > 2.4f - 0.8f && std::hypot(e.x, e.z) < 7.4f + 0.8f);
+        // Its focus: the eye's distance from the orbit's centre (on the road plane, within 1.12 m).
+        CHECK(m.focus() >= e.y && std::fabs(m.focus() - render::length(e)) < 1.2f);
         // Telephoto: 2.5 .. 6.5 m past a bumper, 0.1 .. 1.3 m up, looking back at the car.
         PC z;
         z.start({3, 0, 2.0f, seed}, car, flat, none);
@@ -947,6 +964,8 @@ TEST(race_procedural_cameras) {
         CHECK(ze.y >= 0.1f - 1e-3f && ze.y <= 1.3f + 1e-3f && std::fabs(ze.x) <= 1.5f + 1e-3f);
         const render::Vec3 at = zv.transform_point(car.pos); // the car ahead in the view (-z)
         CHECK(at.z < 0 && std::fabs(at.x) < -at.z * 0.5f);
+        // Its focus: the distance past the bumper or from the car's origin (a draw at the cut).
+        CHECK(near(z.focus(), std::fabs(ze.z) - 2.2f, 1e-3f) || near(z.focus(), std::fabs(ze.z), 1e-3f));
         // Roadside: still, near the road (0.1 .. 1.1 m up) or 1 m above the car without road.
         PC s;
         s.start({0, 0, 3.0f, seed}, car, flat, none);
@@ -955,6 +974,7 @@ TEST(race_procedural_cameras) {
         moved.pos = {0, 0.3f, -20};
         const render::Mat4 v1 = s.view(moved, flat);
         CHECK(v0.m == v1.m && s.eye().y >= 0.1f - 1e-3f && s.eye().y <= 1.1f + 1e-3f);
+        CHECK(s.focus() == 100.0f);
     }
     // No road anywhere: the Roadside falls back to 1 m above the car, along its motion.
     PC s;
@@ -969,6 +989,7 @@ TEST(race_procedural_cameras) {
     const render::Mat4 bv = b.view(car, flat);
     CHECK(near(b.eye().x, 0, 1e-4f) && near(b.eye().y, 0.45f, 1e-4f) && near(b.eye().z, -1.73f, 1e-4f));
     CHECK(near(b.zoom(), 1.69f) && near(bv.transform_point(car.pos + render::Vec3{0, 0.15f, -11.73f}).z, -10.0f, 1e-3f));
+    CHECK(b.focus() == 100.0f);
     // Flags bit 1: a view from outside (the car drawn); the bumper (0xD) is on board.
     mounts[3].flags = 0xD;
     b.start({4, 3, 2.0f, 1u}, car, flat, mounts);

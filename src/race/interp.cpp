@@ -90,6 +90,8 @@ sim::VehicleState interpolate(const sim::VehicleState& a, const sim::VehicleStat
         w.angular_velocity = lerp(wa.angular_velocity, wb.angular_velocity, t);
         w.suspension = lerp(wa.suspension, wb.suspension, t);
         w.flap = lerp(wa.flap, wb.flap, t);
+        w.camber = lerp(wa.camber, wb.camber, t);
+        w.brake_heat = lerp(wa.brake_heat, wb.brake_heat, t);
     }
     return r;
 }

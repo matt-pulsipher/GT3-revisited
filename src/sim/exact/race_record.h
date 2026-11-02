@@ -43,7 +43,7 @@ struct RaceChange {
 void apply_change(ExactRace& race, const RaceChange& c);
 
 struct RaceRecord {
-    static constexpr u32 kVersion = 3; // the record's own layout (inside a replay file; versions 1 and 2 still read)
+    static constexpr u32 kVersion = 4; // the record's own layout (inside a replay file; versions 1 to 3 still read)
 
     // ---- the program and the course ----
     u64 program = 0;        // ProgramData::fingerprint of the program the race ran on
@@ -76,6 +76,9 @@ struct RaceRecord {
     bool external_ghost = false;
     // The player's recording at the run's end (version 3; SoloRecorders::run_recording): what a ghost of this run plays.
     std::vector<u8> run_recording;
+    // Each entry's spark points as the race had them (RaceSetup::sparks, version 4; a record from before: none, the race as it
+    // ran then).
+    std::vector<std::vector<SparkPoint>> sparks;
     // ---- the frames ----
     u32 frames = 0;                           // frames recorded (ExactRace::step calls)
     std::vector<std::vector<PadFrame>> pads;  // pads[i][t]: car i's frame at frame t (one stream per entry; frames past a
@@ -115,8 +118,8 @@ struct RaceRecord {
 std::vector<u8> run_recording_of(const RaceRecord& r);
 
 // A hash of everything a race step leaves that the next one reads or the game shows: every car's record, the collision
-// bodies, the race order, the race flow's clock and end countdown, the VU0 random register, the start words. Two runs with the
-// same hash after the same frame are the same race (to the hash's 64 bits).
+// bodies, the race order, the race flow's clock and end countdown, the VU0 random register, the start words, the sparks (in a
+// race with spark points). Two runs with the same hash after the same frame are the same race (to the hash's 64 bits).
 u64 race_hash(const ExactRace& race);
 
 // Steps a race from a record: before frame t its changes, then its pads.

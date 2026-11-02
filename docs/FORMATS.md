@@ -245,5 +245,5 @@ sizes.
 
 | Magic / extension | Where | Notes |
 |---|---|---|
-| `GTBR` | `race/brake.bin` | not sound: contains a `Tex1` set at 0x460 (purpose unknown) |
+| `GTBR` | `race/brake.bin` | the brake parts drawn inside race cars' wheels: rotor and caliper images, their tables (docs/formats/car_model.md "Brake parts") |
 | `.cdt` | 30 files, gzip | ? |

@@ -46,6 +46,8 @@
 #include "race/lamp_glows.h"
 #include "race/race_panels.h"
 #include "race/sun_glare.h"
+#include "race/replay_post.h"
+#include "race/sun_disc.h"
 #include "race/results.h"
 #include "race/pause_menu.h"
 #include "race/paint.h"
@@ -59,6 +61,7 @@
 #include "race/point_lights.h"
 #include "formats/text/mltx.h"
 #include "race/pylons.h"
+#include "race/sparks.h"
 #include "race/tyre_smoke.h"
 #include "race/wet_road.h"
 #include "race/road_shade.h"
@@ -267,6 +270,10 @@ private:
     void seed_vehicle_condition(const sim::EngineCondition& c, bool live);
     sim::EngineCondition live_condition() const;
     std::optional<Bytes> read_car(App& app, const std::string& model) const;
+    // A car model's spark points (GTCI +0x58 / +0x5C of read_car's model): ExactFieldOptions::spark_points. Kept by folder
+    // and model (every restart builds the race again).
+    std::vector<sim::exact::SparkPoint> car_spark_points(App& app, const std::string& model) const;
+    mutable std::map<std::string, std::vector<sim::exact::SparkPoint>> spark_points_;
     // Flying start (physics §9.1, 9.4: licence tests and time trials with the event's
     // distance and speed): the race's AI drives the player's car until the first line crossing.
     bool flying_runup() const { return !race_mode_ && tt_start_.flying() && track_ && !track_->lap_started(); }
@@ -341,9 +348,14 @@ private:
     CarLook car_look(const sim::VehicleState& s, bool player, size_t slot) const;
     int car_lamp_index(const sim::VehicleState& s, size_t slot) const;
     static TyreSmoke::View smoke_view(const CameraRig& c, float aspect, float fovy);
-    // `mirror`: the rear-view mirror's pass (its own sky; CourseScene::add_items).
+    // The view items are collected for: the main view, a 2P half, the rear-view mirror (its own
+    // sky; CourseScene::add_items). They differ in the course draw's flags (Env0 +0xF30 / +0xF34 /
+    // +0xF38: the billboards), the sun disc (not in the mirror) and the mirror's passes (presentation
+    // §H2, §I6, §I7).
+    enum class ItemsView { Main = 0, Split = 1, Mirror = 2 };
+    // `smoke_v.forward` is also the camera's view direction for the sun disc (none when zero).
     void collect_items(const render::Vec3& eye, const sim::Vec3& right = {1, 0, 0}, bool player = true,
-                       bool second = true, const TyreSmoke::View& smoke_v = {}, bool mirror = false);
+                       bool second = true, const TyreSmoke::View& smoke_v = {}, ItemsView view = ItemsView::Main);
     size_t player_items_[2] = {0, 0}; // collect_items: the player's car is items_[first, end)
     size_t scenery_items_ = 0;          // collect_items: the course's items are items_[0, end)
     HudData hud_data(int player);
@@ -510,6 +522,8 @@ private:
     // The post-process pass (presentation §G6, §G16): the grade (the shot's levels / filter over
     // the course's Env0 values), the dissolve and the trail.
     void apply_post_pass(render::DrawOptions& o) const;
+    // The replay depth of field (presentation §G17) for the full-frame view.
+    void apply_depth_of_field(render::DrawOptions& o) const;
     // The disc region's replays (race::replay_dir).
     std::string replay_dir(App& app) const {
         return race::replay_dir(app.data_dir(), app.vfs() ? app.vfs()->region().region : Region::America);
@@ -658,8 +672,22 @@ private:
     Pylons pylons_;
     bool pylon_hit_ = false; // the player's car touched a pylon
     TyreSmoke smoke_;                             // tyre smoke / dirt dust (course slots 26 / 32)
+    SparkDraw sparks_;                            // the race's sparks (race/particle.img)
+    // collect_items draws the sparks with this view (the one-player view, the VR head); off for the mirror and the
+    // split-screen halves. The view's camera at the last draw (a change is a cut).
+    bool spark_pass_ = false;
+    render::Mat4 spark_view_;
+    std::optional<CameraRig::Shot> spark_shot_;
     // Per-car light sets this frame (stable addresses; filled while collecting the draw items).
     mutable std::deque<render::ItemLights> item_lights_;
+    // The wheels (race/wheel_fx.h): race/brake.bin, the course's Env0 values, the view collecting
+    // the draw items (null: plain wheels) and each car's track of its wheels on screen (by
+    // car_look slot; the ghost's own).
+    std::optional<BrakeParts> brake_parts_;
+    WheelEnv wheel_env_;
+    const WheelView* wheel_view_ = nullptr;
+    mutable std::deque<WheelTrack> wheel_tracks_;
+    WheelTrack ghost_wheel_track_;
     bool env_cube_on_ = true; // [video] car_reflections
     bool shadows_on_ = true;  // [video] car_shadows
     bool full_car_detail_ = false; // [video] full_car_detail (CarVisual::set_full_detail)
@@ -734,8 +762,21 @@ private:
     bool setting_pending_ = false;
     bool tt_failed_ = false;
     SunGlare sun_;
+    SunDisc sun_disc_; // drawn after the sky dome (Env0 +0x9D4 / +0x9D8)
     bool no_course_fog_ = SDL_getenv("GT3R_NO_COURSE_FOG") != nullptr; // compare with the old linear fog
+    bool dof_off_ = SDL_getenv("GT3R_NO_DOF") != nullptr; // compare without the replay depth of field
+    bool heat_haze_ = false; // [video] heat_haze = on (default off): replays' heat haze lenses
     LampGlows lamps_;
+    // The passes between the 3D scene and the grade, and the replay vignette (presentation §L6):
+    // the heat haze lenses (stepped every 60 Hz tick), and this frame's batches for View3D.
+    HeatHaze haze_;
+    std::vector<HazeLens> haze_lenses_;
+    render::ScreenBatch haze_batch_, overlay_batch_, overlay2_batch_, vignette_batch_;
+    int view_frame_ = 0, haze_log_ = 0; // GT3R_RACE_DEBUG's haze lines: the main view's frames (as GT3R_CAPTURE3D counts)
+    // This frame's passes on the main view's options: the overlay (glare, lamps) for `rect`
+    // (`second`: player 2's view); the haze and the vignette (replays only).
+    void add_screen_passes(render::DrawOptions& o, const SDL_FRect& rect, const CameraRig& cam, float sun_visibility,
+                           bool second, bool split);
     int sun_log_ = 0;
     Billboards billboards_;
     bool original_res_ = false, original_nearest_ = true;

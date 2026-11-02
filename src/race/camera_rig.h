@@ -67,6 +67,15 @@ public:
     void set_start_shot(std::optional<GtrcRecord> r) { start_shot_ = std::move(r); }
     bool intro() const { return intro_; }
     bool look_back() const { return look_back_; }
+    // Which camera the view is on: its mode, the replay's TV camera, director record and procedural cut, the pre-race shot, the
+    // look back. A change is a camera cut (the sparks drop their streaks then, presentation §L7).
+    struct Shot {
+        CameraMode mode = CameraMode::Bumper;
+        int tv = -1, record = -1, serial = -1;
+        bool intro = false, back = false;
+        bool operator==(const Shot&) const = default;
+    };
+    Shot shot() const { return {mode_, tv_active_, director_record_, proc_serial_, intro_, look_back_}; }
 
     // Snap the smoothed chase state to the car (after reset/respawn).
     void snap(const sim::VehicleState& s);
@@ -98,6 +107,9 @@ public:
     // The followed car as the procedural cameras see it (its body origin, extents, attitude).
     static CameraCar camera_car(const sim::VehicleState& s, const sim::VehicleSetup& setup);
     int replay_record() const { return director_record_; }
+    // The camera is a course shot whose record has the heat haze flag (ReplayDirector::Shot::haze;
+    // never the live views, the procedural cameras or a turn on board).
+    bool replay_haze() const { return mode_ == CameraMode::Tv && director_haze_; }
     int tv_index() const { return tv_active_; }
     // The eye is in the car: own car hidden, mirror, in-car HUD and sounds. Not during the
     // pre-race shot, which looks at the car from outside (GT3 draws it with the chase HUD).
@@ -105,6 +117,11 @@ public:
     // The replay camera is one of view mode 1's on-board car mounts (in-car, a bumper, the
     // driver's head): the followed car is not drawn.
     bool replay_on_board() const { return mode_ == CameraMode::Tv && replay_on_board_; }
+    // The depth of field's focus distance (presentation §G17; GT3's camera +0xD0) as of the last
+    // update(): a course shot's distance from its eye to its aim (the car's point 0.4 m up, or
+    // the record's target), the procedural cameras' (ProceduralCamera::focus), 100 m for the
+    // player's views and car mounts; ours: the fallback TV cameras' distance to their aim.
+    float focus() const { return focus_; }
 
     float near_plane = 0.1f, far_plane = 6000.0f;
 
@@ -146,6 +163,7 @@ private:
     int tv_active_ = -1;
     ReplayDirector* director_ = nullptr;
     int lap_ = 0, director_record_ = -1;
+    bool director_haze_ = false;
     std::optional<render::Vec3> replay_aim_;
     std::optional<ReplayDirector::Pair> replay_pair_;
     std::optional<sim::VehicleState> replay_partner_;
@@ -153,6 +171,7 @@ private:
     // Mode 1's procedural camera of the current cut (the director's cut serial), stepped at 60 Hz.
     ProceduralCamera proc_;
     bool replay_on_board_ = false;
+    float focus_ = 100.0f;
     int proc_serial_ = -1;
     double proc_acc_ = 0;
     GroundHeight ground_;

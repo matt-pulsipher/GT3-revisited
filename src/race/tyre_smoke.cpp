@@ -38,6 +38,7 @@ float TyreSmoke::rand01() {
 
 bool TyreSmoke::load(render::GpuContext& ctx, ByteSpan e, ByteSpan tex) {
     gpu_.reset();
+    gpu_blend_.reset();
     clear();
     if (e.size() < 0x920 || std::memcmp(e.data(), "Env0", 4) != 0 || tex.empty() || !Tex1::is_tex1(tex)) return false;
     for (size_t c = 0; c < 6; ++c) {
@@ -100,6 +101,11 @@ bool TyreSmoke::load(render::GpuContext& ctx, ByteSpan e, ByteSpan tex) {
     m.compute_bounds();
     verts_ = m.meshes[0].vertices;
     gpu_ = std::make_unique<render::GpuModel>(ctx, m);
+    if (additive_) { // the mirror draws the puffs straight into its picture with ALPHA 0x44 (Env0 +0x918)
+        m.meshes[0].primitives[0].flags =
+            scene::kAlphaBlend | scene::kUnlit | scene::kNoDepthWrite | scene::kDoubleSided;
+        gpu_blend_ = std::make_unique<render::GpuModel>(ctx, m);
+    }
     return true;
 }
 
@@ -162,7 +168,7 @@ void TyreSmoke::update(double dt) {
 }
 
 void TyreSmoke::add_items(std::vector<render::DrawItem>& items, const render::Vec3& eye, const render::Vec3& right,
-                          const render::Vec3& up, const View& view) {
+                          const render::Vec3& up, const View& view, bool mirror) {
     if (!gpu_) return;
     std::vector<u32> order;
     for (u32 i = 0; i < puffs_.size(); ++i)
@@ -207,7 +213,7 @@ void TyreSmoke::add_items(std::vector<render::DrawItem>& items, const render::Ve
         bool crosses = false, above = false, below = false;
         for (const V& c : quad) (c.pos.y >= g ? above : below) = true;
         crosses = above && below;
-        if (p.size > 3.0f || !crosses || additive_) {
+        if (p.size > 3.0f || !crosses || additive_ || mirror) {
             put(0, {quad[0], quad[1], quad[2], quad[3]});
             put(1, {});
             continue;
@@ -230,9 +236,11 @@ void TyreSmoke::add_items(std::vector<render::DrawItem>& items, const render::Ve
         put(0, up_poly);
         put(1, down_poly);
     }
-    gpu_->update_vertices(verts_);
-    render::DrawItem it{gpu_.get(), {}, 0};
+    render::GpuModel* gpu = mirror && gpu_blend_ ? gpu_blend_.get() : gpu_.get();
+    gpu->update_vertices(verts_);
+    render::DrawItem it{gpu, {}, 0};
     it.helper = true; // never culled (positions change every frame)
+    it.late = true;   // after the whole scene and the heat haze (presentation §L6)
     items.push_back(it);
 }
 

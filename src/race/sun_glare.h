@@ -12,6 +12,7 @@
 
 #include "base/bytes.h"
 #include "render/math3d.h"
+#include "render/screen_batch.h"
 
 #include <SDL3/SDL_render.h>
 
@@ -74,9 +75,17 @@ struct SunParams {
     u32 scene_light_mask = 0; // bit n: scene light n enabled
     // The panoramic environment lookup (course chunk kind 3): Env0 +0xEC0 / +0xEC4.
     std::array<float, 2> panorama{4.0f, 0.25f};
+    // The replay depth of field (presentation §G17): flag 0x100, the lens's f-number +0x930 and
+    // focal length +0x934 (mm), the nearest focus +0x938 (m); the far clip +0x20 (m).
+    bool dof = false;
+    float dof_f_number = 10, dof_focal_mm = 35, dof_min_focus = 4;
+    float far_clip = 1000;
     // The course scenery's light set as GT3's renderer holds it while the course is drawn.
     void course_lights(render::ItemLights& out) const;
     float sky_yaw = 0, sky_pitch = 0; // Env0 +0x28 / +0x48 (degrees): the reflection map's sky dome rotation
+    // The course draw's flags per view (Env0 +0xF30 the main view, +0xF34 the 2P halves, +0xF38 the
+    // rear-view mirror; presentation §I7): bit 0 draws the billboards (BLBd) after the scenery.
+    std::array<u32, 3> view_flags{~0u, ~0u, ~0u};
     // Car light scaling by the road shade (a sun, b sky): s = P2 + (1 - P2) b (1 - (1 - P1)(1 - a))
     // with (P1, P2) = +0xAC8/+0xACC ambient, +0xAB4/+0xABC diffuse, +0xAC0/+0xAC4 specular.
     std::array<float, 2> shade_ambient{1, 1}, shade_diffuse{1, 1}, shade_specular{1, 1};
@@ -98,6 +107,17 @@ struct SunParams {
     // Sets the GT3 car lighting of `o` from the enabled day car lights: light 0 as the main
     // light, the others as fills, ambient = global ambient + the enabled lights' ambients.
     void day_car_lights(render::DrawOptions& o) const;
+    // The replay passes after the 3D picture (presentation §L6). The heat haze: flag 0x20 at
+    // +0x10; +0xB0 u32 lens count, +0xB4 lens size S0, +0xB8 box b, +0xBC vertical cap, +0xC0
+    // distance ahead, +0xC4 horizontal drift range, +0xC8 vertical drift (metres per frame).
+    bool haze = false;
+    u32 haze_count = 0;
+    float haze_size = 0, haze_box = 0, haze_cap = 0, haze_ahead = 0, haze_drift_xz = 0, haze_drift_y = 0;
+    // The vignette: flag 0x40; +0x950 outer / +0x954 inner radius (pixels of the 640 x 448
+    // frame), +0x958..+0x964 outer RGBA, +0x968..+0x974 inner RGBA.
+    bool vignette = false;
+    float vignette_outer = 0, vignette_inner = 0;
+    std::array<float, 4> vignette_outer_rgba{}, vignette_inner_rgba{};
     // Light scale (ambient, diffuse, specular) and the light-shadow factor F for road shade (a, b).
     std::array<float, 3> light_scale(float a, float b) const;
     float shadow_factor(float a, float b) const { return (shadow_f_shade + (shadow_f_lit - shadow_f_shade) * a) * b; }
@@ -107,21 +127,24 @@ struct SunParams {
 
 class SunGlare {
 public:
-    ~SunGlare();
-    // Loads race/glare.img once; `env0` = the course's slot 32.
-    void load(const Vfs& vfs, SDL_Renderer* r, ByteSpan env0);
+    // Loads race/glare.img once (for the 2D renderer and, with `gpu`, the 3D views); `env0` = the
+    // course's slot 32.
+    void load(const Vfs& vfs, SDL_Renderer* r, render::GpuContext* gpu, ByteSpan env0);
     const SunParams& params() const { return p_; }
-    // Draws the glare into `rect` for a camera (view, vertical FOV); `visibility` 0..1.
-    void draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, float fovy, float visibility) const {
-        draw(r, rect, view, render::Frustum::symmetric(fovy, rect.w / rect.h), visibility);
+    // Adds the glare over `rect` (the view's rectangle) for a camera (view, frustum) to `b`, which
+    // the view draws before its grade (presentation §L6); `visibility` 0..1.
+    void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Frustum& fr,
+             float visibility) const;
+    void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, float fovy, float visibility) const {
+        add(b, rect, view, render::Frustum::symmetric(fovy, rect.w / rect.h), visibility);
     }
-    // Any frustum (VR eyes).
+    // Draws it with the 2D renderer (VR eyes, which have no grade).
     void draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Frustum& fr,
               float visibility) const;
 
 private:
     SunParams p_;
-    SDL_Texture* tex_ = nullptr;
+    render::SpriteTexture tex_;
 };
 
 } // namespace gt3r::race

@@ -13,6 +13,7 @@
 #include "sim/program.h"
 
 #include <array>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -30,6 +31,7 @@ enum class Conductor : u8;
 struct RaceRecord;
 struct SoloRecorders;
 struct Snapshot;
+struct SparkPoint;
 } // namespace gt3r::sim::exact
 
 namespace gt3r::race {
@@ -114,6 +116,9 @@ struct ExactFieldOptions {
     std::shared_ptr<const sim::exact::RaceRecord> analysis_b;
     bool analysis = false;
     std::shared_ptr<const std::vector<std::map<s32, sim::exact::Snapshot>>> logger_tables;
+    // A car model's spark points by its id (GTCI +0x58 / +0x5C of the model the race draws, cars/<time of day>/<model>): the
+    // race's sparks (sim/exact/sparks.h). Unset: a race without them. A replay keeps the points it was recorded with.
+    std::function<std::vector<sim::exact::SparkPoint>(const std::string& model)> spark_points;
 };
 // The solo conductors: the time trial, licence test, machine test, free run and free practice (the player alone; free
 // practice with the race's field, FieldConfig::opponents).

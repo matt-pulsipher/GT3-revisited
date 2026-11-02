@@ -205,8 +205,10 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         render::Vec3 target = rv(s.position + rotate(s.orientation, tg));
         view_ = render::look_at(eye_, target, {0, 1, 0});
         fovy_ = 2.0f * std::atan(224.0f / (320.0f * zoom));
+        focus_ = render::length(target - eye_);
         return;
     }
+    focus_ = 100.0f; // the player's views (GT3's on-board camera)
     switch (mode_) {
     case CameraMode::Chase: gt3_view(1); break;
     case CameraMode::Bumper: {
@@ -257,11 +259,13 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         const render::Vec3 aim = replay_aim ? *replay_aim : pos;
         render::Vec3 target = aim + render::Vec3{0, 0.7f, 0};
         director_record_ = -1;
+        director_haze_ = false;
         replay_on_board_ = false;
         if (director_) {
             ReplayDirector::Shot shot =
                 director_->update(track_s_, lap_, aim, dt, 16.0f / 9.0f, replay_pair ? &*replay_pair : nullptr);
             director_record_ = shot.record;
+            director_haze_ = shot.valid && shot.haze;
             if (shot.valid && shot.onboard) { // mode 2's on-board cut: a bumper view on the partner's car
                 const bool other = shot.on_partner && replay_partner;
                 const sim::VehicleState& o = other ? *replay_partner : s;
@@ -270,6 +274,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
                 eye_ = rv(o.position + rotate(o.orientation, {0, 0.62f, -length * 0.5f + 0.15f}));
                 view_ = render::look_at(eye_, eye_ + of * 10.0f - ou * 0.25f, ou);
                 fovy_ = 0.9f;
+                focus_ = 100.0f;
                 break;
             }
             // View mode 1's procedural cameras (presentation §G15) on the followed car, planned
@@ -290,6 +295,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
                 if (proc_acc_ > 1.0 / 60.0) proc_acc_ = 0;
                 view_ = proc_.view(cc, ground_, float(proc_acc_ * 60.0));
                 eye_ = proc_.eye();
+                focus_ = proc_.focus();
                 replay_on_board_ = proc_.on_board();
                 fovy_ = std::clamp(ReplayDirector::zoom_fovy(proc_.zoom()), 0.02f, 2.4f);
                 break;
@@ -297,6 +303,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
             if (shot.valid) { // a course shot; mode 1's roll about the view axis (Rz in eye space)
                 eye_ = shot.eye;
                 view_ = render::rotate_z(shot.roll) * render::look_at(eye_, shot.target, {0, 1, 0});
+                focus_ = render::length(shot.target - eye_);
                 fovy_ = std::clamp(shot.fovy, 0.02f, 2.4f);
                 break;
             }
@@ -305,6 +312,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
             eye_ = pos + render::Vec3{std::sin(chase_yaw_) * 14.0f, 6.0f, std::cos(chase_yaw_) * 14.0f};
             view_ = render::look_at(eye_, target, {0, 1, 0});
             fovy_ = 0.7f;
+            focus_ = render::length(target - eye_);
             break;
         }
         // The camera whose point is closest to slightly ahead of the car (cuts as the car passes).
@@ -318,6 +326,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         tv_active_ = best;
         eye_ = tv_[size_t(best)].position;
         view_ = render::look_at(eye_, target, {0, 1, 0});
+        focus_ = render::length(target - eye_);
         // Zoom so the car keeps a similar size on screen.
         float dist = render::length(target - eye_);
         fovy_ = std::clamp(2.0f * std::atan(6.0f / std::max(dist, 1.0f)) / tv_[size_t(best)].zoom, 0.08f, 0.9f);

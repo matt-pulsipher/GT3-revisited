@@ -2,12 +2,14 @@
 
 #include "base/log.h"
 #include "formats/course/course_model.h"
+#include "formats/model/wheel_model.h"
 #include "race/interp.h"
 
 #include <algorithm>
 #include <cstring>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 
 namespace gt3r::race {
 
@@ -358,19 +360,71 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         scene::Model lit_body = extract(lit, [](const scene::Mesh& m) { return m.name.rfind("node", 0) != 0; });
         if (!lit_body.meshes.empty()) body_brake_ = std::make_unique<render::GpuModel>(ctx, lit_body);
     }
+    // The wheels' effects (race/wheel_fx.h): the tyre's GTTR fields, the brake records, and the
+    // rim's images in the wheel file's texture table (GTM1 +0x34, table 0: entry 1 the rim,
+    // entry 2 the spinning rim GT3 shows on the other cars' fast wheels).
+    std::optional<scene::Texture> rim_spin;
+    try {
+        CarFile f = CarFile::parse(car_file);
+        if (f.tire.size() >= 0x1C) {
+            tyre_repeats_ = rd32(f.tire, 0x10), tyre_flags_ = rd32(f.tire, 0x14);
+            u32 sh = rd32(f.tire, 0x18);
+            std::memcpy(&tyre_shininess_, &sh, 4);
+        }
+        brake_records_ = parse_brake_records(f.info);
+        gtm1::Gtm1 g = gtm1::Gtm1::parse(WheelFile::parse(wheel_file.empty() ? f.wheel : wheel_file).gtm1);
+        auto set_image = [&](size_t entry) -> std::optional<scene::Texture> {
+            if (g.texset_tables.empty() || g.texset_tables[0].size() <= entry) return std::nullopt;
+            const u32 k = g.texset_tables[0][entry];
+            if (k >= g.texsets.size() || g.texsets[k] >= g.data.size()) return std::nullopt;
+            std::vector<scene::Texture> t;
+            gtm1::decode_texture_set(g.data.subspan(g.texsets[k]), t, "rim_");
+            if (t.empty()) return std::nullopt;
+            return t[0];
+        };
+        if (std::optional<scene::Texture> rim = set_image(1)) rim_width_ = rim->width;
+        rim_spin = set_image(2);
+    } catch (const std::exception& e) {
+        LOG_WARN("Car %s: wheel effects: %s", model.c_str(), e.what());
+    }
     for (int i = 0; i < 4; ++i) {
         std::string n = kWheelNames[i];
-        scene::Model w = extract(car, [&](const scene::Mesh& m) { return m.name == n || m.name == n + "_tyre"; });
         int axle = i >> 1;
         render::Vec3 c{(i & 1 ? 0.5f : -0.5f) * ws.track[axle], ws.radius[axle], (axle ? 0.5f : -0.5f) * ws.wheelbase};
         wheel_center_[size_t(i)] = c;
-        for (scene::Mesh& m : w.meshes)
-            for (scene::Vertex& v : m.vertices) v.pos[0] -= c.x, v.pos[1] -= c.y, v.pos[2] -= c.z;
-        if (!w.meshes.empty()) wheels_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, w);
-        scene::Model band = extract(car, [&](const scene::Mesh& m) { return m.name == n + "_band"; });
-        for (scene::Mesh& m : band.meshes)
-            for (scene::Vertex& v : m.vertices) v.pos[0] -= c.x, v.pos[1] -= c.y, v.pos[2] -= c.z;
+        wheel_width_[size_t(axle)] = ws.width[axle];
+        wheel_bound_[size_t(axle)] =
+            std::sqrt(ws.radius[axle] * ws.radius[axle] + 0.25f * ws.width[axle] * ws.width[axle]);
+        auto hub_model = [&](const std::string& name) {
+            scene::Model w = extract(car, [&](const scene::Mesh& m) { return m.name == name; });
+            for (scene::Mesh& m : w.meshes)
+                for (scene::Vertex& v : m.vertices) v.pos[0] -= c.x, v.pos[1] -= c.y, v.pos[2] -= c.z;
+            return w;
+        };
+        scene::Model rim = hub_model(n);
+        if (!rim.meshes.empty()) {
+            if (rim_spin) {
+                rim_spin_texture_ = int(rim.textures.size()); // (the same index in every wheel's model)
+                rim.textures.push_back(*rim_spin);
+            }
+            rims_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, rim);
+        }
+        scene::Model tyre = hub_model(n + "_tyre");
+        if (!tyre.meshes.empty()) tyres_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, tyre);
+        scene::Model band = hub_model(n + "_band");
         if (!band.meshes.empty()) bands_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, band);
+    }
+}
+
+void CarVisual::set_brake_parts(const BrakeParts& bin) {
+    for (int i = 0; i < 4; ++i) {
+        const BrakeRecord& rec = brake_records_[size_t(i >> 1)];
+        const bool right = (i & 1) != 0;
+        brakes_[size_t(i)].reset(), glows_[size_t(i)].reset();
+        scene::Model parts = build_brake_parts(bin, rec, right, tyre_shininess_);
+        if (!parts.meshes.empty()) brakes_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, parts);
+        scene::Model glow = build_brake_glow(bin, rec, right);
+        if (!glow.meshes.empty()) glows_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, glow);
     }
 }
 
@@ -467,7 +521,7 @@ void CarVisual::add_items(std::vector<render::DrawItem>& items, const sim::Vehic
             if (shadow_[1]) shadow(shadow_[1].get(), bias * g * flat, 1);
         }
     }
-    add_body_items(items, s, setup, look, {}, lod);
+    add_body_items(items, s, setup, look, {}, lod, true);
 }
 
 bool CarVisual::road_mirror(const sim::VehicleState& s, render::Mat4& out) {
@@ -495,13 +549,53 @@ bool CarVisual::add_mirror_items(std::vector<render::DrawItem>& items, const sim
     render::Mat4 m;
     if (!road_mirror(s, m)) return false;
     float dist = render::length(render::Vec3{s.position.x, s.position.y, s.position.z} - eye);
-    add_body_items(items, s, setup, look, m, car_lod(dist, lods_, full_detail_));
+    add_body_items(items, s, setup, look, m, car_lod(dist, lods_, full_detail_), false);
     return true;
+}
+
+CarVisual::WheelLook CarVisual::wheel_look(int i, const render::Mat4& at, const render::Mat4& hub,
+                                           const sim::WheelState& w, const CarLook& look) const {
+    WheelLook out;
+    if (!look.wheels) return out;
+    const WheelView& v = *look.wheels;
+    const size_t axle = size_t(i >> 1);
+    const bool right = (i & 1) != 0;
+    // The wheel's level from its size on screen; its outer face in view when the eye is beyond the
+    // face's plane in the wheel's frame (steered and cambered, before the spin).
+    const render::Vec3 centre = at.transform_point({0, 0, 0});
+    const int detail = wheel_detail(v.proj.at(0, 0), wheel_bound_[axle], -v.view.transform_point(centre).z);
+    const render::Vec3 eye = render::inverse(hub).transform_point(v.eye);
+    const float half_width = 0.5f * wheel_width_[axle];
+    const bool outer = right ? eye.x > half_width : eye.x < -half_width;
+    out.parts = detail < 2 && outer;
+    if (detail < 2) out.glow = brake_glow_fix(w.brake_heat, v.env.glow_gain);
+    // The blur's turn, from the wheel centre's movement on screen since the last frame.
+    float turn = 0;
+    if (v.blur && look.wheel_track) {
+        const render::Mat4 vp = v.proj * v.view;
+        const render::Vec3 c = vp.transform_point(centre);
+        const float cw = vp.at(3, 0) * centre.x + vp.at(3, 1) * centre.y + vp.at(3, 2) * centre.z + vp.at(3, 3);
+        std::array<float, 2>& last = look.wheel_track->ndc[size_t(i)];
+        const std::array<float, 2> ndc = std::fabs(cw) > 1e-6f ? std::array<float, 2>{c.x / cw, c.y / cw} : last;
+        const float moved = std::hypot(ndc[0] - last[0], ndc[1] - last[1]);
+        last = ndc;
+        turn = wheel_blur_turn(w.spin_step, moved, v.env);
+    }
+    if (turn == 0) return out;
+    if (look.focus && detail < 2 && tread_blur_wanted(tyre_flags_, outer)) {
+        out.tread = true;
+        out.tread_shifts = tread_blur_shifts(turn, tyre_repeats_, right);
+    }
+    if (outer && detail < 3) {
+        if (look.focus) out.rim = 1, out.rim_angles = rim_blur_angles(turn, right);
+        else if (rim_spin_texture_ >= 0 && rim_spinning_image(turn)) out.rim = 2;
+    }
+    return out;
 }
 
 void CarVisual::add_body_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s,
                                const sim::VehicleSetup& setup, const CarLook& look, const render::Mat4& pre,
-                               int lod) const {
+                               int lod, bool wheel_fx) const {
     render::Mat4 world = pre * car_matrix(s);
     auto styled = [&](render::DrawItem it) {
         for (int k = 0; k < 3; ++k) it.light_scale[k] = look.light_scale[k];
@@ -529,17 +623,61 @@ void CarVisual::add_body_items(std::vector<render::DrawItem>& items, const sim::
         items.push_back(styled({mo.gpu.get(), world * render::translate({0, body_lift(setup), 0}), lod}));
     }
     for (int i = 0; i < 4; ++i) {
-        if (!wheels_[size_t(i)]) continue;
-        const sim::WheelState& w = s.wheels[size_t(i)];
-        const sim::VehicleSetup::Wheel& sw = setup.wheels[size_t(i)];
+        const size_t k = size_t(i);
+        if (!tyres_[k] && !rims_[k]) continue;
+        const sim::WheelState& w = s.wheels[k];
+        const sim::VehicleSetup::Wheel& sw = setup.wheels[k];
         // Hub in the car frame: the sim's rest hub (y = tyre radius over the ground-level origin)
         // plus the suspension travel from the static pose (+ = compressed: up into the arch;
         // airborne = max droop). The body mesh is lifted by the ride height (see body_lift).
-        render::Vec3 c = wheel_center_[size_t(i)];
+        render::Vec3 c = wheel_center_[k];
         c.y = sw.rest_center.y + (w.suspension - sw.static_suspension);
-        const render::Mat4 hub = world * render::translate(c) * render::rotate_y(-w.steer_angle);
-        items.push_back(styled({wheels_[size_t(i)].get(), hub * render::rotate_x(-w.spin_angle), lod}));
-        if (bands_[size_t(i)]) items.push_back(styled({bands_[size_t(i)].get(), hub, lod}));
+        // GT3 turns a wheel by its steering (and half a turn for a right wheel: ours are built
+        // turned), then by its camber about the z axis of that frame (so the other way round in
+        // ours for a right wheel), then by its spin.
+        const float camber = (i & 1) ? -w.camber : w.camber;
+        const render::Mat4 at = world * render::translate(c);
+        const render::Mat4 hub = at * render::rotate_y(-w.steer_angle) * render::rotate_z(camber);
+        const render::Mat4 spun = hub * render::rotate_x(-w.spin_angle);
+        const WheelLook wl = wheel_fx ? wheel_look(i, at, hub, w, look) : WheelLook{};
+        // GT3's order: the tyre, the rotor and caliper, the tyre's black faces with the rotor's
+        // glow, then the rim. The parts are drawn whole before the tyre's opaque faces (in_order),
+        // which then cover the caliper's soft shadow where it wrote no depth, as in GT3.
+        if (wl.parts && brakes_[k]) {
+            render::DrawItem it = styled({brakes_[k].get(), hub, 0});
+            it.in_order = true;
+            items.push_back(it);
+        }
+        if (tyres_[k]) {
+            render::DrawItem it = styled({tyres_[k].get(), spun, lod});
+            if (wl.tread) {
+                it.wheel_blur = 1;
+                for (size_t j = 0; j < 3; ++j) it.wheel_steps[j] = wl.tread_shifts[j];
+            }
+            items.push_back(it);
+        }
+        if (wl.glow > 0 && glows_[k]) {
+            render::DrawItem it = styled({glows_[k].get(), spun, 0});
+            it.tint = wl.glow; // GS ALPHA 0x68: Cs x FIX + Cd (the glow texture's alpha is 0x80)
+            it.no_fog = true;
+            items.push_back(it);
+        }
+        if (rims_[k]) {
+            render::DrawItem it = styled({rims_[k].get(), spun, lod});
+            if (wl.rim == 1) {
+                it.wheel_blur = 2;
+                it.wheel_blur_lod = rim_blur_lod(rim_width_);
+                // GT3 tests the blurred image's own alpha (the spokes' coverage x 0x80) at the rim
+                // programs' AREF 0x20; our rims' cut-out copies (alpha 0 or 1) average to the coverage.
+                it.wheel_blur_alpha_ref = 0x20 / 128.0f;
+                it.wheel_steps = wl.rim_angles;
+            } else if (wl.rim == 2) {
+                it.texture = rims_[k]->textures()[size_t(rim_spin_texture_)].texture;
+            }
+            items.push_back(it);
+        }
+        // The arch shade: turned by the camber, not by the steering (GT3).
+        if (bands_[k]) items.push_back(styled({bands_[k].get(), at * render::rotate_z(camber), lod}));
     }
 }
 

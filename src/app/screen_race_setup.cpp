@@ -27,6 +27,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (SDL_getenv("GT3R_NO_ENV")) env_cube_on_ = false;
     shadows_on_ = app.config().get("video", "car_shadows").value_or("on") != "off";
     full_car_detail_ = app.full_car_detail();
+    heat_haze_ = to_lower(app.config().get("video", "heat_haze").value_or("off")) == "on";
     // [video] original_res = on: the 3D scene at the PS2's 640x448 in a 4:3 frame,
     // upscaled with [video] original_filter = nearest (default) | bilinear.
     original_res_ = app.config().get("video", "original_res").value_or("off") == "on";
@@ -88,6 +89,15 @@ void RaceScreen::start(App& app, const Replay* replay) {
             return h.height;
         });
         course_scene_ = std::make_unique<CourseScene>(*app.gpu(), *course, ce.label, preset_.sheen);
+        // The brake parts inside the race cars' wheels (loaded before every race).
+        brake_parts_.reset();
+        if (std::optional<Bytes> bb = app.vfs()->read("race/brake.bin")) try {
+                brake_parts_ = BrakeParts::parse(*bb);
+            } catch (const std::exception& e) {
+                LOG_WARN("Race: race/brake.bin: %s", e.what());
+            }
+        wheel_tracks_.clear();
+        ghost_wheel_track_ = {};
         // GT mode: the garage car's bought wheels.
         std::optional<Bytes> wheel_file;
         if (from_menu_ || online_)
@@ -109,6 +119,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         car_visual_ = std::make_unique<CarVisual>(*app.gpu(), *car_file, model, car_.wheels, preset_.paint,
                                                   wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod);
         car_visual_->set_full_detail(full_car_detail_);
+        if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
         course_name_ = ce.name;
         // The start title shows the course table's name as it is: licence sections have their
         // own ("Grand Valley Test Section"), and a course without one shows no title.
@@ -140,10 +151,13 @@ void RaceScreen::start(App& app, const Replay* replay) {
             course::CourseFile cf = course::CourseFile::parse(*course);
             ByteSpan g = cf.section(*course, course::kSlotReplayCameras);
             hud_.set_course_map(app.renderer(), cf.section(*course, course::kSlotCourseMap));
+            hud_.reset_needles();
             // Billboard sprites (trees, spectators; slot 30).
             if (app.gpu()) billboards_.load(*app.gpu(), cf.section(*course, 30), ce.label);
             // The sun and its glare (Env0, slot 32).
-            sun_.load(*app.vfs(), app.renderer(), cf.section(*course, 32));
+            sun_.load(*app.vfs(), app.renderer(), app.gpu(), cf.section(*course, 32));
+            if (app.gpu()) sun_disc_.load(*app.gpu(), sun_.params());
+            wheel_env_ = WheelEnv::parse(cf.section(*course, 32)); // the wheels' blur and glow
             if (sun_.params().has_env && course_scene_) { // the course's own lit packets: its scene lights
                 render::ItemLights cl;
                 sun_.params().course_lights(cl);
@@ -151,15 +165,18 @@ void RaceScreen::start(App& app, const Replay* replay) {
             }
             point_lights_.load(cf.section(*course, course::kSlotRoad)); // night lamp list (point-light courses)
             if (app.gpu()) smoke_.load(*app.gpu(), cf.section(*course, 32), cf.section(*course, 26)); // tyre smoke / dust
+            if (app.gpu() && !sparks_.loaded()) sparks_.load(*app.gpu(), *app.vfs()); // the sparks' glow (race/particle.img)
+            spark_shot_.reset();
             pylons_.load(app.gpu(), *course); // pylons / cones (GTRW list + slot 36 types)
             if (sun_.params().has_shadow) pylons_.set_shadow(sun_.params().shadow_rgb, sun_.params().shadow_alpha);
             if (app.gpu()) wet_.load(*app.gpu(), *app.vfs(), *course, cf.section(*course, 32)); // wet-road reflection
             if (point_lights_.active()) LOG_INFO("Race: %zu course lamps (point-light mode)", point_lights_.lamps().size());
             // Street / stadium lamps (slot 29, the lists picked by slot 2's visibility lists).
             std::optional<Bytes> flare = app.vfs()->read("race/flare.bin");
-            lamps_.load(app.renderer(), cf.section(*course, 29), cf.section(*course, 32), cf.section(*course, 2),
+            lamps_.load(app.renderer(), app.gpu(), cf.section(*course, 29), cf.section(*course, 32), cf.section(*course, 2),
                         flare ? ByteSpan(*flare) : ByteSpan{});
-            car_lamps_.load(app.renderer(), cf.section(*course, 32), flare ? ByteSpan(*flare) : ByteSpan{}); // car lamp glows
+            car_lamps_.load(app.renderer(), app.gpu(), cf.section(*course, 32),
+                            flare ? ByteSpan(*flare) : ByteSpan{}); // car lamp glows
             LOG_INFO("Race: car models from %s, car lamp glows %s", car_folder_.c_str(), car_lamps_.active() ? "on" : "off");
             if (sun_.params().enabled)
                 LOG_INFO("Race: sun at elevation %.1f, azimuth %.1f, glare %.2f, style %d", sun_.params().elevation,
@@ -534,6 +551,7 @@ ExactFieldOptions RaceScreen::exact_options(App& app) {
     o.second.original_response = o.player.original_response;
     o.playback = exact_playback();
     o.ghost = exact_ghost_source();
+    o.spark_points = [this, a = &app](const std::string& model) { return car_spark_points(*a, model); };
     // The Analyzer's REPLAY on the exact core: track A's replay as GT3's logger race, track B its ghost car, the pass's tables.
     if (analysis_ && replaying_ && logger_mode_) {
         o.analysis = true, o.analysis_b = analysis_b_, o.logger = true, o.logger_tables = analysis_tables_;
@@ -648,6 +666,7 @@ bool RaceScreen::build_vehicle(App& app) {
                         car2_visual_ = std::make_unique<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
                                                                    w2 ? ByteSpan(*w2) : ByteSpan{}, bm2);
                         car2_visual_->set_full_detail(full_car_detail_);
+                        if (brake_parts_) car2_visual_->set_brake_parts(*brake_parts_);
                     }
                 }
             }
@@ -708,6 +727,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
                 if (f && !f->empty()) {
                     v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm);
                     v->set_full_detail(full_car_detail_);
+                    if (brake_parts_) v->set_brake_parts(*brake_parts_);
                 }
             } catch (const std::exception& e) {
                 LOG_WARN("Race: opponent model %s: %s", model.c_str(), e.what());
@@ -792,6 +812,9 @@ void RaceScreen::reset_run_state() {
     lap_times_.clear();
     odometer_m_ = 0;
     smoke_.clear();
+    // The heat haze lenses as the original's race set-up leaves them (every run, replay and
+    // demonstration; presentation §L6).
+    haze_.setup(sun_.params());
     pylons_.reset(track_->query()); // every run (and retry) starts with the cones in place
     pylon_hit_ = false;
     exit_transition_ = -1;
@@ -820,6 +843,16 @@ std::optional<Bytes> RaceScreen::read_car(App& app, const std::string& model) co
     if (car_folder_ != "cars/day/")
         if (std::optional<Bytes> f = app.vfs()->read(car_folder_ + model); f && !f->empty()) return f;
     return app.vfs()->read("cars/day/" + model);
+}
+
+std::vector<sim::exact::SparkPoint> RaceScreen::car_spark_points(App& app, const std::string& model) const {
+    const auto [it, made] = spark_points_.try_emplace(car_folder_ + model);
+    if (!made) return it->second;
+    std::optional<Bytes> f = read_car(app, model);
+    if (!f || !CarFile::is_car(*f)) return {};
+    for (const std::array<u32, 3>& p : gt3r::car_spark_points(CarFile::parse(*f).info))
+        it->second.push_back({sim::exact::F::raw(p[0]), sim::exact::F::raw(p[1]), sim::exact::F::raw(p[2])});
+    return it->second;
 }
 
 } // namespace gt3r::race_screen

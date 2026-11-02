@@ -427,27 +427,28 @@ public:
             rs.ghost_car = ghost_entry ? humans_ : -1;
             if (fr) visit_ = opts_.free_run;
         }
+        first_remote_ = int(rs.entries.size() - cfg_.remote.size()); // (the remote players' entries come last)
+        std::vector<std::string> car_labels;
+        const int first_opp = humans_ + (ghost_entry ? 1 : 0);
+        for (int i = 0; i < int(rs.entries.size()); ++i)
+            car_labels.push_back(i == 0                ? opts_.player.car.label
+                                 : i == 1 && battle    ? opts_.second.car.label
+                                 : i < first_opp       ? opts_.player.car.label // (the ghost: the player's car)
+                                 : i >= first_remote_  ? remote_cars[size_t(i - first_remote_)] // (online: the car raced here)
+                                                       : opps[size_t(i - first_opp)].label);
+        rs.sparks = exact_spark_points(db, car_labels, opts_.spark_points); // (the models the screen draws)
         try {
             race_ = std::make_unique<ex::ExactRace>(rs);
         } catch (const std::exception& e) {
             if (error) *error = std::string("exact race: ") + e.what();
             return false;
         }
-        first_remote_ = int(rs.entries.size() - cfg_.remote.size()); // (the remote players' entries come last)
         remote_.assign(cfg_.remote.size(), {});
         for (size_t j = 0; j < cfg_.remote.size(); ++j) race_->set_posed(first_remote_ + int(j), true);
         rs_ = rs;
         rec_ = std::make_shared<ex::RaceRecord>(ex::RaceRecord::of(rs, opts_.course));
         rec_->data = exact_data_fingerprint(db, rs.entries, opts_.course_bytes());
         change({0, ex::RaceChange::StartCountdown});
-        std::vector<std::string> car_labels;
-        const int first_opp = humans_ + (ghost_entry ? 1 : 0);
-        for (int i = 0; i < race_->size(); ++i)
-            car_labels.push_back(i == 0                ? opts_.player.car.label
-                                 : i == 1 && battle    ? opts_.second.car.label
-                                 : i < first_opp       ? opts_.player.car.label // (the ghost: the player's car)
-                                 : i >= first_remote_  ? remote_cars[size_t(i - first_remote_)] // (online: the car raced here)
-                                                       : opps[size_t(i - first_opp)].label);
         finish_build(db, rs, car_labels, n_opp, p1);
         return true;
     }
@@ -492,11 +493,13 @@ public:
             rs.entries.resize(1);
             ex::SoloRecorders s(false);
             const ex::RaceRecord* b = opts_.analysis_b.get();
+            rs.sparks.resize(std::min<size_t>(rs.sparks.size(), 1));
             if (b && !b->entries.empty()) {
                 ex::StartEntry g = b->entries[0];
                 g.human = 1, g.player = true, g.car = 0, g.grid_slot = r.entries.size() > 1 ? r.entries[1].grid_slot : g.grid_slot;
                 rs.entries.push_back(g);
                 rs.ghost_switch = 1;
+                if (!b->sparks.empty() && !b->sparks[0].empty()) rs.sparks.resize(1), rs.sparks.push_back(b->sparks[0]);
             }
             s.analysis(ex::run_recording_of(r), b ? ex::run_recording_of(*b) : std::vector<u8>{});
             rs.recorders = std::make_shared<const ex::SoloRecorders>(std::move(s));
@@ -1131,6 +1134,18 @@ std::unique_ptr<RaceField> make_exact_field(const RaceTrack&, const data::CarDat
     auto f = std::make_unique<ExactField>(cfg);
     if (!f->build(db, error)) return nullptr;
     return f;
+}
+
+std::vector<std::vector<ex::SparkPoint>> exact_spark_points(
+    const data::CarDatabase& db, const std::vector<std::string>& labels,
+    const std::function<std::vector<ex::SparkPoint>(const std::string&)>& source) {
+    std::vector<std::vector<ex::SparkPoint>> out;
+    if (!source) return out;
+    for (const std::string& l : labels) {
+        const data::Car* c = db.car(exact_base_car(db, l));
+        out.push_back(c ? source(db.model_of(*c)) : std::vector<ex::SparkPoint>{});
+    }
+    return out;
 }
 
 const sim::exact::ExactRace* exact_race_of(const RaceField& f) {

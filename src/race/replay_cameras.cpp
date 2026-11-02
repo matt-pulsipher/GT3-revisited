@@ -34,6 +34,7 @@ GtrcRecord read_record(ByteSpan d, size_t o) {
     r.end = rdf(d, o + 0x08);
     r.duration = rdf(d, o + 0x0C);
     r.mount = rd32(d, o + 0x18);
+    r.haze = rdf(d, o + 0x1C);
     r.zoom_min = rdf(d, o + 0x28);
     r.zoom_max = rdf(d, o + 0x2C);
     r.dissolve = rdf(d, o + 0x64);
@@ -298,6 +299,7 @@ ReplayDirector::Shot ReplayDirector::evaluate(const GtrcRecord& r, float D, cons
     Shot shot;
     shot.record = cur_;
     shot.seconds = float(shot_time_);
+    shot.haze = r.hazy();
     if (r.mode() == 3) {
         shot.valid = shot.onboard = true;
         return shot;
@@ -367,6 +369,7 @@ ReplayDirector::Shot ReplayDirector::update(float s, int lap, const render::Vec3
         shot.valid = true;
         shot.record = cur_;
         shot.seconds = float(shot_time_);
+        shot.haze = !onboard_ && r.hazy(); // an on-board record's own flag; a turn on board has none
         last_t_ = std::clamp(u, 0.0f, 1.0f);
         if (on_partner_) {
             shot.onboard = shot.on_partner = true;

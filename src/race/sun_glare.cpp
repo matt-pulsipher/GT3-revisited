@@ -101,6 +101,9 @@ SunParams SunParams::from_env0(ByteSpan b) {
         p.mirror_fog_a = f(0xAA0);
         p.mirror_fog_b = f(0xAA4);
     }
+    p.dof = (rd32(b, 0x10) & 0x100) != 0;
+    p.dof_f_number = f(0x930), p.dof_focal_mm = f(0x934), p.dof_min_focus = f(0x938);
+    p.far_clip = f(0x20);
     p.grade = (rd32(b, 0x10) & 0x80) != 0;
     p.grade_g = {f(0x980), f(0x984), f(0x988)};
     p.grade_black = f(0x98C), p.grade_white = f(0x990);
@@ -144,6 +147,7 @@ SunParams SunParams::from_env0(ByteSpan b) {
     if (b.size() >= 0xADC) p.scene_light0_dir = {f(0xAD0), f(0xAD4), f(0xAD8)};
     p.scene_light_mask = (rd32(b, 0x10) >> 11) & 0xF;
     if (b.size() >= 0xEC8) p.panorama = {f(0xEC0), f(0xEC4)};
+    if (b.size() >= 0xF3C) p.view_flags = {rd32(b, 0xF30), rd32(b, 0xF34), rd32(b, 0xF38)};
     for (size_t n = 0; n < 4; ++n) {
         size_t o = 0xAD0 + 0x50 * n;
         if (o + 0x40 > b.size()) break;
@@ -153,6 +157,18 @@ SunParams SunParams::from_env0(ByteSpan b) {
         l.diffuse = {f(o + 0x20), f(o + 0x24), f(o + 0x28)};
         l.specular = {f(o + 0x30), f(o + 0x34), f(o + 0x38)};
     }
+    // The replay passes after the 3D picture (presentation §L6).
+    const u32 flags = rd32(b, 0x10);
+    p.haze = (flags & 0x20) != 0;
+    p.haze_count = rd32(b, 0xB0);
+    p.haze_size = f(0xB4), p.haze_box = f(0xB8), p.haze_cap = f(0xBC), p.haze_ahead = f(0xC0);
+    p.haze_drift_xz = f(0xC4), p.haze_drift_y = f(0xC8);
+    p.vignette = (flags & 0x40) != 0;
+    p.vignette_outer = f(0x950), p.vignette_inner = f(0x954);
+    for (size_t i = 0; i < 4; ++i) {
+        p.vignette_outer_rgba[i] = f(0x958 + 4 * i);
+        p.vignette_inner_rgba[i] = f(0x968 + 4 * i);
+    }
     if (b.size() >= 0xAD0) {
         p.shade_ambient = {f(0xAC8), f(0xACC)};
         p.shade_diffuse = {f(0xAB4), f(0xABC)};
@@ -161,13 +177,9 @@ SunParams SunParams::from_env0(ByteSpan b) {
     return p;
 }
 
-SunGlare::~SunGlare() {
-    if (tex_) SDL_DestroyTexture(tex_);
-}
-
-void SunGlare::load(const Vfs& vfs, SDL_Renderer* r, ByteSpan env0) {
+void SunGlare::load(const Vfs& vfs, SDL_Renderer* r, render::GpuContext* gpu, ByteSpan env0) {
     p_ = SunParams::from_env0(env0);
-    if (tex_ || !p_.enabled) return;
+    if (tex_.valid() || !p_.enabled) return;
     std::optional<Bytes> data = vfs.read("race/glare.img");
     if (!data) return;
     try {
@@ -176,12 +188,8 @@ void SunGlare::load(const Vfs& vfs, SDL_Renderer* r, ByteSpan env0) {
         tex.upload(*data, gs);
         Tex1::Image img = tex.decode(gs, 0);
         // (decode() already maps the GS alpha 0..0x80 to 0..255.)
-        tex_ = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, int(img.width), int(img.height));
-        if (tex_) {
-            SDL_UpdateTexture(tex_, nullptr, img.rgba.data(), int(img.width * 4));
-            SDL_SetTextureBlendMode(tex_, SDL_BLENDMODE_ADD);
-            SDL_SetTextureScaleMode(tex_, SDL_SCALEMODE_LINEAR);
-        }
+        if (img.rgba.size() >= size_t(img.width) * img.height)
+            tex_.create(r, gpu, int(img.width), int(img.height), img.rgba.data());
     } catch (const std::exception& e) {
         LOG_WARN("Sun glare: %s", e.what());
     }
@@ -189,7 +197,15 @@ void SunGlare::load(const Vfs& vfs, SDL_Renderer* r, ByteSpan env0) {
 
 void SunGlare::draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Frustum& fr,
                     float visibility) const {
-    if (!p_.enabled || !tex_ || visibility <= 0 || p_.glare_size <= 0) return;
+    render::ScreenBatch b;
+    b.rect = rect;
+    add(b, rect, view, fr, visibility);
+    render::submit_2d(r, b);
+}
+
+void SunGlare::add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Frustum& fr,
+                   float visibility) const {
+    if (!p_.enabled || !tex_.valid() || visibility <= 0 || p_.glare_size <= 0) return;
     // The sun direction in camera space (view rotation only).
     render::Vec3 d = p_.direction();
     float cx = view.at(0, 0) * d.x + view.at(0, 1) * d.y + view.at(0, 2) * d.z;
@@ -201,10 +217,9 @@ void SunGlare::draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& 
     if (px + half < rect.x || px - half > rect.x + rect.w || py + half < rect.y || py - half > rect.y + rect.h) return;
     // Colour: sun RGB x visibility, with the original's 0.5 = full weight convention.
     float k = std::clamp(p_.weight, 0.0f, 1.0f) * visibility;
-    auto c8 = [&](float v) { return u8(std::clamp(v * k, 0.0f, 1.0f) * 255.0f); };
-    SDL_SetTextureColorMod(tex_, c8(p_.rgb[0]), c8(p_.rgb[1]), c8(p_.rgb[2]));
-    SDL_FRect dst{px - half, py - half, 2 * half, 2 * half};
-    SDL_RenderTexture(r, tex_, nullptr, &dst);
+    auto c8 = [&](float v) { return float(u8(std::clamp(v * k, 0.0f, 1.0f) * 255.0f)) / 255.0f; };
+    const float rgba[4] = {c8(p_.rgb[0]), c8(p_.rgb[1]), c8(p_.rgb[2]), 1.0f};
+    b.add_rect(&tex_, SDL_FRect{px - half, py - half, 2 * half, 2 * half}, rgba);
 }
 
 } // namespace gt3r::race

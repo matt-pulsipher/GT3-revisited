@@ -360,6 +360,10 @@ std::vector<PipelineKey> warm_keys() {
                 keys.push_back(k);
             }
     }
+    // The replay depth of field's downsampled pictures (View3D::encode_dof).
+    PipelineKey single;
+    single.cull = CullMode::None, single.depth_write = false, single.single = true;
+    keys.push_back(single);
     return keys;
 }
 
@@ -514,8 +518,8 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
                                                                             : SDL_GPU_CULLMODE_FRONT;
     info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
     info.rasterizer_state.enable_depth_clip = true;
-    info.multisample_state.sample_count = samples_;
-    info.depth_stencil_state.enable_depth_test = true;
+    info.multisample_state.sample_count = key.single ? SDL_GPU_SAMPLECOUNT_1 : samples_;
+    info.depth_stencil_state.enable_depth_test = !key.single;
     info.depth_stencil_state.enable_depth_write = key.depth_write;
     // GT3's depth test, for every pass with or without depth writes: GEQUAL on a reversed depth
     // (render::perspective: 1 near, 0 far), so second passes over the same vertices (decals,
@@ -524,7 +528,7 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     info.target_info.color_target_descriptions = &color;
     info.target_info.num_color_targets = 1;
     info.target_info.depth_stencil_format = depth_format_;
-    info.target_info.has_depth_stencil_target = true;
+    info.target_info.has_depth_stencil_target = !key.single;
 
 #ifdef __ANDROID__
     // Android's crash reports name the crashing thread: while the driver compiles, the thread is
@@ -533,7 +537,7 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     char thread_name[16] = {}, key_name[16];
     prctl(PR_GET_NAME, thread_name);
     std::snprintf(key_name, sizeof key_name, "pipe%d%d%d%d%d%dx%d", int(key.blend), int(key.cull),
-                  int(key.depth_write), int(key.lines), int(key.coverage), int(key.alpha), msaa());
+                  int(key.depth_write), int(key.lines), int(key.coverage), int(key.alpha), key.single ? 1 : msaa());
     prctl(PR_SET_NAME, key_name);
 #endif
     SDL_GPUGraphicsPipeline* p = SDL_CreateGPUGraphicsPipeline(device_, &info);

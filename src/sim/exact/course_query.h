@@ -23,8 +23,9 @@ public:
     // scalars (clamped to the corners' range), unit normal and plane, raw scalars and the triangle's bytes; height ties go to
     // the later group of the grid cell. g.h is left as it is. On a miss: miss = 1, height = g.h, scalars 1, bytes 0, segment
     // -1 (kept when the point is off the grid); the program then copies its own uninitialised stack words into the normal,
-    // plane and raw scalars, which here keep their values.
-    void ground(Ground& g) const;
+    // plane and raw scalars, which here keep their values. `material`: the triangle's whole material word (triangle +0x08, as
+    // the program reads it; the record keeps its low byte), set on a hit.
+    void ground(Ground& g, u16* material = nullptr) const;
     // The race progress (metres along the lap) of course point (x, z) from the checkpoints of segment `seg`, of its
     // neighbours, or of every segment when it is not a segment number; 0 when no checkpoint pair brackets the point.
     F progress(F x, F h, F z, s32 seg) const;

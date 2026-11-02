@@ -345,18 +345,21 @@ smoke code).
 | Off | Meaning |
 |---|---|
 | +0x00 | `Env0` |
-| +0x10 | u32 flags: bits 0-3 car lights 0-3; 5 ambient particle field; 7 colour-grade pass; 10 sun disc + glare; 11-14 scene lights 0-3; 15 car lamp glows (and the `cars/night/` car models); 16 mirrored cars and 17 lamp streaks in the wet-road reflection; 19 the `cars/eve/` car models (before bit 15); 21 GTFX lamp glows (6, 8, 9, 18, 20, 22: replay / car-model modes, partly unknown) |
+| +0x10 | u32 flags: bits 0-3 car lights 0-3; 5 heat haze (replay course shots); 6 replay vignette; 7 colour-grade pass; 8 replay depth of field; 10 sun disc + glare; 11-14 scene lights 0-3; 15 car lamp glows (and the `cars/night/` car models); 16 mirrored cars and 17 lamp streaks in the wet-road reflection; 19 the `cars/eve/` car models (before bit 15); 21 GTFX lamp glows (9, 18, 20, 22: replay / car-model modes, partly unknown) |
 | +0x20 | far clip (m); the sun sits at far / 2 |
 | +0x28 / +0x48 | yaw / pitch (degrees) of the small sky dome (slot 23) in the cars' reflection map: turned by the yaw first, then the pitch |
 | +0x50 / +0x54 | scenery texture-LOD threshold / car LOD size threshold |
 | +0x58 | headlamp pool strength (car model node 5, drawn only when non-zero: night and dusk courses) |
 | +0x60..+0x68 | fog RGB (0..1) |
 | +0x70 / +0x74 | fog distance A / minimum visibility b (1.0 = no fog): visibility = b + (1 - b) min(1, A / z), z = view depth (per vertex). The backdrop (slot 22) gets the same fog at true distance |
-| +0xB0..+0xC8 | ambient particles: u32 count, box / size / speed |
+| +0xB0..+0xC8 | heat haze (flag 5): u32 lens count (400), lens size, box half-width, vertical cap, distance ahead (m), horizontal drift range, vertical drift (m per frame) |
 | +0xD0 + 0x80 i | car light i: direction (towards the light, normalised by the renderer), ambient, diffuse, specular (w lanes 1); scaled per car by its shade (+0xAB0..+0xACC). Day courses enable light 0 (the sun) and often light 1, a light from below with a negative diffuse (rome, apricot, smtnorth/smtsouth, testcourse, super, r_deepforest, ...: direction (0, −0.29, 0) or (0, −0.79, −1), diffuse −0.2..−0.26, ambient and specular 0) that darkens the lower body. Global ambient +0xEF0 (w = 1) |
+| +0x930..+0x938 | replay depth of field (flag 8, presentation §G17): f-number (10 on most courses), focal length in mm (35), the nearest focus distance (m; 4 on most) |
 | +0x980..+0x994 | colour grade (flag 7): levels black / white (+0x98C / +0x990) stretched to 0 / 1, then per channel (g at +0x980..+0x988) out = x^2 + 2 g x (1 - x) (g = 0.5 identity), then saturation s (+0x994) around luma (0.30, 0.59, 0.11); no bloom. Only Monte Carlo (g 0.29 0.28 0.27, s 0.97) and reverse Deep Forest (0.5 0.5 0.45) change the picture |
+| +0x950..+0x974 | replay vignette (flag 6): outer / inner radius (pixels of the 640 × 448 frame), outer RGBA, inner RGBA (most courses 420 / 200, black at 0.4 outside, clear inside) |
 | +0x9C0..+0x9E8 | sun: RGB, occlusion weight W, glare size k (angular half-size atan k), disc size d (angular radius atan d), disc gain, elevation, azimuth (degrees; direction (sin a cos e, -sin e, cos a cos e), e = -elev, a = -az, y up), i32 style (0 `race/glare.img` sprite, 1 72-spike burst, 2 glow disc), occlusion box N (pixels) |
 | +0x9F0..+0xA1C | car-lamp glow type (as the lamp types below) |
+| +0xF30 / +0xF34 / +0xF38 | u32 course draw flags of the 1P view, the 2P halves and the rear-view mirror: bit 0 draws the billboards (BLBd) after the scenery. Most courses 0xFFFFFFFF; 0xFFFFFFFE (none) in the 2P halves and the mirror on akasaka, midfield, seattle, smtsouth and the Tahiti courses, in the mirror on rome and route11; montecarlo 1 / 0 / 0 |
 | +0xA60..+0xA78 | car shadows (car model nodes 1 and 6, see car_model.md): RGB, alpha scale +0xA6C, direction elevation / azimuth +0xA70 / +0xA74 (degrees), length +0xA78 (shift per metre of height) |
 | +0xAD0 + 0x50 i | scene light i: direction (towards the light), ambient +0x10, diffuse +0x20, specular +0x30 (+0x40 unused); enabled by +0x10 bits 11-14. The lights of the course's own lit packets (see "Lighting") |
 | +0xC60 + 0x40 i | lamp type i (8): RGB, intensity, glow size (x10 = flare mesh scale), halo size, halo gain, directional exponent n, attenuation c / l / q (I = 1 / (c + l z + q z^2)), max distance, occlusion box (x128 px), blink period |
@@ -479,9 +482,11 @@ scaled by the glow size × 10, without depth test: vertex RGB × colour (type
 RGB × intensity × attenuation × blink × D, clamped to 255), vertex alpha ×
 visibility, blended Cs·As/128 + Cd. Visibility: a depth test of a 10 × 10
 pixel box at the lamp, 0.2 m nearer than it, worth 2 × the passing fraction
-(capped at 1). The halo is a depth-tested burst mesh of the halo size,
-colour × gain × 0.5, drawn for every kept lamp further than 1 m whatever D
-and the visibility.
+(capped at 1). The halo is the game's own 14-segment disc (a fan of radius
+1, centre RGBA 0xFF, rim 0; built at start-up, not in `race/flare.bin`) of the
+halo size, depth-tested, colour × gain × 0.5 at full visibility, drawn for every
+kept lamp further than 1 m whatever D and the visibility. The sun disc is the
+same mesh.
 
 `race/flare.bin`: +0x0A u16 mesh count, at +0x10 per mesh {u32 offset, u16
 qwc, u16 texture}; each mesh is a VIF packet laid out as a GTM1 chunk

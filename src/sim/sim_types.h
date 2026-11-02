@@ -84,6 +84,8 @@ struct WheelState {
     bool grounded = false;
     u32 surface = 0;
     float flap = 0;          // [physics §8.8] flap pendulum, -1..1 (car models' morph phase 0.5 + 0.5 flap)
+    float camber = 0;        // radians, the drawn wheel's camber from its suspension travel (the wheel record's)
+    float brake_heat = 0;    // [physics §8.5] 0..1, drawn as the brake rotor's glow
 };
 
 // A car's state after a step (race::exact_state). Rendering, camera, HUD and

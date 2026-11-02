@@ -9,7 +9,8 @@
 //     (0x80 bytes each, sorted by start), +0x2C/+0x30 a second list (course stills: the
 //     program shows them only in a slideshow nothing reachable starts).
 //   record: +0x00 u32 kind, +0x04 f32 start D, +0x08 f32 end D, +0x0C f32 duration,
-//     +0x18 u32 on-board mount, +0x28/+0x2C f32 zoom min/max, rel-ptr curves:
+//     +0x18 u32 on-board mount, +0x1C f32 the heat haze (> 0: on; presentation §L6),
+//     +0x28/+0x2C f32 zoom min/max, rel-ptr curves:
 //     +0x34 zoom, +0x40/+0x44/+0x48 camera x/y/z, +0x58/+0x5C/+0x60 target x/y/z,
 //     +0x64 f32 the cut's dissolve (seconds, 0 none; presentation §G16).
 //   curve: u32 n, n x {f32 t, f32 value}; piecewise linear in t (0..1), linear
@@ -52,8 +53,12 @@ struct GtrcRecord {
     u32 mount = 0;
     float zoom_min = 1, zoom_max = 100;
     float dissolve = 0; // +0x64: seconds of dissolve at the cut to it (modes 0, 2, 3)
+    // +0x1C: the shot's camera flag 0x2000 (the designer camera, > 0.0): the heat haze
+    // lenses on courses with Env0 flag 0x20 (presentation §L6). 0.0 or 1.0 on the disc.
+    float haze = 0;
     GtrcCurve zoom, pos[3], target[3];
 
+    bool hazy() const { return haze > 0; }
     int mode() const { return int(kind & 3); }
     bool looks_at_car() const { return (kind & 0xC) != 0; }
     bool zoom_by_distance() const { return (kind & 0x10) != 0; }
@@ -276,6 +281,10 @@ public:
         float fovy = 0.8f;    // radians, vertical
         float roll = 0;       // radians about the view axis (mode 1's course shots)
         float seconds = 0;    // since the cut
+        // A course shot (its record's camera, on-board records included) whose record has the
+        // haze flag (GtrcRecord::haze); never a turn on board or a procedural camera, whose
+        // flags are 0 or 0x4000 (presentation §L6).
+        bool haze = false;
     };
     // A GT3 zoom (1 / tan of the half horizontal angle over the 640-pixel frame) as our
     // vertical field of view (the 448-line frame: tan(half) = 0.7 / zoom).

@@ -15,12 +15,14 @@
 // attenuation x blink x D, clamped to 255), vertex alpha x visibility, added as Cs As / 128.
 // Visibility is the GS depth test of a 10 x 10 pixel box at the lamp 0.2 m nearer than it,
 // 2 x the passing fraction, capped at 1 (a ray grid against the course occluder here). The
-// halo is a depth-tested disc of the halo size, colour x gain x 0.5, drawn for every kept
-// lamp further than 1 m (the original's halo mesh is a procedural 72-spike burst).
+// halo is the flare system's 14-segment disc (Flare::disc_mesh) of the halo size at the pulled
+// point, depth-tested (one ray here), colour x gain x 0.5 at full visibility, added as the
+// glow is, drawn for every kept lamp further than 1 m.
 
 #include "base/bytes.h"
 #include "formats/course/visibility.h"
 #include "render/math3d.h"
+#include "render/screen_batch.h"
 
 #include <SDL3/SDL_render.h>
 
@@ -37,10 +39,6 @@ namespace gt3r::race {
 // adds Cs As / 128.
 class Flare {
 public:
-    Flare() = default;
-    Flare(const Flare&) = delete;
-    Flare& operator=(const Flare&) = delete;
-    ~Flare();
     struct Vertex {
         float x = 0, y = 0, z = 0; // metres at scale 1
         u8 rgba[4] = {};           // raw GS colour (0x80 = 1.0)
@@ -53,22 +51,27 @@ public:
     static std::vector<Mesh> parse(ByteSpan flare);
     void load(ByteSpan flare) { meshes_ = parse(flare); }
     bool empty() const { return meshes_.empty(); }
-    // Appends the meshes centred at view-space (x, y) at depth `d` in front of the camera,
-    // scaled by `s`, coloured `col` with visibility `vis` (0..1).
-    void add(std::vector<SDL_Vertex>& verts, std::vector<int>& idx, const render::Frustum& fr, const SDL_FRect& rect,
-             float x, float y, float d, float s, const std::array<float, 3>& col, float vis) const;
-    // Draws a batch built for `rect`: Cs As / 128 + Cd, i.e. two passes of SDL's additive
-    // Cs As / 255 + Cd. With `lines` > 0 the batch is drawn into a layer of that many rows over
-    // `rect` (columns at the PS2 frame's pixel aspect, 640 x 448 shown at 4:3) and added to
-    // the picture with bilinear filtering, so the thin rays look (and break up) as they do at
-    // the original's resolution; 0 draws straight at the output resolution.
-    void submit(SDL_Renderer* r, const SDL_FRect& rect, float lines, std::vector<SDL_Vertex>& verts,
-                const std::vector<int>& idx) const;
+    // Adds the meshes centred at view-space (x, y) at depth `d` in front of the camera, scaled by
+    // `s`, coloured `col` with visibility `vis` (0..1), to `b` (in `rect`'s units): Cs As / 128 +
+    // Cd, i.e. two passes of the additive Cs As / 255 + Cd. Drawn into the view's picture (at the
+    // original's 448 lines in the original-resolution frame), not over the output.
+    void add(render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect, float x, float y, float d,
+             float s, const std::array<float, 3>& col, float vis) const;
+    // One mesh, as add(), scaled by `sx` across and `sy` up (view space).
+    static void add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect,
+                         float x, float y, float d, float sx, float sy, const std::array<float, 3>& col, float vis);
+    // The vertex program's colour of a vertex as the GS gets it (0..255 per channel; the
+    // alpha's 0x80 = 1.0): trunc(min(255, vertex RGB x col)), trunc(min(255, vertex alpha x
+    // trunc(255 vis) / 255)).
+    static std::array<u8, 4> gs_color(const Vertex& v, const std::array<float, 3>& col, float vis);
+    // The flare system's own mesh, built at start-up (not in race/flare.bin): a 14-segment fan
+    // of radius 1 in the view plane, seven strips of four vertices (rim 2k, centre, rim 2k + 1,
+    // rim 2k + 2; rim j at angle 2 pi j / 14, x = cos, y = sin), centre RGBA 0xFF, rim 0. The sun
+    // disc and every lamp halo are drawn with it (presentation §I6, §J1).
+    static const Mesh& disc_mesh();
 
 private:
     std::vector<Mesh> meshes_;
-    mutable SDL_Texture* layer_ = nullptr;
-    mutable int layer_w_ = 0, layer_h_ = 0;
 };
 
 struct LampType {
@@ -85,22 +88,24 @@ struct Lamp {
 
 class LampGlows {
 public:
-    ~LampGlows();
     // `gtfx` = slot 29, `env0` = slot 32 (lamp types; flag 0x200000 turns the lamps on),
     // `vls0` = slot 2 (which lamp lists to visit), `flare` = race/flare.bin (empty: a
-    // procedural stand-in sprite).
-    void load(SDL_Renderer* r, ByteSpan gtfx, ByteSpan env0, ByteSpan vls0, ByteSpan flare);
+    // procedural stand-in sprite). `gpu`: the sprites for the 3D views too.
+    void load(SDL_Renderer* r, render::GpuContext* gpu, ByteSpan gtfx, ByteSpan env0, ByteSpan vls0, ByteSpan flare);
     size_t count() const { return count_; }
     void tick(double seconds) { time_ += seconds; }
-    // `blocked(from, to)`: true if the segment is occluded. `lines`: the flare layer's rows
-    // over `rect` (Flare::submit; 0 = output resolution).
-    void draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye, float fovy,
-              const std::function<bool(const render::Vec3&, const render::Vec3&)>& blocked, float lines = 0) const {
-        draw(r, rect, view, eye, render::Frustum::symmetric(fovy, rect.w / rect.h), blocked, lines);
+    using Blocked = std::function<bool(const render::Vec3&, const render::Vec3&)>;
+    // Adds the glows over `rect` to `b`, which the view draws before its grade (presentation
+    // §L6). `blocked(from, to)`: true if the segment is occluded.
+    void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
+             const render::Frustum& fr, const Blocked& blocked) const;
+    void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
+             float fovy, const Blocked& blocked) const {
+        add(b, rect, view, eye, render::Frustum::symmetric(fovy, rect.w / rect.h), blocked);
     }
+    // Draws them with the 2D renderer (VR eyes, which have no grade).
     void draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
-              const render::Frustum& fr,
-              const std::function<bool(const render::Vec3&, const render::Vec3&)>& blocked, float lines = 0) const;
+              const render::Frustum& fr, const Blocked& blocked) const;
 
 private:
     std::vector<std::vector<Lamp>> lists_; // GTFX lists, one per slot 1 node
@@ -108,8 +113,7 @@ private:
     std::array<LampType, 8> types_{};
     course::Visibility vis_;
     Flare flare_;
-    SDL_Texture* glow_ = nullptr; // stand-in when race/flare.bin is missing
-    SDL_Texture* disc_ = nullptr;
+    render::SpriteTexture glow_; // stand-in when race/flare.bin is missing
     double time_ = 0;
 };
 
@@ -141,9 +145,9 @@ struct CarLampSet {
 
 class CarLampGlows {
 public:
-    ~CarLampGlows();
-    // `env0` = slot 32, `flare` = race/flare.bin (empty: a procedural stand-in sprite).
-    void load(SDL_Renderer* r, ByteSpan env0, ByteSpan flare);
+    // `env0` = slot 32, `flare` = race/flare.bin (empty: a procedural stand-in sprite). `gpu`: the
+    // sprites for the 3D views too.
+    void load(SDL_Renderer* r, render::GpuContext* gpu, ByteSpan env0, ByteSpan flare);
     bool active() const { return active_; }
     struct Car {
         const CarLampSet* lamps = nullptr;
@@ -151,22 +155,22 @@ public:
         float k = 0;        // lamp factor k/4
         bool brake_now = false;
     };
-    // `lines`: as LampGlows::draw.
-    void draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye, float fovy,
-              const std::vector<Car>& cars,
-              const std::function<bool(const render::Vec3&, const render::Vec3&)>& blocked, float lines = 0) const {
-        draw(r, rect, view, eye, render::Frustum::symmetric(fovy, rect.w / rect.h), cars, blocked, lines);
+    using Blocked = LampGlows::Blocked;
+    // As LampGlows::add / draw.
+    void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
+             const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked) const;
+    void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
+             float fovy, const std::vector<Car>& cars, const Blocked& blocked) const {
+        add(b, rect, view, eye, render::Frustum::symmetric(fovy, rect.w / rect.h), cars, blocked);
     }
     void draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
-              const render::Frustum& fr, const std::vector<Car>& cars,
-              const std::function<bool(const render::Vec3&, const render::Vec3&)>& blocked, float lines = 0) const;
+              const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked) const;
 
 private:
     bool active_ = false;
     LampType type_;
     Flare flare_;
-    SDL_Texture* glow_ = nullptr; // stand-in when race/flare.bin is missing
-    SDL_Texture* disc_ = nullptr;
+    render::SpriteTexture glow_; // stand-in when race/flare.bin is missing
 };
 
 } // namespace gt3r::race

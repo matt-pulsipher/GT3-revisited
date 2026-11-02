@@ -10,6 +10,9 @@
 // draws of the VU0 random register, phase 13, the race flow and the pit lane, the race clock, the gap matrices, the ranking,
 // the rubber band and the race's end countdown [physics §1.1-§1.2, §5.3; ai §9-§13].
 //
+// A race frame (step) is that step and what race's frame does after it that the race's later frames depend on: each car's
+// spark bursts and the sparks' update (sparks.h), which draw the VU0 random register after the step's tyre effects and flaps.
+//
 // The race flow's outputs for the game (race_flow.h): the race display's events among the queue posts, the entries' and the
 // session's time records, the data logger's tables (race info + 0x70 / + 0x74), the free run's recorder events (its lap
 // recordings and ghost car: the ghost's extra step, the race step in its second entry mode, runs inside). Not modelled
@@ -27,6 +30,7 @@
 #include "sim/exact/pit_lane.h"
 #include "sim/exact/race_flow.h"
 #include "sim/exact/race_inputs.h"
+#include "sim/exact/sparks.h"
 #include "sim/exact/start.h"
 #include "sim/exact/tick.h"
 
@@ -95,6 +99,10 @@ struct RaceSetup {
     // The course's tyre effect emitter (the race's particle system, RaceCourse +4): it draws the VU0 random register for every
     // particle. Off only to reproduce a race run without one.
     bool effects = true;
+    // Each entry's car model's spark points (GTCI +0x58 / +0x5C, the model folder the race draws; entry i's at i, none past the
+    // list): the race's sparks [presentation §L7]. All empty: a race without them (a replay recorded before they were made, a
+    // test of the race step alone).
+    std::vector<std::vector<SparkPoint>> sparks;
     // The addresses the records' pointer words hold (car + 0 / + 4 / + 8, the parameter block's tables): they matter only
     // where records are compared byte for byte.
     u32 info = 0, conductor = 0, course_addr = 0;
@@ -163,11 +171,12 @@ public:
     // no pit box for the car, a grid slot outside 0 .. 7). Nothing a step does throws.
     explicit ExactRace(const RaceSetup& setup);
 
-    // One race frame (60 Hz): the start countdown, then the race step. pads[i] is car i's frame (the pad read and the
-    // conductor's pad hook; a car without an input device has an empty one); missing entries read as empty frames.
+    // One race frame (60 Hz): the start countdown, the race step, then the sparks' bursts and update (RaceSetup::sparks).
+    // pads[i] is car i's frame (the pad read and the conductor's pad hook; a car without an input device has an empty one);
+    // missing entries read as empty frames.
     void step(std::span<const PadFrame> pads);
-    // The race step alone (as the race's frame calls it, after the countdown), for a caller that drives the race
-    // information's countdown itself (set_start_count).
+    // The race step alone (as the race's frame calls it, after the countdown; no sparks), for a caller that drives the
+    // race information's countdown itself (set_start_count).
     void race_step(std::span<const PadFrame> pads);
 
     // ---- the race information's start countdown (race info + 0x50 .. + 0x68) ----
@@ -221,6 +230,11 @@ public:
     const std::vector<collide::exact::Body>& bodies() const { return bodies_; }
     std::vector<collide::exact::Body>& bodies() { return bodies_; }
     const Vu0Random& random() const { return rng_; }
+    // The sparks (RaceSetup::sparks; none in a race without spark points): as the last frame left them.
+    bool has_sparks() const { return sparks_on_; }
+    const Sparks& sparks() const { return sparks_; }
+    // The random register as the last frame's race step left it, before its sparks drew from it.
+    const Vu0Random& random_before_sparks() const { return rng_step_; }
 
     // ---- the last frame's outputs ----
     bool ran() const { return ran_; }                                      // the race-flow gate let the step's phases run
@@ -276,6 +290,7 @@ private:
     void run(std::span<const PadFrame> pads, int mode); // conductor, mode: 1 the free run ghost's extra step
     void collide(size_t first);      // phase 10 (mode 1: for the cars from `first`)
     void emit(int i, const ChassisOutputs& out); // phase 12's emitter calls
+    void spark_frame();              // The race's frame's bursts (per car), then the race's frame update's update
     void flow_after(AiPlan& plan, std::span<const PadFrame> pads, int mode); // after phase 13
     void copy_in();
     void restore_body(int k, const Snapshot& s); // the body
@@ -307,7 +322,7 @@ private:
     RaceFlow flow_;
     GapMatrix gaps_;
     Proximity prox_;
-    Vu0Random rng_;
+    Vu0Random rng_, rng_step_;
 
     std::function<void(std::span<PadFrame>)> nested_pads_;
     std::optional<SoloRecorders> rec_;
@@ -319,6 +334,9 @@ private:
     std::vector<PitEvent> pit_events_;
     std::vector<CollisionHit> hits_;
     std::vector<SmokeParticle> particles_;
+    std::vector<std::vector<SparkPoint>> spark_points_;
+    bool sparks_on_ = false;
+    Sparks sparks_;
     std::vector<u8> hit_, hit_43c_;
     std::vector<u8> posed_;
     std::vector<CarContact> car_contacts_;

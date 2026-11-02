@@ -4,6 +4,7 @@
 // distant backdrop, camera-centred sky domes) and the player's car (body LODs plus
 // four separately transformed wheels).
 
+#include "formats/model/brake_model.h"
 #include "formats/model/car_model.h"
 #include "race/clut_animations.h"
 #include "race/occluder.h"
@@ -12,6 +13,7 @@
 #include "render/gpu_model.h"
 #include "race/lamp_glows.h"
 #include "render/view3d.h"
+#include "race/wheel_fx.h"
 #include "sim/sim_types.h"
 
 #include <array>
@@ -104,6 +106,23 @@ struct CarShadowParams {
     float headlamp = 0;
 };
 
+// The view drawing the cars, for their wheels (race/wheel_fx.h): GT3 picks each wheel's detail
+// from its size on screen, draws the brake parts on the near ones whose outer face is in view,
+// and in the main view blurs the spinning wheels. Without one (the mirrors) the wheels are drawn
+// plain.
+struct WheelView {
+    render::Mat4 view, proj;
+    render::Vec3 eye;
+    bool blur = false; // the main view: the spin blurs (not the 2P halves)
+    WheelEnv env;      // the course's blur time and falloff, the rotors' glow gain
+};
+
+// Where a car's wheel centres were on screen the last frame the main view drew it (normalised
+// device coordinates), for the blur.
+struct WheelTrack {
+    std::array<std::array<float, 2>, 4> ndc{};
+};
+
 // Per-car look for one frame: light colour scales (ambient, diffuse, specular; GT3's road
 // shade under the car), the reflection factor (1 - dirt) and the light shadow's factor F.
 struct CarLook {
@@ -120,6 +139,11 @@ struct CarLook {
     int lamp_shadows = 0;
     render::Vec3 lamp_shear[4];
     float lamp_alpha[4] = {};
+    // The wheels' view (null: plain wheels), this car's track of them, and whether it is the
+    // camera's car (GT3 blurs its tyres and rims; the other cars' rims show their spinning image).
+    const WheelView* wheels = nullptr;
+    WheelTrack* wheel_track = nullptr;
+    bool focus = false;
 };
 
 class CarVisual {
@@ -150,10 +174,25 @@ public:
     render::Mat4 body_matrix(const sim::VehicleState& s, const sim::VehicleSetup& setup) const;
     void set_shadow(const CarShadowParams& p);
     bool shadow_set() const { return shadow_set_; }
+    // The brake parts inside the wheels (race/brake.bin; the car file's GTCI records which).
+    void set_brake_parts(const BrakeParts& bin);
 
 private:
+    // `wheel_fx`: the wheels' brake parts and spin blurs (not for the wet road's mirrored car,
+    // whose wheels GT3 draws as its farthest level).
     void add_body_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s, const sim::VehicleSetup& setup,
-                        const CarLook& look, const render::Mat4& pre, int lod) const;
+                        const CarLook& look, const render::Mat4& pre, int lod, bool wheel_fx) const;
+    // What one wheel shows this frame (race/wheel_fx.h).
+    struct WheelLook {
+        bool parts = false;     // the rotor and caliper
+        float glow = 0;         // the rotor glow's weight (0: none)
+        bool tread = false;     // the tread blur, by tread_shifts
+        std::array<float, 3> tread_shifts{};
+        int rim = 0;            // 1: the rim blur by rim_angles, 2: the wheel's spinning image
+        std::array<float, 4> rim_angles{};
+    };
+    WheelLook wheel_look(int i, const render::Mat4& at, const render::Mat4& hub, const sim::WheelState& w,
+                         const CarLook& look) const;
     std::unique_ptr<render::GpuModel> body_, body_brake_;
     // The draws the car's callback morphs (mud flaps, aerials, steering), per LOD, drawn from
     // models sharing morph_base_'s textures, one per CarLook::instance, rebuilt when the values
@@ -167,9 +206,22 @@ private:
     mutable std::array<Morph, 2> morph_;
     CarLampSet lamps_;
     std::vector<CarMount> mounts_;
-    std::array<std::unique_ptr<render::GpuModel>, 4> wheels_;
-    std::array<std::unique_ptr<render::GpuModel>, 4> bands_; // the tyres' arch shade (does not spin)
+    // Each wheel: the tyre (with its black faces) and the rim, drawn spinning; the band, the tyres'
+    // arch shade, turned by the camber only; the brake parts (rotor and caliper, steered, not
+    // spinning) and the rotor's glow (spinning).
+    std::array<std::unique_ptr<render::GpuModel>, 4> tyres_, rims_;
+    std::array<std::unique_ptr<render::GpuModel>, 4> bands_;
+    std::array<std::unique_ptr<render::GpuModel>, 4> brakes_, glows_;
     std::array<render::Vec3, 4> wheel_center_{}; // where the decoder placed each wheel (car frame)
+    std::array<BrakeRecord, 2> brake_records_{}; // GTCI +0x14 / +0x28
+    // The wheels' sizes (WheelSpec, per axle): the tyre width and the bounding radius sqrt(R^2 + W^2 / 4).
+    std::array<float, 2> wheel_width_{}, wheel_bound_{};
+    u32 tyre_flags_ = 0, tyre_repeats_ = 1; // GTTR +0x14 / +0x10
+    float tyre_shininess_ = 8;              // GTTR +0x18
+    // The rim image's width (the blur's mip level) and the wheel's spinning image: the texture
+    // index in rims_ (-1: the wheel file has none).
+    u32 rim_width_ = 0;
+    int rim_spin_texture_ = -1;
     // Shadow nodes 1 (light) and 6 (contact), and node 5 (headlamp pool); all LODs; CPU copies
     // to recolour.
     std::array<std::unique_ptr<render::GpuModel>, 3> shadow_;
