@@ -69,8 +69,9 @@ sim::ControlInputs ControlMapper::update(const PadState& pad, double dt) {
 }
 
 void RumbleModel::reset() {
-    gt3_ = modern_ = {};
-    trig_l_ = trig_r_ = 0;
+    gt3_ = {};
+    body_ = tyres_ = 0;
+    trig_l_ = trig_r_ = spin_ = 0;
     impact_timer_ = impact_level_ = 0;
 }
 
@@ -99,24 +100,38 @@ void RumbleModel::update(const sim::VehicleState& s, const sim::VehicleTelemetry
     float lock_amt = std::clamp((lock - 0.2f) / 0.5f, 0.0f, 1.0f) * std::min(1.0f, in.brake * 2);
 
     // The pad's actuators are cleared after every send, so a step that sends nothing stops both motors.
-    gt3_ = modern_ = {};
+    gt3_ = {};
+    body_ = tyres_ = 0;
     if (t && t->pad_output) {
         if (t->pad_rumble > 0) gt3_.large = u8(std::min(t->pad_rumble, 127));
         const float speed = s.speed_kmh / 3.6f;
-        float large = impact_level_;
-        if (ev.offroad && speed > 3) large = std::max(large, 0.18f + std::min(0.2f, speed / 150.0f));
-        large = std::max(large, 0.25f * spin_amt);
-        // A pronounced squeal adds a gentle low-motor rumble; ordinary cornering stays quiet.
+        // Modern's body level (hits, rough ground) and tyre level (wheelspin, a pronounced squeal: ordinary
+        // cornering stays quiet; locked wheels; curbs pulsed at a rate that follows the speed).
+        body_ = impact_level_;
+        if (ev.offroad && speed > 3) body_ = std::max(body_, 0.18f + std::min(0.2f, speed / 150.0f));
         const float grip_loss = std::clamp((slide - 0.35f) / 0.9f, 0.0f, 1.0f);
-        large = std::max(large, 0.35f * grip_loss);
-        modern_.large = u8(std::clamp(large, 0.0f, 1.0f) * 255.0f);
-        // Curbs: the small (on/off) motor, pulsed at a rate that follows the speed.
-        modern_.small = ev.kerb && speed > 2 && std::fmod(clock_ * (4.0 + speed * 0.4), 1.0) < 0.5;
+        tyres_ = std::max({0.4f * spin_amt, 0.4f * grip_loss, 0.35f * lock_amt});
+        if (ev.kerb && speed > 2 && std::fmod(clock_ * (4.0 + speed * 0.4), 1.0) < 0.5)
+            tyres_ = std::max(tyres_, 0.63f);
     }
 
     // Ours, the triggers. Impulse triggers: ABS chatter on the brake trigger, wheelspin buzz on the throttle trigger.
     trig_l_ = lock_amt > 0 ? (std::fmod(clock_ * 15.0, 1.0) < 0.5 ? 0.6f * lock_amt + 0.2f : 0.0f) : 0.0f;
     trig_r_ = 0.5f * spin_amt;
+    spin_ = spin_amt;
+}
+
+PadRumble RumbleModel::rumble(bool gt3, bool dualsense) const {
+    if (gt3) return gt3_;
+    // Modern: the body on the large motor and the tyres on the small one, each motor also playing a share of the
+    // other's level. Most pads' large motor shakes the whole pad, so the split reads as heavy against light and a
+    // small share keeps it; a DualSense plays its motors in separate grips, where a split reads as a side.
+    const float other = dualsense ? 0.7f : 0.35f;
+    auto level = [](float v) { return u8(std::clamp(v, 0.0f, 1.0f) * 255.0f); };
+    PadRumble r;
+    r.large = level(std::max(body_, other * tyres_));
+    r.small = level(std::max(tyres_, other * body_));
+    return r;
 }
 
 } // namespace gt3r::race

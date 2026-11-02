@@ -825,7 +825,9 @@ void InputManager::update(double dt) {
         const Device* steer = tagged_steering(p);
         for (const Device* d : {find_device(p.device), steer}) {
             if (!d || (d == steer && d->id == p.device)) continue;
-            if (p.ffb_age < 0.25) ffb_.apply(d->id, d->gamepad, d->joystick, d == steer ? -1 : brake_trigger(p), p.ffb, time_);
+            if (p.ffb_age < 0.25)
+                ffb_.apply(d->id, d->gamepad, d->joystick, d == steer ? -1 : pedal_trigger(p, PadButton::Square),
+                           d == steer ? -1 : pedal_trigger(p, PadButton::Cross), p.ffb, time_);
             else ffb_.stop(d->id);
         }
         p.ffb_age += dt;
@@ -837,9 +839,9 @@ void InputManager::set_force_feedback(int player, const ForceFeedbackState& stat
     players_[player].ffb_age = 0;
 }
 
-int InputManager::brake_trigger(const Player& p) const {
+int InputManager::pedal_trigger(const Player& p, PadButton pedal) const {
     for (const Binding& b : (p.race_reads_menu ? p.menu : p.race).bindings)
-        if (b.target.kind == PadTarget::Kind::Button && b.target.button == PadButton::Square &&
+        if (b.target.kind == PadTarget::Kind::Button && b.target.button == pedal &&
             b.source.kind == InputSource::Kind::PadAxis && b.source.device.empty() &&
             (b.source.code == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || b.source.code == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER))
             return b.source.code;
@@ -850,7 +852,13 @@ bool use_phone_vibrator(bool enabled, int player, bool device_rumbles) {
     return enabled && player == 0 && !device_rumbles;
 }
 
-float phone_vibration_strength(const PadRumble& r) { return std::max(r.large / 255.0f, r.small ? 0.6f : 0.0f); }
+float phone_vibration_strength(const PadRumble& r) { return std::max(r.large, r.small) / 255.0f; }
+
+PadRumble dualsense_rumble(const PadRumble& r) {
+    PadRumble out = r;
+    out.small = u8(std::min(255.0f, r.small * 1.75f));
+    return out;
+}
 
 bool gt3_rumble(std::string_view mode, bool dualsense) {
     if (mode == "gt3") return true;
@@ -933,12 +941,15 @@ void InputManager::set_rumble(int player, const PadRumble& r) {
     if (player == 0)
         vibrate_phone(use_phone_vibrator(phone_vibration_, player, rumbles) ? phone_vibration_strength(r) : 0.0f);
     if (!d) return;
-    // DS2: large motor -> low-frequency rumble, small (on/off) -> high frequency.
-    Uint16 low = Uint16(r.large * 257);
-    Uint16 high = r.small ? 0xA000 : 0;
+    // Large motor -> low-frequency rumble (the left grip), small -> high frequency (the right grip).
+    const PadRumble m = d->dualsense ? dualsense_rumble(r) : r;
+    Uint16 low = Uint16(m.large * 257);
+    Uint16 high = Uint16(m.small * 257);
     // None to a wheel whose force effects are ours (ForceFeedback::drives_wheel): it would reset them.
-    if (d->gamepad) SDL_RumbleGamepad(d->gamepad, low, high, 250);
-    else if (!ffb_.drives_wheel(d->id)) SDL_RumbleJoystick(d->joystick, low, high, 250);
+    if (d->gamepad) {
+        const bool sent = SDL_RumbleGamepad(d->gamepad, low, high, 250);
+        ffb_.rumbling(d->id, sent ? m.large : 0, sent ? m.small : 0); // for the DualSense's trigger packets
+    } else if (!ffb_.drives_wheel(d->id)) SDL_RumbleJoystick(d->joystick, low, high, 250);
 }
 
 bool InputManager::phone_vibration_available() {

@@ -49,9 +49,11 @@ class IniDocument;
 // of its own (built-in handheld controls, touch, a controller without motors). A controller that
 // can rumble always rumbles itself and the phone stays still.
 bool use_phone_vibrator(bool enabled, int player, bool device_rumbles);
-// The DS2 rumble as one motor's strength 0..1: the large motor's level, or the small (on/off)
-// motor's 0.6 when stronger.
+// The rumble as one motor's strength 0..1: the stronger motor's level.
 float phone_vibration_strength(const PadRumble& r);
+// The rumble a DualSense is sent: it plays the small motor (the right grip) much lighter than the large one, so
+// the small motor's level is raised 1.75 times (at most full).
+PadRumble dualsense_rumble(const PadRumble& r);
 
 // The race rumble ([playerN] rumble; race::RumbleModel): "gt3" GT3 original, "modern" ours, "auto"
 // (or anything else) GT3 original on a DualSense, whose motors play GT3's levels as a DualShock 2
@@ -130,8 +132,8 @@ public:
     // Impulse triggers on Xbox One/Series pads (0..1 each). No-op elsewhere.
     void set_trigger_rumble(int player, float left, float right);
     // Driving feedback for this frame (call every frame while driving):
-    // DualSense brake-trigger resistance and ABS pulse, Xbox impulse-trigger
-    // ABS pulse, wheel spring + steering force. Effects stop by themselves
+    // DualSense brake-trigger resistance and ABS pulse and throttle-trigger
+    // wheelspin buzz, Xbox impulse-trigger ABS pulse, wheel spring + steering force. Effects stop by themselves
     // ~0.25 s after the last call. See docs/INPUT.md "Force feedback".
     void set_force_feedback(int player, const ForceFeedbackState& state);
     const ForceFeedbackConfig& ffb_config() const { return ffb_.config(); }
@@ -317,7 +319,8 @@ private:
     void add_chord_input(const InputSource& s);
     void update_chord_capture();
     void update_tilt(Player& p, const Device* dev);
-    int brake_trigger(const Player& p) const; // SDL trigger axis bound to the brake, or -1
+    // SDL trigger axis bound to a pedal (Square the brake, Cross the throttle), or -1.
+    int pedal_trigger(const Player& p, PadButton pedal) const;
     void vibrate_phone(float strength);       // 0 stops it
     void apply_background() const;            // SDL's background hint: background_ or background_held_
 

@@ -133,19 +133,28 @@ controllers; `race_rumble_mode`). GT3 original (physics §1.2), as GT3 drives a
 DualShock 2: each race step's vibration level (`VehicleTelemetry::pad_rumble`,
 0-127, set in phase 12 from the front tires' drive and brake forces, the dampers and
 curbs under the front wheels, and a hit's rumble) goes to the large motor as it is, so
-at most about half strength; the small motor never runs. Modern (ours): a wall or car
+at most about half strength; the small motor never runs. Modern (ours) runs both
+motors for everything with a lean (`RumbleModel::rumble`): the body level on the
+large (low-frequency, left) motor and the tyre level on the small (high-frequency,
+right) one, each motor also playing 0.35 of the other's level, or 0.7 on a DualSense
+(`InputManager::dualsense`), whose motors play in separate grips where a split reads
+as a side; elsewhere the large motor shakes the whole pad. A DualSense also plays its
+small motor (the right grip) much lighter than the large one, so `set_rumble` sends
+it 1.75 times stronger (`dualsense_rumble`), whatever the rumble. The body: a wall or car
 hit (`RaceVehicle::last_impact`, the stronger impulse over the car's mass, over
-1.5 m/s) holds the large motor for 0.25 s at speed change / 8 m/s; off-road
-(`RaceTrack::is_offroad` under the car, above 3 m/s) holds it at 0.18 plus the speed /
-150 m/s (up to 0.2 more); wheelspin under throttle at up to 0.25; a slide (the
-strongest grounded wheel's slip intensity, physics §8.3, from 0.35 to 1.25) at up to
-0.35; a wheel on a curb (`RaceTrack::is_kerb`) pulses the small motor at 4 Hz plus
-0.4 Hz per m/s. Either way a car the pad does not drive (an AI run-up, after the
-finish; `VehicleTelemetry::pad_output` clear) sends nothing, and its motors stop.
-Replays and demonstrations send nothing, and the Vibration option (`vib1`, the
-quick menu's OPTIONS) turns it off. Impulse triggers (`set_trigger_rumble`, ours):
-left = ABS-style chatter when a grounded wheel locks under braking, right =
-wheelspin under throttle (`race_rumble`).
+1.5 m/s) holds speed change / 8 m/s for 0.25 s; off-road (`RaceTrack::is_offroad`
+under the car, above 3 m/s) 0.18 plus the speed / 150 m/s (up to 0.2 more). The
+tyres: wheelspin under throttle up to 0.4, a slide (the strongest grounded wheel's
+slip intensity, physics §8.3, from 0.35 to 1.25) up to 0.4 and locked wheels under
+braking up to 0.35; a wheel on a curb (`RaceTrack::is_kerb`) pulses 0.63 at 4 Hz
+plus 0.4 Hz per m/s. Either way a car the pad does not drive
+(an AI run-up, after the finish; `VehicleTelemetry::pad_output` clear) sends nothing,
+and its motors stop. Replays and demonstrations send nothing, and the Vibration option
+(`vib1`, the quick menu's OPTIONS) turns it off. Impulse triggers (`set_trigger_rumble`,
+ours): left = ABS-style chatter when a grounded wheel locks under braking, right =
+wheelspin under throttle (`race_rumble`); a DualSense gets the wheelspin on its
+throttle trigger as an adaptive-trigger vibration (`ForceFeedbackState::wheelspin`,
+`ffb::throttle_trigger_effect`), as SDL's trigger rumble does nothing there.
 
 ## Rendering
 

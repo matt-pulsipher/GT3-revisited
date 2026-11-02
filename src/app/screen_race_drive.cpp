@@ -580,7 +580,9 @@ void RaceScreen::update_drive(App& app, double dt) {
         camera2_.set_track_distance(track_->distance_of(render_state2_.position));
         camera2_.set_lap(field_->second_laps().laps);
         camera2_.update(render_state2_, field_->second_setup(), pad2, dt);
-        app.input().set_rumble(1, rumble2_on_ && !replaying_ ? rumble2_.rumble(app.input().gt3_rumble(1)) : PadRumble{});
+        app.input().set_rumble(1, rumble2_on_ && !replaying_
+                                      ? rumble2_.rumble(app.input().gt3_rumble(1), app.input().dualsense(1))
+                                      : PadRumble{});
         if (rumble2_on_ && !replaying_) app.input().set_trigger_rumble(1, rumble2_.trigger_left(), rumble2_.trigger_right());
         else app.input().set_trigger_rumble(1, 0, 0);
         if (se_on() && engine2_.loaded()) {
@@ -630,7 +632,7 @@ void RaceScreen::update_drive(App& app, double dt) {
     if (const float d = director_.take_dissolve(); d > 0) start_dissolve(d); // a course record's own
 
     bool feel = rumble_on_ && !replaying_ && !demo_;
-    app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0)) : PadRumble{});
+    app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0), app.input().dualsense(0)) : PadRumble{});
     if (!feel) app.input().set_trigger_rumble(0, 0, 0);
     else app.input().set_trigger_rumble(0, rumble_.trigger_left(), rumble_.trigger_right());
     if (const RaceField* f = exact_field(); f && f->opponents() > 0) {
@@ -672,10 +674,12 @@ void RaceScreen::update_drive(App& app, double dt) {
     if (!replaying_ && !demo_ && rumble_on_) {
         if (!finished_)
             if (const sim::VehicleTelemetry* t = vehicle_->telemetry())
-                app.input().set_force_feedback(0, feedback(vehicle_->state(), *t, last_in_, ffb_wall_, ffb_car_));
+                app.input().set_force_feedback(0,
+                                               feedback(vehicle_->state(), *t, last_in_, ffb_wall_, ffb_car_, rumble_));
         if (field_ && field_->has_second() && !finished2_)
             if (const sim::VehicleTelemetry* t2 = field_->second_telemetry())
-                app.input().set_force_feedback(1, feedback(field_->second_state(), *t2, last_in2_, ffb_wall2_, ffb_car2_));
+                app.input().set_force_feedback(
+                    1, feedback(field_->second_state(), *t2, last_in2_, ffb_wall2_, ffb_car2_, rumble2_));
     }
     ffb_wall_ = ffb_car_ = ffb_wall2_ = ffb_car2_ = 0;
 }
@@ -683,13 +687,14 @@ void RaceScreen::update_drive(App& app, double dt) {
 // The steering force is the one GT3 gives a force-feedback wheel (car +0x16D6, 0x80 centred; positive turns the wheel
 // left, as the pad frame's steering).
 ForceFeedbackState RaceScreen::feedback(const sim::VehicleState& s, const sim::VehicleTelemetry& t, const sim::ControlInputs& in,
-                                        float wall, float car_hit) {
+                                        float wall, float car_hit, const RumbleModel& rumble) {
     ForceFeedbackState f;
     f.speed_kmh = s.speed_kmh;
     f.brake = in.brake;
     f.abs_active = t.abs_active;
     f.steer_force = t.wheel_force >= 0 ? std::clamp(-float(t.wheel_force - 0x80) / 127.0f, -1.0f, 1.0f) : 0.0f;
     f.jolt = std::min(1.0f, std::max(wall, car_hit) / 5000.0f);
+    f.wheelspin = rumble.wheelspin();
     return f;
 }
 
