@@ -269,12 +269,12 @@ TEST(vif_signed_8bit) {
 
 // The quad with vertex colours (V4-8 at 0x80: RGB 0x80, 0xFF, 0x40, alpha 0x80) and the GIF
 // tag's PRIM word `prim` (0x7C textured, 0x2C untextured).
-Bytes make_coloured_packet(u32 prim) {
+Bytes make_coloured_packet(u32 prim, u8 green = 0x60) {
     Bytes b = make_packet();
     const u32 tag1 = 0x30004000u | (prim << 15); // NREG 3, PRE, PRIM
     for (int i = 0; i < 4; ++i) b[8 + size_t(i)] = u8(tag1 >> (8 * i));
     put32(b, 0x6E04C080); // after the padding (VIF no-ops): V4-8 num=4 @0x80, colours
-    for (int i = 0; i < 4; ++i) b.push_back(0x80), b.push_back(0xFF), b.push_back(0x40), b.push_back(0x80);
+    for (int i = 0; i < 4; ++i) b.push_back(0x80), b.push_back(green), b.push_back(0x40), b.push_back(0x80);
     while (b.size() % 16) put32(b, 0);
     return b;
 }
@@ -290,10 +290,29 @@ TEST(gtm1_untextured_colours_as_the_gs_shows_them) {
     };
     auto rgb_is = [](u32 c, u32 r, u32 g, u32 b) { return (c & 0xFF) == r && ((c >> 8) & 0xFF) == g && ((c >> 16) & 0xFF) == b; };
     const u32 prelit_textured = colour(0x7C, 0), prelit_untextured = colour(0x2C, 0), lit_untextured = colour(0x2C, 1);
-    CHECK(rgb_is(prelit_textured, 255, 255, 128));
-    CHECK(rgb_is(prelit_untextured, 128, 255, 64));
-    CHECK(rgb_is(lit_untextured, 255, 255, 128));
+    CHECK(rgb_is(prelit_textured, 255, 191, 128));
+    CHECK(rgb_is(prelit_untextured, 128, 96, 64));
+    CHECK(rgb_is(lit_untextured, 255, 191, 128));
     CHECK((prelit_textured >> 24) == 255 && (prelit_untextured >> 24) == 255 && (lit_untextured >> 24) == 255);
+}
+
+// Past 0x80 a factor brightens (the GS: texel x colour >> 7, up to 255/128): the packet keeps the
+// GS bytes and kVertexColor2x, for the renderer to scale. An untextured pre-lit packet, shown as
+// it is, keeps its bytes without the flag.
+TEST(gtm1_colour_factors_past_0x80) {
+    auto decode = [](u32 prim, u8 kind) {
+        return gtm1::decode_gtm1(make_gtm1(make_coloured_packet(prim, 0xFF), kind));
+    };
+    auto check = [](const scene::Model& m, bool flagged) {
+        CHECK(!m.meshes.empty() && !m.meshes[0].vertices.empty() && !m.meshes[0].primitives.empty());
+        if (m.meshes.empty() || m.meshes[0].vertices.empty() || m.meshes[0].primitives.empty()) return;
+        const u32 c = m.meshes[0].vertices[0].color;
+        CHECK((c & 0xFFFFFFu) == (0x80u | 0xFFu << 8 | 0x40u << 16) && (c >> 24) == 255);
+        CHECK(((m.meshes[0].primitives[0].flags & scene::kVertexColor2x) != 0) == flagged);
+    };
+    check(decode(0x7C, 0), true);  // pre-lit, textured: MODULATE
+    check(decode(0x2C, 1), true);  // a factor of the VU's maths
+    check(decode(0x2C, 0), false); // pre-lit, untextured: shown as it is
 }
 
 TEST(gtm1_synthetic_model) {

@@ -152,6 +152,10 @@ struct DecodedPacket {
     bool env_normals = false;      // V3-32 at 0x40 (reflection pass: normal used for the env map)
     bool morph = false;            // a second key frame is present (key1)
     u32 raw_rgb_max = 0;           // largest raw vertex colour channel (0x80 = 1.0; up to 0xFF = 2.0)
+    // A colour factor past 0x80 (raw_rgb_max): the vertices' RGB are the GS bytes as they are,
+    // for the renderer to scale by 255/128 (scene::kVertexColor2x); untextured pre-lit packets,
+    // shown as they are, never.
+    bool rgb_2x = false;
 };
 
 class Gtm1 {

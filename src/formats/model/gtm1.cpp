@@ -76,9 +76,10 @@ int fixed_operand_bytes(u8 op) {
 }
 
 // A GS vertex colour in our 0..255 terms, 0x80 = 1.0: alpha is a blend weight, RGB a factor (a
-// texture's MODULATE, or the VU's lighting / reflection maths). `rgb_as_is`: a pre-lit packet's
-// colour that the VU passes straight to an untextured primitive, which the GS shows as it is
-// (0x80 = mid grey: the licence course line's coasting dashes).
+// texture's MODULATE, or the VU's lighting / reflection maths). `rgb_as_is`: the RGB bytes as
+// they are: a pre-lit packet's colour that the VU passes straight to an untextured primitive,
+// which the GS shows as it is (0x80 = mid grey: the licence course line's coasting dashes), or a
+// packet with a factor past 0x80 (DecodedPacket::rgb_2x: the renderer applies 255/128).
 u32 expand_color(const std::array<u32, 4>& c, bool rgb_as_is) {
     auto ch = [](u32 v) { return std::min<u32>(255, (v * 255 + 64) / 128); };
     auto rgb = [&](u32 v) { return rgb_as_is ? std::min<u32>(255, v) : ch(v); };
@@ -471,6 +472,12 @@ DecodedPacket Gtm1::decode_packet(const Packet& pk, bool prelit) const {
     out.has_colors = !col.empty();
     out.has_uv = !uv.empty();
     out.env_normals = !envn.empty();
+    for (const auto* cs : {&col, &col1})
+        for (const std::array<u32, 4>& c : *cs)
+            out.raw_rgb_max = std::max({out.raw_rgb_max, c[0] & 0xFF, c[1] & 0xFF, c[2] & 0xFF});
+    // A factor past 0x80 does not fit 0x80 = 255: such packets keep the GS bytes (rgb_2x).
+    const bool as_is = prelit && !out.prim.tme;
+    out.rgb_2x = !as_is && out.raw_rgb_max > 0x80;
     out.vertices.resize(n);
     for (size_t i = 0; i < n; ++i) {
         scene::Vertex& v = out.vertices[i];
@@ -478,10 +485,7 @@ DecodedPacket Gtm1::decode_packet(const Packet& pk, bool prelit) const {
         if (!nrm.empty()) for (int k = 0; k < 3; ++k) v.normal[k] = nrm[i][k];
         else if (!envn.empty()) for (int k = 0; k < 3; ++k) v.normal[k] = envn[i][k];
         if (!uv.empty()) v.uv[0] = uv[i][0], v.uv[1] = uv[i][1];
-        if (!col.empty()) {
-            v.color = expand_color(col[i], prelit && !out.prim.tme);
-            out.raw_rgb_max = std::max({out.raw_rgb_max, col[i][0] & 0xFF, col[i][1] & 0xFF, col[i][2] & 0xFF});
-        }
+        if (!col.empty()) v.color = expand_color(col[i], as_is || out.rgb_2x);
     }
     if (!pos1.empty()) {
         out.key1 = out.vertices;
@@ -490,7 +494,7 @@ DecodedPacket Gtm1::decode_packet(const Packet& pk, bool prelit) const {
             for (int k = 0; k < 3; ++k) v.pos[k] = pos1[i][k];
             if (!nrm1.empty()) for (int k = 0; k < 3; ++k) v.normal[k] = nrm1[i][k];
             if (!uv1.empty()) v.uv[0] = uv1[i][0], v.uv[1] = uv1[i][1];
-            if (!col1.empty()) v.color = expand_color(col1[i], prelit && !out.prim.tme);
+            if (!col1.empty()) v.color = expand_color(col1[i], as_is || out.rgb_2x);
         }
     }
     return out;
@@ -728,7 +732,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             p.first_index = u32(mesh.indices.size());
             p.index_count = u32(idx.size());
             p.texture = tex;
-            p.flags = kFlags;
+            p.flags = kFlags | (prim.flags & scene::kVertexColor2x);
             p.env_rows = prim.env_rows;
             std::copy(std::begin(prim.env_c0), std::end(prim.env_c0), p.env_c0);
             std::copy(std::begin(prim.env_c1), std::end(prim.env_c1), p.env_c1);
@@ -1046,6 +1050,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     else if ((d.fb_mask & 0xFF000000u) == 0xFF000000u)
                         prim.flags |= scene::kKeepAlpha;
                 }
+                if (dp.rgb_2x) prim.flags |= scene::kVertexColor2x;
                 if (weighted) {
                     emit_weighted_reflection(mesh, prim, written_alpha);
                     continue;

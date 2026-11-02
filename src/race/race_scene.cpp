@@ -116,9 +116,10 @@ CourseScene::CourseScene(render::GpuContext& ctx, ByteSpan data, const std::stri
                 if (t.rgba.empty()) continue;
                 const scene::Vertex& v = m.vertices[m.indices[p.first_index]];
                 u32 tc = t.rgba[t.rgba.size() / 2];
+                const double vs = (p.flags & scene::kVertexColor2x) ? 1.0 / 128.0 : 1.0 / 255.0;
                 for (int k = 0; k < 3; ++k)
                     acc[k] += double(p.index_count) * (double((tc >> (8 * k)) & 0xFF) / 255.0) *
-                              (double((v.color >> (8 * k)) & 0xFF) / 255.0);
+                              (double((v.color >> (8 * k)) & 0xFF) * vs);
                 n += double(p.index_count);
             }
         if (n > 0)
