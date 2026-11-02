@@ -72,7 +72,7 @@ body:
     id: disc
     attributes:
       label: Game disc
-      description: Settings → Game disc shows the serial, version and region.
+      description: Settings → Disc & saves shows the serial, version and region.
       placeholder: SCUS_971.02 v1.00 NTSC-U
     validations:
       required: true

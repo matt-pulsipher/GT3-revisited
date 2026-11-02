@@ -641,9 +641,7 @@ bool write_save(const std::string& path, const GameState& s, std::string* error)
         if (error) *error = "cannot write " + tmp;
         return false;
     }
-    // SDL_RenamePath takes UTF-8 on every platform (std::filesystem would use
-    // the ANSI code page on Windows) and replaces an existing file.
-    if (!SDL_RenamePath(tmp.c_str(), path.c_str())) {
+    if (!host_rename(tmp, path)) {
         if (error) *error = "cannot rename to " + path + ": " + SDL_GetError();
         return false;
     }
@@ -675,7 +673,7 @@ std::string set_aside_save(const std::string& path, std::string* error) {
         if (host_path_exists(to)) continue;
         // A file that cannot be renamed (locked, immutable) is copied: its bytes are kept
         // either way.
-        if (SDL_RenamePath(path.c_str(), to.c_str()) || SDL_CopyFile(path.c_str(), to.c_str())) return to;
+        if (host_rename(path, to) || host_copy_file(path, to)) return to;
         if (error) *error = "cannot move " + path + " to " + to + ": " + SDL_GetError();
         return {};
     }

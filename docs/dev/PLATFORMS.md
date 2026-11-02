@@ -147,6 +147,24 @@ read by its path like everywhere else, not through the documents API: the game a
 `READ_MEDIA_AUDIO` (`READ_EXTERNAL_STORAGE` before Android 13; Android 10 needs
 `requestLegacyExternalStorage`), which lets an app read audio files by path from Android 11
 on, then shows the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`).
+
+The save folder (Settings → Disc & saves → Save folder; `game/save_folder.h`) is used through the
+Storage Access Framework instead, so it can be any folder the system's picker offers: the
+device's storage, a memory card, or another app's documents provider (a sync app, a cloud
+drive). `GT3Activity.pickSaveFolder` asks for the folder with `ACTION_OPEN_DOCUMENT_TREE` and
+keeps a persisted read and write permission to it (released when the player leaves it); a
+folder of the game's own provider is used by its path. The tree URI is stored in
+`[saves] folder`, and the files in it have paths of their own: the tree URI, then `/` and the
+names inside it (`content://<authority>/tree/<id>/saves/eu/GAME.sav`,
+`platform/document_tree.h`). The host file functions (`base/file.h`: read, write, list, make,
+remove, rename, copy, exists, modification time) take those paths on Android and call
+`DocumentTree` (Java) through `GT3Activity`'s `doc*` methods, which finds each name's document
+among its folder's children (exact name first, else ignoring case) and remembers the ids, checked
+before each use because a sync app changes the folder too. SDL then reads and writes the
+document's own `content://` URI. Writing a save keeps the write-then-rename of other platforms:
+the `.tmp` file is written, the old file deleted and the `.tmp` renamed (`renameDocument` does not
+replace); a provider that renames nothing gets a copy and a delete. Every file is created as
+`application/octet-stream`, so providers keep the names as given.
 `GT3Activity.treePath` turns the picked folder into a path: the device's storage and memory
 cards (`primary:` and volume ids), Downloads' `raw:` ids and the game's own folder; folders of
 other providers (cloud drives) have none and are refused. Without the permission (refused, or
@@ -226,7 +244,8 @@ An image copied into the GT3 Revisited folder needs no
 bookmark; its saved path is moved into the next install's folder, which iOS names anew
 (`rebase_app_container_path`). No document type is declared: opening an image from the Files
 app would copy it into the app. The music folder is picked the same way (a folder in the
-document picker) and keeps its access with a bookmark too (`restore_music_access`).
+document picker) and keeps its access with a bookmark too (`restore_folder_access`), and so is
+the save folder (`[saves] folder`, game/save_folder.h).
 
 The simulator needs its own build tree (the SDK is chosen at configure time):
 

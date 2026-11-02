@@ -534,7 +534,7 @@ private:
     void apply_depth_of_field(render::DrawOptions& o) const;
     // The disc region's replays (race::replay_dir).
     std::string replay_dir(App& app) const {
-        return race::replay_dir(app.data_dir(), app.vfs() ? app.vfs()->region().region : Region::America);
+        return race::replay_dir(app.save_folder(), app.vfs() ? app.vfs()->region().region : Region::America);
     }
 
     // After a run (screen_race_post_run.cpp; race/post_run.h): the race-exit transition, the

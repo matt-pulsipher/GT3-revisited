@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct SDL_IOStream;
 
@@ -43,5 +44,25 @@ bool write_host_file(const std::string& path, ByteSpan data);
 std::optional<s64> host_file_mtime(const std::string& path);
 bool host_path_exists(const std::string& path);
 bool host_is_directory(const std::string& path);
+
+// Folders and files of the save folder (game/save_folder.h). These and the functions above
+// also take the paths of a folder picked on Android (platform/document_tree.h); failures set
+// SDL_GetError().
+struct HostDirEntry {
+    std::string name;
+    bool dir = false;
+    s64 mtime = 0; // seconds since 1970
+    u64 size = 0;
+};
+// A folder's files and folders (not what is inside those), sorted by name; empty when it
+// cannot be read.
+std::vector<HostDirEntry> host_dir_entries(const std::string& dir);
+// Creates a folder and the missing ones above it; true when it is there.
+bool host_make_dir(const std::string& dir);
+// Removes a file or an empty folder.
+bool host_remove(const std::string& path);
+// Renames a file, replacing `to` (in the same folder).
+bool host_rename(const std::string& from, const std::string& to);
+bool host_copy_file(const std::string& from, const std::string& to);
 
 } // namespace gt3r

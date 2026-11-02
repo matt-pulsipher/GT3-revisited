@@ -20,7 +20,8 @@ its sections); this page describes the code.
 | `src/game/gt_mode.*` | `GtData` (disc data, loaded once) and `GtMode` (all rules; deterministic) incl. the bridge to `sim::CarSpec` |
 | `src/game/language_rules.*` | what the game's language decides: prize-car labels, Opel / Vauxhall dealer buttons, the licence car and S-1's `_uk` demonstration, which paint name shows (car names: `data::car_name_fields`) |
 | `src/game/gt_save.*` | native save (text, versioned) and import/export of the original PS2 GAMEDATA file |
-| `src/game/save_library.*` | the save library: any number of native saves in `<user data>/saves/`, the current one, migration of older saves |
+| `src/game/save_library.*` | the save library: any number of native saves in `<save folder>/saves/`, the current one, migration of older saves |
+| `src/game/save_folder.*` | the save folder (saves and replays): the user data folder or the player's choice, and the copy when it changes |
 | `src/menu/flow/save_page.*` | the save page (title Load / Save / File Operation, home Save, Trade, Load Garage, Load / Save Settings) on the original's file list art |
 | `src/game/gt_mode_menu.h`, `src/game/gt_mode_menu/` | binds GT mode to the interactive menus through `menu::flow::GtModeHooks` (files: "Menu integration" below) |
 | `src/menu/flow/gt_mode_hooks.*` | the hook interface (menu side; no dependency on `src/game`) |
@@ -670,8 +671,9 @@ GT mode, its menus and the arcade progression are complete except for:
 GT3 Revisited does not model the PS2's memory cards: GT-mode saves are plain
 files, any number of them (`game/save_library.*`):
 
-- **Library**: `<user data dir>/saves/*.sav` (`SDL_GetPrefPath("GT3Revisited",
-  "GT3Revisited")`, or the executable's folder in portable mode, or `GT3R_DATA_DIR`). A save's
+- **Library**: `<save folder>/saves/*.sav`. The save folder (`game/save_folder.h`) is the user
+  data folder (`SDL_GetPrefPath("GT3Revisited", "GT3Revisited")`, or the executable's folder in
+  portable mode, or `GT3R_DATA_DIR`) unless the player chose another (below). A save's
   name is its `fcomment` (the original's file name, Edit file name) or its file
   name without `.sav`; file names follow the names (sanitised, made unique with
   " 2", " 3"...). `saves/current.txt` holds the file name of the game being
@@ -689,6 +691,17 @@ files, any number of them (`game/save_library.*`):
   minor version, the folder name). PS2 import / export uses the release's folder
   name, GAMEDATA minor version (7.0 NTSC-J, 7.1 NTSC-U, 7.2 PAL) and language
   word (+0xC8); see docs/COMPATIBILITY.md "Regions".
+- **Save folder**: Settings → Disc & saves → Save folder (`[saves] folder`) moves the saves and
+  the replays to another folder, such as one a sync app (Syncthing, Nextcloud) keeps the same
+  on two devices. A folder without `saves/` gets a copy of the current folder's `saves/` (all
+  regions, `current.txt` and saves set aside included), and one without `replays/` a copy of
+  its `replays/` (`copy_save_folder`); a folder that has its own is used as it is, so a second
+  device picking the synced folder continues the first one's game. Nothing is written over and
+  the old folder keeps its files; a copy that fails is removed again and nothing changes. The
+  GT-mode session starts again from the new library (`close_gt_mode`). On Android the folder
+  can be any the system's picker offers, used through its documents provider
+  (`platform/document_tree.h`, docs/dev/PLATFORMS.md "Android"). Settings opened over the
+  game's menus (Key Configuration) shows the folder but doesn't change it.
 - **Migration**: when `saves/` does not exist yet, the single save of earlier
   versions (`<user data dir>/gtmode.sav`) and its second "memory card slot"
   (`gtmode_2.sav`) are copied into it (the first becomes current). The

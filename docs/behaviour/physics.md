@@ -126,7 +126,7 @@ on this page are at 60 steps a second.
 
 A disc of another game on the same engine, or a GT3 build that GT3 Revisited does not fully
 recognize, races on GT3's physics with GT3's built-in tables and NTSC-U's rules for each
-behavior it does not recognize. Settings > Game disc shows the race physics, with a note
+behavior it does not recognize. Settings > Disc & saves shows the race physics, with a note
 when GT3's stands in for the disc's own.
 
 In a free run, when the ghost car restarts its lap a fraction of a step behind, the race

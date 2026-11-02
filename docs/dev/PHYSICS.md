@@ -195,7 +195,7 @@ keep their recent results (`ee_math.cpp`).
 ## Open points
 
 - Other games on the engine (GT Concept) race on GT3's tables and NTSC-U's
-  rules (Settings > Game disc says so); their own physics is not supported yet.
+  rules (Settings > Disc & saves says so); their own physics is not supported yet.
   A disc whose program cannot be read cannot race: the race screen says so.
 - Electric mod cars race on their donor car's engine (docs/MODDING.md).
 - The HUD's boost gauge reads the turbo's boost factor from the two lagged stages

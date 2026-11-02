@@ -1,10 +1,10 @@
 #pragma once
 
 // The GT-mode save library (docs/dev/GT_MODE.md "Saves"): any number of native saves
-// (gt_save.h text files, "<name>.sav") in one folder, <user data>/saves/, and which of
-// them is the game being played (current.txt in that folder holds its file name). The
-// menus' save page (menu/flow/save_page.h) lists them; the game autosaves into the
-// current one.
+// (gt_save.h text files, "<name>.sav") in one folder, <save folder>/saves/
+// (game/save_folder.h), and which of them is the game being played (current.txt in that
+// folder holds its file name). The menus' save page (menu/flow/save_page.h) lists them; the
+// game autosaves into the current one.
 //
 // A save's name is its GameState::file_comment (the original's file name, shown and
 // edited in File Operation) or, when that is empty, its file name without ".sav". File
@@ -41,9 +41,8 @@ public:
     // current save is remembered in current.txt (off for GT3R_GTMODE_SAVE).
     explicit SaveLibrary(std::string dir, bool tracked = true);
     // The library of a region's games (each release keeps its own, as on the PS2's memory
-    // cards): <user data>/saves/ for NTSC-U, <user data>/saves/<region key>/ for the
-    // others (the user data folder: SDL_GetPrefPath, or the executable's folder in
-    // portable mode).
+    // cards): <save folder>/saves/ for NTSC-U, <save folder>/saves/<region key>/ for the
+    // others (the save folder: the user data folder unless the player chose another).
     static std::string user_dir(Region region = Region::America);
     // The single save of earlier versions: <user data>/gtmode.sav.
     static std::string legacy_path();

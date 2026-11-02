@@ -1,5 +1,5 @@
 // Settings: every user-facing config.ini option on tabbed pages (Display,
-// Audio, Controls, Rumble & feedback, Touch, Game disc, Online). Changes apply at once
+// Audio, Controls, Rumble & feedback, Touch, Disc & saves, Online). Changes apply at once
 // where the engine can (volume, vsync, speed units, MSAA, anisotropic filtering, 3D
 // resolution, bindings, force feedback, touch layout) and are saved to config.ini
 // immediately. Only keys the engine reads are offered; see README "Settings" for
@@ -13,8 +13,10 @@
 
 #include "base/file.h"
 #include "disc/region.h"
+#include "game/save_folder.h"
 #include "menu/flow/menu_sound.h"
 #include "net/session.h"
+#include "platform/document_tree.h"
 #include "platform/music_folder.h"
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
@@ -38,10 +40,10 @@ namespace {
 
 #if GT3R_XR
 enum Tab { kDisplay, kAudio, kControls, kFfb, kTouch, kDisc, kOnline, kVr, kTabCount };
-const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Game disc", "Online", "VR"};
+const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Disc & saves", "Online", "VR"};
 #else
 enum Tab { kDisplay, kAudio, kControls, kFfb, kTouch, kDisc, kOnline, kTabCount };
-const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Game disc", "Online"};
+const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Disc & saves", "Online"};
 #endif
 
 struct Row {
@@ -92,7 +94,10 @@ public:
     void on_event(App& app, const SDL_Event& e) override {
         // Back from Android's settings, where music access may have been allowed: the next pick
         // asks again.
-        if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) access_refused_ = false;
+        if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+            access_refused_ = false;
+            saves_view_.folder.clear(); // the save folder looked at again
+        }
         build(app);
         if (confirm_.active) { // a tap answers the replace-Custom question
             if (gesture_.feed(e) == Gesture::Result::Tap) {
@@ -956,6 +961,86 @@ private:
                });
     }
 
+    // The save folder (game/save_folder.h): GT Mode's saves and the replays.
+    void build_saves(App& app) {
+        App* a = &app;
+        heading("Saves and replays");
+        const bool chosen = app.save_folder_chosen();
+        const bool mobile = platform::is_mobile();
+        const bool picked = platform::is_document_tree_path(app.save_folder()); // Android's
+        // Looked at again when the folder changes or the game comes back to the foreground (a
+        // picked folder's name and access are its provider's).
+        if (saves_view_.folder != app.save_folder()) {
+            saves_view_.folder = app.save_folder();
+            saves_view_.reachable = app.save_folder_reachable();
+            std::string shown = saves_view_.folder;
+            while (shown.size() > 1 && (shown.back() == '/' || shown.back() == '\\')) shown.pop_back();
+#if defined(SDL_PLATFORM_ANDROID)
+            if (picked) shown = platform::document_tree_name(platform::document_tree_of(shown));
+            if (picked && shown.empty()) shown = "Picked folder";
+#endif
+            // Phones and tablets: the chosen folder by its name, the game's as the Files app shows it.
+            if (mobile && !picked) shown = shown.substr(shown.find_last_of("/\\") + 1);
+            if (!chosen) shown = mobile ? "GT3 Revisited" : "Game's user data folder";
+            saves_view_.shown = std::move(shown);
+        }
+        Row& r = action("Save folder",
+                        to_game_ ? std::string("Change it in Settings from GT3 Revisited's main menu.")
+                                 : std::string("Cross: choose another folder for GT Mode saves and replays, such as one a sync "
+                                               "app keeps the same on your other devices. A folder without saves gets a copy "
+                                               "of yours; one with saves is used as it is."),
+                        saves_view_.shown, [this, a] { choose_save_folder(*a); });
+        r.enabled = !to_game_;
+        if (chosen && !saves_view_.reachable)
+            info("", "Can't be reached",
+                 "The folder is gone, its drive or memory card is out, or the game no longer has access to it. "
+                 "Choose it again, or go back to the game's folder.");
+        if (chosen) {
+            Row& back = action("Use the game's save folder",
+                               "Back to the game's user data folder: its saves and replays are used as they are (a copy of "
+                               "yours goes there if it has none).",
+                               "", [this, a] { use_save_folder(*a, ""); });
+            back.enabled = !to_game_;
+        }
+        // Phones and tablets open only the game's folder (in the Files app).
+        if (!picked && (!mobile || !chosen))
+            action("Open save folder",
+                   mobile ? "Opens it in the Files app (GT3 Revisited > saves)." : "Shows it in the file manager.", "",
+                   [this, a] {
+                       const std::string dir = a->save_folder() + "saves";
+                       host_make_dir(dir);
+                       if (platform::open_user_folder(dir, a->data_dir())) return;
+                       note_ = "Could not open " + dir;
+                       note_left_ = 4;
+                   });
+    }
+
+    void choose_save_folder(App& app) {
+        if (folder_picking_ || to_game_) return;
+        if (!platform::start_folder_pick(app.window(), app.save_folder_chosen() ? app.save_folder() : std::string(),
+                                         platform::FolderUse::Saves)) {
+            note_ = "Could not show a folder picker";
+            note_left_ = 4;
+            return;
+        }
+        folder_picking_ = true;
+        folder_use_ = platform::FolderUse::Saves;
+        app.input().hold_background(true); // macOS: the dialog's sheet takes the window's focus
+    }
+
+    void use_save_folder(App& app, const std::string& path) {
+        game::SaveFolderCopy copied;
+        if (!app.set_save_folder(path, &copied)) {
+            note_ = "Could not copy your saves and replays into that folder (nothing changed)";
+        } else if (copied.saves || copied.replays) {
+            note_ = "Copied in: " + std::to_string(copied.saves) + (copied.saves == 1 ? " save, " : " saves, ") +
+                    std::to_string(copied.replays) + (copied.replays == 1 ? " replay" : " replays");
+        } else {
+            note_ = path.empty() ? "Saves and replays are in the game's folder again" : "Saves and replays now go to this folder";
+        }
+        note_left_ = 6;
+    }
+
     void open_music_folder(App& app) {
         if (platform::open_user_folder(app.music_folder(), app.data_dir())) return;
         note_ = "Could not open " + app.music_folder();
@@ -970,6 +1055,7 @@ private:
             return;
         }
         folder_picking_ = true;
+        folder_use_ = platform::FolderUse::Music;
         app.input().hold_background(true); // macOS: the dialog's sheet takes the window's focus
     }
 
@@ -980,12 +1066,23 @@ private:
         folder_picking_ = false;
         app.input().hold_background(false);
         using Kind = platform::FolderAnswer::Kind;
+        if (folder_use_ == platform::FolderUse::Saves) {
+            switch (answer->kind) {
+            case Kind::Picked: use_save_folder(app, answer->path); return;
+            case Kind::Cancelled: return;
+            case Kind::NotKept: note_ = "That folder's app doesn't let the game keep using it: choose another"; break;
+            default: note_ = "Could not show a folder picker"; break;
+            }
+            note_left_ = 6;
+            return;
+        }
         access_refused_ = answer->kind == Kind::NoAccess;
         switch (answer->kind) {
         case Kind::Picked: app.set_music_folder(answer->path); return;
         case Kind::Cancelled: break;
         case Kind::NoAccess: note_ = "Music access not allowed: Allow music access opens Android's settings"; break;
         case Kind::Elsewhere: note_ = "Choose a folder on this device or its memory card (not in a cloud drive)"; break;
+        case Kind::NotKept: // (save folders only)
         case Kind::Failed: note_ = "Could not show a folder picker"; break;
         }
         if (answer->kind != Kind::Cancelled) note_left_ = 6;
@@ -1602,6 +1699,10 @@ private:
         }
         action("Browse for a disc image...", "Pick a .iso or .chd made from your own Gran Turismo 3 A-Spec disc.", "",
                [a] { a->show_open_dialog(); });
+        if (!app.last_error().empty() && !app.failed_disc_path().empty())
+            info("Last error", app.last_error(), elide_middle(app.failed_disc_path(), 77));
+
+        build_saves(app);
 
         std::vector<std::string> recent = app.recent_discs();
         if (!recent.empty()) heading("Recent disc images");
@@ -1620,8 +1721,6 @@ private:
             r.dim = is_current;
             r.remove = [a, p] { a->forget_recent_disc(p); };
         }
-        if (!app.last_error().empty() && !app.failed_disc_path().empty())
-            info("Last error", app.last_error(), elide_middle(app.failed_disc_path(), 77));
 
         heading("Startup");
         bool hub = to_lower(cfg.get("app", "start").value_or("")) == "hub";
@@ -1870,7 +1969,12 @@ private:
     Press press_;
     Layout lay_;
     Capture capture_;    // a binding being captured (Controls)
-    bool folder_picking_ = false; // the music folder's picker is open
+    bool folder_picking_ = false; // a folder picker is open
+    platform::FolderUse folder_use_ = platform::FolderUse::Music; // the open picker's
+    struct SavesView {
+        std::string folder, shown; // App::save_folder() as of the last look, and its name
+        bool reachable = true;
+    } saves_view_;
     bool access_refused_ = false; // Android: music access refused at the last pick
     struct Confirm {
         bool active = false, replace = false; // replace: the focused answer (Cancel first)

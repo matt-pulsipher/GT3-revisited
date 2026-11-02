@@ -1502,7 +1502,7 @@ sequence's music: the start jingle over the hold, the race music from the signal
 - a theater replay returns to the theater;
 - otherwise the replay pause opens with "End of replay".
 
-**Saving.** Save replay writes `<user data>/replays/<course>_<car>_<stamp>.gt3replay`
+**Saving.** Save replay writes `<save folder>/replays/<course>_<car>_<stamp>.gt3replay`
 at once (a toast, no slot page). Two saves in the same second take the next free
 second's stamp. That folder is all the theater lists (§G9).
 
@@ -1844,7 +1844,7 @@ does for them:
 - **Demonstration** (mode `theater_demo`): the disc's demonstration of a license
   test or arcade time trial plays as its run (§G12), with TV cameras (the REPLAY
   OPTIONS view mode, opening as any replay, §H8) and only the mark. It ends 180 ticks after its inputs run out, or by EXIT.
-- **Files.** The theater lists `<user data>/replays/*.gt3replay`, newest first,
+- **Files.** The theater lists `<save folder>/replays/*.gt3replay`, newest first,
   with each file's header (`race::list_replay_entries`). The info panel shows
   Size ("123KB"), Date ("YYYY/MM/DD", the saved time or else the file name's
   stamp), Mode (`replay_kind_name`: Time Trial, Arcade, 2P Battle, GT Mode,

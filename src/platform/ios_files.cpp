@@ -230,16 +230,16 @@ bool restore_disc_access(IniDocument& cfg, const std::string& data_dir) {
 }
 
 
-bool restore_music_access(IniDocument& cfg, const std::string& data_dir) {
+bool restore_folder_access(IniDocument& cfg, const char* section, const char* key, const std::string& data_dir) {
 #if defined(SDL_PLATFORM_IOS)
-    auto folder = cfg.get("music", "folder");
+    auto folder = cfg.get(section, key);
     if (!folder || folder->empty()) return false;
     std::string path = restored_path(*folder, data_dir);
     if (path == *folder) return false;
-    cfg.set("music", "folder", path);
+    cfg.set(section, key, path);
     return true;
 #else
-    (void)cfg, (void)data_dir;
+    (void)cfg, (void)section, (void)key, (void)data_dir;
     return false;
 #endif
 }

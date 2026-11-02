@@ -151,13 +151,14 @@ Settings, saves, replays, mods and screenshots live in:
   **Open folder** goes there); a copy of the disc image can go there too
 
 If a `portable.ini` file sits next to the executable, all user data is kept
-beside it instead.
+beside it instead. Saves and replays can go in another folder of your choice
+([Saves](#saves)).
 
 | In the folder | |
 |---|---|
 | `config.ini` | settings (below) |
-| `saves/` | GT Mode saves (below) |
-| `replays/` | saved replays (`.gt3replay`), listed by the Replay Theater and Time trial |
+| `saves/` | GT Mode saves (below), unless Settings chooses another save folder |
+| `replays/` | saved replays (`.gt3replay`), listed by the Replay Theater and Time trial; in the save folder too |
 | `mods/` | installed mods ([MODDING](docs/MODDING.md)) |
 | `music/` | your own race music (below), unless Settings chooses another folder |
 | `music_playlist.txt` | your songs' playlist (their order and check marks) |
@@ -207,6 +208,7 @@ are only there:
 | `[audio] music_volume`, `sfx_volume` | `0.0`..`1.0` | |
 | `[audio] surround_cue` | `on` / `off` | GT3's rear-channel phase cue for Pro Logic decoders |
 | `[music] folder` | path | your music folder (absent: the user data folder's `music/`; Settings → Audio) |
+| `[saves] folder` | path | the save folder for `saves/` and `replays/` (absent: the user data folder; Settings → Disc & saves). On Android, a folder picked there (not a path) |
 | `[music] show_song` | `on` / `off` | the race song on the pause screen, with L1 / R1 to skip (default on) |
 | `[music] next_race` | `same` / `next` | same (default): a race, restart or replay starts with the song the last one ended on, from its start; next: a new song every time, as GT3 does (Settings → Audio → Next race starts with) |
 | `[music] race_song` | text | the race song playing last (`disc:` or `yours:` and its id), for `next_race = same` |
@@ -233,6 +235,15 @@ day, credits, cars and completion, and let you start a new game, save under a
 new name or over a save, rename, copy and delete. The game being played
 autosaves after every race and continues at the next launch. A save that
 cannot be read (damaged, or from a newer version) is never written over.
+
+**Settings → Disc & saves → Save folder** keeps the saves and replays in another
+folder, for example one that Syncthing, Nextcloud or a cloud drive keeps the
+same on your phone and tablet. On Android it can be any folder the system's
+folder picker offers. A folder without saves gets a copy of yours; a folder
+that already has saves (from your other device) is used as it is, so that
+device's game continues. The game's own folder keeps its saves, and **Use the
+game's save folder** goes back to them. Play on one device at a time: two
+devices saving the same game at once leave the sync app two copies of it.
 
 **Save editor** (main menu) changes a save of the disc's region: credits,
 prize money, the day, races and wins, the endings seen; the garage (add any car

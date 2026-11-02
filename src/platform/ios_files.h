@@ -34,7 +34,7 @@ bool show_folder_picker(SDL_Window* window, std::function<void(std::string path)
 // from an earlier install are moved to this one's (rebase_app_container_path). True when a path
 // in `cfg` changed (for the caller to save). No-op elsewhere.
 bool restore_disc_access(IniDocument& cfg, const std::string& data_dir);
-// iOS: the same for the music folder ([music] folder). No-op elsewhere.
-bool restore_music_access(IniDocument& cfg, const std::string& data_dir);
+// iOS: the same for a folder kept in `cfg` ([music] folder, [saves] folder). No-op elsewhere.
+bool restore_folder_access(IniDocument& cfg, const char* section, const char* key, const std::string& data_dir);
 
 } // namespace gt3r::platform
