@@ -85,11 +85,9 @@ u32 expand_alpha(u32 a) { return std::min<u32>(a * 2, 255); }
 
 // GS 32-bit color (A8B8G8R8, alpha 0..128) -> RGBA8 in memory order.
 u32 ct32_to_rgba(u32 c) { return (c & 0x00FFFFFF) | (expand_alpha(c >> 24) << 24); }
+// The GS widens each 5-bit channel by a shift alone: the low 3 bits are 0 (31 -> 248).
 u32 ct16_to_rgba(u32 c) {
     u32 r = (c & 0x1F) << 3, g = ((c >> 5) & 0x1F) << 3, b = ((c >> 10) & 0x1F) << 3;
-    r |= r >> 5;
-    g |= g >> 5;
-    b |= b >> 5;
     // Alpha really comes from TEXA.TA0/TA1; the game's TEXA setup is not yet
     // known, so treat the A bit as a straight on/off mask.
     u32 a = (c & 0x8000) ? 0xFF : 0x00;

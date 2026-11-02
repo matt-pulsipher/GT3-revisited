@@ -206,6 +206,36 @@ TEST(course_vertex_colours_past_0x80_disc) {
     CHECK(gv.tris_2x * 20 < gv.tris); // Grand Valley: a few
 }
 
+// GT3's VU clips a strip's triangles in strip order (render/guard_band.h); the renderer takes it
+// from the indices (View3D::upload_clipped): a course triangle is three consecutive strip vertices,
+// stored in strip order or with its first two swapped.
+TEST(course_triangles_in_strip_order_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    for (const char* name : {"super", "route5_dry", "trialmt"}) {
+        const Volume::Entry* e = disc->volume().find(std::string("courses/US/") + name);
+        CHECK(e != nullptr);
+        if (!e) continue;
+        const Bytes data = disc->volume().read(*e);
+        CourseModelOptions scenery, mask, backdrop;
+        scenery.textures = mask.textures = backdrop.textures = false;
+        mask.scenery = mask.course_line = mask.backdrop = mask.sky = false;
+        mask.road_reflection_mask = mask.frame_alpha = true;
+        backdrop.scenery = backdrop.course_line = backdrop.sky = false;
+        backdrop.backdrop = true;
+        size_t tris = 0, strip = 0;
+        for (const CourseModelOptions& o : {scenery, mask, backdrop})
+            for (const scene::Mesh& m : build_course_model(data, o, name).meshes)
+                for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
+                    const u32 a = m.indices[i], b = m.indices[i + 1], c = m.indices[i + 2];
+                    ++tris;
+                    strip += (b == a + 1 || a == b + 1) && c == std::max(a, b) + 1;
+                }
+        CHECK(tris > 1000);
+        CHECK(strip == tris);
+    }
+}
+
 TEST(course_all_us) {
     Disc* disc = test::test_disc();
     if (!disc) SKIP("needs GT3R_DISC");

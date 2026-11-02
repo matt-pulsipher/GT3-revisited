@@ -78,7 +78,8 @@ bool WetRoad::load(render::GpuContext& ctx, const Vfs& vfs, ByteSpan course, Byt
         o.road_reflection_mask = true;
         o.frame_alpha = true; // its passes write only the frame alpha
         scene::Model mask = course::build_course_model(course, o, "reflection_mask");
-        if (!mask.meshes.empty()) mask_ = std::make_unique<render::GpuModel>(ctx, mask);
+        // (Its vertex alpha is the weight: GT3 clips it at the guard band, DrawItem::guard_band.)
+        if (!mask.meshes.empty()) mask_ = std::make_unique<render::GpuModel>(ctx, mask, true);
     } catch (const std::exception& e) {
         LOG_WARN("Wet road: %s", e.what());
         reflection_.reset();
@@ -99,7 +100,7 @@ bool WetRoad::load(render::GpuContext& ctx, const Vfs& vfs, ByteSpan course, Byt
     p_.cap = rdf(env, 0xE78), p_.length = rdf(env, 0xE7C);
 
     // Blur passes: the buffer onto itself through an NDC quad (identity view and projection),
-    // source shifted by -0.5 / +0.5 texel.
+    // source shifted by -0.5 / +0.5 texel (GT3's sprites: UV 0 / 1 at the GS's pixels).
     for (int k = 0; k < 2; ++k) {
         float du = (k == 0 ? -0.5f : 0.5f) / float(p_.width), dv = (k == 0 ? -0.5f : 0.5f) / float(p_.height);
         blur_quad_[k] = make_quad(ctx, {render::Vec3{-1, 1, 0}, {1, 1, 0}, {1, -1, 0}, {-1, -1, 0}},
@@ -232,6 +233,7 @@ SDL_GPUTexture* WetRoad::render(render::View3D& v, const render::Mat4& view, con
     for (int k = 0; k < p_.blur && blur_quad_[0]; ++k) {
         render::DrawItem it{blur_quad_[k & 1].get(), {}, 0};
         it.texture = t;
+        it.gs_bilinear = true;
         t = v.render_offscreen(1 + (k & 1), p_.width, p_.height, {}, {}, {0, 0, 0}, {it}, bo);
         if (!t) return nullptr;
     }
@@ -254,7 +256,9 @@ WetRoad::FrameQuads& WetRoad::frame_quads(const render::Frustum& fr) {
         const float l = fr.left * d, r = fr.right * d, b = fr.down * d, t = fr.up * d;
         const std::array<render::Vec3, 4> pos = {render::Vec3{l, t, -0.105f}, {r, t, -0.105f}, {r, b, -0.105f},
                                                  {l, b, -0.105f}};
-        // The composite's net -0.5 texel shift.
+        // The composite's net -0.5 texel shift: a GS pixel samples the scene at its integer position
+        // (the buffer's XYOFFSET is whole pixels), so GT3's texels hold it half a texel up and left
+        // of ours.
         float du = -0.5f / float(p_.width), dv = -0.5f / float(p_.height);
         q->clear = make_quad(*ctx_, pos, {{{0, 0}, {1, 0}, {1, 1}, {0, 1}}}, 0x00FFFFFFu, scene::kAlphaOnly | kQuadFlags);
         q->frame = make_quad(*ctx_, pos, {{{du, dv}, {1 + du, dv}, {1 + du, 1 + dv}, {du, 1 + dv}}}, 0xFFFFFFFFu,
@@ -275,12 +279,14 @@ void WetRoad::add_frame_items(std::vector<render::DrawItem>& items, const render
         clr.in_order = clr.frame_alpha = true;
         items.push_back(clr);
         render::DrawItem mk{mask_.get(), {}, 0};
-        mk.in_order = mk.frame_alpha = true;
+        mk.in_order = mk.frame_alpha = mk.guard_band = true;
         items.push_back(mk);
     }
     render::DrawItem comp{q.frame.get(), cam, 0};
     comp.in_order = true;
     comp.texture = buffer;
+    comp.gs_bilinear = true;
+    comp.no_fog = true;
     comp.dest_alpha_blend = p_.mode == 0x54 ? 1 : 2;
     items.push_back(comp);
 }

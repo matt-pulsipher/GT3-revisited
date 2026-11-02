@@ -2,6 +2,8 @@
 
 #include "base/log.h"
 #include "platform/render_scale.h"
+#include "render/guard_band.h"
+#include "render/shaders/generated/model_clip_vert.h"
 #include "render/shaders/generated/model_frag.h"
 #include "render/shaders/generated/model_vert.h"
 #include "scene/model.h"
@@ -145,9 +147,10 @@ bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
     if (!open) return false;
     if (renderer_ && SDL_GetRenderWindow(renderer_)) SDL_SetRenderVSync(renderer_, options.vsync ? 1 : 0);
 
-    vs_ = make_shader(true);
-    fs_ = make_shader(false);
-    if (!vs_ || !fs_) return false;
+    vs_ = make_shader(Stage::Vertex);
+    vs_clipped_ = make_shader(Stage::ClippedVertex);
+    fs_ = make_shader(Stage::Fragment);
+    if (!vs_ || !vs_clipped_ || !fs_) return false;
 
     for (SDL_GPUTextureFormat f :
          {SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTUREFORMAT_D24_UNORM, SDL_GPU_TEXTUREFORMAT_D16_UNORM})
@@ -184,13 +187,17 @@ GpuContext::~GpuContext() {
         if (white_) SDL_ReleaseGPUTexture(device_, white_);
         for (auto& [t, shared] : shared_textures_) SDL_ReleaseGPUTexture(device_, t);
         if (vs_) SDL_ReleaseGPUShader(device_, vs_);
+        if (vs_clipped_) SDL_ReleaseGPUShader(device_, vs_clipped_);
         if (fs_) SDL_ReleaseGPUShader(device_, fs_);
     }
     if (renderer_) SDL_DestroyRenderer(renderer_); // releases the window claim
     if (device_) SDL_DestroyGPUDevice(device_);
 }
 
-SDL_GPUShader* GpuContext::make_shader(bool vertex) {
+SDL_GPUShader* GpuContext::make_shader(Stage stage) {
+    using namespace shaders;
+    const bool vertex = stage != Stage::Fragment;
+    const bool clipped = stage == Stage::ClippedVertex;
     SDL_GPUShaderCreateInfo info{};
     SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device_);
     SDL_PropertiesID props = 0;
@@ -199,12 +206,16 @@ SDL_GPUShader* GpuContext::make_shader(bool vertex) {
         // OpenGL ES (gpu_gles.h): GLSL ES source, with its block and sampler names.
         props = SDL_CreateProperties();
         SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_UNIFORM_BLOCKS,
-                              vertex ? shaders::model_vert_gles_blocks : shaders::model_frag_gles_blocks);
+                              clipped  ? model_clip_vert_gles_blocks
+                              : vertex ? model_vert_gles_blocks
+                                       : model_frag_gles_blocks);
         SDL_SetStringProperty(props, GT3R_GL_PROP_SHADER_SAMPLERS,
-                              vertex ? shaders::model_vert_gles_samplers : shaders::model_frag_gles_samplers);
+                              clipped  ? model_clip_vert_gles_samplers
+                              : vertex ? model_vert_gles_samplers
+                                       : model_frag_gles_samplers);
         info.props = props;
         info.format = SDL_GPU_SHADERFORMAT_PRIVATE;
-        const char* src = vertex ? shaders::model_vert_gles : shaders::model_frag_gles;
+        const char* src = clipped ? model_clip_vert_gles : vertex ? model_vert_gles : model_frag_gles;
         info.code = reinterpret_cast<const Uint8*>(src);
         info.code_size = std::strlen(src);
         info.entrypoint = "main";
@@ -212,12 +223,14 @@ SDL_GPUShader* GpuContext::make_shader(bool vertex) {
 #endif
     if (formats & SDL_GPU_SHADERFORMAT_SPIRV) {
         info.format = SDL_GPU_SHADERFORMAT_SPIRV;
-        info.code = vertex ? shaders::model_vert_spv : shaders::model_frag_spv;
-        info.code_size = vertex ? sizeof(shaders::model_vert_spv) : sizeof(shaders::model_frag_spv);
+        info.code = clipped ? model_clip_vert_spv : vertex ? model_vert_spv : model_frag_spv;
+        info.code_size = clipped  ? sizeof(model_clip_vert_spv)
+                         : vertex ? sizeof(model_vert_spv)
+                                  : sizeof(model_frag_spv);
         info.entrypoint = "main";
     } else if (formats & SDL_GPU_SHADERFORMAT_MSL) {
         info.format = SDL_GPU_SHADERFORMAT_MSL;
-        const char* src = vertex ? shaders::model_vert_msl : shaders::model_frag_msl;
+        const char* src = clipped ? model_clip_vert_msl : vertex ? model_vert_msl : model_frag_msl;
         info.code = reinterpret_cast<const Uint8*>(src);
         info.code_size = std::strlen(src);
         info.entrypoint = "main0";
@@ -360,6 +373,15 @@ std::vector<PipelineKey> warm_keys() {
                 keys.push_back(k);
             }
     }
+    // The course's triangles GT3 clips at the guard band (PipelineKey::clipped): the main views'
+    // blends and frame-alpha modes, back faces culled or none.
+    const size_t plain = keys.size();
+    for (size_t i = 0; i < plain; ++i)
+        if (!keys[i].coverage && keys[i].cull != CullMode::Front) {
+            PipelineKey k = keys[i];
+            k.clipped = true;
+            keys.push_back(k);
+        }
     // The replay depth of field's downsampled pictures (View3D::encode_dof).
     PipelineKey single;
     single.cull = CullMode::None, single.depth_write = false, single.single = true;
@@ -419,14 +441,20 @@ SDL_GPUGraphicsPipeline* GpuContext::pipeline(const PipelineKey& key) {
 SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     SDL_GPUVertexBufferDescription vb{};
     vb.slot = 0;
-    vb.pitch = sizeof(scene::Vertex);
+    vb.pitch = key.clipped ? sizeof(ClipVertex) : sizeof(scene::Vertex);
     vb.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-    SDL_GPUVertexAttribute attrs[4] = {
-        {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, u32(offsetof(scene::Vertex, pos))},
-        {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, u32(offsetof(scene::Vertex, normal))},
-        {2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, u32(offsetof(scene::Vertex, uv))},
-        {3, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, u32(offsetof(scene::Vertex, color))},
-    };
+    // A scene::Vertex; clipped: ClipVertex's three of them, then the weights.
+    SDL_GPUVertexAttribute attrs[13];
+    const int vertices = key.clipped ? 3 : 1;
+    for (int k = 0; k < vertices; ++k) {
+        const u32 at = u32(k * sizeof(scene::Vertex)), loc = u32(4 * k);
+        SDL_GPUVertexAttribute* a = attrs + 4 * k;
+        a[0] = {loc + 0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, at + u32(offsetof(scene::Vertex, pos))};
+        a[1] = {loc + 1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, at + u32(offsetof(scene::Vertex, normal))};
+        a[2] = {loc + 2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, at + u32(offsetof(scene::Vertex, uv))};
+        a[3] = {loc + 3, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, at + u32(offsetof(scene::Vertex, color))};
+    }
+    if (key.clipped) attrs[12] = {12, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, u32(offsetof(ClipVertex, b))};
 
     SDL_GPUColorTargetDescription color{};
     color.format = kColorFormat;
@@ -505,12 +533,12 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     }
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
-    info.vertex_shader = vs_;
+    info.vertex_shader = key.clipped ? vs_clipped_ : vs_;
     info.fragment_shader = fs_;
     info.vertex_input_state.vertex_buffer_descriptions = &vb;
     info.vertex_input_state.num_vertex_buffers = 1;
     info.vertex_input_state.vertex_attributes = attrs;
-    info.vertex_input_state.num_vertex_attributes = 4;
+    info.vertex_input_state.num_vertex_attributes = key.clipped ? 13 : 4;
     info.primitive_type = key.lines ? SDL_GPU_PRIMITIVETYPE_LINELIST : SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     info.rasterizer_state.cull_mode = key.lines || key.cull == CullMode::None ? SDL_GPU_CULLMODE_NONE

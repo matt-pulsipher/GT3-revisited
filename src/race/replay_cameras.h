@@ -287,8 +287,10 @@ public:
         bool haze = false;
     };
     // A GT3 zoom (1 / tan of the half horizontal angle over the 640-pixel frame) as our
-    // vertical field of view (the 448-line frame: tan(half) = 0.7 / zoom).
-    static float zoom_fovy(float zoom) { return 2.0f * std::atan(0.7f / std::max(zoom, 1e-3f)); }
+    // vertical field of view: the 448-line frame (tan(half) = 0.7 / zoom) after GT3's
+    // Scale(1, 1 / kYScale, 1) (presentation §G8), tan(half) = 0.7 x 1.098 / zoom.
+    static constexpr float kYScale = 1.098f; // program constant
+    static float zoom_fovy(float zoom) { return 2.0f * std::atan(0.7f * kYScale / std::max(zoom, 1e-3f)); }
     // `s` = car's track distance (0..L), `lap` = its lap counter (lap_counter: 0 before the
     // start line), `car` = the point the camera aims at (the followed car, or between a pair),
     // `dt` = frame time (zoom smoothing, time-based records), `aspect` = viewport width /

@@ -4,12 +4,15 @@
 
 layout(location = 0) in vec3 v_normal;
 layout(location = 1) in vec2 v_uv;
-layout(location = 2) in vec4 v_color;
+layout(location = 2) in vec4 v_color_in;
 layout(location = 3) in vec3 v_world;
 // GT3's lighting factor and fog amount per vertex, times the clip w (model.vert): with
-// gl_FragCoord.w (1 / w), interpolated linearly in screen space like the GS.
+// gl_FragCoord.w (1 / w), interpolated linearly in screen space like the GS. v_fog_w.y > 0: the
+// triangle is drawn by the other draw (GT3's guard band: model.vert), or the point lies past GT3's
+// far plane.
 layout(location = 4) in vec3 v_lit_w;
-layout(location = 5) in float v_fog_w;
+layout(location = 5) in vec2 v_fog_w;
+vec4 v_color; // the vertex colour (u.output_mode.y = 1: it came times the clip w, as v_lit_w)
 vec3 v_lit;
 float v_fog;
 
@@ -61,7 +64,9 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
                          // w 1 = write alpha 1 (coverage) for this opaque primitive
     vec4 env_c0;         // GT3 reflection weight rows: c0 + c1 min(V.N, 0) per channel;
     vec4 env_c1;         // env_c0.w = 1: valid (else the scalar env_sky.w term)
-    vec4 output_mode;    // x = 1: store 5 bits per channel (GT3's PSMCT16 reflection map)
+    vec4 output_mode;    // x = 1: store 5 bits per channel (GT3's PSMCT16 reflection map);
+                         // y = 1: the vertex colour is linear in screen space (GT3's guard band);
+                         // z = 1: the texture filtered as the GS does (gs_bilinear below)
     // GT3's wheel spin blurs (DrawItem::wheel_blur; wheel_texture below): x 1 = the tyre's tread,
     // 2 = the rim; y the rim's mip level. wheel_steps: the tread's three S shifts / the rim's
     // four angles.
@@ -92,7 +97,22 @@ vec2 rim_turn(vec2 r, int k, int bit, float a) {
     return vec2(r.x * c - r.y * s, r.x * s + r.y * c);
 }
 
+// The texture as the GS filters it (DrawItem::gs_bilinear): the four texels around uv (clamped)
+// weighted by the 4-bit fractions of its position, across then down, each lerp truncated to a
+// whole 8-bit level, a + ((b - a) f >> 4). The texture holds whole levels (an offscreen buffer).
+vec4 gs_bilinear(vec2 uv) {
+    ivec2 size = textureSize(u_tex, 0);
+    vec2 t = uv * vec2(size) - 0.5, i = floor(t);
+    vec2 f = min(floor((t - i) * 16.0 + 1e-3), vec2(15.0));
+    ivec2 p0 = clamp(ivec2(i), ivec2(0), size - 1), p1 = clamp(ivec2(i) + 1, ivec2(0), size - 1);
+    vec4 a = floor(texelFetch(u_tex, p0, 0) * 255.0 + 0.5), b = floor(texelFetch(u_tex, ivec2(p1.x, p0.y), 0) * 255.0 + 0.5);
+    vec4 c = floor(texelFetch(u_tex, ivec2(p0.x, p1.y), 0) * 255.0 + 0.5), d = floor(texelFetch(u_tex, p1, 0) * 255.0 + 0.5);
+    vec4 top = a + floor((b - a) * f.x / 16.0), bottom = c + floor((d - c) * f.x / 16.0);
+    return (top + floor((bottom - top) * f.y / 16.0)) / 255.0;
+}
+
 vec4 wheel_texture(vec2 uv) {
+    if (u.output_mode.z > 0.5) return gs_bilinear(uv);
     if (u.wheel_blur.x < 0.5) return texture(u_tex, uv);
     vec4 sum = vec4(0.0);
     if (u.wheel_blur.x < 1.5) {
@@ -185,6 +205,18 @@ float fog_amount(float d) {
     return clamp((d - u.fog_params.x) * u.fog_params.y, 0.0, 1.0) * u.fog_params.z;
 }
 
+// The GS's 8-bit colour arithmetic (presentation §M7), which truncates where a GPU rounds: the
+// texel as the GS filters it (the bilinear result truncated to 8 bits), MODULATE
+// (texel x colour) >> 7 clamped to 255, and fog (F C + (256 - F) FOGCOL) >> 8 with the fog
+// coefficient F = 255 (1 - amount) (255: no fog, which still takes C past FOGCOL down a level).
+// Each leaves a whole 8-bit level, which the frame buffer stores as it is.
+vec3 gs_texel(vec3 t) { return floor(t * 255.0 + 0.05) / 255.0; }
+vec3 gs_color(vec3 c) { return min(floor(c * 255.0 + 1e-3), 255.0) / 255.0; }
+vec3 gs_fog(vec3 c, vec3 fog, float amount) {
+    vec3 f = fog * 255.0;
+    return floor(f + (c * 255.0 - f) * ((255.0 / 256.0) * (1.0 - amount)) + 1e-3) / 255.0;
+}
+
 void shade() {
     if (u.params.w > 5.5) {
         o_color = dof_sample();
@@ -227,7 +259,8 @@ void shade() {
         // Vertex colour x the reflection weight, an 8-bit GS colour (<= 255/128); then PS2
         // MODULATE: texture x colour (0x80 = 1.0, already expanded by the decoder).
         vec4 vc = vec4(min(v_color.rgb * env_weight(view, n), vec3(255.0 / 128.0)), v_color.a);
-        vec4 c = texture(u_tex, uv) * vc * u.tint;
+        vec4 t = texture(u_tex, uv);
+        vec4 c = vec4(gs_color(gs_texel(t.rgb) * vc.rgb), t.a * vc.a) * u.tint;
         if (u.params.z > 0.5) c.a = v_color.a * u.tint.a; // additive layer: full weight (Ad = 1)
         o_color = c;
         if (u.grade2.w > 0.5) o_color.a = 1.0;
@@ -263,23 +296,24 @@ void shade() {
             float m = max(length(e + vec3(0.0, 0.0, 1.0)), 1e-4);
             env = texture(u_sphere, vec2(0.5 + 0.5 * e.x / m, 0.5 - 0.5 * e.y / m)).rgb;
         }
-        vec3 rgb = env * min(v_color.rgb * w, vec3(255.0 / 128.0)) * u.params.z;
+        vec3 rgb = gs_color(gs_texel(env) * min(v_color.rgb * w, vec3(255.0 / 128.0)) * u.params.z);
         if (u.fog_color.w > 0.0) {
             float d = length(v_world - u.camera_pos.xyz);
-            rgb *= 1.0 - fog_amount(d);
+            rgb = gs_fog(rgb, vec3(0.0), fog_amount(d));
         }
         o_color = vec4(rgb, v_color.a * wheel_texture(v_uv).a * u.tint.a);
         return;
     }
-    vec4 c = wheel_texture(v_uv) * v_color;
+    vec4 t = wheel_texture(v_uv);
+    vec4 c = vec4(gs_texel(t.rgb), t.a) * v_color;
     if (u.params.w > 1.5) {
         // Road sheen: the texel modulated by its VU program's lit colour (model.vert), fogged
         // to black (the node program sets the fog colour to 0 for this pass); added weighted by
         // the frame-buffer alpha (Cs * Ad + Cd) or, without one, by its own alpha.
-        c.rgb = texture(u_tex, v_uv).rgb * v_lit;
+        c.rgb = gs_color(gs_texel(texture(u_tex, v_uv).rgb) * v_lit);
         if (u.fog_color.w > 0.0) {
             float d = length(v_world - u.camera_pos.xyz);
-            c.rgb *= 1.0 - fog_amount(d);
+            c.rgb = gs_fog(c.rgb, vec3(0.0), fog_amount(d));
         }
         o_color = c;
         return;
@@ -310,18 +344,20 @@ void shade() {
             c.rgb = mix(c.rgb, env_color(r), u.params.z);
         }
     }
+    c.rgb = gs_color(c.rgb);
     if (u.fog_color.w > 0.0) {
         float d = length(v_world - u.camera_pos.xyz);
-        float f = fog_amount(d);
-        c.rgb = mix(c.rgb, u.fog_color.rgb, f);
+        c.rgb = gs_fog(c.rgb, u.fog_color.rgb, fog_amount(d));
     }
     o_color = c * u.tint;
     if (u.grade2.w > 0.5) o_color.a = 1.0;
 }
 
 void main() {
+    if (v_fog_w.y > 0.0) discard;
+    v_color = u.output_mode.y > 0.5 ? v_color_in * gl_FragCoord.w : v_color_in;
     v_lit = v_lit_w * gl_FragCoord.w;
-    v_fog = v_fog_w * gl_FragCoord.w;
+    v_fog = v_fog_w.x * gl_FragCoord.w;
     shade();
     // GT3's reflection map is a PSMCT16 frame buffer: each write keeps c8 >> 3 (read back as
     // c5 << 3).

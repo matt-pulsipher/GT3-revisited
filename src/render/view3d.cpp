@@ -4,6 +4,7 @@
 #include "base/log.h"
 #include "formats/png_writer.h"
 #include "platform/render_scale.h"
+#include "render/guard_band.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,7 +26,9 @@ struct VertexUniforms {
     float model[16];
     float normal_mat[16];
     float view_z[4]; // the view matrix's z row (eye-space z of a world point)
-    float fog[4];    // GT3 fog: x distance A, y 1 - minimum visibility, z = 1 on
+    float fog[4];    // GT3 fog: x distance A, y 1 - minimum visibility, z = 1 on; w > 0: GT3's
+                     // guard band (DrawItem::guard_band), its near plane in the item's eye space
+    float far_clip[4]; // x > 0: GT3's far plane in the item's eye space (DrawOptions::far_clip)
 };
 // model.vert's VertexLighting (slot 1): GT3's VU lighting per vertex.
 struct VertexLighting {
@@ -81,12 +84,154 @@ struct FragmentUniforms {
     float grade2[4]; // x black, y white, z 1 = saturation before the curve, w 1 = alpha = coverage
     float env_c0[4]; // reflection weight rows (scene::Primitive::env_c0/c1); c0.w = 1: valid
     float env_c1[4];
-    float output[4]; // x = 1: quantise the colour to 5 bits per channel (DrawOptions::quantize_rgb5)
+    float output[4]; // x = 1: quantise the colour to 5 bits per channel (DrawOptions::quantize_rgb5);
+                     // y = 1: the vertex colour is linear in screen space (DrawItem::guard_band);
+                     // z = 1: the bound texture filtered as the GS does (DrawItem::gs_bilinear)
     float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level
     float wheel_steps[4]; // DrawItem::wheel_steps
 };
 
+// Frustum planes of `vp` (clip depth 0..w, far..near): w+x, w-x, w+y, w-y, z, w-z, normalised.
+void frustum_planes(const Mat4& vp, float planes[6][4]) {
+    for (int i = 0; i < 4; ++i) {
+        float r0 = vp.at(0, i), r1 = vp.at(1, i), r2 = vp.at(2, i), r3 = vp.at(3, i);
+        planes[0][i] = r3 + r0, planes[1][i] = r3 - r0, planes[2][i] = r3 + r1;
+        planes[3][i] = r3 - r1, planes[4][i] = r2, planes[5][i] = r3 - r2;
+    }
+    for (int k = 0; k < 6; ++k) {
+        float* p = planes[k];
+        float l = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+        if (l > 0)
+            for (int i = 0; i < 4; ++i) p[i] /= l;
+    }
+}
+
+// A mesh where an item puts it: its world transform, bounding sphere and distance from the eye.
+struct Placed {
+    Mat4 world;
+    Vec3 center;
+    float radius = 0, dist = 0;
+    float scale = 1; // the world transform's largest axis scale
+};
+Placed place(const DrawItem& item, const GpuModel::MeshInfo& mesh, const Vec3& eye) {
+    Placed m;
+    m.world = item.transform * mesh.transform;
+    m.center = m.world.transform_point(mesh.center);
+    float sc = 0;
+    for (int col = 0; col < 3; ++col)
+        sc = std::max(sc, length(Vec3{m.world.at(0, col), m.world.at(1, col), m.world.at(2, col)}));
+    m.radius = mesh.radius * sc;
+    m.scale = sc;
+    m.dist = length(m.center - eye);
+    return m;
+}
+
+int item_lod(const DrawItem& item, const DrawOptions& opt) { return item.lod == -2 ? opt.lod : item.lod; }
+
+// A point's depth in front of the eye (the view's -z).
+float eye_depth(const Mat4& view, const Vec3& p) {
+    return -(view.at(2, 0) * p.x + view.at(2, 1) * p.y + view.at(2, 2) * p.z + view.at(2, 3));
+}
+
+// GT3's far plane as the item's depth from the eye (DrawOptions::far_clip; the backdrop's 0.01
+// modelview scale puts it 100 times as far), 0 for none.
+float item_far(const DrawItem& item, const DrawOptions& opt) {
+    if (opt.far_clip <= 0 || item.background || item.helper) return 0;
+    return opt.far_clip / std::max(item.modelview_scale, 1e-6f);
+}
+
+// The draw distance and frustum culling of encode, and GT3's far plane: its VU culls what lies
+// wholly beyond.
+bool culled(const DrawItem& item, const Placed& m, const DrawOptions& opt, const float planes[6][4], const Mat4& view) {
+    if (item.background || item.helper) return false;
+    const float max_dist = item.draw_distance >= 0 ? item.draw_distance : opt.draw_distance;
+    if (max_dist > 0 && m.dist - m.radius > max_dist) return true;
+    const float far = item_far(item, opt);
+    if (far > 0 && eye_depth(view, m.center) - m.radius > far) return true;
+    if (opt.frustum_cull)
+        for (int k = 0; k < 6; ++k) {
+            const float* p = planes[k];
+            if (p[0] * m.center.x + p[1] * m.center.y + p[2] * m.center.z + p[3] < -m.radius) return true;
+        }
+    return false;
+}
+
+// DrawItem::far_whole: whether any of the item's meshes reaches past GT3's far plane.
+bool reaches_past_far(const DrawItem& item, const DrawOptions& opt, const Mat4& view, const Vec3& eye) {
+    const float far = item_far(item, opt);
+    if (!item.far_whole || far <= 0) return false;
+    const int lod = item_lod(item, opt);
+    for (const GpuModel::MeshInfo& mesh : item.model->meshes()) {
+        if (lod >= 0 && mesh.lod != lod) continue;
+        const Placed m = place(item, mesh, eye);
+        if (eye_depth(view, m.center) + m.radius > far) return true;
+    }
+    return false;
+}
+
+// Whether a sphere is past the near plane, before the far plane (far_w > 0) and inside the guard
+// band (|x|, |y| <= 2 w) of `vp`: none of its triangles is clipped.
+bool inside_guard_band(const Mat4& vp, const Vec3& c, float r, float near_w, float far_w) {
+    // The planes w - near, 2 w - x, 2 w + x, 2 w - y, 2 w + y, far - w (positive inside).
+    const float kw[6] = {1, 2, 2, 2, 2, -1}, kx[6] = {0, -1, 1, 0, 0, 0}, ky[6] = {0, 0, 0, -1, 1, 0};
+    for (int k = 0; k < (far_w > 0 ? 6 : 5); ++k) {
+        float p[4];
+        for (int i = 0; i < 4; ++i) p[i] = kw[k] * vp.at(3, i) + kx[k] * vp.at(0, i) + ky[k] * vp.at(1, i);
+        if (k == 0) p[3] -= near_w;
+        if (k == 5) p[3] += far_w;
+        const float l = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+        if (p[0] * c.x + p[1] * c.y + p[2] * c.z + p[3] < r * l) return false;
+    }
+    return true;
+}
+
 } // namespace
+
+void View3D::Streamed::release(SDL_GPUDevice* dev) {
+    if (vb) SDL_ReleaseGPUBuffer(dev, vb);
+    if (ib) SDL_ReleaseGPUBuffer(dev, ib);
+    if (tb) SDL_ReleaseGPUTransferBuffer(dev, tb);
+}
+
+bool View3D::Streamed::upload(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, const void* verts, u32 vsize,
+                              const void* idx, u32 isize) {
+    auto grow = [&](SDL_GPUBuffer*& buf, u32& cap, u32 size, SDL_GPUBufferUsageFlags usage) {
+        if (buf && cap >= size) return true;
+        if (buf) SDL_ReleaseGPUBuffer(dev, buf);
+        SDL_GPUBufferCreateInfo bi{};
+        bi.usage = usage;
+        bi.size = std::max(size, cap * 2);
+        buf = SDL_CreateGPUBuffer(dev, &bi);
+        cap = buf ? bi.size : 0;
+        return buf != nullptr;
+    };
+    const u32 ioff = (vsize + 15u) & ~15u, total = ioff + isize;
+    if (!grow(vb, vb_size, vsize, SDL_GPU_BUFFERUSAGE_VERTEX) || !grow(ib, ib_size, isize, SDL_GPU_BUFFERUSAGE_INDEX))
+        return false;
+    if (!tb || tb_size < total) {
+        if (tb) SDL_ReleaseGPUTransferBuffer(dev, tb);
+        SDL_GPUTransferBufferCreateInfo ti{};
+        ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        ti.size = std::max(total, tb_size * 2);
+        tb = SDL_CreateGPUTransferBuffer(dev, &ti);
+        tb_size = tb ? ti.size : 0;
+        if (!tb) return false;
+    }
+    auto* p = static_cast<u8*>(SDL_MapGPUTransferBuffer(dev, tb, true));
+    if (!p) return false;
+    std::memcpy(p, verts, vsize);
+    std::memcpy(p + ioff, idx, isize);
+    SDL_UnmapGPUTransferBuffer(dev, tb);
+    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTransferBufferLocation src{tb, 0};
+    SDL_GPUBufferRegion dst{vb, 0, vsize};
+    SDL_UploadToGPUBuffer(cp, &src, &dst, true); // (the last frame's draws may still read them)
+    src.offset = ioff;
+    dst = {ib, 0, isize};
+    SDL_UploadToGPUBuffer(cp, &src, &dst, true);
+    SDL_EndGPUCopyPass(cp);
+    return true;
+}
 
 std::array<u8, 3> post_grade_pixel(const DrawOptions::PostGrade& g, u8 r, u8 gr, u8 b) {
     const float d = g.white - g.black, inv = d == 0 ? 0.0f : 1.0f / d;
@@ -108,6 +253,27 @@ std::array<u8, 3> post_grade_pixel(const DrawOptions::PostGrade& g, u8 r, u8 gr,
         out[size_t(c)] = u8(std::min(sum, 255.0f));
     }
     return out;
+}
+
+std::array<u8, 3> gs_pixel(const float texel[3], const float color[3], const u8 fog[3], float f) {
+    std::array<u8, 3> out{};
+    for (int c = 0; c < 3; ++c) {
+        const float t = std::floor(texel[c] + 0.05f); // the filtered texel
+        const float m = std::min(std::floor(t * color[c] / 128.0f + 1e-3f), 255.0f); // MODULATE
+        const float fc = fog[c];
+        out[size_t(c)] = u8(std::floor(fc + (m - fc) * (f / 256.0f) + 1e-3f));
+    }
+    return out;
+}
+
+u8 gs_bilinear_texel(const u8* px, int w, int h, float u, float v) {
+    const float tu = u - 0.5f, tv = v - 0.5f, iu = std::floor(tu), iv = std::floor(tv);
+    const int fu = std::min(int(std::floor((tu - iu) * 16.0f + 1e-3f)), 15);
+    const int fv = std::min(int(std::floor((tv - iv) * 16.0f + 1e-3f)), 15);
+    auto at = [&](int x, int y) { return int(px[size_t(std::clamp(y, 0, h - 1)) * size_t(w) + size_t(std::clamp(x, 0, w - 1))]); };
+    auto lerp = [](int a, int b, int f) { return a + (((b - a) * f) >> 4); }; // (an arithmetic shift: floor)
+    const int x = int(iu), y = int(iv);
+    return u8(lerp(lerp(at(x, y), at(x + 1, y), fu), lerp(at(x, y + 1), at(x + 1, y + 1), fu), fv));
 }
 
 std::array<u8, 3> sheen_vertex_bytes(const scene::Material& m, const Vec3& light, const float light_spec[3],
@@ -205,9 +371,8 @@ View3D::~View3D() {
     release_target();
     if (quad_vb_) SDL_ReleaseGPUBuffer(ctx_.device(), quad_vb_);
     if (quad_ib_) SDL_ReleaseGPUBuffer(ctx_.device(), quad_ib_);
-    if (screen_vb_) SDL_ReleaseGPUBuffer(ctx_.device(), screen_vb_);
-    if (screen_ib_) SDL_ReleaseGPUBuffer(ctx_.device(), screen_ib_);
-    if (screen_tb_) SDL_ReleaseGPUTransferBuffer(ctx_.device(), screen_tb_);
+    screen_.release(ctx_.device());
+    clip_.release(ctx_.device());
     release_cube();
     release_offscreen();
     if (placeholder_cube_) SDL_ReleaseGPUTexture(ctx_.device(), placeholder_cube_);
@@ -381,6 +546,8 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     }
     // The screen draws of the passes after the scene (presentation §L6), uploaded first.
     const ScreenUpload screen = upload_screen(cmd, opt, pw, ph);
+    // So are the pieces of the triangles GT3 clips at the guard band.
+    guard_on_ = opt.guard_near > 0 && upload_clipped(cmd, view, proj, eye, items, opt);
     const bool vignette = screen.ok && opt.vignette && !opt.vignette->empty();
     const bool post = (post_wanted(opt) || vignette) && ensure_post(&scene_);
     // The depth of field reads the picture and its depth, then writes the post passes' picture
@@ -478,6 +645,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         encode_after_scene(cmd, pass, view, proj, eye, items, opt, screen);
         SDL_EndGPURenderPass(pass);
     }
+    guard_on_ = false; // (the other entry points draw every triangle themselves)
     if (post) {
         // The finished picture (graded), then the frozen one and the last one over it.
         SDL_GPUColorTargetInfo pt{};
@@ -674,57 +842,119 @@ View3D::ScreenUpload View3D::upload_screen(SDL_GPUCommandBuffer* cmd, const Draw
         for (u32 i : b->idx) idx.push_back(base + i);
     }
     if (verts.empty() || idx.empty()) return up;
-    SDL_GPUDevice* dev = ctx_.device();
-    const u32 vsize = u32(verts.size() * sizeof(scene::Vertex)), isize = u32(idx.size() * sizeof(u32));
-    auto grow = [&](SDL_GPUBuffer*& buf, u32& cap, u32 size, SDL_GPUBufferUsageFlags usage) {
-        if (buf && cap >= size) return true;
-        if (buf) SDL_ReleaseGPUBuffer(dev, buf);
-        SDL_GPUBufferCreateInfo bi{};
-        bi.usage = usage;
-        bi.size = std::max(size, cap * 2);
-        buf = SDL_CreateGPUBuffer(dev, &bi);
-        cap = buf ? bi.size : 0;
-        return buf != nullptr;
-    };
-    const u32 total = ((vsize + 15u) & ~15u) + isize;
-    if (!grow(screen_vb_, screen_vb_size_, vsize, SDL_GPU_BUFFERUSAGE_VERTEX) ||
-        !grow(screen_ib_, screen_ib_size_, isize, SDL_GPU_BUFFERUSAGE_INDEX))
-        return up;
-    if (!screen_tb_ || screen_tb_size_ < total) {
-        if (screen_tb_) SDL_ReleaseGPUTransferBuffer(dev, screen_tb_);
-        SDL_GPUTransferBufferCreateInfo ti{};
-        ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        ti.size = std::max(total, screen_tb_size_ * 2);
-        screen_tb_ = SDL_CreateGPUTransferBuffer(dev, &ti);
-        screen_tb_size_ = screen_tb_ ? ti.size : 0;
-        if (!screen_tb_) return up;
-    }
-    auto* p = static_cast<u8*>(SDL_MapGPUTransferBuffer(dev, screen_tb_, true));
-    if (!p) return up;
-    const u32 ioff = (vsize + 15u) & ~15u;
-    std::memcpy(p, verts.data(), vsize);
-    std::memcpy(p + ioff, idx.data(), isize);
-    SDL_UnmapGPUTransferBuffer(dev, screen_tb_);
-    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
-    SDL_GPUTransferBufferLocation src{screen_tb_, 0};
-    SDL_GPUBufferRegion dst{screen_vb_, 0, vsize};
-    SDL_UploadToGPUBuffer(cp, &src, &dst, true); // (the last frame's draws may still read them)
-    src.offset = ioff;
-    dst = {screen_ib_, 0, isize};
-    SDL_UploadToGPUBuffer(cp, &src, &dst, true);
-    SDL_EndGPUCopyPass(cp);
-    up.ok = true;
+    up.ok = screen_.upload(ctx_.device(), cmd, verts.data(), u32(verts.size() * sizeof(scene::Vertex)), idx.data(),
+                           u32(idx.size() * sizeof(u32)));
     return up;
+}
+
+bool View3D::upload_clipped(SDL_GPUCommandBuffer* cmd, const Mat4& view, const Mat4& proj, const Vec3& eye,
+                            const std::vector<DrawItem>& items, const DrawOptions& opt) {
+    clipped_.clear();
+    const Mat4 view_proj = proj * view;
+    float planes[6][4];
+    frustum_planes(view_proj, planes);
+    std::vector<ClipVertex> corners;
+    std::vector<u32> tris;
+    std::vector<ClipPos> clip;
+    std::vector<u8> outside;
+    for (const DrawItem& item : items) {
+        const GpuModel* model = item.model;
+        const GpuModel::Geometry* g = model ? model->geometry() : nullptr;
+        if (!item.guard_band || !g || !model->valid() || item.late) continue;
+        const float near_w = opt.guard_near / std::max(item.modelview_scale, 1e-6f);
+        const float far_w = item_far(item, opt);
+        const int lod = item_lod(item, opt);
+        const std::vector<GpuModel::MeshInfo>& meshes = model->meshes();
+        for (size_t mi = 0; mi < meshes.size(); ++mi) {
+            const GpuModel::MeshInfo& mesh = meshes[mi];
+            if (lod >= 0 && mesh.lod != lod) continue;
+            const Placed m = place(item, mesh, eye);
+            if (culled(item, m, opt, planes, view) || inside_guard_band(view_proj, m.center, m.radius, near_w, far_w))
+                continue;
+            // The mesh's vertices in clip space, and whether GT3's VU clips them: with a margin, so
+            // every vertex model.vert finds outside is (a triangle the static draw leaves out is
+            // always here; the clipped draw drops what the GPU keeps itself).
+            const size_t first = size_t(mesh.vertex_offset);
+            const size_t end = mi + 1 < meshes.size() ? size_t(meshes[mi + 1].vertex_offset) : g->vertices.size();
+            if (end < first || end > g->vertices.size()) continue;
+            const Mat4 mvp = view_proj * m.world;
+            clip.resize(end - first);
+            outside.assign(end - first, 2); // 2: not transformed yet
+            auto vertex = [&](u32 k) {
+                if (outside[k] != 2) return;
+                const float* q = g->vertices[first + k].pos;
+                ClipPos& c = clip[k];
+                c.x = mvp.at(0, 0) * q[0] + mvp.at(0, 1) * q[1] + mvp.at(0, 2) * q[2] + mvp.at(0, 3);
+                c.y = mvp.at(1, 0) * q[0] + mvp.at(1, 1) * q[1] + mvp.at(1, 2) * q[2] + mvp.at(1, 3);
+                c.w = mvp.at(3, 0) * q[0] + mvp.at(3, 1) * q[1] + mvp.at(3, 2) * q[2] + mvp.at(3, 3);
+                const float w = 2 * c.w * (1.0f - 1e-4f);
+                outside[k] = c.w < near_w * (1.0f + 1e-4f) + 1e-6f || std::fabs(c.x) > w || std::fabs(c.y) > w ||
+                             (far_w > 0 && c.w > far_w * (1.0f - 1e-4f));
+            };
+            for (size_t pi = 0; pi < mesh.primitives.size(); ++pi) {
+                const scene::Primitive& p = mesh.primitives[pi];
+                // A primitive wholly inside (none of its triangles clipped) or wholly past the far
+                // plane (all culled; the primitive's own draw leaves them out too) needs nothing.
+                if (pi < mesh.primitive_spheres.size()) {
+                    const GpuModel::MeshInfo::Sphere& ps = mesh.primitive_spheres[pi];
+                    const Vec3 c = m.world.transform_point(ps.center);
+                    const float r = ps.radius * m.scale;
+                    if (inside_guard_band(view_proj, c, r, near_w, far_w)) continue;
+                    if (far_w > 0 && eye_depth(view, c) - r > far_w) continue;
+                }
+                const u32 tri_first = u32(tris.size());
+                const size_t base = size_t(mesh.index_offset) + p.first_index;
+                for (u32 t = 0; t + 2 < p.index_count && base + t + 2 < g->indices.size(); t += 3) {
+                    const u32* abc = &g->indices[base + t];
+                    if (abc[0] >= clip.size() || abc[1] >= clip.size() || abc[2] >= clip.size()) continue;
+                    vertex(abc[0]), vertex(abc[1]), vertex(abc[2]);
+                    if (!outside[abc[0]] && !outside[abc[1]] && !outside[abc[2]]) continue;
+                    // GT3's strip order: a strip's vertices follow each other (gtm1), so the
+                    // indices ascending; the stored order is a rotation of it (even) or not.
+                    u32 s[3] = {abc[0], abc[1], abc[2]};
+                    std::sort(s, s + 3);
+                    const bool even = (abc[0] == s[0] && abc[1] == s[1]) || (abc[0] == s[1] && abc[1] == s[2]) ||
+                                      (abc[0] == s[2] && abc[1] == s[0]);
+                    const ClipPos v[3] = {clip[s[0]], clip[s[1]], clip[s[2]]};
+                    ClipCorner out[kMaxClipCorners];
+                    const int n = guard_clip(v, near_w, far_w, out);
+                    if (n < 3) continue;
+                    const u32 at = u32(corners.size());
+                    for (int i = 0; i < n; ++i) {
+                        ClipVertex cv;
+                        for (int k = 0; k < 3; ++k) cv.v[k] = g->vertices[first + s[k]], cv.b[k] = out[i].b[k];
+                        corners.push_back(cv);
+                    }
+                    // GT3's strip, each piece wound as the stored triangle: the sign of the
+                    // determinant of its corners' weights is the sign of its turn about the
+                    // triangle's.
+                    for (int i = 0; i + 2 < n; ++i) {
+                        const float* a = out[i].b;
+                        const float* b = out[i + 1].b;
+                        const float* c = out[i + 2].b;
+                        const float det = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) +
+                                          a[2] * (b[0] * c[1] - b[1] * c[0]);
+                        if (det == 0) continue;
+                        const u32 j = (det > 0) == even ? 1 : 2; // the second corner (else swapped)
+                        tris.insert(tris.end(), {at + u32(i), at + u32(i) + j, at + u32(i) + 3 - j});
+                    }
+                }
+                if (tris.size() > tri_first) clipped_[{&item, &mesh, pi}] = {tri_first, u32(tris.size()) - tri_first};
+            }
+        }
+    }
+    return tris.empty() || clip_.upload(ctx_.device(), cmd, corners.data(), u32(corners.size() * sizeof(ClipVertex)),
+                                        tris.data(), u32(tris.size() * sizeof(u32)));
 }
 
 void View3D::encode_screen(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const ScreenBatch& b, u32 first_index,
                            bool frame) {
-    if (b.empty() || !screen_vb_ || !screen_ib_) return;
+    if (b.empty() || !screen_.vb || !screen_.ib) return;
     const SDL_GPUViewport vp{0, 0, float(used_w_), float(used_h_), 0, 1};
     const SDL_Rect sc{0, 0, used_w_, used_h_};
     SDL_SetGPUViewport(pass, &vp);
     SDL_SetGPUScissor(pass, &sc);
-    SDL_GPUBufferBinding vb{screen_vb_, 0}, ib{screen_ib_, 0};
+    SDL_GPUBufferBinding vb{screen_.vb, 0}, ib{screen_.ib, 0};
     VertexUniforms vu{};
     const Mat4 id;
     std::copy(id.m.begin(), id.m.end(), vu.mvp);
@@ -1036,7 +1266,7 @@ void View3D::encode_dof(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, const M
     const float m22 = proj.at(2, 2), m23 = proj.at(2, 3);
     const float near = m23 / std::max(1.0f + m22, 1e-6f);
     auto depth_at = [&](float dist) { return dist <= 0 ? 1.0f : std::clamp((m23 - m22 * dist) / dist, 0.0f, 1.0f); };
-    for (const DofLayer& layer : dof_layers(o.dof, proj.at(1, 1) * o.dof.y_scale, near)) {
+    for (const DofLayer& layer : dof_layers(o.dof, proj.at(1, 1), near)) {
         if (layer.level < 0) {
             encode_resample(cmd, pass, scene_, pic, 1.0f, depth_at(layer.distance), false);
             continue;
@@ -1128,18 +1358,8 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     for (int c = 0; c < 4; ++c) line_proj.at(2, c) += 1e-4f * proj.at(3, c);
     const Mat4 line_view_proj = line_proj * view;
 
-    // Frustum planes (clip depth 0..w, far..near): w+x, w-x, w+y, w-y, z, w-z.
     float planes[6][4];
-    for (int i = 0; i < 4; ++i) {
-        float r0 = view_proj.at(0, i), r1 = view_proj.at(1, i), r2 = view_proj.at(2, i), r3 = view_proj.at(3, i);
-        planes[0][i] = r3 + r0, planes[1][i] = r3 - r0, planes[2][i] = r3 + r1;
-        planes[3][i] = r3 - r1, planes[4][i] = r2, planes[5][i] = r3 - r2;
-    }
-    for (auto& p : planes) {
-        float l = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
-        if (l > 0)
-            for (float& v : p) v /= l;
-    }
+    frustum_planes(view_proj, planes);
 
     Vec3 l = normalize(opt.light_dir);
     FragmentUniforms fu{};
@@ -1186,32 +1406,20 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         const GpuModel* model = item.model;
         if (!model || !model->valid()) continue;
         if ((which == Items::Early && item.late) || (which == Items::Late && !item.late)) continue;
-        int lod = item.lod == -2 ? opt.lod : item.lod;
-        float max_dist = item.draw_distance >= 0 ? item.draw_distance : opt.draw_distance;
+        if (reaches_past_far(item, opt, view, eye)) {
+            stats_.meshes_culled += int(model->meshes().size());
+            continue;
+        }
+        const int lod = item_lod(item, opt);
         for (const GpuModel::MeshInfo& mesh : model->meshes()) {
             if (lod >= 0 && mesh.lod != lod) continue;
-            Mat4 world = item.transform * mesh.transform;
-            Vec3 c = world.transform_point(mesh.center);
-            float sc = 0;
-            for (int col = 0; col < 3; ++col)
-                sc = std::max(sc, length(Vec3{world.at(0, col), world.at(1, col), world.at(2, col)}));
-            float r = mesh.radius * sc;
-            float dist = length(c - eye);
-            if (!item.background && !item.helper) {
-                bool culled = max_dist > 0 && dist - r > max_dist;
-                if (opt.frustum_cull && !culled)
-                    for (const auto& p : planes)
-                        if (p[0] * c.x + p[1] * c.y + p[2] * c.z + p[3] < -r) {
-                            culled = true;
-                            break;
-                        }
-                if (culled) {
-                    ++stats_.meshes_culled;
-                    continue;
-                }
+            const Placed m = place(item, mesh, eye);
+            if (culled(item, m, opt, planes, view)) {
+                ++stats_.meshes_culled;
+                continue;
             }
             ++stats_.meshes_drawn;
-            vis.push_back({&item, &mesh, world, dist});
+            vis.push_back({&item, &mesh, m.world, m.dist});
         }
     }
 
@@ -1286,6 +1494,10 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         std::copy(nm.m.begin(), nm.m.end(), vu.normal_mat);
         for (int i = 0; i < 4; ++i) vu.view_z[i] = view.at(2, i);
         vu.fog[0] = opt.fog_start, vu.fog[1] = opt.fog_max, vu.fog[2] = opt.fog_gt3 ? 1.0f : 0.0f;
+        // GT3's near plane in the item's eye space (the backdrop's modelview scale: s x the depth).
+        if (guard_on_ && v.item->guard_band && !lines)
+            vu.fog[3] = opt.guard_near / std::max(v.item->modelview_scale, 1e-6f);
+        if (!lines) vu.far_clip[0] = item_far(*v.item, opt); // (GT3's far plane)
         flush();
         SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
         pushed = &v;
@@ -1439,6 +1651,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         for (int i = 0; i < 4; ++i) fu.wheel_steps[i] = v.item->wheel_steps[size_t(i)];
         fu.tint[3] = std::max(v.item->alpha, 0.0f); // > 1 (blended items): the blend clamps
         fu.tint[0] = fu.tint[1] = fu.tint[2] = v.item->tint;
+        const bool guard = guard_on_ && v.item->guard_band;
+        fu.output[1] = guard ? 1.0f : 0.0f; // model.vert sends the colour times w
+        fu.output[2] = v.item->texture && v.item->gs_bilinear ? 1.0f : 0.0f;
         // GT3's lighting runs per vertex (the VU), with the infinite viewer: the lights and
         // material go to the vertex shader. The sheen's program has a local viewer instead:
         // GT3's light model viewer (0, 2, 0) in eye space, 2 m along the camera's up axis.
@@ -1513,6 +1728,22 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             pending = {first, p.index_count, v.mesh->vertex_offset};
         }
         stats_.triangles += p.index_count / 3;
+        // The triangles GT3 clips at the guard band: their pieces (upload_clipped), in place of the
+        // ones the draw above leaves out (model.vert).
+        if (!guard) return;
+        const auto it = clipped_.find({v.item, v.mesh, size_t(&p - v.mesh->primitives.data())});
+        if (it == clipped_.end() || it->second.count == 0) return;
+        PipelineKey clip_key = key;
+        clip_key.clipped = true;
+        if (!bind(clip_key)) return;
+        flush();
+        SDL_GPUBufferBinding vb{clip_.vb, 0};
+        SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+        SDL_GPUBufferBinding ib{clip_.ib, 0};
+        SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        bound_model = nullptr; // the next mesh binds its own buffers again
+        SDL_DrawGPUIndexedPrimitives(pass, it->second.count, 1, it->second.first, 0, 0);
+        ++stats_.draw_calls;
     };
     auto prim_blended = [](const scene::Primitive& p) {
         return (p.flags & (scene::kAlphaBlend | scene::kAdditive | scene::kMultiplyDest | scene::kAlphaOnly)) != 0;

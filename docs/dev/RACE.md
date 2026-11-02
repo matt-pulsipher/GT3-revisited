@@ -96,7 +96,7 @@ update(dt):
                  (the wheels turn by the tick's own turn, WheelState::spin_step: their spin angles wrap)
   camera, engine audio and rumble use render_state
 render:
-  View3D::draw(course items + car items) with frustum culling, draw distance, sorted blending, fog
+  View3D::draw(course items + car items) with frustum culling, GT3's far plane, sorted blending, fog
   HUD over it
 ```
 
@@ -236,7 +236,8 @@ throttle trigger as an adaptive-trigger vibration (`ForceFeedbackState::wheelspi
 - Cameras (GT3's player views are two camera points of the car's GTCI block, +0x68 count / +0x6C
   offset of 0x40-byte records, translate p at +0x00; fallbacks (0, -0.8, 0) / (0, -1.5, -6)):
   the eye sits at -p in the car model's frame (origin at the body height), looking along that frame's
-  forward axis, 60 degrees horizontal over the 640x448 frame (44 vertical), near 0.1. In-car (point
+  forward axis, 60 degrees horizontal over the 640x448 frame (48 vertical; see "Original resolution and
+  field of view"), near 0.1. In-car (point
   0, R34 1.01 m up, 0.2 m back): the body's attitude, own car not drawn, rear-view mirror. Chase
   (point 1, R34 6 m back, 1.5 m up): heading and pitch lagged by GT3's springs at 60 Hz (yaw 30 e -
   10 w trapezoid, pitch 20 e - 10 w), no roll, no camera lag in position. Change view toggles the
@@ -1025,7 +1026,8 @@ workstream (all 80 US courses, 4493 records, no errors):
   request is pending; the cut takes the record at D (u <= 0.6, not the same one), else another
   variant's, else turns on board. A new followed car re-picks the same way as a reset.
 - zoom = 1/tan(half horizontal FOV) over the 640-pixel frame; the 448-line frame gives
-  `fovy = 2 atan(0.7/zoom)` (`ReplayDirector::zoom_fovy`; the player views use the same).
+  `fovy = 2 atan(0.7 x 1.098 / zoom)` with the projection's 1 / 1.098 y scale
+  (`ReplayDirector::zoom_fovy`, `kYScale`; the player views use the same).
   In the telephoto shots (100-150 m, down to 1.4 degrees across) the cars' decals, a few mm
   above the body, stay in front because the depth is reversed like GT3's Z buffer
   (docs/dev/RENDERING.md, coordinate conventions).
@@ -1828,7 +1830,12 @@ screen, `screen_race_license.cpp` the flow. The rules (presentation §A):
 - Field of view is Hor+: every camera fixes the vertical FOV and the
   horizontal one follows the aspect, so 16:9 shows more at the sides than
   4:3 (`[video] aspect = 4:3` gives GT3's 4:3 view exactly) and nothing
-  is cropped vertically. (GT3's two player views, the pre-race
+  is cropped vertically. GT3's projection scales y by 1 / 1.098 and its
+  640x448 frame is shown at 4:3 (its 16:9 option scales x by 0.75), so a
+  picture A wide per unit of height takes a frustum 0.976 A wide
+  (`CameraRig::kPixelAspect`, in `projection()` and `frustum()`, which the
+  glare, lamp glows, wet road and smoke use too); checked against PCSX2
+  grid captures: the same framing to within 1 %. (GT3's two player views, the pre-race
   shot and the replay cameras use the original's FOVs, see "Cameras"; our
   extra views use our own values.)
 
@@ -1934,7 +1941,9 @@ by the course area):
   lamp streaks (flag 0x20000); then Env0 +0xC2C blur passes (the buffer onto itself, bilinear,
   -0.5 / +0.5 texel; wet 1, dry 6) and the composite over the frame (bilinear, net -0.5 texel)
   with Env0 +0xC20: 0x54 (Cs - Cd) Ad + Cd on the wet courses, 0x58 Cs Ad + Cd on the dry
-  ones. Streaks: per car the headlamps (I 1), brake lamps (k for flag-bit-0 records, else 1 while
+  ones. Both filter as the GS does (docs/formats/course.md "Lighting"): 4-bit weights, each
+  lerp truncated, so a blur copy is ((a + b) >> 1 + (c + d) >> 1) >> 1 and loses about 3 % of
+  the buffer's light (route5_dry's six: 17 %; a GPU's rounding gains instead). Streaks: per car the headlamps (I 1), brake lamps (k for flag-bit-0 records, else 1 while
   the pedal is down) and tail lamps (0.3) at the lamp's mirror image; c = cos(lamp axis, eye ->
   lamp), skipped when negative or behind the eye; a camera-facing quad 0.5 m nearer the eye,
   half width (E74 + (E70 - E74) c) x lamp size (+0x40), from min(E78, lamp height) above the
@@ -1942,7 +1951,8 @@ by the course area):
   x E60..E68 x E6C, added; no attenuation or occlusion (wet route5: width 0.3, cap 1, length 1.8,
   gain 1; route5_dry 0.5 / 1 / 0.5 / 0.3; route11 0.63..0.03 / 0.6 / 0.2 / 0.07). Ours: the
   buffer and blur through `View3D::render_offscreen`, the frame items (alpha clear quad, mask,
-  composite quad with `DrawItem::texture` / `dest_alpha_blend`) just past the near plane,
+  composite quad with `DrawItem::texture` / `dest_alpha_blend`) just past the near plane, the
+  blur copies and the composite filtered by `DrawItem::gs_bilinear` (model.frag `gs_bilinear`),
   `in_order` items inserted right after the scenery (before the cars and their shadows); the frame alpha's GS range above 0x80 (weights up to 2) is clamped
   to 1; the main view only (not 2P halves or the mirror). Slots 9 / 13 were drawn as visible
   scenery before.
@@ -2043,11 +2053,22 @@ filling the options each frame:
 
 ## Known gaps
 
-- The road sheen follows docs/formats/course.md
-  "Lighting"; checked against a lossless PCSX2 capture at Super Speedway (bumper view on
-  the grid, facing the sun): the shape matches, ours adds about 25 % more (+44 vs +34
-  levels), which our own bumper camera (field of view and yaw are not the original's)
-  accounts for at least in part. Its mask is the PS2's: the course scenery draws with the
+- The road sheen follows docs/formats/course.md "Lighting", GT3's clipping at the guard band
+  included (`render::guard_clip`, `DrawItem::guard_band`: the course's triangles that reach past
+  twice the screen or GT3's near plane are drawn from the clipped pieces, the vertex colour
+  linear in screen space), and with the GS's 8-bit arithmetic (docs/dev/RENDERING.md). Checked
+  against lossless PCSX2 captures (arcade grids, in-car view): Super Speedway's road is 1.01 of
+  the original's in every row (1.11 without the clipping, 1.04 with float arithmetic) and falls
+  off towards the bottom of the frame like it. Route 5 (dry) is 2-4 % brighter on the road (was
+  ~10 %; most of it was the arithmetic). Its wet-road pass filters as the GS does
+  (`DrawItem::gs_bilinear`; a PCSX2 software-renderer replay of the grid, every target read back
+  per draw: the original's blur copies reproduced to the pixel, its composite to 99.9 %): the
+  road it reaches is 1.02-1.03 of the original's in both views, like the road it does not reach
+  (1.02-1.04). The pass still adds 1.2 x the original's light: the blend unit rounds the products
+  the GS truncates (the composite's (Cs x Ad) >> 7, about 7 % of the pass, and slot 9's alpha
+  blend; the frame alpha is only in the target, so the shader cannot do it), and the buffer takes
+  the view's MSAA (the GS: one sample per pixel). Wet Route 5 (one blur copy, 0x54): no capture
+  of the original's yet. The sheen's mask is the PS2's: the course scenery draws with the
   frame-buffer alpha (`DrawItem::frame_alpha`: every pass writes its texel x vertex alpha,
   FBMSK 0xFF000000 passes keep it, the alpha-only shadow masks write only it), and the sheen
   adds Cs x Ad (`BlendMode::DestAlphaAdd`). The sheen pass's own alpha (0x7F x texel alpha)

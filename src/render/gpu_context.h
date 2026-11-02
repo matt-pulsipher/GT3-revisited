@@ -60,6 +60,9 @@ struct PipelineKey {
     // One sample and no depth target, whatever the MSAA level: View3D's small single-sample
     // passes (the depth of field's downsampled pictures).
     bool single = false;
+    // The corners of triangles GT3 clips at the guard band (render/guard_band.h): View3D's
+    // ClipVertex layout and model.vert built with CLIPPED.
+    bool clipped = false;
     auto operator<=>(const PipelineKey&) const = default;
 };
 
@@ -152,7 +155,8 @@ public:
 private:
     GpuContext() = default;
     bool init(SDL_Window* window, const GpuOptions& options);
-    SDL_GPUShader* make_shader(bool vertex);
+    enum class Stage : u8 { Vertex, ClippedVertex, Fragment };
+    SDL_GPUShader* make_shader(Stage stage);
     bool create_samplers();
     void release_samplers();
     SDL_GPUGraphicsPipeline* create_pipeline(const PipelineKey& key);
@@ -175,6 +179,7 @@ private:
     float render_ceiling_ = 0.0f;
     SDL_Renderer* renderer_ = nullptr;
     SDL_GPUShader* vs_ = nullptr;
+    SDL_GPUShader* vs_clipped_ = nullptr;
     SDL_GPUShader* fs_ = nullptr;
     SDL_GPUSampler* samplers_[8] = {};
     SDL_GPUTexture* white_ = nullptr;

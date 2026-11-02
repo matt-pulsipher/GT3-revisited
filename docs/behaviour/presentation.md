@@ -2455,7 +2455,12 @@ offsets in `docs/formats/course.md`), read by `race::SunParams::from_env0`.
   75 / 0.98; Laguna Seca b 1.00 (no fog). A course without Env0 gets a
   placeholder linear fog (350 .. 3000 m, at most 55 %, the sky's horizon color).
   `GT3R_NO_COURSE_FOG=1` forces the placeholder.
-- **Draw distance.** 2500 m.
+- **Draw distance.** The course's far plane (+0x20: 610 m at Monte Carlo, 690 m at Laguna Seca,
+  1000 m on most courses, 2000 m at Grand Valley, 3000 m at the Test Course), as eye depth:
+  scenery reaching past it is cut there, scenery wholly beyond is not drawn, and a car is not
+  drawn once any of it lies beyond. The sky and the distant backdrop are not cut (the backdrop is
+  drawn at a hundredth of its depth). A course without Env0 draws to 2500 m.
+  `GT3R_NO_FAR_PLANE=1` draws to 2500 m everywhere (for comparisons).
 - **Color grade** (flag 0x80): the levels black / white (+0x98C / +0x990),
   per channel the curve x^2 + 2 g x (1 - x) (+0x980 .. +0x988; g = 0.5 is no
   change), then the saturation (+0x994) around luma (0.30, 0.59, 0.11). It is a
@@ -2817,7 +2822,7 @@ or replaces the weakest (strength x weight). With a random k in 0 .. 7:
 - **Alpha and texture.** Alpha = min(1, 1.99 x strength x weight x opacity) x
   texel. The texture is the course's slot 26 (four 32 x 64 frames, frame k & 3).
 - **Cull.** A puff is drawn only while its center's view depth d is inside
-  (near, far) and it is under two screen widths across (P0 x size < 2 d, P0 = the
+  (near, far; far = the course's far plane, §I1) and it is under two screen widths across (P0 x size < 2 d, P0 = the
   projection's x scale). A camera inside or next to a puff does not see it (test
   `race_tyre_smoke_cull`).
 - **Ground split.** A puff up to 3 m that crosses the ground line (ground -
