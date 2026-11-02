@@ -150,8 +150,11 @@ class CarVisual {
 public:
     // `car_file` is cars/day/<model>; wheels are placed from `wheels`.
     // `wheel_file` (optional): a bought wheel (wheel/<label>, GTTW) replacing the car's own.
+    // `showroom_car`, `showroom_wheel` (optional): LOD 0's wheels as the menus draw them
+    // ([video] showroom_wheels; CarModelOptions::showroom_car, showroom_wheel).
     CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::string& model, const WheelSpec& wheels,
-              int paint = 0, ByteSpan wheel_file = {}, const CarBodyMod& body_mod = {});
+              int paint = 0, ByteSpan wheel_file = {}, const CarBodyMod& body_mod = {}, ByteSpan showroom_car = {},
+              ByteSpan showroom_wheel = {});
 
     // Car draw items for the (interpolated) state. LOD is picked from the
     // camera distance (car_lod).
@@ -190,6 +193,7 @@ private:
         std::array<float, 3> tread_shifts{};
         int rim = 0;            // 1: the rim blur by rim_angles, 2: the wheel's spinning image
         std::array<float, 4> rim_angles{};
+        bool spinning = false;  // the turn passes the spinning image's 3 degrees (rim_spinning_image)
     };
     WheelLook wheel_look(int i, const render::Mat4& at, const render::Mat4& hub, const sim::WheelState& w,
                          const CarLook& look) const;
@@ -222,6 +226,10 @@ private:
     // index in rims_ (-1: the wheel file has none).
     u32 rim_width_ = 0;
     int rim_spin_texture_ = -1;
+    // Showroom wheels: LOD 0's race rims (meshes wheel_<x>_race), drawn instead of the modelled
+    // ones while a rim blur shows (add_body_items), and the spinning image's index in them.
+    std::array<std::unique_ptr<render::GpuModel>, 4> race_rims_;
+    int race_rim_spin_texture_ = -1;
     // Shadow nodes 1 (light) and 6 (contact), and node 5 (headlamp pool); all LODs; CPU copies
     // to recolour.
     std::array<std::unique_ptr<render::GpuModel>, 3> shadow_;

@@ -27,6 +27,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (SDL_getenv("GT3R_NO_ENV")) env_cube_on_ = false;
     shadows_on_ = app.config().get("video", "car_shadows").value_or("on") != "off";
     full_car_detail_ = app.full_car_detail();
+    showroom_wheels_ = app.showroom_wheels();
     heat_haze_ = to_lower(app.config().get("video", "heat_haze").value_or("off")) == "on";
     // [video] original_res = on: the 3D scene at the PS2's 640x448 in a 4:3 frame,
     // upscaled with [video] original_filter = nearest (default) | bilinear.
@@ -100,10 +101,12 @@ void RaceScreen::start(App& app, const Replay* replay) {
         ghost_wheel_track_ = {};
         // GT mode: the garage car's bought wheels.
         std::optional<Bytes> wheel_file;
+        std::string wheel_label;
         if (from_menu_ || online_)
             [&](const auto& rq) {
                 if constexpr (requires { rq.car_wheel; })
-                    if (!rq.car_wheel.empty()) wheel_file = app.vfs()->read("wheel/" + rq.car_wheel);
+                    if (!rq.car_wheel.empty())
+                        wheel_file = app.vfs()->read("wheel/" + rq.car_wheel), wheel_label = rq.car_wheel;
             }(launch_.request);
         {
             render::Vec3 p0{0, -0.8f, 0}, p1{0, -1.5f, -6.0f};
@@ -115,9 +118,12 @@ void RaceScreen::start(App& app, const Replay* replay) {
         if (event_paint_id_ != 0xFFFFFFFFu)
             if (int k = colors_.index_of(model, event_paint_id_); k >= 0) preset_.paint = k;
         CarBodyMod body_mod = body_mod_for_car(db_, car_.label, preset_.paint);
-        if (!wheel_file && !body_mod.wheel.empty()) wheel_file = app.vfs()->read("wheel/" + body_mod.wheel);
+        if (!wheel_file && !body_mod.wheel.empty())
+            wheel_file = app.vfs()->read("wheel/" + body_mod.wheel), wheel_label = body_mod.wheel;
+        const ShowroomFiles showroom = read_showroom(app, model, wheel_file ? wheel_label : "");
         car_visual_ = std::make_unique<CarVisual>(*app.gpu(), *car_file, model, car_.wheels, preset_.paint,
-                                                  wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod);
+                                                  wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod,
+                                                  showroom.car_span(), showroom.wheel_span());
         car_visual_->set_full_detail(full_car_detail_);
         if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
         course_name_ = ce.name;
@@ -663,8 +669,10 @@ bool RaceScreen::build_vehicle(App& app) {
                     if (!wheel2.empty()) bm2.wheel = wheel2;
                     std::optional<Bytes> w2 = bm2.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm2.wheel);
                     if (f2 && !f2->empty()) {
+                        const ShowroomFiles sh2 = read_showroom(app, m2, w2 ? bm2.wheel : "");
                         car2_visual_ = std::make_unique<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
-                                                                   w2 ? ByteSpan(*w2) : ByteSpan{}, bm2);
+                                                                   w2 ? ByteSpan(*w2) : ByteSpan{}, bm2,
+                                                                   sh2.car_span(), sh2.wheel_span());
                         car2_visual_->set_full_detail(full_car_detail_);
                         if (brake_parts_) car2_visual_->set_brake_parts(*brake_parts_);
                     }
@@ -725,7 +733,9 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
             std::optional<Bytes> wf = bm.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm.wheel);
             try {
                 if (f && !f->empty()) {
-                    v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm);
+                    const ShowroomFiles sh = read_showroom(app, model, wf ? bm.wheel : "");
+                    v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm,
+                                                    sh.car_span(), sh.wheel_span());
                     v->set_full_detail(full_car_detail_);
                     if (brake_parts_) v->set_brake_parts(*brake_parts_);
                 }
@@ -843,6 +853,14 @@ std::optional<Bytes> RaceScreen::read_car(App& app, const std::string& model) co
     if (car_folder_ != "cars/day/")
         if (std::optional<Bytes> f = app.vfs()->read(car_folder_ + model); f && !f->empty()) return f;
     return app.vfs()->read("cars/day/" + model);
+}
+
+RaceScreen::ShowroomFiles RaceScreen::read_showroom(App& app, const std::string& model, const std::string& wheel) const {
+    ShowroomFiles s;
+    if (!showroom_wheels_) return s;
+    s.car = app.vfs()->read("menu/cars/" + model);
+    if (s.car && !wheel.empty()) s.wheel = app.vfs()->read("menu/wheel/" + wheel);
+    return s;
 }
 
 std::vector<sim::exact::SparkPoint> RaceScreen::car_spark_points(App& app, const std::string& model) const {

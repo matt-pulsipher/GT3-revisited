@@ -161,7 +161,10 @@ wheelspin under throttle (`race_rumble`).
   with all LODs; body LOD by camera distance
   (< 30 m, < 80 m, beyond; `race::car_lod`), or LOD 0 at any distance with
   `[video] full_car_detail = on` (Settings → Display → Always show full car
-  detail; the default except on phones and tablets). The wheels are split into models re-centred on their hubs
+  detail; the default except on phones and tablets). LOD 0's wheels are the menus' with
+  `[video] showroom_wheels = on` (Settings → Display → Showroom wheels in races; the
+  default except on phones and tablets): the `menu/cars/<model>` rim and tyre, a fitted
+  wheel's `menu/wheel/<label>` (docs/formats/car_model.md "Tyres"). The wheels are split into models re-centred on their hubs
   (`CarVisual::tyres_`, `rims_`) and drawn with `car * translate(hub) * rotY(-steer) * rotZ(camber) * rotX(-spin)`
   (the camber negated on right wheels, whose models are built turned half a turn).
 - Wheels (`race/wheel_fx.h`, docs/formats/car_model.md "Brake parts" and "Wheel spin blur"):
@@ -179,8 +182,10 @@ wheelspin under throttle (`race_rumble`).
   S in model.frag's `wheel_texture`) and its rim (16 taps turned about the image centre, from
   the mip level of a 64-texel square, alpha tested at AREF 0x20 on the coverage); the other
   cars' rims take the wheel file's spinning image (texture table entry 2, `DrawItem::texture`)
-  above 3 degrees of turn. The wet road's mirrored cars get none of this (GT3 draws their wheels
-  at the farthest level). The arch shade (`bands_`) turns with the camber, not the steering.
+  above 3 degrees of turn. With showroom wheels, LOD 0's modelled rims take neither: they are
+  drawn sharp up to 3 degrees of turn (`WheelLook::spinning`), and past it the race rims
+  (`race_rims_`, meshes `wheel_<x>_race`) take their place with the blur or spinning image. The
+  wet road's mirrored cars get none of this (GT3 draws their wheels at the farthest level). The arch shade (`bands_`) turns with the camber, not the steering.
 - Car placement (as GT3 draws it): the car model's origin (wheelbase
   midpoint, y = 0 = the body's lowest point) sits at the physics body height,
   which at rest is the ride height q (the front ride height in mm x 0.001 m, both axles; physics §4.2) above

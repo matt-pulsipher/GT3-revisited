@@ -5,8 +5,10 @@
 #include "formats/model/wheel_model.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 namespace gt3r {
 
@@ -35,8 +37,10 @@ WheelSpec estimate_wheels(const scene::Model& car) {
 // the tyre's outer sidewall; right wheels are rotated 180 degrees about Y.
 // Each wheel gets its tyre (tyre_model.h): "wheel_<x>_tyre" and, at the highest
 // detail, "wheel_<x>_band", the arch shade, which does not turn with the wheel.
+// `brakes` (menu cars): the front and rear axles' brake disc and caliper, meshes of
+// `car` itself, drawn in each wheel's frame like its rim: "wheel_<x>_brake".
 void add_wheels(scene::Model& car, const scene::Model& wheel, int tyre_texture, const TyreShape& tyre,
-                const TyreDetail& detail, const WheelSpec& ws) {
+                const TyreDetail& detail, const WheelSpec& ws, const std::array<std::vector<scene::Mesh>, 2>& brakes) {
     static const char* names[4] = {"wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"};
     int tex_base = int(car.textures.size());
     car.textures.insert(car.textures.end(), wheel.textures.begin(), wheel.textures.end());
@@ -59,6 +63,20 @@ void add_wheels(scene::Model& car, const scene::Model& wheel, int tyre_texture, 
             for (scene::Vertex& v : m.vertices) place(v, rim, -0.5f * w);
             for (scene::Primitive& p : m.primitives)
                 if (p.texture >= 0) p.texture += tex_base;
+            car.meshes.push_back(std::move(m));
+        }
+        // Modelled for the left wheels. A right wheel's are mirrored in z before the half
+        // turn, i.e. mirrored in x about the hub: the caliper sits at the same end of the car
+        // on both sides. The mirror reverses the triangles, so their corners are swapped back.
+        for (const scene::Mesh& src : brakes[size_t(axle)]) {
+            scene::Mesh m = src;
+            m.name = std::string(names[i]) + "_brake";
+            for (scene::Vertex& v : m.vertices) {
+                if (right) v.pos[2] = -v.pos[2], v.normal[2] = -v.normal[2];
+                place(v, rim, -0.5f * w);
+            }
+            if (right)
+                for (size_t k = 0; k + 2 < m.indices.size(); k += 3) std::swap(m.indices[k + 1], m.indices[k + 2]);
             car.meshes.push_back(std::move(m));
         }
         TyreShape shape = tyre;
@@ -130,11 +148,25 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
     o.run.callback = gtm1::kCarCallbackDefaults.data();
     o.morphs = morphs;
     o.reflection = opt.reflection;
-    o.node = opt.effects ? -1 : 0;
+    // The menus' brake discs and calipers: nodes 2 (front) and 3 (rear) of a menu car's
+    // body, drawn with the wheels. Race car files leave both empty.
+    const bool brakes = opt.wheels && opt.menu_tyres;
+    o.node = opt.effects || brakes ? -1 : 0;
     o.paint = opt.paint;
     o.program_alpha_test = true;  // wheel-arch / grille cut-outs
     o.weighted_reflection = true; // reflection passes weighted by the body's texel alpha
     scene::Model m = gtm1::build_model(g, o, name);
+    std::array<std::vector<scene::Mesh>, 2> brake_parts;
+    if (brakes) {
+        std::vector<scene::Mesh> kept;
+        for (scene::Mesh& mesh : m.meshes) {
+            if (mesh.name == "node2" || mesh.name == "node3")
+                brake_parts[mesh.name == "node3"].push_back(std::move(mesh));
+            else if (opt.effects || mesh.name == "node0")
+                kept.push_back(std::move(mesh));
+        }
+        m.meshes = std::move(kept);
+    }
     for (scene::Mesh& mesh : m.meshes)
         if (mesh.name == "node0") mesh.name = "body";
     m.compute_bounds();
@@ -144,24 +176,41 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
         wo.run.lod = lod;
         wo.program_alpha_test = true;
         wo.weighted_reflection = true;
-        scene::Model wheel = load_wheel_model(opt.wheel_override.empty() ? f.wheel : opt.wheel_override, wo, "wheel");
+        // Showroom wheels: LOD 0's rim and tyre texture from the menu car file.
+        const bool showroom = lod == 0 && CarFile::is_car(opt.showroom_car);
+        const CarFile src = showroom ? CarFile::parse(opt.showroom_car) : f;
+        const ByteSpan rim = showroom && !opt.showroom_wheel.empty() ? opt.showroom_wheel
+                             : !opt.wheel_override.empty()           ? opt.wheel_override
+                                                                     : src.wheel;
+        scene::Model wheel = load_wheel_model(rim, wo, "wheel");
         int tyre_tex = -1;
         TyreShape tyre;
-        if (f.tire.size() > 0x20 && rd32(f.tire, 0x1C) < f.tire.size()) {
+        if (src.tire.size() > 0x20 && rd32(src.tire, 0x1C) < src.tire.size()) {
             size_t first = m.textures.size();
-            tyre_tex = gtm1::decode_texture_set(f.tire.subspan(rd32(f.tire, 0x1C)), m.textures, "tyre_");
+            tyre_tex = gtm1::decode_texture_set(src.tire.subspan(rd32(src.tire, 0x1C)), m.textures, "tyre_");
             // The game samples it repeating round the tyre, clamped across, without mipmaps.
             for (size_t t = first; t < m.textures.size(); ++t) {
                 m.textures[t].clamp_u = false, m.textures[t].clamp_v = true;
                 m.textures[t].no_mips = true;
             }
-            tyre.repeats = float(std::clamp<u32>(rd32(f.tire, 0x10), 1, 8));
-            tyre.flags = rd32(f.tire, 0x14);
-            u32 s = rd32(f.tire, 0x18);
+            tyre.repeats = float(std::clamp<u32>(rd32(src.tire, 0x10), 1, 8));
+            tyre.flags = rd32(src.tire, 0x14);
+            u32 s = rd32(src.tire, 0x18);
             std::memcpy(&tyre.shininess, &s, 4);
         }
-        const TyreDetail detail = opt.menu_tyres ? menu_tyre_detail() : race_tyre_detail(lod);
-        add_wheels(m, wheel, tyre_tex, tyre, detail, opt.wheel_spec ? *opt.wheel_spec : estimate_wheels(m));
+        const TyreDetail detail = opt.menu_tyres || showroom ? menu_tyre_detail() : race_tyre_detail(lod);
+        const WheelSpec ws = opt.wheel_spec ? *opt.wheel_spec : estimate_wheels(m);
+        add_wheels(m, wheel, tyre_tex, tyre, detail, ws, brake_parts);
+        // Showroom wheels: the race rims as well ("wheel_<x>_race"), drawn while a wheel
+        // spins fast enough for the races' rim blurs.
+        if (showroom) {
+            scene::Model race;
+            add_wheels(race, load_wheel_model(!opt.wheel_override.empty() ? opt.wheel_override : f.wheel, wo, "wheel"),
+                       -1, tyre, detail, ws, {});
+            std::erase_if(race.meshes, [](const scene::Mesh& r) { return r.name.size() != 8; }); // wheel_<x> only
+            for (scene::Mesh& r : race.meshes) r.name += "_race";
+            merge(m, std::move(race));
+        }
     }
     for (scene::Mesh& mesh : m.meshes) mesh.lod = lod;
     return m;

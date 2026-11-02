@@ -1137,6 +1137,10 @@ page opens and side-on (yaw 90°) after about 7.4 s.
   reflection pass, on phones and tablets (Android, iOS:
   `platform::is_mobile`), where the 3D renderer's MSAA smooths the edges
   instead.
+- Menu cars are the detailed `menu/cars` models with `menu/wheel` rims. Each
+  wheel shows the car's own brake disc and caliper through its spokes (the
+  menu car's front and rear brake parts, mirrored on the right side;
+  [car_model.md](../formats/car_model.md) "Brake parts").
 - On the arcade car pages (`ar/select_car`, `ar/select_car_2p`) and the
   time-trial page the car and its reflection are drawn at the depth of the
   layout's `car` slot (z 5): over the background, the movie and the spec

@@ -651,6 +651,16 @@ private:
         detail.enabled = scale.enabled;
         if (!detail.enabled) detail.desc = msaa.desc;
 
+        Row& rims = toggle("Showroom wheels in races",
+                           "Cars up close get the detailed rims and tires of the car menus. Off: GT3's race "
+                           "wheels, flat rims with painted spokes.",
+                           app.showroom_wheels(), [a](bool v) {
+                               a->config().set("video", "showroom_wheels", v ? "on" : "off");
+                               a->save_config();
+                           });
+        rims.enabled = scale.enabled;
+        if (!rims.enabled) rims.desc = msaa.desc;
+
         // [video] heat_haze = on | off (default off; RaceScreen::add_screen_passes)
         Row& haze = toggle("Heat haze in replays",
                            "GT3's heat shimmer over some trackside camera shots in replays, on some courses.",

@@ -197,6 +197,7 @@ are only there:
 | `[video] render_scale` | `auto`, `0.5`..`4.0` | 3D resolution vs. the screen; above `1.0` the 3D views render larger and are scaled down (supersampling), up to 16384 pixels a side |
 | `[video] dynamic_resolution` | `on` / `off` | lower the 3D resolution (to 50% at most) when the GPU can't keep up and raise it while it keeps up, up to `render_scale`; with `auto`, up to the screen's full resolution (at most 1440 lines), starting where the last race ended (kept in `dynamic_start`). Default on for phones and tablets |
 | `[video] full_car_detail` | `on` / `off` | every car in full detail at any distance; `off`: distant cars switch to GT3's simpler models. Default on, off for phones and tablets |
+| `[video] showroom_wheels` | `on` / `off` | close cars in races get the car menus' detailed rims and tires; `off`: GT3's race wheels. Default on, off for phones and tablets |
 | `[video] heat_haze` | `on` / `off` | GT3's heat shimmer over some trackside camera shots in replays, on some courses. Default off |
 | `[video] gpu` | `auto` / `gles` / `gles_driver` / `0` | the 3D renderer: `auto` = SDL_GPU (Vulkan, Metal), or OpenGL ES where the GPU has no Vulkan (Windows, Linux); `gles` = OpenGL ES first; `gles_driver` = the same on Windows with the graphics driver's OpenGL ES rather than ANGLE; `0` = 2D-only (restart required). Settings offers only the kinds of OpenGL ES that open on the computer |
 | `[video] original_res` | `on` / `off` | *(file)* races at the PS2's 640×448 in a 4:3 frame |
