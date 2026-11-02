@@ -55,15 +55,23 @@ scene::Model gtm1_model(ByteSpan block, const CourseModelOptions& opt, const std
     return m;
 }
 
+// Vertex colour is memory-order RGBA8 (R,G,B,A). On little-endian the u32 value is
+// therefore 0xAABBGGRR. Alpha ~0x90 keeps the overlay readable while still letting
+// the real road texture show through.
 u32 surface_color(u32 surface) {
-    switch (surface) {
-    case 0: return 0xFF808080u; // u32 0xAABBGGRR (bytes R,G,B,A); 0 = plain road
-    case 1: return 0xFF4060C0u;
-    case 8: return 0xFF3030C0u;
-    case 16: return 0xFF30A0E0u;
-    case 17: return 0xFF2080F0u;
-    case 24: return 0xFF40B040u;
-    default: return 0xFFC000C0u;
+    // Prefer the material byte (low 8 of the GTRW triangle surface / material field).
+    const u8 mat = u8(surface);
+    switch (mat) {
+    case 0: return 0x90808080u; // Tarmac / pit lane – neutral grey
+    case 1: return 0x904040E0u; // Kerb / rumble strip – red
+    case 2: return 0x9040C040u; // Grass – green
+    case 3: return 0x9060A0C0u; // Gravel – sandy brown
+    case 4: return 0x9080D0E0u; // Sand – pale yellow
+    case 5: return 0x9013458Bu; // Dirt – sienna
+    case 7: return 0x908090A0u; // Paving / cobbles – warm grey
+    case 8: return 0x90C0A060u; // Loose – light blue-grey
+    case 9: return 0x90506070u; // Rough – dark brown-grey
+    default: return 0x90C000C0u; // Unknown – magenta
     }
 }
 
@@ -82,13 +90,15 @@ scene::Mesh make_road_mesh(const Road& road) {
                 sv.pos[1] = p->y + 0.05f;
                 sv.pos[2] = p->z;
                 sv.normal[1] = 1;
-                sv.color = surface_color(t.surface);
+                sv.color = surface_color(t.material); // material byte (0=tarmac, 1=kerb, ...)
                 mesh.vertices.push_back(sv);
             }
             mesh.indices.insert(mesh.indices.end(), {base, base + 1, base + 2});
         }
     }
-    mesh.primitives.push_back({0, u32(mesh.indices.size()), -1, scene::kUnlit | scene::kDoubleSided});
+    // Semi-transparent overlay: blend, no depth write, unlit, double-sided.
+    mesh.primitives.push_back({0, u32(mesh.indices.size()), -1,
+                               scene::kUnlit | scene::kDoubleSided | scene::kAlphaBlend | scene::kNoDepthWrite});
     return mesh;
 }
 

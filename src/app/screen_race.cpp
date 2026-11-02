@@ -264,9 +264,9 @@ void RaceScreen::init(App& app) {
                 if (db_.car(e0)) preset_.car = e0;
                 else if (const data::CarVariant* v = db_.variant(e0)) preset_.car = v->car;
             }
-            bool listed = false;
-            for (const CourseEntry& c : courses_) listed = listed || c.label == te->course;
-            if (!listed) courses_.push_back({te->course, te->course});
+            bool course_listed = false;
+            for (const CourseEntry& c : courses_) course_listed = course_listed || c.label == te->course;
+            if (!course_listed) courses_.push_back({te->course, te->course});
         }
     course_sel_ = std::max(0, find_course(preset_.course.empty() ? "trialmt" : preset_.course));
     car_sel_ = std::max(0, find_car(preset_.car.empty() ? "r34_gtr_v_99" : preset_.car));

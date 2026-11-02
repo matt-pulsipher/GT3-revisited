@@ -65,6 +65,10 @@ public:
     // Uploads what changed since the last call (once per drawn frame).
     void upload_animations();
 
+    // Debug: semi-transparent coloured overlay of the GTRW road surface (F1 toggles).
+    void set_surface_overlay(bool on) { surface_overlay_ = on; }
+    bool surface_overlay() const { return surface_overlay_; }
+
 private:
     // Moving nodes, rebuilt every frame into a model sharing `textures`' textures.
     struct Moving {
@@ -80,6 +84,8 @@ private:
     bool frame_alpha_ = false; // the scenery draws with the PS2's frame alpha (sheen masks)
     Occluder occluder_;
     std::unique_ptr<render::GpuModel> scenery_, line_, backdrop_, sky_, sky_low_;
+    std::unique_ptr<render::GpuModel> road_overlay_; // debug surface-type mesh (GTRW)
+    bool surface_overlay_ = false;
     CourseStats stats_;
     float horizon_[3] = {0.62f, 0.70f, 0.80f};
     float sky_rgb_[3] = {0.35f, 0.55f, 0.85f};

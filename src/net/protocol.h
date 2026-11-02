@@ -45,6 +45,7 @@ enum class Msg : u8 {
     Contact = 21,    // *  u8 target, u8 from, u32 tick, f32 point x, z, f32 impulse x, z (reliable; relayed)
     Flag = 22,       // C->H u8 suspect, u8 FlagKind, f32 value (reliable); H->C u8 suspect, u8 kind, f32 value, u8 reporter
     Kick = 23,       // H->C str reason (the host removed us)
+    Voice = 24,      // *  u8 player, u8 seq, u8 nbytes, bytes μ-law (unreliable; host relays like State)
 };
 
 class Writer {

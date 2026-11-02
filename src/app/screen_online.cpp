@@ -38,16 +38,22 @@
 #include "base/sha256.h"
 #include "menu/flow/menu_set.h"
 #include "menu/flow/game_hooks.h"
+#include "base/config.h"
 #include "net/session.h"
+#include "net/voice_chat.h"
 #include "race/exact_setup.h"
 #include "race/paint.h"
 #include "vfs/vfs.h"
 
 #include <SDL3/SDL_clipboard.h>
+#include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_scancode.h>
 
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <map>
+#include <memory>
 #include <set>
 #include <cstdlib>
 #include <string>
@@ -141,6 +147,7 @@ public:
 
     ~OnlineScreen() override {
         if (editing_ && window_) SDL_StopTextInput(window_);
+        voice_.reset();
         net::online().close(); // leaving the lobby ends the session
     }
 
@@ -155,6 +162,7 @@ public:
             if (ns.active()) ns.set_ready(false);
         }
         ns.poll();
+        update_voice(app, ns);
         while (std::optional<net::Event> e = ns.next_event()) {
             using K = net::Event::Kind;
             switch (e->kind) {
@@ -1551,9 +1559,72 @@ private:
         l.asm_on = asm_on_, l.tcs_on = tcs_on_;
         LOG_INFO("Online: race on %s, %d laps, %zu cars, ASM %s, TCS %s", l.course.c_str(), l.laps, e.grid.size(),
                  l.asm_on ? "on" : "off", l.tcs_on ? "on" : "off");
+        voice_.reset(); // race screen owns the mic for the run
         in_race_ = true;
         page_ = Page::Lobby; // a picker or the rules page left open closes for the race
         app.push(make_online_race_screen(l));
+    }
+
+    // Lobby proximity voice: full volume for everyone in the session (no distance falloff).
+    void update_voice(App& app, net::Session& ns) {
+        if (!ns.active() || page_ == Page::Start) {
+            voice_.reset();
+            return;
+        }
+        const bool open_mic = to_lower(app.config().get("voice", "open_mic").value_or("on")) != "off";
+        const bool muted = to_lower(app.config().get("voice", "muted").value_or("off")) == "on";
+        float vol = 1.0f;
+        if (auto s = app.config().get("voice", "volume")) {
+            try {
+                vol = std::clamp(std::stof(*s), 0.0f, 1.0f);
+            } catch (...) {
+            }
+        }
+        if (!voice_) {
+            voice_ = std::make_unique<net::VoiceChat>();
+            voice_->set_open_mic(open_mic);
+            voice_->set_muted(muted);
+            voice_->set_volume(vol);
+            if (voice_->start()) status("Voice on (M mute, B mode, V talk)", false);
+        }
+        if (!voice_ || !voice_->active()) return;
+        voice_->set_volume(vol);
+
+        int nkeys = 0;
+        const bool* keys = SDL_GetKeyboardState(&nkeys);
+        auto key_down = [&](SDL_Scancode sc) -> bool {
+            return keys && nkeys > static_cast<int>(sc) && keys[sc];
+        };
+        static bool m_was = false, b_was = false;
+        const bool m_down = key_down(SDL_SCANCODE_M);
+        const bool b_down = key_down(SDL_SCANCODE_B);
+        if (m_down && !m_was) {
+            voice_->set_muted(!voice_->muted());
+            app.config().set("voice", "muted", voice_->muted() ? "on" : "off");
+            app.save_config();
+            status(voice_->muted() ? "Voice: muted" : "Voice: unmuted", false);
+        }
+        if (b_down && !b_was) {
+            voice_->set_open_mic(!voice_->open_mic());
+            app.config().set("voice", "open_mic", voice_->open_mic() ? "on" : "off");
+            app.save_config();
+            status(voice_->open_mic() ? "Voice: open-mic" : "Voice: push-to-talk (hold V)", false);
+        }
+        m_was = m_down;
+        b_was = b_down;
+        voice_->set_talking(key_down(SDL_SCANCODE_V));
+
+        for (const net::VoiceFrame& f : voice_->take_outgoing()) {
+            const u8* samples = f.data.data();
+            ns.send_voice(f.seq, ByteSpan(samples, static_cast<size_t>(net::kVoiceFrameSamples)));
+        }
+        // Lobby: hear everyone at full proximity gain (still scaled by Voice volume setting).
+        for (const net::Player& p : ns.players()) {
+            if (int(p.id) == ns.my_id()) continue;
+            voice_->set_gain(p.id, 1.0f);
+        }
+        for (const net::Session::VoiceRx& vx : ns.take_voice())
+            voice_->push_remote(vx.player, vx.seq, vx.data);
     }
 
     // --- scripted runs ---
@@ -1671,6 +1742,7 @@ private:
     bool kick_armed_ = false;
     std::string status_;
     bool status_bad_ = false;
+    std::unique_ptr<net::VoiceChat> voice_; // lobby proximity voice (full gain for all)
 };
 
 } // namespace

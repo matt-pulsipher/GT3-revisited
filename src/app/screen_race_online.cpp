@@ -5,7 +5,15 @@
 
 #include "app/screen_race_impl.h"
 
+#include "base/config.h"
 #include "sim/exact/race.h"
+
+#include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_scancode.h>
+
+#include <algorithm>
+#include <cmath>
+#include <string>
 
 namespace gt3r::race_screen {
 
@@ -19,6 +27,46 @@ constexpr u32 kGoDelayMs = 1500;          // host: Go -> countdown start
 constexpr double kClockEase = 0.05;       // racing: a start-time correction runs our race clock at most 5% fast or slow
 constexpr double kContactWindow = 0.2;    // s: our own contact this recent makes theirs a duplicate
 constexpr double kStartGhost = 3.0;       // s after the start signal
+
+// [voice] section of config.ini (Settings → Online → Proximity voice).
+struct VoiceSettings {
+    bool open_mic = true;
+    bool muted = false;
+    float volume = 1.0f;
+    float full_m = 15.0f;
+    float max_m = 80.0f;
+};
+
+VoiceSettings load_voice_settings(const IniDocument& cfg) {
+    VoiceSettings v;
+    v.open_mic = to_lower(cfg.get("voice", "open_mic").value_or("on")) != "off";
+    v.muted = to_lower(cfg.get("voice", "muted").value_or("off")) == "on";
+    if (auto s = cfg.get("voice", "volume")) {
+        try {
+            v.volume = std::clamp(std::stof(*s), 0.0f, 1.0f);
+        } catch (...) {
+        }
+    }
+    if (auto s = cfg.get("voice", "full_m")) {
+        try {
+            v.full_m = std::clamp(std::stof(*s), 1.0f, 100.0f);
+        } catch (...) {
+        }
+    }
+    if (auto s = cfg.get("voice", "max_m")) {
+        try {
+            v.max_m = std::clamp(std::stof(*s), 5.0f, 300.0f);
+        } catch (...) {
+        }
+    }
+    if (v.max_m < v.full_m + 1.0f) v.max_m = v.full_m + 1.0f;
+    return v;
+}
+
+void save_voice_bool(App& app, const char* key, bool on) {
+    app.config().set("voice", key, on ? "on" : "off");
+    app.save_config();
+}
 
 } // namespace
 
@@ -178,6 +226,75 @@ bool RaceScreen::online_update(App& app, double dt) {
             LOG_INFO("Online: %s: %u states, prediction %s, last error %.3f m", net_.names[i].c_str(),
                      ns.remote(u8(net_.player[i])) ? ns.remote(u8(net_.player[i]))->count : 0u,
                      net_.cars[i].physics() ? "exact shadow" : "dead reckoning", net_.cars[i].last_error());
+    }
+
+    // Proximity voice ([voice] settings; M mute, B mode, V force-talk).
+    const VoiceSettings vset = load_voice_settings(app.config());
+    if (!voice_) {
+        voice_ = std::make_unique<net::VoiceChat>();
+        voice_->set_open_mic(vset.open_mic);
+        voice_->set_muted(vset.muted);
+        voice_->set_volume(vset.volume);
+        if (voice_->start()) {
+            toast(vset.muted ? "Voice: muted (M to unmute)"
+                             : (vset.open_mic ? "Voice: open-mic on (M mute, B mode)"
+                                              : "Voice: push-to-talk (hold V)"));
+        }
+    }
+    if (voice_ && voice_->active()) {
+        // Volume can change from Settings while a race is open.
+        voice_->set_volume(vset.volume);
+
+        int nkeys = 0;
+        const bool* keys = SDL_GetKeyboardState(&nkeys);
+        auto key_down = [&](SDL_Scancode sc) -> bool {
+            return keys && nkeys > static_cast<int>(sc) && keys[sc];
+        };
+
+        // Edge-triggered mode / mute (static latches local to this race).
+        static bool m_was = false, b_was = false;
+        const bool m_down = key_down(SDL_SCANCODE_M);
+        const bool b_down = key_down(SDL_SCANCODE_B);
+        if (m_down && !m_was) {
+            voice_->set_muted(!voice_->muted());
+            save_voice_bool(app, "muted", voice_->muted());
+            toast(voice_->muted() ? "Voice: muted" : "Voice: unmuted");
+        }
+        if (b_down && !b_was) {
+            voice_->set_open_mic(!voice_->open_mic());
+            save_voice_bool(app, "open_mic", voice_->open_mic());
+            toast(voice_->open_mic() ? "Voice: open-mic (VAD)" : "Voice: push-to-talk (hold V)");
+        }
+        m_was = m_down;
+        b_was = b_down;
+
+        // V: force transmit (PTT). In open-mic mode this also punches through quiet VAD frames.
+        voice_->set_talking(key_down(SDL_SCANCODE_V));
+
+        for (const net::VoiceFrame& f : voice_->take_outgoing()) {
+            const u8* samples = f.data.data();
+            ns.send_voice(f.seq, ByteSpan(samples, static_cast<size_t>(net::kVoiceFrameSamples)));
+        }
+
+        // Gains from our car to each remote (horizontal distance on the track).
+        const float full_m = vset.full_m;
+        const float max_m = vset.max_m;
+        const sim::Vec3 my_pos = vehicle_ ? vehicle_->state().position : render_state_.position;
+        for (size_t i = 0; i < net_.player.size(); ++i) {
+            float gain = 0.0f;
+            if (i < net_.cars.size() && net_.cars[i].has()) {
+                const sim::Vec3& their = net_.cars[i].latest().state.position;
+                const float dx = their.x - my_pos.x;
+                const float dz = their.z - my_pos.z;
+                const float dist = std::sqrt(dx * dx + dz * dz);
+                if (dist <= full_m) gain = 1.0f;
+                else if (dist >= max_m) gain = 0.0f;
+                else gain = 1.0f - (dist - full_m) / (max_m - full_m);
+            }
+            voice_->set_gain(u8(net_.player[i]), gain);
+        }
+        for (const net::Session::VoiceRx& vx : ns.take_voice())
+            voice_->push_remote(vx.player, vx.seq, vx.data);
     }
     return true;
 }

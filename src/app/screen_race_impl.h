@@ -70,6 +70,7 @@
 #include "race/net_race.h"
 #include "game/net_car.h"
 #include "net/session.h"
+#include "net/voice_chat.h"
 #include "race/replay_cameras.h"
 #include "race/time_text.h"
 #include "formats/course/course_file.h"
@@ -844,6 +845,8 @@ private:
         net::PadInput inputs[net::kInputHistory];
         int input_count = 0;
     } net_;
+    // Proximity voice (online only; push-to-talk V). Created when the race loads.
+    std::unique_ptr<net::VoiceChat> voice_;
     // 2P battle (split screen): player 2 drives the field's second car with pad 2.
     bool two_player_ = false;
     OpponentEngines opp_engines_;

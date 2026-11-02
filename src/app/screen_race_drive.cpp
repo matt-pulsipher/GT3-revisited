@@ -7,6 +7,9 @@
 
 #include "app/screen_race_impl.h"
 
+#include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_scancode.h>
+
 namespace gt3r::race_screen {
 
 sim::ControlInputs RaceScreen::scripted_inputs(double t, bool& reverse) const {
@@ -373,6 +376,21 @@ void RaceScreen::flying_start_signal(App& app) {
 void RaceScreen::update_drive(App& app, double dt) {
     const MenuInput& m = app.menu();
     if (online_ && !online_update(app, dt)) return;
+
+    // F1: toggle semi-transparent coloured road-surface overlay (tarmac / kerb / dirt / ...).
+    // Available in offline and online races (including while paused online, where the sim continues).
+    if (course_scene_) {
+        int nkeys = 0;
+        const bool* keys = SDL_GetKeyboardState(&nkeys);
+        static bool f1_was = false;
+        const bool f1 = nkeys > SDL_SCANCODE_F1 && keys[SDL_SCANCODE_F1];
+        if (f1 && !f1_was) {
+            bool on = !course_scene_->surface_overlay();
+            course_scene_->set_surface_overlay(on);
+        }
+        f1_was = f1;
+    }
+
     if (logger_mode_ && update_logger(app, dt)) return;
     if (replay_pending_) { // back from the run's presentations: its replay (screen_race_post_run.cpp)
         start_auto_replay(app);

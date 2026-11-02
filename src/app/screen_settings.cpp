@@ -1629,6 +1629,62 @@ private:
         std::string server = app.config().get("online", "server").value_or(kDefaultServer);
         info("Relay server", server.empty() ? kDefaultServer : server,
              "Change it in the online lobby (Relay server). The update check asks the same server.");
+
+        // Proximity voice ([voice] in config.ini). Online races only.
+        heading("Proximity voice");
+        IniDocument& vcfg = app.config();
+        const bool open_mic = to_lower(vcfg.get("voice", "open_mic").value_or("on")) != "off";
+        const bool start_muted = to_lower(vcfg.get("voice", "muted").value_or("off")) == "on";
+        float vol = 1.0f;
+        if (auto s = vcfg.get("voice", "volume")) {
+            try {
+                vol = std::clamp(std::stof(*s), 0.0f, 1.0f);
+            } catch (...) {
+            }
+        }
+        float full_m = 15.0f, max_m = 80.0f;
+        if (auto s = vcfg.get("voice", "full_m")) {
+            try {
+                full_m = std::clamp(std::stof(*s), 1.0f, 100.0f);
+            } catch (...) {
+            }
+        }
+        if (auto s = vcfg.get("voice", "max_m")) {
+            try {
+                max_m = std::clamp(std::stof(*s), 5.0f, 300.0f);
+            } catch (...) {
+            }
+        }
+        if (max_m < full_m + 1.0f) max_m = full_m + 1.0f;
+
+        toggle("Open mic",
+               "On: always listen and send when you speak (voice activity). Off: hold V to talk. "
+               "In a race: B toggles this, M mutes.",
+               open_mic, [a](bool v) {
+                   a->config().set("voice", "open_mic", v ? "on" : "off");
+                   a->save_config();
+               });
+        toggle("Start muted", "When an online race loads, the mic starts muted until you unmute (M in race).",
+               start_muted, [a](bool v) {
+                   a->config().set("voice", "muted", v ? "on" : "off");
+                   a->save_config();
+               });
+        slider("Voice volume", "How loud other players sound (separate from sound effects).", vol, 0, 1, 0.05f,
+               percent(vol), [a](float v) {
+                   a->config().set("voice", "volume", std::to_string(v));
+                   a->save_config();
+               });
+        slider("Full volume range", "Distance in metres where other players are at full voice volume.", full_m, 1, 50,
+               1.0f, std::to_string(int(std::lround(full_m))) + " m", [a](float v) {
+                   a->config().set("voice", "full_m", std::to_string(int(std::lround(v))));
+                   a->save_config();
+               });
+        slider("Max range", "Distance in metres beyond which other players are silent.", max_m, 10, 200, 5.0f,
+               std::to_string(int(std::lround(max_m))) + " m", [a](float v) {
+                   a->config().set("voice", "max_m", std::to_string(int(std::lround(v))));
+                   a->save_config();
+               });
+        info("In race", "M mute   B open-mic/PTT   V force talk");
     }
 
     // --- behaviour ---------------------------------------------------------

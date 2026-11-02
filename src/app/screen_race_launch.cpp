@@ -128,9 +128,9 @@ void RaceScreen::resolve_launch() {
     preset_.course = course;
     preset_.car = car;
     // Courses the menu offers that are not in the database course list (e.g. licence layouts).
-    bool listed = false;
-    for (const CourseEntry& c : courses_) listed = listed || c.label == course;
-    if (!listed) courses_.push_back({course, course});
+    bool course_listed = false;
+    for (const CourseEntry& c : courses_) course_listed = course_listed || c.label == course;
+    if (!course_listed) courses_.push_back({course, course});
     // Races with opponents: the event gives the field, laps and AI parameters.
     if ((rq.mode == "single_race" || rq.mode == "go_race") && db_.event(code)) race_event_ = code;
     if (!rq.opponents.empty()) race_opponents_ = rq.opponents; // GT mode: the field drawn by the menus

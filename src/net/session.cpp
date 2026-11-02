@@ -1192,6 +1192,38 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
         }
         return;
     }
+    case Msg::Voice: {
+        u8 player = r.u8_();
+        u8 seq = r.u8_();
+        u8 nbytes = r.u8_();
+        if (!r.ok() || nbytes == 0) return;
+        ByteSpan payload_span = r.bytes(nbytes);
+        if (!r.ok()) return;
+        Bytes payload(payload_span.begin(), payload_span.end());
+        if (host_) {
+            if (c.player < 0) return;
+            player = u8(c.player); // clients only speak for themselves
+            Writer w;
+            w.u8_(u8(Msg::Voice));
+            w.u8_(player);
+            w.u8_(seq);
+            w.u8_(nbytes);
+            w.bytes(payload);
+            for (auto& o : conns_)
+                if (o.get() != &c && o->player >= 0 && !direct_pair(player, u8(o->player))) send_unreliable(*o, w);
+        } else if (c.peer) {
+            player = u8(c.player);
+        } else if (int(player) == my_id_) {
+            return;
+        }
+        VoiceRx vx;
+        vx.player = player;
+        vx.seq = seq;
+        vx.data = std::move(payload);
+        voice_rx_.push_back(std::move(vx));
+        if (voice_rx_.size() > 64) voice_rx_.erase(voice_rx_.begin(), voice_rx_.begin() + (voice_rx_.size() - 64));
+        return;
+    }
     case Msg::Contact: {
         u8 target = r.u8_(), from = r.u8_();
         Event e;
@@ -1858,6 +1890,25 @@ void Session::send_contact(u8 target, const Event::Hit& h) {
         return;
     }
     if (Conn* hc = host_conn()) send_reliable(*hc, w);
+}
+
+void Session::send_voice(u8 seq, ByteSpan mulaw) {
+    if (!joined() || mulaw.empty() || mulaw.size() > 255) return;
+    Writer w;
+    w.u8_(u8(Msg::Voice));
+    w.u8_(u8(my_id_));
+    w.u8_(seq);
+    w.u8_(u8(mulaw.size()));
+    w.bytes(mulaw);
+    // Same fan-out as State: host to all clients; client to host + direct peers.
+    for (auto& c : conns_)
+        if (c->close_at == 0 && (c->player >= 0 || !host_)) send_unreliable(*c, w);
+}
+
+std::vector<Session::VoiceRx> Session::take_voice() {
+    std::vector<VoiceRx> out;
+    out.swap(voice_rx_);
+    return out;
 }
 
 void Session::log_flag(const Event& e) {

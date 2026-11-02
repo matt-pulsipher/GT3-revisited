@@ -25,7 +25,8 @@ __pycache__/
 .cache/
 compile_commands.json
 dist/
-
+.vs 
+CMakeSettings.json
 # Signing keys
 *.jks
 *.keystore

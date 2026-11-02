@@ -146,12 +146,12 @@ std::optional<RacePlaylist> RacePlaylist::from_text(std::string_view text, size_
     std::string tok;
     while (in >> tok) {
         unsigned long long id = 0;
-        int listed = 0, played = 0, order = 0;
+        int is_listed = 0, is_played = 0, order = 0;
         if (p.songs_.size() >= limit ||
-            std::sscanf(tok.c_str(), "%llx:%d:%d:%d", &id, &listed, &played, &order) != 4 || order < -32768 ||
+            std::sscanf(tok.c_str(), "%llx:%d:%d:%d", &id, &is_listed, &is_played, &order) != 4 || order < -32768 ||
             order > 32767)
             return std::nullopt;
-        p.songs_.push_back(Song{u64(id), listed != 0, played != 0, s16(order)});
+        p.songs_.push_back(Song{u64(id), is_listed != 0, is_played != 0, s16(order)});
     }
     return p;
 }

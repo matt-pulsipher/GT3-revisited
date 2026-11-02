@@ -228,6 +228,15 @@ public:
     void retire(); // leaving the race (the session stays)
     // A hit our machine saw between our car and player `target`'s: the impulse their car felt.
     void send_contact(u8 target, const Event::Hit& hit);
+    // Proximity voice: one μ-law frame (unreliable; host relays like State). `seq` is a rolling byte.
+    void send_voice(u8 seq, ByteSpan mulaw);
+    // Voice frames received since the last call (player, seq, payload). Drained each poll/frame.
+    struct VoiceRx {
+        u8 player = 0;
+        u8 seq = 0;
+        Bytes data;
+    };
+    std::vector<VoiceRx> take_voice();
     // A plausibility check our machine flagged about another player's car (sent to the host).
     void report_flag(u8 suspect, FlagKind kind, float value);
     // Host: removes a player from the session (they are told why).
@@ -340,6 +349,7 @@ private:
     std::vector<Player> players_;
     std::map<u8, Remote> remotes_;
     std::map<u8, Bytes> car_info_; // per player (survives roster updates)
+    std::vector<VoiceRx> voice_rx_; // proximity voice frames awaiting the race
     std::vector<FlagRecord> flag_log_;
     void log_flag(const Event& e);
     struct Incoming {

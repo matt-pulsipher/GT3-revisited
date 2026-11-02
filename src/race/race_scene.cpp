@@ -190,6 +190,16 @@ CourseScene::CourseScene(render::GpuContext& ctx, ByteSpan data, const std::stri
     eo.sky_object = true;
     scene::Model env_sky = course::build_course_model(data, eo, name + "/env_sky");
     if (!env_sky.meshes.empty()) env_sky_ = std::make_unique<render::GpuModel>(ctx, env_sky);
+
+    // Debug surface overlay (GTRW road mesh, coloured by material). Built once; toggled at draw time.
+    {
+        course::CourseModelOptions ro;
+        ro.scenery = ro.scenery2 = ro.backdrop = ro.sky = ro.sky_low = ro.sky_object = false;
+        ro.course_line = false;
+        ro.road_mesh = true;
+        scene::Model road = course::build_course_model(data, ro, name + "/road_overlay");
+        if (!road.meshes.empty()) road_overlay_ = std::make_unique<render::GpuModel>(ctx, road);
+    }
 }
 
 void CourseScene::set_moving(Moving& m, render::GpuContext& ctx, const render::GpuModel* textures,
@@ -285,6 +295,12 @@ void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::
         it.in_order = true;           // after the scenery's in-order blended passes
         it.frame_alpha = frame_alpha_; // colour only: the frame alpha stays (kKeepAlpha)
         it.draw_distance = 0;          // one mesh along the whole section: never distance-culled
+        items.push_back(it);
+    }
+    // Debug: coloured semi-transparent GTRW surface overlay (toggled with F1).
+    if (surface_overlay_ && road_overlay_) {
+        render::DrawItem it{road_overlay_.get(), {}, 0};
+        it.draw_distance = 0;
         items.push_back(it);
     }
 }

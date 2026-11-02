@@ -141,7 +141,7 @@ private:
         big.valign = VAlign::Middle;
         big.color = {120, 200, 255, 255};
         if (!raw.empty() && y < py + ph - 60) font->draw_game(px + pw / 2, (y + py + ph - 30) / 2, raw, big);
-        ui.footer("Up/Down: key  Left/Right: font  Cross: language  Square: mode  Triangle: back");
+        ui.footer("Up/Down: key  Left/Right: font  Cross: language  Square: mode  Triangle: back Smeg");
     }
 
     void render_fonts(Ui& ui) {
