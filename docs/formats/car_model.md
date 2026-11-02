@@ -49,6 +49,40 @@ lamps (z ≈ +2.38), 2 more front points, then camera-like records (position,
 two angles in degrees, a float near 1.2..1.7 and a type code 3/7/0xA/0xD/0xF).
 Wheel positions were **not** found here.
 
+The brake records (see "Brake parts"): 0x14 bytes each, the front axle's at +0x14 and the
+rear's at +0x28 (+0x10 is 1 on every car):
+
+```
++0x00 u32 caliper: record (value - 2) of brake.bin's caliper table; 0 or 1 = none
++0x04 u32 rotor: record (value - 1) of the rotor table
++0x08 f32 brake radius r (m)
++0x0C f32 the parts' offset along the axle from the hub centre (m; negative = towards the outer face)
++0x10 f32 the caliper's angle (degrees)
+```
+`am0006`: front (6, 3, 0.192, -0.045, 0), rear (6, 3, 0.188, -0.045, -40). Every car's
+records fall in the tables (rotor 1..7, caliper 1..31); r is 0.1..0.2 m, or 1.0 on a few
+race and concept cars without a caliper; the offset -0.09..0.12 m. The times of day share
+them but for `cv0022`'s calipers (21 by day, 9 at night).
+
+The groups the race reads (u32 count, u32 offset from the block's start; the
+race turns the offsets into pointers when it loads the car):
+
+| Group | Records |
+|---|---|
+| +0x40, +0x48, +0x50 | lamp lists, 0x80 bytes each (docs/dev/RACE.md "Car lamps") |
+| +0x58 count, +0x5C offset | **spark points**, 16 bytes each: f32 x, y, z in the model frame, a fourth word the race does not read |
+| +0x68 count, +0x6C offset | camera mounts, 0x40 bytes each (presentation §G) |
+
+Spark points are where the race's sparks start when the point dips below the
+road at speed (presentation §L7; `car_spark_points`). 24 of the 286 models in
+`cars/day/` have them, all at y ≈ 0 (the body's lowest point) and z +0.83..+1.97
+(behind the origin): ml0001, ml0002 (F688/S), ml0003 (F090/S), lo0024 (F687/S),
+wl0001, wl0002 / wl0003 (F094/H, F094/S), wl1001 (F686/M), pd0001, pd0010,
+ma0095 (787B), ni0062 (R390 GT1), ty0056, ty0141 / ty2056 (GT-One), mb0010,
+op0003 / op0011, va0003 / va0011, tf0001, cv0024, la0007 / la0008 (Stratos, one
+point). `cars/eve/` has them on the same 24, `cars/night/` on the same but
+ml0001 and pd0001.
+
 ### GTTR (tyre)
 
 ```
@@ -57,8 +91,8 @@ Wheel positions were **not** found here.
 0x20 Tex1 set (one T4 texture, 128x64 in cars/, 256x128 in menu/cars/: tread in
      the top half, sidewall lettering below)
 ```
-Flags: bit 0 the race's spin blur (the texture redrawn as shifted copies while
-the wheel turns; not reproduced), bit 1 a symmetric tyre (below). On the disc
+Flags: bit 0 the race's tread blur (the texture redrawn as shifted copies while
+the wheel turns, see "Wheel spin blur"), bit 1 a symmetric tyre (below). On the disc
 (repeats, flags) are (2, 0) on 227 cars, (1, 1) on 52 and (1, 3) on 7. The
 `tire/n1..n49` files have the same structure; the embedded one equals
 `tire/n1`. There is no tyre geometry: the game builds it (see "Tyres" below,
@@ -229,6 +263,13 @@ field that holds them. Ops 0x0C and 0x10 (matrices) appear in a few cars only
 0x1FF = runtime slot, e.g. the environment map on reflection passes and the
 rim image on wheels); bits 9-15 = material index + 1 (0 = none, 0x7F =
 runtime slot).
+
+A wheel's texture-LOD tables (+0x34; one per level of detail, and per axle when GTTW flag
+bit 0 is set: table level + 3 x axle) hold four entries: 0 a set shared by every table,
+1 the rim image (its first texture; the race's runtime slot), 2 the **spinning** rim, a
+softer image of the turning wheel (64 x 64 for `am0006`'s 128 x 128 rim), 3 unused (0) or
+entry 0 again. 279 of the 286 car files' wheels have entry 2; a few wheels have a single set
+and no table.
 
 #### Materials
 
@@ -444,6 +485,79 @@ reproduced; GT3 Revisited uses the body's level.)
 
 For the SLK 230's front 205/55R16 in the menus: R 0.316, b 0.231, h 0.021;
 the outer face at −0.1015 m from the hub.
+
+## Brake parts (`brake_model.*`)
+
+In a race the game draws brake parts inside each wheel, seen between the spokes: a rotor
+image, a caliper image and, when hot, the rotor's glow. The menus' wheels have none (their
+car files have their own brake geometry in nodes 2 and 3).
+
+`race/brake.bin` ("GTBR", 45,488 bytes; loaded before every race):
+
+```
+0x00 "GTBR"   0x04 u32 0 (relocation base at run time)   0x0C u32 file size
+0x10 u32 -> Tex1 set (0x460: 38 textures)
+0x14 u32 first rotor texture (1)   0x18 u32 first caliper texture (8)   0x1C u32 glow texture (0)
+0x20 u32 -> rotor table (0x30): 7 x 16 bytes, u32 flags (bit 0: the rotor glows; 0 on record 0), 12 bytes 0
+0x24 u32 -> caliper table (0xA0): 30 x 32 bytes, f32 radial half size, tangential half size,
+            radial centre, tangential centre (in brake radii, e.g. 0.4 / 0.85 / 0.75 / 0), 16 bytes 0
+```
+Textures (T4 / T8, REGION_CLAMP, no mipmaps, bilinear): 0 an orange ring on black (64 x
+64, the glow), 1-7 rotor faces (64 x 64; 7 is 32 x 32), 8-37 calipers in silver, red, gold,
+blue and black, some with makers' marks (32 x 32), each with a soft drop shadow at half
+alpha.
+
+Per wheel, in the wheel's frame turned by its steering and camber but not by its spin (the
+game counter-rotates the parts by the spin, so they stay put; a right wheel's image is the
+left one's mirrored through the car's centre plane), with r and the offset from the axle's
+record, y up and z along the car (+ backwards):
+
+- **Rotor**: a square of side 2r on the hub, at the offset; S = 0.5 + 0.5 z / r,
+  T = 0.5 - 0.5 y / r. Alpha tested GREATER 0x40, opaque.
+- **Caliper** (when the record has one), 5 mm outward of the rotor: the corners
+  (y0, z0) = (tc + th yc, rc + rh zc) r for (yc, zc) = (±1, ±1) (radial half size rh,
+  tangential th, centres rc, tc from its table record), turned by the record's angle a:
+  y = y0 cos a - z0 sin a, z = y0 sin a + z0 cos a; S = 0.5 - 0.5 yc, T = 0.5 - 0.5 zc (the
+  image's top at the outer edge). Blended (Cs - Cd) As + Cd, alpha tested GREATER 0x7F with
+  failing fragments still blended but writing no depth (the shadow).
+- Both lit with the tyre material (above) and facing out of the wheel; drawn after the
+  tyre's textured pieces and before its black faces and the rim.
+- **Glow** (rotor table bit 0): a square of the glow texture over the rotor, 1 mm outward of
+  it, turning with the wheel; added unlit and unfogged, Cs x FIX + Cd with FIX =
+  trunc(clamp(128 h^2 g, 0, 255)) / 128, h the wheel's brake heat (0..1, a physics output) and
+  g the course's Env0 +0x4C (1 on most courses, 1.7 or 2 on some, 0 on one); no depth writes.
+
+The parts are drawn on a wheel's two nearest levels of detail (below), and only when the eye
+is outboard of the wheel's outer face. The glow is part of the tyre's black faces and follows
+their level only.
+
+**Wheel detail level.** The game picks each wheel's level from its size on screen:
+s = the projection's x scale x sqrt(R^2 + W^2 / 4) / the hub's depth; level 0 above 0.09,
+1 above 0.03, 2 above 0.015, else 3 (a drum). (The tyre's segments, its level-2 hexagon and
+the drum follow it in the game; GT3 Revisited keeps the body's level for the geometry.)
+
+## Wheel spin blur
+
+In the race's main view (not the 2P halves or the mirrors), the game blurs spinning wheels by
+their turn over part of the last frame:
+
+- The **turn**: d = -(the wheel's spin over its last step) x b x exp(f m), with b and f the
+  course's Env0 +0xEA0 / +0xEA4 (0.8 and -20 on every course) and m the distance the hub's
+  centre moved on screen (normalised device coordinates, x and y) since the car was last
+  drawn in that view. A wheel the camera follows is blurred over 80 % of its step; one
+  crossing the screen hardly at all.
+- **Tyre** (the camera's car only; level 0 or 1; the GTTR flags ask for it: bit 0, and when the
+  tyre is not symmetric (bit 1 clear) only while the outer face is in view): the 128 x 64 tyre
+  texture is copied, then blended three times at 50 % with itself shifted along S by
+  trunc(d / 2 x repeats x 1024 / pi / 2^k) / 16 texels (k = 1, 2, 3; wrapped at 128 texels;
+  the turn negated on right wheels): the mean of 8 copies spread over half the step's travel.
+  59 car files have bit 0.
+- **Rim** (the outer face in view, level 0..2): on the camera's car, when d is not 0, the rim
+  image (scaled to a square of min(width, 64) texels) becomes the mean of 16 copies turned
+  about the image centre by every sum of a subset of d / 2, d / 4, d / 8, d / 16 (negated on
+  right wheels), alpha included; the rim then draws with it as usual (alpha tested GREATER
+  0x20, so a ring the spokes cover a quarter of turns solid). The other cars' rims show the
+  wheel's spinning image (texture-LOD table entry 2) when |d| passes 3 degrees.
 
 ## Callback morphs (mud flaps, aerials, steering)
 

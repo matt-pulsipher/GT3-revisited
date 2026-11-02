@@ -82,6 +82,11 @@ public:
     render::Vec3 eye() const { return eye_; }
     float zoom() const { return zoom_; }
     int kind() const { return kind_; }
+    // The depth of field's focus distance (presentation §G17), as of view(): the roadside camera
+    // and car mounts 100 m; the hover camera its eye's distance from the car's origin (wobble
+    // included); the orbit its eye's from the orbit's centre; the telephoto, drawn at the cut
+    // (p 0.5), its distance past the bumper, else its distance from the car's origin.
+    float focus() const { return focus_; }
     // An on-board car mount (CarMount::outside clear): the car itself is not drawn.
     bool on_board() const { return kind_ == Mount && !mount_.outside(); }
 
@@ -113,7 +118,7 @@ private:
 
     int kind_ = -1;
     GameRandom rng_;
-    float zoom_ = 1;
+    float zoom_ = 1, focus_ = 100;
     render::Vec3 eye_;
     float roll_ = 0, fov_ = 60;
     // Roadside: its fixed view.

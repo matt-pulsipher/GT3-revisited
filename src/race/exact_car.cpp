@@ -104,6 +104,8 @@ void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleS
         o.grounded = h(w.load) > 0;
         o.surface = u32(g.material) | u32(g.flags) << 8;
         o.flap = h(w.flap);
+        o.camber = h(w.camber);
+        o.brake_heat = h(w.brake_heat);
     }
 }
 

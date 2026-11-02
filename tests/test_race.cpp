@@ -44,6 +44,7 @@
 #include "race/pylons.h"
 #include "race/race_scene.h"
 #include "race/road_shade.h"
+#include "race/sun_disc.h"
 #include "race/sun_glare.h"
 #include "render/view3d.h"
 #include "race/tyre_smoke.h"
@@ -2052,6 +2053,82 @@ TEST(race_flare_mesh_parse) {
     CHECK(m[0].verts[2].rgba[0] == 0xFF && m[0].verts[2].rgba[1] == 0 && m[0].verts[2].rgba[3] == 0xA8);
     b[0x14] = 2; // packet cut short: the strip table points past the vertices it holds
     CHECK(race::Flare::parse(b).empty());
+}
+
+// The flare system's own disc (the sun disc, the lamp halos): seven strips of rim 2k, centre,
+// rim 2k + 1, rim 2k + 2 around a 14-gon of radius 1; the colour rule of its vertex program.
+TEST(race_flare_disc_mesh) {
+    const race::Flare::Mesh& m = race::Flare::disc_mesh();
+    CHECK(m.verts.size() == 28 && m.tris.size() == 42);
+    if (m.verts.size() != 28 || m.tris.size() != 42) return;
+    const float kPi = 3.14159265f;
+    for (int k = 0; k < 7; ++k) {
+        const race::Flare::Vertex* s = &m.verts[size_t(4 * k)];
+        CHECK(s[1].x == 0 && s[1].y == 0 && s[1].rgba[0] == 0xFF && s[1].rgba[3] == 0xFF);
+        const int rims[3] = {0, 2, 3};
+        for (int i = 0; i < 3; ++i) {
+            const race::Flare::Vertex& v = s[rims[i]];
+            const float a = 2 * kPi * float(2 * k + i) / 14.0f;
+            CHECK(std::fabs(v.x - std::cos(a)) < 1e-5f && std::fabs(v.y - std::sin(a)) < 1e-5f && v.z == 0);
+            CHECK(v.rgba[0] == 0 && v.rgba[3] == 0);
+        }
+        CHECK(m.tris[size_t(6 * k)] == 4 * k && m.tris[size_t(6 * k + 5)] == 4 * k + 3);
+    }
+    CHECK(m.verts[27].x == 1.0f && m.verts[27].y == 0.0f); // rim 14 is rim 0, exactly
+    const race::Flare::Vertex& c = m.verts[1];
+    CHECK((race::Flare::gs_color(c, {2, 1, 0.017f}, 1) == std::array<u8, 4>{255, 255, 4, 255}));
+    CHECK((race::Flare::gs_color(c, {0.5f, 0.5f, 0.5f}, 0) == std::array<u8, 4>{127, 127, 127, 0}));
+}
+
+// The sun disc (presentation §I6): its colours from Env0, 10 m out along the sun in the
+// camera's screen plane, nothing for a disc size of 0 or the sun off.
+TEST(race_sun_disc) {
+    race::SunParams p;
+    p.enabled = true;
+    p.rgb = {1.35f, 0.92f, 0.63f}; // Seattle: gain 2, size 0.025
+    p.disc_gain = 2, p.disc_size = 0.025f;
+    scene::Model m = race::SunDisc::build(p);
+    CHECK(m.meshes.size() == 1);
+    if (m.meshes.size() != 1) return;
+    const scene::Mesh& mesh = m.meshes[0];
+    CHECK(mesh.vertices.size() == 28 && mesh.indices.size() == 42 && mesh.primitives.size() == 1);
+    CHECK(mesh.vertices[1].color == (255u | 234u << 8 | 160u << 16 | 255u << 24)); // centre: trunc(255 x RGB x gain / 2)
+    CHECK(mesh.vertices[0].color == 0);                                             // rim
+    const u32 f = mesh.primitives[0].flags;
+    CHECK((f & scene::kAdditive) && (f & scene::kNoDepthWrite) && (f & scene::kUnlit) && !(f & scene::kAlphaTest));
+    p.rgb = {0.34f, 0.29f, 0.13f}, p.disc_gain = 0.1f; // Laguna: a faint glow
+    CHECK(race::SunDisc::build(p).meshes[0].vertices[1].color == (4u | 3u << 8 | 1u << 16 | 255u << 24));
+    p.disc_size = 0; // Super Speedway
+    CHECK(race::SunDisc::build(p).meshes.empty());
+    p.disc_size = 0.1f, p.enabled = false;
+    CHECK(race::SunDisc::build(p).meshes.empty());
+    // A camera at (1, 2, 3) turned 90 degrees left (right = -z, up = y), the sun along -x.
+    render::Mat4 t = race::SunDisc::transform({1, 2, 3}, {-1, 0, 0}, 0.045f, {0, 0, -1}, {0, 1, 0});
+    render::Vec3 c = t.transform_point({0, 0, 0}), r = t.transform_point({1, 0, 0}), u = t.transform_point({0, 1, 0});
+    CHECK(std::fabs(c.x + 9) < 1e-5f && std::fabs(c.y - 2) < 1e-5f && std::fabs(c.z - 3) < 1e-5f);
+    CHECK(std::fabs(r.z - (3 - 0.45f)) < 1e-5f && std::fabs(r.x - c.x) < 1e-5f);
+    CHECK(std::fabs(u.y - (2 + 0.45f)) < 1e-5f);
+}
+
+// The disc's sun on the disc's courses: Trial Mountain white, Super Speedway none.
+TEST(race_sun_disc_disc) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    auto params = [&](const char* name) {
+        Bytes data = disc->volume().read(*disc->volume().find(std::string("courses/US/") + name));
+        course::CourseFile f = course::CourseFile::parse(data);
+        return race::SunParams::from_env0(f.section(data, course::kSlotEnv));
+    };
+    race::SunParams tm = params("trialmt");
+    CHECK(tm.enabled && std::fabs(tm.disc_size - 0.045f) < 1e-6f);
+    scene::Model m = race::SunDisc::build(tm);
+    CHECK(m.meshes.size() == 1 && m.meshes[0].vertices[1].color == 0xFFFFFFFFu);
+    CHECK(race::SunDisc::build(params("super")).meshes.empty());
+    // The course draw's flags: billboards in Seattle's main view, not in its 2P halves or mirror;
+    // Rome's in its 2P halves too.
+    race::SunParams se = params("seattle"), ro = params("rome");
+    CHECK((se.view_flags[0] & 1) && !(se.view_flags[1] & 1) && !(se.view_flags[2] & 1));
+    CHECK((ro.view_flags[0] & 1) && (ro.view_flags[1] & 1) && !(ro.view_flags[2] & 1));
 }
 
 TEST(race_course_scene_lights) {

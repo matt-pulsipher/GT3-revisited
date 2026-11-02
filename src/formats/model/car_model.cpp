@@ -100,6 +100,15 @@ CarFile CarFile::parse(ByteSpan data) {
     return c;
 }
 
+std::vector<std::array<u32, 3>> car_spark_points(ByteSpan g) {
+    std::vector<std::array<u32, 3>> out;
+    if (g.size() < 0x60 || std::memcmp(g.data(), "GTCI", 4) != 0) return out;
+    const u32 n = rd32(g, 0x58), off = rd32(g, 0x5C);
+    if (n == 0 || n > 64 || u64(off) + 16ull * n > g.size()) return out;
+    for (u32 i = 0; i < n; ++i) out.push_back({rd32(g, off + 16 * i), rd32(g, off + 16 * i + 4), rd32(g, off + 16 * i + 8)});
+    return out;
+}
+
 namespace {
 
 // Appends `src` to `dst`, remapping texture indices.

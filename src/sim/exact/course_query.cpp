@@ -38,7 +38,7 @@ CourseQuery::CourseQuery(const course::Road& road)
     for (const course::RoadMarker& m : road.markers) markers_.push_back({u16(m.flags), u16(m.flags >> 16), F(m.distance)});
 }
 
-void CourseQuery::ground(Ground& g) const {
+void CourseQuery::ground(Ground& g, u16* material) const {
     // its own record: the scalars start at 1, the bytes at 0.
     g.attr_a = k1, g.attr_b = k1;
     g.material = 0, g.flags = 0, g.x32 = 0;
@@ -105,6 +105,7 @@ void CourseQuery::ground(Ground& g) const {
     g.height = best_h;
     g.seg = best_id;
     g.material = u8(best->material), g.flags = u8(best->flags);
+    if (material) *material = best->material;
     const Vertex &a = best_seg->v[best->a], &b = best_seg->v[best->b], &cv = best_seg->v[best->c];
     {
         // The point's barycentric weights times the corners' scalars, clamped to the corners' range.

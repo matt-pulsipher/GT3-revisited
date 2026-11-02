@@ -33,6 +33,11 @@ namespace gt3r::race {
 // refuses). cfg.exact must be set.
 std::unique_ptr<RaceField> make_exact_field(const RaceTrack& track, const data::CarDatabase& db, const FieldConfig& cfg,
                                             std::string* error = nullptr);
+// Each car's spark points (ExactFieldOptions::spark_points) for the cars with these labels (database, variant or arcade
+// labels: the base car's model); empty without a source.
+std::vector<std::vector<sim::exact::SparkPoint>> exact_spark_points(
+    const data::CarDatabase& db, const std::vector<std::string>& labels,
+    const std::function<std::vector<sim::exact::SparkPoint>(const std::string&)>& source);
 // The exact race behind a field (nullptr for another field), and the pad frames its last step gave the cars (the players'
 // from their pads or inputs, empty frames for the others): for tests, replays and the online code.
 const sim::exact::ExactRace* exact_race_of(const RaceField& f);

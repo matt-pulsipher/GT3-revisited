@@ -15,6 +15,7 @@
 #include "render/camera.h"
 #include "render/gpu_context.h"
 #include "render/gpu_model.h"
+#include "render/screen_batch.h"
 
 #include <algorithm>
 #include <array>
@@ -117,6 +118,30 @@ struct DrawOptions {
     bool snapshot = false;
     float dissolve = 0, trail = 0;
     bool keep_last = false;
+    // The replay depth of field (presentation §G17), before the passes above and below: the picture
+    // rebuilt from itself and blurred copies of it by the scene's depth (dof_layers), for a lens
+    // of `focal_mm` (a film 1.333 times as wide as high whose diagonal is the focal length; its
+    // focal length at this view's zoom from the projection's vertical scale x `y_scale`), the
+    // f-number `f_number`, focused `focus` metres from the eye. Nothing beyond `far` metres
+    // (the original's far plane) gets more blur than at it. Not drawn by draw_to.
+    struct DepthOfField {
+        bool on = false;
+        float f_number = 10, focal_mm = 35, focus = 10, far = 1000;
+        float y_scale = 1; // the original's projection's vertical scale over this one's
+    } dof;
+    // --- The passes between the 3D scene and the grade, and the vignette (GT3's frame order,
+    // presentation §L6): the heat haze lenses, the DrawItem::late items (the tyre smoke), the
+    // overlay; then the grade above, the vignette, the dissolve and the trail.
+    // `haze`: triangles (positions and texture coordinates in its rect's units, e.g. the 640 x 448
+    // frame) sampling one copy of the picture as it is after the scene, blended at 50 % (GS ALPHA
+    // FIX 64), in front of everything (the original's lens depth is past its depth buffer's range,
+    // so nothing hides a lens: presentation §L6).
+    const ScreenBatch* haze = nullptr;
+    // Screen draws over the picture before the grade (the sun glare, the lamp glows; in the
+    // draw rectangle's units, ScreenBatch::rect).
+    const ScreenBatch* overlay = nullptr;
+    // Drawn over the graded picture, under the dissolve and the trail (the replay vignette).
+    const ScreenBatch* vignette = nullptr;
     // Fixed internal resolution (e.g. the PS2's 640x448), upscaled to the rectangle;
     // 0 = the rectangle's own pixel size. `nearest` upscales without filtering.
     int fixed_width = 0, fixed_height = 0;
@@ -125,6 +150,33 @@ struct DrawOptions {
 
 // The grade pass's arithmetic on one 8-bit pixel: model.frag's gt3_grade on the CPU (tests).
 std::array<u8, 3> post_grade_pixel(const DrawOptions::PostGrade& g, u8 r, u8 gr, u8 b);
+
+// One layer of the depth of field (presentation §G17), in drawing order: level `level` (0..4) of
+// the downsampled pictures, or the sharp picture itself (-1), drawn at weight `alpha` wherever the
+// scene is `distance` metres or more from the eye (0: everywhere; the first layer covers all).
+struct DofLayer {
+    int level = -1;
+    float alpha = 1;
+    float distance = 0;
+};
+// The layers for a lens on a projection whose vertical scale (row 1, column 1) is `proj_y` and
+// whose near plane is `near` metres away.
+std::vector<DofLayer> dof_layers(const DrawOptions::DepthOfField& d, float proj_y, float near);
+// The downsampled picture `level` (0..4) for a picture `aspect` times as wide as high: GT3's
+// 320 x 224, 320 x 112, 160 x 112, 160 x 56 and 160 x 56 of its 640 x 448 frame, as wide as the
+// picture is at the frame's line spacing (4:3: the frame itself).
+std::array<int, 2> dof_level_size(int level, float aspect);
+// How the original's level `level` (0..4) blurs the frame as the layers show it (presentation
+// §G17), across and down in frame pixels: the spread (standard deviation) of its 2-texel means
+// and of the bilinear filter that enlarges it, and how far its picture moves right and down (the
+// kept axes' half-texel steps and the layers' half pixel). Pictures taller than the frame build
+// their levels at their own resolution with this blur (View3D::encode_dof), not GT3's
+// 160-320 texel pyramid stretched over them.
+struct DofBlur {
+    float sigma[2] = {0, 0};
+    float shift[2] = {0, 0};
+};
+DofBlur dof_level_blur(int level);
 
 // The road sheen's per-vertex colour (scene::Material::specular_local): model.vert's program on
 // the CPU (tests). `light` towards the light (normalised here), `light_spec` its specular colour,
@@ -210,6 +262,21 @@ struct DrawItem {
     // Double-sided primitives culled like the rest (back faces): a car body seen from inside
     // (VR's in-car view) shows its bonnet, not the inside of its roof and windows.
     bool single_sided = false;
+    // Drawn after every other item, with their depth: GT3's tyre smoke pass comes after the
+    // whole scene and the heat haze (DrawOptions::haze), before the glare (presentation §L6).
+    bool late = false;
+    // GT3's wheel spin blurs (race/wheel_fx.h): the item's textured primitives sample their
+    // texture as the mean of copies of it: 1 = shifted along S by every sum of a subset of
+    // wheel_steps[0..2] (the tyre's tread), 2 = turned about the image centre by every sum of a
+    // subset of wheel_steps' four angles (radians), read from mip level wheel_blur_lod (the rim).
+    // wheel_blur_alpha_ref >= 0: the alpha test's threshold for its alpha-tested primitives
+    // without one of their own (GT3 tests the blurred image's own alpha).
+    u8 wheel_blur = 0;
+    float wheel_blur_lod = 0;
+    float wheel_blur_alpha_ref = -1;
+    std::array<float, 4> wheel_steps{};
+    // Not fogged (a GS pass without FGE: the brake rotor's glow).
+    bool no_fog = false;
 };
 
 class View3D {
@@ -265,9 +332,27 @@ private:
     bool ensure_cube(int size);
     void release_cube();
     SDL_GPUTexture* placeholder_cube();
-    // Records the draws of one view into an open render pass.
+    // Records the draws of one view into an open render pass: every item, those without
+    // DrawItem::late, or only those.
+    enum class Items : u8 { All, Early, Late };
     void encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Mat4& view, const Mat4& proj, const Vec3& eye,
-                const std::vector<DrawItem>& items, const DrawOptions& options);
+                const std::vector<DrawItem>& items, const DrawOptions& options, Items which = Items::All);
+    // --- The passes after the scene (presentation §L6): DrawOptions::haze, late items, overlay,
+    // vignette. Screen geometry for the frame goes up in one copy pass; each batch's first index.
+    struct ScreenUpload {
+        u32 haze = 0, overlay = 0, vignette = 0;
+        bool ok = false;
+    };
+    ScreenUpload upload_screen(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, int picture_w, int picture_h);
+    // One batch into an open pass, over the picture's corner: `frame` samples haze_src_ (the
+    // picture's copy) at 50 % (with haze_low_valid_ its field-sized copy displaced, plus this
+    // picture's finer detail at each pixel), else each draw's texture times its vertex colour.
+    void encode_screen(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const ScreenBatch& b, u32 first_index,
+                       bool frame);
+    // The late items and the overlay at the end of a pass (the scene's, or the haze's).
+    void encode_after_scene(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Mat4& view, const Mat4& proj,
+                            const Vec3& eye, const std::vector<DrawItem>& items, const DrawOptions& o,
+                            const ScreenUpload& up);
     // The post-process passes (DrawOptions::post_grade, dissolve, trail).
     bool post_wanted(const DrawOptions& o) const;
     bool ensure_post(SDL_GPUTexture** t);
@@ -275,6 +360,23 @@ private:
                      int picture_h, float alpha, const DrawOptions::PostGrade* grade);
     // Copies the w x h corner (a picture) of `from` to `to` (cycling `to`: see draw).
     void copy_picture(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* from, SDL_GPUTexture* to, int w, int h, bool cycle);
+    bool ensure_quad();
+    // The depth of field (DrawOptions::dof): from scene_ (the picture) and depth_ (its depth, kept
+    // by the scene pass), the downsampled pictures, then the layers into `out` (the picture's size).
+    bool dof_wanted(const DrawOptions& o) const { return o.dof.on && o.dof.focus > 0; }
+    bool ensure_dof_levels(float aspect, int pw, int ph);
+    void encode_dof(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, const Mat4& proj, float aspect,
+                    SDL_GPUTexture* out, bool cycle);
+    // One quad over the pass's viewport sampling `src` (model.frag's mode 6, see dof_sample) at
+    // `depth`, weight `alpha` (1: replaces); `single`: a single-sample pass without depth.
+    struct Resample {
+        float scale[2] = {1, 1}, offset[2] = {0, 0}; // texture coordinates = v_uv x scale + offset
+        float clamp[4] = {0, 0, 1, 1};               // min u, min v, max u, max v
+        float taps[2] = {1, 1}, step[2] = {0, 0};    // taps across / down, their spacing
+        float sigma[2] = {0, 0};                     // > 0: the taps weighted by a Gaussian (in taps), else equal
+    };
+    void encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* src, const Resample& r,
+                         float alpha, float depth, bool single);
 
     GpuContext& ctx_;
     // The targets are width_ x height_, sized for the largest 3D scale (GpuContext::render_ceiling);
@@ -300,6 +402,29 @@ private:
     bool last_valid_ = false, snap_valid_ = false;
     int last_w_ = 0, last_h_ = 0, snap_w_ = 0, snap_h_ = 0; // their pictures' sizes
     SDL_GPUBuffer *quad_vb_ = nullptr, *quad_ib_ = nullptr;
+    // The screen geometry of the passes after the scene (one buffer pair, refilled per draw), and
+    // the picture's copy the haze lenses sample.
+    SDL_GPUBuffer *screen_vb_ = nullptr, *screen_ib_ = nullptr;
+    SDL_GPUTransferBuffer* screen_tb_ = nullptr;
+    u32 screen_vb_size_ = 0, screen_ib_size_ = 0, screen_tb_size_ = 0;
+    SDL_GPUTexture* haze_src_ = nullptr;
+    // The depth of field's downsampled pictures (each `w` x `h` in the corner of a `cap_w` wide
+    // texture) and its result when the post-process passes follow.
+    struct DofLevel {
+        SDL_GPUTexture* tex = nullptr;
+        int cap_w = 0, cap_h = 0, w = 0, h = 0;
+        int dx = 1, dy = 1; // picture pixels per texel (pictures taller than the frame)
+    };
+    DofLevel dof_level_[5];
+    DofLevel dof_tmp_[2]; // the blur's intermediate pictures (pictures taller than the frame)
+    // Pictures taller than the original's 448 lines: the picture at the size of the original's
+    // display field (640 x 224, as wide as the picture at its spacing) for the haze lenses, which
+    // displace that picture and keep this one's finer detail (encode_screen).
+    DofLevel haze_low_;
+    bool haze_low_valid_ = false;
+    bool ensure_dof_texture(DofLevel& l, int w, int h);
+    SDL_GPUTexture* dof_ = nullptr;
+    void release_dof_levels();
     DrawStats stats_;
     SDL_GPUTexture* cube_ = nullptr;      // environment cube (6 layers)
     // Multisampled colour, one per face (resolved into cube_'s layer): SDL 3.4's Vulkan backend

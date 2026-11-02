@@ -209,6 +209,11 @@ ExactRace::ExactRace(const RaceSetup& s) {
     hit_.assign(n, 0), hit_43c_.assign(n, 0);
     posed_.assign(n, 0);
     if (s.recorders) rec_ = *s.recorders, ghost_car_ = s.ghost_car, external_ghost_ = s.external_ghost;
+    // The race's start-up: the sparks' reset.
+    spark_points_ = s.sparks;
+    spark_points_.resize(n);
+    for (const std::vector<SparkPoint>& p : spark_points_) sparks_on_ = sparks_on_ || !p.empty();
+    sparks_.reset();
 }
 
 void ExactRace::start_countdown() { info_.start = 1; }
@@ -444,6 +449,22 @@ void ExactRace::step(std::span<const PadFrame> pads) {
     rec_applied_ = 0;
     race_info_frame(info_, events_, steps_per_second(data_->behaviour()));
     run(pads, 0);
+    rng_step_ = rng_;
+    spark_frame();
+}
+
+// The race's frame after the race step: every car's bursts (each entry's model is loaded, its +0x18BC
+// set), in race order; then the race's frame update's update of the sparks (dt 1/60), after the cars' animators,
+// the flares, the tyre smoke's update and the course's rigid bodies, none of which draws the random register. A posed car
+// (online) makes none: its record has no drawn pose of its own.
+void ExactRace::spark_frame() {
+    if (!sparks_on_) return;
+    for (size_t i = 0; i < cars_.size(); ++i) {
+        const Car& c = cars_[i];
+        if (posed_[i]) continue;
+        sparks_.emit(c, spark_points_[i], *course_->query, draw_mode(c, x70_, ghost_switch_) >= 2, rng_);
+    }
+    sparks_.update(F::raw(0x3C888889), rng_);
 }
 
 void ExactRace::race_step(std::span<const PadFrame> pads) {

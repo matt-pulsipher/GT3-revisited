@@ -98,6 +98,7 @@ void ProceduralCamera::start(const ProceduralShot& shot, const CameraCar& car, c
     kind_ = std::clamp(shot.kind, 0, 4);
     rng_.x = shot.seed;
     roll_ = 0;
+    focus_ = 100; // (roadside, mounts)
     switch (kind_) {
     case Roadside: start_roadside(car, ground, shot.x); break;
     case Hover: {
@@ -134,7 +135,8 @@ void ProceduralCamera::start(const ProceduralShot& shot, const CameraCar& car, c
         lateral_ = 3.0f * draw() - 1.5f;
         if (draw() < 0.3f) lateral_ = 0, roll_ = 0; // dead centre, level
         aim_height_ = 0.5f * draw() + 0.2f;
-        draw(); // (the subject distance, for nothing drawn here)
+        // The depth of field's focus: past the bumper, or from the car's origin.
+        focus_ = draw() < 0.5f ? dist_ - (rear_ ? car.rear : car.front) : dist_;
         fov_ = 15.0f * draw() + 25.0f;
         zoom_ = zoom_of(fov_);
         for (Spring& s : shake_) s = {};
@@ -249,6 +251,7 @@ render::Mat4 ProceduralCamera::view(const CameraCar& car, const GroundHeight& gr
         const render::Vec3 back = offset_ * -1.0f; // aimed at the car's origin, without the wobble
         m = render::rotate_y(jy * kDeg) * render::rotate_x(jp * kDeg) *
             rotation(roll_, pitch_of(back), yaw_of(back)) * render::translate(e * -1.0f) * car_frame(car);
+        focus_ = render::length(e);
         break;
     }
     case Orbit: {
@@ -266,6 +269,7 @@ render::Mat4 ProceduralCamera::view(const CameraCar& car, const GroundHeight& gr
         const float ox = x_end_ + (x_start_ - x_end_) * f, oz = z_end_ + (z_start_ - z_end_) * f;
         const float st = std::sin(theta * kDeg), ct = std::cos(theta * kDeg);
         h += below({ox - radius * st, h, oz + radius * ct}); // kept above the road (the pitch as it was)
+        focus_ = std::sqrt(radius * radius + h * h);
         m = render::rotate_z(roll_ * kDeg) * render::rotate_x(pitch * kDeg) * render::translate({0, -h, -radius}) *
             render::rotate_y(theta * kDeg) * render::translate({-ox, 0, -oz}) * car_frame(car);
         break;

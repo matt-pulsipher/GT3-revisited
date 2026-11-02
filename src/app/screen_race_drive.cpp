@@ -239,6 +239,9 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     update_gear_hint(s);
     update_dirt(dt);
     update_smoke(dt);
+    // The heat haze lenses drift every frame, whatever the camera (presentation §L6). Live views
+    // never show them and a replay sets them up again, so live runs skip the work.
+    if (!live_view()) haze_.step();
     update_pylons(dt);
     if (lap_done && tt_failed_) lap_done = false; // a failed time trial records no lap
     if (lap_done) {

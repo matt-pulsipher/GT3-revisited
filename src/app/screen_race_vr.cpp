@@ -62,7 +62,9 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
     sv.proj_x = 2.0f / std::max(e0.tan_right - e0.tan_left, 1e-3f);
     sv.near_m = camera_.near_plane, sv.far_m = camera_.far_plane;
     const bool own_car = !camera_.onboard() || st.show_car;
+    spark_pass_ = true, spark_view_ = render::inverse(head); // (the sparks' streaks from the head)
     collect_items(head_pos, right, own_car, true, sv);
+    spark_pass_ = false;
     if (camera_.onboard()) // from inside the body: its bonnet, not its roof and windows
         for (size_t i = player_items_[0]; i < player_items_[1]; ++i) items_[i].single_sided = true;
     const float fovy = std::atan(e0.tan_up) - std::atan(e0.tan_down);

@@ -25,6 +25,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/replay.h/.cpp` | Replay format, recorder, player, save/list in `<user data>/replays/` |
 | `sim/exact/race_record.h/.cpp` | A race on the exact core as a replay keeps it (`RaceRecord`: setup, every car's frames, the game's changes, the end hash), `RacePlayback`, `race_hash` |
 | `race/exact_demo.h/.cpp` | The disc's demo runs as race records (`demo_record`: the race GT3's replay playback builds from the save) |
+| `sim/exact/sparks.h/.cpp`, `race/sparks.h/.cpp` | The race's sparks: the particles in GT3's arithmetic, stepped by `ExactRace::step` (`Sparks`); their draw (`SparkDraw`; see "Sparks") |
 | `race/replay_library.h/.cpp` | The Replay Theater's files: list with headers, delete, rename, info texts |
 | `race/replay_options.h/.cpp` | REPLAY OPTIONS: replay view mode, target, HUD items, sound; the panel |
 | `race/analyzer.h/.cpp` | The Analyzer (data logger): the logger's sectors, keys and graph from the race's data logger tables, GRAPH / REPLAY screens |
@@ -47,6 +48,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `tests/test_race_lap_events.cpp` | The pop-ups, split points, machine-test timing and the loading picture without the disc |
 | `tests/test_time_text.cpp` | The time formats; disc (any region): the placeholders against the game program and laid out with the disc's fonts |
 | `tests/test_exact_game.cpp` | Disc: the pad read's frames; whole races through `RaceField` on the exact core equal to `ExactRace` stepped directly (`exact_game_race_lockstep`); a pad-read run equal to its replay's inputs (`exact_game_pad_replay`) |
+| `tests/test_sparks.cpp` | The sparks' pool, bursts, update, VU0 sine and cosine, emission gates and colours without the disc; disc: the 24 models with spark points, an F090/S race that sparks and replays to the same race |
 | `tests/test_exact_replay.cpp`, `tests/test_exact_demos.cpp` | Disc: races on the exact core through a replay file and back, every step (`exact_replay_round_trip`); the whole-run ghost car (`exact_replay_ghost`); the disc's demos through their race records (`exact_demo_records`) |
 | `tools/gt3tool/cmd_race.cpp` | Diagnostics: `race-texlod`, `race-blend`, `race-sheen`, `race-carprims` |
 
@@ -159,8 +161,26 @@ wheelspin under throttle (`race_rumble`).
   with all LODs; body LOD by camera distance
   (< 30 m, < 80 m, beyond; `race::car_lod`), or LOD 0 at any distance with
   `[video] full_car_detail = on` (Settings → Display → Always show full car
-  detail; the default except on phones and tablets). The wheels are split into four models re-centred on their hubs and
-  drawn with `car * translate(hub) * rotY(-steer) * rotX(-spin)`.
+  detail; the default except on phones and tablets). The wheels are split into models re-centred on their hubs
+  (`CarVisual::tyres_`, `rims_`) and drawn with `car * translate(hub) * rotY(-steer) * rotZ(camber) * rotX(-spin)`
+  (the camber negated on right wheels, whose models are built turned half a turn).
+- Wheels (`race/wheel_fx.h`, docs/formats/car_model.md "Brake parts" and "Wheel spin blur"):
+  each wheel's detail level comes from its size on screen as GT3 picks it (`race::wheel_detail`;
+  levels 0..1 within about 15 m of a 0.3 m tyre at a 67-degree view). On levels 0 and 1, when
+  the eye is outboard of the wheel's outer face, the brake parts from `race/brake.bin` are drawn
+  in the steered hub frame (`CarVisual::brakes_`: the rotor and caliper decals, an `in_order`
+  item before the tyre so its black faces cover the caliper's soft shadow as GT3's order does)
+  and the rotor's glow in the spinning frame (`glows_`, added at `DrawItem::tint` = FIX =
+  brake heat^2 x Env0 +0x4C, unfogged). The view collecting the items (`WheelView`: the main
+  view, the 2P halves without blur; none for the mirrors) and each car's last wheel positions
+  on screen (`WheelTrack`, by car slot) give the blur's turn, -spin_step x Env0 +0xEA0 x
+  exp(Env0 +0xEA4 x the hub's NDC movement). The camera's car (`CarLook::focus`: the player's,
+  or a replay's followed opponent) blurs its tread (`DrawItem::wheel_blur` 1, eight taps along
+  S in model.frag's `wheel_texture`) and its rim (16 taps turned about the image centre, from
+  the mip level of a 64-texel square, alpha tested at AREF 0x20 on the coverage); the other
+  cars' rims take the wheel file's spinning image (texture table entry 2, `DrawItem::texture`)
+  above 3 degrees of turn. The wet road's mirrored cars get none of this (GT3 draws their wheels
+  at the farthest level). The arch shade (`bands_`) turns with the camber, not the steering.
 - Car placement (as GT3 draws it): the car model's origin (wheelbase
   midpoint, y = 0 = the body's lowest point) sits at the physics body height,
   which at rest is the ride height q (the front ride height in mm x 0.001 m, both axles; physics §4.2) above
@@ -171,11 +191,10 @@ wheelspin under throttle (`race_rumble`).
   VehicleSetup::Wheel::static_suspension` (+ = compressed, the wheel rises
   into the arch; airborne = max droop). In GT3's model frame this is
   y = R - q - (x' - x_s). R34: q 0.130, R 0.327, static hub 0.197 above the
-  model origin. Not drawn yet: the visual camber (setting + the camber gain x
-  travel) and the swing-arm half-track shrink, both small. Each tyre's arch
-  shade (formats/car_model.md "Tyres") is its own model per wheel
-  (`CarVisual::bands_`), drawn at the hub with the steering but without the
-  wheel's spin.
+  model origin. The visual camber (the physics' wheel record, from the travel) is drawn
+  (`WheelState::camber`); not drawn yet: the swing-arm half-track shrink, small. Each tyre's
+  arch shade (formats/car_model.md "Tyres") is its own model per wheel (`CarVisual::bands_`),
+  drawn at the hub with the camber but neither the steering nor the wheel's spin, as GT3.
 - Car lighting (docs/formats/car_model.md "Materials"): lit packets carry the
   selected paint's material (`scene::Material`, from GTM1 +0x38[paint]); the
   renderer lights them with the course's Env0 car lights (`SunParams::day_car_lights`: those
@@ -341,6 +360,26 @@ wheelspin under throttle (`race_rumble`).
   s), every replay / demonstration start (0.5 s, from the live run's last picture; the
   original's also holds the 2D frame), manual car changes in modes 0 / 3 incl. the attract
   demo's (1 s), and course records in modes 0 / 2 / 3 (their +0x64, on-board records 1 s).
+- **Replay depth of field** (presentation §G17; `RaceScreen::apply_depth_of_field`,
+  `DrawOptions::dof`, `View3D::encode_dof`): replays, demonstrations, the attract demo and the
+  full-frame quick-menu race on Env0 flag 0x100, the 1P view only (not the 2P halves, the licence
+  menu's box or VR). The lens from Env0 +0x930 / +0x934, the focus `max(CameraRig::focus(),
+  Env0 +0x938)` (each camera's distance, `ProceduralCamera::focus`; the telephoto's 8th draw at
+  the cut, which had been drawn and dropped), the far plane Env0 +0x20, and GT3's projection's
+  vertical scale (ours x 1 / 1.098) for the focal length. The scene pass stores its depth; five
+  downsampled pictures, then a pass over
+  the multisampled target draws the layers of `render::dof_layers` as quads at their distances'
+  depth, tested GEQUAL against the scene's depth (smooth edges with MSAA), resolved into the post
+  pass's picture or, without one, the finished picture. Up to the frame's 448 lines the pictures
+  are GT3's (320 x 224 .. 160 x 56, widened for wide pictures; level 0 averages every picture texel
+  under it). Taller pictures would stretch those 160-320 texels over the whole picture (blocky
+  steps at 1440 lines), so each level is built at the picture's own resolution instead: the mean
+  of dx x dy pixels (powers of two that keep the level's spread over 1.2 texels), then a Gaussian
+  across and down that brings the spread to the original level's as shown (`render::dof_level_blur`:
+  each 2-texel mean adds spacing^2 / 4 to the variance, the bilinear enlargement spacing^2 / 6), and
+  the layers move it by the original level's whole shift. The same blur and shift, without the
+  original's texel steps. Costs about 0.6 ms a frame at 2560 x 1440
+  with 4x MSAA on an M4 Pro (`gpusync=1`). `GT3R_NO_DOF=1` turns it off for comparisons.
 - Tyre smoke and dust (`race/tyre_smoke.*`): a 256-puff pool fed each tick by every car's wheels
   with smoke-emission intensity > 0.001 (`VehicleTelemetry::smoke_emit`, physics
   physics §8.3b — not the slip intensity `smoke` of physics §8.3: race used that until now and made
@@ -645,13 +684,21 @@ research (captures of the original, `database/racedetail.db` rows,
   "Recommended gear").
 - **Rear-view mirror** (onboard cameras, not in replays): frame rect (200, 20)
   240x64 with a 1 px black outline; the camera's view with z flipped (looking
-  back, mirrored), 1.3x zoom, far 120 m; we leave the player's own car out.
+  back, mirrored), 1.3x zoom, far 120 m; we leave the player's own car out. Its items
+  (`collect_items(..., ItemsView::Mirror)`, presentation §H2): sky slot 24, scenery, the course
+  line, billboards on Env0 +0xF38 bit 0, cars, smoke with whole alpha-blended puffs
+  (`TyreSmoke::add_items(mirror)`; Route 5 keeps an alpha-blended copy of its additive model); no
+  backdrop, sun disc, pylons or wet road. The 2P halves take their billboards from +0xF34
+  (`ItemsView::Split`).
 
 - **Boost meter** (turbo cars): `boost` face 64x64 at (530, 436) onboard /
   (475, 436) chase, needle 0..2 over -45..200.32 degrees; the value is the
   pressure ratio (1.0 = the face's "0 kg/cm2", i.e. 1 + physics' boost).
 
-Not reproduced yet: the needle's 8-pass motion blur.
+Needles (presentation §D1): 8 passes at 1/8 each (`Hud::needle_passes`), swept from the angle
+the meter was last drawn at, with the original's sub-pixel steps in 640 x 448 frame units; one
+last angle per meter (in-car tachometer, speedometer, outside tachometer, boost), reset per race
+(`Hud::reset_needles`). At 120 Hz the sweep covers our frame's movement, half the original's.
 
 ## Pop-ups: lap time, splits, gaps
 
@@ -741,7 +788,8 @@ fingerprint of the game data it was built from (`exact_data_fingerprint`: the co
 entry's database records), every car's pad frame of every step (changed fields only; a CPU car's stream
 stays empty; the free run ghost's extra steps' reads apart), the game's own changes to the race between
 steps (`RaceChange`: the start countdown, the pause menu's AT / MT, a seeded engine condition, an AI
-take-over) and `race_hash` after the last step. Version 3 also keeps the solo modes' recorders as the run
+take-over) and `race_hash` after the last step. Version 4 keeps each entry's spark points (`RaceRecord::sparks`; an
+older record plays without sparks, as it ran). Version 3 also keeps the solo modes' recorders as the run
 starts (`sim::exact::SoloRecorders`, their record memory stored sparse) and the run's own pad frame recording
 (`RaceRecord::run_recording`: the player's device's block as the race's end closes it, GT3's recorder),
 which a whole-run ghost plays; a version 1 or 2 record's ghost car drives its recorded frames instead. Playback (`ExactFieldOptions::playback`, set by the
@@ -939,7 +987,8 @@ workstream (all 80 US courses, 4493 records, no errors):
   +0x2C/+0x30 a second list (course stills; never shown in play), +0x34/+0x38 zones
   (gate the automount camera only).
 - Record: +0x00 kind, +0x04/+0x08 start/end track distance D, +0x0C duration,
-  +0x18 on-board mount, +0x28/+0x2C zoom min/max, curve pointers +0x34 zoom,
+  +0x18 on-board mount, +0x1C the heat haze (> 0: on; "Passes after the 3D picture"),
+  +0x28/+0x2C zoom min/max, curve pointers +0x34 zoom,
   +0x40/44/48 camera x/y/z (world), +0x58/5C/60 look-at x/y/z.
 - Curve: `u32 n; n x {f32 t, f32 v}`, piecewise linear in t with linear
   extrapolation.
@@ -1775,8 +1824,8 @@ From the race workstream's research (facts for docs/formats/course.md, owned
 by the course area):
 
 - **Env0** (slot 32) is the course's environment block, read every frame:
-  flags at +0x10 (car lights 0-3, ambient particles 0x20, colour-grade pass
-  0x80, sun 0x400, scene lights bits 11-14, car lamp glows 0x8000, GTFX lamps
+  flags at +0x10 (car lights 0-3, heat haze 0x20, replay vignette 0x40, colour-grade pass
+  0x80, replay depth of field 0x100, sun 0x400, scene lights bits 11-14, car lamp glows 0x8000, GTFX lamps
   0x200000), far clip +0x20 (the sun sits at far/2), texture / car LOD
   thresholds +0x50 / +0x54, fog RGB +0x60, distance A +0x70 and minimum
   visibility b +0x74 (visibility = b + (1 - b) * min(1, A / z)), four car
@@ -1791,7 +1840,7 @@ by the course area):
   additive screen-aligned billboard at the sun after the scene, coloured RGB
   x visibility from an N x N depth test at the sun pixel; no ghosts, no
   falloff towards the centre, no bloom. A sun disc (14-segment fan) is drawn
-  right after the sky dome. Trial Mountain: elev 31, az 92, k 0.40; Seattle
+  right after the sky dome (presentation §I6). Trial Mountain: elev 31, az 92, k 0.40; Seattle
   16.8 / 220.2 / 0.45; Laguna 11.6 / -31.6 / 1.10; Tahiti dirt and Midfield
   have no sun.
 - `race::SunGlare` draws the glare billboard (style 0, `race/glare.img`
@@ -1799,7 +1848,13 @@ by the course area):
   around the sun; we cast a 3 x 3 grid of rays through the same angular box
   against the course's opaque scenery and backdrop triangles
   (`race::Occluder`, an XZ grid; about 0.1 ms) and use the open fraction.
-  The sun disc is not drawn yet.
+- `race::SunDisc` draws the sun disc: `Flare::disc_mesh` as a `scene::Model` with the
+  vertex program's colours baked in at load (sun RGB x gain / 2), one additive unlit primitive
+  without depth writes, added to the items by `RaceScreen::collect_items` as two `background`
+  items after the sky dome (the GS's As / 128 is two of our Cs As + Cd passes), at eye + 10 x the
+  sun direction in the camera's right / up plane. Background items draw before everything else,
+  without fog, so the backdrop and the scenery cover it. Not in the mirror
+  (`ItemsView::Mirror`) or the reflection cube; VR re-centres it per eye with the sky.
 - **Fog**: the course's Env0 fog replaces our linear placeholder: the model
   shader's `fog_gt3` mode, amount (1 - b)(1 - min(1, A / d)) towards the
   fog colour (`GT3R_NO_COURSE_FOG=1` restores the old fog for comparison).
@@ -1812,17 +1867,18 @@ by the course area):
   "GTFX"): the lamp lists of the nodes visible from the camera (slot 2 Vls0,
   `course::Visibility`), at most 100 lamps passing the original's screen test
   (halo-sized), its attenuation, directional factor, blink, and
-  `race/flare.bin`'s three meshes (the six-point star) drawn with
-  `SDL_RenderGeometry` in the original's colour arithmetic (vertex RGB × colour,
-  alpha × visibility, Cs·As/128 as two additive passes), crisp at the output
-  resolution. In the original-resolution frame they go into a 640 × 448 layer
-  added with bilinear filtering, as the PS2 shows them: the rays are 1-2 pixel
-  slivers there, soft and broken up (compared with a PCSX2 capture, 2026-10-22).
-  At high resolution that layer mangled the diagonal rays, so it is only used there. Visibility: a 3 × 3 ray
+  `race/flare.bin`'s three meshes (the six-point star) in the original's colour
+  arithmetic (vertex RGB × colour, alpha × visibility, Cs·As/128 as two additive
+  passes), drawn with the sun glare inside the 3D picture before its grade
+  ("Passes after the 3D picture"), at the picture's resolution: in the
+  original-resolution frame its 640 × 448, as the PS2 shows them (the rays 1-2 pixel
+  slivers, soft and broken up; compared with a PCSX2 capture, 2026-10-22). VR eyes draw
+  them with the 2D renderer (`render::submit_2d`). Visibility: a 3 × 3 ray
   grid over the original's 10-pixel box, to 0.2 m in front of the lamp, against
   the course occluder (cars do not occlude; the original's depth test sees
-  them). The halo is still a soft disc (the original draws a 72-spike burst
-  mesh), tested with one ray. Seattle 69 lamps (stadium lights), Route 5 / 11
+  them). The halo is the flare system's 14-segment disc (`Flare::disc_mesh`, the sun disc's
+  mesh) in the same batch as the glows, tested with one ray at its centre. Seattle 69 lamps
+  (stadium lights), Route 5 / 11
   about 300 (street and tunnel lamps).
 - **Billboards** (`race::Billboards`, BLBd): every sprite as a quad turning
   about the vertical to face the camera (vertices re-uploaded when the
@@ -1886,6 +1942,19 @@ by the course area):
   demonstration's Viper. The course scenery item is drawn `DrawItem::in_order`: its opaque
   meshes, then its blended ones in model order, before the next items' opaque meshes (cars,
   pylons); the distance-sorted blended items (billboards, smoke, glass) come last.
+- **Sparks** (presentation §L7; `sim::exact::Sparks`, `race::SparkDraw`): not from hits but from a car model's
+  underbody spark points (GTCI +0x58 / +0x5C, docs/formats/car_model.md: 24 models, the F1 and Group C cars, the GT-One,
+  R390, CLK, the touring Calibra / Astra, the Corvette C5R, the Stratos, ...) below the road plane under the car at
+  100 km/h or more on materials 0, 1, 7, 9: 5..20 particles a point (200 a metre below), a pool of 128 (none taken back),
+  drag, gravity, a lift at 0.1 s of age, bounces on that plane. They draw the VU0 random register (six a particle, one in
+  the kick window), so they are the race's (`ExactRace::step` after the race step, `RaceSetup::sparks` from
+  `ExactFieldOptions::spark_points`: the screen reads the car folder the race draws, `RaceScreen::car_spark_points`;
+  every race mode, replays, demonstrations, 2P; not online remote cars). Drawn in the one-player view only (and in VR from
+  the head; not the mirror or the 2P halves), after the cars and before the tyre smoke (the smoke item now follows the
+  cars; both blended items tie on distance, so list order decides): streak quads from the eye-space position one race
+  frame earlier to now, `race/particle.img`, added, depth-tested without depth writes, unfogged, both faces, colour by life
+  remaining. A camera cut (`CameraRig::shot`) drops the streaks' starts. Bursts, update and emission match the original bit
+  for bit.
 - **Lamp glow**: Trial Mountain and Deep Forest have no GTFX lamps (Env0 flag 0x200000 off) and
   no bloom / haze pass exists in races; their tunnel lamps are plain fogged scenery quads whose
   glow is painted in the 32x32 texture times an over-bright vertex colour (up to 1.99).
@@ -1910,6 +1979,54 @@ drawn/culled, draw calls, triangles, active voices). This Mac (Metal,
 | Seattle | 8.3 ms (vsync) | 1.8–3.7 ms | 46–291 / 400 | 710–6070 | 19–155 k |
 | Rome | 8.3 ms (vsync) | 0.3–0.5 ms (no sync) | 113–199 / 812 | 920–1870 | 25–53 k |
 
+## Passes after the 3D picture
+
+The original's frame after its 3D scene (presentation §L6): the depth-of-field composite or the
+plain copy, the heat haze lenses, the tyre smoke, the sun glare and lamp glows, the grade, the
+vignette, the dissolve, the trail. Ours, in `View3D::draw` with `RaceScreen::add_screen_passes`
+filling the options each frame:
+
+- **Overlay** (`DrawOptions::overlay`, a `render::ScreenBatch` in the view rectangle's units):
+  `SunGlare::add`, `LampGlows::add`, `CarLampGlows::add` (textures in `render::SpriteTexture`, both
+  for the GPU and the 2D renderer). Drawn after every scene item, before the grade: graded, under
+  the vignette. Player 2's half gets its own glare.
+- **Tyre smoke**: its item is `DrawItem::late`, drawn after every other item (still with the
+  scene's depth), after the depth of field and the haze lenses.
+- **Heat haze** (`race::HeatHaze`, `race/replay_post.*`): off unless `[video] heat_haze = on`
+  (Settings → Display → Heat haze in replays; the user chose off by default after playtesting: in
+  our sharp picture the lenses sliding across panning shots read as jitter). Set up in `RaceScreen::restart` (every
+  run, replay and demonstration: the original's race set-up), stepped every race tick,
+  drawn when the camera is a GTRC course shot with the record flag (`CameraRig::replay_haze`) on
+  an Env0 0x20 course. The lenses go into `DrawOptions::haze` in 640 × 448 frame units (heights in
+  the original's 224-line field: 2 frame lines each); View3D then keeps the picture and depth of
+  the scene pass (or of the depth of field's composite), copies the picture, and draws the
+  lenses (the model shader's post mode at 50 %), the late items and the overlay in a second pass. One copy serves every lens (the
+  original flushes the texture cache per lens, so a lens also samples the ones before it).
+  Above 448 lines the copy is also box-downsampled to the original's field size (`View3D::haze_low_`,
+  480 x aspect by 224) and each lens draws that copy's displaced texel plus the pixel's own detail
+  finer than it (sharp picture here minus the field copy here; model.frag post mode, `flat_color.w`).
+  Drawn plainly at full resolution, the lenses' 1-2 frame-pixel shifts cut sharp seams through our
+  much finer picture and showed in every shot of a fully flagged course (Super Speedway); the
+  original's softer picture showed them only in telephoto shots.
+  Never depth-tested: the original's depth test after its depth of field never fails for a lens
+  (its vertex depth is converted as 12.4 fixed point, past the Z24 range), so the lenses lie over
+  the cars and the road too (an earlier version tested them at their own depth, about 40 m out,
+  which hid them in most shots). Depth-of-field frames always get the second pass (the smoke and the glare
+  come after its composite, unblurred); other frames without lenses keep the single scene pass. `GT3R_RACE_DEBUG=1`
+  logs the lens counts with the race screen's view frame number (`GT3R_CAPTURE3D` counts the
+  View3D's draws, about 110 more after a demo's telephoto shot). The lenses are projected with the
+  camera's rotation (an earlier version used the projection alone and showed them only in shots
+  facing world -z). Check: the replay of an arcade race at Super Speedway opens on a flagged
+  telephoto of the grid (`GT3R_QUICKRACE="event=arcade_C,car=altezza_rs200_98,level=0,course=super,start"`
+  with `GT3R_RACE="auto=1,warp=30,watch=1"`, `--screen quickrace`), as the original's does.
+- **Vignette** (`DrawOptions::vignette`, `race::add_vignette`): replays and demonstrations
+  (`!live_view()`) on Env0 0x40 courses, drawn after the graded picture in the post pass, under
+  the dissolve and the trail.
+- **2P halves**: no grade (and no haze or vignette).
+- Not reproduced: the original copies its 640 × 448 picture into 640 × 224 interlaced fields,
+  with a vertical 2-tap filter on the fields of one parity; our original-resolution frame is
+  progressive (filtering every other frame would flicker).
+
 ## Known gaps
 
 - The road sheen follows docs/formats/course.md
@@ -1931,10 +2048,18 @@ drawn/culled, draw calls, triangles, active voices). This Mac (Metal,
 - Near-road "shimmer" at speed (Super Speedway, Trial Mountain) is the sheen's noise texture
   (256x128) moving under the camera; the original shows the same grain. Our textures are
   mipmapped, so this is not minification aliasing.
-- Lamp glows (see "Lamp glows", "Car lamps"): the halo is a soft disc (the original draws a
-  72-spike burst mesh), and cars do not hide lamps (the original's depth test sees them).
-- Not drawn yet: the sun disc (see "Sun glare"), the cars' visual camber (see "Rendering"),
-  the tachometer needle's motion blur.
+- Lamp glows (see "Lamp glows", "Car lamps"): cars do not hide lamps (the original's depth test
+  sees them); a halo is hidden or shown whole by one ray (the original depth-tests it per
+  pixel); bar lamps' elliptical halos lie along the screen axes (the original turns them with
+  the lamp's projected x axis).
+- Wheels (see "Rendering"): the tyre and rim geometry keep the body's level (GT3 switches the
+  tyre's segments, its level-2 hexagon and level-3 drum by the wheel's own level, which only the
+  brake parts and blurs follow here); the mirrors' and the wet road's cars keep full wheels
+  where GT3 draws drums. The blurs sample the texture in the shader instead of GT3's 8-bit work
+  buffer passes (no per-pass rounding; the tread's 128 x 64 buffer is the whole texture on every
+  car file). Checked against PCSX2 captures of the B-3 demonstration (Fiat Coupé: the red front
+  caliper in front of the hub, the rear one behind, the rim's square hub smeared) but not frame
+  matched (our demonstration's cameras differ near the end).
 - Car rear-window reflections match the original in matched chase views at Laguna (dusk, 50 vs
   46 luma), Route 11 (night, 9 vs 9) and wet Route 5 (7 vs 9), but are darker at Super Speedway
   (day) in all nine matched shots, by a factor that follows the car's heading: 1.2x along the

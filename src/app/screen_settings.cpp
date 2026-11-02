@@ -651,6 +651,16 @@ private:
         detail.enabled = scale.enabled;
         if (!detail.enabled) detail.desc = msaa.desc;
 
+        // [video] heat_haze = on | off (default off; RaceScreen::add_screen_passes)
+        Row& haze = toggle("Heat haze in replays",
+                           "GT3's heat shimmer over some trackside camera shots in replays, on some courses.",
+                           to_lower(cfg.get("video", "heat_haze").value_or("off")) == "on", [a](bool v) {
+                               a->config().set("video", "heat_haze", v ? "on" : "off");
+                               a->save_config();
+                           });
+        haze.enabled = scale.enabled;
+        if (!haze.enabled) haze.desc = msaa.desc;
+
         // [video] gpu = auto | gles | gles_driver | 0 (App::init)
         const std::string gpu_cfg = to_lower(cfg.get("video", "gpu").value_or("auto"));
         const bool gpu_off = gpu_cfg == "0" || gpu_cfg == "off";

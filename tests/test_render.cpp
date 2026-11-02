@@ -359,6 +359,82 @@ TEST(render_post_grade_formula) {
     CHECK(o[0] > 100 && o[0] < o[1] && o[1] < o[2]);
 }
 
+TEST(render_depth_of_field_layers) {
+    // presentation §G17: the layers in drawing order, from the lens formula (in double here).
+    DrawOptions::DepthOfField d;
+    d.f_number = 10, d.focal_mm = 35, d.focus = 94, d.far = 1000;
+    const double film = 0.035 / std::sqrt(1.0 + 1.333 * 1.333), c = film / 448.0;
+    auto at = [&](double proj_y, double s, double r, int side) { // side +1 near, -1 far
+        const double f = 0.5 * film * proj_y, f2 = f * f;
+        return f2 * s / (f2 + side * 10.0 * r * c * (s - f));
+    };
+    auto same = [](float a, double b) { return std::fabs(double(a) - b) <= 1e-3 * std::max(1.0, std::fabs(b)); };
+    // A telephoto (zoom 22.8 over GT3's 448-line frame: its projection's y scale 29.66).
+    const float ty = 29.66f;
+    std::vector<DofLayer> l = dof_layers(d, ty, 0.1f);
+    CHECK(l.size() == 7);
+    if (l.size() == 7) {
+        // Near: 4, 2, 1 lines (levels 2, 1, 0), each from the last one's distance; the first everywhere.
+        CHECK(l[0].level == 2 && l[0].alpha == 1 && l[0].distance == 0);
+        CHECK(l[1].level == 1 && same(l[1].distance, at(ty, 94, 4, 1)));
+        CHECK(l[2].level == 0 && same(l[2].distance, at(ty, 94, 2, 1)));
+        // The sharp picture from the 1-line distance on.
+        CHECK(l[3].level == -1 && l[3].alpha == 1 && same(l[3].distance, at(ty, 94, 1, 1)));
+        // Far: 1, 1.41, 2 lines (levels 0, 0, 1 at 1/2, 1, 1/2); 2.83 lines is past the hyperfocal
+        // distance (negative: everything beyond is that sharp).
+        CHECK(l[4].level == 0 && l[4].alpha == 0.5f && same(l[4].distance, at(ty, 94, 1, -1)));
+        CHECK(l[5].level == 0 && l[5].alpha == 1 && same(l[5].distance, at(ty, 94, std::sqrt(2.0), -1)));
+        CHECK(l[6].level == 1 && l[6].alpha == 0.5f && same(l[6].distance, at(ty, 94, 2, -1)));
+        CHECK(at(ty, 94, 2 * std::sqrt(2.0), -1) < 0);
+        CHECK(l[1].distance < l[2].distance && l[2].distance < l[3].distance && l[3].distance < 94);
+    }
+    // Focused past the hyperfocal distance (a wide lens): no far layers, the sharp one last.
+    l = dof_layers(d, 2.6f, 0.1f);
+    CHECK(!l.empty() && l.back().level == -1);
+    // Close focus on a long lens with no far plane: every far step to 8 lines, levels 0..3.
+    d.focus = 10, d.far = 1e9f;
+    l = dof_layers(d, ty, 0.1f);
+    const int levels[7] = {0, 0, 1, 1, 2, 2, 3};
+    const float alphas[7] = {0.5f, 1, 0.5f, 1, 0.5f, 1, 0.5f};
+    CHECK(l.size() == 11);
+    for (size_t i = 0; i < 7 && i + 4 < l.size(); ++i)
+        CHECK(l[i + 4].level == levels[i] && l[i + 4].alpha == alphas[i] && l[i + 4].distance > l[i + 3].distance);
+    // A near plane beyond the 4-line distance: that layer is skipped, the 2-line one covers all.
+    l = dof_layers(d, ty, at(ty, 10, 4, 1) + 0.01f);
+    CHECK(!l.empty() && l[0].level == 1 && l[0].distance == 0);
+    // The far plane cuts the far steps off.
+    d.far = float(at(ty, 10, 2, -1)) + 0.01f;
+    l = dof_layers(d, ty, 0.1f);
+    CHECK(!l.empty() && l.back().level == 1 && l.back().alpha == 0.5f);
+}
+
+TEST(render_depth_of_field_levels) {
+    // GT3's downsampled pictures at 4:3; a wider picture widens them at the frame's line spacing.
+    const int kSize[5][2] = {{320, 224}, {320, 112}, {160, 112}, {160, 56}, {160, 56}};
+    for (int k = 0; k < 5; ++k) {
+        const std::array<int, 2> s = dof_level_size(k, 4.0f / 3.0f);
+        CHECK(s[0] == kSize[k][0] && s[1] == kSize[k][1]);
+    }
+    CHECK(dof_level_size(0, 16.0f / 9.0f)[0] == 427 && dof_level_size(3, 16.0f / 9.0f)[0] == 213);
+    CHECK(dof_level_size(4, 16.0f / 9.0f)[1] == 56);
+}
+
+TEST(render_depth_of_field_level_blur) {
+    // Each 2-texel mean adds (spacing)^2 / 4 to the variance, the bilinear enlargement its texels'
+    // spacing^2 / 6; kept axes move the picture half a texel, the layers half a frame pixel.
+    auto near = [](float a, float b) { return std::fabs(a - b) < 1e-4f; };
+    const DofBlur l0 = dof_level_blur(0), l1 = dof_level_blur(1), l3 = dof_level_blur(3), l4 = dof_level_blur(4);
+    CHECK(near(l0.sigma[0], std::sqrt(0.25f + 4.0f / 6.0f)) && near(l0.sigma[1], l0.sigma[0]));
+    CHECK(near(l0.shift[0], 0.5f) && near(l0.shift[1], 0.5f));
+    CHECK(near(l1.sigma[0], std::sqrt(1.25f + 4.0f / 6.0f)) && near(l1.sigma[1], std::sqrt(1.25f + 16.0f / 6.0f)));
+    CHECK(near(l1.shift[0], 1.5f) && near(l1.shift[1], 0.5f));
+    CHECK(near(l3.sigma[0], std::sqrt(6.25f + 16.0f / 6.0f)) && near(l3.sigma[1], std::sqrt(9.25f + 64.0f / 6.0f)));
+    CHECK(near(l3.shift[0], 3.5f) && near(l3.shift[1], 2.5f));
+    CHECK(near(l4.shift[0], 5.5f) && near(l4.shift[1], 6.5f));
+    for (int k = 1; k < 5; ++k) // every level blurs more than the one before
+        CHECK(dof_level_blur(k).sigma[1] > dof_level_blur(k - 1).sigma[1]);
+}
+
 TEST(render_sheen_vertex_program) {
     // Super Speedway's sheen material and scene light 0's specular.
     scene::Material m;

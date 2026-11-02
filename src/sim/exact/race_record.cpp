@@ -372,6 +372,7 @@ RaceSetup RaceRecord::setup(const ProgramData& d, const data::CarDatabase& db, s
     s.effects = effects;
     s.info = info, s.conductor = conductor, s.course_addr = course_addr, s.road_addr = road_addr;
     s.recorders = recorders, s.ghost_car = ghost_car, s.external_ghost = external_ghost;
+    s.sparks = sparks;
     return s;
 }
 
@@ -398,6 +399,7 @@ RaceRecord RaceRecord::of(const RaceSetup& s, std::string course_label) {
     r.entries = s.entries;
     r.pads.assign(s.entries.size(), {});
     r.recorders = s.recorders, r.ghost_car = s.ghost_car, r.external_ghost = s.external_ghost;
+    r.sparks = s.sparks;
     return r;
 }
 
@@ -496,6 +498,11 @@ Bytes RaceRecord::serialize() const {
     w.put<u8>(external_ghost ? 1 : 0);
     w.var(u32(run_recording.size()));
     w.bytes(ByteSpan(run_recording.data(), run_recording.size()));
+    w.var(u32(sparks.size()));
+    for (const std::vector<SparkPoint>& e : sparks) {
+        w.var(u32(e.size()));
+        for (const SparkPoint& p : e) w.put<u32>(p.x.bits), w.put<u32>(p.y.bits), w.put<u32>(p.z.bits);
+    }
     w.put<u64>(final_hash);
     return std::move(w.out);
 }
@@ -595,6 +602,21 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
                 if (r.entries[i].human != 0 && r.entries[i].player) r.ghost_car = s32(i); // (the ghost car: a pad car after the players)
         }
     }
+    if (version >= 4) {
+        const u32 ne = rd.var();
+        if (ne > 8) throw FormatError("race record: bad spark point lists");
+        for (u32 i = 0; i < ne; ++i) {
+            const u32 np = rd.var();
+            if (np > 64) throw FormatError("race record: bad spark points");
+            std::vector<SparkPoint> e;
+            for (u32 k = 0; k < np; ++k) {
+                SparkPoint p;
+                p.x = F::raw(rd.get<u32>()), p.y = F::raw(rd.get<u32>()), p.z = F::raw(rd.get<u32>());
+                e.push_back(p);
+            }
+            r.sparks.push_back(std::move(e));
+        }
+    }
     r.final_hash = rd.get<u64>();
     if (!rd.at_end()) throw FormatError("race record: bytes past the end");
     return r;
@@ -619,6 +641,7 @@ u64 race_hash(const ExactRace& race) {
     word(race.random().r);
     const RaceInfoStart& i = race.info();
     for (s32 v : {i.start, i.start_type, i.seconds, i.start_count, i.timer_on, i.timer}) word(u32(v));
+    if (race.has_sparks()) race.sparks().mix(word);
     return h;
 }
 

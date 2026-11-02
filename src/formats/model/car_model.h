@@ -4,7 +4,7 @@
 // VOL; ids listed in cars/.list). Layout (all little endian):
 //
 //   0x00 u32 section offsets[5] (0x00 is the header itself), u32 end
-//        [1] "GTCI" car info: lamp and camera placements
+//        [1] "GTCI" car info: lamp, camera and spark point placements
 //        [2] "GTM1" body model (node 0 = body with 3 LODs, others = effects/shadows)
 //        [3] "GTTR" tyre: header + Tex1 tread/sidewall texture
 //        [4] "GTTW" wheel model (byte-identical to wheel/<id>)
@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace gt3r {
 
@@ -32,6 +33,11 @@ struct CarFile {
     static bool is_car(ByteSpan data);
     static CarFile parse(ByteSpan data);
 };
+
+// The car's underbody spark points from its GTCI block (+0x58 count, +0x5C offset of 16-byte records: x, y, z floats in the
+// model frame, a fourth word unused), as the file's words; where the race's sparks start (docs/formats/car_model.md "GTCI").
+// Empty when the block has none (or the list runs past the block).
+std::vector<std::array<u32, 3>> car_spark_points(ByteSpan gtci);
 
 // Wheel and tyre dimensions (metres). Not stored in the car file: they come
 // from the car parameter database (see wheel_spec.h). Axle 0 = front, 1 = rear.

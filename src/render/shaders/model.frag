@@ -25,13 +25,17 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
                       //    3 = environment reflection layer (additive, untextured: car paint/glass)
                       //    4 = sphere map from the bound texture (prize scenes)
                       //    5 = the post pass (View3D: a picture over the frame, gt3_grade)
-    vec4 flat_color;  // used when params.w > 0 (wireframe overlay)
+                      //    6 = the depth of field's resampling (View3D::encode_dof, dof_sample)
+    vec4 flat_color;  // used when params.w > 0 (wireframe overlay); params.w = 6: xy the taps' Gaussian
+                      // spreads; params.w = 5: w = 1 the haze lens at the field's size (view_row0/1)
     vec4 fog_color;   // rgb: fog colour, w: 1 = fog enabled for this draw
     vec4 fog_params;  // x: start distance, y: 1 / (end - start), z: max fog amount
     vec4 tint;        // multiplies the final colour (DrawItem::alpha for ghosts)
-    vec4 view_row0;   // view matrix rows 0 and 1 (world -> view x / y), for params.w = 4
-    vec4 view_row1;
-    vec4 grade;       // the post pass's grade (params.w = 5): rgb curve g per channel, w saturation
+    vec4 view_row0;   // view matrix rows 0 and 1 (world -> view x / y), for params.w = 4;
+    vec4 view_row1;   // params.w = 6: the texture coordinates v_uv x row0.xy + row0.zw, clamped
+                      // to the rectangle row1 (min xy, max zw)
+    vec4 grade;       // the post pass's grade (params.w = 5): rgb curve g per channel, w saturation;
+                      // params.w = 6: xy taps across / down, zw their spacing (texture units)
     vec4 light_ambient; // rgb; w = 1: GT3 car lighting (texel x min(ambient + diffuse N.L, 2))
     vec4 light_diffuse; // rgb
     vec4 env_sky;       // environment for car reflections: rgb above the horizon; w = Fresnel C1
@@ -58,6 +62,11 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
     vec4 env_c0;         // GT3 reflection weight rows: c0 + c1 min(V.N, 0) per channel;
     vec4 env_c1;         // env_c0.w = 1: valid (else the scalar env_sky.w term)
     vec4 output_mode;    // x = 1: store 5 bits per channel (GT3's PSMCT16 reflection map)
+    // GT3's wheel spin blurs (DrawItem::wheel_blur; wheel_texture below): x 1 = the tyre's tread,
+    // 2 = the rim; y the rim's mip level. wheel_steps: the tread's three S shifts / the rim's
+    // four angles.
+    vec4 wheel_blur;
+    vec4 wheel_steps;
 } u;
 
 // GT3's per-vertex reflection weight (VU kernel): C0 + C1 min(V.N, 0), V the unit vector
@@ -69,6 +78,43 @@ vec3 env_weight(vec3 view, vec3 n) {
 }
 
 layout(location = 0) out vec4 o_color;
+
+// ---- GT3's wheel spin blurs (race/wheel_fx.h) ----
+// GT3 redraws a spinning wheel's texture in a work buffer as the mean of copies of itself, each
+// pass blending the buffer at 50 % with a copy shifted (the tyre) or turned (the rim) by half the
+// last pass's amount. The result is the mean over every sum of a subset of the passes' amounts,
+// which these taps read directly. Tread: 8 copies shifted along S. Rim: 16 copies turned about the
+// image centre (the GS draws copy k turned by a_k, so it shows the image at R(-a_k)), read at the
+// mip level of GT3's square of min(width, 64) texels.
+vec2 rim_turn(vec2 r, int k, int bit, float a) {
+    if ((k & bit) == 0) return r;
+    float c = cos(a), s = sin(a);
+    return vec2(r.x * c - r.y * s, r.x * s + r.y * c);
+}
+
+vec4 wheel_texture(vec2 uv) {
+    if (u.wheel_blur.x < 0.5) return texture(u_tex, uv);
+    vec4 sum = vec4(0.0);
+    if (u.wheel_blur.x < 1.5) {
+        for (int k = 0; k < 8; ++k) {
+            float s = ((k & 1) != 0 ? u.wheel_steps.x : 0.0) + ((k & 2) != 0 ? u.wheel_steps.y : 0.0) +
+                      ((k & 4) != 0 ? u.wheel_steps.z : 0.0);
+            sum += texture(u_tex, vec2(uv.x + s, uv.y));
+        }
+        return sum * 0.125;
+    }
+    vec2 d = uv - vec2(0.5);
+    for (int k = 0; k < 16; ++k) {
+        vec2 r = vec2(1.0, 0.0); // (cos, sin) of the copy's angle
+        r = rim_turn(r, k, 1, u.wheel_steps.x);
+        r = rim_turn(r, k, 2, u.wheel_steps.y);
+        r = rim_turn(r, k, 4, u.wheel_steps.z);
+        r = rim_turn(r, k, 8, u.wheel_steps.w);
+        sum += textureLod(u_tex, vec2(0.5) + vec2(d.x * r.x + d.y * r.y, d.y * r.x - d.x * r.y), u.wheel_blur.y);
+    }
+    return sum * 0.0625;
+}
+// ---- end of the wheel spin blurs ----
 
 // Environment for the car reflection passes: a sky / horizon / ground gradient (the
 // renderer's stand-in for GT3's per-frame sphere map of the course around the car).
@@ -109,16 +155,55 @@ vec3 gt3_grade(vec3 c) {
     return min(r + gg + bb, vec3(255.0)) / 255.0;
 }
 
+// The depth of field (presentation §G17): one texel of a downsampled picture, or one pixel of a
+// blurred picture laid over the frame. The mean of grade.x x grade.y bilinear taps spaced
+// grade.zw apart around v_uv x view_row0.xy + view_row0.zw (one tap: the plain bilinear sample),
+// every tap clamped to view_row1 (the used part of the texture, half a texel in from its edges: a
+// clamp to its edge), at the weight tint.a.
+vec4 dof_sample() {
+    vec2 uv = v_uv * u.view_row0.xy + u.view_row0.zw;
+    vec2 n = max(u.grade.xy, vec2(1.0));
+    // flat_color.xy > 0: the taps weighted by a Gaussian of that spread (in taps) per axis, else
+    // equally (a box mean).
+    vec2 s = u.flat_color.xy;
+    vec3 sum = vec3(0.0);
+    float total = 0.0;
+    for (float j = 0.0; j < n.y; j += 1.0)
+        for (float i = 0.0; i < n.x; i += 1.0) {
+            vec2 k = vec2(i, j) - 0.5 * (n - 1.0);
+            vec2 g = vec2(s.x > 0.0 ? exp(-0.5 * k.x * k.x / (s.x * s.x)) : 1.0,
+                          s.y > 0.0 ? exp(-0.5 * k.y * k.y / (s.y * s.y)) : 1.0);
+            float w = g.x * g.y;
+            sum += w * texture(u_tex, clamp(uv + k * u.grade.zw, u.view_row1.xy, u.view_row1.zw)).rgb;
+            total += w;
+        }
+    return vec4(sum / total, u.tint.a);
+}
+
 float fog_amount(float d) {
     if (u.fog_params.w > 0.5) return v_fog; // GT3: per vertex from the view depth (model.vert)
     return clamp((d - u.fog_params.x) * u.fog_params.y, 0.0, 1.0) * u.fog_params.z;
 }
 
 void shade() {
+    if (u.params.w > 5.5) {
+        o_color = dof_sample();
+        return;
+    }
     if (u.params.w > 4.5) {
         // The post pass (View3D): a finished picture drawn over the frame, graded when asked,
         // at the weight tint.a (the dissolve's frozen picture, the trail's previous one).
         vec3 c = texture(u_tex, v_uv).rgb;
+        if (u.flat_color.w > 0.5) {
+            // The heat haze above the original's resolution (View3D::encode_screen): the lens's
+            // texel in the picture at the original field's size (u_sphere), plus this pixel's
+            // detail finer than that (the picture here minus its field-sized copy here). v_world
+            // is the fragment's place in the picture (clip x, y; the screen batch's model is the
+            // identity).
+            vec2 s = vec2(0.5 + 0.5 * v_world.x, 0.5 - 0.5 * v_world.y);
+            c = texture(u_sphere, v_uv * u.view_row1.xy).rgb + texture(u_tex, s * u.view_row0.xy).rgb -
+                texture(u_sphere, s * u.view_row0.zw).rgb;
+        }
         if (u.grade2.z > 0.5) c = gt3_grade(c);
         o_color = vec4(c, u.tint.a);
         return;
@@ -183,10 +268,10 @@ void shade() {
             float d = length(v_world - u.camera_pos.xyz);
             rgb *= 1.0 - fog_amount(d);
         }
-        o_color = vec4(rgb, v_color.a * texture(u_tex, v_uv).a * u.tint.a);
+        o_color = vec4(rgb, v_color.a * wheel_texture(v_uv).a * u.tint.a);
         return;
     }
-    vec4 c = texture(u_tex, v_uv) * v_color;
+    vec4 c = wheel_texture(v_uv) * v_color;
     if (u.params.w > 1.5) {
         // Road sheen: the texel modulated by its VU program's lit colour (model.vert), fogged
         // to black (the node program sets the fog colour to 0 for this pass); added weighted by

@@ -78,7 +78,7 @@ void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const ren
     TyreSmoke::View sv = smoke_view(cam, mr.w / mr.h, 2.0f * std::atan(t));
     sv.forward = sv.forward * -1.0f; // the mirror looks back
     sv.far_m = 120;
-    collect_items(eye, cam_right(cam), p2, !p2, sv, true); // the own car would fill the view
+    collect_items(eye, cam_right(cam), p2, !p2, sv, ItemsView::Mirror); // the own car would fill the view
     render::DrawOptions o = main;
     o.mirrored = true;
     o.draw_distance = 120;
@@ -221,6 +221,14 @@ CarLook RaceScreen::car_look(const sim::VehicleState& s, bool player, size_t slo
         }
     }
     if (player && dirt_dims_) look.reflection = 1.0f - std::clamp(float(car_dirt_), 0.0f, 0.8f);
+    if (wheel_view_) {
+        // The camera's car: the player's, or a replay's followed opponent (slot 2 + i).
+        const bool followed_player = !(field_ && replay_focus_ >= 0);
+        look.wheels = wheel_view_;
+        while (wheel_tracks_.size() <= slot) wheel_tracks_.emplace_back();
+        look.wheel_track = &wheel_tracks_[slot];
+        look.focus = followed_player ? slot == 0 : slot == 2 + size_t(replay_focus_);
+    }
     return look;
 }
 
@@ -236,7 +244,8 @@ TyreSmoke::View RaceScreen::smoke_view(const CameraRig& c, float aspect, float f
 
 // Draw items seen from `eye`: course, every car, the ghost.
 void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, bool player,
-                               bool second, const TyreSmoke::View& smoke_v, bool mirror) {
+                               bool second, const TyreSmoke::View& smoke_v, ItemsView view) {
+    const bool mirror = view == ItemsView::Mirror;
     item_lights_.clear();
     if (shadows_on_) {
         auto apply = [this](CarVisual* v) {
@@ -248,17 +257,17 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
     }
     items_.clear();
     course_scene_->add_items(items_, eye, mirror);
+    // The sun disc after the sky dome, before the backdrop and the scenery (presentation §I6): the
+    // main view and the 2P halves only, in the camera's screen plane.
+    const render::Vec3 cam_r{right.x, right.y, right.z};
+    if (!mirror && sun_disc_.active() && render::length(smoke_v.forward) > 0)
+        sun_disc_.add_items(items_, eye, cam_r, render::normalize(render::cross(cam_r, smoke_v.forward)));
     scenery_items_ = items_.size();
-    billboards_.add_items(items_, {right.x, right.y, right.z});
-    {
+    // Billboards with the scenery on bit 0 of the view's course draw flags (presentation §I7).
+    if (sun_.params().view_flags[size_t(view)] & 1) billboards_.add_items(items_, cam_r);
+    if (!mirror) { // the mirror draws no pylons (presentation §H2)
         const std::array<float, 3>& l = sun_.params().scene_light0_dir;
         pylons_.add_items(items_, eye, {l[0], l[1], l[2]});
-    }
-    if (smoke_.loaded()) {
-        render::Vec3 r = render::normalize(render::Vec3{right.x, right.y, right.z});
-        // Camera-facing about the vertical: up is world up made orthogonal to the camera's right.
-        render::Vec3 up = render::normalize(render::Vec3{0, 1, 0} - r * r.y);
-        smoke_.add_items(items_, eye, r, up, smoke_v);
     }
     player_items_[0] = player_items_[1] = items_.size();
     if (player) {
@@ -296,6 +305,7 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
         size_t first = items_.size();
         CarLook ghost_look;
         ghost_look.instance = 1; // its own morph geometry (the car's is drawn this frame too)
+        ghost_look.wheels = wheel_view_, ghost_look.wheel_track = &ghost_wheel_track_;
         car_visual_->add_items(items_, gs, su, eye, ghost_look);
         for (size_t i = first; i < items_.size(); ++i) items_[i].alpha = 0.4f;
     };
@@ -307,6 +317,20 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
     } else if (logger_ghost && !logger_ghost_.empty()) {
         const double ghost_t = (double(player_.tick()) - double(logger_begin_) + step_.alpha() - 1.0) * step_.step();
         if (logger_ghost_.state_at(ghost_t, 1.0 / step_.step(), gs)) add_ghost(vehicle_->setup());
+    }
+    // The sparks after the cars, before the tyre smoke (presentation §L7): in the one-player view only.
+    if (spark_pass_ && !mirror && sparks_.loaded())
+        if (const RaceField* f = exact_field())
+            if (const sim::exact::ExactRace* r = exact_race_of(*f); r && r->has_sparks()) {
+                const CameraRig::Shot shot = camera_.shot();
+                sparks_.add_items(items_, r->sparks(), spark_view_, step_.alpha(), spark_shot_ && !(*spark_shot_ == shot));
+                spark_shot_ = shot;
+            }
+    if (smoke_.loaded()) {
+        render::Vec3 r = render::normalize(cam_r);
+        // Camera-facing about the vertical: up is world up made orthogonal to the camera's right.
+        render::Vec3 up = render::normalize(render::Vec3{0, 1, 0} - r * r.y);
+        smoke_.add_items(items_, eye, r, up, smoke_v, mirror);
     }
 }
 
@@ -597,6 +621,49 @@ render::DrawOptions RaceScreen::draw_options() const {
     return o;
 }
 
+// The original's passes after its 3D picture, as View3D draws them (presentation §L6): the sun
+// glare and the lamp glows go into the picture before the grade (graded, under the vignette); the
+// heat haze lenses and the vignette belong to the 1P frame's replays.
+void RaceScreen::add_screen_passes(render::DrawOptions& o, const SDL_FRect& rect, const CameraRig& cam,
+                                   float sun_visibility, bool second, bool split) {
+    if (!second) ++view_frame_;
+    render::ScreenBatch& ob = second ? overlay2_batch_ : overlay_batch_;
+    ob.clear();
+    ob.rect = rect;
+    const render::Vec3 eye = cam.eye();
+    sun_.add(ob, rect, cam.view(), cam.fovy(), sun_visibility);
+    if (!second) {
+        auto occl = [this](const render::Vec3& a, const render::Vec3& b) {
+            return course_scene_ && course_scene_->occluder().segment_blocked(a, b);
+        };
+        lamps_.add(ob, rect, cam.view(), eye, cam.fovy(), occl);
+        if (car_lamps_.active()) car_lamps_.add(ob, rect, cam.view(), eye, cam.fovy(), lamp_cars(), occl);
+    }
+    o.overlay = &ob;
+    if (second || split) return; // the 2P halves: no haze, no vignette
+    const SunParams& e = sun_.params();
+    // The heat haze: Env0 flag 0x20 and a course shot whose GTRC record has +0x1C set (so
+    // only replays, demonstrations and the attract demo); over everything, the cars included.
+    // Off unless the player turns it on ([video] heat_haze): in our sharp picture its lenses,
+    // sliding across panning shots, read as jitter rather than the original's soft shimmer.
+    haze_batch_.clear();
+    if (heat_haze_ && haze_.active() && cam.replay_haze()) {
+        const render::Mat4 proj = cam.projection(rect.w / rect.h);
+        haze_.lenses(cam.view(), proj, haze_lenses_);
+        add_haze_lenses(haze_batch_, haze_lenses_);
+        o.haze = &haze_batch_;
+        if (debug_ && !haze_lenses_.empty() && haze_log_++ % 10 == 0)
+            LOG_INFO("Heat haze: %zu lenses on screen, zoom m %.2f, size %.1f px (view frame %d)", haze_lenses_.size(),
+                     proj.at(0, 0), haze_lenses_[0].size, view_frame_);
+    }
+    // The vignette: replays and demonstrations (race +0x9784) on Env0 flag 0x40 courses.
+    vignette_batch_.clear();
+    if (e.vignette && !live_view()) {
+        add_vignette(vignette_batch_, e);
+        o.vignette = &vignette_batch_;
+    }
+}
+
 void RaceScreen::render_drive(App& app, Ui& ui) {
     app.note_race_scale();
     upload_course_animations(); // once per frame
@@ -620,8 +687,15 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             SDL_FRect box = licence_box ? SDL_FRect{menu_dst.x + 32 * sx, menu_dst.y + 58 * sy, 280 * sx, 210 * sy}
                                         : menu_dst;
             render::Vec3 eye = camera_.eye();
+            const WheelView wv{camera_.view(), camera_.projection(box.w / box.h), eye, true, wheel_env_};
+            wheel_view_ = &wv;
+            spark_pass_ = true, spark_view_ = camera_.view();
             collect_items(eye, cam_right(camera_), !camera_.onboard(), true, smoke_view(camera_, box.w / box.h, camera_.fovy()));
-            view_->draw(ui.renderer(), box, camera_.view(), camera_.projection(box.w / box.h), eye, items_, draw_options());
+            spark_pass_ = false;
+            wheel_view_ = nullptr;
+            render::DrawOptions bo = draw_options();
+            if (!licence_box) apply_depth_of_field(bo); // (the licence box: GT3's 2P-style pass, none)
+            view_->draw(ui.renderer(), box, camera_.view(), camera_.projection(box.w / box.h), eye, items_, bo);
         }
         if (panel_ != Panel::None) draw_panel(app, menu_dst);
         else quick_menu_.draw(ui.renderer(), menu_dst);
@@ -636,6 +710,8 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     render::DrawOptions o = draw_options();
     // (2P replays: REPLAY OPTIONS SCREEN single shows player 1's view only.)
     bool split = two_player_ && field_ && field_->has_second() && !(replaying_ && !replay_settings_.split);
+    // The 2P halves have no grade (the original draws none in them; presentation §L6).
+    if (split) o.post_grade.on = false;
     // 2P battle. Vertical (GT3's 16:9 option, our default on a 16:9 screen): side by side
     // (player 1 left), each 3D view letterboxed to (x0, H/6, W/2, 8H/11), the HUD on the
     // whole half. Horizontal (the PS2's 4:3 default): player 1 on top, player 2 below.
@@ -680,8 +756,15 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     const bool mount_in = camera_.replay_on_board();
     const bool followed_player = !(field_ && replay_focus_ >= 0);
     hidden_opponent_ = mount_in && !followed_player ? replay_focus_ : -1;
+    // The wheels: GT3 blurs them in the 1P frame, not in the 2P halves (docs/formats/car_model.md
+    // "Wheel spin blur").
+    const WheelView wv{camera_.view(), camera_.projection(rect.w / rect.h), eye, !split, wheel_env_};
+    wheel_view_ = &wv;
+    spark_pass_ = !split, spark_view_ = camera_.view(); // (the split-screen halves draw none)
     collect_items(eye, cam_right(camera_), !camera_.onboard() && !(mount_in && followed_player), true,
-                  smoke_view(camera_, rect.w / rect.h, camera_.fovy()));
+                  smoke_view(camera_, rect.w / rect.h, camera_.fovy()), split ? ItemsView::Split : ItemsView::Main);
+    spark_pass_ = false;
+    wheel_view_ = nullptr;
     hidden_opponent_ = -1;
     Uint64 h_c1 = SDL_GetTicksNS();
     hitch::collect_ms = double(h_c1 - h_e1) / 1e6;
@@ -694,31 +777,29 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     dissolve_.snapshot = false;
     ov.dissolve = dissolve_.weight();
     ov.trail = std::floor(128.0f * director_.look().trail_weight()) / 128.0f;
+    if (!split) apply_depth_of_field(ov);
+    // The passes between the scene and the grade (the glare and lamp glows inside the picture, the
+    // heat haze) and the vignette (presentation §L6).
+    const float sun_v = sun_visibility(eye, camera_.fovy(), rect.h);
+    if (debug_ && sun_.params().enabled && (++sun_log_ % 60) == 0) LOG_INFO("sun visibility %.2f", sun_v);
+    add_screen_passes(ov, rect, camera_, sun_v, false, split);
     view_->draw(ui.renderer(), rect, camera_.view(), camera_.projection(rect.w / rect.h), eye, items_, ov);
     remove_wet_road(wet_items); // (the wet road's frame items belong to this view only)
     hitch::draw_ms = double(SDL_GetTicksNS() - h_c1) / 1e6;
     hitch::meshes = view_->stats().meshes_drawn;
-    float sun_v = sun_visibility(eye, camera_.fovy(), rect.h);
-    if (debug_ && sun_.params().enabled && (++sun_log_ % 60) == 0) LOG_INFO("sun visibility %.2f", sun_v);
-    sun_.draw(ui.renderer(), rect, camera_.view(), camera_.fovy(), sun_v);
-    auto occl = [this](const render::Vec3& a, const render::Vec3& b) {
-        return course_scene_ && course_scene_->occluder().segment_blocked(a, b);
-    };
-    // Lamp flares: in the original-resolution frame at its 448 lines (the PS2's soft, broken
-    // rays); otherwise crisp at the output resolution.
-    const float flare_lines = original_res_ && !split ? 448.0f : 0.0f;
-    lamps_.draw(ui.renderer(), rect, camera_.view(), eye, camera_.fovy(), occl, flare_lines);
-    if (car_lamps_.active())
-        car_lamps_.draw(ui.renderer(), rect, camera_.view(), eye, camera_.fovy(), lamp_cars(), occl, flare_lines);
     if (!replaying_ && camera_.onboard() && camera_.mirror() && !camera_.look_back() && (!split || horizontal))
         draw_mirror(app, ui, rect, o, false, split);
     if (split) {
         if (!view2_) view2_ = std::make_unique<render::View3D>(*app.gpu());
         render::Vec3 eye2 = camera2_.eye();
-        collect_items(eye2, cam_right(camera2_), true, !camera2_.onboard(),
-                      smoke_view(camera2_, rect2.w / rect2.h, camera2_.fovy())); // in-car: own car not drawn
-        view2_->draw(ui.renderer(), rect2, camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, items_, o);
-        sun_.draw(ui.renderer(), rect2, camera2_.view(), camera2_.fovy(), sun_visibility(eye2, camera2_.fovy(), rect2.h));
+        const WheelView wv2{camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, false, wheel_env_};
+        wheel_view_ = &wv2;
+        collect_items(eye2, cam_right(camera2_), true, !camera2_.onboard(), // in-car: own car not drawn
+                      smoke_view(camera2_, rect2.w / rect2.h, camera2_.fovy()), ItemsView::Split);
+        wheel_view_ = nullptr;
+        render::DrawOptions o2 = o;
+        add_screen_passes(o2, rect2, camera2_, sun_visibility(eye2, camera2_.fovy(), rect2.h), true, true);
+        view2_->draw(ui.renderer(), rect2, camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, items_, o2);
         if (horizontal && !replaying_ && camera2_.onboard() && camera2_.mirror() && !camera2_.look_back())
             draw_mirror(app, ui, rect2, o, true, true);
     }

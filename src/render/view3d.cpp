@@ -51,7 +51,7 @@ struct FragmentUniforms {
     float light_dir[4];
     float camera_pos[4];
     float params[4]; // alpha ref, unlit, env strength, flat colour
-    float flat_color[4];
+    float flat_color[4]; // wireframe colour; mode 6: the taps' Gaussian spreads; mode 5: w = 1 the haze at the field's size
     float fog_color[4];  // rgb, w = enabled
     float fog_params[4]; // start, 1 / (end - start), max amount
     float tint[4];       // final colour multiplier
@@ -81,6 +81,8 @@ struct FragmentUniforms {
     float env_c0[4]; // reflection weight rows (scene::Primitive::env_c0/c1); c0.w = 1: valid
     float env_c1[4];
     float output[4]; // x = 1: quantise the colour to 5 bits per channel (DrawOptions::quantize_rgb5)
+    float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level
+    float wheel_steps[4]; // DrawItem::wheel_steps
 };
 
 } // namespace
@@ -123,10 +125,88 @@ std::array<u8, 3> sheen_vertex_bytes(const scene::Material& m, const Vec3& light
     return out;
 }
 
+// presentation §G17. GT3's lens (its race +0x97CC object): a film 1.333 times as wide
+// as high whose diagonal is the focal length, 0.001 m per mm; the focal length f at
+// the view's zoom from the projection's vertical scale; the focus s; one line of its 448-line frame
+// on the film as the unit of blur. The near side: blurs 2^k lines, k from trunc(log2(4 + 1)) (the
+// largest, 4) down to 0, each at d = f^2 s / (f^2 + N r c (s - f)) and drawn from the last one's
+// distance on (the first from the eye); a distance before the near plane is skipped. Then the
+// sharp picture from the last. The far side: 2^(k/2) lines, k = 0, 1, ... up to 8 lines, level
+// k / 2, at weight 1/2 for even k (a mix of two levels) and 1 for odd k, each from
+// d = f^2 s / (f^2 - N r c (s - f)) on, until a distance passes the far plane or turns negative
+// (past the hyperfocal distance: everything beyond is in focus). With ln 2.
+std::vector<DofLayer> dof_layers(const DrawOptions::DepthOfField& d, float proj_y, float near) {
+    constexpr float kLn2 = 0.6931472f;
+    constexpr int kNearSteps = 1, kFarSteps = 2;     // steps per doubling (+0x28, +0x24)
+    constexpr float kNearMax = 4.0f, kFarMax = 8.0f; // the largest blurs (+0x20, +0x1C)
+    // The program's expf / logf (exactly enough in double, rounded to float).
+    auto exp_f = [](float x) { return float(std::exp(double(x))); };
+    auto log_f = [](float x) { return float(std::log(double(x))); };
+    const float film = 0.001f * d.focal_mm / std::sqrt(1.0f + 1.333f * 1.333f);
+    const float f = film * 0.5f * proj_y;
+    const float c = film / 448.0f;
+    const float s = d.focus, f2 = f * f, sf = s - f;
+    std::vector<DofLayer> out;
+    float from = 0;
+    for (int k = kNearSteps * int(log_f(kNearMax + 1.0f) / kLn2); k >= 0; --k) {
+        const float r = exp_f(float(k) * kLn2 / float(kNearSteps));
+        const float dist = f2 * s / (f2 + sf * r * c * d.f_number);
+        if (dist < near) continue;
+        out.push_back({k / kNearSteps, float(kNearSteps - k % kNearSteps) / float(kNearSteps), from});
+        from = dist;
+    }
+    out.push_back({-1, 1.0f, from});
+    for (int k = 0;; ++k) {
+        const float r = exp_f(float(k) * kLn2 / float(kFarSteps));
+        if (kFarMax < r) break;
+        const float dist = f2 * s / (f2 - sf * r * c * d.f_number);
+        if (d.far < dist || dist < 0) break;
+        const int m = (k + 1) % kFarSteps;
+        out.push_back({k / kFarSteps, m ? float(m) / float(kFarSteps) : 1.0f, dist});
+    }
+    return out;
+}
+
+// GT3's pyramid (table, in one 640 x 224 buffer) at its sizes; wider pictures widen it.
+std::array<int, 2> dof_level_size(int level, float aspect) {
+    static constexpr int kSize[5][2] = {{320, 224}, {320, 112}, {160, 112}, {160, 56}, {160, 56}};
+    const int k = std::clamp(level, 0, 4);
+    const float wide = std::max(aspect, 0.1f) * 0.75f; // over 4:3
+    return {std::max(1, int(std::lround(float(kSize[k][0]) * wide))), kSize[k][1]};
+}
+
+// Per axis, from the frame's pixels (spacing 1): each level is the mean of two texels of the one
+// before, `s` apart (a halved axis: the pair under the texel; a kept one: a texel and the next,
+// which moves the picture s / 2), adding s^2 / 4 to the variance; the layers then enlarge it
+// bilinearly (a tent as wide as its texels: + s^2 / 6) half a frame pixel up and left.
+DofBlur dof_level_blur(int level) {
+    static constexpr int kSize[5][2] = {{320, 224}, {320, 112}, {160, 112}, {160, 56}, {160, 56}};
+    constexpr float kFrame[2] = {640, 448};
+    DofBlur b;
+    const int k = std::clamp(level, 0, 4);
+    for (int a = 0; a < 2; ++a) {
+        float var = 0, shift = 0, prev = kFrame[a];
+        for (int j = 0; j <= k; ++j) {
+            const float s = kFrame[a] / prev; // the spacing of the level before (frame pixels)
+            var += s * s / 4.0f;
+            if (float(kSize[j][a]) == prev) shift += s / 2.0f;
+            prev = float(kSize[j][a]);
+        }
+        const float spacing = kFrame[a] / prev;
+        b.sigma[a] = std::sqrt(var + spacing * spacing / 6.0f);
+        b.shift[a] = shift + 0.5f;
+    }
+    return b;
+}
+
 View3D::~View3D() {
+    release_dof_levels();
     release_target();
     if (quad_vb_) SDL_ReleaseGPUBuffer(ctx_.device(), quad_vb_);
     if (quad_ib_) SDL_ReleaseGPUBuffer(ctx_.device(), quad_ib_);
+    if (screen_vb_) SDL_ReleaseGPUBuffer(ctx_.device(), screen_vb_);
+    if (screen_ib_) SDL_ReleaseGPUBuffer(ctx_.device(), screen_ib_);
+    if (screen_tb_) SDL_ReleaseGPUTransferBuffer(ctx_.device(), screen_tb_);
     release_cube();
     release_offscreen();
     if (placeholder_cube_) SDL_ReleaseGPUTexture(ctx_.device(), placeholder_cube_);
@@ -138,7 +218,7 @@ void View3D::release_target() {
         *w = nullptr;
     }
     SDL_GPUDevice* dev = ctx_.device();
-    for (SDL_GPUTexture** t : {&color_, &msaa_, &depth_, &scene_, &last_, &snap_, &half_}) {
+    for (SDL_GPUTexture** t : {&color_, &msaa_, &depth_, &scene_, &last_, &snap_, &half_, &haze_src_, &dof_}) {
         if (*t) SDL_ReleaseGPUTexture(dev, *t);
         *t = nullptr;
     }
@@ -298,8 +378,31 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             copy_picture(cmd, last_, snap_, last_w_, last_h_, cycle);
         }
     }
-    const bool post = post_wanted(opt) && ensure_post(&scene_);
-    SDL_GPUTexture* scene_target = post ? scene_ : color_;
+    // The screen draws of the passes after the scene (presentation §L6), uploaded first.
+    const ScreenUpload screen = upload_screen(cmd, opt, pw, ph);
+    const bool vignette = screen.ok && opt.vignette && !opt.vignette->empty();
+    const bool post = (post_wanted(opt) || vignette) && ensure_post(&scene_);
+    // The depth of field reads the picture and its depth, then writes the post passes' picture
+    // (dof_) or, without them, the finished one.
+    const float aspect = out_w / std::max(out_h, 1.0f);
+    const bool dof = dof_wanted(opt) && ensure_post(&scene_) && ensure_dof_levels(aspect, pw, ph) && ensure_quad() &&
+                     (!post || ensure_post(&dof_));
+    SDL_GPUTexture* scene_target = post || dof ? scene_ : color_;
+    // The picture after the scene and the depth of field: the passes after them draw into it, the
+    // post-process passes start from it.
+    SDL_GPUTexture* staged = !dof ? scene_target : post ? dof_ : color_;
+    // The heat haze samples the picture as the scene (or the depth of field) left it: that pass
+    // keeps its picture and depth, a copy is taken, and a second pass draws the lenses, the late
+    // items and the overlay. Depth-of-field frames get the second pass too (the smoke and the glare
+    // come after its composite); other frames end the scene pass with them.
+    const bool lenses = screen.ok && opt.haze && !opt.haze->empty() && ensure_post(&haze_src_);
+    // Above the original's 448 lines the lenses displace the picture at the size of the original's
+    // display field and keep this picture's finer detail (presentation §L6): its seams then are no
+    // sharper than the original's were, so the lenses show as there, plainly in telephoto shots
+    // and hardly in wide ones.
+    haze_low_valid_ = lenses && ph > 448 && ensure_quad() &&
+                      ensure_dof_texture(haze_low_, std::max(1, int(std::lround(480.0f * aspect))), 224);
+    const bool after_pass = lenses || dof;
 
     SDL_GPUColorTargetInfo ct{};
     ct.clear_color = {opt.clear[0], opt.clear[1], opt.clear[2], opt.clear[3]};
@@ -307,7 +410,8 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     ct.cycle = cycle;
     if (msaa_) {
         ct.texture = msaa_;
-        ct.store_op = SDL_GPU_STOREOP_RESOLVE;
+        // (The second pass goes on in it, unless the depth of field composites into it afresh.)
+        ct.store_op = lenses && !dof ? SDL_GPU_STOREOP_RESOLVE_AND_STORE : SDL_GPU_STOREOP_RESOLVE;
         ct.resolve_texture = scene_target;
         ct.cycle_resolve_texture = cycle;
     } else {
@@ -318,7 +422,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     dt.texture = depth_;
     dt.clear_depth = kFarDepth;
     dt.load_op = SDL_GPU_LOADOP_CLEAR;
-    dt.store_op = SDL_GPU_STOREOP_DONT_CARE;
+    dt.store_op = after_pass ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
     dt.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
     dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
     dt.cycle = cycle;
@@ -326,8 +430,53 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     SDL_SetGPUViewport(pass, &used_viewport);
     SDL_SetGPUScissor(pass, &used_rect);
     frame_alpha_written_ = false;
-    encode(cmd, pass, view, proj, eye, items, opt);
+    encode(cmd, pass, view, proj, eye, items, opt, Items::Early);
+    if (!after_pass) encode_after_scene(cmd, pass, view, proj, eye, items, opt, screen);
     SDL_EndGPURenderPass(pass);
+    if (dof) encode_dof(cmd, opt, proj, aspect, staged, cycle);
+    if (after_pass) {
+        if (lenses) copy_picture(cmd, staged, haze_src_, pw, ph, cycle);
+        if (haze_low_valid_) { // the copy at the field's size: the mean of the texels under each texel
+            SDL_GPUColorTargetInfo lt{};
+            lt.texture = haze_low_.tex;
+            lt.load_op = SDL_GPU_LOADOP_DONT_CARE;
+            lt.store_op = SDL_GPU_STOREOP_STORE;
+            lt.cycle = cycle;
+            SDL_GPURenderPass* lp = SDL_BeginGPURenderPass(cmd, &lt, 1, nullptr);
+            const SDL_GPUViewport lvp{0, 0, float(haze_low_.w), float(haze_low_.h), 0, 1};
+            const SDL_Rect lsc{0, 0, haze_low_.w, haze_low_.h};
+            SDL_SetGPUViewport(lp, &lvp);
+            SDL_SetGPUScissor(lp, &lsc);
+            const float W = float(width_), H = float(height_);
+            const float fx = float(pw) / float(haze_low_.w), fy = float(ph) / float(haze_low_.h);
+            Resample r;
+            r.scale[0] = float(pw) / W, r.scale[1] = float(ph) / H;
+            r.clamp[0] = 0.5f / W, r.clamp[1] = 0.5f / H;
+            r.clamp[2] = (float(pw) - 0.5f) / W, r.clamp[3] = (float(ph) - 0.5f) / H;
+            r.taps[0] = std::clamp(std::ceil(fx * 0.5f), 1.0f, 8.0f), r.taps[1] = std::clamp(std::ceil(fy * 0.5f), 1.0f, 8.0f);
+            r.step[0] = fx / r.taps[0] / W, r.step[1] = fy / r.taps[1] / H;
+            encode_resample(cmd, lp, haze_src_, r, 1.0f, 0.0f, true);
+            SDL_EndGPURenderPass(lp);
+        }
+        SDL_GPUColorTargetInfo ht{};
+        ht.load_op = SDL_GPU_LOADOP_LOAD;
+        if (msaa_) {
+            ht.texture = msaa_;
+            ht.store_op = SDL_GPU_STOREOP_RESOLVE;
+            ht.resolve_texture = staged;
+        } else {
+            ht.texture = staged;
+            ht.store_op = SDL_GPU_STOREOP_STORE;
+        }
+        SDL_GPUDepthStencilTargetInfo hd = dt;
+        hd.load_op = SDL_GPU_LOADOP_LOAD;
+        hd.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        hd.cycle = false;
+        pass = SDL_BeginGPURenderPass(cmd, &ht, 1, &hd);
+        if (lenses) encode_screen(cmd, pass, *opt.haze, screen.haze, true);
+        encode_after_scene(cmd, pass, view, proj, eye, items, opt, screen);
+        SDL_EndGPURenderPass(pass);
+    }
     if (post) {
         // The finished picture (graded), then the frozen one and the last one over it.
         SDL_GPUColorTargetInfo pt{};
@@ -343,8 +492,10 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         }
         pt.cycle = cycle;
         SDL_GPUDepthStencilTargetInfo pd = dt;
+        pd.store_op = SDL_GPU_STOREOP_DONT_CARE;
         pass = SDL_BeginGPURenderPass(cmd, &pt, 1, &pd);
-        encode_post(cmd, pass, scene_, pw, ph, 1.0f, opt.post_grade.on ? &opt.post_grade : nullptr);
+        encode_post(cmd, pass, staged, pw, ph, 1.0f, opt.post_grade.on ? &opt.post_grade : nullptr);
+        if (vignette) encode_screen(cmd, pass, *opt.vignette, screen.vignette, false);
         if (opt.dissolve > 0 && snap_valid_)
             encode_post(cmd, pass, snap_, snap_w_, snap_h_, std::min(opt.dissolve, 1.0f), nullptr);
         if (opt.trail > 0 && last_valid_)
@@ -450,22 +601,7 @@ void View3D::encode_post(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL
     const SDL_Rect sc{0, 0, used_w_, used_h_};
     SDL_SetGPUViewport(pass, &vp);
     SDL_SetGPUScissor(pass, &sc);
-    if (!quad_vb_) {
-        // Clip-space corners (an identity transform), texture rows from the top (SDL_GPU).
-        scene::Vertex v[4] = {};
-        const float xy[4][2] = {{-1, 1}, {1, 1}, {-1, -1}, {1, -1}}, uv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
-        for (int i = 0; i < 4; ++i) {
-            v[i].pos[0] = xy[i][0], v[i].pos[1] = xy[i][1], v[i].pos[2] = 0;
-            v[i].normal[2] = 1;
-            v[i].uv[0] = uv[i][0], v[i].uv[1] = uv[i][1];
-        }
-        const u32 idx[6] = {0, 2, 1, 1, 2, 3};
-        Uploader up(ctx_.device());
-        quad_vb_ = up.buffer(SDL_GPU_BUFFERUSAGE_VERTEX, v, sizeof(v));
-        quad_ib_ = up.buffer(SDL_GPU_BUFFERUSAGE_INDEX, idx, sizeof(idx));
-        up.submit();
-        if (!quad_vb_ || !quad_ib_) return;
-    }
+    if (!ensure_quad()) return;
     PipelineKey key;
     key.blend = alpha >= 1.0f ? BlendMode::Opaque : BlendMode::Alpha;
     key.cull = CullMode::None;
@@ -500,6 +636,422 @@ void View3D::encode_post(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL
     SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
     SDL_DrawGPUIndexedPrimitives(pass, 6, 1, 0, 0, 0);
     ++stats_.draw_calls;
+}
+
+// --- The passes after the scene (presentation §L6) -------------------------------------------
+
+View3D::ScreenUpload View3D::upload_screen(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, int picture_w,
+                                           int picture_h) {
+    ScreenUpload up;
+    const ScreenBatch* batches[3] = {o.haze, o.overlay, o.vignette};
+    u32* firsts[3] = {&up.haze, &up.overlay, &up.vignette};
+    std::vector<scene::Vertex> verts;
+    std::vector<u32> idx;
+    for (int k = 0; k < 3; ++k) {
+        const ScreenBatch* b = batches[k];
+        *firsts[k] = u32(idx.size());
+        if (!b || b->empty()) continue;
+        const u32 base = u32(verts.size());
+        const float rw = std::max(b->rect.w, 1e-6f), rh = std::max(b->rect.h, 1e-6f);
+        for (const ScreenBatch::Vertex& s : b->verts) {
+            scene::Vertex v{};
+            const float nx = (s.x - b->rect.x) / rw, ny = (s.y - b->rect.y) / rh;
+            v.pos[0] = 2.0f * nx - 1.0f, v.pos[1] = 1.0f - 2.0f * ny, v.pos[2] = s.depth;
+            if (k == 0) v.pos[2] = 1.0f; // the haze: in front of everything
+            v.normal[2] = 1;
+            if (k == 0) { // the haze: texture coordinates in the rect's units, on the copy's picture corner
+                v.uv[0] = (s.u - b->rect.x) / rw * float(picture_w) / float(std::max(width_, 1));
+                v.uv[1] = (s.v - b->rect.y) / rh * float(picture_h) / float(std::max(height_, 1));
+            } else {
+                v.uv[0] = s.u, v.uv[1] = s.v;
+            }
+            u32 c = 0;
+            for (int i = 0; i < 4; ++i) c |= u32(std::lround(std::clamp(s.rgba[i], 0.0f, 1.0f) * 255.0f)) << (8 * i);
+            v.color = c;
+            verts.push_back(v);
+        }
+        for (u32 i : b->idx) idx.push_back(base + i);
+    }
+    if (verts.empty() || idx.empty()) return up;
+    SDL_GPUDevice* dev = ctx_.device();
+    const u32 vsize = u32(verts.size() * sizeof(scene::Vertex)), isize = u32(idx.size() * sizeof(u32));
+    auto grow = [&](SDL_GPUBuffer*& buf, u32& cap, u32 size, SDL_GPUBufferUsageFlags usage) {
+        if (buf && cap >= size) return true;
+        if (buf) SDL_ReleaseGPUBuffer(dev, buf);
+        SDL_GPUBufferCreateInfo bi{};
+        bi.usage = usage;
+        bi.size = std::max(size, cap * 2);
+        buf = SDL_CreateGPUBuffer(dev, &bi);
+        cap = buf ? bi.size : 0;
+        return buf != nullptr;
+    };
+    const u32 total = ((vsize + 15u) & ~15u) + isize;
+    if (!grow(screen_vb_, screen_vb_size_, vsize, SDL_GPU_BUFFERUSAGE_VERTEX) ||
+        !grow(screen_ib_, screen_ib_size_, isize, SDL_GPU_BUFFERUSAGE_INDEX))
+        return up;
+    if (!screen_tb_ || screen_tb_size_ < total) {
+        if (screen_tb_) SDL_ReleaseGPUTransferBuffer(dev, screen_tb_);
+        SDL_GPUTransferBufferCreateInfo ti{};
+        ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        ti.size = std::max(total, screen_tb_size_ * 2);
+        screen_tb_ = SDL_CreateGPUTransferBuffer(dev, &ti);
+        screen_tb_size_ = screen_tb_ ? ti.size : 0;
+        if (!screen_tb_) return up;
+    }
+    auto* p = static_cast<u8*>(SDL_MapGPUTransferBuffer(dev, screen_tb_, true));
+    if (!p) return up;
+    const u32 ioff = (vsize + 15u) & ~15u;
+    std::memcpy(p, verts.data(), vsize);
+    std::memcpy(p + ioff, idx.data(), isize);
+    SDL_UnmapGPUTransferBuffer(dev, screen_tb_);
+    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTransferBufferLocation src{screen_tb_, 0};
+    SDL_GPUBufferRegion dst{screen_vb_, 0, vsize};
+    SDL_UploadToGPUBuffer(cp, &src, &dst, true); // (the last frame's draws may still read them)
+    src.offset = ioff;
+    dst = {screen_ib_, 0, isize};
+    SDL_UploadToGPUBuffer(cp, &src, &dst, true);
+    SDL_EndGPUCopyPass(cp);
+    up.ok = true;
+    return up;
+}
+
+void View3D::encode_screen(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const ScreenBatch& b, u32 first_index,
+                           bool frame) {
+    if (b.empty() || !screen_vb_ || !screen_ib_) return;
+    const SDL_GPUViewport vp{0, 0, float(used_w_), float(used_h_), 0, 1};
+    const SDL_Rect sc{0, 0, used_w_, used_h_};
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_SetGPUScissor(pass, &sc);
+    SDL_GPUBufferBinding vb{screen_vb_, 0}, ib{screen_ib_, 0};
+    VertexUniforms vu{};
+    const Mat4 id;
+    std::copy(id.m.begin(), id.m.end(), vu.mvp);
+    std::copy(id.m.begin(), id.m.end(), vu.model);
+    std::copy(id.m.begin(), id.m.end(), vu.normal_mat);
+    SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
+    VertexLighting off{};
+    SDL_PushGPUVertexUniformData(cmd, 1, &off, sizeof(off));
+    for (const ScreenBatch::Draw& d : b.draws) {
+        PipelineKey key;
+        key.blend = d.blend;
+        key.cull = CullMode::None;
+        key.depth_write = false;
+        SDL_GPUGraphicsPipeline* p = ctx_.pipeline(key);
+        if (!p || d.count == 0) continue;
+        SDL_BindGPUGraphicsPipeline(pass, p);
+        SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+        SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_GPUTexture* tex = frame ? haze_src_ : d.texture && d.texture->gpu() ? d.texture->gpu() : ctx_.white_texture();
+        const bool low = frame && haze_low_valid_;
+        SDL_GPUTextureSamplerBinding sbs[3] = {{tex, ctx_.sampler(true, true, true)},
+                                               {placeholder_cube(), ctx_.sampler(true, true)},
+                                               {low ? haze_low_.tex : ctx_.white_texture(), ctx_.sampler(true, true, true)}};
+        SDL_BindGPUFragmentSamplers(pass, 0, sbs, 3);
+        FragmentUniforms fu{};
+        fu.light_dir[1] = 1;
+        fu.params[0] = -1; // no alpha test
+        fu.params[1] = 1;  // unlit: texture x vertex colour
+        for (float& t : fu.tint) t = 1;
+        if (frame) {
+            // The post mode: the picture's copy, its alpha ignored; GS ALPHA FIX 64 = 0.5.
+            fu.params[3] = 5;
+            fu.tint[3] = 0.5f;
+            if (low) { // the field-sized copy displaced, plus this pixel's finer detail (model.frag)
+                const float px = float(used_w_) / float(width_), py = float(used_h_) / float(height_);
+                const float lx = float(haze_low_.w) / float(haze_low_.cap_w), ly = float(haze_low_.h) / float(haze_low_.cap_h);
+                fu.view_row0[0] = px, fu.view_row0[1] = py, fu.view_row0[2] = lx, fu.view_row0[3] = ly;
+                fu.view_row1[0] = lx / px, fu.view_row1[1] = ly / py;
+                fu.flat_color[3] = 1;
+            }
+        }
+        SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
+        for (int k = 0; k < d.passes; ++k) {
+            SDL_DrawGPUIndexedPrimitives(pass, d.count, 1, first_index + d.first, 0, 0);
+            ++stats_.draw_calls;
+        }
+    }
+}
+
+void View3D::encode_after_scene(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Mat4& view, const Mat4& proj,
+                                const Vec3& eye, const std::vector<DrawItem>& items, const DrawOptions& o,
+                                const ScreenUpload& up) {
+    const SDL_GPUViewport vp{0, 0, float(used_w_), float(used_h_), 0, 1};
+    const SDL_Rect sc{0, 0, used_w_, used_h_};
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_SetGPUScissor(pass, &sc);
+    // The late items (the tyre smoke), with the scene's depth; their counts add to the scene's.
+    const DrawStats early = stats_;
+    encode(cmd, pass, view, proj, eye, items, o, Items::Late);
+    stats_.meshes_drawn += early.meshes_drawn, stats_.meshes_culled += early.meshes_culled;
+    stats_.draw_calls += early.draw_calls, stats_.triangles += early.triangles;
+    if (up.ok && o.overlay && !o.overlay->empty()) encode_screen(cmd, pass, *o.overlay, up.overlay, false);
+}
+
+// A quad over the viewport: clip-space corners (an identity transform), texture rows from the
+// top (SDL_GPU), v_uv 0..1 across.
+bool View3D::ensure_quad() {
+    if (quad_vb_ && quad_ib_) return true;
+    scene::Vertex v[4] = {};
+    const float xy[4][2] = {{-1, 1}, {1, 1}, {-1, -1}, {1, -1}}, uv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+    for (int i = 0; i < 4; ++i) {
+        v[i].pos[0] = xy[i][0], v[i].pos[1] = xy[i][1], v[i].pos[2] = 0;
+        v[i].normal[2] = 1;
+        v[i].uv[0] = uv[i][0], v[i].uv[1] = uv[i][1];
+    }
+    const u32 idx[6] = {0, 2, 1, 1, 2, 3};
+    Uploader up(ctx_.device());
+    if (!quad_vb_) quad_vb_ = up.buffer(SDL_GPU_BUFFERUSAGE_VERTEX, v, sizeof(v));
+    if (!quad_ib_) quad_ib_ = up.buffer(SDL_GPU_BUFFERUSAGE_INDEX, idx, sizeof(idx));
+    up.submit();
+    return quad_vb_ && quad_ib_;
+}
+
+void View3D::release_dof_levels() {
+    for (DofLevel* set : {dof_level_, dof_tmp_, &haze_low_})
+        for (int k = 0; k < (set == dof_level_ ? 5 : set == dof_tmp_ ? 2 : 1); ++k) {
+            if (set[k].tex) SDL_ReleaseGPUTexture(ctx_.device(), set[k].tex);
+            set[k] = {};
+        }
+}
+
+// A w x h picture in the corner of `l`'s texture (created on first use; again only when a larger
+// picture needs more).
+bool View3D::ensure_dof_texture(DofLevel& l, int w, int h) {
+    w = std::max(w, 1), h = std::max(h, 1);
+    if (!l.tex || l.cap_w < w || l.cap_h < h) {
+        if (l.tex) SDL_ReleaseGPUTexture(ctx_.device(), l.tex);
+        const int cw = std::max(w, l.cap_w), ch = std::max(h, l.cap_h);
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type = SDL_GPU_TEXTURETYPE_2D;
+        ti.width = u32(cw), ti.height = u32(ch);
+        ti.layer_count_or_depth = 1;
+        ti.num_levels = 1;
+        ti.format = GpuContext::kColorFormat;
+        ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        ti.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        l.tex = SDL_CreateGPUTexture(ctx_.device(), &ti);
+        l.cap_w = cw, l.cap_h = ch;
+        if (!l.tex) {
+            LOG_WARN("Depth of field target %dx%d: %s", cw, ch, SDL_GetError());
+            release_dof_levels();
+            return false;
+        }
+    }
+    l.w = w, l.h = h;
+    return true;
+}
+
+// The downsampled pictures for a pw x ph picture `aspect` times as wide as high. Up to the frame's
+// 448 lines GT3's pyramid at its sizes; taller pictures get each level at their own resolution:
+// `dx` x `dy` pixels a texel, as many as keep its blur (dof_level_blur) over 1.2 texels, and the
+// two intermediate pictures of its blur.
+bool View3D::ensure_dof_levels(float aspect, int pw, int ph) {
+    const bool frame = ph <= 448;
+    const float px[2] = {float(pw) / (480.0f * aspect), float(ph) / 448.0f}; // picture pixels a frame pixel
+    int tmp_w = 1, tmp_h = 1;
+    for (int k = 0; k < 5; ++k) {
+        DofLevel& l = dof_level_[k];
+        std::array<int, 2> size = dof_level_size(k, aspect);
+        l.dx = l.dy = 1;
+        if (!frame) {
+            const DofBlur b = dof_level_blur(k);
+            int d[2] = {1, 1};
+            for (int a = 0; a < 2; ++a)
+                while (d[a] * 2 <= 16 && float(d[a] * 2) * 1.2f <= b.sigma[a] * px[a]) d[a] *= 2;
+            l.dx = d[0], l.dy = d[1];
+            size = {(pw + d[0] - 1) / d[0], (ph + d[1] - 1) / d[1]};
+            tmp_w = std::max(tmp_w, size[0]), tmp_h = std::max(tmp_h, size[1]);
+        }
+        if (!ensure_dof_texture(l, size[0], size[1])) return false;
+    }
+    if (!frame)
+        for (DofLevel& t : dof_tmp_)
+            if (!ensure_dof_texture(t, tmp_w, tmp_h)) return false;
+    return true;
+}
+
+void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* src,
+                             const Resample& r, float alpha, float depth, bool single) {
+    PipelineKey key;
+    key.blend = alpha >= 1.0f ? BlendMode::Opaque : BlendMode::Alpha;
+    key.cull = CullMode::None;
+    key.depth_write = false;
+    key.single = single;
+    SDL_GPUGraphicsPipeline* p = ctx_.pipeline(key);
+    if (!p) return;
+    SDL_BindGPUGraphicsPipeline(pass, p);
+    SDL_GPUBufferBinding vb{quad_vb_, 0}, ib{quad_ib_, 0};
+    SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+    SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    VertexUniforms vu{};
+    const Mat4 at_depth = translate({0, 0, depth}), id;
+    std::copy(at_depth.m.begin(), at_depth.m.end(), vu.mvp);
+    std::copy(id.m.begin(), id.m.end(), vu.model);
+    std::copy(id.m.begin(), id.m.end(), vu.normal_mat);
+    SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
+    VertexLighting off{};
+    SDL_PushGPUVertexUniformData(cmd, 1, &off, sizeof(off));
+    SDL_GPUTextureSamplerBinding sbs[3] = {{src, ctx_.sampler(true, true, true)},
+                                           {placeholder_cube(), ctx_.sampler(true, true)},
+                                           {ctx_.white_texture(), ctx_.sampler(true, true)}};
+    SDL_BindGPUFragmentSamplers(pass, 0, sbs, 3);
+    FragmentUniforms fu{};
+    fu.params[0] = -1, fu.params[1] = 1, fu.params[3] = 6;
+    fu.tint[0] = fu.tint[1] = fu.tint[2] = 1, fu.tint[3] = alpha;
+    fu.light_dir[1] = 1;
+    fu.view_row0[0] = r.scale[0], fu.view_row0[1] = r.scale[1];
+    fu.view_row0[2] = r.offset[0], fu.view_row0[3] = r.offset[1];
+    std::copy(r.clamp, r.clamp + 4, fu.view_row1);
+    fu.grade[0] = r.taps[0], fu.grade[1] = r.taps[1], fu.grade[2] = r.step[0], fu.grade[3] = r.step[1];
+    fu.flat_color[0] = r.sigma[0], fu.flat_color[1] = r.sigma[1];
+    SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
+    SDL_DrawGPUIndexedPrimitives(pass, 6, 1, 0, 0, 0);
+    ++stats_.draw_calls;
+}
+
+// presentation §G17. The GS samples a pixel at its corner, the bilinear filter at the
+// coordinate - 0.5: GT3's coordinates (+0.5 +0.5 in the pyramid, -0.5 +0.5 in the layers) make
+// each level the mean of 2 x 2 texels of the one before, or of 2 x 1 / 1 x 2 where an axis keeps
+// its size (a texel and the next one: that picture moves half a texel right / down), and show
+// each pixel its level half a frame pixel up and left of its centre (the blurred picture moves
+// half a pixel right and down). Ours keeps those offsets; its texel centres sit at +0.5.
+void View3D::encode_dof(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, const Mat4& proj, float aspect,
+                        SDL_GPUTexture* out, bool cycle) {
+    const int pw = used_w_, ph = used_h_;
+    const float W = float(width_), H = float(height_);
+    // The picture's texels in scene_ (the target's corner), clamped half a texel in.
+    Resample pic;
+    pic.scale[0] = float(pw) / W, pic.scale[1] = float(ph) / H;
+    pic.clamp[0] = 0.5f / W, pic.clamp[1] = 0.5f / H;
+    pic.clamp[2] = (float(pw) - 0.5f) / W, pic.clamp[3] = (float(ph) - 0.5f) / H;
+    auto pass_into = [&](const DofLevel& l) {
+        SDL_GPUColorTargetInfo ct{};
+        ct.texture = l.tex;
+        ct.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        ct.store_op = SDL_GPU_STOREOP_STORE;
+        ct.cycle = cycle;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+        const SDL_GPUViewport vp{0, 0, float(l.w), float(l.h), 0, 1};
+        const SDL_Rect sc{0, 0, l.w, l.h};
+        SDL_SetGPUViewport(pass, &vp);
+        SDL_SetGPUScissor(pass, &sc);
+        return pass;
+    };
+    auto texels = [&](const DofLevel& l) { // a picture's texels in its texture, clamped half a texel in
+        Resample r;
+        r.scale[0] = float(l.w) / float(l.cap_w), r.scale[1] = float(l.h) / float(l.cap_h);
+        r.clamp[0] = 0.5f / float(l.cap_w), r.clamp[1] = 0.5f / float(l.cap_h);
+        r.clamp[2] = (float(l.w) - 0.5f) / float(l.cap_w), r.clamp[3] = (float(l.h) - 0.5f) / float(l.cap_h);
+        return r;
+    };
+    // Mean of the picture's texels under each of `l`'s texels (bilinear taps 2 texels apart: exact
+    // for an even number of texels).
+    auto downsample = [&](const DofLevel& l, float fx, float fy) {
+        SDL_GPURenderPass* pass = pass_into(l);
+        Resample r = pic;
+        r.scale[0] = float(l.w) * fx / W, r.scale[1] = float(l.h) * fy / H;
+        r.taps[0] = std::clamp(std::ceil(fx * 0.5f), 1.0f, 8.0f);
+        r.taps[1] = std::clamp(std::ceil(fy * 0.5f), 1.0f, 8.0f);
+        r.step[0] = fx / r.taps[0] / W, r.step[1] = fy / r.taps[1] / H;
+        encode_resample(cmd, pass, scene_, r, 1.0f, 0.0f, true);
+        SDL_EndGPURenderPass(pass);
+    };
+    const bool frame = ph <= 448;
+    const float frame_w = 480.0f * aspect; // the frame's pixels across (its 448 lines at their spacing)
+    if (frame) {
+        // Level 0: GT3's 2 x 2 mean of its 640 x 448 frame; levels 1-4 from the one before: a
+        // halved axis samples between two texels (their mean), a kept one half a texel on (a
+        // texel and the next).
+        downsample(dof_level_[0], float(pw) / float(dof_level_[0].w), float(ph) / float(dof_level_[0].h));
+        for (int k = 1; k < 5; ++k) {
+            const DofLevel &src = dof_level_[k - 1], &dst = dof_level_[k];
+            SDL_GPURenderPass* pass = pass_into(dst);
+            Resample r = texels(src);
+            if (dst.w == src.w) r.offset[0] = 0.5f / float(src.cap_w);
+            if (dst.h == src.h) r.offset[1] = 0.5f / float(src.cap_h);
+            encode_resample(cmd, pass, src.tex, r, 1.0f, 0.0f, true);
+            SDL_EndGPURenderPass(pass);
+        }
+    } else {
+        // A taller picture: each level at its own resolution (dx x dy pixels a texel: their mean),
+        // then a Gaussian across and down that brings the spread to the original level's
+        // (dof_level_blur, in this picture's pixels; the layers' bilinear filter adds its share).
+        const float px[2] = {float(pw) / frame_w, float(ph) / 448.0f};
+        for (int k = 0; k < 5; ++k) {
+            DofLevel& l = dof_level_[k];
+            const DofBlur b = dof_level_blur(k);
+            const int d[2] = {l.dx, l.dy};
+            float sigma[2];
+            for (int a = 0; a < 2; ++a) {
+                const float s = b.sigma[a] * px[a], dd = float(d[a]);
+                const float rest = s * s - (dd * dd - 1.0f) / 12.0f - dd * dd / 6.0f;
+                sigma[a] = std::sqrt(std::max(rest, 0.0625f)) / dd;
+            }
+            DofLevel &t0 = dof_tmp_[0], &t1 = dof_tmp_[1];
+            t0.w = t1.w = l.w, t0.h = t1.h = l.h;
+            downsample(t0, float(d[0]), float(d[1]));
+            for (int a = 0; a < 2; ++a) {
+                const DofLevel& src = a == 0 ? t0 : t1;
+                SDL_GPURenderPass* pass = pass_into(a == 0 ? t1 : l);
+                Resample r = texels(src);
+                const float n = std::min(2.0f * std::ceil(2.5f * sigma[a]) + 1.0f, 15.0f);
+                r.taps[a] = n, r.sigma[a] = sigma[a];
+                r.step[a] = 1.0f / float(a == 0 ? src.cap_w : src.cap_h);
+                encode_resample(cmd, pass, src.tex, r, 1.0f, 0.0f, true);
+                SDL_EndGPURenderPass(pass);
+            }
+        }
+    }
+    // The layers, each tested (GEQUAL on the reversed depth) at its distance against the scene's
+    // depth: the multisampled one with MSAA, so the layers' edges are smooth. The picture and the
+    // depth stay for the passes after it (the haze, the smoke, the glare: View3D::draw).
+    SDL_GPUColorTargetInfo ct{};
+    ct.clear_color = {0, 0, 0, 1};
+    ct.load_op = SDL_GPU_LOADOP_CLEAR;
+    ct.cycle = cycle;
+    if (msaa_) {
+        ct.texture = msaa_;
+        ct.store_op = SDL_GPU_STOREOP_RESOLVE_AND_STORE;
+        ct.resolve_texture = out;
+        ct.cycle_resolve_texture = cycle;
+    } else {
+        ct.texture = out;
+        ct.store_op = SDL_GPU_STOREOP_STORE;
+    }
+    SDL_GPUDepthStencilTargetInfo dt{};
+    dt.texture = depth_;
+    dt.load_op = SDL_GPU_LOADOP_LOAD;
+    dt.store_op = SDL_GPU_STOREOP_STORE;
+    dt.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+    dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &dt);
+    const SDL_GPUViewport vp{0, 0, float(pw), float(ph), 0, 1};
+    const SDL_Rect sc{0, 0, pw, ph};
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_SetGPUScissor(pass, &sc);
+    // A distance as this projection's depth (column vectors: clip z = m22 z + m23, w = -z); the
+    // near plane's is 1.
+    const float m22 = proj.at(2, 2), m23 = proj.at(2, 3);
+    const float near = m23 / std::max(1.0f + m22, 1e-6f);
+    auto depth_at = [&](float dist) { return dist <= 0 ? 1.0f : std::clamp((m23 - m22 * dist) / dist, 0.0f, 1.0f); };
+    for (const DofLayer& layer : dof_layers(o.dof, proj.at(1, 1) * o.dof.y_scale, near)) {
+        if (layer.level < 0) {
+            encode_resample(cmd, pass, scene_, pic, 1.0f, depth_at(layer.distance), false);
+            continue;
+        }
+        const DofLevel& l = dof_level_[layer.level];
+        Resample r = texels(l);
+        if (frame) { // half a frame pixel up and left (the pyramid made the rest of the shift)
+            r.offset[0] = -0.5f / frame_w * r.scale[0], r.offset[1] = -0.5f / 448.0f * r.scale[1];
+        } else { // the level's texels over the picture's pixels, the original level's whole shift
+            const DofBlur b = dof_level_blur(layer.level);
+            r.scale[0] = float(pw) / float(l.dx * l.cap_w), r.scale[1] = float(ph) / float(l.dy * l.cap_h);
+            r.offset[0] = -b.shift[0] / frame_w * r.scale[0], r.offset[1] = -b.shift[1] / 448.0f * r.scale[1];
+        }
+        encode_resample(cmd, pass, l.tex, r, layer.alpha, depth_at(layer.distance), false);
+    }
+    SDL_EndGPURenderPass(pass);
 }
 
 bool View3D::draw_to(SDL_GPUTexture* target, int w, int h, const Mat4& view, const Mat4& proj, const Vec3& eye,
@@ -558,13 +1110,17 @@ bool View3D::draw_to(SDL_GPUTexture* target, int w, int h, const Mat4& view, con
     dt.cycle = true;
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &dt);
     frame_alpha_written_ = false;
-    encode(cmd, pass, view, proj, eye, items, opt);
+    encode(cmd, pass, view, proj, eye, items, opt, Items::Early);
+    const DrawStats early = stats_;
+    encode(cmd, pass, view, proj, eye, items, opt, Items::Late);
+    stats_.meshes_drawn += early.meshes_drawn, stats_.meshes_culled += early.meshes_culled;
+    stats_.draw_calls += early.draw_calls, stats_.triangles += early.triangles;
     SDL_EndGPURenderPass(pass);
     return SDL_SubmitGPUCommandBuffer(cmd);
 }
 
 void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Mat4& view, const Mat4& proj,
-                    const Vec3& eye, const std::vector<DrawItem>& items, const DrawOptions& opt) {
+                    const Vec3& eye, const std::vector<DrawItem>& items, const DrawOptions& opt, Items which) {
     const Mat4 view_proj = proj * view;
     // Wireframe lines are pulled slightly towards the camera (to a larger depth) to avoid z-fighting.
     Mat4 line_proj = proj;
@@ -628,6 +1184,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     for (const DrawItem& item : items) {
         const GpuModel* model = item.model;
         if (!model || !model->valid()) continue;
+        if ((which == Items::Early && item.late) || (which == Items::Late && !item.late)) continue;
         int lod = item.lod == -2 ? opt.lod : item.lod;
         float max_dist = item.draw_distance >= 0 ? item.draw_distance : opt.draw_distance;
         for (const GpuModel::MeshInfo& mesh : model->meshes()) {
@@ -789,6 +1346,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                        : p.alpha_ref >= 0                ? p.alpha_ref
                        : blended_prim                    ? opt.blend_alpha_ref
                                                          : opt.alpha_ref;
+        if (textured && v.item->wheel_blur && v.item->wheel_blur_alpha_ref >= 0 && (p.flags & scene::kAlphaTest) &&
+            p.alpha_ref < 0)
+            fu.params[0] = v.item->wheel_blur_alpha_ref;
         if (half == 2 && fu.params[0] >= 0) fu.params[0] += 2.0f; // keep only the failing fragments
         fu.params[1] = (p.flags & scene::kUnlit) ? 1.0f : 0.0f;
         // kAdditive | kEnvironmentMap: car reflection pass when kUnlit is set or nothing is
@@ -871,7 +1431,11 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             bool spec = mt.specular[0] > 0 || mt.specular[1] > 0 || mt.specular[2] > 0;
             fu.mat_specular[3] = !spec && !sheen ? 0.0f : mt.shininess < 6 ? 4.0f : mt.shininess < 12 ? 8.0f : 16.0f;
         }
-        fu.fog_color[3] = opt.fog && !background && !v.item->helper ? 1.0f : 0.0f;
+        fu.fog_color[3] = opt.fog && !background && !v.item->helper && !v.item->no_fog ? 1.0f : 0.0f;
+        // GT3's wheel spin blurs: the item's textured primitives only.
+        fu.wheel_blur[0] = textured ? float(v.item->wheel_blur) : 0.0f;
+        fu.wheel_blur[1] = v.item->wheel_blur_lod;
+        for (int i = 0; i < 4; ++i) fu.wheel_steps[i] = v.item->wheel_steps[size_t(i)];
         fu.tint[3] = std::max(v.item->alpha, 0.0f); // > 1 (blended items): the blend clamps
         fu.tint[0] = fu.tint[1] = fu.tint[2] = v.item->tint;
         // GT3's lighting runs per vertex (the VU), with the infinite viewer: the lights and

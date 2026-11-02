@@ -118,8 +118,12 @@ void RaceScreen::begin_license() {
         // The race GT3's replay playback builds from the save, played like a replay.
         const data::Event* dev = db_.event(demo_code);
         if (disc_demo_ && dev && load_program_data(*app_))
-            if (std::optional<sim::exact::RaceRecord> r = race::demo_record(*disc_demo_, *dev, db_, exact_data_->fingerprint(), 180, &err))
+            if (std::optional<sim::exact::RaceRecord> r = race::demo_record(*disc_demo_, *dev, db_, exact_data_->fingerprint(), 180, &err)) {
+                // (the demonstration's car's sparks, as GT3's playback races it)
+                r->sparks = race::exact_spark_points(db_, {db_.label(r->entries[0].eq.car)},
+                                                     [this](const std::string& m) { return car_spark_points(*app_, m); });
                 demo_record_ = std::make_shared<const sim::exact::RaceRecord>(std::move(*r));
+            }
     }
     if (license_event_.empty()) return;
     const data::Event* ev = db_.event(license_event_);

@@ -49,8 +49,10 @@ public:
         return depth > v.near_m && depth < v.far_m && !(v.proj_x > 0 && v.proj_x * size >= 2.0f * depth);
     }
     // Writes the quads facing the camera, sorted back to front, and appends the item.
+    // `mirror`: the rear-view mirror's pass (GT3 draws every puff whole there, without the
+    // ground-line split, alpha-blended on every course: presentation §H2).
     void add_items(std::vector<render::DrawItem>& items, const render::Vec3& eye, const render::Vec3& cam_right,
-                   const render::Vec3& cam_up, const View& view = {});
+                   const render::Vec3& cam_up, const View& view = {}, bool mirror = false);
     size_t live() const;
 
 private:
@@ -75,6 +77,7 @@ private:
     static constexpr size_t kVerts = 10; // per puff: two polygon fans of 5 (above / below the ground line)
     std::vector<scene::Vertex> verts_;
     std::unique_ptr<render::GpuModel> gpu_;
+    std::unique_ptr<render::GpuModel> gpu_blend_; // additive courses: the mirror's alpha-blended copy
     u32 rng_ = 0x12345678u;
 };
 

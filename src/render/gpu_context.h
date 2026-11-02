@@ -57,6 +57,9 @@ struct PipelineKey {
     // transparent clear); otherwise alpha is never written.
     bool coverage = false;
     AlphaWrite alpha = AlphaWrite::Keep;
+    // One sample and no depth target, whatever the MSAA level: View3D's small single-sample
+    // passes (the depth of field's downsampled pictures).
+    bool single = false;
     auto operator<=>(const PipelineKey&) const = default;
 };
 

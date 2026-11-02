@@ -12,7 +12,8 @@
 //   = rev_NN tachometer + speed_XXX speedometer at the bottom centre.
 // - Round meters: face stretched to its box; pivot = box centre + offset;
 //   angle = a0 + 90 + t (a1 - a0) degrees (y down, clockwise); tapered red
-//   needle from n0 r to n1 r; a thin segmented band at 0.95..0.98 r, red from
+//   needle from n0 r to n1 r, drawn as 8 jittered passes across the frame's
+//   motion (Hud::needle_passes); a thin segmented band at 0.95..0.98 r, red from
 //   the shift-up rpm.
 // - Tach scale = floor((rev limit + 1500) / 1000) * 1000; face = first of
 //   06..12, 18 that covers it.
@@ -144,6 +145,8 @@ public:
     void load(const Vfs& vfs, SDL_Renderer* r, const std::string& language = "US");
     // Course map (course file slot 33, "GTCM"); empty span clears it.
     void set_course_map(SDL_Renderer* r, ByteSpan gtcm);
+    // A new race's meters: the needles have no last angle (no motion blur on their first draw).
+    void reset_needles() { needle_prev_.fill(kNoNeedleAngle); }
     // The game area (UI units): 640x360 on 16:9, 480x360 at 4:3, wider with fill (App::aspect).
     // The draws without a viewport fill it; the 640 x 448 layouts keep their shape in the middle
     // and the elements GT3 pushes outward in 16:9 go to its sides.
@@ -197,6 +200,18 @@ public:
     // layout's in the in-car view alone). The second event display's rows are never drawn:
     // nothing is ever posted to it.
     static const HudRow* event_row(HudMode m, u8 items, int view);
+    // A round meter's needle (presentation §D1): 8 passes, each blending 1/8 towards the needle
+    // colour (GS ALPHA 0x64, FIX 0x10), pass k at angle a + (a - a') / 8 x (k + 1) (a' the
+    // angle the last draw used; none: all at a) and moved by -o_k frame pixels, o_k the sum of
+    // the first k jitter steps (0.5, 0), (-0.5, 0.5), (0.5, 0), (-0.5, -0.25), (0.5, 0),
+    // (-0.5, 0.5), (0.5, 0), (-0.5, -0.75) (GS XYOFFSET): motion blur over the last frame's
+    // movement and an 8-sample smoothing of the thin needle.
+    struct NeedlePass {
+        float angle;  // degrees
+        float dx, dy; // 640 x 448 frame pixels (y down)
+    };
+    static constexpr float kNoNeedleAngle = 3.40282347e38f; // FLT_MAX: no last angle
+    static std::array<NeedlePass, 8> needle_passes(float angle, float last);
 
 private:
 public:
@@ -216,6 +231,7 @@ private:
         float scale;        // full scale value
         float red_from;     // band turns red here (0 = no red)
         float step;         // band segment size (0 = no band)
+        int needle = 0;     // needle_prev_ slot (the original's meter object)
     };
     void draw_meter(SDL_Renderer* r, const Meter& m, float value);
     void draw_meters(SDL_Renderer* r, const HudData& d);
@@ -256,6 +272,9 @@ private:
     Image tire_outline_;
     float map_ox_ = 0, map_oz_ = 0, map_scale_ = 1, map_rot_ = 0;
     int blink_ = 0, shift_counter_ = 0, lamp_counter_ = 0;
+    // The angle each meter's needle was last drawn at (in-car tachometer, speedometer, outside
+    // tachometer, boost meter): kNoNeedleAngle until then.
+    std::array<float, 4> needle_prev_{kNoNeedleAngle, kNoNeedleAngle, kNoNeedleAngle, kNoNeedleAngle};
     SDL_FRect event_icon_rect_{0, 0, 0, 0}, pole_icon_rect_{0, 0, 0, 0};
     SDL_FRect screen_{0, 0, 640, 360}; // set_screen
     // measure(): text() and blit() add their bounds to measured_ instead of drawing.
