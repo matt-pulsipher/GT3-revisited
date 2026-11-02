@@ -47,6 +47,10 @@ enum PrimitiveFlags : u32 {
     // alpha earlier passes left (course road sheen). DrawItem::frame_alpha items only; elsewhere
     // the pass is plain additive.
     kDestAlphaAdd = 1u << 12,
+    // The vertex colours' RGB are the GS bytes as they are (0x80 = 128), a texel factor up to
+    // 255/128 that the renderer applies: GTM1 packets with a colour past 0x80 (Trial Mountain's
+    // scenery). Other packets store 0x80 as 255 (gtm1.cpp expand_color).
+    kVertexColor2x = 1u << 13,
 };
 
 // Fixed-function lighting material of a lit primitive (GT3 cars: GTM1 material

@@ -138,7 +138,9 @@ facts follow.
 - **Course specifics.** Course nodes never call other nodes. Running every node once draws every chunk exactly once (trialmt: 600 nodes, 562/562 chunks). Each node begins with `0a` (8-point box), optionally `22`, then binds a texture set and draws chunks.
 - **Chunk flags** (header byte 8, then byte 9). Bits 0-4 are the chunk kind, which picks
   how the vertices are coloured (see "Lighting" below):
-  - 0: pre-lit. V4-8 vertex colours passed through: `0x80` = 1.0 as a texture's MODULATE factor;
+  - 0: pre-lit. V4-8 vertex colours passed through: `0x80` = 1.0 as a texture's MODULATE factor,
+    brighter past it (texel x colour >> 7, clamped to 255: Trial Mountain's scenery uses 0x90-0xBF
+    on about a third of its channels, about 1.2x the texel; other US courses on 1-2%);
     untextured, the GS shows them as they are (`0x80` = mid grey; see "Course line").
   - 1: lit (normals, no colours) with the material and the lights; courses: diffuse only.
   - 2: environment pass: the packet's texture as a sphere map (normals in the UV slot).

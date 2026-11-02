@@ -228,6 +228,7 @@ There is one shader pair. Per-primitive state comes from
 | `kAlphaBlend \| kAlphaTest \| kAlphaFailBlend` | GS AFAIL = RGB_ONLY (course foliage): drawn twice, the fragments passing the test in the opaque phase (with depth write), the failing ones blended in the blended phase without depth write |
 | `kDoubleSided` | no culling; normals flipped for back faces |
 | `kUnlit` | colour = texture × vertex colour, no lighting |
+| `kVertexColor2x` | the vertex RGB are the GS bytes (0x80 = 128): `model.vert` scales them by 255/128 (GTM1 packets with a colour factor past 0x80; texel × colour >> 7 as on the GS) |
 | `kEnvironmentMap` | placeholder reflection: sky/ground gradient mixed by `env_strength` |
 | `kNoDepthWrite` | depth write off (the depth test stays on, GREATER_OR_EQUAL as for every pass) |
 | `kAdditive \| kDestAlphaAdd` | GS ALPHA 0x58 (Cs·Ad + Cd): with `DrawItem::frame_alpha`, added weighted by the frame-buffer alpha (`BlendMode::DestAlphaAdd`); elsewhere plain additive (src·α + dst). The course road sheen and other blended ALPHA 0x58 course packets |
@@ -256,6 +257,10 @@ to three more (`fill_*`, or `ItemLights` per item). Vertex colour is used
 as-is (RGBA8 → 0..1). Decoders should map PS2's 0x80 = 1.0 convention
 themselves (the GTM1 decoder does for colours that modulate a texture or feed the
 lighting; a pre-lit untextured colour stays as the GS shows it, 0x80 = mid grey).
+A factor can pass 1.0 (up to 0xFF = 255/128: the GS's MODULATE is texel × colour >> 7,
+clamped to 255), which RGBA8 at 0x80 = 255 cannot hold: packets with a colour past 0x80
+keep the GS bytes and carry `kVertexColor2x` (Trial Mountain's scenery: 31% of its pre-lit
+channels are 0x90-0xBF; other US courses about 1-2%).
 
 ### GT3 lighting (primitives with a valid `scene::Material`)
 

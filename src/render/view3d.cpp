@@ -46,6 +46,7 @@ struct VertexLighting {
     float env_c0[4];
     float env_c1[4];
     float env_pano[4];
+    float vertex_color[4]; // x = 1: the RGB are GS bytes, scaled by 255/128 (scene::kVertexColor2x)
 };
 struct FragmentUniforms {
     float light_dir[4];
@@ -878,8 +879,10 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         // material go to the vertex shader. The sheen's program has a local viewer instead:
         // GT3's light model viewer (0, 2, 0) in eye space, 2 m along the camera's up axis.
         const bool vertex_lit = mt.valid && fu.params[1] < 0.5f && (fu.params[3] < 0.5f || sheen);
-        if (vertex_lit || vertex_env || vl_on) {
+        const bool color_2x = (p.flags & scene::kVertexColor2x) != 0;
+        if (vertex_lit || vertex_env || color_2x || vl_on) {
             VertexLighting vl{};
+            vl.vertex_color[0] = color_2x ? 1.0f : 0.0f;
             if (vertex_env) {
                 // The VU's environment programs read the camera's position in object space
                 // through a rigid inverse of the modelview (the backdrop: scale s, so s^2 x camera).
@@ -934,7 +937,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                 std::copy(std::begin(fu.mat_emission), std::end(fu.mat_emission), vl.mat_emission);
             }
             push_lighting(vl);
-            vl_on = vertex_lit || vertex_env;
+            vl_on = vertex_lit || vertex_env || color_2x;
         }
         push_fragment(fu);
         const u32 first = v.mesh->index_offset + p.first_index;

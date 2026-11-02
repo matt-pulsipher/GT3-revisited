@@ -36,6 +36,7 @@ layout(set = 1, binding = 1) uniform VertexLighting {
     vec4 env_c0;
     vec4 env_c1;
     vec4 env_pano;
+    vec4 vertex_color;   // x = 1: a_color's RGB are GS bytes (0x80 = 128), a factor up to 255/128
 } l;
 
 layout(location = 0) out vec3 v_normal;
@@ -60,7 +61,10 @@ void main() {
     v_world = (u.model * vec4(a_pos, 1.0)).xyz;
     v_normal = mat3(u.normal_mat) * a_normal;
     v_uv = a_uv;
-    v_color = a_color;
+    // The GS's texel x colour >> 7: 0x80 = 1.0 and past it up to 255/128 (scene::kVertexColor2x);
+    // other packets store 0x80 as 1.0.
+    vec4 color = l.vertex_color.x > 0.5 ? vec4(a_color.rgb * (255.0 / 128.0), a_color.a) : a_color;
+    v_color = color;
     v_fog = 0.0;
     if (u.fog.z > 0.5) {
         float W = max(-(dot(u.view_z.xyz, v_world) + u.view_z.w), 1e-4);
@@ -98,7 +102,7 @@ void main() {
             v_uv = vec2(l.env_pano.x - u / 8.0, l.env_pano.z - l.env_pano.y * (y * y * y + 2.0 * y));
         }
         // The colour, alpha too: c_v x (C0 + C1 min(D.N / |D|, 0)).
-        v_color = a_color * (l.env_c0 + l.env_c1 * min(dot(D, n) * p, 0.0));
+        v_color = color * (l.env_c0 + l.env_c1 * min(dot(D, n) * p, 0.0));
     } else if (l.eye_dir.w > 1.5) {
         // The road sheen's VU program (course chunk kind 4): the first light's specular term
         // only, Phong with the reflected ray from the viewer: D = vertex - viewer,

@@ -168,6 +168,44 @@ TEST(course_trialmt) {
     CHECK(m.meshes.size() > 100 && tris > 50000);
 }
 
+// Pre-lit colours past 0x80 brighten the texel on the GS (texel x colour >> 7): Trial Mountain's
+// scenery uses 0x90-0xBF widely. Such packets keep the GS bytes (kVertexColor2x), the rest store
+// 0x80 as 255 as before.
+TEST(course_vertex_colours_past_0x80_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    struct Share {
+        size_t tris = 0, tris_2x = 0, prims_2x = 0, below_ff = 0;
+    };
+    auto share = [&](const char* name) {
+        Share s;
+        const Volume::Entry* e = disc->volume().find(std::string("courses/US/") + name);
+        CHECK(e != nullptr);
+        if (!e) return s;
+        CourseModelOptions opt;
+        opt.textures = false;
+        scene::Model m = build_course_model(disc->volume().read(*e), opt, name);
+        for (const scene::Mesh& mesh : m.meshes)
+            for (const scene::Primitive& p : mesh.primitives) {
+                s.tris += p.index_count / 3;
+                if (!(p.flags & scene::kVertexColor2x)) continue;
+                s.tris_2x += p.index_count / 3;
+                u32 hi = 0;
+                for (u32 i = 0; i < p.index_count; ++i) {
+                    u32 c = mesh.vertices[mesh.indices[p.first_index + i]].color;
+                    hi = std::max({hi, c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF});
+                }
+                ++s.prims_2x;
+                s.below_ff += hi > 0x80 && hi < 0xFF; // the GS bytes (0x80 = 255 would clamp to 0xFF)
+            }
+        return s;
+    };
+    Share tm = share("trialmt"), gv = share("grandvalley");
+    CHECK(tm.tris_2x * 5 > tm.tris);  // a fifth or more of Trial Mountain's triangles
+    CHECK(tm.below_ff * 2 > tm.prims_2x);
+    CHECK(gv.tris_2x * 20 < gv.tris); // Grand Valley: a few
+}
+
 TEST(course_all_us) {
     Disc* disc = test::test_disc();
     if (!disc) SKIP("needs GT3R_DISC");
