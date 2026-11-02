@@ -27,7 +27,7 @@ namespace gt3r {
 namespace {
 
 const SDL_DialogFileFilter kDiscFilters[] = {
-    {"PS2 disc images", "iso"},
+    {"PS2 disc images", "iso;chd"},
     {"All files", "*"},
 };
 

@@ -39,7 +39,7 @@ using namespace gt3r;
 using namespace gt3r::tool;
 
 static int usage() {
-    std::puts("usage: gt3tool <command> <disc.iso> [args]\n");
+    std::puts("usage: gt3tool <command> <disc.iso|disc.chd> [args]\n");
     auto cmds = commands();
     std::sort(cmds.begin(), cmds.end(), [](const Command& a, const Command& b) { return std::string(a.name) < b.name; });
     for (const Command& c : cmds) {

@@ -22,7 +22,7 @@ library, so the two always match. The engine's root `CMakeLists.txt` builds
 
 ## Using it
 
-1. Copy your GT3 `.iso` to the device (or keep it on an SD card or USB drive).
+1. Copy your GT3 `.iso` or `.chd` to the device (or keep it on an SD card or USB drive). Create the CHD from the ISO with `chdman createdvd`.
 2. Launch the app and tap **Open disc image**. Android's file picker
    opens and the app reads the image through the Storage Access Framework, so
    no storage permission is needed.

@@ -4,6 +4,23 @@
 
 include(FetchContent)
 
+# --- libchdr: read compressed DVD/CD disc images --------------------------
+FetchContent_Declare(libchdr
+  GIT_REPOSITORY https://github.com/rtissera/libchdr.git
+  GIT_TAG v0.3.0
+  GIT_SHALLOW TRUE
+  EXCLUDE_FROM_ALL)
+if(CMAKE_VERSION VERSION_LESS 3.28)
+  # FetchContent's EXCLUDE_FROM_ALL option was added in 3.28.
+  FetchContent_GetProperties(libchdr)
+  if(NOT libchdr_POPULATED)
+    FetchContent_Populate(libchdr)
+    add_subdirectory(${libchdr_SOURCE_DIR} ${libchdr_BINARY_DIR} EXCLUDE_FROM_ALL)
+  endif()
+else()
+  FetchContent_MakeAvailable(libchdr)
+endif()
+
 # --- SDL3: windowing, input (gamepads, wheels, sensors), audio, GPU ---------
 # Release packages build SDL from source (GT3R_FETCH_SDL) so they don't depend
 # on a system or Homebrew SDL; Windows packages use SDL3.dll (GT3R_SDL_SHARED).

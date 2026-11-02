@@ -4,7 +4,7 @@ An open-source reimplementation of the *Gran Turismo 3 A-Spec* engine for
 modern platforms: **Windows, macOS, Linux, Android, iOS and Meta Quest (VR)**.
 
 GT3 Revisited contains **no game data or assets**. It needs a
-disc image (`.iso`) that you made from your own copy of the game. At runtime
+disc image (`.iso` or `.chd`) that you made from your own copy of the game. At runtime
 it reads the image directly and decodes the assets. Nothing is extracted to
 disk or redistributed.
 
@@ -95,8 +95,8 @@ of the steps above.
 
 You need a disc image of *Gran Turismo 3 A-Spec*. The NTSC-U releases
 (SCUS-97102 and the PBPX-95503 bundle disc) are verified; other regions are
-untested ([COMPATIBILITY](docs/COMPATIBILITY.md)). Only `.iso` images are
-read.
+untested ([COMPATIBILITY](docs/COMPATIBILITY.md)). Use a `.iso` image or a `.chd`
+created from it with `chdman createdvd`.
 
 ```bash
 gt3r                                  # first run asks for your disc image
@@ -105,7 +105,7 @@ gt3r                                  # first run asks for your disc image
 gt3r "/path/to/Gran Turismo 3.iso"    # or pass it directly
 ```
 
-You can also drag the `.iso` onto the window. On Android and the Quest, choose
+You can also drag the `.iso` or `.chd` onto the window. On Android and the Quest, choose
 **Open disc image** and pick the file ([android/README.md](android/README.md)). On
 iOS, **Open disc image** shows the Files app's picker: the image can be anywhere it
 reaches (On My iPhone, a network share, another app's folder) and is read where it
@@ -483,6 +483,10 @@ original program's code in any form.
   ([third_party/dr_libs](third_party/dr_libs)).
 - [SDL 3](https://libsdl.org) and [zlib](https://zlib.net), zlib License,
   fetched at build time (Windows builds ship `SDL3.dll`).
+- [libchdr](https://github.com/rtissera/libchdr) v0.3.0, BSD 3-Clause, reads
+  `.chd` disc images; it vendors the LZMA SDK (public domain), miniz (MIT) and
+  zstd (BSD 3-Clause). Fetched at build time. Its notices and theirs are in
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which the Windows, macOS and Linux packages ship.
 - The [Khronos](https://github.com/KhronosGroup/OpenGL-Registry) OpenGL ES 3.0
   headers (`third_party/khronos`), MIT and Apache 2.0, for the OpenGL ES renderer.
 - [ANGLE](https://chromium.googlesource.com/angle/angle), BSD 3-Clause, built

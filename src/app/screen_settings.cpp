@@ -1581,7 +1581,7 @@ private:
         } else {
             info("Current disc", "None");
         }
-        action("Browse for a disc image...", "Pick a .iso made from your own Gran Turismo 3 A-Spec disc.", "",
+        action("Browse for a disc image...", "Pick a .iso or .chd made from your own Gran Turismo 3 A-Spec disc.", "",
                [a] { a->show_open_dialog(); });
 
         std::vector<std::string> recent = app.recent_discs();

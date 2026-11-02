@@ -3,6 +3,7 @@
 #include "base/config.h"
 #include "base/log.h"
 #include "disc/core_image.h"
+#include "disc/chd_image.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -40,8 +41,11 @@ std::string incomplete_image(u64 file_bytes, u64 volume_bytes) {
 
 std::unique_ptr<Disc> Disc::open(const std::string& path) {
     std::unique_ptr<Disc> disc(new Disc());
-    disc->file_ = File::open(path);
-    if (!disc->file_) throw FormatError("Could not open file: " + path);
+    auto file = File::open(path);
+    if (!file) throw FormatError("Could not open file: " + path);
+    // By content: a picked file's path (an Android content:// URI) often has no extension.
+    if (ChdImage::is_chd(*file)) disc->file_ = ChdImage::open(std::move(file));
+    else disc->file_ = std::move(file);
     // The file systems: one, or one per layer of a dual-layer image (the files may be in either).
     std::vector<std::unique_ptr<Iso9660>> layers = iso_layers(*disc->file_);
     disc->iso_ = std::move(layers[0]);

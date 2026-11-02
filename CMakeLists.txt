@@ -42,7 +42,7 @@ file(GLOB_RECURSE GT3R_ENGINE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/
 list(FILTER GT3R_ENGINE_SOURCES EXCLUDE REGEX "/src/app/")
 add_library(gt3r_engine STATIC ${GT3R_ENGINE_SOURCES})
 target_include_directories(gt3r_engine PUBLIC src)
-target_link_libraries(gt3r_engine PUBLIC SDL3::SDL3 ZLIB::ZLIB)
+target_link_libraries(gt3r_engine PUBLIC SDL3::SDL3 ZLIB::ZLIB chdr-static)
 if(GT3R_LIBTOOL_QUIET)
   set_target_properties(gt3r_engine PROPERTIES STATIC_LIBRARY_OPTIONS ${GT3R_LIBTOOL_QUIET})
 endif()
