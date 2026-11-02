@@ -119,6 +119,7 @@ public:
         // together. Empty for the steering zone, which follows the screen.
         const char* key = "";
         bool hidden = false; // hidden in the layout editor: not drawn, takes no touches
+        bool no_slide = false; // takes only a finger put down on it, never one sliding onto it (reverse)
         PadButton button = PadButton::Cross; // Button / Pedal
         TouchAction action = TouchAction::None; // Action
         std::string label;                   // short text; empty for face-button symbols
