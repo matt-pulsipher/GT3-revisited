@@ -35,8 +35,8 @@ std::string format_float(float v) {
 }
 
 // Placement keys (TouchConfig::placements) of each layout's controls, in config.ini order.
-constexpr const char* kDriveKeys[] = {"drive.gas",   "drive.brake",  "drive.up",    "drive.down", "drive.handbrake",
-                                      "drive.pause", "drive.camera", "drive.steer", "drive.music"};
+constexpr const char* kDriveKeys[] = {"drive.gas",     "drive.brake", "drive.up",     "drive.down",  "drive.handbrake",
+                                      "drive.reverse", "drive.pause", "drive.camera", "drive.steer", "drive.music"};
 constexpr const char* kMenuKeys[] = {"menu.dpad", "menu.buttons", "menu.l1", "menu.r1", "menu.select", "menu.start"};
 
 std::string_view layout_prefix(TouchLayout layout) {
@@ -311,12 +311,22 @@ void TouchControls::build_layout() {
         add(gas, "drive.gas");
         add(brake, "drive.brake");
 
-        const float r = 22 * s;
+        const float r = 22 * s, up_y = gas.y - kGap - r;
         // The race pad's buttons in GT3's meaning (race/controls.h), whatever the race layout.
-        add(button(gas.x + pw / 2, gas.y - kGap - r, r, PadButton::R2, "UP"), "drive.up");
+        add(button(gas.x + pw / 2, up_y, r, PadButton::R2, "UP"), "drive.up");
         add(button(brake.x + pw / 2, brake.y - kGap - r, r, PadButton::L2, "DOWN"), "drive.down");
         const float hb = 18 * s;
         add(button(brake.x - kGap - hb, mB - hb, hb, PadButton::Circle, "HB"), "drive.handbrake");
+        // GT3's reverse (Triangle, held), above shift up: out of the way of the thumb on the pedals
+        // (on 20:9 phones in the side bar, clear of the HUD), its touch area apart from shift up's.
+        // Where the screen is too short for that (large controls), above the handbrake instead. A
+        // finger sliding onto it never reverses (finger_move): only a touch put down on it.
+        const float apart = (r + hb) * kHitScale + kGap / 2;
+        float rev_x = gas.x + pw / 2, rev_y = up_y - apart;
+        if (rev_y - hb < mT) rev_x = brake.x - kGap - hb, rev_y = mB - hb - (2 * hb * kHitScale + kGap / 2);
+        Widget rev = button(rev_x, rev_y, hb, PadButton::Triangle, "REV");
+        rev.no_slide = true;
+        add(rev, "drive.reverse");
 
         const float sr = 15 * s;
         add(button(cx_mid, mT + sr, sr, PadButton::Start, "||"), "drive.pause");
@@ -576,11 +586,13 @@ void TouchControls::finger_move(u64 id, float x, float y, float pressure) {
     f->x = x, f->y = y, f->pressure = pressure;
     // Buttons and pedals follow a sliding finger (brake -> gas, D-pad -> face
     // buttons); the steering zone and the song buttons keep theirs, and a sliding finger
-    // never skips a song.
+    // never skips a song or selects reverse (it can slide off reverse onto the pedals).
     using K = Widget::Kind;
     if (widgets_[size_t(f->widget)].kind == K::Steering || widgets_[size_t(f->widget)].kind == K::Action) return;
     int w = widget_at(x, y);
-    if (w >= 0 && widgets_[size_t(w)].kind != K::Steering && widgets_[size_t(w)].kind != K::Action) f->widget = w;
+    if (w < 0) return;
+    const Widget& to = widgets_[size_t(w)];
+    if (to.kind != K::Steering && to.kind != K::Action && !to.no_slide) f->widget = w;
 }
 
 void TouchControls::finger_up(u64 id) {

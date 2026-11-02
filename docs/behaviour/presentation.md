@@ -1239,8 +1239,9 @@ of the 640 x 360 UI.
   side, the block instead goes into the area (moved in by the inset and down to
   the area's top). When the rank goes into the area, the map goes with it.
   On the driving layout at its normal size, on 16:9 and 20:9, no control is
-  in the top corners, so the blocks keep their places (test
-  `touch_control_bounds`).
+  in the top corners but reverse, which comes up under the lap list's last line
+  (on 20:9 in the side bar, past the game area), so the blocks keep their places
+  (test `touch_control_bounds`).
 
 ---
 

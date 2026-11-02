@@ -6,6 +6,7 @@
 #include "base/config.h"
 #include "input/input_manager.h"
 #include "input/touch_controls.h"
+#include "race/controls.h"
 #include "sim/exact/pad_read.h"
 
 #include <SDL3/SDL_hints.h>
@@ -117,6 +118,81 @@ TEST(touch_slide_between_pedals) {
     t.finger_up(7);
     t.update(0.016, 0);
     CHECK(t.pad().buttons == 0);
+}
+
+// Reverse: GT3's back input (Triangle, held) on its own button above shift up, away from the thumb
+// on the pedals. A finger put down on it reverses; one sliding onto it never does, and one on it can
+// slide onto the pedals.
+TEST(touch_reverse_button) {
+    TouchControls t = driving();
+    const Widget rev = *find_widget(t, Widget::Kind::Button, PadButton::Triangle);
+    const Widget up = *find_widget(t, Widget::Kind::Button, PadButton::R2);
+    const Widget brake = *find_widget(t, Widget::Kind::Pedal, PadButton::Square);
+    const Widget gas = *find_widget(t, Widget::Kind::Pedal, PadButton::Cross);
+    CHECK(std::string_view(rev.key) == "drive.reverse" && !rev.hidden);
+    CHECK(rev.x == up.x && rev.y + rev.w * 1.2f < up.y - up.w * 1.2f); // above shift up, the touch areas apart
+    CHECK(rev.y - rev.w > 100); // under the race's lap list (its last line ends at 120.5: left to cover it)
+    // 20:9: in the side bar, beside the HUD's corner block.
+    t.set_screen(-70, 0, 710, 360);
+    CHECK(find_widget(t, Widget::Kind::Button, PadButton::Triangle)->x - rev.w >= 640);
+    t.set_screen(0, 0, 640, 360);
+    // Every control size: inside the screen and clear of the other controls' touch areas (above shift
+    // up while it fits; on a 360-unit screen up to size 1.44, then above the handbrake).
+    for (float size : {0.6f, 1.0f, 1.4f, 1.44f, 1.45f, 1.5f, 1.6f}) {
+        TouchConfig cfg;
+        cfg.size = size;
+        TouchControls z = driving(cfg);
+        const Widget rz = *find_widget(z, Widget::Kind::Button, PadButton::Triangle);
+        CHECK(rz.y - rz.w >= 14 && rz.x + rz.w <= 626);
+        CHECK(rz.x == find_widget(z, Widget::Kind::Button, size <= 1.44f ? PadButton::R2 : PadButton::Circle)->x);
+        const float hr = rz.w * 1.2f; // touch radius
+        for (const Widget& w : z.widgets()) {
+            if (w.kind == Widget::Kind::Steering || w.button == PadButton::Triangle) continue;
+            if (w.shape == Widget::Shape::Circle) CHECK(std::hypot(w.x - rz.x, w.y - rz.y) > hr + w.w * 1.2f);
+            else CHECK(rz.y + hr < w.y || rz.x + hr < w.x); // above or left of the pedals
+        }
+    }
+
+    CHECK(t.finger_down(1, rev.x, rev.y, 0.3f));
+    t.update(0.016, 0);
+    CHECK(t.pad().down(PadButton::Triangle) && t.pad().press(PadButton::Triangle) == 255);
+    CHECK(!t.pad().down(PadButton::Cross) && !t.pad().down(PadButton::Square));
+    // Player 1's race pad gets it in any race layout, and the race asks for reverse.
+    InputManager input;
+    input.set_overlay(0, t.pad());
+    input.update(0.016);
+    const PadState& race = input.race_pad(0);
+    CHECK(race.down(PadButton::Triangle) && race.press(PadButton::Triangle) == 255);
+    race::ControlMapper mapper;
+    mapper.update(race, 1.0 / 60);
+    CHECK(mapper.reverse());
+    // Done reversing: the thumb slides on to the gas.
+    t.finger_move(1, gas.x + gas.w / 2, gas.y + gas.h / 2, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.pad().down(PadButton::Cross) && !t.pad().down(PadButton::Triangle));
+    t.finger_up(1);
+
+    // A thumb sliding up off the brake over shift up onto reverse: it shifts, and never reverses.
+    t.finger_down(2, brake.x + brake.w / 2, brake.y + brake.h / 2, 1.0f);
+    t.update(0.016, 0);
+    t.finger_move(2, up.x, up.y, 1.0f);
+    t.update(0.016, 0);
+    t.finger_move(2, rev.x, rev.y, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.pad().down(PadButton::R2) && !t.pad().down(PadButton::Triangle));
+    t.finger_up(2);
+    t.update(0.016, 0);
+    CHECK(t.pad().buttons == 0);
+
+    // A layout key of its own: moved, resized or hidden like the others.
+    TouchConfig cfg = TouchConfig::load(IniDocument::parse("[touch]\ndrive.reverse = hidden\n"));
+    CHECK(cfg.hidden("drive.reverse"));
+    TouchControls h = driving(cfg);
+    h.note_touch();
+    CHECK(find_widget(h, Widget::Kind::Button, PadButton::Triangle)->hidden && !h.hit(rev.x, rev.y));
+    IniDocument ini;
+    cfg.save(ini);
+    CHECK(ini.get("touch", "drive.reverse") == std::optional<std::string>("hidden"));
 }
 
 TEST(touch_drag_steering_and_multitouch) {
@@ -1297,12 +1373,16 @@ TEST(touch_control_bounds) {
     }
     CHECK(gas_seen && up_seen);
     // The race HUD's corner blocks keep their places beside the driving layout at its normal
-    // size (16:9 and 20:9): the top corners hold no control down to the shift buttons.
+    // size (16:9 and 20:9): the top corners hold no control down to the shift buttons but reverse,
+    // which comes up under the lap list's last line (112.5..120.5: left to cover it), and on 20:9
+    // stays in the side bar.
     for (float x1 : {640.0f, 710.0f}) {
         t.set_screen(640 - x1, 0, x1, 360);
+        const Widget rev = *find_widget(t, Widget::Kind::Button, PadButton::Triangle);
         for (const TouchRect& r : t.control_bounds()) {
             const bool top_left = r.x < 200 && r.y < 150, top_right = r.x + r.w > 500 && r.y < 150;
-            CHECK(!top_left && !top_right);
+            if (r.x == rev.x - rev.w && r.y == rev.y - rev.w) CHECK(r.y > 120.5f - 24 && (x1 == 640 || r.x >= 640));
+            else CHECK(!top_left && !top_right);
         }
     }
 }
@@ -1345,7 +1425,7 @@ TEST(touch_gt3_race_buttons) {
     CHECK(find_widget(t, Widget::Kind::Button, PadButton::L2)->label == "DOWN");
     CHECK(find_widget(t, Widget::Kind::Button, PadButton::R1)->label == "CAM");
     CHECK(find_widget(t, Widget::Kind::Button, PadButton::Select) == nullptr); // no respawn, as in GT3
-    CHECK(find_widget(t, Widget::Kind::Button, PadButton::Triangle) == nullptr);
+    CHECK(find_widget(t, Widget::Kind::Button, PadButton::Triangle)->label == "REV"); // GT3's reverse ("back")
 }
 
 namespace {

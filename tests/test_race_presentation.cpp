@@ -1481,9 +1481,11 @@ TEST(hud_top_blocks_beside_touch_controls) {
     d.cars = 6, d.position = 6;
     const int times = lit(d, 330, 640, true), rank = lit(d, 0, 320, false);
     CHECK(times > 600 && rank > 20 && rank < 40); // the lap count and the rank in the corners
-    // The driving layout on 16:9: pedals and shift buttons bottom right, pause row top centre.
+    // The driving layout on 16:9: pedals and shift buttons bottom right with reverse above them, pause row
+    // top centre.
     d.safe_area = {0, 44, 446, 316};
-    d.touch_controls = {{492, 214, 134, 132}, {501, 160, 116, 44}, {446, 310, 36, 36}, {266, 14, 108, 30}};
+    d.touch_controls = {{492, 214, 134, 132}, {501, 160, 116, 44}, {446, 310, 36, 36}, {577, 111, 36, 36},
+                        {266, 14, 108, 30}};
     CHECK(lit(d, 330, 640, true) == times && lit(d, 0, 320, false) == rank);
     // A control coming up under the bottom line (Lap, 112.5..120.5): underlapped.
     d.touch_controls.push_back({560, 110, 66, 40});

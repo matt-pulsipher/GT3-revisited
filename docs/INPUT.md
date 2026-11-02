@@ -319,8 +319,8 @@ chase; `[race] views = gt3` (Settings: Race views) keeps GT3's own two, in-car
 and chase. Races start in the view last used, in-car at first.
 
 With `gt3` the race reads the menu pad itself, so every button does what it
-did on a DualShock 2. In the modern layout shifting down at a standstill also
-selects reverse (as in GT3). Wheels keep their pedals and buttons in both
+did on a DualShock 2. Reverse is its own held input in both, as in GT3:
+shifting down never selects it. Wheels keep their pedals and buttons in both
 layouts, and the back paddles shift in both (under `gt3` they press R2 / L2).
 Configs from before per-player layouts used
 `[race] buttons = gt3 | ours | auto`; it is read once as the default
@@ -442,7 +442,7 @@ Each screen picks a layout:
 | Layout | Controls |
 |---|---|
 | Menu (default) | D-pad (slide between directions), Cross / Circle / Square / Triangle, L1, R1, Select, Start. Taps away from the controls go to the screen underneath |
-| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). With `steering = buttons`, Left and Right buttons in the bottom corner instead (a thumb can rock from one to the other): they press the race pad's D-pad, so the car steers as GT3 steers with a DualShock 2's D-pad (full lock, turned in at its slow digital rate and let back faster). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, handbrake (Circle), and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls). Left of pause, Previous / Next song (the [song controls](#song-controls)): hidden until shown in the layout editor |
+| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). With `steering = buttons`, Left and Right buttons in the bottom corner instead (a thumb can rock from one to the other): they press the race pad's D-pad, so the car steers as GT3 steers with a DualShock 2's D-pad (full lock, turned in at its slow digital rate and let back faster). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, reverse above shift up, handbrake (Circle) left of the brake, and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls). Reverse is GT3's own reverse (Triangle): hold it to back up (it takes over from the gas while held, as in GT3), then press the gas to drive forward again. It sits out of the way of the thumb on the pedals (on 20:9 phones in the side bar, clear of the lap times), and only a finger put down on it reverses: a thumb sliding onto it never does, and one on it can slide on to the pedals. Where the screen is too short for it above shift up (the largest control sizes), it sits above the handbrake. Left of pause, Previous / Next song (the [song controls](#song-controls)): hidden until shown in the layout editor |
 
 ```ini
 [touch]
@@ -479,7 +479,7 @@ Each changed control is one `[touch]` key, `drive.<control>` or
 
 | Layout | Controls |
 |---|---|
-| `drive.` | `gas`, `brake`, `up`, `down`, `handbrake`, `pause`, `camera`, `steer` (the steering buttons), `music` (Previous / Next song) |
+| `drive.` | `gas`, `brake`, `up`, `down`, `handbrake`, `reverse`, `pause`, `camera`, `steer` (the steering buttons), `music` (Previous / Next song) |
 | `menu.` | `dpad`, `buttons` (Cross, Circle, Square, Triangle), `l1`, `r1`, `select`, `start` |
 
 The value is `[left|center|right <x> top|bottom <y>] [size <s>] [hidden|shown]`
