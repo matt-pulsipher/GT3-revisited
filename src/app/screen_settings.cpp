@@ -1075,6 +1075,20 @@ private:
                            a->input().set_keyboard(p, v);
                            a->save_config();
                        });
+            {
+                const float c = in.steering_curve(p);
+                char text[24];
+                std::snprintf(text, sizeof(text), std::fabs(c - 1.0f) < 0.005f ? "%.1f (linear)" : "%.1f", double(c));
+                slider(in.wheel_steering(p) ? "Wheel steering curve" : "Steering curve",
+                       "Races. 1.0 steers as far as you turn. Higher: finer near the centre (a wheel set to a small "
+                       "rotation). Lower: quicker off the centre (a large rotation). Full lock stays at the end. A "
+                       "wheel and other controllers each keep their own.",
+                       c, InputManager::kSteeringCurveMin, InputManager::kSteeringCurveMax, 0.1f, text,
+                       [a, p](float v) {
+                           a->input().set_steering_curve(p, v);
+                           a->save_config();
+                       });
+            }
             binding_rows(app, p);
         }
     }
@@ -1311,9 +1325,10 @@ private:
             end_capture(app);
             return;
         }
-        if (auto src = in.poll_capture()) {
-            const bool bound = capture_.race ? in.bind_race(capture_.player, capture_.target, *src, !capture_.append)
-                                             : in.bind(capture_.player, capture_.target, *src, !capture_.append);
+        if (auto c = in.poll_capture()) {
+            const bool bound =
+                capture_.race ? in.bind_race(capture_.player, capture_.target, c->source, !capture_.append, c->rest)
+                              : in.bind(capture_.player, capture_.target, c->source, !capture_.append, c->rest);
             if (!bound) {
                 note_ = capture_.race ? "A button or key can't steer both ways: bind it to Steer left or Steer right."
                                       : "A button or key can't move a stick both ways: use the D-pad rows.";

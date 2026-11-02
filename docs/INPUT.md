@@ -145,7 +145,10 @@ then:
   is refused: it could push it only one way (bind it to Steer left / Steer
   right, or the D-pad). A stick captured on Steer or a stick axis gets
   `deadzone=0.08`; a wheel's axis gets none, and the wheel's saved sets drop the
-  `deadzone=0.08` earlier versions gave it (issue 134).
+  `deadzone=0.08` earlier versions gave it (issue 134). An axis that rests at an
+  end (a pedal, a joystick's trigger) captured on a button or a stick half reads
+  over its whole travel (`pedal`, with `invert` when it rests at +1), not from
+  half way; one resting in the middle (combined pedals) keeps its half.
 - **Square**: add an input instead of replacing
 - **Select** (Delete on the keyboard): clear the highlighted column
 - **Left/Right**: switch between the two columns
@@ -199,7 +202,7 @@ an action (Reverse, say) takes it off the one it had (shift); clearing Shift up
 or down, or rebinding it to another button, takes shift off the paddle.
 
 The **Settings** screen (Controls, Rumble & feedback and Touch pages) edits the
-`[playerN]` controller/keyboard/race/rumble keys and bindings (and `[player1]
+`[playerN]` controller/keyboard/race/rumble/steering curve keys and bindings (and `[player1]
 phone_vibration` on Android), every `[ffb]` key and every `[touch]` key
 described below, and applies them immediately.
 
@@ -220,6 +223,8 @@ controller = auto      ; auto, part of a device name ("DualSense", "G29"), or ke
 keyboard = on
 race = modern          ; race layout (modern | gt3), used when there is no [player1.race]
 rumble = auto          ; race rumble: auto (GT3 original on a DualSense, else modern) | modern | gt3 (see Native features)
+steering_curve = 1.00  ; race steering = |x|^curve, 0.5..2.5 (see Race controls)
+wheel_steering_curve = 1.00 ; the same for a wheel
 phone_vibration = off  ; Android, player 1 only: rumble on the device's own motor (see Native features)
 
 [player1.bindings]     ; the menu pad, a gamepad's inputs ([player1.wheel.bindings], [player1.joystick.bindings])
@@ -336,6 +341,14 @@ steering keeps the device's own resolution, not the DualShock 2 stick's 256 step
 with `original` a wheel reads as the GT Force's 10 bits. The physics is the
 same either way, and replays keep what the race got. The automatic or manual
 gearbox is the race entry's pedal style (the gearbox setting, as in GT3).
+
+**Steering curve** (Settings > Controls, per player: `[playerN] steering_curve`,
+and `wheel_steering_curve` while a wheel steers) shapes the race's steering
+before GT3's pad read: the car steers |x|^curve of the way to full lock for x of
+the input's travel (0.5..2.5, 1 = as far as it is moved). Above 1 is finer near
+the centre (a wheel set to a small rotation); below 1 is quicker off it (a large
+rotation). Full lock stays at the end of the travel. The menus read the input as
+it is.
 
 Replays, the pause window and the quick menus read the menu pad, as in GT3.
 Start opens the pause, in replays too. In a replay, Cross switches between the

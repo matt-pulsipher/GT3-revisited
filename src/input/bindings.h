@@ -83,6 +83,14 @@ struct Binding {
 // The dead zone a stick bound to an axis gets (Profile::bind).
 constexpr float kStickDeadzone = 0.08f;
 
+// What an edit knows of an axis besides its source (Profile::bind): a wheel's axis gets no dead
+// zone; one that rests at an end (`rest` -1 or 1: a pedal, a joystick's trigger) is read over its
+// whole travel, not from half way.
+struct AxisInfo {
+    bool wheel = false;
+    float rest = 0.0f; // where it rested before it moved, -1..1
+};
+
 struct Profile {
     std::string name;
     std::vector<Binding> bindings;
@@ -92,9 +100,10 @@ struct Profile {
     // Device tags used by these bindings (InputSource::device).
     std::vector<std::string> devices() const;
     // An edit in the binding editor: `source` drives `target`, alone when `replace` (an axis
-    // target drops its halves too). A stick on an axis gets a dead zone (kStickDeadzone); a
-    // wheel's axis (`wheel`) none. Names the profile "custom".
-    void bind(const PadTarget& target, const InputSource& source, bool replace, bool wheel = false);
+    // target drops its halves too). A stick on an axis gets a dead zone (kStickDeadzone), a
+    // wheel's axis none; an axis resting at an end on a button or half axis is a pedal (`pedal`,
+    // `invert` when it rests at 1). Names the profile "custom".
+    void bind(const PadTarget& target, const InputSource& source, bool replace, AxisInfo axis = {});
     // No binding reads a controller (pad, joystick or tilt): only keys and mouse buttons drive it.
     bool keyboard_only() const;
 };
@@ -218,10 +227,10 @@ struct PlayerBindings {
     // pad's set (a raw joystick input to the wheel's). Refused (false): a button or key on a whole
     // stick axis, which could only push it one way (keys steer with Steer left / right).
     // Editing while a layout is chosen makes new custom sets from both sets as they stand (under
-    // "gt3" the menu's) plus the edit, replacing kept ones (Settings asks first). `wheel`: the
-    // source is a wheel's (Profile::bind: no dead zone).
+    // "gt3" the menu's) plus the edit, replacing kept ones (Settings asks first). `axis`: the
+    // source's device and resting place (Profile::bind).
     bool bind(DeviceKind kind, bool race, const PadTarget& target, const InputSource& source, bool replace,
-              bool wheel = false);
+              AxisInfo axis = {});
     void clear(DeviceKind kind, bool race, const PadTarget& target, BindingSet s);
     void reset(DeviceKind kind, bool race); // the layout chosen; custom sets kept
     void use_custom(bool race);             // the kept custom sets chosen again
