@@ -19,7 +19,7 @@ namespace {
 
 const char kOptions[] = R"(Usage: gt3r [disc.iso|disc.chd] [options]
 
-  disc.iso|disc.chd      a GT3 disc image (CHD: chdman createdvd from ISO; default: the one opened last)
+  disc.iso|disc.chd      a GT3 disc image (default: the one opened last)
   --screen <id>          open a screen instead of the game (ids below)
   --hub                  start in Developer options ([app] start = hub)
   --browse <vol path>    open the asset browser on a file in GT3.VOL

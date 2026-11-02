@@ -1,15 +1,14 @@
 # Third-party notices
 
-GT3 Revisited's own code is released under the MIT License (`LICENSE`). The
-components below are included in source and binary distributions; their
-licenses require the notices in this file to be reproduced with them.
+GT3 Revisited's own code is released under the MIT License (`LICENSE`). Builds
+also include the components below; their notices follow.
 
 | Component | Version | License | Used for |
 |---|---|---|---|
 | [libchdr](https://github.com/rtissera/libchdr) | 0.3.0 | BSD-3-Clause | reading `.chd` disc images |
 | LZMA SDK (vendored by libchdr) | 25.01 | Public domain | LZMA-compressed CHD hunks |
 | miniz (vendored by libchdr) | 3.1.1 | MIT, parts Unlicense | Deflate-compressed CHD hunks |
-| zstd (vendored by libchdr) | 1.5.7 | BSD-3-Clause (the GPLv2 option is not used) | Zstandard-compressed CHD hunks |
+| zstd (vendored by libchdr) | 1.5.7 | BSD-3-Clause | Zstandard-compressed CHD hunks |
 | dr_flac (vendored by libchdr) | — | Public domain or MIT-0 | FLAC-compressed CHD hunks |
 
 libchdr and its dependencies are fetched at build time from the pinned tag and
@@ -123,7 +122,5 @@ Anyone is free to copy, modify, publish, use, compile, sell, or distribute the o
 
 ## dr_flac
 
-libchdr embeds dr_flac, which is available under a choice of public domain or
-MIT-0. This project uses it under that choice, so no notice is required beyond
-this acknowledgement; the copy included directly in `third_party/dr_libs` is
-credited in `README.md`.
+libchdr embeds dr_flac (public domain or MIT-0). The copy in
+`third_party/dr_libs` is credited in `README.md`.

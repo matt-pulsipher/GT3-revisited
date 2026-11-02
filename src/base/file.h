@@ -25,7 +25,7 @@ public:
 
     // Reads exactly `len` bytes at `offset` into `out`; throws on short read.
     void read_at(u64 offset, void* out, size_t len) override;
-    Bytes read_at(u64 offset, size_t len);
+    using Reader::read_at;
 
 private:
     File(SDL_IOStream* io, std::string path, u64 size);

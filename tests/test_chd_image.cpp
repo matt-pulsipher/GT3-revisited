@@ -17,14 +17,31 @@ Bytes pattern() {
     return b;
 }
 
-void check_image(const char* name) {
+std::string fixture(const char* name) {
     const auto path = std::filesystem::path(GT3R_SOURCE_DIR) / "tests" / "data" / name;
     if (!std::filesystem::exists(path)) SKIP("CHD fixture missing; run tests/data/make_chd_fixtures.sh");
-    auto file = File::open(path.string());
+    return path.string();
+}
+
+// The FormatError message `fn` throws, "" when it does not throw.
+std::string error_of(const std::function<void()>& fn) {
+    try {
+        fn();
+    } catch (const FormatError& e) {
+        return e.what();
+    }
+    return "";
+}
+
+const char kNotGt3[] = "This does not look like a Gran Turismo 3 disc image (CORE.GT3 / GT3.VOL missing).";
+
+void check_image(const char* name) {
+    const std::string path = fixture(name);
+    auto file = File::open(path);
     CHECK(file != nullptr);
     auto image = ChdImage::open(std::move(file));
     const Bytes expected = pattern();
-    CHECK(image->path() == path.string());
+    CHECK(image->path() == path);
     CHECK(image->size() == expected.size());
     CHECK(image->read_at(0, expected.size()) == expected);
     // Boundary reads and cache revisits must not return stale bytes.
@@ -90,18 +107,45 @@ TEST(chd_open_error) {
     CHECK(threw);
 }
 
-TEST(chd_disc_extension_case_insensitive) {
-    const auto fixture = std::filesystem::path(GT3R_SOURCE_DIR) / "tests/data/synthetic.chd";
-    if (!std::filesystem::exists(fixture)) SKIP("CHD fixture missing; run tests/data/make_chd_fixtures.sh");
-    const auto path = test::temp_path("synthetic.ChD");
-    std::filesystem::copy_file(fixture, path);
-    bool threw = false;
-    try {
-        Disc::open(path.string());
-    } catch (const FormatError& e) {
-        // ISO probing must be reached even with a mixed-case CHD extension.
-        CHECK(std::string(e.what()) == "no ISO9660 primary volume descriptor");
-        threw = true;
+// The small file system of make_chd_fixtures.sh in each layout chdman makes: the sectors are the track's data
+// (not chdman's padding frames, not a stored pregap), at each track type's offset, and the dual-layer probe past
+// the volume's end (a padding frame, a Form 2 postgap sector) finds no second layer instead of failing.
+TEST(chd_file_system_layouts) {
+    const std::pair<const char*, u64> cases[] = {{"synthetic-fs-dvd.chd", 37},
+                                                 {"synthetic-fs-mode1.chd", 37},
+                                                 {"synthetic-fs-mode2.chd", 40},
+                                                 {"synthetic-fs-pregap.chd", 40}};
+    for (const auto& [name, sectors] : cases) {
+        std::unique_ptr<ChdImage> image = ChdImage::open(File::open(fixture(name)));
+        CHECK(image->size() == sectors * 2048);
+        std::vector<std::unique_ptr<Iso9660>> layers = iso_layers(*image);
+        CHECK(layers.size() == 1);
+        CHECK(layers[0]->volume_id() == "GT3R_CHD_TEST");
+        CHECK(layers[0]->volume_bytes() == 37 * 2048);
+        std::optional<Iso9660::Entry> readme = layers[0]->find("README.TXT");
+        CHECK(readme.has_value());
+        const Bytes text = layers[0]->read(*readme);
+        CHECK(std::string(text.begin(), text.end()) == "GT3 Revisited CHD test file\n");
+        // Through Disc::open the image gets as far as looking for the game's files.
+        CHECK(error_of([&] { Disc::open(fixture(name)); }) == kNotGt3);
     }
-    CHECK(threw);
+}
+
+// Disc::open tells a CHD by its header, whatever the name (an Android content:// URI often has no extension).
+TEST(chd_found_by_content) {
+    const std::string chd = test::temp_path("disc.iso").string();
+    std::filesystem::copy_file(fixture("synthetic-fs-dvd.chd"), chd);
+    CHECK(ChdImage::is_chd(*File::open(chd)));
+    CHECK(error_of([&] { Disc::open(chd); }) == kNotGt3);
+
+    const std::string iso = test::temp_path("plain.chd").string();
+    CHECK(write_host_file(iso, ChdImage::open(File::open(chd))->read_at(0, 37 * 2048)));
+    CHECK(!ChdImage::is_chd(*File::open(iso)));
+    CHECK(error_of([&] { Disc::open(iso); }) == kNotGt3);
+}
+
+TEST(chd_not_a_disc_image) {
+    const std::string path = test::temp_path("tiny").string();
+    CHECK(write_host_file(path, Bytes{'M', 'C'}));
+    CHECK(!ChdImage::is_chd(*File::open(path)));
 }

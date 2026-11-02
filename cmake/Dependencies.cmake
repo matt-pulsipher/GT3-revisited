@@ -5,7 +5,6 @@
 include(FetchContent)
 
 # --- libchdr: read compressed DVD/CD disc images --------------------------
-set(CHDR_VERIFY_BLOCK_CRC OFF CACHE BOOL "Verify CHD block CRCs on every read" FORCE)
 FetchContent_Declare(libchdr
   GIT_REPOSITORY https://github.com/rtissera/libchdr.git
   GIT_TAG v0.3.0

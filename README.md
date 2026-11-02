@@ -486,7 +486,7 @@ original program's code in any form.
 - [libchdr](https://github.com/rtissera/libchdr) v0.3.0, BSD 3-Clause, reads
   `.chd` disc images; it vendors the LZMA SDK (public domain), miniz (MIT) and
   zstd (BSD 3-Clause). Fetched at build time. Its notices and theirs are in
-  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which every package ships.
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which the Windows, macOS and Linux packages ship.
 - The [Khronos](https://github.com/KhronosGroup/OpenGL-Registry) OpenGL ES 3.0
   headers (`third_party/khronos`), MIT and Apache 2.0, for the OpenGL ES renderer.
 - [ANGLE](https://chromium.googlesource.com/angle/angle), BSD 3-Clause, built

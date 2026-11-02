@@ -121,7 +121,7 @@ public:
         }
         y += 4;
         for (const std::string& line :
-             Ui::wrap("To play, open a disc image (.iso or .chd) made from your own copy of Gran Turismo 3 A-Spec. For CHD, use chdman createdvd from the ISO.", lw)) {
+             Ui::wrap("To play, open a disc image (.iso or .chd) made from your own copy of Gran Turismo 3 A-Spec.", lw)) {
             ui.text(lx, y, line, colors::kDim);
             y += 11;
         }
