@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/bytes.h"
+#include "base/reader.h"
 
 #include <memory>
 #include <mutex>
@@ -15,16 +15,16 @@ namespace gt3r {
 // content:// URIs (from the system file picker) work the same as desktop
 // paths. Reads are serialized so one handle can be shared between the main
 // thread and the audio streaming thread.
-class File {
+class File : public Reader {
 public:
     static std::unique_ptr<File> open(const std::string& path);
-    ~File();
+    ~File() override;
 
-    u64 size() const { return size_; }
-    const std::string& path() const { return path_; }
+    u64 size() const override { return size_; }
+    const std::string& path() const override { return path_; }
 
     // Reads exactly `len` bytes at `offset` into `out`; throws on short read.
-    void read_at(u64 offset, void* out, size_t len);
+    void read_at(u64 offset, void* out, size_t len) override;
     Bytes read_at(u64 offset, size_t len);
 
 private:

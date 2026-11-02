@@ -8,7 +8,7 @@
 
 namespace gt3r {
 
-Volume::Volume(File& file, u64 base_offset, u64 length) : file_(file) {
+Volume::Volume(Reader& file, u64 base_offset, u64 length) : file_(file) {
     parts_.push_back({base_offset, length});
     read_toc(0);
     LOG_INFO("GT3.VOL: %zu files", entries_.size());

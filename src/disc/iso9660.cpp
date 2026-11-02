@@ -7,14 +7,14 @@
 namespace gt3r {
 
 namespace {
-bool has_pvd(File& file, u64 sector) {
+bool has_pvd(Reader& file, u64 sector) {
     if (file.size() < (sector + 1) * u64(kSectorSize)) return false;
     const Bytes pvd = file.read_at(sector * kSectorSize, 6);
     return pvd[0] == 1 && std::memcmp(&pvd[1], "CD001", 5) == 0;
 }
 } // namespace
 
-std::vector<std::unique_ptr<Iso9660>> iso_layers(File& file) {
+std::vector<std::unique_ptr<Iso9660>> iso_layers(Reader& file) {
     std::vector<std::unique_ptr<Iso9660>> layers;
     layers.push_back(std::make_unique<Iso9660>(file));
     const u64 end = layers[0]->volume_bytes() / kSectorSize; // the first layer's sectors
@@ -26,7 +26,7 @@ std::vector<std::unique_ptr<Iso9660>> iso_layers(File& file) {
     return layers;
 }
 
-Iso9660::Iso9660(File& file, u64 base_sector) : file_(file), base_(base_sector) {
+Iso9660::Iso9660(Reader& file, u64 base_sector) : file_(file), base_(base_sector) {
     if (file.size() < (base_ + 17) * kSectorSize) throw FormatError("image too small to be ISO9660");
     Bytes pvd = file.read_at((base_ + 16) * kSectorSize, kSectorSize);
     if (pvd[0] != 1 || std::memcmp(&pvd[1], "CD001", 5) != 0)

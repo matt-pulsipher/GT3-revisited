@@ -22,7 +22,12 @@
 #include "../../third_party/dr_libs/dr_mp3.h"
 #define DR_FLAC_IMPLEMENTATION
 #define DR_FLAC_NO_STDIO
+// libchdr embeds its own dr_flac; keep this decoder's symbols local.
+#define DRFLAC_API static
+#define DRFLAC_PRIVATE static
 #include "../../third_party/dr_libs/dr_flac.h"
+#undef DRFLAC_API
+#undef DRFLAC_PRIVATE
 #define DR_WAV_IMPLEMENTATION
 #define DR_WAV_NO_STDIO
 #include "../../third_party/dr_libs/dr_wav.h"

@@ -47,7 +47,7 @@ public:
 
 private:
     Disc() = default;
-    std::unique_ptr<File> file_;
+    std::unique_ptr<Reader> file_;
     std::unique_ptr<Iso9660> iso_;                   // the first layer's file system
     std::vector<std::unique_ptr<Iso9660>> layers_;  // every layer's but the first
     std::unique_ptr<Volume> volume_;

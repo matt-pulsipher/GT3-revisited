@@ -95,4 +95,4 @@ Races run at 60 Hz on every disc, each with the rules of that disc's own release
   recordings included on that disc, not the European release's own 50 Hz runs.
 - Online races always use the US rules, whatever disc each player has.
 
-Only `.iso` images (2048-byte sectors) are supported for now; `.bin/.cue` (2352-byte) and CHD support are planned.
+Use `.iso` images (2048-byte sectors) or `.chd` images created from the ISO with `chdman createdvd`. Data-only `chdman createcd` images (Mode 1 / Mode 2 Form 1) are also supported; audio and Form 2 sectors are not. Direct `.bin/.cue` support is planned.

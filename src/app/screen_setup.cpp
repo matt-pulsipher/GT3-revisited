@@ -121,7 +121,7 @@ public:
         }
         y += 4;
         for (const std::string& line :
-             Ui::wrap("To play, open a disc image (.iso) made from your own copy of Gran Turismo 3 A-Spec.", lw)) {
+             Ui::wrap("To play, open a disc image (.iso or .chd) made from your own copy of Gran Turismo 3 A-Spec. For CHD, use chdman createdvd from the ISO.", lw)) {
             ui.text(lx, y, line, colors::kDim);
             y += 11;
         }
@@ -134,7 +134,7 @@ public:
             if (it.kind == Item::Quit) rects_[i] = {lx + std::floor((lw - 8) / 2) + 8, y + bh + 8, std::floor((lw - 8) / 2), sh};
         }
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
-        if (!touch) ui.text(lx, y + bh + 8 + sh + 10, "or drop the .iso onto this window", colors::kDim);
+        if (!touch) ui.text(lx, y + bh + 8 + sh + 10, "or drop the .iso or .chd onto this window", colors::kDim);
 #endif
 
         // Right column (or below): a disc that could not be opened, recent discs.

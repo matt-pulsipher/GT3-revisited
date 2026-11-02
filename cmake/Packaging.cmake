@@ -65,7 +65,8 @@ if(APPLE)
   if(_tools)
     install(TARGETS ${_tools} RUNTIME DESTINATION .)
   endif()
-  install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION .)
+  install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE
+          ${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.md DESTINATION .)
   install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/OFL.txt DESTINATION . RENAME Barlow-OFL.txt)
   # Seal the finished bundle with an ad-hoc signature (no Apple account needed). The
   # linker signs only the executable; without sealing the bundle's resources the
@@ -82,7 +83,8 @@ elseif(WIN32)
   if(GT3R_ANGLE_DIR) # ANGLE for the OpenGL ES renderer (CMakeLists.txt)
     install(FILES ${GT3R_ANGLE_FILES} ${GT3R_ANGLE_DIR}/LICENSE-ANGLE.txt DESTINATION .)
   endif()
-  install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION .)
+  install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE
+          ${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.md DESTINATION .)
   install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/OFL.txt DESTINATION . RENAME Barlow-OFL.txt)
 else()
   include(GNUInstallDirs)
@@ -90,7 +92,8 @@ else()
   install(FILES ${GT3R_PACKAGING_DIR}/gt3r.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
   install(FILES ${GT3R_PACKAGING_DIR}/icon.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/1024x1024/apps
           RENAME gt3r.png)
-  install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/gt3r)
+  install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE
+          ${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/gt3r)
   install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/OFL.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/gt3r
           RENAME Barlow-OFL.txt)
 endif()

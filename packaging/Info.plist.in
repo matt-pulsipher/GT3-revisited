@@ -42,6 +42,7 @@
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>iso</string>
+				<string>chd</string>
 			</array>
 		</dict>
 	</array>
