@@ -2,7 +2,7 @@
 """Regenerates src/render/shaders/generated/*.h from the GLSL sources.
 
 Shaders are authored once in Vulkan GLSL (model.vert, model.frag) and
-compiled offline:
+compiled offline (model.vert twice: model_clip_vert with CLIPPED defined):
 
     GLSL --glslangValidator--> SPIR-V   (Vulkan: Linux, Android, Windows)
     SPIR-V --spirv-cross-----> MSL      (Metal: macOS, iOS)
@@ -25,8 +25,11 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 OUT = HERE / "generated"
-SHADERS = [("model_vert", "model.vert"), ("model_frag", "model.frag"),
-           ("present_vert", "present.vert"), ("present_frag", "present.frag")]
+# (name, source, preprocessor definitions): model_clip_vert is model.vert for the corners of the
+# triangles GT3 clips at the guard band (render/guard_band.h).
+SHADERS = [("model_vert", "model.vert", []), ("model_clip_vert", "model.vert", ["-DCLIPPED"]),
+           ("model_frag", "model.frag", []), ("present_vert", "present.vert", []),
+           ("present_frag", "present.frag", [])]
 
 
 def run(*args):
@@ -72,9 +75,9 @@ def gles(spv: str, vertex: bool):
 def main():
     OUT.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        for name, src in SHADERS:
+        for name, src, defines in SHADERS:
             spv = os.path.join(tmp, name + ".spv")
-            run("glslangValidator", "-V", "--quiet", str(HERE / src), "-o", spv)
+            run("glslangValidator", "-V", "--quiet", *defines, str(HERE / src), "-o", spv)
             msl = subprocess.run(["spirv-cross", spv, "--msl", "--msl-version", "20000", "--msl-decoration-binding"],
                                  check=True, capture_output=True, text=True).stdout
             spirv = pathlib.Path(spv).read_bytes()

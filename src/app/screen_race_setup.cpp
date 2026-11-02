@@ -163,6 +163,9 @@ void RaceScreen::start(App& app, const Replay* replay) {
             // The sun and its glare (Env0, slot 32).
             sun_.load(*app.vfs(), app.renderer(), app.gpu(), cf.section(*course, 32));
             if (app.gpu()) sun_disc_.load(*app.gpu(), sun_.params());
+            // GT3's far plane (Env0 +0x20); the projections reach to the backdrop's, 100 x as far.
+            const float far = sun_.params().has_env && !no_far_plane_ ? sun_.params().far_clip : 0.0f;
+            for (CameraRig* c : {&camera_, &camera2_}) c->set_gt3_far(far, CourseScene::kBackdropScale);
             wheel_env_ = WheelEnv::parse(cf.section(*course, 32)); // the wheels' blur and glow
             if (sun_.params().has_env && course_scene_) { // the course's own lit packets: its scene lights
                 render::ItemLights cl;

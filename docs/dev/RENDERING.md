@@ -114,8 +114,9 @@ brew install glslang spirv-cross     # or the LunarG Vulkan SDK on Linux/Windows
 python3 src/render/shaders/compile_shaders.py
 ```
 
-This writes `src/render/shaders/generated/model_{vert,frag}.h`: a 4-byte
-aligned SPIR-V byte array, the MSL source (entry point `main0`) and the GLSL ES
+This writes `src/render/shaders/generated/model_{vert,clip_vert,frag}.h` (`model_clip_vert`
+is `model.vert` with `CLIPPED` defined: the corners of the triangles GT3 clips at the guard
+band, see "GT3 lighting"): a 4-byte aligned SPIR-V byte array, the MSL source (entry point `main0`) and the GLSL ES
 source with its uniform block and sampler names in slot order (GLSL ES 3.00
 has no binding qualifiers, so `gpu_gles.cpp` binds them by name). The GLSL ES
 vertex shader flips y and remaps depth to GL's clip space.
@@ -297,7 +298,46 @@ per-fragment sphere kernel (`params.w = 4`). See docs/formats/course.md "Lightin
 
 GT3 fog (`DrawOptions::fog_gt3`, course Env0) is computed per vertex too, from the
 view depth W like the VU's transform: F = trunc(b' + 0.1 + (255 − b') min(W, A) / W),
-b' = 255 b, fog amount 1 − F / 255, interpolated in screen space.
+b' = 255 b, fog amount 1 − F / 255, interpolated in screen space. A course whose Env0 has
+no fog (b = 1) is still fogged, at F = 255 everywhere, as its packets are on the GS.
+
+The GS works in 8-bit integers and truncates where a GPU rounds, so `model.frag` does its
+sums as the GS does, in the textured passes (base, sheen, car reflections, prize sphere
+maps): the filtered texel truncated to 8 bits (`gs_texel`), MODULATE = texel × colour >> 7
+clamped to 255 (`gs_color`; after GT3's lighting or our own), then fog
+(F C + (256 − F) FOGCOL) >> 8 (`gs_fog`: F = 255 still takes a colour past the fog colour
+down a level, and a pass fogged to black, the sheen, loses one). Each result is a whole
+8-bit level, which the RGBA8 target stores exactly. The blend unit still rounds its
+product (Cs × As or Cs × Ad), where the GS truncates ((A − B) C >> 7 + D); a weight of 0x80
+is exact either way, as on the road under the sheen. `render::gs_pixel` is the same on the
+CPU (tests). With float sums the race frame came out 1 to 3 levels above the original's
+(the arcade grids: 1.015 of it on average, now 0.998; Super Speedway's road 1.04, now 1.01;
+Route 5's lit windows, past 0x80 and fogged after the clamp, now near the original's).
+
+GT3's VU clips a triangle at the guard band before the GS sees it (twice the screen,
+|x|, |y| = 2 w, and the projection's near and far planes: docs/formats/course.md "Lighting"), so
+the colour the GS interpolates in screen space spans the clipped pieces. Items with
+`DrawItem::guard_band` get the same in views with `DrawOptions::guard_near` (the race's
+main views, `CameraRig::gt3_near`): the course models and the wet road's mask, which keep
+their geometry on the CPU (`GpuModel`'s keep_geometry). Each frame `View3D::upload_clipped`
+finds their triangles with a vertex outside (the indices ascending are GT3's strip order),
+clips them with `render::guard_clip` and uploads the corners as `ClipVertex` (the triangle's
+three vertices and the corner's weights). `model.vert` built with `CLIPPED`
+(`PipelineKey::clipped`) lights the three vertices, blends them and rounds a new corner's
+colour bytes as the VU does. The primitive's own draw leaves those triangles out (`v_fog_w.y`,
+discarded in `model.frag`) and the clipped draw drops any the GPU does not find outside, so
+each triangle is drawn once. These items' vertex colour is linear in screen space as well.
+`GpuModel::MeshInfo::primitive_spheres` let the CPU skip the primitives no plane can cut.
+Not clipped: the mirror, VR, offscreen views and the reflection map.
+
+GT3's far plane (`DrawOptions::far_clip`, Env0 +0x20 through `CameraRig::gt3_far`: the race's
+views, the race behind the quick menu and VR) is the race view's only draw distance: a mesh
+wholly beyond it is culled, the guard band clips its items there (the `+z` plane), the other
+items are cut at it in `model.frag` (`v_fog_w.y` = the depth past it, as the GPU cuts at its own
+far plane) and `DrawItem::far_whole` items (the cars, as GT3's cars pass drops a model whose box
+reaches past it) are dropped whole. Background items are never cut, and an item's modelview
+scale moves its plane: the backdrop's lies 100 times as far, where the projection's far plane is
+(`CameraRig::set_gt3_far`). `GT3R_NO_FAR_PLANE=1` draws as before (2500 m, a 6000 m projection).
 `DrawItem::light_scale` (road shade) scales every light, fills included.
 Light sources per scene:
 
@@ -365,6 +405,7 @@ uses a slightly depth-biased projection, so it works without
 |---|---|
 | `frustum_cull` | skip meshes whose bounding sphere (`GpuModel::MeshInfo::center/radius`, computed on upload) is outside the frustum |
 | `draw_distance` | skip meshes further than this; `DrawItem::draw_distance` overrides per item (0 = never) |
+| `far_clip` | GT3's far plane (eye depth): what lies beyond is not drawn (see "GT3 lighting" above) |
 | `sort_blended` | blended primitives drawn back to front by mesh distance instead of model order |
 | `fog`, `fog_color/start/end/max` | linear distance fog (not on background or helper items); `fog_gt3`: GT3's per-vertex depth fog (see "GT3 lighting") |
 | `blend_alpha_ref` | alpha-test threshold for blended `kAlphaTest` primitives |

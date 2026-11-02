@@ -348,7 +348,7 @@ smoke code).
 |---|---|
 | +0x00 | `Env0` |
 | +0x10 | u32 flags: bits 0-3 car lights 0-3; 5 heat haze (replay course shots); 6 replay vignette; 7 colour-grade pass; 8 replay depth of field; 10 sun disc + glare; 11-14 scene lights 0-3; 15 car lamp glows (and the `cars/night/` car models); 16 mirrored cars and 17 lamp streaks in the wet-road reflection; 19 the `cars/eve/` car models (before bit 15); 21 GTFX lamp glows (9, 18, 20, 22: replay / car-model modes, partly unknown) |
-| +0x20 | far clip (m); the sun sits at far / 2 |
+| +0x20 | far clip (m; 610 Monte Carlo .. 3010 L_testcourse3, 1000 on most): the race projection's far plane, where the scenery and the cars end (see "Lighting"); the sun sits at far / 2 |
 | +0x28 / +0x48 | yaw / pitch (degrees) of the small sky dome (slot 23) in the cars' reflection map: turned by the yaw first, then the pitch |
 | +0x50 / +0x54 | scenery texture-LOD threshold / car LOD size threshold |
 | +0x58 | headlamp pool strength (car model node 5, drawn only when non-zero: night and dusk courses) |
@@ -424,11 +424,25 @@ fixed-function maths and these inputs, all from the course file:
 - The backdrop (slot 22) is drawn with its modelview scaled by 0.01 in eye space (depth and fog
   distance scale together, nothing changes on screen); the sheen viewer, taken through a rigid
   inverse of that modelview, then sits at 0.0001 x the camera position + 0.02 x its up axis.
-- The colour is interpolated linearly in screen space (GS Gouraud), not perspective-correct;
-  on the long road strips (vertices every ~23 m) this gives the sheen its flat near-road look.
+  Its far plane is therefore 100 times as far as the scenery's: every US backdrop lies well
+  inside it (at most about 7.3 km from the road, Monte Carlo, against 61 km).
+- The colour is interpolated linearly in screen space (GS Gouraud), not perspective-correct.
+  A triangle with a vertex past twice the screen (|x| or |y| beyond 2 w in clip space; the road
+  strip under the camera, vertices every ~23 m), nearer than the projection's near plane or
+  farther than its far plane (Env0 +0x20) is clipped first, unless all three are beyond one edge
+  of the screen or the far plane (culled). The planes go in
+  the order near, far, bottom, top, left, right, each cutting the polygon from its first corner
+  (at first the triangle's vertices in strip order: i, i + 1, i + 2). A kept corner stays, and a
+  new one on each crossing edge takes the position, ST and colour (alpha too) interpolated along
+  the edge in clip space. The pieces go out as one strip (p0, p(n-1), p1, p(n-2), ...), the
+  colours rounded, each corner's fog from its own depth. Under the car the sheen then falls off
+  towards the bottom of the frame, between the vertex ahead and clip points about a metre ahead
+  (Super Speedway grid, in-car view: 14 at the vertex 23 m ahead, 1 and 3 at the clip points).
 - Fog (Env0 +0x70 / +0x74) is computed per vertex from the view depth W:
   F = trunc(b' + 0.1 + (255 - b') min(W, A) / W), b' = 255 b, and the GS mixes the colour
-  towards the fog colour by 1 - F / 255.
+  towards the fog colour as (F C + (256 - F) FOGCOL) >> 8, truncated like its texel filter and
+  its MODULATE ((texel x colour) >> 7). F = 255 (b = 1: no fog) still takes a colour past the
+  fog colour down a level, and the sheen, fogged to black, a level everywhere.
 - **Kind 2** (environment pass, sphere map): from the camera position E (not the light model
   viewer), D = vertex - E, R = D - 2 (D.N) N with N from the UV slot, R_eye = the view rotation x
   R / |D|, m = |R_eye + (0, 0, 1)|, UV = (0.5 + 0.5 Rx / m, 0.5 - 0.5 Ry / m); colour = vertex
@@ -455,7 +469,14 @@ fixed-function maths and these inputs, all from the course file:
   only), the road-edge strips (a ragged alpha that keeps the sheen off the dirt) and Laguna's
   wall banners (alpha 0x40 throughout) are such packets, not cut-outs.
 - Dirt and wet courses have no lighting of their own: the differences are data. The wet routes
-  have no sheen; their wet look is the reflection pass (+0xC20).
+  have no sheen; their wet look is the reflection pass (+0xC20; docs/dev/RACE.md "Wet-road
+  reflection"). Its blur copies and composite are bilinear GS sprites: the GS weights the four
+  texels by the 4-bit fractions of the sample point (texel centres at + 0.5) and truncates each
+  lerp, across then down, a + ((b - a) f >> 4); a copy at UV 0 / 1 (half a texel off: f = 8) is
+  ((a + b) >> 1 + (c + d) >> 1) >> 1, so each loses light (about 3 % of route5_dry's buffer a
+  copy). The composite adds (Cs x Ad) >> 7 (0x58; 0x54: ((Cs - Cd) x Ad) >> 7 + Cd). A GS pixel
+  samples at its integer position and the buffer's XYOFFSET is whole pixels, so its texels hold
+  the scene half a texel up and left of a GPU's (the composite's net -0.5 texel).
 - The rear-view mirror draws the low-resolution sky (slot 24) and slot 1 (with the sheen),
   with its own fog: Env0 +0xA90 RGB, +0xAA0 distance A, +0xAA4 minimum visibility b (A = 0: a
   constant visibility b; Super Speedway 0 / 1 = none, route11 0 / 0.72).
@@ -563,7 +584,7 @@ sampling, alpha test) for checking decodes offline.
 ## Sky dome (slot 21)
 
 - One node, one chunk, PRIM 0x1C (textured, Gouraud, no fog, no blend), ALPHA test entry state.
-  Trial Mountain: a 1024×256 T8 texture (CT32 CLUT, REGION_CLAMP over the whole texture,
+  Trial Mountain: a 1024×256 T8 texture (CT32 CLUT; r_trialmt's has a CT16 CLUT, REGION_CLAMP over the whole texture,
   TEX1 bilinear magnify / minify, no mipmaps) on a 100 m dome reaching y = -13.5 below the eye,
   plus one 128×16 T4 cut-out quad (alpha 0 / 0x80) inside the dome. Vertex colours are 0x80
   (1.0) everywhere: no colour scale.

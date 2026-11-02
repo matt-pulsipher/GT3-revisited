@@ -29,6 +29,10 @@ struct CourseStats {
 
 class CourseScene {
 public:
+    // GT3 draws the backdrop (slot 22) with Scale(0.01) x view: its depth and fog distance are a
+    // hundredth of the true ones, so its far plane lies 100 times as far as the scenery's.
+    static constexpr float kBackdropScale = 0.01f;
+
     // Builds the models from a decompressed course file.
     // `sheen`: draw the road sheen passes (gtm1::Options::road_sheen).
     CourseScene(render::GpuContext& ctx, ByteSpan course_file, const std::string& name, bool sheen = true);

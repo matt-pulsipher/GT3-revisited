@@ -374,8 +374,7 @@ private:
     render::DrawOptions draw_options() const;
     void render_drive(App& app, Ui& ui);
     size_t add_wet_road(const render::Vec3& eye, float aspect, const render::DrawOptions& o) {
-        return add_wet_road(eye, camera_.view(), camera_.projection(aspect),
-                            render::Frustum::symmetric(camera_.fovy(), aspect), o);
+        return add_wet_road(eye, camera_.view(), camera_.projection(aspect), camera_.frustum(aspect), o);
     }
     void remove_wet_road(size_t n) {
         auto first = items_.begin() + std::ptrdiff_t(scenery_items_);
@@ -773,6 +772,7 @@ private:
     SunGlare sun_;
     SunDisc sun_disc_; // drawn after the sky dome (Env0 +0x9D4 / +0x9D8)
     bool no_course_fog_ = SDL_getenv("GT3R_NO_COURSE_FOG") != nullptr; // compare with the old linear fog
+    bool no_far_plane_ = SDL_getenv("GT3R_NO_FAR_PLANE") != nullptr;    // compare without GT3's far plane
     bool dof_off_ = SDL_getenv("GT3R_NO_DOF") != nullptr; // compare without the replay depth of field
     bool heat_haze_ = false; // [video] heat_haze = on (default off): replays' heat haze lenses
     LampGlows lamps_;

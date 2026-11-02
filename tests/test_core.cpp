@@ -53,6 +53,19 @@ TEST(gs_cross_format) {
     CHECK(gs.read_texel(0, 2, 0x14, 4, 2) == 0x1); // high nibble of byte 0 (row-pair swap)
 }
 
+TEST(gs_ct16_expand) {
+    // A 16-bit texel's 5-bit channels become c << 3 with the low bits 0, as the GS reads them
+    // (a 16-bit CLUT the same way): 31 -> 248, not 255.
+    GsMemory gs;
+    const u16 px[2] = {u16(31 | (16 << 5) | (1 << 10) | 0x8000), u16(23 << 5)};
+    gs.upload(0, 1, 0x02, 2, 1, ByteSpan(reinterpret_cast<const u8*>(px), sizeof(px)));
+    Tex0 t;
+    t.psm = 0x02, t.tbw = 1, t.tcc = true;
+    std::vector<u32> c = gs.decode_rgba(t, 2, 1);
+    CHECK(c[0] == (248u | (128u << 8) | (8u << 16) | 0xFF000000u));
+    CHECK(c[1] == (184u << 8));
+}
+
 TEST(tex0_decode) {
     // TEX0 from a real GT3 texture header: 256x256 T4, CBP 0x22, TCC on.
     Tex0 t = Tex0::decode(0x2000044621410000ull);

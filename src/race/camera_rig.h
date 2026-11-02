@@ -85,7 +85,12 @@ public:
 
     render::Vec3 eye() const { return eye_; }
     render::Mat4 view() const { return view_; }
+    // GT3 shows its 640 x 448 frame at 4:3 (its 16:9 option scales x by 0.75), so a picture
+    // `aspect` wide per unit of height takes a frustum aspect x kPixelAspect wide: the
+    // projection and every overlay placed with it (frustum()).
+    static constexpr float kPixelAspect = (640.0f / 448.0f) / (ReplayDirector::kYScale * 4.0f / 3.0f);
     render::Mat4 projection(float aspect) const;
+    render::Frustum frustum(float aspect) const { return render::Frustum::symmetric(fovy_, aspect * kPixelAspect); }
     float fovy() const { return fovy_; }
     void set_orbit(float yaw, float pitch, float dist) { orbit_yaw_ = yaw, orbit_pitch_ = pitch, orbit_dist_ = dist; }
     // Replay (TV) cameras and the followed car's track distance (set before update()).
@@ -123,7 +128,19 @@ public:
     // player's views and car mounts; ours: the fallback TV cameras' distance to their aim.
     float focus() const { return focus_; }
 
-    float near_plane = 0.1f, far_plane = 6000.0f;
+    static constexpr float kFarPlane = 6000.0f; // ours, where no GT3 far plane is known
+    float near_plane = 0.1f, far_plane = kFarPlane;
+    // GT3's far plane (presentation §G: Env0 +0x20, 610..3010 m; 0 = none): its VU clips and culls
+    // the race view there (render::DrawOptions::far_clip), and drops tyre smoke beyond it.
+    // set_gt3_far also moves far_plane out to the backdrop's (CourseScene::kBackdropScale).
+    float gt3_far = 0;
+    void set_gt3_far(float far, float backdrop_scale) {
+        gt3_far = far;
+        far_plane = far > 0 ? far / backdrop_scale : kFarPlane;
+    }
+    // GT3's near plane at this view's zoom (presentation §G: 0.1 x 0.7002 x the zoom),
+    // where its VU clips at the guard band (render::DrawOptions::guard_near).
+    float gt3_near() const { return 0.1f * 0.7002f * 0.7f * ReplayDirector::kYScale / std::tan(fovy_ * 0.5f); }
 
 private:
     CameraMode mode_ = CameraMode::Bumper; // GT3's default view: in-car (both halves in 2P)

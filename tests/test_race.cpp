@@ -2150,6 +2150,62 @@ TEST(race_sun_disc_disc) {
     CHECK((ro.view_flags[0] & 1) && (ro.view_flags[1] & 1) && !(ro.view_flags[2] & 1));
 }
 
+// GT3's far plane (Env0 +0x20, presentation §G) on every US course, and the backdrop GT3 draws
+// at a hundredth of its depth: it lies inside 100 x that plane from anywhere near the road, so
+// neither GT3's plane nor our projection's (CameraRig::set_gt3_far) cuts it.
+TEST(race_far_plane_disc) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    std::map<std::string, float> fars;
+    size_t files = 0, backdrops = 0;
+    for (const auto& e : disc->volume().entries()) {
+        if (e.path.rfind("courses/US/", 0) != 0) continue;
+        ++files;
+        const std::string name = e.path.substr(11);
+        Bytes data = disc->volume().read(e);
+        course::CourseFile f = course::CourseFile::parse(data);
+        const race::SunParams env = race::SunParams::from_env0(f.section(data, course::kSlotEnv));
+        CHECK(env.has_env);
+        fars[name] = env.far_clip;
+        CHECK(env.far_clip >= 610 && env.far_clip <= 3010);
+        // The road's box, 200 m wider every way (the replay cameras stand beside it).
+        course::Road road = course::Road::parse(f.section(data, course::kSlotRoad));
+        render::Vec3 lo{1e9f, 1e9f, 1e9f}, hi{-1e9f, -1e9f, -1e9f};
+        for (const course::RoadSegment& seg : road.segments)
+            for (const course::Vec3& v : seg.vertices)
+                lo = {std::min(lo.x, v.x), std::min(lo.y, v.y), std::min(lo.z, v.z)},
+                hi = {std::max(hi.x, v.x), std::max(hi.y, v.y), std::max(hi.z, v.z)};
+        course::CourseModelOptions opt;
+        opt.textures = opt.scenery = opt.course_line = opt.sky = false;
+        opt.backdrop = true;
+        float reach = 0;
+        for (const scene::Mesh& m : course::build_course_model(data, opt, name).meshes)
+            for (const scene::Vertex& v : m.vertices) {
+                const float* t = m.transform.data();
+                const float p[3] = {t[0] * v.pos[0] + t[4] * v.pos[1] + t[8] * v.pos[2] + t[12],
+                                    t[1] * v.pos[0] + t[5] * v.pos[1] + t[9] * v.pos[2] + t[13],
+                                    t[2] * v.pos[0] + t[6] * v.pos[1] + t[10] * v.pos[2] + t[14]};
+                const float dx = std::max(std::fabs(p[0] - lo.x), std::fabs(p[0] - hi.x)) + 200;
+                const float dy = std::max(std::fabs(p[1] - lo.y), std::fabs(p[1] - hi.y)) + 200;
+                const float dz = std::max(std::fabs(p[2] - lo.z), std::fabs(p[2] - hi.z)) + 200;
+                reach = std::max(reach, std::sqrt(dx * dx + dy * dy + dz * dz));
+            }
+        backdrops += reach > 0;
+        CHECK(reach < env.far_clip / race::CourseScene::kBackdropScale);
+    }
+    CHECK(files == 80 && backdrops >= 70);
+    CHECK(fars["super"] == 1000 && fars["montecarlo"] == 610 && fars["laguna"] == 690);
+    CHECK(fars["testcourse"] == 3000 && fars["L_testcourse3"] == 3010 && fars["grandvalley"] == 2000);
+    CHECK(fars["akasaka"] == 1200 && fars["rome"] == 1460 && fars["r_rome"] == 1500);
+    // The camera's far planes: GT3's, and the projection's out to the backdrop's.
+    race::CameraRig cam;
+    CHECK(cam.gt3_far == 0 && cam.far_plane == race::CameraRig::kFarPlane);
+    cam.set_gt3_far(fars["montecarlo"], race::CourseScene::kBackdropScale);
+    CHECK(cam.gt3_far == 610 && near(cam.far_plane, 61000, 0.5f));
+    cam.set_gt3_far(0, race::CourseScene::kBackdropScale);
+    CHECK(cam.far_plane == race::CameraRig::kFarPlane);
+}
+
 TEST(race_course_scene_lights) {
     // A synthetic Env0: scene lights 0..2 enabled (bits 11..13), light 1 ambient only.
     Bytes env(0x1380, 0);

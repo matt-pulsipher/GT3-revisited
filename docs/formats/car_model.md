@@ -381,7 +381,9 @@ the u16 at Tex1 +0x10, 0 on disc), bits 19-22 CPSM (0 = CT32, 2 = CT16), bits
 23-31 the index of the texture record (0x28-byte records at Tex1 +0x18) that
 is patched. Entries do not have to follow texture order: 1,550 of 13,909
 variants (about 11 cars per time of day, e.g. `ho1086`) skip textures, and
-1,044 entries switch the CLUT between CT32 and CT16 (e.g. `ar0006`). Variant 0
+1,044 entries switch the CLUT between CT32 and CT16 (e.g. `ar0006`; the GS widens a CT16
+entry's 5-bit channels by a shift alone, low bits 0: 31 -> 248, as for every 16-bit texel and
+CLUT). Variant 0
 holds the TEX0 values. All CLUTs are already in the uploaded buffers, so
 painting is just choosing CBP/CPSM/CSA. V equals the car's colour
 count in `database/carcolor.db` (verified for 275 of 287 cars, all LOD sets). For example,

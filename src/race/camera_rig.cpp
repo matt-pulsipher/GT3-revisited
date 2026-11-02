@@ -158,8 +158,8 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         shake_time_ = 0;
     }
     // GT3 player views: eye at -p of the car's camera point in a frame at the body origin (ride
-    // height above the sim's ground-level origin), looking along that frame's forward axis; 60
-    // degrees horizontal over the 640x448 frame = 44 degrees vertical.
+    // height above the sim's ground-level origin), looking along that frame's forward axis; zoom
+    // sqrt(3): 60 degrees horizontal over the 640x448 frame, 48 degrees vertical.
     auto gt3_view = [&](int index) {
         float q = setup.wheels[0].ride_height > 0 ? setup.wheels[0].ride_height : 0.13f;
         render::Vec3 origin = rv(s.position + rotate(s.orientation, {0, q, 0}));
@@ -181,7 +181,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         if (look_back_ && index == 0) e.z = -e.z;
         eye_ = origin + r * e.x + u * e.y - f * e.z;
         view_ = render::look_at(eye_, eye_ + f, u);
-        fovy_ = 2.0f * std::atan(224.0f / (320.0f * 1.7320508f));
+        fovy_ = ReplayDirector::zoom_fovy(1.7320508f);
     };
 
     if (intro_ && mode_ != CameraMode::Orbit && mode_ != CameraMode::Tv) {
@@ -204,7 +204,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         eye_ = rv(s.position + rotate(s.orientation, e));
         render::Vec3 target = rv(s.position + rotate(s.orientation, tg));
         view_ = render::look_at(eye_, target, {0, 1, 0});
-        fovy_ = 2.0f * std::atan(224.0f / (320.0f * zoom));
+        fovy_ = ReplayDirector::zoom_fovy(zoom);
         focus_ = render::length(target - eye_);
         return;
     }
@@ -375,6 +375,8 @@ CameraCar CameraRig::camera_car(const sim::VehicleState& s, const sim::VehicleSe
     return c;
 }
 
-render::Mat4 CameraRig::projection(float aspect) const { return render::perspective(fovy_, aspect, near_plane, far_plane); }
+render::Mat4 CameraRig::projection(float aspect) const {
+    return render::perspective(fovy_, aspect * kPixelAspect, near_plane, far_plane);
+}
 
 } // namespace gt3r::race
