@@ -1271,22 +1271,49 @@ private:
             t.button = b;
             return t;
         };
-        auto axis = [](PadAxis x) {
+        auto axis = [](PadAxis x, InputSource::Half half = InputSource::Half::Full) {
             PadTarget t;
             t.kind = PadTarget::Kind::Axis;
             t.axis = x;
+            t.half = half;
             return t;
         };
         const bool gt3 = in.race_uses_menu_pad(p);
         heading(who + "race controls").columns = true;
+        // Ours: the look around after Look back. Its stick on the whole axes, buttons and keys on
+        // Look left / right (RX's halves; behind is Look back's).
         for (const PadTarget& t : {button(PadButton::Cross), button(PadButton::Square), button(PadButton::R2),
                                    button(PadButton::L2), button(PadButton::Circle), button(PadButton::Triangle),
-                                   button(PadButton::R1), button(PadButton::L1), button(PadButton::Start),
+                                   button(PadButton::R1), button(PadButton::L1), axis(PadAxis::RX),
+                                   axis(PadAxis::RY), axis(PadAxis::RX, InputSource::Half::Negative),
+                                   axis(PadAxis::RX, InputSource::Half::Positive), button(PadButton::Start),
                                    axis(PadAxis::LX), button(PadButton::Left), button(PadButton::Right),
                                    button(PadButton::R3)}) {
-            Row& r = binding(app, p, true, t);
+            // Look left / right lists its stick only: its halves have rows of their own.
+            Row& r = binding(app, p, true, t, t.kind == PadTarget::Kind::Axis && t.axis == PadAxis::RX);
             if (!gt3) continue;
-            // GT3 original: the race reads the menu pad, so the menu button's inputs drive it.
+            // GT3 original: the race reads the menu pad, so the menu button's inputs drive it. R3 (the
+            // right stick's click) looks back as well as L1 (race::look_back_held), so no input shows
+            // the overlay.
+            const bool look_back = t.kind == PadTarget::Kind::Button && t.button == PadButton::L1;
+            if (look_back) {
+                auto with_r3 = [&](std::string& column, BindingSet s) {
+                    const std::string r3 = inputs(in, p, in.bindings(p, true, s), button(PadButton::R3));
+                    if (!r3.empty()) column += (column.empty() ? "" : ", ") + r3;
+                };
+                if (in.kind(p) != DeviceKind::Keyboard) with_r3(r.value, BindingSet::Controller);
+                with_r3(r.keys, BindingSet::Keyboard);
+                r.label += " (L1, R3)";
+                r.desc = "GT3 original: the race reads the menu buttons, so this is L1's and R3's (the right stick's "
+                         "click). Editing it makes custom race controls from GT3 original plus the change.";
+                continue;
+            }
+            if (t.kind == PadTarget::Kind::Button && t.button == PadButton::R3) {
+                r.value.clear(), r.keys.clear();
+                r.desc = "GT3 original: the menu buttons' R3 looks back, so nothing shows the overlay. Editing it "
+                         "makes custom race controls from GT3 original plus the change.";
+                continue;
+            }
             r.label += " (" + target_name(t) + ")";
             r.desc = "GT3 original: the race reads the menu buttons, so this is " + target_name(t) +
                      "'s. Editing it makes custom race controls from GT3 original plus the change.";
@@ -1318,26 +1345,33 @@ private:
 
     static std::string target_name(const PadTarget& t) {
         static const char* const kAxes[] = {"Left stick X", "Left stick Y", "Right stick X", "Right stick Y"};
-        if (t.kind == PadTarget::Kind::Axis) return kAxes[size_t(t.axis)];
+        if (t.kind == PadTarget::Kind::Axis)
+            return std::string(kAxes[size_t(t.axis)]) +
+                   (t.half == InputSource::Half::Negative ? " -" : t.half == InputSource::Half::Positive ? " +" : "");
         return std::string(pad_button_name(t.button));
     }
 
     // A control's inputs in one set, as the player's device names them ("Cross", "Right paddle").
-    static std::string inputs(const InputManager& in, int player, const Profile& prof, const PadTarget& t) {
+    // An axis lists its halves' inputs too ("-A, +D"), unless `exact`; a half lists its own.
+    static std::string inputs(const InputManager& in, int player, const Profile& prof, const PadTarget& t,
+                              bool exact = false) {
         std::string out;
         for (const Binding& b : prof.bindings) {
+            const bool same_half = t.kind == PadTarget::Kind::Axis && (exact || t.half != InputSource::Half::Full);
             const bool match = b.target.kind == t.kind &&
-                               (t.kind == PadTarget::Kind::Button ? b.target.button == t.button : b.target.axis == t.axis);
+                               (t.kind == PadTarget::Kind::Button ? b.target.button == t.button : b.target.axis == t.axis) &&
+                               (!same_half || b.target.half == t.half);
             if (!match) continue;
             if (!out.empty()) out += ", ";
-            if (b.target.kind == PadTarget::Kind::Axis && b.target.half != InputSource::Half::Full)
+            if (b.target.kind == PadTarget::Kind::Axis && b.target.half != InputSource::Half::Full && !same_half)
                 out += b.target.half == InputSource::Half::Positive ? "+" : "-";
             out += in.describe(player, b.source);
         }
         return out;
     }
 
-    Row& binding(App& app, int p, bool race, const PadTarget& t) {
+    // `exact`: an axis whose halves have rows of their own lists only its whole-axis inputs (inputs()).
+    Row& binding(App& app, int p, bool race, const PadTarget& t, bool exact = false) {
         App* a = &app;
         InputManager& in = app.input();
         const std::string label = race ? std::string(race_action_name(t)) : target_name(t);
@@ -1347,8 +1381,8 @@ private:
         r.player = p;
         r.race = race;
         r.target = t;
-        r.value = in.kind(p) == DeviceKind::Keyboard ? "" : inputs(in, p, in.bindings(p, race, BindingSet::Controller), t);
-        r.keys = inputs(in, p, in.bindings(p, race, BindingSet::Keyboard), t);
+        r.value = in.kind(p) == DeviceKind::Keyboard ? "" : inputs(in, p, in.bindings(p, race, BindingSet::Controller), t, exact);
+        r.keys = inputs(in, p, in.bindings(p, race, BindingSet::Keyboard), t, exact);
         r.activate = [a, this, p, race, t, label] {
             guard_edit(*a, p, race, [this, p, race, t, label] { start_capture(p, race, t, false, label); });
         };
@@ -1496,8 +1530,11 @@ private:
                 capture_.race ? in.bind_race(capture_.player, capture_.target, c->source, !capture_.append, c->rest)
                               : in.bind(capture_.player, capture_.target, c->source, !capture_.append, c->rest);
             if (!bound) {
-                note_ = capture_.race ? "A button or key can't steer both ways: bind it to Steer left or Steer right."
-                                      : "A button or key can't move a stick both ways: use the D-pad rows.";
+                const PadAxis axis = capture_.target.axis;
+                note_ = !capture_.race           ? "A button or key can't move a stick both ways: use the D-pad rows."
+                        : axis == PadAxis::RX ? "A button or key can't look both ways: bind it to Look left or Look right."
+                        : axis == PadAxis::RY ? "A button or key can't look both ways: bind it to Look back."
+                                              : "A button or key can't steer both ways: bind it to Steer left or Steer right.";
                 note_left_ = 4;
             }
         } else if (capture_.timer > 0 && in.capturing()) {
@@ -1677,6 +1714,13 @@ private:
                0.5f, 0.01f, percent(c.steer_range), [apply, c](float v) {
                    TouchConfig n = c;
                    n.steer_range = v;
+                   apply(n);
+               });
+        toggle("Look around", "Drag sideways on the open screen, away from the controls, to turn the camera; "
+                              "drag farther to look behind. Let go and it turns back.",
+               c.look, [apply, c](bool v) {
+                   TouchConfig n = c;
+                   n.look = v;
                    apply(n);
                });
         slider("Tilt deadzone", "Tilt steering ignores this much turn around the centre.", c.tilt_deadzone, 0, 0.5f,

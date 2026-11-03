@@ -516,7 +516,7 @@ void add_modern_race_pad(Profile& p) {
     p.add("Down", "pad.dpdown");
     p.add("LX", "pad.leftx deadzone=0.08");
     p.add("LY", "pad.lefty deadzone=0.08");
-    p.add("RX", "pad.rightx deadzone=0.08");
+    p.add("RX", "pad.rightx deadzone=0.08"); // look around
     p.add("RY", "pad.righty deadzone=0.08");
 }
 
@@ -583,7 +583,16 @@ Profile make_race_preset(std::string_view layout, std::string_view device_preset
 }
 
 std::string_view race_action_name(const PadTarget& t) {
-    if (t.kind == PadTarget::Kind::Axis) return t.axis == PadAxis::LX ? "Steer" : "";
+    if (t.kind == PadTarget::Kind::Axis) {
+        using H = InputSource::Half;
+        switch (t.axis) {
+        case PadAxis::LX: return "Steer";
+        // Ours: the look around (race/camera_rig.h), the right stick's.
+        case PadAxis::RX: return t.half == H::Negative ? "Look left" : t.half == H::Positive ? "Look right" : "Look left / right";
+        case PadAxis::RY: return t.half == H::Full ? "Look ahead / behind" : "";
+        default: return "";
+        }
+    }
     if (t.kind != PadTarget::Kind::Button) return "";
     switch (t.button) {
     case PadButton::Cross: return "Accelerate";
@@ -871,6 +880,15 @@ void PlayerBindings::begin_custom(DeviceKind kind, bool race) {
     Profile keys = set(kind, race, BindingSet::Keyboard);
     std::optional<Profile> controller;
     if (kind != DeviceKind::Keyboard) controller = set(kind, race, BindingSet::Controller);
+    // Under "gt3" the menu's R3 looks back in races (race::look_back_held): the copies keep it there.
+    if (race && race_layout == "gt3") {
+        auto keep_look_back = [](Profile& p) {
+            for (Binding& b : p.bindings)
+                if (b.target.kind == PadTarget::Kind::Button && b.target.button == PadButton::R3) b.target.button = PadButton::L1;
+        };
+        keep_look_back(keys);
+        if (controller) keep_look_back(*controller);
+    }
     keys.name = "custom";
     slot(kind, race, BindingSet::Keyboard) = std::move(keys);
     if (controller) {
@@ -901,6 +919,12 @@ bool PlayerBindings::bind(DeviceKind kind, bool race, const PadTarget& target, c
     if (s == BindingSet::Controller && kind == DeviceKind::Keyboard) kind = controller_kind(source);
     std::optional<Profile>& c = slot(kind, race, s);
     if (!c) c = set(kind, race, s); // as it stands (under "gt3", the menu's)
+    // The race's RX halves are controls of their own (Look left / right): replacing the whole axis keeps them.
+    if (race && replace && target.kind == PadTarget::Kind::Axis && target.axis == PadAxis::RX &&
+        target.half == InputSource::Half::Full) {
+        c->remove_target(target);
+        replace = false;
+    }
     c->bind(target, source, replace, axis);
     return true;
 }

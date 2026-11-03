@@ -119,11 +119,12 @@ std::string_view pad_preset(); // "pad"; "quest" in VR builds
 
 // Race controls. While driving, the race reads a second virtual pad per player whose buttons
 // always mean what they meant in GT3 (Cross accelerate, Square brake, Triangle reverse, R2/L2
-// shift, R1 view, L1 look back, Start pause, ...); see race_action_name(). A race layout
+// shift, R1 view, L1 look back, Start pause, ...; ours: the right stick looks around, RX- / RX+
+// looking left / right); see race_action_name(). A race layout
 // says which physical inputs drive each of those actions:
 //   "modern" (default)  a current racing-game layout: triggers throttle/brake, Cross/Square
 //                       shift, Circle handbrake, Triangle view, R3 look back, L1 reverse,
-//                       WASD-style keyboard driving
+//                       the right stick looking around, WASD-style keyboard driving
 //   "gt3"               the original: the race reads the menu pad itself (identity), so every
 //                       button does what it did on a DualShock 2
 // make_race_preset("gt3", ...) returns an empty profile named "gt3" (= use the menu pad).

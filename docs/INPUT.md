@@ -135,7 +135,8 @@ then holds the controllers and their bindings, for player 1 and player 2
 
 - **Player N race controls**: the race actions in driving order (Accelerate,
   Brake, Shift up, Shift down, Handbrake, Reverse, Change view, Look back,
-  Pause, Steer, Steer left / right, the performance overlay);
+  Look left / right, Look ahead / behind, Look left, Look right, Pause, Steer,
+  Steer left / right, the performance overlay);
 - **Player N menu buttons**: a reset row, then the DualShock 2's buttons and
   sticks, as the game's menus read them.
 
@@ -149,9 +150,10 @@ then:
   controller input. The other column keeps its input. Esc, Android Back or a
   tap / click cancels instead (so those keys can't be captured: choose the
   layout again to get them back), and mouse buttons aren't captured (set them
-  in `config.ini`, e.g. `mouse.left`). A button or key on Steer or a stick axis
-  is refused: it could push it only one way (bind it to Steer left / Steer
-  right, or the D-pad). A stick captured on Steer or a stick axis gets
+  in `config.ini`, e.g. `mouse.left`). A button or key on Steer, Look left /
+  right, Look ahead / behind or a stick axis is refused: it could push it only
+  one way (bind it to Steer left / Steer right, Look left / Look right or Look
+  back, or the D-pad). A stick captured on Steer or a stick axis gets
   `deadzone=0.08`; a wheel's axis gets none, and the wheel's saved sets drop the
   `deadzone=0.08` earlier versions gave it (issue 134). An axis that rests at an
   end (a pedal, a joystick's trigger) captured on a button or a stick half reads
@@ -183,9 +185,12 @@ Settings asks first ("Replace your custom race controls with GT3 original plus
 this change?", Cancel focused).
 
 Under **GT3 original** the race reads the menu pad, so the race list shows each
-action's menu button ("Accelerate (Cross)") and the menu buttons' inputs.
-Editing one there starts custom race controls from GT3 original's mapping plus
-the change.
+action's menu button ("Accelerate (Cross)") and the menu buttons' inputs. R3
+(the right stick's click) looks back there as well as L1, as Look back is the
+right stick's click in Modern: the list shows "Look back (L1, R3)" with both
+buttons' inputs, and the performance overlay none. Editing one there starts
+custom race controls from GT3 original's mapping plus the change, with R3's
+inputs on Look back.
 
 **Inputs from other devices.** Any binding can come from any connected
 controller, for either player: a brake pedal set, a second pad's trigger, a
@@ -309,18 +314,30 @@ The race pad's buttons keep GT3's meaning, and the race layout (per player:
 | Shift up / down (R2 / L2) | Cross / Square (A / X), back paddles | R2 / L2 | E / Q | O / U |
 | Reverse (Triangle, pressure) | L1 (held) | Triangle | R | H |
 | Change view (R1) | Triangle / Y | R1 | C | period |
-| Look back, held (L1) | R3 | L1 | X | comma |
+| Look back, held (L1) | R3 | L1, R3 | X | comma |
+| Look around (RX / RY, ours) | Right stick | Right stick | Home / End (left / right), Page Down (behind) | unbound |
 | Pause (Start) | Start | Start | Esc, P | ; |
 | Performance overlay (R3, ours; developer tool) | unbound | unbound | unbound | unbound |
 
 Players without these keys rebind them in Settings → Controls.
 
 There is no respawn, as in GT3: a car stays where it is. The performance overlay
-is off controllers by default (under `gt3` the menu pad's R3 does nothing in a
+is off controllers by default (under `gt3` the menu pad's R3 looks back in a
 race); bind it under the race controls in **Settings → Controls** if wanted. In time
 trials, free runs, machine tests and licence tests the controller's own Select (the
 menu pad's: Back / Select, Tab on the keyboard) shows or hides the ghost, as in the
 original.
+
+**Look around** (ours): the stick's direction is where the view
+turns (right: 90° right, pulled back: behind, pushed up: ahead), eased there
+and back ahead when the stick is let go. In-car the view turns where the eye
+is; the chase views go round the car. Look back takes over while held, the
+mirror is hidden while the view is turned to the side, and it is off in the
+disc's demonstrations, replays and VR (the headset looks around). In Settings
+the stick is on **Look left / right** and **Look ahead / behind** (`RX` and
+`RY` on the race pad); buttons and keys go on **Look left** and **Look right**
+(`RX-` / `RX+`), and behind is Look back's. Replacing the stick on Look left /
+right keeps them.
 
 Change view cycles in-car (with mirror), in-car without mirror, chase and far
 chase; `[race] views = gt3` (Settings: Race views) keeps GT3's own two, in-car
@@ -460,7 +477,7 @@ Each screen picks a layout:
 | Layout | Controls |
 |---|---|
 | Menu (default) | D-pad (slide between directions), Cross / Circle / Square / Triangle, L1, R1, Select, Start. Taps away from the controls go to the screen underneath |
-| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). With `steering = buttons`, Left and Right buttons in the bottom corner instead (a thumb can rock from one to the other): they press the race pad's D-pad, so the car steers as GT3 steers with a DualShock 2's D-pad (full lock, turned in at its slow digital rate and let back faster). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, reverse above shift up, handbrake (Circle) left of the brake, and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls). Reverse is GT3's own reverse (Triangle): hold it to back up (it takes over from the gas while held, as in GT3), then press the gas to drive forward again. It sits out of the way of the thumb on the pedals (on 20:9 phones in the side bar, clear of the lap times), and only a finger put down on it reverses: a thumb sliding onto it never does, and one on it can slide on to the pedals. Where the screen is too short for it above shift up (the largest control sizes), it sits above the handbrake. Left of pause, Previous / Next song (the [song controls](#song-controls)): hidden until shown in the layout editor |
+| Driving (race screen, while racing; its pause and quick menus use Menu) | Steering zone on the left half: put a finger down anywhere and drag sideways (the touch-down point is centre). With `steering = buttons`, Left and Right buttons in the bottom corner instead (a thumb can rock from one to the other): they press the race pad's D-pad, so the car steers as GT3 steers with a DualShock 2's D-pad (full lock, turned in at its slow digital rate and let back faster). Gas (Cross) and brake (Square) pedals on the right: the higher the finger on the pedal, the more pressure; a finger can slide from brake to gas. Shift up / down above the pedals, reverse above shift up, handbrake (Circle) left of the brake, and pause (Start) and camera at the top; they press the race pad's buttons, so they work with any [race layout](#race-controls). Reverse is GT3's own reverse (Triangle): hold it to back up (it takes over from the gas while held, as in GT3), then press the gas to drive forward again. It sits out of the way of the thumb on the pedals (on 20:9 phones in the side bar, clear of the lap times), and only a finger put down on it reverses: a thumb sliding onto it never does, and one on it can slide on to the pedals. Where the screen is too short for it above shift up (the largest control sizes), it sits above the handbrake. Left of pause, Previous / Next song (the [song controls](#song-controls)): hidden until shown in the layout editor. A finger put down on the open screen, at least 20 units from every control (with tilt steering the steering zone is open screen), looks around (`look = drag`; Settings → Touch → Look around): drag sideways to turn the view, 96 units (15 % of the 640-unit width) for 90°, twice that for behind; lift it and the view turns back ahead |
 
 ```ini
 [touch]
@@ -469,6 +486,7 @@ steering = drag        ; drag | tilt (roll the device like a wheel, ±45° = ful
 pedals = position      ; position | area (touch pressure/size, where the screen reports it) | full
 pedal_min = 0.35       ; pressure at the bottom of a pedal (position mode)
 steer_range = 0.14     ; drag distance for full lock, fraction of the screen width
+look = drag            ; drag (a finger on the open screen looks around) | off
 tilt_deadzone = 0.04   ; fraction of full lock
 opacity = 0.50
 size = 1.00            ; 0.6 .. 1.6

@@ -2234,8 +2234,23 @@ the view does not judder.
 - **L1 held looks back.**
   - Chase: heading + π, pitch negated.
   - In-car: the forward axis reversed and the eye's z mirrored.
+  - Ours, far chase and roof (§H4): turned round the same way, the far chase's
+    eye ahead of the car looking back past it.
   - No mirror while looking back.
-- **Rear-view mirror** (in-car views, not in replays, not while looking back):
+  - Ours: the right stick's click looks back too, on the GT3 original controls
+    as in the modern ones.
+  - Test `race_camera_look_back`: every player view looks back while held.
+- **The right stick looks around** (ours).
+  - The stick's direction is where the view turns: right 90° right, pulled back
+    behind, pushed up ahead. The view eases there and back ahead when the stick
+    is let go.
+  - In-car the view turns about the car's up axis with the eye in place; the
+    chase views go round the car.
+  - Look back takes over while held. No mirror while the view is turned more
+    than 0.35 rad (20°) to the side.
+  - On phones a drag on the open screen, away from the controls, does the same.
+- **Rear-view mirror** (in-car views, not in replays, not while looking back or
+  turned to the side):
   - **Placement.** A 240 x 64 rectangle at (200, 20) of the frame (pushed by
     106.667 in 16:9) with a 1-unit black outline. On a 4:3 2P half it is
     240 x 55 at (200, 16) of the 640 x 224 half. Side-by-side 2P halves have

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <utility>
 
 namespace gt3r {
@@ -189,6 +190,7 @@ TouchConfig TouchConfig::load(const IniDocument& ini) {
     }
     c.pedal_min = parse_float(get("pedal_min"), c.pedal_min, 0.0f, 1.0f);
     c.steer_range = parse_float(get("steer_range"), c.steer_range, 0.03f, 0.5f);
+    if (auto v = get("look")) c.look = to_lower(*v) != "off" && *v != "0";
     c.tilt_deadzone = parse_float(get("tilt_deadzone"), c.tilt_deadzone, 0.0f, 0.5f);
     c.opacity = parse_float(get("opacity"), c.opacity, 0.05f, 1.0f);
     c.size = parse_float(get("size"), c.size, 0.6f, 1.6f);
@@ -208,6 +210,7 @@ void TouchConfig::save(IniDocument& ini) const {
     ini.set("touch", "pedals", pedals == Pedals::Area ? "area" : pedals == Pedals::Full ? "full" : "position");
     ini.set("touch", "pedal_min", format_float(pedal_min));
     ini.set("touch", "steer_range", format_float(steer_range));
+    ini.set("touch", "look", look ? "drag" : "off");
     ini.set("touch", "tilt_deadzone", format_float(tilt_deadzone));
     ini.set("touch", "opacity", format_float(opacity));
     ini.set("touch", "size", format_float(size));
@@ -530,7 +533,23 @@ int TouchControls::widget_at(float x, float y, bool hidden) const {
     return -1;
 }
 
-bool TouchControls::hit(float x, float y) const { return visible() && widget_at(x, y) >= 0; }
+bool TouchControls::hit(float x, float y) const { return visible() && (widget_at(x, y) >= 0 || opens_look(x, y)); }
+
+bool TouchControls::opens_look(float x, float y) const {
+    if (layout_ != TouchLayout::Driving || !cfg_.look) return false;
+    for (const Widget& w : widgets_) {
+        if (w.hidden) continue;
+        if (w.kind == Widget::Kind::Steering && cfg_.steering != TouchConfig::Steering::Drag) continue; // only a hint
+        if (w.shape == Widget::Shape::Circle) {
+            const float r = w.w * kHitScale + kLookClear, dx = x - w.x, dy = y - w.y;
+            if (dx * dx + dy * dy <= r * r) return false;
+        } else if (x >= w.x - kLookClear && x < w.x + w.w + kLookClear && y >= w.y - kLookClear &&
+                   y < w.y + w.h + kLookClear) {
+            return false;
+        }
+    }
+    return true;
+}
 
 int TouchControls::dpad_direction(const Widget& w, float x, float y) const {
     float dx = x - (w.x + w.w / 2), dy = y - (w.y + w.h / 2);
@@ -569,10 +588,13 @@ bool TouchControls::finger_down(u64 id, float x, float y, float pressure) {
     if (!visible()) return false;
     std::erase_if(fingers_, [&](const Finger& f) { return f.id == id; });
     int w = widget_at(x, y);
-    if (w < 0) return false;
+    // On the open screen it looks around (with tilt steering the steering zone is open screen).
+    const bool look = (w < 0 || widgets_[size_t(w)].kind == Widget::Kind::Steering) && opens_look(x, y);
+    if (w < 0 && !look) return false;
     Finger f;
     f.id = id;
-    f.widget = w;
+    f.widget = look ? -1 : w;
+    f.look = look;
     f.x = f.origin_x = x;
     f.y = f.origin_y = y;
     f.pressure = pressure;
@@ -584,6 +606,7 @@ void TouchControls::finger_move(u64 id, float x, float y, float pressure) {
     Finger* f = find(id);
     if (!f) return;
     f->x = x, f->y = y, f->pressure = pressure;
+    if (f->look) return; // looking around until it lifts
     // Buttons and pedals follow a sliding finger (brake -> gas, D-pad -> face
     // buttons); the steering zone and the song buttons keep theirs, and a sliding finger
     // never skips a song or selects reverse (it can slide off reverse onto the pedals).
@@ -639,7 +662,12 @@ void TouchControls::update(double, float tilt) {
     }
     pad_.connected = true;
     float lx = 0.0f;
+    std::optional<float> look; // the first looking finger's turn (radians, + right)
     for (const Finger& f : fingers_) {
+        if (f.look) {
+            if (!look) look = std::clamp((f.x - f.origin_x) / kLookRange, -2.0f, 2.0f) * 1.5707964f;
+            continue;
+        }
         Widget& w = widgets_[size_t(f.widget)];
         switch (w.kind) {
         case Widget::Kind::Button:
@@ -687,6 +715,8 @@ void TouchControls::update(double, float tilt) {
             if (w.kind == Widget::Kind::Steering) w.value = lx;
     }
     pad_.set_axis(PadAxis::LX, lx);
+    // The look as the right stick pushed fully that way (up = ahead; CameraRig::set_look).
+    if (look) pad_.set_axis(PadAxis::RX, std::sin(*look)), pad_.set_axis(PadAxis::RY, -std::cos(*look));
     pressed_actions_ = u8(held_actions_ & ~was_held);
     std::erase_if(fingers_, [](const Finger& f) { return f.released; });
     for (Finger& f : fingers_) f.seen = true;
