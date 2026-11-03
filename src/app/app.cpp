@@ -60,6 +60,9 @@ bool App::init(int argc, char** argv) {
     // In a headset the (invisible) window never has keyboard focus, and SDL drops joystick
     // input without it: the controllers' virtual gamepad and Bluetooth pads alike.
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    // Nor does Android's screen keyboard open over an immersive app: text is typed on the game's
+    // own (app/text_keyboard.h), so SDL doesn't ask for it.
+    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
 #endif
     // iOS: the audio session games have (the system's default for apps): silent with the Ring /
     // Silent switch, and other apps' music paused while the game plays. SDL's own default there
@@ -1130,7 +1133,8 @@ void App::set_xr_settings(const xr::Settings& s) {
 }
 
 // The right controller points at the virtual screen (menus, movies; not while racing in 3D):
-// a dot follows it and the trigger clicks, as mouse events in UI coordinates.
+// a dot follows it and the trigger clicks, as mouse events (of kXrPointerMouse, ui.h) in UI
+// coordinates.
 void App::xr_pointer() {
     // Already in UI coordinates: routed like App::event's pointer events after their conversion.
     auto dispatch = [this](const SDL_Event& e) {
@@ -1145,10 +1149,13 @@ void App::xr_pointer() {
             SDL_Event e{};
             e.type = SDL_EVENT_MOUSE_BUTTON_UP;
             e.button.button = SDL_BUTTON_LEFT;
+            e.button.which = kXrPointerMouse;
             e.button.x = xr_pointer_x_, e.button.y = xr_pointer_y_;
             dispatch(e);
         }
         xr_pointer_on_ = xr_pointer_down_ = false;
+        xr_->set_a_clicks(false);
+        ui_->set_pointer(false, 0, 0);
         return;
     }
     // Canvas pixels -> UI units through the canvas's logical presentation (layout_ui).
@@ -1167,6 +1174,7 @@ void App::xr_pointer() {
     if (!xr_pointer_on_ || x != xr_pointer_x_ || y != xr_pointer_y_) {
         SDL_Event e{};
         e.type = SDL_EVENT_MOUSE_MOTION;
+        e.motion.which = kXrPointerMouse;
         e.motion.x = x, e.motion.y = y;
         e.motion.xrel = xr_pointer_on_ ? x - xr_pointer_x_ : 0;
         e.motion.yrel = xr_pointer_on_ ? y - xr_pointer_y_ : 0;
@@ -1179,12 +1187,19 @@ void App::xr_pointer() {
         SDL_Event e{};
         e.type = pressed ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
         e.button.button = SDL_BUTTON_LEFT;
+        e.button.which = kXrPointerMouse;
         e.button.down = pressed;
         e.button.clicks = 1;
         e.button.x = x, e.button.y = y;
         dispatch(e);
         xr_pointer_down_ = pressed;
     }
+    // A clicks what the page would take a click on (as last drawn); buttons and tabs under the
+    // pointer highlight.
+    const bool clickable = updates().dialog_open() ? updates().dialog_clickable(x, y)
+                                                   : !screens_.empty() && screens_.back()->clickable(x, y);
+    xr_->set_a_clicks(clickable);
+    ui_->set_pointer(true, x, y);
 }
 #endif
 

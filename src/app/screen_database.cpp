@@ -61,6 +61,8 @@ public:
             int step = m.held(PadButton::R1) || m.held(PadButton::L1) ? 10 : 1;
             sel = std::clamp(sel + m.vertical() * step, 0, n - 1);
         }
+        for (const XrList::Hit& h : {xr_list_.take_hover(), xr_list_.take_click()}) // the VR pointer
+            if (h.row >= 0 && h.row < n) sel = h.row;
         if (mode_ == Mode::Cars && m.horizontal()) page_ = (page_ + 3 + m.horizontal()) % 3;
         if (mode_ == Mode::Cars && m.pressed(PadButton::Circle)) {
             sort_by_power_ = !sort_by_power_;
@@ -68,7 +70,10 @@ public:
         }
     }
 
+    void on_event(App&, const SDL_Event& e) override { xr_list_.event(e); }
+
     void render(App&, Ui& ui) override {
+        xr_list_.clear();
         if (!error_.empty() || !gt_) {
             ui.header("CAR DATABASE", "");
             ui.text_center(150, error_, colors::kBad);
@@ -146,7 +151,8 @@ private:
     void render_cars(Ui& ui) {
         ui.header("CAR DATABASE", fmt("%zu cars  %s", order_.size(), sort_by_power_ ? "by power" : "by maker"));
         int n = int(order_.size());
-        int first = ui.list_window(n, car_sel_, kRows);
+        int first = xr_list_.first(0, car_sel_, kRows, ui.list_window(n, car_sel_, kRows));
+        xr_list_.rows(0, first, std::min(kRows, n - first), 4, 240, 24, 12);
         for (int i = 0; i < kRows && first + i < n; ++i) {
             int idx = first + i;
             const data::Car& c = db().cars()[order_[idx]];
@@ -273,7 +279,8 @@ private:
         const auto& ev = db().events();
         ui.header("RACE EVENTS", fmt("%zu events", ev.size()));
         int n = int(ev.size());
-        int first = ui.list_window(n, event_sel_, kRows);
+        int first = xr_list_.first(0, event_sel_, kRows, ui.list_window(n, event_sel_, kRows));
+        xr_list_.rows(0, first, std::min(kRows, n - first), 4, 240, 24, 12);
         for (int i = 0; i < kRows && first + i < n; ++i) {
             int idx = first + i;
             float y = 26 + i * 12.0f;
@@ -328,6 +335,7 @@ private:
     bool sort_by_power_ = false;
     Mode mode_ = Mode::Cars;
     int car_sel_ = 0, event_sel_ = 0, page_ = 0;
+    XrList xr_list_;
 };
 
 } // namespace

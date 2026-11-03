@@ -155,16 +155,6 @@ public:
 
     bool follows_aspect() const override { return true; }
 
-    // UI point -> menu layout coordinates (640x448, y up), matching the 4:3
-    // picture placement in render(). False outside the picture.
-    static bool ui_to_menu(const Ui& ui, SDL_FPoint p, float& x, float& y) {
-        const UiRect pic = ui.picture43();
-        if (p.x < pic.x || p.x >= pic.right() || p.y < 0 || p.y >= pic.h) return false;
-        x = (p.x - pic.x) * 640.0f / pic.w;
-        y = 448.0f - p.y * 448.0f / pic.h;
-        return true;
-    }
-
     void update(App& app, double dt) override {
         if (!flow_ && !init_tried_) init_tried_ = true, init(app); // once: a failure shows its error (no retry every frame)
         if (!flow_) {
@@ -264,8 +254,9 @@ public:
         const SDL_FRect dst{pic.x, pic.y, pic.w, pic.h};
         if (frame_) SDL_RenderTexture(app.renderer(), frame_, nullptr, &dst);
         // Our main menu (settings, mods, online, ...), in the bar beside the title menu.
+        gt3r_button_ = {};
         if (on_title()) {
-            const UiRect b = gt3r_menu_button(app);
+            const UiRect b = gt3r_button_ = gt3r_menu_button(app);
             auto draw = [&](float dx, float dy) {
                 const UiRect d{b.x + dx, b.y + dy, b.w, b.h};
                 ui.button(d, "GT3R menu", false, press_ && b.contains(press_->x, press_->y));
@@ -318,6 +309,9 @@ private:
         return !language_page_ && flow_ && flow_->controller() && !flow_->switching() &&
                flow_->controller()->page_name() == "root" && !flow_->controller()->busy();
     }
+
+    // The title's GT3R menu button (the game's own items take A as Cross after a hover).
+    bool clickable(float x, float y) const override { return on_title() && gt3r_button_.contains(x, y); }
 
     std::string menu_music_; // the menu's current BGM sequence ("" = none)
     struct Message {
@@ -697,6 +691,7 @@ private:
     std::string lang_ = "US";
     std::vector<std::string> languages_;
     bool language_page_ = false;
+    UiRect gt3r_button_; // as last drawn (none off the title)
     std::string error_;
     bool init_tried_ = false;
 };

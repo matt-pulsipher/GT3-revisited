@@ -174,31 +174,70 @@ bool ReplayOptions::tick(u16 held) {
         }
         return true;
     }
-    if (key(MenuKey::Confirm)) {
-        const int c = col_[size_t(row_)];
-        if (cell(row_, c) == 2) {
-            sounds_.push_back("disable");
-            return true;
-        }
-        switch (row_) {
-        case RowMode: // (the avant-garde mode stores BGM on)
-            s_.mode = c;
-            if (ReplaySettings::bgm_forced(c)) s_.bgm = true;
-            col_[RowTarget] = s_.current_target();
-            break;
-        case RowTarget: s_.target[size_t(s_.mode)] = c; break;
-        case RowItem1:
-        case RowItem2: s_.items ^= item_bit(row_, c); break;
-        case RowSound:
-            if (c == 0) s_.bgm = !s_.bgm;
-            else s_.se = !s_.se;
-            break;
-        case RowScreen: s_.split = c == 1; break;
-        }
-        changed_ = true;
-        sounds_.push_back("ok");
-    }
+    if (key(MenuKey::Confirm)) apply();
     return true;
+}
+
+void ReplayOptions::apply() {
+    const int c = col_[size_t(row_)];
+    if (cell(row_, c) == 2) {
+        sounds_.push_back("disable");
+        return;
+    }
+    switch (row_) {
+    case RowMode: // (the avant-garde mode stores BGM on)
+        s_.mode = c;
+        if (ReplaySettings::bgm_forced(c)) s_.bgm = true;
+        col_[RowTarget] = s_.current_target();
+        break;
+    case RowTarget: s_.target[size_t(s_.mode)] = c; break;
+    case RowItem1:
+    case RowItem2: s_.items ^= item_bit(row_, c); break;
+    case RowSound:
+        if (c == 0) s_.bgm = !s_.bgm;
+        else s_.se = !s_.se;
+        break;
+    case RowScreen: s_.split = c == 1; break;
+    }
+    changed_ = true;
+    sounds_.push_back("ok");
+}
+
+bool ReplayOptions::cell_at(float x, float y, bool vertical_split, int& row, int& col) const {
+    const std::optional<menu::MenuScene>& sc = scenes_[two_player_ ? 1 : 0];
+    if (!sc) return false;
+    auto hit = [&](const char* name, int r, int c) {
+        const menu::Element* e = find_element(*sc, name);
+        if (!e || x < e->x || x > e->x + e->w || y < e->y || y > e->y + e->h) return false;
+        row = r, col = c;
+        return true;
+    };
+    for (int c = 0; c < 4; ++c)
+        if (hit(kModeNames[c], RowMode, c)) return true;
+    for (int c = 0; c < 3; ++c)
+        if (hit(kTargetNames[c], RowTarget, c)) return true;
+    for (int c = 0; c < 3; ++c)
+        if (hit(kItem1Names[c], RowItem1, c)) return true;
+    for (int c = 0; c < 4; ++c)
+        if (hit(kItem2Names[c], RowItem2, c)) return true;
+    for (int c = 0; c < 2; ++c)
+        if (hit(kSoundNames[c], RowSound, c)) return true;
+    return two_player_ && (hit("screen_single", RowScreen, 0) ||
+                           hit(vertical_split ? "screen_v_split" : "screen_h_split", RowScreen, 1));
+}
+
+void ReplayOptions::hover(float x, float y, bool vertical_split) {
+    int r = 0, c = 0;
+    if (!cell_at(x, y, vertical_split, r, c) || cell(r, c) == 2 || (r == row_ && c == col_[size_t(r)])) return;
+    row_ = r, col_[size_t(r)] = c;
+    sounds_.push_back("cursor");
+}
+
+void ReplayOptions::tap(float x, float y, bool vertical_split) {
+    int r = 0, c = 0;
+    if (!cell_at(x, y, vertical_split, r, c) || cell(r, c) == 2) return;
+    if (r == row_ && c == col_[size_t(r)]) apply();
+    else hover(x, y, vertical_split);
 }
 
 bool ReplayOptions::load(const Vfs& vfs, SDL_Renderer* r, text::GameFonts& fonts, const std::string& lang) {

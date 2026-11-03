@@ -91,6 +91,11 @@ public:
     const ReplaySettings& settings() const { return s_; }
     bool changed() const { return changed_; } // something was applied since open()
     std::vector<std::string> take_sounds();
+    // Pointers (menu units, 640x448 y up; `vertical_split` as draw()): a hover moves the cursor
+    // to the cell under it; a tap on the cursor's cell applies it as Circle / Cross, on another
+    // moves the cursor there. Disabled cells take neither.
+    void hover(float x, float y, bool vertical_split = true);
+    void tap(float x, float y, bool vertical_split = true);
 
     int row() const { return row_; }
     int column() const { return col_[size_t(row_)]; }
@@ -104,6 +109,9 @@ public:
     void draw(const SDL_FRect& dst, bool vertical_split = true);
 
 private:
+    bool cell_at(float x, float y, bool vertical_split, int& row, int& col) const;
+    void apply(); // the cursor's cell, as Circle / Cross
+
     ReplaySettings s_;
     bool two_player_ = false;
     bool changed_ = false;

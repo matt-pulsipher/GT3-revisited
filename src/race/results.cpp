@@ -440,6 +440,9 @@ QuickMenu::Choice QuickMenu::update(u16 held, double dt) {
 
 std::vector<std::string> QuickMenu::take_sounds() { return std::exchange(sounds_, {}); }
 
+bool QuickMenu::tap(float x, float y) { return ctl_ && ctl_->tap(x, y); }
+bool QuickMenu::hover(float x, float y) { return ctl_ && ctl_->hover(x, y); }
+
 const std::string& QuickMenu::focused() const {
     static const std::string none;
     if (!ctl_ || !ctl_->has_page()) return none;

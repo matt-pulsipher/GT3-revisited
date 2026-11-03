@@ -166,14 +166,15 @@ void RecordsPanel::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::vect
 
 // --- Option list ----------------------------------------------------------------------
 
+constexpr float kOptionY0 = 110, kOptionStep = 34; // the rows' centres
+
 void draw_option_list(SDL_Renderer* r, text::GameFonts& fonts, const std::string& title,
                       const std::vector<OptionRow>& rows, int selected, const std::string& help, const SDL_FRect& dst) {
     Frame f{dst};
     fill(r, f, 0, 0, kMenuW, kMenuH, SDL_Color{12, 12, 14, 255});
     text(fonts, f, 320, 40, title, "sw_20", 1.0f, SDL_Color{255, 120, 0, 255}, text::HAlign::Center);
-    float y0 = 110;
     for (size_t i = 0; i < rows.size(); ++i) {
-        float y = y0 + 34 * float(i);
+        float y = kOptionY0 + kOptionStep * float(i);
         bool sel = int(i) == selected;
         fill(r, f, 120, y - 14, 400, 28, sel ? SDL_Color{255, 120, 0, 70} : SDL_Color{40, 40, 46, 255});
         SDL_Color c = sel ? kAmber : kGrey;
@@ -182,6 +183,17 @@ void draw_option_list(SDL_Renderer* r, text::GameFonts& fonts, const std::string
              text::HAlign::Right);
     }
     if (!help.empty()) text(fonts, f, 320, 410, help, "sw_16#1", 0.55f, kDim, text::HAlign::Center);
+}
+
+int option_list_row(size_t count, float x, float y, const SDL_FRect& dst) {
+    if (dst.w <= 0 || dst.h <= 0) return -1;
+    const float mx = (x - dst.x) * kMenuW / dst.w, my = (y - dst.y) * kMenuH / dst.h;
+    if (mx < 120 || mx >= 520) return -1;
+    for (size_t i = 0; i < count; ++i) {
+        const float cy = kOptionY0 + kOptionStep * float(i);
+        if (my >= cy - 14 && my < cy + 14) return int(i);
+    }
+    return -1;
 }
 
 } // namespace gt3r::race

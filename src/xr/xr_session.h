@@ -135,6 +135,9 @@ public:
     void rumble(float low, float high, Uint32 ms);
     // Where the pointer hits the screen this frame, (u, v) in 0..1 from the top left.
     bool pointer(float& u, float& v, bool& pressed) const;
+    // The pointer is over something the page takes clicks on (App::xr_pointer, each frame): A
+    // pressed there clicks as the trigger does instead of being the pad's A.
+    void set_a_clicks(bool on) { a_clicks_ = on; }
 
     struct Impl;
 
@@ -147,8 +150,13 @@ private:
     Eye eyes_[2];
     bool eyes_valid_ = false;
     bool stereo_ = false;
+    bool hud_panel_ = false; // the last frame showed the canvas as the race's HUD panel (not the screen)
     bool pointer_on_ = false, pointer_pressed_ = false;
     float pointer_u_ = 0, pointer_v_ = 0;
+    bool pull_ = false, pull_free_ = false; // the trigger pulled; the ray left where the pull began
+    float pull_u_ = 0, pull_v_ = 0;
+    bool trigger_down_ = false;
+    bool a_clicks_ = false, a_held_ = false, a_click_ = false; // a_click_: this A press clicks
     bool recenter_pending_ = false;
 };
 

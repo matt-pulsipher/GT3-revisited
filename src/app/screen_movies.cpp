@@ -61,14 +61,19 @@ public:
             return;
         }
         if (m.pressed(PadButton::Square)) gallery_ = !gallery_;
+        const XrList::Hit hover = xr_list_.take_hover(), click = xr_list_.take_click(); // the VR pointer
         if (gallery_) {
             int n = int(previews_.entries().size());
             if (n) still_sel_ = std::clamp(still_sel_ + m.vertical(), 0, n - 1);
+            for (const XrList::Hit& h : {hover, click})
+                if (h.row >= 0 && h.row < n) still_sel_ = h.row;
             if (m.pressed(PadButton::Triangle)) gallery_ = false;
             return;
         }
         int n = int(files_.size());
         if (n) sel_ = std::clamp(sel_ + m.vertical(), 0, n - 1);
+        if (hover.row >= 0 && hover.row < n) sel_ = hover.row;
+        if (click.row >= 0 && click.row < n) play(app, sel_ = click.row);
         if (m.pressed(PadButton::Cross) && n) play(app, sel_);
         if (m.pressed(PadButton::Triangle)) app.pop();
     }
@@ -78,14 +83,18 @@ public:
         if (still_tex_) SDL_DestroyTexture(still_tex_);
     }
 
+    void on_event(App&, const SDL_Event& e) override { xr_list_.event(e); }
+
     void render(App&, Ui& ui) override {
+        xr_list_.clear();
         if (playing_ >= 0) return render_playback(ui);
         if (gallery_) return render_gallery(ui);
         ui.header("MOVIE THEATER", std::to_string(files_.size()) + " movies");
         if (files_.empty()) ui.text_center(150, error_.empty() ? "No movies found" : error_, colors::kBad);
         if (!error_.empty() && !files_.empty()) ui.text(10, Ui::kHeight - 44, error_, colors::kBad);
         int n = int(files_.size());
-        int first = ui.list_window(n, sel_, kRows);
+        int first = xr_list_.first(0, sel_, kRows, ui.list_window(n, sel_, kRows));
+        xr_list_.rows(0, first, std::min(kRows, n - first), 4, Ui::kWidth - 4, 26, 12);
         for (int i = 0; i < kRows && first + i < n; ++i) {
             int idx = first + i;
             float y = 28 + i * 12.0f;
@@ -160,7 +169,8 @@ private:
             ui.text_center(150, "stream/course.ipic not found", colors::kBad);
         } else {
             int n = int(entries.size());
-            int first = ui.list_window(n, still_sel_, kRows);
+            int first = xr_list_.first(0, still_sel_, kRows, ui.list_window(n, still_sel_, kRows));
+            xr_list_.rows(0, first, std::min(kRows, n - first), 4, 154, 26, 12);
             for (int i = 0; i < kRows && first + i < n; ++i) {
                 int idx = first + i;
                 float y = 28 + i * 12.0f;
@@ -232,6 +242,7 @@ private:
     video::CoursePreviews previews_;
     bool gallery_ = false;
     int still_sel_ = 0;
+    XrList xr_list_;
     std::string still_name_;
     SDL_Texture* still_tex_ = nullptr;
 };

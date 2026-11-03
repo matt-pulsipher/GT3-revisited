@@ -315,6 +315,7 @@ void RaceScreen::open_quick_menu(App& app) {
 }
 
 void RaceScreen::update_quick_menu(App& app, double dt) {
+    if (menu_pointer(app)) return;
     if (panel_ != Panel::None) {
         update_panel(app);
         return;

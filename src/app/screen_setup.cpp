@@ -62,7 +62,13 @@ float title_bar(Ui& ui, std::string_view subtitle, UiRect* badge = nullptr, bool
 
 class SetupScreen : public Screen {
 public:
+    bool clickable(float x, float y) const override {
+        return item_at(x, y) >= 0 || (badge_.w > 0 && badge_.contains(x, y));
+    }
+
     void on_event(App& app, const SDL_Event& e) override {
+        if (float x, y; xr_hover(e, x, y)) // the VR pointer focuses what it is over (ui.h)
+            if (int i = item_at(x, y); i >= 0) sel_ = i;
         switch (gesture_.feed(e)) {
         case Gesture::Result::Down:
             pressed_ = item_at(gesture_.x(), gesture_.y());
@@ -269,11 +275,19 @@ public:
         }
     }
 
+    bool clickable(float x, float y) const override {
+        return item_at(x, y) >= 0 || (badge_.w > 0 && badge_.contains(x, y));
+    }
+
     void on_event(App&, const SDL_Event& e) override {
         if (e.type == SDL_EVENT_MOUSE_WHEEL) {
             scroll_ -= e.wheel.y * (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f) * cell_h_;
             follow_sel_ = false;
             return;
+        }
+        if (float x, y; xr_hover(e, x, y)) { // the VR pointer focuses what it is over (ui.h)
+            if (int i = item_at(x, y); i >= 0) sel_ = i, badge_focus_ = false;
+            else if (badge_.w > 0 && badge_.contains(x, y)) badge_focus_ = true;
         }
         switch (gesture_.feed(e)) {
         case Gesture::Result::Down:

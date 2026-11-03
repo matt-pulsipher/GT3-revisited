@@ -100,8 +100,11 @@ public:
     void fill_round(float x, float y, float w, float h, float r, Color c);
     void frame_round(float x, float y, float w, float h, float r, float t, Color c);
     void fill_circle(float cx, float cy, float r, Color c);
-    // A push button: `primary` is the accent-filled main action.
+    // A push button: `primary` is the accent-filled main action. Under the VR controller's
+    // pointer (set_pointer) it shows focused.
     void button(const UiRect& r, std::string_view label, bool focused, bool pressed, bool primary = false);
+    // The VR controller's pointer (App::xr_pointer), for the buttons' and tabs' hover look.
+    void set_pointer(bool on, float x, float y) { pointer_on_ = on, pointer_x_ = x, pointer_y_ = y; }
     // Thin vertical scroll indicator for a list `view` showing `offset`..+view.h of `content` height.
     void scrollbar(const UiRect& view, float content, float offset);
     void fill(float x, float y, float w, float h, Color c);
@@ -111,7 +114,8 @@ public:
     void header(std::string_view title, std::string_view hint);
     void footer(std::string_view hint);
     // Settings-style widgets. Sizes follow touch(): finger-sized on phones.
-    // A tab of a tab bar at (x, y), `h` tall; returns its width.
+    // A tab of a tab bar at (x, y), `h` tall; returns its width. Under the VR pointer it shows
+    // focused.
     float tab(float x, float y, float h, std::string_view label, bool active, bool focused);
     float tab_width(std::string_view label) const { return std::ceil(text_width(label)) + (touch_ ? 20 : 16); }
     // ON/OFF switch vertically centred on `cy`; toggle_width() wide.
@@ -131,6 +135,8 @@ private:
     float w_ = kWidth, h_ = kHeight;
     UiRect safe_{0, 0, kWidth, kHeight};
     bool touch_ = false;
+    bool pointer_on_ = false;
+    float pointer_x_ = 0, pointer_y_ = 0;
 };
 
 // `s` split into lines of at most `max_chars` characters at spaces (words
@@ -229,6 +235,52 @@ private:
 // button or a finger; mouse events synthesized from touches are ignored).
 // `e` must already be converted to render coordinates (App does this).
 bool pointer_down(const SDL_Event& e, float& x, float& y);
+
+// UI point -> the game's menu layout coordinates (640x448, y up) in the 4:3 picture
+// (Ui::picture43, where the game's menu screens draw). False outside the picture.
+bool ui_to_menu(const Ui& ui, SDL_FPoint p, float& x, float& y);
+
+// The mouse the VR controller's pointer sends its events as (App::xr_pointer).
+constexpr SDL_MouseID kXrPointerMouse = SDL_MouseID(-3);
+// Where the VR controller's pointer is, if `e` is its move with the trigger released. In a
+// headset the ray is how a player aims, so pages focus what it is over: A then chooses what it
+// points at. (Pages on PointerInput get this from its Hover.)
+bool xr_hover(const SDL_Event& e, float& x, float& y);
+
+// The VR controller's pointer on list pages that otherwise take only the pad (the jukebox, the
+// movie theater, the car database, the time trial's lists): render() records the rows it drew,
+// on_event() feeds the events, update() takes a hover (focus that row) and a click (choose it,
+// as Cross).
+class XrList {
+public:
+    struct Hit {
+        int list = -1, row = -1; // row: the entry's index; -1 = none
+        bool operator==(const Hit&) const = default;
+    };
+    void clear() { lists_.clear(); }
+    // List `list` (several on a page tell apart): entries `first`.. (`count` of them) drawn `h`
+    // apart from `y0`, between x0 and x1.
+    void rows(int list, int first, int count, float x0, float x1, float y0, float h) {
+        lists_.push_back({list, first, count, x0, x1, y0, h});
+    }
+    void event(const SDL_Event& e);
+    Hit take_hover() { return held(std::exchange(hover_, Hit{})); }
+    Hit take_click() { return held(std::exchange(click_, Hit{})); }
+    // The first entry to show of `list`, given `centred` (Ui::list_window): the list holds
+    // still while the entry the pointer chose is in view, so the row stays under it.
+    int first(int list, int sel, int rows, int centred);
+
+private:
+    struct Rows {
+        int list, first, count;
+        float x0, x1, y0, h;
+    };
+    Hit at(float x, float y) const;
+    Hit held(Hit h); // a taken hit: its list holds still at its drawn first entry
+    std::vector<Rows> lists_;
+    Hit hover_, click_, press_;
+    int held_list_ = -1, held_first_ = 0;
+};
 
 // `s` shortened to at most `max_chars` characters by replacing its middle
 // with "..." (keeps the start and the file name end of long paths). Never

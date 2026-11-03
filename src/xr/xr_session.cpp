@@ -525,6 +525,7 @@ void Session::end_frame() {
     Uint64 t0 = SDL_GetTicksNS(), t1 = t0, t2 = t0;
     if (x.timing.on && x.timing.last_wait_end) x.timing.app += double(t0 - x.timing.last_wait_end) / 1e6;
     const bool stereo = stereo_ && eyes_valid_;
+    hud_panel_ = stereo; // where the canvas shows (the pointer aims there next frame)
 
     XrCompositionLayerProjectionView pv[2] = {
         xr_init<XrCompositionLayerProjectionView>(XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW),

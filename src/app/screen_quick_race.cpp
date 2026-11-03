@@ -143,24 +143,38 @@ public:
         else update_events(app);
     }
 
+    bool clickable(float x, float y) const override {
+        return page_ == Page::Cars ? car_picker_.clickable(x, y) : row_at(x, y) >= 0;
+    }
+
     void on_event(App& app, const SDL_Event& e) override {
         if (page_ == Page::Cars) car_picker_.event(e); // the car page's pointer (online_pickers.h)
         float x = 0, y = 0;
-        if (page_ == Page::Cars || !pointer_down(e, x, y)) return;
-        // Taps: a row is selected; the selected row is chosen (as Cross).
+        const bool hover = xr_hover(e, x, y);
+        if (page_ == Page::Cars || (!hover && !pointer_down(e, x, y))) return;
+        // Taps: a row is selected; the selected row is chosen (as Cross). The VR pointer selects
+        // the row it is over (ui.h), so its click chooses it.
+        const int r = row_at(x, y);
+        if (r < 0) return;
         if (page_ == Page::Events) {
-            if (x >= kListW || y < kListY) return;
-            int r = list_first_ + int((y - kListY + 2) / kRowH);
-            if (r < 0 || r >= int(rows_.size()) || r >= list_first_ + kListRows || rows_[size_t(r)].event < 0) return;
-            if (r == row_) choose_event(app);
-            else row_ = r, picker_sound(app, "cursor");
+            if (r != row_) row_ = r, picker_sound(app, "cursor");
+            else if (!hover) choose_event(app);
         } else {
-            std::vector<Row> rows = setup_rows();
-            int r = int((y - kSetupY + 3) / kSetupH);
-            if (x >= kSetupR || r < 0 || r >= int(rows.size())) return;
-            if (r == setup_sel_) setup_action(app, rows[size_t(r)], 1, true);
-            else setup_sel_ = r, picker_sound(app, "cursor");
+            if (r != setup_sel_) setup_sel_ = r, picker_sound(app, "cursor");
+            else if (!hover) setup_action(app, setup_rows()[size_t(r)], 1, true);
         }
+    }
+
+    // The row of the event list or the setup page at (x, y); -1 = none.
+    int row_at(float x, float y) const {
+        if (page_ == Page::Events) {
+            if (x >= kListW || y < kListY) return -1;
+            const int r = list_first_ + int((y - kListY + 2) / kRowH);
+            if (r < 0 || r >= int(rows_.size()) || r >= list_first_ + kListRows || rows_[size_t(r)].event < 0) return -1;
+            return r;
+        }
+        const int r = int((y - kSetupY + 3) / kSetupH);
+        return x >= kSetupR || r < 0 || r >= int(setup_rows().size()) ? -1 : r;
     }
 
     void render(App& app, Ui& ui) override {
