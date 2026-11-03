@@ -832,6 +832,26 @@ TEST(input_pedal_whole_travel) {
 // A wheel's pedals captured in Settings and the steering curve, on SDL's virtual wheel: half a
 // pedal's travel is half pressure, and the race (not the menus) steers through the wheel's curve,
 // kept apart from other controllers' and saved per player.
+TEST(input_steering_curve_shape) {
+    // Ends kept, sign kept, rising, and at most ~3.7 times linear at the centre (no power curve's infinite slope:
+    // the force feedback oscillated around it, issue 134).
+    for (float c = InputManager::kSteeringCurveMin; c <= InputManager::kSteeringCurveMax + 0.001f; c += 0.1f) {
+        CHECK(InputManager::curved_steering(0.0f, c) == 0.0f);
+        CHECK(InputManager::curved_steering(1.0f, c) == 1.0f && InputManager::curved_steering(-1.0f, c) == -1.0f);
+        CHECK(InputManager::curved_steering(-0.3f, c) == -InputManager::curved_steering(0.3f, c));
+        CHECK(InputManager::curved_steering(1e-4f, c) / 1e-4f < 3.75f);
+        float prev = 0.0f;
+        for (int i = 1; i <= 100; ++i) {
+            const float y = InputManager::curved_steering(float(i) / 100.0f, c);
+            CHECK(y > prev);
+            prev = y;
+        }
+    }
+    CHECK(InputManager::curved_steering(0.37f, 1.0f) == 0.37f);
+    CHECK(InputManager::curved_steering(0.3f, 0.1f) > 0.5f); // quicker off the centre
+    CHECK(InputManager::curved_steering(0.3f, 2.5f) < 0.15f); // finer near it
+}
+
 TEST(input_virtual_wheel_pedals_and_steering_curve) {
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
     int connected = 0;
@@ -879,12 +899,19 @@ TEST(input_virtual_wheel_pedals_and_steering_curve) {
         axis(1, -32768), axis(2, 32767);
         frame();
         CHECK(!in.race_pad(0).down(PadButton::Cross) && !in.race_pad(0).down(PadButton::Square));
+        axis(1, -29491), axis(2, 29491); // 5 % down: pressed (the race's pedal threshold, not 12 %)
+        frame();
+        CHECK(in.race_pad(0).press(PadButton::Cross) == 13 && in.race_pad(0).press(PadButton::Square) == 13);
+        axis(1, -32440), axis(2, 32440); // 1 %: the rest's noise
+        frame();
+        CHECK(!in.race_pad(0).down(PadButton::Cross) && !in.race_pad(0).down(PadButton::Square));
+        axis(1, -32768), axis(2, 32767);
 
         CHECK(in.steering_curve(0) == 1.0f);
         in.set_steering_curve(0, 2.0f);
         axis(0, 16384); // half lock to the right
         frame();
-        CHECK(std::fabs(in.race_pad(0).axis_fine(PadAxis::LX) - 0.25f) < 0.001f);
+        CHECK(std::fabs(in.race_pad(0).axis_fine(PadAxis::LX) - 0.35f / 1.2f) < 0.001f); // (0.6^2 - 0.1^2) / (1.1^2 - 0.1^2)
         CHECK(std::fabs(in.pad(0).axis_fine(PadAxis::LX) - 0.5f) < 0.001f); // the menus: as it is
         axis(0, -32768);
         frame();

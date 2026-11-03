@@ -31,6 +31,11 @@ std::string section_name(int player, const char* suffix = "") {
     return "player" + std::to_string(player + 1) + suffix;
 }
 
+// An analog source bound to a button presses it past kPressThreshold (a light touch of a stick or a
+// trigger doesn't), a pedal on the race pad past kRacePedalPress: past its rest's noise, not the
+// first 12 % of its travel (the pressure only counts while pressed; issue 134).
+constexpr float kPressThreshold = 0.12f, kRacePedalPress = 0.02f;
+
 float parse_curve(const std::optional<std::string>& v) {
     if (!v) return 1.0f;
     char* end = nullptr;
@@ -409,6 +414,13 @@ void InputManager::set_steering_curve(int player, float curve) {
     (wheel_steering(p) ? p.wheel_steering_curve : p.steering_curve) = curve;
 }
 
+float InputManager::curved_steering(float x, float curve) {
+    if (curve == 1.0f) return x;
+    constexpr float a = 0.1f;
+    const float base = std::pow(a, curve);
+    return std::copysign((std::pow(std::fabs(x) + a, curve) - base) / (std::pow(1.0f + a, curve) - base), x);
+}
+
 std::string InputManager::describe(int player, const InputSource& src) const {
     // Another device's input names it first ("Wireless Controller 2: Right trigger").
     const Device* d = find_device(players_[player].device);
@@ -683,14 +695,11 @@ void InputManager::evaluate(Player& p, double dt) {
     const bool keyboard = keyboard_active(int(&p - players_.data()));
     update_tilt(p, dev);
     evaluate_profile(p, dev, keyboard, p.menu, p.ramp_values, p.state, dt);
-    if (p.race_reads_menu) p.race_state = p.state;
-    else evaluate_profile(p, dev, keyboard, p.race, p.race_ramps, p.race_state, dt);
+    evaluate_profile(p, dev, keyboard, p.race_reads_menu ? p.menu : p.race, p.race_ramps, p.race_state, dt, true);
     // The steering curve: the race's steering only (the menus read the stick as it is).
     if (p.steering_curve != 1.0f || p.wheel_steering_curve != 1.0f)
-        if (const float c = steering_curve(p); c != 1.0f) {
-            const float x = p.race_state.axis_fine(PadAxis::LX);
-            p.race_state.set_axis(PadAxis::LX, std::copysign(std::pow(std::fabs(x), c), x));
-        }
+        if (const float c = steering_curve(p); c != 1.0f)
+            p.race_state.set_axis(PadAxis::LX, curved_steering(p.race_state.axis_fine(PadAxis::LX), c));
 }
 
 void InputManager::evaluate_any_device(double dt) {
@@ -709,7 +718,7 @@ void InputManager::evaluate_any_device(double dt) {
 }
 
 void InputManager::evaluate_profile(const Player& p, const Device* dev, bool keyboard, const Profile& prof,
-                                    std::vector<float>& ramps, PadState& s, double dt) const {
+                                    std::vector<float>& ramps, PadState& s, double dt, bool race) const {
     float button_val[kPadButtonCount] = {};
     bool button_digital[kPadButtonCount] = {};
     float axis_val[kPadAxisCount] = {};
@@ -754,7 +763,10 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
             size_t i = static_cast<size_t>(b.target.button);
             float bv = std::clamp(v, 0.0f, 1.0f);
             button_val[i] = std::max(button_val[i], bv);
-            float thr = o.threshold > 0.0f ? o.threshold : (b.source.is_analog() ? 0.12f : 0.0f);
+            float thr = o.threshold > 0.0f   ? o.threshold
+                        : !b.source.is_analog() ? 0.0f
+                        : race && o.pedal       ? kRacePedalPress
+                                                : kPressThreshold;
             if (bv > thr && (b.source.is_analog() || o.ramp > 0.0f || bv >= 1.0f)) button_digital[i] = true;
         } else if (b.target.kind == PadTarget::Kind::Axis) {
             size_t i = static_cast<size_t>(b.target.axis);
