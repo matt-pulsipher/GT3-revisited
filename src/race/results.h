@@ -285,6 +285,11 @@ public:
     std::vector<std::string> take_sounds();
 
     void draw(SDL_Renderer* r, const SDL_FRect& dst);
+    // Pointers (menu units, 640x448 y up; MenuController::tap / hover): a tap on the focused
+    // item confirms it (its choice comes from update()), on another focuses it; a hover
+    // focuses the item under it. False when nothing was hit.
+    bool tap(float x, float y);
+    bool hover(float x, float y);
     const std::string& focused() const;
     bool focus(const std::string& item); // false if the page has no such item
     // Opens a dialog page of the same layout ("exit_sure", "ghost_dlg") as a popup over

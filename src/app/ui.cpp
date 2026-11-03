@@ -214,6 +214,7 @@ void Ui::fill_circle(float cx, float cy, float r, Color c) { fill_round(cx - r, 
 
 void Ui::button(const UiRect& b, std::string_view label, bool focused, bool pressed, bool primary) {
     const float rad = touch_ ? 6.0f : 4.0f;
+    focused = focused || (pointer_on_ && b.contains(pointer_x_, pointer_y_));
     Color bg = primary ? (pressed ? Color{200, 150, 20} : colors::kAccent)
                        : pressed ? Color{70, 78, 108} : focused ? colors::kHighlight : colors::kPanel;
     fill_round(b.x, b.y, b.w, b.h, rad, bg);
@@ -263,6 +264,7 @@ void Ui::footer(std::string_view hint) {
 
 float Ui::tab(float x, float y, float h, std::string_view label, bool active, bool focused) {
     const float w = tab_width(label), rad = touch_ ? 6.0f : 4.0f;
+    focused = focused || (pointer_on_ && UiRect{x, y, w, h}.contains(pointer_x_, pointer_y_));
     if (active) {
         fill_round(x, y, w, h, rad, colors::kHighlight);
         fill_round(x + 6, y + h - 3, w - 12, 2, 1, colors::kAccent);
@@ -468,6 +470,55 @@ bool pointer_down(const SDL_Event& e, float& x, float& y) {
         return true;
     }
     return false;
+}
+
+bool ui_to_menu(const Ui& ui, SDL_FPoint p, float& x, float& y) {
+    const UiRect pic = ui.picture43();
+    if (p.x < pic.x || p.x >= pic.right() || p.y < 0 || p.y >= pic.h) return false;
+    x = (p.x - pic.x) * 640.0f / pic.w;
+    y = 448.0f - p.y * 448.0f / pic.h;
+    return true;
+}
+
+XrList::Hit XrList::at(float x, float y) const {
+    for (const Rows& l : lists_) {
+        if (x < l.x0 || x >= l.x1 || y < l.y0) continue;
+        const int i = int((y - l.y0) / l.h);
+        if (i < l.count) return {l.list, l.first + i};
+    }
+    return {};
+}
+
+XrList::Hit XrList::held(Hit h) {
+    for (const Rows& l : lists_)
+        if (h.row >= 0 && l.list == h.list) held_list_ = l.list, held_first_ = l.first;
+    return h;
+}
+
+int XrList::first(int list, int sel, int rows, int centred) {
+    if (list != held_list_) return centred;
+    if (sel >= held_first_ && sel < held_first_ + rows) return held_first_;
+    held_list_ = -1; // the pad moved it out of view: centred again
+    return centred;
+}
+
+void XrList::event(const SDL_Event& e) {
+    if (float x, y; xr_hover(e, x, y)) {
+        if (Hit h = at(x, y); h.row >= 0) hover_ = h;
+        return;
+    }
+    if ((e.type != SDL_EVENT_MOUSE_BUTTON_DOWN && e.type != SDL_EVENT_MOUSE_BUTTON_UP) ||
+        e.button.which != kXrPointerMouse || e.button.button != SDL_BUTTON_LEFT)
+        return;
+    const Hit h = at(e.button.x, e.button.y);
+    if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) press_ = h;
+    else if (std::exchange(press_, Hit{}) == h && h.row >= 0) click_ = h;
+}
+
+bool xr_hover(const SDL_Event& e, float& x, float& y) {
+    if (e.type != SDL_EVENT_MOUSE_MOTION || e.motion.which != kXrPointerMouse || e.motion.state) return false;
+    x = e.motion.x, y = e.motion.y;
+    return true;
 }
 
 std::string elide_middle(std::string_view s, size_t max_chars) {

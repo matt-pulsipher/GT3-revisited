@@ -437,6 +437,12 @@ throttle trigger as an adaptive-trigger vibration (`ForceFeedbackState::wheelspi
   icon row with the scroll, focus pulse, help layer, confirm blink and the menu SE, the race
   behind them where the original has one (see "After a run"); `prerace=1` opens the pre-race
   menu (screenshots).
+- Pointers on these menus (ours: `RaceScreen::menu_pointer`, screen_race_pause.cpp): a finger's
+  tap, a mouse's or the VR controller's hover and click. GT3's (the pause window, REPLAY OPTIONS,
+  the quick menus) take them as the title menus do: a hover focuses the button, cell or icon
+  under it, a tap on the focused one chooses it (as Circle / Cross) and on another focuses it.
+  Our lists (Select's, the OPTIONS / SETTINGS panels) the same way, a tap on the focused row
+  as Cross; a tap on the records panel closes it. The Analyzer takes the pad only.
 - The env map is quantised like GT3's PSMCT16 map (5 bits per channel).
 - Arcade cars run with their table-35 parts (`race/arcade_car.*`); the car page's RACING / DRIFT
   picks the tyre records: stage 10 ("_k") / 11 ("_l"), stage 12 ("_m") on dirt courses, + 13 on the

@@ -81,6 +81,24 @@ std::string ordinal(int place) { // 0-based
 
 class SaveEditorScreen : public Screen {
 public:
+    bool clickable(float x, float y) const override {
+        if (picking_) return picker_.clickable(x, y);
+        if (pad_.active) {
+            for (int i = 0; i < kPadKeys; ++i)
+                if (pad_.keys[i].contains(x, y)) return true;
+            return false;
+        }
+        if (confirm_.active) {
+            for (const UiRect& r : confirm_.rects)
+                if (r.contains(x, y)) return true;
+            return false;
+        }
+        if (lay_.back.contains(x, y) || (editing() && lay_.save.contains(x, y)) || tab_at(x, y) >= 0) return true;
+        if (!lay_.list.contains(x, y)) return false;
+        const int i = row_at(y);
+        return i >= 0 && rows_[size_t(i)].selectable() && rows_[size_t(i)].enabled;
+    }
+
     void on_event(App& app, const SDL_Event& e) override {
         if (picking_) {
             picker_.event(e);
@@ -90,7 +108,11 @@ public:
             pad_event(app, e);
             return;
         }
+        float hx = 0, hy = 0;
+        const bool hover = xr_hover(e, hx, hy); // the VR pointer focuses what it is over (ui.h)
         if (confirm_.active) {
+            for (size_t i = 0; hover && i < confirm_.rects.size(); ++i)
+                if (confirm_.rects[i].contains(hx, hy)) confirm_.focus = int(i);
             if (gesture_.feed(e) == Gesture::Result::Tap)
                 for (size_t i = 0; i < confirm_.rects.size(); ++i)
                     if (confirm_.rects[i].contains(gesture_.x(), gesture_.y())) answer_confirm(int(i));
@@ -105,6 +127,8 @@ public:
             follow_sel_ = false;
             return;
         }
+        if (hover && lay_.list.contains(hx, hy))
+            if (int i = row_at(hy); i >= 0 && rows_[size_t(i)].selectable()) sel_ = i, focus_tabs_ = false;
         switch (gesture_.feed(e)) {
         case Gesture::Result::Down: {
             const float x = gesture_.x(), y = gesture_.y();
@@ -942,6 +966,9 @@ private:
             }
             return;
         }
+        if (float x, y; xr_hover(e, x, y)) // the VR pointer focuses what it is over (ui.h)
+            for (int i = 0; i < kPadKeys; ++i)
+                if (pad_.keys[i].contains(x, y)) pad_.focus = i;
         if (gesture_.feed(e) == Gesture::Result::Tap)
             for (int i = 0; i < kPadKeys; ++i)
                 if (pad_.keys[i].contains(gesture_.x(), gesture_.y())) {

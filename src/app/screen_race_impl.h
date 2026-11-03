@@ -465,6 +465,12 @@ private:
     PauseMenu::Kind pause_kind() const;
     void open_pause(App& app);
     void update_pause(App& app, double dt);
+    void pause_result(App& app, PauseMenu::Result r);
+    void pause_more_choose(App& app); // Select's list: the cursor's item, as Cross
+    int pause_more_row(const Ui& ui, float x, float y) const;
+    // The quick menus' and the pause window's pointer (menu_pointer_): true when it closed or
+    // changed the menu (the caller's update stops there).
+    bool menu_pointer(App& app);
     void online_pause_note(Ui& ui);
     void render_pause(Ui& ui);
 
@@ -821,6 +827,8 @@ private:
     std::optional<std::vector<ResultRow>> prerace_rows_;
     PauseMenu pause_menu_;
     bool pause_loaded_ = false;
+    PointerInput menu_pointer_; // taps, clicks and hovers on the quick menus and the pause window
+    SDL_FRect menu_frame_{};    // where those menus were last drawn (UI units)
     menu::flow::MenuSounds quick_sounds_; // the menus' sound effects (quick / pause menus)
     bool quick_sounds_tried_ = false;
     ResultsOverlay results_;
@@ -1038,6 +1046,7 @@ private:
     double toast_time_ = 0;
     double song_shown_ = 0; // draw_song after a skip while driving: seconds left
     bool show_replays_ = false;
+    XrList xr_list_; // the selection page's lists for the VR pointer
     std::vector<ReplayFile> replay_files_;
     int replay_sel_ = 0;
     double race_time_ = 0, clock_ = 0, frame_ms_ = 0;

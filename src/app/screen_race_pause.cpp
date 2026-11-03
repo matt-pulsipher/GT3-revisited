@@ -6,6 +6,11 @@
 
 namespace gt3r::race_screen {
 
+namespace {
+// Select's list (render_pause): left of the middle by kMoreLeft, rows kMoreStep apart from kMoreTop.
+constexpr float kMoreLeft = 100, kMoreTop = 110, kMoreStep = 16;
+} // namespace
+
 std::vector<std::string> RaceScreen::pause_items() const {
     const char* exit = from_menu_ ? "Exit to menu" : "Exit to selection";
     if (replaying_) return {"Resume replay", "Restart replay", "Camera", "Save replay", "Stop replay (drive)", exit};
@@ -37,6 +42,7 @@ void RaceScreen::open_pause(App& app) {
 }
 
 void RaceScreen::update_pause(App& app, double dt) {
+    if (menu_pointer(app)) return;
     const MenuInput& m = app.menu();
     // Ours: L1 / R1 skip the race song shown at the bottom (draw_song); the paused music stays
     // silent until the race goes on.
@@ -73,33 +79,7 @@ void RaceScreen::update_pause(App& app, double dt) {
         }
         PauseMenu::Result r = pause_menu_.update(menu_keys(app.input().pad(0)), dt);
         for (const std::string& se : pause_menu_.take_sounds()) quick_sounds_.play(app.audio().voices(), se);
-        switch (r) {
-        case PauseMenu::Result::None: break;
-        case PauseMenu::Result::Continue:
-            if (!(replaying_ && player_.done())) paused_ = false;
-            break;
-        case PauseMenu::Result::Retry: // the run again from its start (presentation §E retry)
-            paused_ = false;
-            // GT3 tears the race down and sets it up again: the paused music stops (music §2.4) and
-            // the new run starts its own cues (resumed, a fail jingle played over the whole retry).
-            if (online_) toast("Online races cannot be restarted");
-            else music_.stop(app.audio()), restart();
-            break;
-        case PauseMenu::Result::ReplayOptions: // GT3's REPLAY OPTIONS panel (replay_panel1/2.pmb)
-            if (!replay_opts_loaded_)
-                replay_opts_loaded_ = true, replay_opts_.load(*app.vfs(), app.renderer(), hud_.fonts(), lang_);
-            replay_opts_.open(replay_settings_, two_player_);
-            replay_opts_open_ = true;
-            replay_opts_acc_ = 0;
-            break;
-        case PauseMenu::Result::Exit:
-            paused_ = false;
-            if (theater_) leave(app);
-            else if (replaying_) end_replay(app); // at once: the transition, then the menu
-            else if (attract_ || online_) leave(app);
-            else pause_exit(); // the run ends (GT3's loader transition), or it is its finish
-            break;
-        }
+        pause_result(app, r);
         return;
     }
     std::vector<std::string> items = pause_items();
@@ -109,7 +89,41 @@ void RaceScreen::update_pause(App& app, double dt) {
         if (!(replaying_ && player_.done())) paused_ = false;
         return;
     }
-    if (!m.pressed(PadButton::Cross)) return;
+    if (m.pressed(PadButton::Cross)) pause_more_choose(app);
+}
+
+void RaceScreen::pause_result(App& app, PauseMenu::Result r) {
+    switch (r) {
+    case PauseMenu::Result::None: break;
+    case PauseMenu::Result::Continue:
+        if (!(replaying_ && player_.done())) paused_ = false;
+        break;
+    case PauseMenu::Result::Retry: // the run again from its start (presentation §E retry)
+        paused_ = false;
+        // GT3 tears the race down and sets it up again: the paused music stops (music §2.4) and
+        // the new run starts its own cues (resumed, a fail jingle played over the whole retry).
+        if (online_) toast("Online races cannot be restarted");
+        else music_.stop(app.audio()), restart();
+        break;
+    case PauseMenu::Result::ReplayOptions: // GT3's REPLAY OPTIONS panel (replay_panel1/2.pmb)
+        if (!replay_opts_loaded_)
+            replay_opts_loaded_ = true, replay_opts_.load(*app.vfs(), app.renderer(), hud_.fonts(), lang_);
+        replay_opts_.open(replay_settings_, two_player_);
+        replay_opts_open_ = true;
+        replay_opts_acc_ = 0;
+        break;
+    case PauseMenu::Result::Exit:
+        paused_ = false;
+        if (theater_) leave(app);
+        else if (replaying_) end_replay(app); // at once: the transition, then the menu
+        else if (attract_ || online_) leave(app);
+        else pause_exit(); // the run ends (GT3's loader transition), or it is its finish
+        break;
+    }
+}
+
+void RaceScreen::pause_more_choose(App& app) {
+    std::vector<std::string> items = pause_items();
     const std::string& it = items[size_t(pause_sel_)];
     // A run started over from here ends the paused run's music, as RETRY does (above).
     if (it == "Restart" || it == "Restart replay" || it == "Stop replay (drive)") music_.stop(app.audio());
@@ -134,6 +148,64 @@ void RaceScreen::update_pause(App& app, double dt) {
     }
 }
 
+int RaceScreen::pause_more_row(const Ui& ui, float x, float y) const {
+    const float x0 = ui.width() / 2 - kMoreLeft;
+    if (x < x0 - 4 || x >= x0 + 204) return -1;
+    const int n = int(pause_items().size());
+    for (int i = 0; i < n; ++i)
+        if (y >= kMoreTop + float(i) * kMoreStep - 3 && y < kMoreTop + float(i) * kMoreStep + 11) return i;
+    return -1;
+}
+
+// A finger's tap, or a mouse's or the VR controller's hover and click: on GT3's menus (the pause
+// window, REPLAY OPTIONS, the quick menus) as their own pointer input; on our lists (Select's,
+// the option panels) a hover or a first tap moves the cursor and a tap on it chooses, as Cross;
+// a tap on the records closes them, as Cross.
+bool RaceScreen::menu_pointer(App& app) {
+    using K = PointerInput::Action::Kind;
+    const SDL_FRect f = menu_frame_;
+    for (const PointerInput::Action& a : menu_pointer_.take()) {
+        if ((a.kind != K::Hover && a.kind != K::Click) || f.w <= 0 || f.h <= 0) continue;
+        const bool tap = a.kind == K::Click;
+        const float mx = (a.x - f.x) * 640.0f / f.w, my = 448.0f - (a.y - f.y) * 448.0f / f.h; // menu units, y up
+        if (paused_ && replay_opts_open_) {
+            const bool vertical = !split_horizontal(app);
+            if (tap) replay_opts_.tap(mx, my, vertical);
+            else replay_opts_.hover(mx, my, vertical);
+        } else if (paused_ && !pause_more_) {
+            if (!tap) {
+                pause_menu_.hover(mx, my);
+            } else if (PauseMenu::Result r = pause_menu_.tap(mx, my); r != PauseMenu::Result::None) {
+                for (const std::string& se : pause_menu_.take_sounds()) quick_sounds_.play(app.audio().voices(), se);
+                pause_result(app, r);
+                return true;
+            }
+        } else if (paused_) {
+            const int i = pause_more_row(app.ui(), a.x, a.y);
+            if (i < 0) continue;
+            if (tap && i == pause_sel_) {
+                pause_more_choose(app);
+                return true;
+            }
+            pause_sel_ = i;
+        } else if (quick_ && panel_ == Panel::None) {
+            if (tap) quick_menu_.tap(mx, my);
+            else quick_menu_.hover(mx, my);
+        } else if (quick_ && panel_ == Panel::Records) {
+            if (tap) {
+                panel_ = Panel::None;
+                return true;
+            }
+        } else if (quick_ && (panel_ == Panel::Options || panel_ == Panel::Settings)) {
+            const int i = option_list_row(option_rows().size(), a.x, a.y, f);
+            if (i < 0) continue;
+            if (tap && i == panel_sel_) change_option(app, i, 1);
+            else panel_sel_ = i;
+        }
+    }
+    return false;
+}
+
 // Online the pause window does not pause: say so above it.
 void RaceScreen::online_pause_note(Ui& ui) {
     if (!online_) return;
@@ -147,6 +219,7 @@ void RaceScreen::render_pause(Ui& ui) {
     const UiRect pic = ui.picture43();
     if (replay_opts_open_) {
         SDL_FRect dst = original_res_ ? frame_rect_ : SDL_FRect{pic.x, pic.y, pic.w, pic.h};
+        menu_frame_ = dst;
         Color dim{0, 0, 0, 126}; // panel_bg1 reaches past the 4:3 frame (860 wide)
         if (dst.x > 0) ui.fill(0, 0, dst.x, H, dim);
         if (dst.x + dst.w < W) ui.fill(dst.x + dst.w, 0, W - dst.x - dst.w, H, dim);
@@ -156,6 +229,7 @@ void RaceScreen::render_pause(Ui& ui) {
     if (!pause_more_) {
         if (pause_menu_.loaded(pause_menu_.kind())) {
             SDL_FRect dst = original_res_ ? frame_rect_ : SDL_FRect{pic.x, pic.y, pic.w, pic.h};
+            menu_frame_ = dst;
             // The window's full-screen dim (pmb "bg1") also covers the picture outside the
             // 4:3 frame on wide screens.
             Color dim{0, 0, 0, 126};
@@ -175,17 +249,17 @@ void RaceScreen::render_pause(Ui& ui) {
     ui.fill(0, 0, W, H, Color{0, 0, 0, 120});
     std::vector<std::string> items = pause_items();
     int n = int(items.size());
-    float x = W / 2 - 100, y = 110;
-    ui.fill(x - 10, y - 24, 220, 24 + float(n) * 16 + 10, Color{20, 22, 28, 230});
+    float x = W / 2 - kMoreLeft, y = kMoreTop;
+    ui.fill(x - 10, y - 24, 220, 24 + float(n) * kMoreStep + 10, Color{20, 22, 28, 230});
     ui.text(x, y - 16,
             replaying_ ? (player_.done() ? "END OF REPLAY" : "REPLAY PAUSED") : online_ ? "MENU (RACE GOES ON)" : "PAUSED",
             colors::kAccent);
     for (int i = 0; i < n; ++i) {
-        if (i == pause_sel_) ui.fill(x - 4, y + float(i) * 16 - 3, 208, 14, colors::kHighlight);
+        if (i == pause_sel_) ui.fill(x - 4, y + float(i) * kMoreStep - 3, 208, 14, colors::kHighlight);
         std::string s = items[size_t(i)];
         if (s == "Camera") s += std::string(": ") + camera_mode_name(camera_.mode());
         if (s == "Gearbox") s += controls_.config().automatic ? ": AT" : ": MT";
-        ui.text(x, y + float(i) * 16, s, colors::kText);
+        ui.text(x, y + float(i) * kMoreStep, s, colors::kText);
     }
     draw_song(ui, true);
 }

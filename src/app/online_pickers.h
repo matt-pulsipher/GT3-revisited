@@ -139,6 +139,7 @@ public:
     Result update(App& app);
     void render(App& app, Ui& ui);
     void event(const SDL_Event& e) { pointer_.event(e); }
+    bool clickable(float x, float y) const { return hits_.at(x, y) != nullptr; } // Screen::clickable
     // The cars allowed changed (the lobby's rules or course): lists them again.
     void refresh(App& app) {
         if (cars_) regroup(app);
@@ -208,6 +209,7 @@ public:
     Result update(App& app);
     void render(App& app, Ui& ui, PickerArt& art);
     void event(const SDL_Event& e) { pointer_.event(e); }
+    bool clickable(float x, float y) const { return hits_.at(x, y) != nullptr; } // Screen::clickable
     int course() const { return sel_; }
 
 private:
