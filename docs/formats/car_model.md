@@ -501,10 +501,9 @@ menus' tyre detail. Levels 1 and 2 keep the race's. Placement is the same for
 both, so the menus' wheel sits where the race's would
 (`CarModelOptions::showroom_car`, `showroom_wheel`). Across the 286 cars of
 NTSC-U 1.10 the menus' rims have a median of 1,413 triangles against 112 for
-race level 0: about 5,200 more triangles a car with four wheels. Level 0 also
-keeps the race rims, meshes `wheel_<x>_race`: the races draw them while a
-wheel spins fast enough for GT3's rim blur (wheel spin blur, below), which is
-made for a flat rim's image. The menus' and the race files' GTTR repeats,
+race level 0: about 5,200 more triangles a car with four wheels. GT3's rim
+blur (wheel spin blur, below) is made for a flat rim's image: the races blur a
+modelled rim with turned copies of it instead (docs/dev/RACE.md). The menus' and the race files' GTTR repeats,
 flags and shininess are the same on every car, so the tread blur reads the
 menus' tyre as it does the race's.
 

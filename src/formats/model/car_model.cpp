@@ -201,16 +201,6 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
         const TyreDetail detail = opt.menu_tyres || showroom ? menu_tyre_detail() : race_tyre_detail(lod);
         const WheelSpec ws = opt.wheel_spec ? *opt.wheel_spec : estimate_wheels(m);
         add_wheels(m, wheel, tyre_tex, tyre, detail, ws, brake_parts);
-        // Showroom wheels: the race rims as well ("wheel_<x>_race"), drawn while a wheel
-        // spins fast enough for the races' rim blurs.
-        if (showroom) {
-            scene::Model race;
-            add_wheels(race, load_wheel_model(!opt.wheel_override.empty() ? opt.wheel_override : f.wheel, wo, "wheel"),
-                       -1, tyre, detail, ws, {});
-            std::erase_if(race.meshes, [](const scene::Mesh& r) { return r.name.size() != 8; }); // wheel_<x> only
-            for (scene::Mesh& r : race.meshes) r.name += "_race";
-            merge(m, std::move(race));
-        }
     }
     for (scene::Mesh& mesh : m.meshes) mesh.lod = lod;
     return m;

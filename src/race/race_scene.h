@@ -197,7 +197,7 @@ private:
         std::array<float, 3> tread_shifts{};
         int rim = 0;            // 1: the rim blur by rim_angles, 2: the wheel's spinning image
         std::array<float, 4> rim_angles{};
-        bool spinning = false;  // the turn passes the spinning image's 3 degrees (rim_spinning_image)
+        float turn = 0;         // the blur's turn (radians; 0: none), for showroom rims' copies
     };
     WheelLook wheel_look(int i, const render::Mat4& at, const render::Mat4& hub, const sim::WheelState& w,
                          const CarLook& look) const;
@@ -230,10 +230,9 @@ private:
     // index in rims_ (-1: the wheel file has none).
     u32 rim_width_ = 0;
     int rim_spin_texture_ = -1;
-    // Showroom wheels: LOD 0's race rims (meshes wheel_<x>_race), drawn instead of the modelled
-    // ones while a rim blur shows (add_body_items), and the spinning image's index in them.
-    std::array<std::unique_ptr<render::GpuModel>, 4> race_rims_;
-    int race_rim_spin_texture_ = -1;
+    // Showroom wheels: LOD 0's rims are the menus' modelled ones (CarModelOptions::showroom_car),
+    // blurred by turned copies of their geometry (add_body_items).
+    bool showroom_rims_ = false;
     // Shadow nodes 1 (light) and 6 (contact), and node 5 (headlamp pool); all LODs; CPU copies
     // to recolour.
     std::array<std::unique_ptr<render::GpuModel>, 3> shadow_;

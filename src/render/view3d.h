@@ -205,6 +205,21 @@ std::array<u8, 3> sheen_vertex_bytes(const scene::Material& m, const Vec3& light
 // The GS's bilinear filter on one channel of an 8-bit image (DrawItem::gs_bilinear): model.frag's
 // gs_bilinear on the CPU (tests). `u`, `v` in texels (texel centres at + 0.5), clamped addressing.
 u8 gs_bilinear_texel(const u8* px, int w, int h, float u, float v);
+// A modelled rim's turned copies (DrawItem::spin_turn) share out the picture's samples: a pixel's
+// samples hold that many copies, and `cells` (1..16, a power of two) cells of a 4 x 4 ordered
+// pattern of pixels the rest, cells x samples copies in all. spin_copy_at is the copy drawing sample
+// `sample` of pixel (x, y): model.frag's spin_copy_samples on the CPU (tests).
+int spin_copy_at(int x, int y, int sample, int cells);
+// How many copies a rim `radius_px` pixels across (its radius) is drawn as whose copies spread
+// `spread_px` pixels at its edge, at `samples` a pixel (1 without sample masks): powers of two from
+// `samples` up while they would lie more than 1.5 pixels apart, at most 16 cells and as many as
+// lie 1.5 pixels apart over a radian of its edge (a small rim's blur hides its spokes sooner; 64
+// from 96 pixels).
+int spin_copy_count(float spread_px, float radius_px, int samples);
+// The pixels the cells' pattern repeats over (1: one cell; 2 x 2 up to 4 cells, else 4 x 4), and so
+// the taps of View3D's filter weighing every cell alike: two bilinear taps a pixel apart each way
+// (a 3 x 3 tent, 1 2 1) or four (1 2 2 2 1).
+int spin_copy_period(int cells);
 
 // Per-draw counters (last View3D::draw call).
 struct DrawStats {
@@ -300,6 +315,13 @@ struct DrawItem {
     float wheel_blur_lod = 0;
     float wheel_blur_alpha_ref = -1;
     std::array<float, 4> wheel_steps{};
+    // Not 0: a modelled rim's spin blur (race::CarVisual). The item is drawn as copies of itself
+    // turned about its own x axis (the axle) by k / n of this turn (radians), k = 0..n - 1, n from
+    // its size on screen (spin_copy_count), each into its own share of the picture's samples
+    // (spin_copy_at): each pixel resolves to the mean of the copies it holds, and each copy's own
+    // depth keeps what lies behind it sharp. The main view then evens out the cells over the rim
+    // (spin_resolve). Without the shader variant (GpuContext::spin_copies) it is drawn once, plain.
+    float spin_turn = 0;
     // Not fogged (a GS pass without FGE: the brake rotor's glow).
     bool no_fog = false;
     // GT3's cars pass (DrawOptions::far_clip): the model is dropped whole once any of it reaches
@@ -419,6 +441,20 @@ private:
     // The depth of field (DrawOptions::dof): from scene_ (the picture) and depth_ (its depth, kept
     // by the scene pass), the downsampled pictures, then the layers into `out` (the picture's size).
     bool dof_wanted(const DrawOptions& o) const { return o.dof.on && o.dof.focus > 0; }
+    // The modelled rims the scene pass drew as turned copies (DrawItem::spin_turn), in normalised
+    // device coordinates, with how far the copies spread at the rim's edge (pixels) and their cells'
+    // spin_copy_period. After the scene, spin_resolve lays the cell-evening filter over each.
+    struct SpinRect {
+        const DrawItem* item = nullptr;
+        float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+        float spread_px = 0;
+        int period = 1;
+    };
+    std::vector<SpinRect> spin_rects_;
+    // The main view's scene pass: pixels per unit of x in normalised device coordinates (half the
+    // picture's width), for spin_copy_count and spin_rects_. 0 elsewhere: a copy a sample, no rects.
+    float spin_px_ = 0;
+    void spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle);
     bool ensure_dof_levels(float aspect, int pw, int ph);
     void encode_dof(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, const Mat4& proj, float aspect,
                     SDL_GPUTexture* out, bool cycle);

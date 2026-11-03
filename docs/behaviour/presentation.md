@@ -2634,9 +2634,9 @@ k = 0, so no glare is drawn.
   spokes painted on and cut out, and simpler tyres; only the menus load the
   modelled rims and finer tyres (`menu/cars`, `menu/wheel`). Ours draws the
   menus' wheels at full detail with `[video] showroom_wheels = on` (the default
-  except on phones and tablets). Their modelled rims are drawn sharp until a
-  wheel turns more than 3 degrees a frame, where GT3 blurs a rim or shows its
-  spinning image; past that, ours draws the race rim with them, as GT3 does.
+  except on phones and tablets). Ours blurs their spinning modelled rims over
+  the same turn GT3 blurs its rims over, by copies of the rim itself, so the
+  blur grows smoothly from a standstill.
 - Ours: `DrawItem::in_order` draws an item whole at its place (its opaque
   meshes, then its blended ones in model order) before later items' opaque
   meshes: the course scenery, the wet-road frame passes and each car shadow.
@@ -3011,7 +3011,8 @@ In races each wheel draws, besides its tire and rim:
 - **Spin blur** (the main view): the turn over most of the last frame, less for a wheel
   crossing the screen. The followed car's tire tread (on tires that ask for it) and rim
   are blurred over that turn; the other cars switch to their wheel's pre-blurred rim
-  image above 3° a frame.
+  image above 3° a frame. Ours with showroom wheels: every car's modelled rims are
+  blurred over that turn.
 - **Camber**: each wheel is drawn tilted by its camber from the suspension (a physics
   output); the arch shade turns with it, not with the steering.
 

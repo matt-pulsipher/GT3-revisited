@@ -191,9 +191,10 @@ throttle trigger as an adaptive-trigger vibration (`ForceFeedbackState::wheelspi
   S in model.frag's `wheel_texture`) and its rim (16 taps turned about the image centre, from
   the mip level of a 64-texel square, alpha tested at AREF 0x20 on the coverage); the other
   cars' rims take the wheel file's spinning image (texture table entry 2, `DrawItem::texture`)
-  above 3 degrees of turn. With showroom wheels, LOD 0's modelled rims take neither: they are
-  drawn sharp up to 3 degrees of turn (`WheelLook::spinning`), and past it the race rims
-  (`race_rims_`, meshes `wheel_<x>_race`) take their place with the blur or spinning image. The
+  above 3 degrees of turn. With showroom wheels, LOD 0's modelled rims take neither: every car's
+  are drawn as copies of themselves turned back over the blur's turn (`WheelLook::turn`,
+  `DrawItem::spin_turn`; [RENDERING](RENDERING.md#large-scenes)), GT3's copies of a flat rim's
+  image done with the rim's geometry, so a rim blurs from standstill on with no change of model. The
   wet road's mirrored cars get none of this (GT3 draws their wheels at the farthest level). The arch shade (`bands_`) turns with the camber, not the steering.
 - Car placement (as GT3 draws it): the car model's origin (wheelbase
   midpoint, y = 0 = the body's lowest point) sits at the physics body height,
