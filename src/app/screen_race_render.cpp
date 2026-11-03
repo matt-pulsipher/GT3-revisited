@@ -401,6 +401,13 @@ HudData RaceScreen::hud_data(int player) {
     d.throttle = in.throttle;
     d.brake = in.brake;
     d.steer = in.steer;
+    // The steering and accel / brake monitors read the car's own steering byte (percent of full
+    // lock, left positive) and pedals, as the original's, so the computer's driving shows too.
+    if (!p2)
+        if (const sim::VehicleTelemetry* t = vehicle_->telemetry(); t && t->steer_pct > -1000) {
+            d.steer = -float(t->steer_pct) / 100.0f;
+            d.throttle = t->throttle_pedal, d.brake = t->brake_pedal;
+        }
     if (p2) {
         FieldLap l = field_lap2();
         d.lap = l.started ? l.laps + 1 : 0;

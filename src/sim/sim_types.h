@@ -183,6 +183,10 @@ struct VehicleTelemetry {
     // steering wheel's force (car +0x16D6, 0x80 centred), and whether the race has tyre wear (the HUD's tyre gauges).
     int tcs_status = -1, asm_status = -1;
     int pad_rumble = -1, wheel_force = -1;
+    // The steering in percent of full lock, left positive (F+0x523), and the throttle and brake pedals 0..1 (F+0x428 /
+    // +0x42C): the replay's steering and accel / brake monitors. steer_pct -1000 = none.
+    int steer_pct = -1000;
+    float throttle_pedal = 0, brake_pedal = 0;
     // Whether the race sends the car's pad vibration and wheel force: its control source is not the AI (1, 2) and no
     // driver kind is set (a car the AI drives, as in a run-up or after the finish, sends nothing).
     bool pad_output = false;

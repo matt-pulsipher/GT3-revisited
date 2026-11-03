@@ -401,6 +401,10 @@ std::vector<PipelineKey> warm_keys() {
             k.cull = c, k.coverage = coverage, k.depth_only = true;
             keys.push_back(k);
         }
+    // The depth reset after the course backdrop (DrawItem::depth_reset).
+    PipelineKey reset;
+    reset.cull = CullMode::None, reset.depth_write = false, reset.depth_reset = true;
+    keys.push_back(reset);
     // The replay depth of field's downsampled pictures (View3D::encode_dof).
     PipelineKey single;
     single.cull = CullMode::None, single.depth_write = false, single.single = true;
@@ -451,9 +455,9 @@ SDL_GPUGraphicsPipeline* GpuContext::pipeline(const PipelineKey& key) {
     const u64 t0 = SDL_GetTicksNS();
     SDL_GPUGraphicsPipeline* p = create_pipeline(key);
     LOG_INFO("3D pipeline built on first use in %.0f ms: blend %d, cull %d, depth write %d, lines %d, coverage %d, "
-             "alpha %d, spin copy %d, depth only %d",
+             "alpha %d, spin copy %d, depth only %d, depth reset %d",
              double(SDL_GetTicksNS() - t0) / 1e6, int(key.blend), int(key.cull), int(key.depth_write), int(key.lines),
-             int(key.coverage), int(key.alpha), int(key.spin_copy), int(key.depth_only));
+             int(key.coverage), int(key.alpha), int(key.spin_copy), int(key.depth_only), int(key.depth_reset));
     std::lock_guard lock(pipelines_mutex_);
     auto [it, added] = pipelines_.emplace(key, p); // failures too, so we don't retry every frame
     if (!added && p) SDL_ReleaseGPUGraphicsPipeline(device_, p); // the warm-up made it meanwhile
@@ -554,6 +558,11 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
                                        SDL_GPU_COLORCOMPONENT_A;
     }
     if (key.depth_only) b.color_write_mask = 0;
+    if (key.depth_reset) { // the depth alone, whatever is there (GT3's Z resets)
+        b.enable_blend = false;
+        b.enable_color_write_mask = true;
+        b.color_write_mask = 0;
+    }
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
     info.vertex_shader = key.clipped ? vs_clipped_ : key.spin_copy ? vs_copy_ : vs_;
@@ -571,11 +580,12 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     info.rasterizer_state.enable_depth_clip = true;
     info.multisample_state.sample_count = key.single ? SDL_GPU_SAMPLECOUNT_1 : samples_;
     info.depth_stencil_state.enable_depth_test = !key.single;
-    info.depth_stencil_state.enable_depth_write = key.depth_write;
+    info.depth_stencil_state.enable_depth_write = key.depth_write || key.depth_reset;
     // GT3's depth test, for every pass with or without depth writes: GEQUAL on a reversed depth
     // (render::perspective: 1 near, 0 far), so second passes over the same vertices (decals,
     // reflections) pass on equal depth.
-    info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
+    info.depth_stencil_state.compare_op =
+        key.depth_reset ? SDL_GPU_COMPAREOP_ALWAYS : SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
     info.target_info.color_target_descriptions = &color;
     info.target_info.num_color_targets = 1;
     info.target_info.depth_stencil_format = depth_format_;
