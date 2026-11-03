@@ -54,6 +54,10 @@ enum PrimitiveFlags : u32 {
     // GS FBMSK 0xFFFFFFFF with depth writes on: the pass writes only the depth. Cars whose glass
     // is drawn without depth writes leave its depth this way, after its reflection.
     kDepthOnly = 1u << 14,
+    // With a car reflection pass: GS TEST.DATE with DATM 0, drawn only where the frame alpha
+    // is below 0x80. Every reflection pass leaves 0x80 where it draws, so these skip what an
+    // earlier one covered and the texels at full reflectivity (texel x vertex alpha = 0x80).
+    kDestAlphaTest = 1u << 15,
 };
 
 // Fixed-function lighting material of a lit primitive (GT3 cars: GTM1 material

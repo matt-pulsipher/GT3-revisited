@@ -69,7 +69,8 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
     vec4 env_c1;         // env_c0.w = 1: valid (else the scalar env_sky.w term)
     vec4 output_mode;    // x = 1: store 5 bits per channel (GT3's PSMCT16 reflection map);
                          // y = 1: the vertex colour is linear in screen space (GT3's guard band);
-                         // z = 1: the texture filtered as the GS does (gs_bilinear below)
+                         // z = 1: the texture filtered as the GS does (gs_bilinear below);
+                         // w = 1: a car reflection pass with GS TEST.DATE (drawn where Ad < 0x80)
     // GT3's wheel spin blurs (DrawItem::wheel_blur; wheel_texture below): x 1 = the tyre's tread,
     // 2 = the rim; y the rim's mip level. wheel_steps: the tread's three S shifts / the rim's
     // four angles. The SPIN_COPIES variant: w the copies' cells (DrawItem::spin_turn).
@@ -273,6 +274,11 @@ void shade() {
         // Car reflection pass (PS2 ALPHA Cs*Ad + Cd): environment colour times the
         // pass colour, weighted through SRC_ALPHA blending by the reflectivity Ad = the
         // base pass's texel alpha (bound texture; white when none) x vertex alpha.
+        float ad = v_color.a * wheel_texture(v_uv).a;
+        // GS TEST.DATE with DATM 0: only where Ad < 0x80 (0x80 = 1.0 here), not on texels at full
+        // reflectivity. (The 0x80 an earlier reflection pass leaves: the decoder drops the
+        // triangles such a pass repeats.)
+        if (u.output_mode.w > 0.5 && ad > 254.0 / 255.0) discard;
         vec3 n = normalize(v_normal);
         if (!gl_FrontFacing) n = -n;
         vec3 view = normalize(v_world - u.camera_pos.xyz);
@@ -304,7 +310,7 @@ void shade() {
             float d = length(v_world - u.camera_pos.xyz);
             rgb = gs_fog(rgb, vec3(0.0), fog_amount(d));
         }
-        o_color = vec4(rgb, v_color.a * wheel_texture(v_uv).a * u.tint.a);
+        o_color = vec4(rgb, ad * u.tint.a);
         return;
     }
     vec4 t = wheel_texture(v_uv);
