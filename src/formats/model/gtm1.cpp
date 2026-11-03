@@ -705,8 +705,12 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     // with that texture and its UVs, so the renderer can weight the reflection per pixel
     // with the texel alpha (holes = 0, no reflection). Other triangles keep a per-vertex
     // weight in the vertex alpha. All are kAdditive | kEnvironmentMap | kUnlit | kNoDepthWrite.
+    // `reflected` holds the triangles earlier reflection passes drew (their corners, sorted):
+    // each leaves the frame alpha at 0x80, so a kDestAlphaTest pass draws none of them again.
+    using Corners = std::array<std::array<float, 3>, 3>;
     auto emit_weighted_reflection = [](scene::Mesh& mesh, const scene::Primitive& prim,
-                                       const std::map<std::array<float, 3>, Written>& written) {
+                                       const std::map<std::array<float, 3>, Written>& written,
+                                       std::set<Corners>& reflected) {
         constexpr u32 kFlags = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit | scene::kNoDepthWrite;
         std::vector<u32> tris(mesh.indices.begin() + prim.first_index,
                               mesh.indices.begin() + prim.first_index + prim.index_count);
@@ -718,6 +722,10 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         };
         std::map<int, std::vector<u32>> groups; // texture -> indices
         for (size_t t = 0; t + 2 < tris.size(); t += 3) {
+            Corners c;
+            for (int k = 0; k < 3; ++k) std::copy_n(mesh.vertices[tris[t + size_t(k)]].pos, 3, c[size_t(k)].begin());
+            std::sort(c.begin(), c.end());
+            if (!reflected.insert(c).second && (prim.flags & scene::kDestAlphaTest)) continue;
             const Written* w[3] = {info(tris[t]), info(tris[t + 1]), info(tris[t + 2])};
             bool same = w[0] && w[1] && w[2] && w[0]->texture >= 0 && w[1]->texture == w[0]->texture &&
                         w[2]->texture == w[0]->texture;
@@ -742,7 +750,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             p.first_index = u32(mesh.indices.size());
             p.index_count = u32(idx.size());
             p.texture = tex;
-            p.flags = kFlags | (prim.flags & scene::kVertexColor2x);
+            p.flags = kFlags | (prim.flags & (scene::kVertexColor2x | scene::kDestAlphaTest));
             p.env_rows = prim.env_rows;
             std::copy(std::begin(prim.env_c0), std::end(prim.env_c0), p.env_c0);
             std::copy(std::begin(prim.env_c1), std::end(prim.env_c1), p.env_c1);
@@ -763,6 +771,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         // What earlier passes left in the frame buffer's alpha, by vertex position: the
         // reflectivity that later Cs*Ad+Cd reflection passes are weighted with.
         std::map<std::array<float, 3>, Written> written_alpha;
+        std::set<Corners> reflected; // the triangles reflection passes drew (frame alpha 0x80)
         // Base-pass vertex alpha by position, for the road sheen mask.
         std::map<std::array<float, 3>, u32> base_alpha;
         if (opt.road_sheen)
@@ -1092,7 +1101,9 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 if (depth_only) prim.flags = (prim.flags & (scene::kAlphaTest | scene::kDoubleSided)) | scene::kDepthOnly | scene::kUnlit;
                 if (dp.rgb_2x) prim.flags |= scene::kVertexColor2x;
                 if (weighted) {
-                    emit_weighted_reflection(mesh, prim, written_alpha);
+                    // TEST.DATE (op 0x1D): GT3 draws these passes with DATM 0, where the frame alpha < 0x80.
+                    if (d.dest_alpha_test) prim.flags |= scene::kDestAlphaTest;
+                    emit_weighted_reflection(mesh, prim, written_alpha, reflected);
                     continue;
                 }
                 if (prim.index_count) mesh.primitives.push_back(prim);

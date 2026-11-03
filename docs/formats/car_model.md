@@ -198,7 +198,7 @@ Render-state ops that matter for cars (each sets GS drawing state):
 |---|---|---|
 | 1A / 1B | TEST.ATE on / off | on for body passes, off for reflection passes |
 | 1C a, r | TEST.ATST = a, AREF = r | (6 GREATER, 0x20) by default; (6, 0) or (5 GEQUAL, 0) before some passes |
-| 1D / 1E | TEST.DATE on / off | on for reflection passes |
+| 1D / 1E | TEST.DATE on / off | on for reflection passes, which draw with DATM 0 (where the frame alpha < 0x80) |
 | 20 m, f | ALPHA = m (A\|B<<2\|C<<4\|D<<6), FIX = f | 0x44 = (Cs-Cd)·As+Cd for glass/decals, 0x58 = Cs·Ad+Cd for reflections and specular overlays |
 | 24 v | FRAME.FBMSK = v | 0xFF000000 = colour only (glass, decals keep the reflectivity alpha), 0xFFFFFFFF = depth only, 0 = all |
 | 17 / 18 | depth test on / off (17 only when depth testing is enabled globally) | |
@@ -342,8 +342,22 @@ C1 0.8: weight 0.2 head-on, 1.0 at grazing angles; prize models use coloured
 rows, e.g. the gold cups C0 0.9, C1 (−0.5, −0.36, −0.26): a warm boost
 head-on), K = 1 − (a per-car value, meaning open). The result is an 8-bit GS
 colour (≤ 255, i.e. ≤ 255/128 of the texel after MODULATE). Blend ALPHA 0x58 (Cs·Ad + Cd) with the fog colour set to black; Ad is
-the frame alpha the body pass wrote (texel alpha × lit alpha). Later reflection
-chunks use the destination-alpha test so overlaps are not added twice.
+the frame alpha the body pass wrote (texel alpha × lit alpha). A reflection pass
+writes its own alpha too: the map is PSMCT16, cleared with alpha 0x80 and drawn
+with the alpha masked, so every texel reads TEXA TA1 = 0x80, and with vertex alpha
+0x80 the pass leaves Ad = 0x80 wherever it draws. Reflection chunks with the
+destination-alpha test (op 0x1D; drawn with DATM 0) draw only where Ad < 0x80:
+not over an earlier reflection, and not on texels at the full reflectivity 0x80
+(the body textures keep their reflective texels at 0x7F or below; some trim
+textures are 0x80 throughout). Checked in a GS dump of the GT-One race car
+(`ty2056`) at Super Speedway: DATE on, DATM 0 on its tested reflection draws, TEXA
+(TA0 0, TA1 0x80), vertex alpha 0x80 on every reflection draw. Tested passes carry
+most of the reflection: 126,513 of 175,610 reflection triangles on the 124 models
+of `cars/day/` with alpha-only or depth-only passes. The renderer
+discards a tested pass's fragments where the weight reaches 0x80
+(`scene::kDestAlphaTest`); of the earlier reflections, the decoder drops the
+triangles a tested pass repeats exactly (0.2 % of them) and does not model
+partial overlaps.
 
 Specular overlays: blended (PRIM.ABE) packets that are not reflection passes but
 are drawn with ALPHA 0x58 add the same way, Cs·Ad + Cd over the body pass below.

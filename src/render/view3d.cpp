@@ -86,7 +86,8 @@ struct FragmentUniforms {
     float env_c1[4];
     float output[4]; // x = 1: quantise the colour to 5 bits per channel (DrawOptions::quantize_rgb5);
                      // y = 1: the vertex colour is linear in screen space (DrawItem::guard_band);
-                     // z = 1: the bound texture filtered as the GS does (DrawItem::gs_bilinear)
+                     // z = 1: the bound texture filtered as the GS does (DrawItem::gs_bilinear);
+                     // w = 1: a car reflection drawn only below full reflectivity (kDestAlphaTest)
     float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level; w spin copies' cells
     float wheel_steps[4]; // DrawItem::wheel_steps
 };
@@ -1737,6 +1738,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         const bool guard = guard_on_ && v.item->guard_band;
         fu.output[1] = guard ? 1.0f : 0.0f; // model.vert sends the colour times w
         fu.output[2] = v.item->texture && v.item->gs_bilinear ? 1.0f : 0.0f;
+        fu.output[3] = (p.flags & scene::kDestAlphaTest) ? 1.0f : 0.0f;
         // GT3's lighting runs per vertex (the VU), with the infinite viewer: the lights and
         // material go to the vertex shader. The sheen's program has a local viewer instead:
         // GT3's light model viewer (0, 2, 0) in eye space, 2 m along the camera's up axis.
