@@ -68,6 +68,9 @@ struct PipelineKey {
     bool spin_copy = false;
     // Nothing but the depth is written (scene::kDepthOnly).
     bool depth_only = false;
+    // Writes the depth whatever is there and no colour: View3D's depth reset after an item
+    // (DrawItem::depth_reset).
+    bool depth_reset = false;
     auto operator<=>(const PipelineKey&) const = default;
 };
 

@@ -359,6 +359,10 @@ far plane) and `DrawItem::far_whole` items (the cars, as GT3's cars pass drops a
 reaches past it) are dropped whole. Background items are never cut, and an item's modelview
 scale moves its plane: the backdrop's lies 100 times as far, where the projection's far plane is
 (`CameraRig::set_gt3_far`). `GT3R_NO_FAR_PLANE=1` draws as before (2500 m, a 6000 m projection).
+The backdrop is drawn whole (`in_order`, its moving nodes joined) right after the sky, and then
+the depth is reset to the far value (`DrawItem::depth_reset`: a viewport quad through the
+`PipelineKey::depth_reset` pipeline, compare always, no colour), as GT3 resets its Z before the
+course (presentation §M2): the course covers the backdrop wherever its planes lie.
 `DrawItem::light_scale` (road shade) scales every light, fills included.
 Light sources per scene:
 

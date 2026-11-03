@@ -129,6 +129,7 @@ void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTel
     t.downforce = h(c.downforce[0]) + h(c.downforce[1]);
     t.tcs_active = c.tcs_status == 2;
     t.tcs_status = c.tcs_status, t.asm_status = c.ascc_status;
+    t.steer_pct = c.steer_pct, t.throttle_pedal = h(c.throttle_pedal), t.brake_pedal = h(c.brake_pedal);
     const float pedal = h(c.brake_pedal);
     for (size_t i = 0; i < 4; ++i) {
         const ex::Wheel& w = c.w[i];

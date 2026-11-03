@@ -273,6 +273,11 @@ void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::
         it.sphere_map = true; // chunk kind 2: the packet's own texture as a sphere map
         it.modelview_scale = kBackdropScale; // (the sheen's viewer, the guard band's planes)
         it.guard_band = true;
+        // Drawn whole before the course, then GT3 resets the depth: the scenery always covers
+        // it, even where the ground lies below its sea (Tahiti Maze's lagoon shores).
+        it.in_order = true;
+        it.in_order_join = m == backdrop_moving_.gpu.get();
+        it.depth_reset = true;
         items.push_back(it);
     }
     for (const render::GpuModel* m : {scenery_.get(), scenery_moving_.gpu.get()}) {

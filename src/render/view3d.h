@@ -277,6 +277,10 @@ struct DrawItem {
     // opaque meshes follow that item's opaque ones, its blended ones that item's blended ones
     // (the course's moving nodes, gtm1::AnimatedNodes, with the scenery they were taken from).
     bool in_order_join = false;
+    // With in_order: once the item (with the items joined to it) is drawn, the depth buffer is
+    // reset to the far plane's, as GT3 resets its Z after the course backdrop (slot 22): the
+    // items after it cover it wherever its planes lie (presentation §M2, frame order).
+    bool depth_reset = false;
     // The PS2's frame-buffer alpha (course scenery): every pass writes its fragment alpha (texel x
     // vertex alpha) unless flagged kKeepAlpha, kAlphaOnly passes write only it, and
     // kAdditive | kDestAlphaAdd passes (the road sheen) are weighted by it (GS ALPHA 0x58,

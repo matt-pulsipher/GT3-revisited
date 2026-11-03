@@ -133,6 +133,11 @@ float eye_depth(const Mat4& view, const Vec3& p) {
     return -(view.at(2, 0) * p.x + view.at(2, 1) * p.y + view.at(2, 2) * p.z + view.at(2, 3));
 }
 
+// Whether an item resets the depth after it (DrawItem::depth_reset: the pass needs the quad).
+bool has_depth_reset(const std::vector<DrawItem>& items) {
+    return std::any_of(items.begin(), items.end(), [](const DrawItem& i) { return i.depth_reset; });
+}
+
 // GT3's far plane as the item's depth from the eye (DrawOptions::far_clip; the backdrop's 0.01
 // modelview scale puts it 100 times as far), 0 for none.
 float item_far(const DrawItem& item, const DrawOptions& opt) {
@@ -533,6 +538,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     const ScreenUpload screen = upload_screen(cmd, opt, pw, ph);
     // So are the pieces of the triangles GT3 clips at the guard band.
     guard_on_ = opt.guard_near > 0 && upload_clipped(cmd, view, proj, eye, items, opt);
+    if (has_depth_reset(items)) ensure_quad();
     const bool vignette = screen.ok && opt.vignette && !opt.vignette->empty();
     const bool post = (post_wanted(opt) || vignette) && ensure_post(&scene_);
     // The depth of field reads the picture and its depth, then writes the post passes' picture
@@ -1346,6 +1352,7 @@ bool View3D::draw_to(SDL_GPUTexture* target, int w, int h, const Mat4& view, con
             return false;
         }
     }
+    if (has_depth_reset(items)) ensure_quad();
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     if (!cmd) return false;
     SDL_GPUColorTargetInfo ct{};
@@ -1843,6 +1850,37 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     // Opaque and alpha-tested, item by item; an in-order item's blended primitives follow its
     // opaque ones, in model order, before the next item's opaque ones (DrawItem::in_order_join
     // items count as part of the in-order item before them).
+    // DrawItem::depth_reset: the far plane's depth over the viewport (GT3's Z-only sprite after
+    // its backdrop), the colour and alpha untouched.
+    auto reset_depth = [&] {
+        if (!quad_vb_ || !quad_ib_) return;
+        PipelineKey key;
+        key.cull = CullMode::None;
+        key.depth_write = false;
+        key.depth_reset = true;
+        if (!bind(key)) return;
+        flush();
+        SDL_GPUBufferBinding vb{quad_vb_, 0}, ib{quad_ib_, 0};
+        SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+        SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        bound_model = nullptr; // the next mesh binds its own buffers again
+        VertexUniforms vu{};
+        const Mat4 id;
+        std::copy(id.m.begin(), id.m.end(), vu.mvp);
+        std::copy(id.m.begin(), id.m.end(), vu.model);
+        std::copy(id.m.begin(), id.m.end(), vu.normal_mat);
+        SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
+        pushed = nullptr; // (the next mesh pushes its own)
+        const SDL_GPUTextureSamplerBinding sbs[3] = {{ctx_.white_texture(), ctx_.sampler(true, true)},
+                                                     {placeholder_cube(), ctx_.sampler(true, true)},
+                                                     {ctx_.white_texture(), ctx_.sampler(true, true)}};
+        bind_samplers(sbs);
+        FragmentUniforms fu{};
+        fu.params[0] = -1; // no alpha test
+        push_fragment(fu);
+        SDL_DrawGPUIndexedPrimitives(pass, 6, 1, 0, 0, 0);
+        ++stats_.draw_calls;
+    };
     auto same_run = [&](size_t i) { // vis[i] belongs to the run of vis[i - 1]
         const DrawItem* a = vis[i - 1].item;
         const DrawItem* b = vis[i].item;
@@ -1858,8 +1896,10 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             if (!prim_blended(p)) draw_prim(v, p);
             else if (split(p)) draw_prim(v, p, 1);
         }
-        if (v.item->in_order && (i + 1 == vis.size() || !same_run(i + 1)))
+        if (v.item->in_order && (i + 1 == vis.size() || !same_run(i + 1))) {
             for (size_t k = run; k <= i; ++k) draw_blended(vis[k]);
+            if (v.item->depth_reset) reset_depth();
+        }
     }
     // The other blended primitives: model order, or back to front by mesh distance.
     std::vector<const Visible*> blended;
@@ -2046,6 +2086,7 @@ SDL_GPUTexture* View3D::render_offscreen(int slot, int w, int h, const Mat4& vie
             return nullptr;
         }
     }
+    if (has_depth_reset(items)) ensure_quad();
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     if (!cmd) return nullptr;
     SDL_GPUColorTargetInfo ct{};
