@@ -16,6 +16,7 @@ App::init
   (failure) -> SDL_CreateRenderer(window, nullptr), 2D only
 
 each frame (App::iterate)
+  (gamma not 1) GammaPass::begin          the 2D renderer draws into a window-sized target
   Ui::clear
   Screen::render
     View3D::draw(rect, camera, models)    own command buffer:
@@ -23,6 +24,7 @@ each frame (App::iterate)
       submit
       SDL_RenderTexture(wrapper)          wrapper = SDL_Texture around the GPU texture
     ui.text(...)                          UI on top
+  (gamma not 1) GammaPass::end            that target onto the window through gamma.frag
   SDL_RenderPresent                       2D command buffer, submitted after ours
 ```
 
@@ -39,6 +41,20 @@ renderer then composites the view as an ordinary texture
   scale.
 - Resizing is handled lazily: the target is recreated when the pixel size
   or MSAA level changes.
+- The player's gamma (`[video] gamma`, `render::GammaPass`) is the one pass over the whole
+  frame. At 1, the default, it does not run and the frame goes to the window as before.
+  Otherwise the 2D renderer draws the frame into an RGBA8 target the window's size (wrapped
+  like a 3D view's, `render::wrap_texture`, with the window's logical presentation), and
+  before the present draws it over the whole window with `gamma.frag`,
+  `out = in ^ (1 / gamma)` per channel: on SDL_GPU as the GPU renderer's own fragment shader
+  (`SDL_GPURenderState`, in the frame's command buffer, so in order); on OpenGL ES, whose 2D
+  renderer takes no shaders, through our own pass (`gamma.vert`'s triangle) into a second
+  target that the 2D renderer then copies (gpu_gles.cpp draws pipelines without vertex
+  attributes with no vertex buffer bound, as SDL_GPU does). UI text in the target is rasterised
+  at the window's pixel size, as on the window (`render::drawing_to_window`), so the frame
+  matches one drawn to the window exactly. Screenshots are read before the pass, so they keep
+  GT3's colours (`GT3R_SHOT_GAMMA=1`: after it, as shown). There is none in VR (the canvases go to the headset as they are) or without the 3D
+  renderer.
 - The dynamic scale allocates nothing: the targets are sized for its ceiling
   (`GpuContext::render_ceiling`) and each frame draws its picture into their
   top-left corner (viewport and scissor), which the 2D renderer upscales with a
@@ -84,6 +100,7 @@ game with a message.
 | `msaa` | `--msaa N` | 4 (desktop), 2 (Android: phones, tablets, Quest) | 1/2/4/8, the nearest the device offers: a missing 2x becomes 4x (Mali GPUs offer 1x, 4x and 8x only; on a Galaxy A15 4x cost about 5 points of dynamic resolution), other missing levels the next lower. Phones default to 2x: on a Moto G Power 2024 (Trial Mountain, 6 cars, fixed 60% scale) 4x cost about 19% of the frame and 2x about 3% vs off, and with 4x dynamic resolution sat at its 50% floor. See `platform::default_msaa` |
 | `vsync` | | 1 | Present with vsync |
 | `aspect` | | 16:9 | Settings → Display → Aspect ratio: the game area of the game's own screens (`Screen::follows_aspect`: its menus, races, movies), 360 UI units tall and 640 (`16:9`), 480 (`4:3`) or the window's shape (`fill`, 480 to 1440 wide) across, letterboxed into the window (`App::layout_ui`, `platform::game_width`). Our own screens keep the 640×360 space or the whole window. 3D views are Hor+ (the vertical FOV is fixed). The race HUD keeps GT3's 640×448 layout in the middle and pushes the elements GT3 pushes in its 16:9 option to the game area's sides: 106.667 frame units on 16:9, more with `fill`, none at 4:3 (GT3's 4:3 layout). Always 16:9 in VR, where Settings has no such row |
+| `gamma` | | 1 | Settings → Display → Gamma, 0.50..2.00 in steps of 0.05 (`render::parse_gamma` clamps the file's value): the whole picture through `out = in ^ (1 / gamma)`, higher brighter ("Frame structure"). 1 removes the key, and Settings shows a "Reset gamma to 1.00" row while it is not 1. The pass costs a window-sized target (SDL keeps one per frame in flight) and a full-window draw a frame |
 | `limit_60fps` | | off | `on` (Settings → Display → Limit to 60 fps): on 120 Hz and faster displays draw every Nth refresh (120 Hz → 60 fps, 144 → 72) through SDL's main loop rate (`App::apply_frame_limit`); off: every refresh |
 | `show_fps` | | off | `on` (Settings → Display → FPS counter): the frames drawn per second, averaged over about half a second, at the top left of the window over everything; on our own screens (`Screen::adaptive_ui`), whose header runs along the top, at the bottom right (`App::draw_fps`). In the safe area on phones, on the virtual screen in VR |
 | `full_car_detail` | | on (desktop), off (Android, iOS) | Settings → Display → Always show full car detail: every car at LOD 0 at any distance (`race::car_lod`, `App::full_car_detail`); off: GT3's LODs by distance. On a Galaxy A15 (Trial Mountain, 6 cars) on drew 32% more triangles and 25% more draw calls: +1.4 ms a frame at a fixed 70% scale with `gpusync=1` (+0.7 ms of it CPU), and in normal play about 1.5 points less dynamic resolution at the same 45 fps |
@@ -97,7 +114,8 @@ game with a message.
 ## Shaders
 
 Shaders are authored once in Vulkan GLSL (`src/render/shaders/model.vert`,
-`model.frag`; `present.vert` / `.frag` are VR's present pass, [VR](VR.md)) and
+`model.frag`; `present.vert` / `.frag` are VR's present pass, [VR](VR.md); `gamma.frag` /
+`.vert` the player's gamma, "Frame structure") and
 compiled **offline**. The outputs are committed, so CI and
 the Android Gradle build need no shader tools:
 

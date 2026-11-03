@@ -201,20 +201,18 @@ GpuContext::~GpuContext() {
 }
 
 SDL_GPUShader* GpuContext::make_shader(Stage stage) {
-    using namespace shaders;
     // Each stage's generated shader (render/shaders/generated), in Stage order.
-    struct Code {
-        const unsigned char* spv;
-        size_t spv_size;
-        const char *msl, *gles, *gles_blocks, *gles_samplers;
-    };
-#define GT3R_SHADER_CODE(n) {n##_spv, sizeof(n##_spv), n##_msl, n##_gles, n##_gles_blocks, n##_gles_samplers}
-    static const Code kCode[] = {GT3R_SHADER_CODE(model_vert), GT3R_SHADER_CODE(model_clip_vert),
-                                 GT3R_SHADER_CODE(model_frag), GT3R_SHADER_CODE(model_vert_copy),
-                                 GT3R_SHADER_CODE(model_frag_copy)};
-#undef GT3R_SHADER_CODE
-    const Code& code = kCode[size_t(stage)];
+    static const ShaderCode kCode[] = {GT3R_SHADER_CODE(model_vert), GT3R_SHADER_CODE(model_clip_vert),
+                                       GT3R_SHADER_CODE(model_frag), GT3R_SHADER_CODE(model_vert_copy),
+                                       GT3R_SHADER_CODE(model_frag_copy)};
     const bool vertex = stage != Stage::Fragment && stage != Stage::CopyFragment;
+    // Vertex: transforms, GT3 per-vertex lighting. Fragment: the texture, the environment cube,
+    // the sphere map.
+    return create_shader(kCode[size_t(stage)], vertex, vertex ? 0 : 3, vertex ? 2 : 1);
+}
+
+SDL_GPUShader* GpuContext::create_shader(const ShaderCode& code, bool vertex, Uint32 samplers,
+                                         Uint32 uniform_buffers) {
     SDL_GPUShaderCreateInfo info{};
     SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device_);
     SDL_PropertiesID props = 0;
@@ -246,8 +244,8 @@ SDL_GPUShader* GpuContext::make_shader(Stage stage) {
         return nullptr;
     }
     info.stage = vertex ? SDL_GPU_SHADERSTAGE_VERTEX : SDL_GPU_SHADERSTAGE_FRAGMENT;
-    info.num_samplers = vertex ? 0 : 3; // fragment: the texture, the environment cube, the sphere map
-    info.num_uniform_buffers = vertex ? 2 : 1; // vertex: transforms, GT3 per-vertex lighting
+    info.num_samplers = samplers;
+    info.num_uniform_buffers = uniform_buffers;
     SDL_GPUShader* s = SDL_CreateGPUShader(device_, &info);
     if (!s) LOG_WARN("Shader creation failed: %s", SDL_GetError());
     if (props) SDL_DestroyProperties(props);
@@ -685,6 +683,34 @@ SDL_GPUBuffer* Uploader::buffer(SDL_GPUBufferUsageFlags usage, const void* data,
     if (!b) return nullptr;
     pending_.push_back({b, nullptr, stage(data, size), size, 0, 0, 0, false});
     return b;
+}
+
+SDL_Texture* wrap_texture(SDL_Renderer* renderer, SDL_GPUTexture* texture, int w, int h, SDL_TextureAccess access) {
+    SDL_Texture* t = nullptr;
+#if GT3R_HAVE_GPU_RENDERER
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_FORMAT_NUMBER, SDL_PIXELFORMAT_ABGR8888);
+    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_ACCESS_NUMBER, access);
+    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_WIDTH_NUMBER, w);
+    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_HEIGHT_NUMBER, h);
+#if GT3R_GLES
+    if (gles::active()) // SDL's GLES2 renderer takes the GL texture
+        SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_OPENGLES2_TEXTURE_NUMBER, gt3r_gl_texture_name(texture));
+    else
+#endif
+        SDL_SetPointerProperty(props, SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER, texture);
+    t = SDL_CreateTextureWithProperties(renderer, props);
+    SDL_DestroyProperties(props);
+#else
+    (void)renderer, (void)texture, (void)w, (void)h, (void)access;
+#endif
+    if (!t) {
+        LOG_WARN("Could not wrap a %dx%d GPU texture for the 2D renderer: %s", w, h, SDL_GetError());
+        return nullptr;
+    }
+    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_NONE);
+    SDL_SetTextureScaleMode(t, SDL_SCALEMODE_LINEAR);
+    return t;
 }
 
 u32 mip_levels(u32 w, u32 h) {

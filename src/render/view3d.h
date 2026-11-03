@@ -381,7 +381,6 @@ private:
     void write_capture();
     bool ensure_target(SDL_Renderer* renderer, int w, int h);
     void release_target();
-    SDL_Texture* wrap(SDL_Renderer* renderer, SDL_GPUTexture* texture, int w, int h);
     bool ensure_half(SDL_Renderer* renderer);
     bool ensure_cube(int size);
     void release_cube();

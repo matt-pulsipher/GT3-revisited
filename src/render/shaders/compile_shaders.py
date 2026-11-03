@@ -33,7 +33,8 @@ SHADERS = [("model_vert", "model.vert", [], []), ("model_clip_vert", "model.vert
            ("model_frag", "model.frag", [], []),
            ("model_vert_copy", "model.vert", ["SPIN_COPIES"], []),
            ("model_frag_copy", "model.frag", ["SPIN_COPIES"], ["NO_SAMPLE_MASK"]),
-           ("present_vert", "present.vert", [], []), ("present_frag", "present.frag", [], [])]
+           ("present_vert", "present.vert", [], []), ("present_frag", "present.frag", [], []),
+           ("gamma_vert", "gamma.vert", [], []), ("gamma_frag", "gamma.frag", [], [])]
 
 
 def run(*args):

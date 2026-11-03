@@ -11,6 +11,7 @@
 #include "platform/display_insets.h"
 #include "race/custom_music.h"
 #include "render/dynamic_scale.h"
+#include "render/gamma_pass.h"
 #include "render/gpu_context.h"
 #include "vfs/vfs.h"
 #include "xr/xr_session.h"
@@ -95,6 +96,11 @@ public:
     // every screen (App::draw_fps).
     bool show_fps() const { return show_fps_; }
     void set_show_fps(bool on);
+    // [video] gamma = 0.5..2.0 (default 1): the whole picture through out = in ^ (1 / gamma)
+    // (render/gamma_pass.h); 1 draws GT3's colours unchanged. Needs the 3D renderer; not in VR.
+    float gamma() const { return gamma_; }
+    void set_gamma(float g);
+    bool gamma_available() const;
     // [video] aspect = 16:9 (default) | 4:3 | fill: the game area's shape (platform/aspect.h).
     // Always 16:9 in VR (the headset's virtual screen).
     platform::Aspect aspect() const;
@@ -288,6 +294,11 @@ private:
     // The main loop rate set by App::apply_frame_limit (0: as fast as vsync allows).
     double frame_limit_rate_ = 0;
     void apply_frame_limit();
+    // [video] gamma, and its pass while it is not 1 (destroyed before gpu_).
+    float gamma_ = 1.0f;
+    std::unique_ptr<render::GammaPass> gamma_pass_;
+    bool gamma_frame_ = false; // this frame is drawn into gamma_pass_'s target
+    void begin_gamma_frame();
     // [video] show_fps: frames counted over about half a second and the rate they make.
     bool show_fps_ = false;
     int fps_frames_ = 0;

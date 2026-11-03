@@ -149,6 +149,7 @@ bool App::init(int argc, char** argv) {
     if (auto v = config_.get("video", "vsync")) gpu_opts.vsync = *v != "0";
     if (auto v = config_.get("video", "gpu_debug")) gpu_opts.debug = *v == "1";
     show_fps_ = to_lower(config_.get("video", "show_fps").value_or("off")) == "on";
+    gamma_ = render::parse_gamma(config_.get("video", "gamma").value_or(""));
     // [video] render_scale = auto | 0.5..4.0 (auto: native on desktop, capped on mobile)
     std::optional<float> render_scale = platform::parse_render_scale(config_.get("video", "render_scale").value_or("auto"));
     for (int i = 1; i < argc; ++i) {
@@ -459,6 +460,40 @@ void App::set_show_fps(bool on) {
     save_config();
 }
 
+bool App::gamma_available() const {
+#if GT3R_XR
+    if (xr_) return false; // the headset shows the canvases as they are
+#endif
+    return gpu_ != nullptr;
+}
+
+void App::set_gamma(float g) {
+    gamma_ = std::clamp(g, render::kGammaMin, render::kGammaMax);
+    if (render::gamma_changes(gamma_)) {
+        char text[16];
+        std::snprintf(text, sizeof(text), "%.2f", double(gamma_));
+        config_.set("video", "gamma", text);
+    } else {
+        gamma_ = 1.0f;
+        config_.remove("video", "gamma");
+    }
+    save_config();
+}
+
+// [video] gamma: from the window, the frame goes into the pass's target (render/gamma_pass.h),
+// which ends it over the window just before the present. At 1 the pass and its targets go.
+void App::begin_gamma_frame() {
+    gamma_frame_ = false;
+    if (!gamma_available() || !render::gamma_changes(gamma_)) {
+        gamma_pass_.reset();
+        return;
+    }
+    if (!gamma_pass_) gamma_pass_ = std::make_unique<render::GammaPass>(*gpu_);
+    int pw = 0, ph = 0;
+    SDL_GetRenderOutputSize(renderer_, &pw, &ph);
+    gamma_frame_ = gamma_pass_->begin(pw, ph);
+}
+
 // [video] show_fps: the frames drawn per second in a corner of the window (of a phone's safe
 // area: clear of its cutout and rounded corners; in VR, of the virtual screen), at the size of
 // 640x360 UI text whatever the screen's layout, over everything. Top left, clear of the race HUD
@@ -726,6 +761,7 @@ SDL_AppResult App::iterate() {
 #endif
     const Screen* shown = screens_.empty() ? nullptr : screens_.back().get(); // (after this frame's changes)
     layout_ui(shown && shown->adaptive_ui(), shown && shown->follows_aspect());
+    begin_gamma_frame();
     ui_->clear();
     Uint64 h_r0 = SDL_GetTicksNS();
     if (!screens_.empty()) screens_.back()->render(*this, *ui_);
@@ -764,6 +800,12 @@ SDL_AppResult App::iterate() {
         const char* f = SDL_getenv("GT3R_SHOT_COUNT");
         return f && *f ? std::max(1, std::atoi(f)) : 1;
     }();
+    // GT3R_SHOT_GAMMA=1: --shot and F12 read the window after the gamma pass, as shown (checks).
+    static const bool shot_gamma = [] {
+        const char* f = SDL_getenv("GT3R_SHOT_GAMMA");
+        return f && *f == '1';
+    }();
+    if (gamma_frame_ && shot_gamma) gamma_pass_->end(gamma_), gamma_frame_ = false;
     if (!auto_shot_path_.empty() && frame_ >= shot_frame && frame_ < shot_frame + shot_count) {
         std::string path = auto_shot_path_;
         if (shot_count > 1) {
@@ -780,6 +822,7 @@ SDL_AppResult App::iterate() {
         SDL_CreateDirectory(dir.c_str());
         save_screenshot(dir + "/gt3r-" + std::to_string(SDL_GetTicks()) + ".png");
     }
+    if (gamma_frame_) gamma_pass_->end(gamma_); // (after the screenshots: they keep GT3's colours)
     const Uint64 present_start = SDL_GetTicksNS();
     SDL_RenderPresent(renderer_);
     if (gpu_) gpu_->frame_presented();
@@ -1289,6 +1332,7 @@ void App::shutdown() {
 #if GT3R_XR
     xr_.reset(); // its canvases and swapchains before the renderer and the device
 #endif
+    gamma_pass_.reset();
     if (gpu_) gpu_.reset(); // destroys the 2D renderer too
     else if (renderer_) SDL_DestroyRenderer(renderer_);
     renderer_ = nullptr;
