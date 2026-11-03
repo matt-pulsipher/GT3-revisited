@@ -151,6 +151,9 @@ void RaceScreen::update(App& app, double dt) {
 
 void RaceScreen::on_event(App& app, const SDL_Event& e) {
     if (stage_ == Stage::Drive) camera_.handle_event(e);
+    if (stage_ == Stage::Select) xr_list_.event(e);
+    if (quick_ || paused_) menu_pointer_.event(e); // (none while driving)
+    else menu_pointer_.clear();
     // Mobile: going to the background pauses the race, like the console.
     if (e.type == SDL_EVENT_DID_ENTER_BACKGROUND && stage_ == Stage::Drive && !paused_) open_pause(app);
 }
@@ -167,6 +170,7 @@ bool RaceScreen::follows_aspect() const {
 }
 
 void RaceScreen::render(App& app, Ui& ui) {
+    xr_list_.clear();
     if (launch_failed_) {
         ui.fill(0, 0, ui.width(), ui.height(), Color{0, 0, 0, 255});
         ui.text_center(ui.height() / 2 - 16, "The race cannot start.", colors::kText);

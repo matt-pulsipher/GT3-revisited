@@ -241,23 +241,53 @@ void Session::update_input(double dt, bool pointer_allowed) {
         in.wheel_held = false;
     }
 
-    // The menus' pointer: the right aim ray against the virtual screen.
+    // The menus' pointer: the right aim ray against the canvas where the last frame showed it,
+    // the virtual screen, or in a stereo race (its pause window) the HUD panel (end_frame: its
+    // centre `drop` below the eyes, tilted to face them).
     pointer_on_ = false;
+    const float dist = hud_panel_ ? settings_.hud_distance : settings_.screen_distance;
+    const float drop = hud_panel_ ? settings_.hud_drop : 0.0f;
+    const float w = hud_panel_ ? settings_.hud_width : settings_.screen_width;
+    const float h = w * float(canvas_h_) / float(canvas_w_);
+    float u = 0, v = 0;
     if (pointer_allowed && in.aim_valid[1]) {
         const Pose& p = in.aim[1];
-        render::Vec3 dir = forward(p);
-        const float dist = settings_.screen_distance, w = settings_.screen_width;
-        const float h = w * float(canvas_h_) / float(canvas_w_);
-        if (dir.z < -1e-3f) {
-            float t = (-dist - p.pos.z) / dir.z;
-            render::Vec3 hit = p.pos + dir * t;
-            pointer_u_ = hit.x / w + 0.5f;
-            pointer_v_ = 0.5f - hit.y / h;
-            pointer_on_ = t > 0 && pointer_u_ >= 0 && pointer_u_ <= 1 && pointer_v_ >= 0 && pointer_v_ <= 1;
+        const render::Vec3 dir = forward(p);
+        const float tilt = -std::atan2(drop, dist);
+        const render::Vec3 c{0, -drop, -dist}, ex{1, 0, 0}, ey{0, std::cos(tilt), std::sin(tilt)},
+            n{0, -std::sin(tilt), std::cos(tilt)};
+        auto dot = [](const render::Vec3& a, const render::Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+        const float dn = dot(dir, n);
+        if (dn < -1e-3f) {
+            const float t = dot(c - p.pos, n) / dn;
+            const render::Vec3 d = p.pos + dir * t - c;
+            u = dot(d, ex) / w + 0.5f;
+            v = 0.5f - dot(d, ey) / h;
+            pointer_on_ = t > 0 && u >= 0 && u <= 1 && v >= 0 && v <= 1;
         }
     }
-    // Hysteresis on the click.
-    pointer_pressed_ = pointer_on_ && in.trigger_v[1] > (pointer_pressed_ ? 0.4f : 0.6f);
+    // A pressed over something the page takes clicks on (a header's Back, a tab, a row) clicks it
+    // as the trigger; elsewhere, and while driving, it is the pad's A. Decided as it goes down.
+    if (in.btn_a != a_held_) a_held_ = in.btn_a, a_click_ = in.btn_a && pointer_on_ && a_clicks_;
+    // Pulling the trigger tips the controller (on the default screen a degree moves the ray ~10
+    // UI units, past the pages' drag distance), and a hand shakes: from the start of a pull (or
+    // an A click) the pointer holds still where it was, so the click lands there, until the ray
+    // moves 3 degrees away (a drag: a list, a slider).
+    const float trigger = in.trigger_v[1];
+    if (!pointer_on_ || (trigger < 0.1f && !a_click_)) {
+        pull_ = pull_free_ = false;
+    } else if (!pull_) {
+        pull_ = true, pull_free_ = false;
+        pull_u_ = u, pull_v_ = v;
+    } else if (!pull_free_) {
+        pull_free_ = std::hypot((u - pull_u_) * w, (v - pull_v_) * h) > dist * std::tan(3.0f * kPi / 180.0f);
+    }
+    const bool held = pull_ && !pull_free_;
+    pointer_u_ = held ? pull_u_ : u;
+    pointer_v_ = held ? pull_v_ : v;
+    // Hysteresis on the trigger's click.
+    trigger_down_ = pointer_on_ && trigger > (trigger_down_ ? 0.3f : 0.5f);
+    pointer_pressed_ = trigger_down_ || (a_click_ && pointer_on_);
 
     SDL_Joystick* j = in.pad;
     SDL_SetJoystickVirtualAxis(j, SDL_GAMEPAD_AXIS_LEFTX, stick_axis(steer));
@@ -267,7 +297,7 @@ void Session::update_input(double dt, bool pointer_allowed) {
     SDL_SetJoystickVirtualAxis(j, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, trigger_axis(in.trigger_v[0]));
     SDL_SetJoystickVirtualAxis(j, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, trigger_axis(pointer_on_ ? 0.0f : in.trigger_v[1]));
     auto set = [&](SDL_GamepadButton b, bool down) { SDL_SetJoystickVirtualButton(j, button_index(b), down); };
-    set(SDL_GAMEPAD_BUTTON_SOUTH, in.btn_a);
+    set(SDL_GAMEPAD_BUTTON_SOUTH, in.btn_a && !a_click_);
     set(SDL_GAMEPAD_BUTTON_EAST, in.btn_b);
     set(SDL_GAMEPAD_BUTTON_WEST, in.btn_x);
     set(SDL_GAMEPAD_BUTTON_NORTH, in.btn_y);

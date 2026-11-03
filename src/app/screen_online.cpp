@@ -10,7 +10,8 @@
 // Every page takes the pad, the keyboard and pointers (mouse, touch, the VR controller's
 // pointer): rows follow a hovering pointer and act on a click (a finger's first tap
 // focuses), the "<" ">" around a value are buttons, the footer's actions are buttons, and
-// a click on the session code copies it.
+// a click on the session code copies it. In a VR headset the code, name, address and relay
+// server are typed on the game's own keyboard (app/text_keyboard.h).
 //
 // Scripted runs (tests, two instances on one machine):
 //   GT3R_ONLINE="host,players=2,course=trialmt,laps=1,car=r34_gtr_v_99"
@@ -26,6 +27,7 @@
 #include "app/app.h"
 #include "app/online_pickers.h"
 #include "app/screen_registry.h"
+#include "app/text_keyboard.h"
 #include "app/updates.h"
 #include "app/ui.h"
 #include "base/log.h"
@@ -224,7 +226,10 @@ public:
         if (page_ != Page::Start && !ns.active()) to_start();
         if (script_.have) run_script(app);
         if (editing_) { // text entry has the keyboard (on_event); a click elsewhere finishes it
-            edit_pointer(app);
+            if (!keyboard_.is_open()) edit_pointer(app);
+            else if (TextKeyboard::Result r = keyboard_.update(app.menu(), pointer_.take(), edit_target());
+                     r != TextKeyboard::Result::None)
+                end_edit(app, r == TextKeyboard::Result::Done);
             return;
         }
         if (page_ != Page::Start && page_ != Page::Cars && page_ != Page::Courses && !prompts_.empty()) {
@@ -238,12 +243,26 @@ public:
         else update_lobby(app);
     }
 
+    bool clickable(float x, float y) const override {
+        if (page_ == Page::Cars) return car_picker_.clickable(x, y);
+        if (page_ == Page::Courses) return course_picker_.clickable(x, y);
+        if (keyboard_.is_open()) return keyboard_.clickable(x, y);
+        const HitArea* h = hits_.at(x, y);
+        if (h && page_ != Page::Start && !prompts_.empty()) return h->id == kHitPromptYes || h->id == kHitPromptNo;
+        return h != nullptr;
+    }
+
     void on_event(App& app, const SDL_Event& e) override {
         // Pointers go to the page on screen (the pickers keep their own).
         if (page_ == Page::Cars) car_picker_.event(e);
         else if (page_ == Page::Courses) course_picker_.event(e);
         else pointer_.event(e);
         if (!editing_) return;
+        // Over the VR keyboard a real keyboard's letters only type (W is also Cross, Space Circle, ...);
+        // the arrows still move between its keys.
+        if (keyboard_.is_open() && e.type == SDL_EVENT_KEY_DOWN && e.key.key != SDLK_UP && e.key.key != SDLK_DOWN &&
+            e.key.key != SDLK_LEFT && e.key.key != SDLK_RIGHT)
+            app.menu().suppress();
         std::string& s = edit_target();
         if (e.type == SDL_EVENT_TEXT_INPUT) {
             for (const char* c = e.text.text; *c; ++c)
@@ -252,7 +271,7 @@ public:
             if (e.key.key == SDLK_BACKSPACE && !s.empty()) s.pop_back();
             else if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) end_edit(app, true);
             else if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_AC_BACK) end_edit(app, false);
-        } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && !keyboard_.is_open()) {
             // Controller typing: up/down change the last character, right adds one, left deletes.
             static const std::string kChars = "0123456789.:abcdefghijklmnopqrstuvwxyz-_[]";
             auto cycle = [&](int d) {
@@ -282,6 +301,7 @@ public:
         else if (page_ == Page::Courses) course_picker_.render(app, ui, art_);
         else if (page_ == Page::Rules) render_rules(ui, ns);
         else render_lobby(app, ui, ns);
+        if (keyboard_.is_open()) keyboard_.draw(ui, edit_target());
         if ((page_ == Page::Lobby || page_ == Page::Rules) && !prompts_.empty()) render_prompt(ui);
         for (const auto& [hash, d] : downloading_) // progress of the downloads
             if (const net::Session::Download* dl = ns.download(hash); dl && dl->total) {
@@ -311,6 +331,9 @@ private:
         if (updates().required() && !script_.have) updates().open_dialog(net::UpdatePrompt::Required);
         app_ = &app;
         window_ = app.window();
+#if GT3R_XR
+        vr_ = app.xr() != nullptr;
+#endif
         if (app.vfs()) {
             db_.load(*app.vfs());
             colors_.load(*app.vfs());
@@ -876,10 +899,10 @@ private:
             if (!v.empty()) ui.text(330, y, Ui::clip(v, 260), edit ? colors::kAccent : colors::kDim);
         }
         const bool joins = after_edit_ != After::Nothing;
-        if (editing_)
+        if (editing_ && !keyboard_.is_open()) // (the VR keyboard has its own)
             ui.footer(joins ? "Type, Enter to join, Esc to cancel (pad: up/down letter, right add, left delete, A join)"
                             : "Type, Enter to finish, Esc to cancel (pad: up/down letter, right add, left delete, A done)");
-        else
+        else if (!editing_)
             footer_actions(ui, "Up/Down: choose", {{"Cross: choose", kFootChoose}, {"Triangle: back", kFootBack}}, hits_,
                            kHitFooter, pointer_);
         ui.text_center(Ui::kHeight - 62, "With a code nobody forwards ports: players connect directly when they can,",
@@ -894,6 +917,7 @@ private:
     enum class After { Nothing, JoinCode, JoinAddress } after_edit_ = After::Nothing;
     bool editing_ = false;
     std::string edit_backup_;
+    TextKeyboard keyboard_; // in VR (vr_)
     std::string& edit_target() {
         switch (edit_) {
         case Edit::Address: return address_;
@@ -917,12 +941,15 @@ private:
         editing_ = true;
         edit_backup_ = edit_target();
         if (window_) SDL_StartTextInput(window_);
+        static const char* const kTitles[] = {"Address", "Name", "Session code", "Relay server"};
+        if (vr_) keyboard_.open(kTitles[int(which)], then == After::Nothing ? "OK" : "Join", which == Edit::Code);
     }
 
     void end_edit(App& app, bool keep) {
         if (!keep) edit_target() = edit_backup_;
         if (edit_ == Edit::Name && name_.empty()) name_ = "Player";
         editing_ = false;
+        keyboard_.close();
         if (window_) SDL_StopTextInput(window_);
         app.menu().suppress(); // the keys typed are no menu input
         remember(app);
@@ -1626,6 +1653,7 @@ private:
 
     App* app_ = nullptr;
     SDL_Window* window_ = nullptr;
+    bool vr_ = false; // in a headset: no system keyboard, no D-pad (keyboard_ types)
     bool init_ = false, in_race_ = false;
     std::string core_problem_; // this machine cannot run online races (init)
     std::shared_ptr<const sim::exact::ProgramData> program_; // this disc's program tables (the cars' digests)

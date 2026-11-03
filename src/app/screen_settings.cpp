@@ -91,6 +91,15 @@ public:
         if (const char* t = SDL_getenv("GT3R_SETTINGS_TAB"); t && *t) tab_ = std::clamp(std::atoi(t), 0, kTabCount - 1);
     }
 
+    bool clickable(float x, float y) const override {
+        if (confirm_.active) return confirm_.cancel_rect.contains(x, y) || confirm_.replace_rect.contains(x, y);
+        if (capture_.state != Capture::State::Idle) return false; // A is what the binding takes
+        if (lay_.back.contains(x, y) || tab_at(x, y) >= 0) return true;
+        if (!lay_.list.contains(x, y)) return false;
+        const int i = row_at(y);
+        return i >= 0 && rows_[size_t(i)].selectable() && rows_[size_t(i)].enabled;
+    }
+
     void on_event(App& app, const SDL_Event& e) override {
         // Back from Android's settings, where music access may have been allowed: the next pick
         // asks again.
@@ -99,7 +108,11 @@ public:
             saves_view_.folder.clear(); // the save folder looked at again
         }
         build(app);
+        float hx = 0, hy = 0;
+        const bool hover = xr_hover(e, hx, hy); // the VR pointer focuses what it is over (ui.h)
         if (confirm_.active) { // a tap answers the replace-Custom question
+            if (hover && confirm_.cancel_rect.contains(hx, hy)) confirm_.replace = false;
+            if (hover && confirm_.replace_rect.contains(hx, hy)) confirm_.replace = true;
             if (gesture_.feed(e) == Gesture::Result::Tap) {
                 if (confirm_.cancel_rect.contains(gesture_.x(), gesture_.y())) answer_confirm(false);
                 else if (confirm_.replace_rect.contains(gesture_.x(), gesture_.y())) answer_confirm(true);
@@ -130,6 +143,8 @@ public:
             follow_sel_ = false;
             return;
         }
+        if (hover && lay_.list.contains(hx, hy))
+            if (int i = row_at(hy); i >= 0 && rows_[i].selectable()) sel_ = i, focus_tabs_ = false;
         switch (gesture_.feed(e)) {
         case Gesture::Result::Down: {
             const float x = gesture_.x(), y = gesture_.y();

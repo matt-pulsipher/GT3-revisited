@@ -339,6 +339,11 @@ pickers with the disc's own art, loaded from the menu sets:
   that would leave the session).
 - **Text rows** (code, address, name, relay server) start typing on a click; a click
   elsewhere finishes the text.
+- **In a VR headset** a text row opens the game's own keyboard (`app/text_keyboard.h`):
+  no system keyboard opens over an immersive app, and the controllers have no D-pad for
+  the pad typing. Its keys focus under the pointer and type on a click; the stick moves
+  between them (A types, X deletes, Menu finishes, B cancels). Paste adds the
+  clipboard's text.
 - A click on the **session code** copies it.
 - The **course picture** opens the course page (host).
 - **Car page:**

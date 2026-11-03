@@ -100,22 +100,7 @@ PauseMenu::Result PauseMenu::tick(u16 held) {
     if (blink_ < 0) blink_ = 1.0f;
 
     std::vector<Button> b = row();
-    if (ok) {
-        const Button& c = b[size_t(std::clamp(cursor_, 0, int(b.size()) - 1))];
-        if (!c.enabled) return Result::None;
-        switch (c.id) {
-        case 3: return Result::Continue;
-        case 5: return Result::Retry;
-        case 4: return Result::Exit; // OK in the question, or the replay's EXIT
-        case 1:
-            if (kind_ == Kind::Replay && !confirm_) return Result::ReplayOptions;
-            confirm_ = !confirm_; // EXIT asks; CANCEL goes back to the row
-            cursor_ = confirm_ ? 1 : 0; // the question starts on CANCEL; the row on CONTINUE
-            blink_ = 1.0f;
-            return Result::None;
-        default: return Result::None;
-        }
-    }
+    if (ok) return choose();
     if (cancel) {
         if (!confirm_) return Result::Continue;
         confirm_ = false;
@@ -132,6 +117,56 @@ PauseMenu::Result PauseMenu::tick(u16 held) {
         sounds_.push_back("cursor");
     }
     return Result::None;
+}
+
+PauseMenu::Result PauseMenu::choose() {
+    std::vector<Button> b = row();
+    const Button& c = b[size_t(std::clamp(cursor_, 0, int(b.size()) - 1))];
+    if (!c.enabled) return Result::None;
+    switch (c.id) {
+    case 3: return Result::Continue;
+    case 5: return Result::Retry;
+    case 4: return Result::Exit; // OK in the question, or the replay's EXIT
+    case 1:
+        if (kind_ == Kind::Replay && !confirm_) return Result::ReplayOptions;
+        confirm_ = !confirm_; // EXIT asks; CANCEL goes back to the row
+        cursor_ = confirm_ ? 1 : 0; // the question starts on CANCEL; the row on CONTINUE
+        blink_ = 1.0f;
+        return Result::None;
+    default: return Result::None;
+    }
+}
+
+int PauseMenu::button_at(float x, float y) const {
+    const std::optional<menu::MenuScene>& sc = scenes_[int(kind_)];
+    if (!sc) return -1;
+    std::vector<Button> b = row();
+    for (int i = 0; i < int(b.size()); ++i) {
+        const menu::Element* e = find_element(*sc, "m_" + b[size_t(i)].name);
+        if (e && b[size_t(i)].enabled && x >= e->x && x <= e->x + e->w && y >= e->y && y <= e->y + e->h) return i;
+    }
+    return -1;
+}
+
+bool PauseMenu::hover(float x, float y) {
+    const int i = button_at(x, y);
+    if (i < 0) return false;
+    if (i != cursor_) {
+        cursor_ = i, blink_ = 1.0f;
+        sounds_.push_back("cursor");
+    }
+    return true;
+}
+
+PauseMenu::Result PauseMenu::tap(float x, float y) {
+    const int i = button_at(x, y);
+    if (i < 0) return Result::None;
+    if (i != cursor_) {
+        hover(x, y);
+        return Result::None;
+    }
+    sounds_.push_back("ok");
+    return choose();
 }
 
 PauseMenu::Result PauseMenu::update(u16 held, double dt) {

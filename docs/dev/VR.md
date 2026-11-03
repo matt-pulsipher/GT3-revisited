@@ -136,7 +136,20 @@ item under it is focused (fixed pages, horizontal scrolling rows, which then hol
 GT Mode garage rows and wheel shop tiles), so one click chooses; on vertical scrolling
 selectors and the arcade pickers' strip a click moves the cursor and a second chooses.
 The online lobby's pages take it the same way (docs/dev/ONLINE.md "Pickers": rows and
-tiles follow it, "<" ">" and the footer's actions are buttons).
+tiles follow it, "<" ">" and the footer's actions are buttons). So do our own pages, in a
+headset only (a desktop mouse still only clicks): the row or tile under it is focused
+(Settings, Mods, the save editor, Quick Race, the main menu, the disc page; the jukebox,
+movie theater, car database and time trial lists, which hold still under it), and buttons and
+tabs under it light up. A pressed over anything the page takes clicks on (a header's Back, a
+tab, a row, the title's GT3R menu button: `Screen::clickable`) clicks it as the trigger does;
+elsewhere A is the pad's Cross. Pulling the trigger tips the controller: from the start of a
+pull (or an A click) the pointer holds still until the ray moves 3 degrees away, so the click
+lands where it was. The race's menus take it too (docs/dev/RACE.md "Pointers on these
+menus"); in a stereo race the pause window is on the HUD panel, so the ray aims at that panel
+there (`hud_distance`, `hud_drop`, `hud_width`) instead of the screen. The online start page's
+text (session code, name, address, relay server) is typed on the game's own keyboard,
+VR builds only: Android's screen keyboard does not open over an immersive app
+(`SDL_HINT_ENABLE_SCREEN_KEYBOARD` is off), and the controllers have no D-pad.
 
 Two Android details: SDL drops joystick input while its window lacks keyboard
 focus, which the invisible window in an immersive app never has

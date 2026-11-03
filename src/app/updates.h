@@ -75,6 +75,7 @@ public:
     void frame(App& app, bool screen_allows);
     void dialog_update(App& app);                       // menu input (when modal())
     void dialog_event(App& app, const SDL_Event& e);    // pointer input (render coordinates)
+    bool dialog_clickable(float x, float y) const;      // Screen::clickable for the dialog
     void dialog_render(Ui& ui);
     std::string badge_text() const; // the main menu's title bar badge ("" none)
 

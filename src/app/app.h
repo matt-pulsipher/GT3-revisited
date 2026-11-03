@@ -56,6 +56,10 @@ public:
     // A file dropped on the window: true when this screen takes it (the Mods screen takes .zip
     // archives) and gets it as an SDL_EVENT_DROP_FILE; otherwise it opens as a disc image.
     virtual bool takes_dropped_file(const std::string&) const { return false; }
+    // Whether a click at (x, y), UI units, would act on something (a button, a tab, a row): in a
+    // headset, A pressed there clicks it as the trigger does; elsewhere A is the pad's Cross
+    // (App::xr_pointer). Screens without pointer input keep the default.
+    virtual bool clickable(float, float) const { return false; }
 };
 
 class App {

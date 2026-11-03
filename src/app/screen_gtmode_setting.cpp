@@ -100,6 +100,14 @@ public:
             app.pop();
             return;
         }
+        // The VR pointer's hover and clicks (on_event), as on the game's other menus.
+        if (hover_) {
+            if (float mx, my; ui_to_menu(app.ui(), *hover_, mx, my)) flow_->hover(mx, my);
+            hover_.reset();
+        }
+        for (SDL_FPoint p : taps_)
+            if (float mx, my; ui_to_menu(app.ui(), p, mx, my)) flow_->tap(mx, my);
+        taps_.clear();
         MenuKeys keys = setting_keys(app.input().pad(0));
         acc_ += dt;
         while (acc_ >= kFrame) {
@@ -122,6 +130,23 @@ public:
     }
 
     bool follows_aspect() const override { return true; } // the game's menus
+
+    // In a headset the controller's pointer focuses the item it is over, and its click confirms
+    // it (Gt3MenuScreen takes the mouse and fingers too; these pages only the pad elsewhere).
+    void on_event(App&, const SDL_Event& e) override {
+        float x = 0, y = 0;
+        if (xr_hover(e, x, y)) hover_ = SDL_FPoint{x, y};
+        if ((e.type != SDL_EVENT_MOUSE_BUTTON_DOWN && e.type != SDL_EVENT_MOUSE_BUTTON_UP) ||
+            e.button.which != kXrPointerMouse || e.button.button != SDL_BUTTON_LEFT)
+            return;
+        const SDL_FPoint at{e.button.x, e.button.y};
+        if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) press_ = at;
+        else if (press_) {
+            const float dx = at.x - press_->x, dy = at.y - press_->y;
+            if (dx * dx + dy * dy <= 12.0f * 12.0f) taps_.push_back(*press_); // as Gt3MenuScreen's tap distance
+            press_.reset();
+        }
+    }
 
 private:
     void init(App& app) {
@@ -238,6 +263,8 @@ private:
     int pending_draws_ = 1;
     double acc_ = 0;
     std::string error_;
+    std::optional<SDL_FPoint> hover_, press_; // the VR pointer (on_event)
+    std::vector<SDL_FPoint> taps_;
 };
 
 } // namespace

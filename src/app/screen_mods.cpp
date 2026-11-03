@@ -109,6 +109,8 @@ std::string with_version(const std::string& name, const std::string& version) {
 
 class ModsScreen : public Screen {
 public:
+    bool clickable(float x, float y) const override { return target_at(x, y).kind != Target::None; }
+
     void on_event(App& app, const SDL_Event& e) override {
         if (e.type == SDL_EVENT_DROP_FILE && e.drop.data && is_zip_name(e.drop.data)) {
             if (!job_ && !confirm_) begin_install(app, e.drop.data);
@@ -120,6 +122,11 @@ public:
             scroll_ -= e.wheel.y * (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f) * lay_.row_h;
             follow_sel_ = false;
             return;
+        }
+        if (float x, y; xr_hover(e, x, y)) { // the VR pointer focuses what it is over (ui.h)
+            const Target t = target_at(x, y);
+            if (t.kind == Target::Row || t.kind == Target::Toggle) sel_ = t.index;
+            if (t.kind == Target::Yes || t.kind == Target::No) confirm_.focus_yes = t.kind == Target::Yes;
         }
         switch (gesture_.feed(e)) {
         case Gesture::Result::Down:

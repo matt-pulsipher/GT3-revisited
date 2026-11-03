@@ -59,6 +59,12 @@ public:
     Result update(u16 held_keys, double dt);
     std::vector<std::string> take_sounds() { return std::exchange(sounds_, {}); }
 
+    // Pointers (menu units, 640x448 y up): a hover moves the cursor to the button under it; a
+    // tap on the cursor's button chooses it, on another moves the cursor there (a finger's first
+    // tap; a hovering pointer is already on it).
+    bool hover(float x, float y);
+    Result tap(float x, float y);
+
     bool confirming() const { return confirm_; }
     int cursor() const { return cursor_; }
     // Screenshots / scripts: the cursor on a button of the current row.
@@ -73,6 +79,8 @@ private:
         bool enabled = true;
     };
     std::vector<Button> row() const;
+    int button_at(float x, float y) const; // -1 = none (a disabled one counts as none)
+    Result choose();                       // the cursor's button, as Circle / Cross
 
     std::optional<menu::MenuScene> scenes_[3];
     std::unique_ptr<menu::MenuRenderer> renderer_;

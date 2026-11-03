@@ -219,6 +219,12 @@ void Updates::dialog_update(App& app) {
     else if (m.pressed(PadButton::Circle) || m.pressed(PadButton::Triangle)) activate(app, 1);
 }
 
+bool Updates::dialog_clickable(float x, float y) const {
+    for (const UiRect& r : dialog_.items)
+        if (r.w > 0 && r.contains(x, y)) return true;
+    return false;
+}
+
 void Updates::dialog_event(App& app, const SDL_Event& e) {
     if (!dialog_.open) return;
     auto hit = [&](float x, float y) {

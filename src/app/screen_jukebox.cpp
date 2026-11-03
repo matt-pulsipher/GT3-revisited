@@ -20,6 +20,8 @@ public:
         const MenuInput& m = app.menu();
         int n = int(tracks_.size());
         if (n) sel_ = std::clamp(sel_ + m.vertical(), 0, n - 1);
+        if (XrList::Hit h = xr_list_.take_hover(); h.row >= 0 && h.row < n) sel_ = h.row; // the VR pointer
+        if (XrList::Hit h = xr_list_.take_click(); h.row >= 0 && h.row < n) play(app, sel_ = h.row);
         if (m.horizontal()) app.audio().set_music_volume(app.audio().music_volume() + 0.05f * m.horizontal());
         if (m.pressed(PadButton::Cross) && n) play(app, sel_);
         if (m.pressed(PadButton::Circle)) {
@@ -39,7 +41,10 @@ public:
         }
     }
 
+    void on_event(App&, const SDL_Event& e) override { xr_list_.event(e); }
+
     void render(App& app, Ui& ui) override {
+        xr_list_.clear();
         char vol[64];
         int rev = app.audio().voices().reverb_mode();
         std::snprintf(vol, sizeof(vol), "Volume %d%%  reverb %s", int(app.audio().music_volume() * 100 + 0.5f),
@@ -49,7 +54,8 @@ public:
             ui.text_center(150, error_.empty() ? "No tracks found" : error_, colors::kBad);
         }
         int n = int(tracks_.size());
-        int first = ui.list_window(n, sel_, kRows);
+        int first = xr_list_.first(0, sel_, kRows, ui.list_window(n, sel_, kRows));
+        xr_list_.rows(0, first, std::min(kRows, n - first), 4, Ui::kWidth - 4, 26, 12);
         for (int i = 0; i < kRows && first + i < n; ++i) {
             int idx = first + i;
             const Track& t = tracks_[idx];
@@ -138,6 +144,7 @@ private:
     bool loaded_ = false;
     int sel_ = 0;
     int playing_ = -1;
+    XrList xr_list_;
 };
 
 } // namespace

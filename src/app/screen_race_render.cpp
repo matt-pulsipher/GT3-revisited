@@ -705,6 +705,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             if (!licence_box) apply_depth_of_field(bo); // (the licence box: GT3's 2P-style pass, none)
             view_->draw(ui.renderer(), box, camera_.view(), camera_.projection(box.w / box.h), eye, items_, bo);
         }
+        menu_frame_ = menu_dst;
         if (panel_ != Panel::None) draw_panel(app, menu_dst);
         else quick_menu_.draw(ui.renderer(), menu_dst);
         if (toast_time_ > 0) {

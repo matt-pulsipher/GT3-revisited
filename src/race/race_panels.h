@@ -85,5 +85,7 @@ struct OptionRow {
 // A titled list with the selected row highlighted; `help` at the bottom.
 void draw_option_list(SDL_Renderer* r, text::GameFonts& fonts, const std::string& title,
                       const std::vector<OptionRow>& rows, int selected, const std::string& help, const SDL_FRect& dst);
+// The row of draw_option_list's `count` rows at (x, y) (dst's coordinates); -1 = none.
+int option_list_row(size_t count, float x, float y, const SDL_FRect& dst);
 
 } // namespace gt3r::race
