@@ -176,6 +176,7 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
         wo.run.lod = lod;
         wo.program_alpha_test = true;
         wo.weighted_reflection = true;
+        wo.runtime_set = 1; // the rim image
         // Showroom wheels: LOD 0's rim and tyre texture from the menu car file.
         const bool showroom = lod == 0 && CarFile::is_car(opt.showroom_car);
         const CarFile src = showroom ? CarFile::parse(opt.showroom_car) : f;

@@ -253,6 +253,11 @@ struct Options {
     // in the vertex alpha. The env map itself is a runtime slot, so the
     // renderer supplies the reflection colour.
     bool weighted_reflection = false;
+    // The runtime texture slot (0x1FF, op 0x29) on colour packets: the first texture of this
+    // entry of the texture-LOD table in use. Wheels: 1, the rim image the game binds there
+    // (docs/formats/car_model.md "GTTW (wheel)"). -1, or a table without the entry: the current
+    // set's first texture, the closest static stand-in.
+    int runtime_set = -1;
     // Prize scenes (.prm): environment-map packets reference a sphere map stored
     // in the file's own texture set. With this set they keep that texture
     // (Primitive::texture, flag kEnvironmentMap, UVs to be derived from the

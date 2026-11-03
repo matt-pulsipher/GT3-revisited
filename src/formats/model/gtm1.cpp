@@ -658,6 +658,16 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         }
         return index < set_size[texset] ? it->second + int(index) : -1;
     };
+    // The runtime slot's texture (Options::runtime_set): its entry of the texture-LOD table in use.
+    auto runtime_texture = [&](u32 texset) -> int {
+        if (opt.runtime_set >= 0 && !g.texset_tables.empty()) {
+            const std::vector<u32>& t =
+                g.texset_tables[std::clamp<size_t>(size_t(std::max(opt.run.texture_lod, 0)), 0, g.texset_tables.size() - 1)];
+            if (size_t(opt.runtime_set) < t.size())
+                if (int i = texture_for(t[size_t(opt.runtime_set)], 0); i >= 0) return i;
+        }
+        return texture_for(texset, 0);
+    };
     auto lowest_alpha = [&](int tex) {
         auto mt = min_alpha.find(tex);
         if (mt == min_alpha.end()) {
@@ -935,8 +945,8 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     if ((g.chunks[d.chunk].flags >> 8) & 1) sm.scale = 255.0f / 128.0f;
                     sm.specular_local = kind == 4;
                 }
-                // 0x1FF is a runtime texture slot (op 0x29; the game fills it, e.g. the wheel rim image);
-                // the set's first texture is the closest static stand-in.
+                // 0x1FF is a runtime texture slot (op 0x29; the game fills it, e.g. the wheel rim image):
+                // opt.runtime_set's image, else the set's first texture, the closest static stand-in.
                 if (dp.prim.tme && dp.has_uv && tex != 0 && !env) {
                     // A set that is not a Tex1 binds no texture and the GS draws with an earlier draw's.
                     // At courses/EU/L_apricot1's reflection dome GT3's cars then reflect no sky (the UK
@@ -945,7 +955,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                         mesh.indices.resize(prim.first_index);
                         continue;
                     }
-                    prim.texture = texture_for(d.texset, tex == 0x1FF ? 0 : tex - 1);
+                    prim.texture = tex == 0x1FF ? runtime_texture(d.texset) : texture_for(d.texset, tex - 1);
                 }
                 if (opt.course_env_maps && env && (kind == 2 || kind == 3) && dp.prim.tme && tex != 0) {
                     // The packet's own texture; the runtime slot 0x1FF is empty while the course is
