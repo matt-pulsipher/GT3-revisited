@@ -334,6 +334,7 @@ std::optional<CarSpec> build_car_spec(const data::CarDatabase& db, const std::st
     const ByteSpan* lw = part_record(db, parts, kLightweight);
     if (lw && lw->size() >= 0x14 && rd16(*lw, 0x12)) weight = weight * rd16(*lw, 0x12) / 1000;
     if (body && body->weight_permille) weight = weight * body->weight_permille / 1000;
+    s.weight_kg = weight;
     s.mass = std::max(float(weight + 120), 300.0f);
     s.front_weight = std::clamp(ch->front_weight_pct > 0 ? ch->front_weight_pct * 0.01f : 0.55f, 0.3f, 0.7f);
     s.wheelbase = ch->wheelbase_mm * 0.001f;

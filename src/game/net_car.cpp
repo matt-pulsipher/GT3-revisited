@@ -323,6 +323,10 @@ PowerPeak spec_power_peak(const sim::CarSpec& s, float condition) {
         float t = lookup(omega);
         float kgfm = ps2::mul(t, condition) / 9.8f; // the looked-up torque x the condition factor
         float ps = ps2::mul(kgfm, float(rpm)) / 716.2f; // PS2 multiply (rounds towards zero)
+        if (kgfm > best.kgfm) {
+            best.kgfm = kgfm;
+            best.torque_rpm = rpm;
+        }
         if (ps > best.ps) {
             best.ps = ps;
             best.rpm = rpm;
@@ -338,6 +342,23 @@ int display_power(float ps, const Units& units) {
 }
 
 const char* power_unit(const Units& units) { return units.power; }
+
+int display_torque(int kgfm_x100, const Units& units) {
+    const ee::F t = ee::int_to_f(kgfm_x100);
+    return ee::to_int(units.torque_ftlb ? t * ee::F::raw(0x40E773EB) : t); // 7.2329
+}
+
+const char* torque_unit(const Units& units) { return units.torque_ftlb ? "ft.lb" : "kgf.m"; }
+
+std::string catalog_torque_text(const data::CarDatabase& db, u64 engine_id, const Units& units) {
+    const ByteSpan* er = db.record(data::TableId::Engine, engine_id);
+    const auto en = db.engine(engine_id);
+    const s32 t = er && er->size() >= 0x40 ? display_torque(rd16(*er, 0x3E), units) : 0; // +0x3E: kgf.m x 100
+    if (t == 0 || !en) return {};
+    char b[64];
+    std::snprintf(b, sizeof b, "%d.%02d%s/%s", t / 100, t % 100, torque_unit(units), en->torque_rpm.c_str());
+    return b;
+}
 
 float geared_top_speed(const sim::CarSpec& s) {
     float r = 0;

@@ -145,10 +145,13 @@ int arcade_class_of(const GtData& gd, const std::string& label);
 // Max power (PS) and its rpm the way the original computes the figure its menus show for a
 // built car: the full-throttle torque curve times the engine condition factor `condition`
 // (physics §10.3; 1 = a fresh engine) sampled every 100 rpm from the first curve point
-// (rounded to 100 rpm) up to the rev limit; power = (N*m / 9.8) * rpm / 716.2.
+// (rounded to 100 rpm) up to the rev limit; power = (N*m / 9.8) * rpm / 716.2. The peak
+// torque (kgf.m) and its rpm come from the same samples, the first strictly greater one.
 struct PowerPeak {
     float ps = 0;
     int rpm = 0;
+    float kgfm = 0;
+    int torque_rpm = 0;
 };
 PowerPeak spec_power_peak(const sim::CarSpec& spec, float condition = 1);
 // Peak power at the crank (PS) of a spec (spec_power_peak().ps).
@@ -158,6 +161,15 @@ float spec_power_ps(const sim::CarSpec& spec, float condition = 1);
 // after it ("PS", "HP", "BHP", "CV").
 int display_power(float ps, const Units& units);
 const char* power_unit(const Units& units);
+// The integer a menu shows for a catalog torque (the engine record's kgf.m x 100) in the
+// language's unit, truncated: ft.lb is kgf.m x 7.2329. torque_unit() is its label ("kgf.m",
+// "ft.lb").
+int display_torque(int kgfm_x100, const Units& units);
+const char* torque_unit(const Units& units);
+// An engine's catalog torque as the car pages print it: display_torque() with two decimals, the
+// unit and the record's rpm text ("489.66ft.lb/3700rpm"); empty when the engine is missing or
+// its torque shows as 0.
+std::string catalog_torque_text(const data::CarDatabase& db, u64 engine_id, const Units& units);
 
 // Highest speed the car's gearing allows at its rev limit (m/s): no driven car goes faster on
 // the flat (plausibility checks).

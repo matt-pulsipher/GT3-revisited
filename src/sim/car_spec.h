@@ -69,6 +69,7 @@ struct CarSpec {
     std::string label;          // database label ("r34_gtr_v_99")
     std::string name;           // display name
     float mass = 1400;          // [physics §6.4] kg: chassis weight x lightweight x body factors + 120 kg
+    int weight_kg = 0;          // [physics §6.4] the same before the 120 kg (spec +0x2A): the menus' weight figure
     float front_weight = 0.55f; // [db] static front axle share
     float wheelbase = 2.6f;     // [db] m
     float length = 4.5f, width = 1.75f, height = 1.35f; // [db] m (body box)

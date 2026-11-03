@@ -8,6 +8,7 @@
 #include "formats/text/mltx.h"
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
+#include "game/net_car.h"
 #include "menu/flow/game_flow.h"
 #include "menu/flow/gt_mode_hooks.h"
 #include "vfs/vfs.h"
@@ -322,6 +323,98 @@ TEST(gtmode_menu_disc_tune_shop_flow) {
     CHECK(gt.ride_power_ps() == fitted);
     press(f, MenuKey::Cancel);
     CHECK(f.controller()->page_name() == "ts/ts_eg");
+}
+
+// The car spec pages' weight, torque and ratios: the built car's weight (spec +0x2A, with the weight reduction parts) and
+// its peak, "%.3t" ratios; the dealer's catalog torque, the garage's built one. The dealer's Viper GTS as the original's
+// dealer page shows it (1531 kg, 449 HP: 3.409 and 0.229; 489.66 ft.lb);
+// a garage R34 lighter with each weight reduction stage (1560 kg stock, stage 3: 1560 x 0.85 = 1326 kg). Any region's
+// disc (the Viper's figures: NTSC-U, in HP).
+TEST(gtmode_menu_disc_car_specs) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    set_env("GT3R_GTMODE_SAVE", "/nonexistent-gt3r-test/gtmode.sav");
+    set_env("GT3R_GTMODE_NOSAVE", "1");
+    game::reset_gt_mode_menu_for_tests();
+    game::install_gt_mode_menu();
+    Vfs vfs(&disc->volume());
+    const Language lang = vfs.region().default_language();
+    vfs.set_language(lang);
+    GameFlow f(vfs_reader(vfs), text::language_code(lang));
+    f.start();
+    settle(f);
+    game::GtModeSession* s = game::gt_mode_session();
+    CHECK(s != nullptr);
+    if (!s) return;
+    game::GtMode& gt = s->gt();
+    gt.state().credits = 1000000 * (lang == Language::JP ? 100 : 1);
+    CHECK(gt.buy_car("r34_gtr_v_99") == 0);
+    choose(f, "gt_mode");
+    settle(f);
+
+    choose(f, "hm_hm");
+    choose(f, "gr");
+    choose(f, "car1"); // set_garage_car
+    CHECK(f.controller()->page_name() == "hm/hm_car");
+    choose(f, "spec");
+    CHECK(f.controller()->page_name() == "hm/hm_car_spec");
+    CHECK(widget_text(f, "spec_weight") == "1560 kg");
+    const std::string pw = widget_text(f, "spec_p_w_ratio_real"), tw = widget_text(f, "spec_t_w_ratio_real");
+    // The built torque, run in (97 %): 45.6 kgf.m through the power's HP factor, with the ft.lb label on NTSC-U.
+    const std::string torque = widget_text(f, "spec_max_torque_real");
+    CHECK(lang != Language::US || torque == "45.0ft.lb/4500rpm");
+    std::string last_pw = pw, last_tw = tw;
+    const char* const kStage[3] = {"1450 kg", "1388 kg", "1326 kg"};
+    for (int k = 0; k < 3; ++k) {
+        CHECK(gt.buy_part(27 + k) && gt.fit_part(27 + k)); // wtr_1 .. wtr_3
+        f.tick(0);
+        CHECK(widget_text(f, "spec_weight") == kStage[k]);
+        // Lighter: both ratios fall (printed as "x.yyy", so they compare as numbers).
+        CHECK(std::atof(widget_text(f, "spec_p_w_ratio_real").c_str()) < std::atof(last_pw.c_str()));
+        CHECK(std::atof(widget_text(f, "spec_t_w_ratio_real").c_str()) < std::atof(last_tw.c_str()));
+        last_pw = widget_text(f, "spec_p_w_ratio_real"), last_tw = widget_text(f, "spec_t_w_ratio_real");
+    }
+    std::printf("  R34: %s / %s stock, %s / %s on stage 3\n", pw.c_str(), tw.c_str(), last_pw.c_str(), last_tw.c_str());
+    CHECK(widget_text(f, "spec_max_torque_real") == torque); // the weight leaves the torque alone
+    CHECK(widget_text(f, "spec_displacement_real") == "2568cc"); // the fitted engine's text
+
+    // Arcade: the time trial's figures are the stock car's (the dealer page's), the car picker's torque the dealer
+    // page's catalog torque.
+    const menu::flow::GtModeHooks& h = menu::flow::gt_mode_hooks();
+    CHECK(h.arcade_parts != nullptr);
+    if (!h.arcade_parts) return;
+    auto part = [&](const std::string& page, const std::string& entry, const std::string& name) {
+        for (const auto& [n, text] : h.arcade_parts(page, entry))
+            if (n == name) return text;
+        return std::string("<none>");
+    };
+    s->focus_car = game::arcade_entry_car("tt01");
+    CHECK(f.controller()->open("00cmn/cd_spec"));
+    settle(f);
+    const std::string tt_weight = part("ar/select_compulsory", "tt01", "weight_value");
+    const std::string tt_power = part("ar/select_compulsory", "tt01", "power_value");
+    std::printf("  tt01 %s: %s, %s; dealer %s\n", s->focus_car.c_str(), tt_power.c_str(), tt_weight.c_str(),
+                widget_text(f, "spec_weight").c_str());
+    CHECK(tt_weight == std::to_string(std::atoi(widget_text(f, "spec_weight").c_str())) + " KG");
+    const std::optional<sim::CarSpec> tt_spec = sim::build_car_spec(gt.db(), s->focus_car);
+    CHECK(tt_spec.has_value());
+    if (tt_spec) CHECK(tt_power == gt.power_text(game::spec_power_ps(*tt_spec), " ")); // computed, not the catalog's
+    s->focus_car = "nsx_s_zero_97";
+    CHECK(f.controller()->open("00cmn/cd_spec"));
+    settle(f);
+    const std::string nsx_torque = part("ar/select_car", "nsx_s_zero_97", "kgm");
+    std::printf("  nsx_s_zero_97: %s / %s\n", part("ar/select_car", "nsx_s_zero_97", "ps").c_str(), nsx_torque.c_str());
+    CHECK(nsx_torque == widget_text(f, "spec_max_torque"));
+    CHECK(lang != Language::US || nsx_torque == "224.21ft.lb/5300rpm");
+    if (lang != Language::US) return;
+
+    s->focus_car = "viper_gts_00";
+    CHECK(f.controller()->open("00cmn/cd_spec"));
+    settle(f);
+    CHECK(widget_text(f, "spec_weight") == "1531 kg");
+    CHECK(widget_text(f, "spec_p_w_ratio") == "3.409");
+    CHECK(widget_text(f, "spec_t_w_ratio") == "0.229");
+    CHECK(widget_text(f, "spec_max_torque") == "489.66ft.lb/3700rpm");
 }
 
 // Race information -> Cars Permitted: the event's regulation list (car name and second

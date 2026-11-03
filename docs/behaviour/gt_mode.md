@@ -303,6 +303,29 @@ A new car is running in, so it shows 97 % of its full figure
 and `spec_max_power` the catalog text. The garage mileage is shown in miles on
 NTSC-U.
 
+**Weight, torque and ratios.** The car specs pages (the garage's `hm/hm_car_spec`, the
+dealer's `00cmn/cd_spec`) show the weight and the two ratios of the same built car: a garage
+car with its fitted parts and condition, a dealer car stock. The weight is the catalog weight
+with the weight-reduction and body parts, without the 120 kg the race adds: an R34 GT-R's
+1,560 kg is 1,450, 1,388 and 1,326 kg with stages 1, 2 and 3.
+
+The built torque T is the peak torque (kgf·m, from the same samples as the power) × 10,
+converted with the power's factor (× 0.98619 where the power is in HP, BHP or CV, whatever
+the torque's unit) and truncated. The garage page shows T × 0.1 with one decimal, the
+torque's unit and the torque peak's rpm: a new R34's 45.6 kgf·m is "45.0ft.lb/4500rpm" on
+NTSC-U. The dealer page shows the catalog torque instead: the engine's kgf·m × 100 in the
+language's unit (ft.lb: × 7.2329), truncated, with two decimals and the catalog rpm
+("489.66ft.lb/3700rpm" for a Viper GTS); a car without one shows nothing. Both pages show
+the fitted engine's displacement text ("2568cc").
+
+The ratios are computed in single precision, truncated to whole numbers and shown with three
+decimals and no unit:
+
+- power to weight: weight / peak power (the whole number shown, in the language's unit)
+  × 1000; a Viper GTS's 1,531 kg over 449 HP is 3.409;
+- torque to weight: weight / T × 0.1 × 1000; the same Viper shows 0.229
+  (`gtmode_menu_disc_car_specs`).
+
 ## §6 Tune shop
 
 The tune shop always works on the ride car.

@@ -965,7 +965,11 @@ The pickers are `ar/select_course`, `ar/select_class`, `ar/select_car` and
 - The vertical bar repeats with a 680-unit period.
 - Game code adds badges and values that move with the art (`arcade_parts`):
   - the course area, surface and length;
-  - the car's drive badge, power and torque (shown at 0.67 scale);
+  - the car's drive badge, power and torque (shown at 0.67 scale). The
+    torque is the engine's catalog figure printed like the dealer's Car
+    Specs page (`gt_mode.md` §5): "224.21ft.lb/5300rpm" in US English,
+    "31.00kgf.m/5300rpm" in the other languages, "----" when the car has
+    none;
   - the time trial's top three records, power and weight.
 
   Time-trial values sit 22 units right of their labels. Each challenge's
@@ -1073,7 +1077,9 @@ like the course picker, with the same strip and cross.
 
 - **Art.** Each challenge shows its full-screen picture, its records (first,
   second, third), and the power and weight of the challenge car, with the car
-  in 3D (§9.5).
+  in 3D (§9.5). The power and weight are those of the car built stock: its
+  computed peak power and its weight with the default weight reduction and
+  body parts ("1250 KG"), the same figures as the dealer's Car Specs page.
 - **Confirm** requests the race for the chosen challenge's course: on the disc
   the second challenge is `tt02`.
 

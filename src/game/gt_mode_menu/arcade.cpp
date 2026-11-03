@@ -153,14 +153,12 @@ std::vector<std::pair<std::string, std::string>> arcade_parts(const std::string&
         for (int k = 0; k < 3; ++k)
             out.push_back({kSlot[k], k < int(t.size()) ? format_time_ms(u32(std::llround(t[size_t(k)] * 1000)))
                                                         : std::string("--:--:--")});
-        if (const data::Car* car = gt.db().car(arcade_entry_car(entry))) {
-            data::CarDatabase::Summary sum = gt.db().summarize(*car);
-            float ps = sum.power_ps;
-            if (auto spec = sim::build_car_spec(gt.db(), arcade_entry_car(entry)); spec && ps <= 0)
-                ps = spec_power_ps(*spec);
+        // The car built stock (set_car_code), its computed peak ("%d %s", truncated) and its built weight
+        // (spec +0x2A: the chassis weight with the weight reduction and body parts, "%d KG").
+        if (auto spec = sim::build_car_spec(gt.db(), arcade_entry_car(entry))) {
+            out.push_back({"power_value", gt.power_text(spec_power_ps(*spec), " ")});
             char b[32];
-            out.push_back({"power_value", gt.power_text(ps, " ")});
-            std::snprintf(b, sizeof b, "%d KG", int(sum.weight_kg));
+            std::snprintf(b, sizeof b, "%d KG", spec->weight_kg);
             out.push_back({"weight_value", b});
         }
     } else if (page == "ar/select_car" || page == "ar/select_car_2p") {
@@ -171,7 +169,8 @@ std::vector<std::pair<std::string, std::string>> arcade_parts(const std::string&
         // A garage car shows its own computed power (parts and condition); cars without a
         // catalogue power (rally prototypes): the built spec's peak (M).
         std::string power;
-        if (const GarageCar* gc = arcade_garage_car(entry)) {
+        const GarageCar* gc = arcade_garage_car(entry);
+        if (gc) {
             PowerPeak p = gt.power_peak(*gc);
             power = gt.power_text(p.ps) + "/" + std::to_string(p.rpm) + "rpm";
         }
@@ -180,24 +179,17 @@ std::vector<std::pair<std::string, std::string>> arcade_parts(const std::string&
                 PowerPeak p = spec_power_peak(*spec);
                 sum.power_ps = u16(p.ps);
                 sum.power_rpm = std::to_string(p.rpm) + "rpm";
-                sum.torque_kgfm = spec->peak_torque() / 9.80665f;
             }
         if (power.empty()) power = gt.power_text(float(sum.power_ps)) + "/" + sum.power_rpm;
         std::string drive = sum.drive;
         for (char& ch : drive) ch = char(std::tolower(static_cast<unsigned char>(ch)));
         out.push_back({drive == "4wd" ? "four_wd" : drive, ""});
-        // Power and torque with their rpm: "276HP/7300rpm", "224.21ft.lb/5300rpm" (US English),
-        // "31.0kgm/5300rpm" in the other languages.
-        char b[64];
-        if (gt.data().units.torque_ftlb) {
-            out.push_back({"ps", power});
-            std::snprintf(b, sizeof b, "%.2fft.lb/%s", double(sum.torque_kgfm) * 7.2327, sum.torque_rpm.c_str());
-            out.push_back({"kgm", b});
-        } else {
-            out.push_back({"ps", power});
-            std::snprintf(b, sizeof b, "%.1fkgm/%s", double(sum.torque_kgfm), sum.torque_rpm.c_str());
-            out.push_back({"kgm", b});
-        }
+        // Power and torque with their rpm: "276HP/7300rpm"; the engine's catalog torque as the dealer's car
+        // page prints it ("224.21ft.lb/5300rpm" in US English, "31.00kgf.m/5300rpm" in the other languages), none:
+        // "----".
+        out.push_back({"ps", power});
+        const std::string torque = catalog_torque_text(gt.db(), gc ? gc->parts[6] : car->parts[6], gt.data().units);
+        out.push_back({"kgm", torque.empty() ? std::string("----") : torque});
     }
     return out;
 }
