@@ -93,7 +93,7 @@ std::shared_ptr<const sim::exact::RaceRecord> RaceScreen::exact_playback() const
 }
 
 std::shared_ptr<const sim::exact::RaceRecord> RaceScreen::exact_ghost_source() const {
-    if (replaying_ || demo_ || !preset_.ghost || !whole_run_ghost()) return nullptr;
+    if (replaying_ || demo_ || backdrop_ || !preset_.ghost || !whole_run_ghost()) return nullptr;
     return ghost_record_;
 }
 

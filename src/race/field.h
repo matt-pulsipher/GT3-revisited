@@ -76,8 +76,9 @@ struct ExactFieldOptions {
     ByteSpan course_bytes() const { return course_file ? ByteSpan(*course_file) : ByteSpan{}; }
     std::string course;         // its label (the course record's category)
     sim::exact::Conductor kind{}; // the race mode (SinglePlayer, Battle2P, ...)
-    u8 config = 0;              // the race-flow byte (the race's play kind): 0 live, 2 the attract demo (every car a CPU car),
-                                // 3 the AI drives the players' cars (the pad decoded)
+    u8 config = 0;              // the race-flow byte (the race's play kind): 0 live, 2 the attract demo (every car a CPU car)
+                                // and the quick menu's race, 3 the AI drives the players' cars (the pad decoded)
+    bool records_off = false;   // race info + 0x6C, which the drivers set for the quick menu's race: no run is judged
     int laps = 0;               // the race's laps (0: the event's time limit)
     ExactHuman player, second;
     // A replay: the race as recorded (sim/exact/race_record.h), built from its setup and stepped from its frames and changes

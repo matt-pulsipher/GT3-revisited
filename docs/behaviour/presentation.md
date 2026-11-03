@@ -190,9 +190,13 @@ after the event) fill the page.
 The license quick menu draws the live race scene into the preview box at
 (32, 58), 280 x 210 of the menu frame, and nothing behind the rest of the page
 (`render_drive`). Before any run, the box shows the disc's demonstration of the
-test (§G12), looping: it restarts 180 ticks after the demonstration's inputs run
-out. After a run it replays the run just driven, looping (`start_preview`); after
-a run left with the pause window's EXIT it shows the demonstration again (§A8).
+test (§G12), looping: it restarts on the step after the demonstration's last
+recorded frame, where its replay ends (`DemoReplay::run_out`, test
+`race_demo_replay_run_out`). After a run it replays the run just driven, looping
+(`start_preview`); after a run left with the pause window's EXIT, and after
+DEMONSTRATION, it shows the demonstration again (§A8). It is seen as the race
+behind the other quick menus is (§C5): from the driver's camera, with the start
+shot over a standing start's hold.
 The box is silent, like the race behind every quick menu: only the menu's music
 and sounds play. What the other quick menus draw behind them is in §C5.
 
@@ -293,8 +297,9 @@ start.
 Every live run with a standing-start hold (§B1) opens on the disc's starting
 shot (`cameras/start.cam`, a one-record camera script in the car's frame;
 `CameraRig::set_start_shot`): races, license tests from rest and machine tests.
-Replays, demonstrations, the attract demo and the menu backdrops do not play it
-(`RaceScreen::live_view`), and the 2P battle has no hold. With C = the frames
+Replays, demonstrations and the attract demo do not play it; the race behind a
+quick menu and the license preview box do, being seen from the driver's camera
+(`RaceScreen::live_camera`, §C5); the 2P battle has no hold. With C = the frames
 left to the signal (`RaceScreen::frames_to_signal`), the shot is shown while C is
 60 or more, so until one second before the signal, at
 
@@ -679,7 +684,7 @@ with it before the first run (`menu_before_run`):
   | start / try again | the run again |
   | free run | the course alone before a GT race; on a course whose pit stop line has no pit box it is refused with "Free run is not available on this course." (GT Mode's such courses are its dirt courses, where FREE RUN is already off) |
   | replay | the run's replay (as in §C4), then the §C1 transition back to the menu |
-  | demo | the disc's demonstration of the test (§G12), or without one the race's AI driving the car, from the TV cameras; REPLAY is disabled after it (below) |
+  | demo | the disc's demonstration of the test (§G12), or without one the race's AI driving the car, from the TV cameras, played once as a replay: its end or the replay pause's EXIT goes back to the menu through the §C1 transition, opened again with START focused (the license menu's box then shows the demonstration, §A7); REPLAY is disabled after it (below) |
   | save replay | write the run's replay file (a toast confirms) |
   | save ghost | write the replay of the visit's best run (a free run: the run of its best lap; §G11) |
   | load ghost | load a saved ghost at once (§G11) |
@@ -726,7 +731,8 @@ with it before the first run (`menu_before_run`):
 
 The result a run reports to the menus is taken when the live run ends
 (`RaceResultLatch`, `RaceScreen::latch_result`), before any replay. This holds
-for every run, as its replays and the menu's backdrop (§C5) re-run it (a license
+for every run, as its replays re-run it and the menu's backdrop (§C5) builds the
+race again (a license
 result still reports the visit's best run, §A5). A race replay re-runs the whole
 field, so the standings afterwards are the replay's, not the race's. A race's
 result menu therefore keeps the rows latched with it.
@@ -778,16 +784,18 @@ What a quick menu shows behind its layout depends on the mode
 | result menus: arcade race, 2P battle, GT race, championship | no race: the layout's own opaque checker background (the root page's `bg`) |
 | license test | the preview box (§A7) |
 
-- **The race.** The menu's race plays like a replay (play mode 2): records are
-  off, and the view mode and target are picked as for the attract demo, drawing
-  from the same generator and count (`pick_attract_view`, §G13). It is silent:
-  no car or course sound plays behind a quick menu (records off mutes them). A
-  single car replays its last run from the start, and the race never ends. Once
-  the recording runs out, the car gets a cleared input frame (no
-  steering, throttle or brake; its gearbox kept) and rolls on. Before any run
-  the recording is empty, so the car stands at its start with no input. A field
-  (the GT pre-race menus) stands on its grid, not simulated, under the TV
-  director's cameras.
+- **The race.** The menu's race runs in play mode 2 with records off. It is
+  silent: no car or course sound plays behind a quick menu (records off mutes
+  them). A single car (time trial, free run, machine test) is driven by the
+  race's AI from its start, with no recording, and the race never ends: the
+  computer laps the course for as long as the menu stays, the same before any
+  run, after a run and after DEMONSTRATION. No time, lap or record it drives
+  counts; the last run stays the one REPLAY, SAVE REPLAY and the ghost use. It
+  is seen from the driver's camera, the view the player last drove with (with
+  the start shot over a standing start's hold, §B3), not the TV cameras. A field
+  (the GT pre-race menus) is the race itself, every car driven by the AI: the
+  start shot over its countdown, then the race from the player's car, on lap
+  after lap past its last, with nothing it drives counted.
 - Choosing a root item other than the option, records and logger items stops it.
   Back from an item that keeps the menu (save, load ghost, a dialog), it starts
   again from the start.
@@ -1625,8 +1633,8 @@ trigger bound to accelerate is still R2 in a replay.
   15 frames and held 15 frames. Up / Down re-arm the shot for the new car (§H8):
   a shot that has run out for it gives way to the record at the new car's D
   whatever its progress, else the camera turns on board; for 15 frames after the
-  change a cut may take a record at any progress. The attract demo in mode 0 (and the
-  menu backdrops) moves to the next car once 300 frames (5 s) have passed and
+  change a cut may take a record at any progress. The attract demo in mode 0 moves to
+  the next car once 300 frames (5 s) have passed and
   the current shot's gate is open (§H8: in mode 0, once the shot has run out
   and any 3 s hold is over), then counts the 300 frames again; its new shot is
   searched at once, the current record included (§H8). Each of these car
@@ -1844,7 +1852,8 @@ does for them:
   the replay pause; EXIT or the end of the replay returns to the theater.
 - **Demonstration** (mode `theater_demo`): the disc's demonstration of a license
   test or arcade time trial plays as its run (§G12), with TV cameras (the REPLAY
-  OPTIONS view mode, opening as any replay, §H8) and only the mark. It ends 180 ticks after its inputs run out, or by EXIT.
+  OPTIONS view mode, opening as any replay, §H8) and only the mark. It ends on the step after its last recorded frame
+  (§G12), or by EXIT.
 - **Files.** The theater lists `<save folder>/replays/*.gt3replay`, newest first,
   with each file's header (`race::list_replay_entries`). The info panel shows
   Size ("123KB"), Date ("YYYY/MM/DD", the saved time or else the file name's
@@ -1999,8 +2008,13 @@ DEMONSTRATION has the race's AI drive the car instead.
 - **Run-up.** The flying run-up is driven by the race's AI, and the recorded
   frames are ignored until the line.
 - **Viewing.** Demonstrations are watched from the TV cameras in the REPLAY
-  OPTIONS view mode, and open as every replay does (§H8). Start, Cross or
-  Circle end a quick-menu demonstration.
+  OPTIONS view mode, and open as every replay does (§H8), with only the mark.
+- **The end.** A demonstration plays once, as a replay: only Start opens the
+  replay pause (CONTINUE, EXIT, REPLAY OPTIONS), and it ends on the step after
+  its last recorded frame (the first that hands the car an empty frame;
+  `DemoReplay::run_out`). The quick menu's then goes back to its menu through the
+  §C1 transition, opened again with START focused; the license menu's preview box
+  then loops the demonstration (§A7).
 
 ### §G13 The attract demo's view
 

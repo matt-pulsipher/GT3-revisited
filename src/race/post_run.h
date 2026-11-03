@@ -62,7 +62,7 @@ PostRun post_run(RunKind kind, const RunOutcome& o);
 // What the quick menu shows behind its layout.
 enum class MenuBackdrop {
     None,    // no race (the result menus)
-    Race,    // the race in play mode 2: the last run again (before any run, an empty recording)
+    Race,    // the race in play mode 2: the computer drives on and on (a run alone, a field after its countdown)
     Preview, // the licence menu's preview box
 };
 // `before_run`: the menu that opens a GT race, championship round, time trial, free run or

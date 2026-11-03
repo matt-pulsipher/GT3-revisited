@@ -833,7 +833,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     }
     if (replaying_ && split) {
         // 2P replays: both halves, no HUD and no mark (the captures).
-    } else if (((replaying_ && preset_.hud) || attract_ || (theater_ && demo_)) && !split) {
+    } else if (((replaying_ && preset_.hud) || attract_ || demo_replay()) && !split) {
         // Replays and the attract demo (presentation §G): the mark on its timer, in replays only
         // while no ITEM is on, in the attract demo always; the REPLAY OPTIONS items and the title.
         if (attract_ || !replay_settings_.items)

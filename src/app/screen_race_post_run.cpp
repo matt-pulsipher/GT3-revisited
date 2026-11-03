@@ -74,8 +74,8 @@ void RaceScreen::after_run(App& app) {
     latch_result();
     latch_run_replay();
     keep_run_laps();
-    last_run_ended_ = finished_;
     const race::RunKind kind = run_kind();
+    demo_loaded_ = kind == race::RunKind::Licence && !finished_; // (§A8: a licence run that did not end)
     const menu::flow::GameRequest& rq = launch_.request;
     solo_run_ghost(); // (before the switches: a recording too long to keep sets no record)
     qm_items_.after_run(kind, finished_, run_session_record_, championship() && rq.champ_last);
@@ -171,8 +171,15 @@ void RaceScreen::start_auto_replay(App& app) {
     if (!replaying_) open_quick_menu(app);
 }
 
-// A replay's transition is over: the quick menu cuts in.
+// A replay's transition is over: the quick menu cuts in. After the quick menu's demonstration, the menu it was chosen
+// from, opened again as the driver's loop runs its quick menu again: the focus on its first item (START).
 void RaceScreen::return_to_menu(App& app) {
+    if (demo_) {
+        end_demo(app);
+        if (prerace_) open_prerace_menu(app);
+        else open_quick_menu(app);
+        return;
+    }
     replaying_ = false;
     camera_.set_mode(drive_camera_);
     replay_to_menu_ = false;
@@ -181,17 +188,17 @@ void RaceScreen::return_to_menu(App& app) {
     open_quick_menu(app);
 }
 
-// The race behind the quick menu (race::menu_backdrop). Play mode 2: the last run (a run alone)
-// replayed from its start with records off (it is a replay) and a random view mode, picked as
-// for the attract demo (presentation §G13); before any run the empty recording: the car at its
-// start with no input. A field stands on its grid (ours: not simulated; with no recording the
-// original's cars get no input).
+// The race behind the quick menu (race::menu_backdrop). The drivers set records off (R+0x6C) and
+// restart the race in play mode 2, the race-flow byte 2, live from its start. Under that byte the solo
+// conductors give the player's car control source 1 (the AI drives, the pad decoded) and the races' every car
+// control source 2; the time trial hands only a pad car back at its first crossing; and with records
+// off the race has no laps and no time limit, so nothing ends it: the computer drives on for as long as the
+// menu stays, before any run, after a run and after a DEMONSTRATION alike, a GT race's field after its countdown. Records
+// off also set the race's SE mute (race +0x1788), under which the race's set-up leaves the camera's view
+// without the race's input: its camera manager runs the live handler, start.cam over a standing
+// hold and then the driver's camera, the view the player last drove with.
 void RaceScreen::start_menu_backdrop(bool before_run) {
-    if (backdrop_) { // (again: from the start)
-        backdrop_ = false;
-        replaying_ = false;
-        camera_.set_mode(drive_camera_);
-    }
+    if (backdrop_) end_backdrop_race(); // (again: from the start)
     switch (race::menu_backdrop(run_kind(), before_run)) {
     case race::MenuBackdrop::None: return;
     case race::MenuBackdrop::Preview: start_preview(); return;
@@ -199,35 +206,44 @@ void RaceScreen::start_menu_backdrop(bool before_run) {
     }
     if (!track_ || !vehicle_ || preview_ || demo_) return;
     backdrop_ = true;
-    if (!field_) {
-        const bool q = quick_, shown = finish_menu_shown_;
-        start_playback(finished_recording());
-        quick_ = q, finish_menu_shown_ = shown; // (the playback resets the run state)
-    } else {
-        drive_camera_ = camera_.mode() == CameraMode::Tv ? drive_camera_ : camera_.mode();
-        camera_.set_mode(CameraMode::Tv);
-    }
-    pick_attract_view();
+    pre_demo_run_ = finished_recording();
+    const bool q = quick_, shown = finish_menu_shown_;
+    const RaceResultLatch latch = result_latch_;
+    const std::optional<std::vector<ResultRow>> rows = latched_rows_;
+    restart(); // (build_vehicle: play mode 2)
+    quick_ = q, finish_menu_shown_ = shown, result_latch_ = latch, latched_rows_ = rows; // (the restart resets them)
+    if (pre_demo_run_->ticks() > 0) run_replay_ = *pre_demo_run_; // REPLAY, SAVE REPLAY: still the run's
+    seed_vehicle_condition(run_condition_, false); // the run's engine condition stays the run's
+    start_hud_clocks(2, 0);
+    camera_.set_mode(drive_camera_); // (live_camera: the view the player last drove with)
     render_state_ = vehicle_->state();
     camera_.snap(render_state_);
 }
 
-void RaceScreen::stop_backdrop(App& app) {
-    if (!backdrop_) return;
+void RaceScreen::end_backdrop_race(bool rebuild) {
     backdrop_ = false;
     replaying_ = false;
+    const bool q = quick_, shown = finish_menu_shown_;
+    const RaceResultLatch latch = result_latch_;
+    const std::optional<std::vector<ResultRow>> rows = latched_rows_;
+    if (rebuild) restart();
+    quick_ = q, finish_menu_shown_ = shown, result_latch_ = latch, latched_rows_ = rows;
+    restore_pre_demo_run();
     camera_.set_mode(drive_camera_);
+}
+
+void RaceScreen::stop_backdrop(App& app, bool rebuild) {
+    if (!backdrop_) return;
+    end_backdrop_race(rebuild);
     lap_times_ = run_laps_;
     silence(app);
 }
 
 void RaceScreen::update_backdrop(App& app, double dt) {
-    if (replaying_) {
-        const int n = step_.advance(dt);
-        for (int i = 0; i < n; ++i) tick(app, PadState{});
-        render_state_ = interpolate(prev_, vehicle_->state(), step_.alpha());
-    }
-    camera_.set_intro(false, 0);
+    const int n = step_.advance(dt);
+    for (int i = 0; i < n; ++i) tick(app, PadState{});
+    render_state_ = interpolate(prev_, vehicle_->state(), step_.alpha());
+    camera_.set_intro(live_camera() && race::start_shot_on(frames_to_signal()), race::start_shot_t(frames_to_signal()));
     camera_.set_track_distance(track_->distance_of(render_state_.position));
     camera_.set_lap(lap_count());
     director_.set_view_mode(view_settings().mode);

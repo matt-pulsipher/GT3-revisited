@@ -19,7 +19,7 @@ std::vector<std::string> RaceScreen::pause_items() const {
 // licence tests and machine tests have RETRY (race pause with retry), races / free runs /
 // 2P do not (race pause), replays have REPLAY OPTIONS (replay pause).
 PauseMenu::Kind RaceScreen::pause_kind() const {
-    if (replaying_ || (theater_ && demo_)) return PauseMenu::Kind::Replay;
+    if (replaying_ || demo_replay()) return PauseMenu::Kind::Replay;
     bool machine = from_menu_ && launch_.request.mode == "go_machine_test";
     bool time_trial = !field_ && !two_player_ && !free_run_ && race_laps_ > 0;
     return !license_event_.empty() || machine || time_trial ? PauseMenu::Kind::Retry : PauseMenu::Kind::Race;
@@ -61,8 +61,8 @@ void RaceScreen::update_pause(App& app, double dt) {
     }
     if (!pause_more_) {
         // Select: our longer list (restart, replays, camera, gearbox, save); not in the
-        // theater (its replays only play).
-        if (m.pressed(PadButton::Select) && !theater_) {
+        // theater (its replays only play) nor in a demonstration.
+        if (m.pressed(PadButton::Select) && !theater_ && !demo_) {
             pause_more_ = true, pause_sel_ = 0;
             return;
         }
@@ -96,6 +96,7 @@ void RaceScreen::update_pause(App& app, double dt) {
             paused_ = false;
             if (theater_) leave(app);
             else if (replaying_) end_replay(app); // at once: the transition, then the menu
+            else if (demo_) begin_exit_transition(ExitThen::Menu); // the demonstration: as a replay's
             else if (attract_ || online_) leave(app);
             else pause_exit(); // the run ends (GT3's loader transition), or it is its finish
             break;

@@ -885,16 +885,28 @@ menus §11.1; `race/post_run.h`, `screen_race_post_run.cpp`; tests `race_post_ru
     no result panel, record overlay or medal; only Start opens its pause (CONTINUE / EXIT / REPLAY
     OPTIONS); music: the replay BGM switch, race songs at 0.7 (the run's music is stopped first).
 - The quick menu's backdrop (`start_menu_backdrop`): time trial, free run and machine test menus,
-  and the GT race / championship pre-race menus, run the race in play mode 2 (a replay: records
-  off; the view mode picked as for the attract demo, `pick_attract_view`; silent): a run alone is
-  its last run from the start, which never ends: once the recording runs out the car gets a
-  cleared input frame (no steering, throttle or brake) and rolls on; before any run its start with
-  no input; a field stands on its grid (not simulated) under the director's cameras. The result
+  and the GT race / championship pre-race menus, run the race in play mode 2 with records off
+  (silent): the race built again live with the race-flow byte 2 and records off
+  (`build_exact_solo` / `build_vehicle`: `ExactFieldOptions::config` 2, `records_off`). The
+  solo conductors make the player's car the AI's (control source 1), a race's every car (control
+  source 2, after its countdown), and records off clear the race's laps and time limit
+  (`ExactRace`), so the computer drives on for as long as the menu stays, before any run, after a
+  run and after DEMONSTRATION; nothing it drives is recorded (`tick` skips the logger, best lap,
+  top speed, machine marks, beeps, the finish), and `end_backdrop_race` puts the run's race back
+  with its recording, replay and result (START skips that rebuild: it builds its own). It is seen
+  from the driver's camera (`live_camera`: the start shot over a standing hold), as the licence
+  preview box is. The result
   menus (arcade race, 2P, GT race, championship) draw no race (their layouts' opaque checker
   background); the licence menu its preview box. Items that keep the menu (save, load ghost)
   start the backdrop again, as the original's driver loop does.
+- DEMONSTRATION (licence, time trial): the demonstration plays once as a replay (`demo_replay()`:
+  Start = the replay pause, the mark only), to the step after its last recorded frame
+  (`demo_over()`, `DemoReplay::run_out`), then the exit transition and the menu it was chosen
+  from, opened again with START focused (`return_to_menu` -> `end_demo`, `open_quick_menu` /
+  `open_prerace_menu`). It stands in the last run's place (`demo_loaded_`): the licence preview
+  box loops it, and REPLAY is disabled until the next run.
 - Licence: a run left with EXIT puts the demonstration in the preview box (the original loads it
-  in the run's place) and disables REPLAY until the next run (below).
+  in the run's place, `demo_loaded_`) and disables REPLAY until the next run (below).
 - Pause EXIT in a free run with a completed lap, and in the top-speed test once the car has moved
   (top speed over 1 m/s) before its goal, is the run's finish (`pause_exit`, `exit_as_finish`):
   the record overlay (5 s; the top-speed test 0.1 s), the end-of-run driver (free run:
@@ -1738,8 +1750,10 @@ screen, `screen_race_license.cpp` the flow. The rules (presentation §A):
   multiplier and divider (`base/ee_float.h`); with the float rounding before (an exact chopped
   product, divisions to nearest) 7 did. The licence
   menu's preview box is no movie: GT3 runs the demo live behind the menu and draws the scene into
-  (32, 58, 280, 210); we do the same (looping, TV cameras, silent), and "Demonstration" runs it full
-  screen. Test `exact_demo_records`.
+  (32, 58, 280, 210); we do the same (looping on the step its replay ends, the driver's camera,
+  silent), and
+  "Demonstration" runs it full screen once, as a replay (see "After a run"). Tests
+  `exact_demo_records`, `race_demo_replay_run_out`.
   `GT3R_RACE="tt_event=L0B0003,demo=1"` starts it, `theater=<event>` as the
   Replay Theater does. The arcade time-trial demos (AT01..AT10) start like the
   licences (event speed 100..220 km/h, -100..-399 m on line 6); GT3 drives every

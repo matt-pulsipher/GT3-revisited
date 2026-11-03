@@ -43,7 +43,10 @@ bool RaceScreen::build_exact_solo(App& app) {
     // What every race takes from the screen (the program, rules, course, the player, playback and ghost).
     ExactFieldOptions o = exact_options(app);
     o.kind = *kind;
-    o.config = preset_.autodrive ? 3 : 0; // the test autopilot: the race's AI drives the player's car (the pad decoded)
+    // The quick menu's race: play mode 2 (the race-flow byte) with records off (presentation §A8c). The test autopilot:
+    // configuration 3, the race's AI drives the player's car (the pad decoded).
+    o.config = backdrop_ ? 2 : preset_.autodrive ? 3 : 0;
+    o.records_off = backdrop_;
     o.laps = race_laps_;
     // The race information's words: the visit's session best, the licence test's judging times (the event's), the speed
     // unit; the free run's ghost car shown with Select's ghost switch.
@@ -53,10 +56,10 @@ bool RaceScreen::build_exact_solo(App& app) {
         for (size_t k = 0; k < 3; ++k) o.licence_times[k] = u32(std::max(0, t.ms[k]));
     }
     o.speed_unit = imperial_ ? 1 : 0;
-    o.ghost_shown = preset_.ghost && ghost_shown_;
+    o.ghost_shown = preset_.ghost && ghost_shown_ && !backdrop_;
     o.ghost_option = ghost_on_; // (a better lap the ghost at once; else "Update Ghost?")
     // The free run's best lap and ghost stay from run to run of the visit, as GT3's race object keeps them.
-    if (*kind == sim::exact::Conductor::FreeRun && !replaying_ && !demo_) {
+    if (*kind == sim::exact::Conductor::FreeRun && !replaying_ && !demo_ && !backdrop_) {
         if (!exact_free_run_) exact_free_run_ = std::make_shared<sim::exact::SoloRecorders>(true);
         o.free_run = exact_free_run_;
     }
@@ -91,7 +94,7 @@ void RaceScreen::exact_solo_step() {
     if (!r) return;
     const double rt = solo_field_->race_time();
     tt_hold_ = std::max(0.0, -rt), race_time_ = std::max(0.0, rt);
-    if (replaying_ || demo_) return;
+    if (replaying_ || demo_ || backdrop_) return;
     const sim::exact::RaceFlow& fl = r->flow();
     for (size_t k = 0; k < 4; ++k) exact_session_[k] = fl.session.sector[k];
     exact_session_[4] = fl.session.lap;

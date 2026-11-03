@@ -295,6 +295,10 @@ private:
     }
     // A live view: not a replay, demonstration, attract demo or menu backdrop.
     bool live_view() const { return !replaying_ && !demo_ && !attract_ && !backdrop_; }
+    // The camera manager's live handler (start.cam over a standing hold, else the driver's camera): live views,
+    // the licence menu's preview box and the quick menus' races, whose records off leave the camera's view without the
+    // race's input (presentation §A8c).
+    bool live_camera() const { return live_view() || preview_ || backdrop_; }
     // Rolling start: the race's AI drives the player's car for the first 300 ticks (counted in
     // ticks, so the hand-over cannot drift by a frame).
     bool rolling_runup() const { return rolling_ && field_ && std::llround(field_->race_time() * 60.0) < 300; }
@@ -500,9 +504,9 @@ private:
     void start_hud_clocks(int replay, float start_speed);
     bool long_title(float start_speed) const;
     void apply_replay_settings(App& app, const ReplaySettings& rs);
-    // The view settings in force: the attract demo's and the menu backdrop's own pick (play
-    // mode 2), else REPLAY OPTIONS'.
-    const ReplaySettings& view_settings() const { return attract_ || backdrop_ ? attract_view_ : replay_settings_; }
+    // The view settings in force: the attract demo's own pick, else REPLAY OPTIONS' (the menu
+    // backdrop's too: its records-off flag skips the pick, presentation §A8c).
+    const ReplaySettings& view_settings() const { return attract_ ? attract_view_ : replay_settings_; }
     // A new replay or demonstration: no shot, the director's generator seeded from the clock.
     void restart_director();
     void pick_attract_view();
@@ -550,11 +554,13 @@ private:
     void after_run(App& app);        // the live run's transition is over
     void solo_run_ghost();           // the best run and the ghost after a live solo run
     void start_auto_replay(App& app); // the run's replay, by itself
-    void return_to_menu(App& app);   // a replay's (or the licence demonstration's) transition is over
+    void return_to_menu(App& app);   // a replay's (or the quick menu's demonstration's) transition is over
     // The quick menu's backdrop (race::menu_backdrop): the race in play mode 2, the licence
     // preview box, or nothing.
     void start_menu_backdrop(bool before_run);
-    void stop_backdrop(App& app);
+    // The run's race again, with its recording, replay and result (`rebuild` false: the caller builds a new race at once).
+    void stop_backdrop(App& app, bool rebuild = true);
+    void end_backdrop_race(bool rebuild = true);
     void update_backdrop(App& app, double dt);
     // A live run is over and lost to the replays that re-run it: its laps for the saved replay.
     void keep_run_laps() { run_laps_ = lap_times_; }
@@ -620,6 +626,11 @@ private:
     std::shared_ptr<const sim::exact::RaceRecord> exact_playback() const;
     // A demonstration the exact core plays from its record (the race judges and drives it: no screen-side takeover).
     bool exact_demo() const { return demo_ && demo_record_ && exact_field() && exact_race_of(*exact_field()); }
+    // A demonstration played as a replay (play mode 1, the quick menu's DEMO and the theater's), not behind a menu: Start
+    // opens the replay pause, it shows the replay's mark, and it ends when its recording runs out.
+    bool demo_replay() const { return demo_ && !preview_; }
+    // The disc's demonstration has run out (DemoReplay::run_out): a replay of it ends, the licence preview box restarts it.
+    bool demo_over() const { return disc_demo_ && disc_demo_->run_out(demo_tick_); }
     // The solo modes (screen_race_solo.cpp): the time trial, licence test, machine test, free run and free practice as
     // GT3 runs them (their conductors' race flow judges the run, times its laps, sectors and splits; the free run's lap
     // handlers keep its best lap and drive its ghost car). The run's field is solo_field_ (field_ stays null: the screen's
@@ -705,7 +716,7 @@ private:
     std::vector<std::string> record_names_;
     RecordsPanel records_panel_;
     bool records_loaded_ = false;
-    bool demo_ = false;                  // quick menu "demonstration": the computer drives
+    bool demo_ = false;                  // the disc's demonstration plays (DEMO, the theater's, the licence box)
     std::optional<Replay> pre_demo_run_; // the player's run, kept for replay / save
     // The live run's replay as it ended (latch_run_replay): its replays, the menu's backdrop and the licence preview
     // rebuild the field, so the field no longer holds the run.
@@ -719,7 +730,9 @@ private:
     // live run so far set a session record (SAVE GHOST, DATA LOGGER; reset at every run start).
     race::QuickMenuItems qm_items_;
     bool run_session_record_ = false;
-    bool last_run_ended_ = false; // the last live run ended (finished, failed, or EXIT as its finish)
+    // The demonstration stands in the last run's place (DEMONSTRATION; a licence run left with EXIT): GT3 loads
+    // demo/%s over the race's data (presentation §A8, §A8c), so the licence box plays it.
+    bool demo_loaded_ = false;
     bool exit_finished_ = false;  // pause EXIT was this run's finish
     double overlay_delay_ = race::kRecordOverlayDelay; // finish -> record overlay (s)
     std::vector<double> run_laps_; // the last live run's laps (the replays re-run lap_times_)
