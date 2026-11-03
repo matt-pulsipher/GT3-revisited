@@ -190,6 +190,7 @@ are only there:
 | `[app] start` | `game` / `hub` | start with the game, or in Developer options |
 | `[video] fullscreen` | `on` / `off` | desktop window mode (F11) |
 | `[video] aspect` | `16:9` / `4:3` / `fill` | the game's picture: 16:9 (default), 4:3 like on a 4:3 TV, or the whole screen (races use its full width; menus and movies stay 4:3) |
+| `[video] gamma` | `0.5`..`2.0` | the whole picture lighter (higher) or darker (lower) in its shadows and middle tones, black and white unchanged; default `1`, GT3's colors (Settings → Display → Gamma, with a row to reset it). Screenshots keep GT3's colors |
 | `[video] vsync` | `1` / `0` | wait for the display refresh |
 | `[video] limit_60fps` | `on` / `off` | on 120 Hz and faster displays, draw about 60 frames a second (every Nth refresh) |
 | `[video] show_fps` | `on` / `off` | the frame rate in a corner of the screen (default off) |

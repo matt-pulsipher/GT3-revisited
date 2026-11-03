@@ -11,8 +11,6 @@
 #include <cstdlib>
 #include <cstring>
 
-#define GT3R_HAVE_GPU_RENDERER SDL_VERSION_ATLEAST(3, 4, 0)
-
 namespace gt3r::render {
 
 namespace {
@@ -437,7 +435,7 @@ bool View3D::ensure_target(SDL_Renderer* renderer, int w, int h) {
         release_target();
         return false;
     }
-    wrapper_ = wrap(renderer, color_, w, h);
+    wrapper_ = wrap_texture(renderer, color_, w, h); // render_scale < 1 upscales, > 1 scales down
     if (!wrapper_) {
         release_target();
         return false;
@@ -447,35 +445,6 @@ bool View3D::ensure_target(SDL_Renderer* renderer, int w, int h) {
     height_ = h;
     samples_ = ctx_.msaa();
     return true;
-}
-
-// `texture` (w x h) as an SDL_Renderer texture: replaces what is behind, scaled linearly.
-SDL_Texture* View3D::wrap(SDL_Renderer* renderer, SDL_GPUTexture* texture, int w, int h) {
-    SDL_Texture* t = nullptr;
-#if GT3R_HAVE_GPU_RENDERER
-    SDL_PropertiesID props = SDL_CreateProperties();
-    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_FORMAT_NUMBER, SDL_PIXELFORMAT_ABGR8888);
-    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_ACCESS_NUMBER, SDL_TEXTUREACCESS_STATIC);
-    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_WIDTH_NUMBER, w);
-    SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_HEIGHT_NUMBER, h);
-#if GT3R_GLES
-    if (gles::active()) // SDL's GLES2 renderer takes the GL texture
-        SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_OPENGLES2_TEXTURE_NUMBER, gt3r_gl_texture_name(texture));
-    else
-#endif
-        SDL_SetPointerProperty(props, SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER, texture);
-    t = SDL_CreateTextureWithProperties(renderer, props);
-    SDL_DestroyProperties(props);
-#else
-    (void)renderer, (void)texture, (void)w, (void)h;
-#endif
-    if (!t) {
-        LOG_WARN("Could not wrap the 3D target for the 2D renderer: %s", SDL_GetError());
-        return nullptr;
-    }
-    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_NONE);
-    SDL_SetTextureScaleMode(t, SDL_SCALEMODE_LINEAR); // render_scale < 1 upscales, > 1 scales down
-    return t;
 }
 
 // The supersampled picture at half size (created on first use), for SDL_BlitGPUTexture to halve
@@ -497,7 +466,7 @@ bool View3D::ensure_half(SDL_Renderer* renderer) {
         LOG_WARN("3D half-size target %dx%d: %s", w, h, SDL_GetError());
         return false;
     }
-    half_wrapper_ = wrap(renderer, half_, w, h);
+    half_wrapper_ = wrap_texture(renderer, half_, w, h);
     if (!half_wrapper_) {
         SDL_ReleaseGPUTexture(ctx_.device(), half_);
         half_ = nullptr;

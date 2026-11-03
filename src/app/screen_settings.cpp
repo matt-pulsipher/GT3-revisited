@@ -1,6 +1,6 @@
 // Settings: every user-facing config.ini option on tabbed pages (Display,
 // Audio, Controls, Rumble & feedback, Touch, Disc & saves, Online). Changes apply at once
-// where the engine can (volume, vsync, speed units, MSAA, anisotropic filtering, 3D
+// where the engine can (volume, gamma, vsync, speed units, MSAA, anisotropic filtering, 3D
 // resolution, bindings, force feedback, touch layout) and are saved to config.ini
 // immediately. Only keys the engine reads are offered; see README "Settings" for
 // the key list.
@@ -543,6 +543,26 @@ private:
                    "screen; menus and movies stay 4:3.",
                    {"16:9", "4:3", "Fill screen"}, int(app.aspect()),
                    [a](int i) { a->set_aspect(platform::Aspect(i)); });
+
+        // [video] gamma (App::set_gamma), and a row back to 1 while it is not.
+        if (!vr) {
+            const float g = app.gamma();
+            const bool changed = render::gamma_changes(g);
+            char text[24];
+            std::snprintf(text, sizeof(text), changed ? "%.2f" : "%.2f (default)", double(g));
+            Row& gamma = slider("Gamma",
+                                "Lighter or darker shadows and middle tones over the whole picture, to suit your "
+                                "screen; black and white stay. Higher is brighter. 1.00: GT3's colors unchanged. "
+                                "Screenshots keep GT3's colors.",
+                                g, render::kGammaMin, render::kGammaMax, render::kGammaStep, text,
+                                [a](float v) { a->set_gamma(v); });
+            if (!app.gamma_available()) {
+                gamma.enabled = false;
+                gamma.desc = "Needs the 3D renderer (turn it on and restart).";
+            }
+            if (changed)
+                action("Reset gamma to 1.00", "Back to GT3's colors, unchanged.", "", [a] { a->set_gamma(1.0f); });
+        }
 
         bool vsync = cfg.get("video", "vsync").value_or("1") != "0";
         toggle("VSync", "Wait for the display refresh: no tearing. Off: lower input latency.", vsync, [a](bool v) {

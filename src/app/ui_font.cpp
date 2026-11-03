@@ -1,6 +1,7 @@
 #include "app/ui_font.h"
 
 #include "base/log.h"
+#include "render/gamma_pass.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,6 +29,22 @@ extern const std::size_t kTitle_size;
 } // namespace font_data
 
 namespace {
+
+// Render units -> pixels of the current texture target, as SDL maps them there (its viewport,
+// render scale and logical presentation).
+void target_pixels(SDL_Renderer* r, float x, float y, float& px, float& py) {
+    SDL_Rect vp{};
+    float sx = 1, sy = 1;
+    SDL_GetRenderViewport(r, &vp);
+    SDL_GetRenderScale(r, &sx, &sy);
+    px = (float(vp.x) + x) * sx, py = (float(vp.y) + y) * sy;
+    int lw = 0, lh = 0;
+    SDL_RendererLogicalPresentation mode = SDL_LOGICAL_PRESENTATION_DISABLED;
+    SDL_FRect dst{};
+    if (SDL_GetRenderLogicalPresentation(r, &lw, &lh, &mode) && mode != SDL_LOGICAL_PRESENTATION_DISABLED && lw > 0 &&
+        lh > 0 && SDL_GetRenderLogicalPresentationRect(r, &dst))
+        px = dst.x + px * dst.w / float(lw), py = dst.y + py * dst.h / float(lh);
+}
 
 struct Face {
     stbtt_fontinfo info{};
@@ -236,16 +253,24 @@ bool UiFontRenderer::draw(FontFace which, float em, float x, float baseline, std
     // Render units -> output pixels (logical presentation, render scale and
     // viewport all included), so glyphs are rasterised at the size they are
     // shown and placed on whole pixels.
+    // Other texture targets: one pixel per render unit. The gamma pass's frame target stands in
+    // for the window (render/gamma_pass.h), mapped by its own view.
     float wx0 = 0, wy0 = 0, wx1 = 1, wy1 = 1;
-    SDL_RenderCoordinatesToWindow(r, 0, 0, &wx0, &wy0);
-    SDL_RenderCoordinatesToWindow(r, 64, 64, &wx1, &wy1);
     float density = 1;
-    if (SDL_Window* w = SDL_GetRenderWindow(r); w && !SDL_GetRenderTarget(r)) {
-        float d = SDL_GetWindowPixelDensity(w);
-        if (d > 0) density = d;
+    const bool window = render::drawing_to_window(r);
+    if (!SDL_GetRenderTarget(r)) {
+        SDL_RenderCoordinatesToWindow(r, 0, 0, &wx0, &wy0);
+        SDL_RenderCoordinatesToWindow(r, 64, 64, &wx1, &wy1);
+        if (SDL_Window* w = SDL_GetRenderWindow(r)) {
+            float d = SDL_GetWindowPixelDensity(w);
+            if (d > 0) density = d;
+        }
+    } else if (window) {
+        target_pixels(r, 0, 0, wx0, wy0);
+        target_pixels(r, 64, 64, wx1, wy1);
     }
     float ppu = (wx1 - wx0) / 64 * density; // output pixels per render unit
-    if (!(ppu > 0.01f) || SDL_GetRenderTarget(r)) ppu = 1, wx0 = wy0 = 0;
+    if (!(ppu > 0.01f) || !window) ppu = 1, wx0 = wy0 = 0;
     const float ox = wx0 * density, oy = wy0 * density;
 
     const int px = std::clamp(int(std::lround(em * ppu)), 4, 512);

@@ -84,6 +84,20 @@ struct GpuOptions {
 
 class Uploader;
 
+// A generated shader (render/shaders/generated/<name>.h, as GT3R_SHADER_CODE(<name>)): SPIR-V,
+// MSL, and GLSL ES with its uniform block and sampler names in slot order.
+struct ShaderCode {
+    const unsigned char* spv;
+    size_t spv_size;
+    const char *msl, *gles, *gles_blocks, *gles_samplers;
+};
+#define GT3R_SHADER_CODE(n)                                                                                      \
+    ::gt3r::render::ShaderCode {                                                                                 \
+        ::gt3r::render::shaders::n##_spv, sizeof(::gt3r::render::shaders::n##_spv),                              \
+            ::gt3r::render::shaders::n##_msl, ::gt3r::render::shaders::n##_gles,                                 \
+            ::gt3r::render::shaders::n##_gles_blocks, ::gt3r::render::shaders::n##_gles_samplers                 \
+    }
+
 class GpuContext {
 public:
     // Creates the device, claims the window and creates the 2D renderer on it.
@@ -129,6 +143,10 @@ public:
     // can move under it without new targets.
     float render_ceiling() const { return render_ceiling_; }
     void set_render_ceiling(float s);
+
+    // A shader from `code` in a format the device takes (OpenGL ES: its GLSL ES), with
+    // `samplers` sampled textures and `uniform_buffers` uniform buffers; null (logged) on failure.
+    SDL_GPUShader* create_shader(const ShaderCode& code, bool vertex, Uint32 samplers, Uint32 uniform_buffers);
 
     SDL_GPUGraphicsPipeline* pipeline(const PipelineKey& key);
     // Creates the pipelines races and menus draw with on a background thread, ahead of their
@@ -210,6 +228,12 @@ private:
     std::map<TextureKey, SDL_GPUTexture*> textures_by_key_;
     std::map<SDL_GPUTexture*, SharedTexture> shared_textures_;
 };
+
+// `texture` (w x h, GpuContext::kColorFormat) as a texture of the context's 2D renderer, drawn
+// replacing what is behind and scaled linearly; with SDL_TEXTUREACCESS_TARGET the 2D renderer
+// can also draw into it. Null (logged) on failure.
+SDL_Texture* wrap_texture(SDL_Renderer* renderer, SDL_GPUTexture* texture, int w, int h,
+                          SDL_TextureAccess access = SDL_TEXTUREACCESS_STATIC);
 
 // Mip chain of a w x h texture: levels down to 1 x 1, each side halving to no less than 1.
 u32 mip_levels(u32 w, u32 h);

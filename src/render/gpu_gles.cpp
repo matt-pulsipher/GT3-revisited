@@ -1463,7 +1463,10 @@ void gt3r_gl_DrawGPUIndexedPrimitives(SDL_GPURenderPass* pass, Uint32 num_indice
                                       Uint32 first_index, Sint32 vertex_offset, Uint32 first_instance) {
     if (!g_device)
         return SDL_DrawGPUIndexedPrimitives(pass, num_indices, num_instances, first_index, vertex_offset, first_instance);
-    if (!pass || !pass->open || !pass->pipe || !pass->vb || !pass->ib || num_indices == 0) return;
+    // (A pipeline without vertex attributes needs no vertex buffer: render/gamma_pass.cpp.)
+    if (!pass || !pass->open || !pass->pipe || (!pass->vb && !pass->pipe->attrs.empty()) || !pass->ib ||
+        num_indices == 0)
+        return;
     SDL_GPUCommandBuffer* cmd = pass->cmd;
     DrawRec d{};
     d.pipe = pass->pipe;

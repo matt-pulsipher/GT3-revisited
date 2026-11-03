@@ -2,6 +2,7 @@
 
 #include "render/camera.h"
 #include "render/dynamic_scale.h"
+#include "render/gamma_pass.h"
 #include "render/gpu_context.h"
 #include "render/gpu_model.h"
 #include "render/guard_band.h"
@@ -645,4 +646,16 @@ TEST(render_gs_bilinear_matches_the_original) {
     // On a texel centre: the texel; outside the image: the edge texel.
     CHECK(gs_bilinear_texel(d, 2, 2, 0.5f, 1.5f) == 30);
     CHECK(gs_bilinear_texel(d, 2, 2, -3.0f, -3.0f) == 29);
+}
+
+// [video] gamma: a number in range, anything else 1 (GT3's colours, no pass).
+TEST(render_gamma_setting) {
+    CHECK(parse_gamma("1.25") == 1.25f);
+    CHECK(parse_gamma("") == 1.0f);
+    CHECK(parse_gamma("bright") == 1.0f);
+    CHECK(parse_gamma("nan") == 1.0f);
+    CHECK(parse_gamma("0.1") == kGammaMin);
+    CHECK(parse_gamma("9") == kGammaMax);
+    CHECK(!gamma_changes(parse_gamma("1.00")));
+    CHECK(gamma_changes(1.05f) && gamma_changes(0.95f));
 }
