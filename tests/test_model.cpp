@@ -850,11 +850,6 @@ TEST(showroom_wheels_in_race_disc) {
             CHECK(!verts(showroom, n, 0).empty() && verts(showroom, n, 0) == verts(menu, n, 0));
             for (int lod = 1; lod < lods; ++lod) CHECK(verts(showroom, n, lod) == verts(race, n, lod));
         }
-    // LOD 0's race rims beside them, for the spin blurs; none without showroom wheels.
-    for (const std::string w : {"wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"}) {
-        CHECK(!verts(showroom, w + "_race", 0).empty() && verts(showroom, w + "_race", 0) == verts(race, w, 0));
-        CHECK(verts(showroom, w + "_race", 1).empty() && verts(race, w + "_race", 0).empty());
-    }
     CHECK(triangles(showroom, "wheel_fl", 0) > 4 * triangles(race, "wheel_fl", 0)); // modelled spokes
     CHECK(verts(showroom, "body", 0) == verts(race, "body", 0));
     // No brake parts: races draw race/brake.bin's.
@@ -881,7 +876,6 @@ TEST(showroom_wheels_in_race_disc) {
     CHECK(verts(showroom_fitted, "wheel_fl", 0) == verts(menu_fitted, "wheel_fl", 0));
     CHECK(verts(showroom_fitted, "wheel_fl", 0) != verts(showroom, "wheel_fl", 0));
     CHECK(verts(showroom_fitted, "wheel_fl", 1) == verts(race_fitted, "wheel_fl", 1));
-    CHECK(verts(showroom_fitted, "wheel_fl_race", 0) == verts(race_fitted, "wheel_fl", 0));
     sf.showroom_wheel = {};
     const scene::Model no_menu_model = load_car_model(race_file, sf, "mb0007");
     CHECK(verts(no_menu_model, "wheel_fl", 0) == verts(race_fitted, "wheel_fl", 0));

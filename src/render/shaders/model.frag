@@ -13,6 +13,9 @@ layout(location = 3) in vec3 v_world;
 layout(location = 4) in vec3 v_lit_w;
 layout(location = 5) in vec2 v_fog_w;
 vec4 v_color; // the vertex colour (u.output_mode.y = 1: it came times the clip w, as v_lit_w)
+#ifdef SPIN_COPIES
+layout(location = 6) flat in int v_copy; // the copy (model.vert's instance)
+#endif
 vec3 v_lit;
 float v_fog;
 
@@ -69,7 +72,7 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
                          // z = 1: the texture filtered as the GS does (gs_bilinear below)
     // GT3's wheel spin blurs (DrawItem::wheel_blur; wheel_texture below): x 1 = the tyre's tread,
     // 2 = the rim; y the rim's mip level. wheel_steps: the tread's three S shifts / the rim's
-    // four angles.
+    // four angles. The SPIN_COPIES variant: w the copies' cells (DrawItem::spin_turn).
     vec4 wheel_blur;
     vec4 wheel_steps;
 } u;
@@ -353,7 +356,30 @@ void shade() {
     if (u.grade2.w > 0.5) o_color.a = 1.0;
 }
 
+#ifdef SPIN_COPIES
+// One of a modelled rim's turned copies (DrawItem::spin_turn; render::spin_copy_at is this rule on
+// the CPU): each copy draws only its share of the picture's samples, so a pixel resolves to the
+// mean of the copies it holds, and each copy's own depth keeps whatever lies behind its spokes (the
+// brake parts) sharp. A pixel's samples hold one copy each; the cells of a 4 x 4 ordered pattern
+// share out the rest, so a pixel's copies spread over the whole turn. Without sample masks (OpenGL
+// ES 3.0) the copies come one to a pixel (as many as cells).
+const int kSpinCells[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+
+void spin_copy_samples() {
+    int copy = v_copy;
+    int cells = int(u.wheel_blur.w + 0.5);
+    ivec2 p = ivec2(gl_FragCoord.xy) & 3;
+    if (kSpinCells[p.y * 4 + p.x] * cells / 16 != copy % cells) discard;
+#ifndef NO_SAMPLE_MASK
+    gl_SampleMask[0] = 1 << (copy / cells);
+#endif
+}
+#endif
+
 void main() {
+#ifdef SPIN_COPIES
+    spin_copy_samples();
+#endif
     if (v_fog_w.y > 0.0) discard;
     v_color = u.output_mode.y > 0.5 ? v_color_in * gl_FragCoord.w : v_color_in;
     v_lit = v_lit_w * gl_FragCoord.w;

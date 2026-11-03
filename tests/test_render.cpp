@@ -464,6 +464,49 @@ TEST(render_depth_of_field_level_blur) {
         CHECK(dof_level_blur(k).sigma[1] > dof_level_blur(k - 1).sigma[1]);
 }
 
+// A modelled rim's turned copies share out the picture's samples (DrawItem::spin_turn): every
+// sample of a 4 x 4 pixel tile belongs to one copy, each copy to as many, and a pixel's copies are
+// evenly spaced over all of them, so it resolves to the mean of copies spread over the whole turn.
+// The filter after the scene weighs every cell alike when its taps cover the pattern's repeat.
+TEST(render_spin_copy_samples) {
+    for (int cells : {1, 2, 4, 8, 16})
+        for (int samples : {1, 2, 4, 8}) {
+            const int n = cells * samples;
+            std::vector<int> owned(size_t(n), 0);
+            for (int y = 0; y < 4; ++y)
+                for (int x = 0; x < 4; ++x) {
+                    std::vector<int> held;
+                    for (int s = 0; s < samples; ++s) {
+                        const int c = spin_copy_at(x, y, s, cells);
+                        CHECK(c >= 0 && c < n);
+                        if (c < 0 || c >= n) return;
+                        ++owned[size_t(c)];
+                        held.push_back(c);
+                        CHECK(spin_copy_at(x + 4, y + 8, s, cells) == c); // the pattern repeats every 4 pixels
+                    }
+                    std::sort(held.begin(), held.end());
+                    for (size_t i = 1; i < held.size(); ++i) CHECK(held[i] - held[i - 1] == cells);
+                    // Within the period, the cells differ: the filter's taps take in each once.
+                    const int period = spin_copy_period(cells);
+                    if (period > 1) CHECK(spin_copy_at(x, y, 0, cells) != spin_copy_at(x + period / 2, y, 0, cells));
+                    for (int dy = 0; dy < 4; ++dy)
+                        for (int dx = 0; dx < 4; ++dx) // cells repeat on the period
+                            if (dx % period == 0 && dy % period == 0)
+                                CHECK(spin_copy_at(x + dx, y + dy, 0, cells) == spin_copy_at(x, y, 0, cells));
+                }
+            for (int k : owned) CHECK(k == 16 / cells); // the tile has 16 x samples samples for cells x samples copies
+        }
+    // Copies: from the samples up, doubling while more than 1.5 pixels apart, at most 16 cells and
+    // as many as fit 1.5 pixels apart over a radian of the rim's edge (64 from 96 pixels).
+    CHECK(spin_copy_count(0.0f, 200.0f, 4) == 4);
+    CHECK(spin_copy_count(6.0f, 200.0f, 4) == 4 && spin_copy_count(6.1f, 200.0f, 4) == 8);
+    CHECK(spin_copy_count(20.0f, 200.0f, 4) == 16 && spin_copy_count(1000.0f, 200.0f, 4) == 64);
+    CHECK(spin_copy_count(1000.0f, 96.0f, 4) == 64 && spin_copy_count(1000.0f, 95.0f, 4) == 32);
+    CHECK(spin_copy_count(1000.0f, 24.0f, 4) == 16 && spin_copy_count(1000.0f, 6.0f, 4) == 4);
+    CHECK(spin_copy_count(1000.0f, 200.0f, 1) == 16 && spin_copy_count(1000.0f, 200.0f, 8) == 64);
+    CHECK(spin_copy_period(1) == 1 && spin_copy_period(4) == 2 && spin_copy_period(16) == 4);
+}
+
 TEST(render_sheen_vertex_program) {
     // Super Speedway's sheen material and scene light 0's specular.
     scene::Material m;
