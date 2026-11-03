@@ -56,6 +56,18 @@ TEST(race_lap_event_texts) {
     CHECK(lap_diff_text(3, "%d Laps") == "+3 Laps");
 }
 
+// A licence test's splits count on over its laps, the line as each lap's last timing point (the licence conductor's
+// checkpoint numbers + 1): IB-2's circle has no split points, so its 3-lap run shows T1 and T2 at the line before its end.
+TEST(race_license_split_numbers) {
+    CHECK(license_split_number(true, 0, 0, 1) == 1);
+    CHECK(license_split_number(true, 1, 0, 1) == 2);
+    // Two split points (3 timing points a lap): 1, 2, the line 3, then 4, 5, the line 6.
+    CHECK(license_split_number(false, 0, 0, 3) == 1 && license_split_number(false, 0, 1, 3) == 2);
+    CHECK(license_split_number(true, 0, 3, 3) == 3); // (the line whatever the points passed)
+    CHECK(license_split_number(false, 1, 0, 3) == 4 && license_split_number(false, 1, 1, 3) == 5);
+    CHECK(license_split_number(true, 1, 2, 3) == 6);
+}
+
 TEST(race_passing_order_gaps) {
     PassingOrder po;
     po.reset();

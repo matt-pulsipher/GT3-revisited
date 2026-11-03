@@ -104,6 +104,10 @@ private:
 std::string lap_time_text(long long ms);
 // "T<number> m'ss.mmm".
 std::string split_text(int number, long long ms);
+// A licence test's split number: its conductor counts the splits on over the laps, the line short of the run's end
+// included. Point k of lap l (from 0) is l x points + k + 1, the line ending lap l (l + 1) x points; `points`: the lap's
+// timing points with the line.
+int license_split_number(bool line, int lap, int point, int points);
 // '+' and the time for a gap >= 0, the font's dash glyph (0x7F) for < 0.
 std::string gap_text(long long gap_ms);
 // '+' (dash glyph when negative) and `format` ("%d Laps") with |laps|.

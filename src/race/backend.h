@@ -40,6 +40,9 @@ struct LapCrossing {
     int lap = 0;            // laps completed before it
     long long ms = 0;       // race clock (ms)
     long long split_ms = 0; // since the lap's start (at the line: the lap time)
+    // At the line: the mode times it as a split, not a lap (a licence test's laps short of its end: split_ms is then
+    // the time since the run's start, which the test keeps as its lap start).
+    bool sector = false;
 };
 
 // A race that times the player's laps itself (the exact core's race flow): the track's lap queries answer from it

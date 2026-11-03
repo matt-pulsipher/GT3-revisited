@@ -98,9 +98,10 @@ wheels straight.
 ### §A3 License HUD
 
 The lap / time block shows "Best", the elapsed "Time" (y 112) and the three
-target times at y 140, 168 and 196, each with its `mark_1st` / `mark_2nd` /
-`mark_3rd` icon drawn at 75 % scale left of the time (`Hud::draw_times`; the
-license layout, §D4). There is no lap count, no position and no message display
+target times at y 140, 168 and 196, drawn as the other time lines with no
+label: each `mark_1st` / `mark_2nd` / `mark_3rd` icon at its own size in the
+label's place, its right edge 8 units right of the label's edge, centered 7
+units above the line's y (`Hud::draw_times`; the license layout, §D4). There is no lap count, no position and no message display
 (no WRONG WAY or AUTO DRIVE, §B4); the map sits at (16, 32).
 
 **Best** is the best judged time of the visit: every run that passes the test
@@ -1049,7 +1050,7 @@ REPLAY OPTIONS ITEM time (default off, §D9):
 | Message | Text | Font, color | Place | Timing |
 |---|---|---|---|---|
 | lap time | "m'ss.mmm" (§D10) | sw_20, green (73, 204, 43) | the anchor | queued |
-| split time | "T<n> m'ss.mmm", the time since the lap's start | sw_16, green | the anchor | queued |
+| split time | "T<n> m'ss.mmm", the time since the lap's start (license tests: the run's start) | sw_16, green | the anchor | queued |
 | gap | "+m'ss.mmm" behind, the font's dash glyph and the time ahead | sw_16, red (240, 0, 0) behind (gap ≥ 0), light blue (128, 128, 255) ahead | 25 below the anchor | at once |
 | laps down | "+N Laps" (`RACEDISPLAY_LapDiffInfo`) | sw_16, red | 25 below the anchor | at once |
 | pit-in | "<car> Pitting in..." (the name as on the results, §B6) | sw_16, green | the anchor | queued |
@@ -1093,7 +1094,11 @@ What each mode shows:
   player's own car; when faster there is none. A free run also shows its two
   notes after the start signal (§B2).
 - **License tests.** Split times only, numbered on through the laps; no lap
-  time.
+  time. A lap test's line crossings before its last lap are split times too,
+  the line counting as each lap's last timing point (`race::license_split_number`;
+  on a course with no split points, a 3-lap test shows "T1" and "T2" at the
+  line). Every license split time is the time since the run's start, not the
+  lap's (test `exact_game_licence_lap_splits`).
 - **Machine tests 0-400 m / 0-1000 m** (§B7; test `race_machine_test_popups`,
   `race::machine_test_message`). At the 400 m split point of the 0-1000 m test
   "T1 m'ss.mmm" with the time since GO, as a split time; at the goal the time to
