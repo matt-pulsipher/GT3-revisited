@@ -244,6 +244,7 @@ There is one shader pair. Per-primitive state comes from
 | `kMultiplyDest` | GS ALPHA 0x89 (Cd·As): destination × fragment alpha (prize cup rims) |
 | textured `kEnvironmentMap` with `DrawItem::sphere_map` | prize scenes: the model's own sphere map, UVs from the reflected view vector in view space (GT3's reflection kernel), vertex colour × the reflection rows |
 | `DrawItem::frame_alpha` (race course scenery) | the PS2's frame-buffer alpha: every pass writes its fragment alpha unblended (`AlphaWrite::Write`; `kKeepAlpha` = FBMSK 0xFF000000 keeps it), `kAlphaOnly` passes (FBMSK 0x00FFFFFF shadow masks) write only the alpha, and the road sheen is added as Cs·Ad (`BlendMode::DestAlphaAdd`, GS ALPHA 0x58). `kAlphaOnly` primitives of other items are not drawn |
+| `kDestAlphaTest` (car reflection passes) | GS TEST.DATE with DATM 0: drawn only where the frame alpha < 0x80. The fragment is discarded where its weight (texel × vertex alpha) reaches 0x80 (`output_mode.w`); the 0x80 an earlier reflection pass leaves is the decoder's part (it drops the triangles the pass repeats). See docs/formats/car_model.md |
 | `kDepthOnly` | GS FBMSK 0xFFFFFFFF with depth writes on: only the depth is written (`PipelineKey::depth_only`, colour write mask 0), in the blended phase in model order (car glass drawn without depth writes gets its depth after its reflection) |
 
 `View3D::render_env_cube` renders the six faces with the standard cube-map frames
