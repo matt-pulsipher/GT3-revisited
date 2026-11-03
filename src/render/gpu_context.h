@@ -66,6 +66,8 @@ struct PipelineKey {
     // A modelled rim's turned copies (DrawItem::spin_turn): model.vert's and model.frag's
     // SPIN_COPIES variants.
     bool spin_copy = false;
+    // Nothing but the depth is written (scene::kDepthOnly).
+    bool depth_only = false;
     auto operator<=>(const PipelineKey&) const = default;
 };
 

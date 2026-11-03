@@ -794,8 +794,33 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         };
         for (const Draw& d : draws) {
             if (ranges) ranges->push_back({mesh.vertices.size(), mesh.indices.size(), mesh.primitives.size()});
+            // Cars: FBMSK 0xFFFFFFFF writes only the depth (glass drawn without depth writes leaves
+            // its depth so, after its reflection): scene::kDepthOnly.
+            const bool depth_only = opt.weighted_reflection && d.fb_mask == 0xFFFFFFFFu;
+            if (depth_only && !d.depth_write) continue;
             // Alpha-only frame buffer passes (shadow masks) produce no colour.
-            const bool alpha_only = (d.fb_mask & 0x00FFFFFFu) == 0x00FFFFFFu;
+            const bool alpha_only = (d.fb_mask & 0x00FFFFFFu) == 0x00FFFFFFu && !depth_only;
+            // Cars: an alpha-only pass sets the reflectivity (the frame alpha, texel x vertex alpha)
+            // that the reflection passes after it over the same vertices are weighted with. It is
+            // drawn over the glass, which keeps whatever alpha lay behind it.
+            if (alpha_only && opt.weighted_reflection) {
+                for (const Packet& pk : g.chunks[d.chunk].packets) {
+                    u32 tex = pk.mat & 0x1FF;
+                    DecodedPacket dp = g.decode_packet(pk);
+                    int t = dp.prim.tme && dp.has_uv && tex != 0 && tex != 0x1FF ? texture_for(d.texset, tex - 1) : -1;
+                    for (scene::Vertex v : dp.vertices) {
+                        if (d.has_matrix) place_vertex(d.matrix, v);
+                        Written w;
+                        w.vertex_alpha = v.color >> 24;
+                        w.weight = w.vertex_alpha;
+                        w.texture = t;
+                        w.uv[0] = v.uv[0], w.uv[1] = v.uv[1];
+                        if (t >= 0) w.weight = w.weight * texel_alpha(model.textures[size_t(t)], v.uv[0], v.uv[1]) / 255;
+                        written_alpha[{v.pos[0], v.pos[1], v.pos[2]}] = w;
+                    }
+                }
+                continue;
+            }
             if (alpha_only && !opt.static_env_maps && !opt.frame_alpha) continue;
             if (alpha_only && !opt.frame_alpha) {
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
@@ -969,7 +994,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 // for later reflection passes over the same vertices. Passes with the alpha channel
                 // write-masked (car glass) leave whatever lies behind them, which a per-vertex model
                 // cannot know; their own alpha is used as the estimate unless a real write exists.
-                if (opt.weighted_reflection && !env) {
+                if (opt.weighted_reflection && !env && !depth_only) {
                     bool masked = (d.fb_mask & 0xFF000000u) != 0;
                     for (u32 vi = base; vi < mesh.vertices.size(); ++vi) {
                         const scene::Vertex& v = mesh.vertices[vi];
@@ -1054,6 +1079,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     else if ((d.fb_mask & 0xFF000000u) == 0xFF000000u)
                         prim.flags |= scene::kKeepAlpha;
                 }
+                if (depth_only) prim.flags = (prim.flags & (scene::kAlphaTest | scene::kDoubleSided)) | scene::kDepthOnly | scene::kUnlit;
                 if (dp.rgb_2x) prim.flags |= scene::kVertexColor2x;
                 if (weighted) {
                     emit_weighted_reflection(mesh, prim, written_alpha);

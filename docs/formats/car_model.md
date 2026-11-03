@@ -250,7 +250,17 @@ are untextured with a per-vertex weight. Glass is a nearly uniform dark texture
 with GS alpha ≈ 0x73, drawn with normal blending and the alpha channel
 write-masked, so it is ~90 % dark plus the reflection on top. The glass's own
 texture is used as its reflectivity because the real Ad (whatever lies
-behind it) is unknown.
+behind it) is unknown, unless an alpha-only pass sets it.
+
+Alpha-only passes (FBMSK 0x00FFFFFF; 69 draws on 62 models in `cars/day/`) are
+drawn over the glass before its reflection: the frame alpha they write (texel ×
+vertex alpha) is the weight of the reflection passes after them over the same
+vertices (`ty2056`'s canopy: an untextured pass at 0x80, full reflectivity). The
+decoder takes them as the weight and draws nothing for them. Depth-only passes
+(FBMSK 0xFFFFFFFF with depth writes on; 101 draws on 73 models) write the depth of
+a part drawn without depth writes, after its reflection (`nm0006`'s windows);
+they are `scene::kDepthOnly` primitives, drawn in model order with the blended
+passes.
 
 Offsets in `06`/`07`/`08`/`09`/`0A` are relative to the address of the operand
 field that holds them. Ops 0x0C and 0x10 (matrices) appear in a few cars only
