@@ -804,7 +804,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     remove_wet_road(wet_items); // (the wet road's frame items belong to this view only)
     hitch::draw_ms = double(SDL_GetTicksNS() - h_c1) / 1e6;
     hitch::meshes = view_->stats().meshes_drawn;
-    if (!replaying_ && camera_.onboard() && camera_.mirror() && !camera_.look_back() && (!split || horizontal))
+    if (!replaying_ && camera_.shows_mirror() && (!split || horizontal))
         draw_mirror(app, ui, rect, o, false, split);
     if (split) {
         if (!view2_) view2_ = std::make_unique<render::View3D>(*app.gpu());
@@ -818,7 +818,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         add_screen_passes(o2, rect2, camera2_, sun_visibility(eye2, camera2_.fovy(), rect2.h), true, true);
         o2.guard_near = camera2_.gt3_near();
         view2_->draw(ui.renderer(), rect2, camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, items_, o2);
-        if (horizontal && !replaying_ && camera2_.onboard() && camera2_.mirror() && !camera2_.look_back())
+        if (horizontal && !replaying_ && camera2_.shows_mirror())
             draw_mirror(app, ui, rect2, o, true, true);
     }
     } // (the flat views)

@@ -251,7 +251,13 @@ SDL's trigger rumble does nothing there.
   pitch negated, no mirror) is L1 on the race pad. Ours: change view also offers in-car without
   the mirror and a far chase (bumper -> bumper, no mirror -> chase -> far chase); `[race] views =
   gt3` keeps GT3's two. The last view is remembered for the session only (GT3 keeps it in its
-  options). In-car vibration (GT3's in-car camera shakers, point 0 only, also
+  options). Ours: the look around (`CameraRig::set_look`, the race pad's RX / RY: the right stick,
+  the touch controls' drag on the open screen): the stick's direction turns the view
+  (atan2(x, -y), full from half way out), eased at 14/s and back ahead when let go; near straight
+  back it keeps to the side it is turned to. In-car it turns the view about the car's up axis (eye
+  in place); the chase views turn their heading (round the car, the pitch scaled by its cosine).
+  Look back takes over while held (the far chase now looks back too); no mirror past 0.35 rad; none
+  in the disc's demonstrations, replays or VR stereo. In-car vibration (GT3's in-car camera shakers, point 0 only, also
   while looking back): amplitude A = sum over the wheels of |slip ratio| 0.3 + |slip angle| /
   (pi/2), at most 3; speed factor S = speed clamped to 10..120 km/h over 120 km/h; on about half
   the 60 Hz updates each axis gets a target (r - 0.5) A 250 through v += ((u - u_prev) - 12 v)/60,
@@ -455,7 +461,8 @@ SDL's trigger rumble does nothing there.
 - Buttons: the race reads each player's race pad (`InputManager::race_pad`), whose buttons are
   GT3's defaults: Cross accelerate, Square brake, Circle handbrake, Triangle
   reverse, R2 / L2 shift, R1 change view, L1 look back (held), Start pause; we put the
-  performance overlay on R3 (Select has no race action: no respawn, as in GT3). The per-player race layout (`[playerN] race = modern
+  performance overlay on R3 (Select has no race action: no respawn, as in GT3). Under `gt3` R3
+  looks back too (`race::look_back_held`; a custom set made from it moves R3's inputs onto L1). The per-player race layout (`[playerN] race = modern
   | gt3`, custom `[playerN.race]`) maps physical inputs onto them; `gt3` is the menu pad itself.
   docs/INPUT.md "Race controls" (the touch overlay presses race pad buttons).
 - Car shadows (nodes 1 and 6, docs/formats/car_model.md): drawn in the

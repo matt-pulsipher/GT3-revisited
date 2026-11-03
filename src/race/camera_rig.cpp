@@ -125,6 +125,20 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         lag_pitch_ = wrap(lag_pitch_ + lag_pitch_w_ * h);
     }
     if (lag_time_ > 1.0 / 60.0) lag_time_ = 0;
+    // Ours: the look around (set_look), eased to the stick's direction and back to the front.
+    {
+        float target = 0;
+        const float m = std::min(std::hypot(look_x_, look_y_), 1.0f);
+        if (m > kLookStart && !intro_ && mode_ != CameraMode::Orbit && mode_ != CameraMode::Tv) {
+            float th = std::atan2(look_x_, -look_y_);
+            // Near straight back either side is behind: keep to the side the view is turned to.
+            if (std::fabs(th) > 0.75f * kPi && look_ * th < 0) th -= std::copysign(2 * kPi, th);
+            const float t = std::clamp((m - kLookStart) / (kLookFull - kLookStart), 0.0f, 1.0f);
+            target = th * t * t * (3 - 2 * t);
+        }
+        look_ += (target - look_) * (1 - std::exp(-kLookRate * fdt));
+        if (target == 0 && std::fabs(look_) < 1e-4f) look_ = 0; // back in front: the view exactly as without
+    }
     // GT3's in-car vibration (on-board camera, view point 0 only), once per 60 Hz camera update.
     // Amplitude A = sum over the wheels of |slip ratio| 0.3 + |slip angle| / (pi/2), at most 3;
     // speed factor S = speed clamped to 10..120 km/h over 120 km/h. On about half the updates
@@ -168,7 +182,9 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
             // Between 60 Hz steps (frame rates above 60) the lags carry on at their own rates:
             // held still, the view would turn on every other frame only (judder in fast turns).
             float yaw_now = lag_yaw_ + lag_yaw_w_ * float(lag_time_), pitch_now = lag_pitch_ + lag_pitch_w_ * float(lag_time_);
-            float th = yaw_now + (look_back_ ? kPi : 0.0f), ph = look_back_ ? -pitch_now : pitch_now;
+            // The look around turns the heading (round the car) and takes the pitch along with it.
+            const float look = look_back_ ? 0.0f : look_;
+            float th = yaw_now + (look_back_ ? kPi : 0.0f) - look, ph = (look_back_ ? -pitch_now : pitch_now) * std::cos(look);
             f = {-std::sin(th) * std::cos(ph), std::sin(ph), -std::cos(th) * std::cos(ph)};
             render::Vec3 r = render::normalize(render::cross(f, {0, 1, 0}));
             u = render::cross(r, f);
@@ -180,6 +196,8 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         render::Vec3 e = point_[index] * -1.0f; // model frame: x right, y up, z back
         if (look_back_ && index == 0) e.z = -e.z;
         eye_ = origin + r * e.x + u * e.y - f * e.z;
+        // In-car, the look around turns the view about the car's up axis, the eye where it is.
+        if (index == 0 && !look_back_ && look_ != 0) f = f * std::cos(look_) + r * std::sin(look_);
         view_ = render::look_at(eye_, eye_ + f, u);
         fovy_ = ReplayDirector::zoom_fovy(1.7320508f);
     };
@@ -225,7 +243,9 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         bool far = mode_ == CameraMode::ChaseFar;
         float dist = (far ? 7.5f : 4.6f) + setup.length * 0.5f;
         float height = far ? 2.4f : 1.55f;
-        render::Vec3 back{std::sin(chase_yaw_), 0, std::cos(chase_yaw_)};
+        // Look back and the look around turn it round the car.
+        const float turn = chase_yaw_ + (look_back_ ? kPi : -look_);
+        render::Vec3 back{std::sin(turn), 0, std::cos(turn)};
         render::Vec3 base{pos.x, chase_height_, pos.z};
         eye_ = base + back * dist + render::Vec3{0, height, 0};
         render::Vec3 target = base + render::Vec3{0, far ? 1.0f : 0.85f, 0} - back * 2.5f;
@@ -237,7 +257,11 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         bool roof = true;
         sim::Vec3 local = roof ? sim::Vec3{0, setup.height + 0.2f, 0.2f} : sim::Vec3{0, 0.62f, -setup.length * 0.5f + 0.15f};
         eye_ = rv(s.position + rotate(s.orientation, local));
-        render::Vec3 target = eye_ + fwd * 10.0f - up * (roof ? 0.9f : 0.25f);
+        // Look back and the look around turn it about the car's up axis, as in-car.
+        const float turn = look_back_ ? kPi : look_;
+        render::Vec3 f = fwd;
+        if (turn != 0) f = fwd * std::cos(turn) + render::normalize(render::cross(fwd, up)) * std::sin(turn);
+        render::Vec3 target = eye_ + f * 10.0f - up * (roof ? 0.9f : 0.25f);
         view_ = render::look_at(eye_, target, up);
         fovy_ = roof ? 0.85f : 0.9f;
         break;

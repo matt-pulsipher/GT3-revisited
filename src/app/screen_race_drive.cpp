@@ -42,6 +42,17 @@ void RaceScreen::next_view(CameraRig& cam, int player) {
         g_last_view[player] = {cam.mode(), cam.mirror()};
 }
 
+// The race pad's right stick (RX / RY as bound in Settings -> Controls; the touch controls' drag on
+// the open screen sets it too). None in the disc's demonstrations and the attract demo, and none in
+// VR, where the head looks around.
+void RaceScreen::look_around([[maybe_unused]] App& app, CameraRig& cam, const PadState& pad) const {
+    bool on = !demo_ && !attract_;
+#if GT3R_XR
+    if (vr_stereo(app, two_player_ && field_ && field_->has_second())) on = false;
+#endif
+    cam.set_look(on ? pad.axis_fine(PadAxis::RX) : 0.0f, on ? pad.axis_fine(PadAxis::RY) : 0.0f);
+}
+
 void RaceScreen::tick(App& app, const PadState& pad) {
     double dt = step_.step();
     animate_course(float(dt)); // the course's animations run with the race
@@ -494,6 +505,7 @@ void RaceScreen::update_drive(App& app, double dt) {
             render_state_ = interpolate(prev_, vehicle_->state(), step_.alpha());
             // ... and the camera keeps following it (offline the frozen view is the pause).
             camera_.set_look_back(false);
+            camera_.set_look(0, 0);
             camera_.set_track_distance(track_->distance_of(render_state_.position));
             camera_.set_lap(lap_count());
             camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
@@ -503,16 +515,19 @@ void RaceScreen::update_drive(App& app, double dt) {
     }
     // GT3's buttons: R1 change view, L1 look back (held), R3 our performance overlay; see
     // race/controls.h. The overlay (a developer tool) is not on a controller by default, and
-    // under the "gt3" layout the race pad is the menu pad, whose R3 does nothing in a race
-    // (bind it in a custom race layout; GT3R_RACE=perf=1 starts with the overlay on).
+    // under the "gt3" layout the race pad is the menu pad, whose R3 looks back instead
+    // (race::look_back_held; bind the overlay in a custom race layout; GT3R_RACE=perf=1 starts
+    // with it on).
     bool own_race_pad = !app.input().race_uses_menu_pad(0);
     if (replaying_ || demo_replay()) {
         // Replays: the original's replay pad (screen_race_replay.cpp, presentation §G3).
         replay_pad(m);
         camera_.set_look_back(false);
+        camera_.set_look(0, 0);
     } else {
         if (rpressed(PadButton::R1)) next_view(camera_, 0);
-        camera_.set_look_back(pad.down(PadButton::L1));
+        camera_.set_look_back(race::look_back_held(pad, !own_race_pad));
+        look_around(app, camera_, pad);
     }
     // Runs with a ghost: the controller's own Select (the menu pad's) shows / hides it for the
     // rest of the visit, as in the original (presentation §G11).
@@ -576,7 +591,8 @@ void RaceScreen::update_drive(App& app, double dt) {
         PadState pad2 = app.input().race_pad(1);
         auto pressed2 = [&](PadButton b) { return pad2.down(b) && !(pad2_prev_ & (1u << unsigned(b))); };
         if (pressed2(PadButton::R1)) next_view(camera2_, 1);
-        camera2_.set_look_back(pad2.down(PadButton::L1));
+        camera2_.set_look_back(race::look_back_held(pad2, app.input().race_uses_menu_pad(1)));
+        look_around(app, camera2_, pad2);
         pad2_prev_ = pad2.buttons;
         render_state2_ = interpolate(field_->second_prev_state(), field_->second_state(), step_.alpha());
         camera2_.set_intro(live_view() && race::start_shot_on(frames_to_signal()), race::start_shot_t(frames_to_signal()));

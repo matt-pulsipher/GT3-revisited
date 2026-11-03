@@ -127,7 +127,8 @@ controllers' haptics, both hands at the stronger motor's level (a controller in 
 hand turns any split between the motors into a side). VR builds' gamepad layout (`quest`) is the gamepad
 layout with B as Triangle (back) and Y as Circle. The race's modern layout then gives
 right trigger throttle, left trigger brake, A/X shift up/down, Y view, B
-handbrake, left grip reverse, right stick click look back. With
+handbrake, left grip reverse, right stick click look back (the right stick's look around is off
+in stereo: the head looks around). With
 `[vr] steering = wheel` both grips squeezed grab a steering wheel: the roll of
 the line between the hands steers (`wheel_degrees` lock to lock) and the grips are
 no longer shoulders. In menus the right controller's aim ray hits the screen: a

@@ -189,7 +189,10 @@ TEST(touch_reverse_button) {
     CHECK(cfg.hidden("drive.reverse"));
     TouchControls h = driving(cfg);
     h.note_touch();
-    CHECK(find_widget(h, Widget::Kind::Button, PadButton::Triangle)->hidden && !h.hit(rev.x, rev.y));
+    CHECK(find_widget(h, Widget::Kind::Button, PadButton::Triangle)->hidden);
+    h.finger_down(5, rev.x, rev.y, 1.0f); // takes no touches (where it was is open screen: it looks around)
+    h.update(0.016, 0);
+    CHECK(h.pad().buttons == 0);
     IniDocument ini;
     cfg.save(ini);
     CHECK(ini.get("touch", "drive.reverse") == std::optional<std::string>("hidden"));
@@ -220,6 +223,58 @@ TEST(touch_drag_steering_and_multitouch) {
     CHECK(t.pad().axis(PadAxis::LX) == 128);
 }
 
+// Ours: a finger on the open screen looks around. Dragged sideways it points the race pad's right
+// stick that way (90 degrees per kLookRange, behind at twice that); lifted, the stick lets go. Not
+// within kLookClear of a control or on the drag steering zone (with tilt steering the zone is open
+// screen), never in the menu layout, and [touch] look = off turns it off.
+TEST(touch_look_around) {
+    constexpr float kRange = TouchControls::kLookRange;
+    TouchControls t = driving();
+    // Between the steering zone and the pedals: open screen.
+    CHECK(t.opens_look(400, 200));
+    CHECK(t.finger_down(1, 400, 200, 1.0f));
+    t.update(0.016, 0);
+    CHECK(std::fabs(t.pad().axis_fine(PadAxis::RX)) < 0.01f && t.pad().axis_fine(PadAxis::RY) < -0.99f); // ahead
+    t.finger_move(1, 400 + kRange, 230, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.pad().axis_fine(PadAxis::RX) > 0.99f && std::fabs(t.pad().axis_fine(PadAxis::RY)) < 0.01f); // right
+    t.finger_move(1, 400 - kRange * 2.5f, 200, 1.0f); // past behind: behind
+    t.update(0.016, 0);
+    CHECK(std::fabs(t.pad().axis_fine(PadAxis::RX)) < 0.01f && t.pad().axis_fine(PadAxis::RY) > 0.99f);
+    // It presses nothing, even dragged over the gas; a second finger drives as usual.
+    const Widget gas = *find_widget(t, Widget::Kind::Pedal, PadButton::Cross);
+    t.finger_move(1, gas.x + 5, gas.y + 5, 1.0f);
+    CHECK(t.finger_down(2, 120, 260, 1.0f)); // the steering zone: steers
+    t.finger_move(2, 160, 260, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.pad().buttons == 0 && t.pad().axis_f(PadAxis::LX) > 0.2f);
+    t.finger_up(1);
+    t.update(0.016, 0);
+    CHECK(t.pad().axis(PadAxis::RX) == 128 && t.pad().axis(PadAxis::RY) == 128); // let go
+    // Near a control (the brake's side, the steering zone's edge): nothing.
+    const Widget brake = *find_widget(t, Widget::Kind::Pedal, PadButton::Square);
+    CHECK(!t.opens_look(brake.x - TouchControls::kLookClear / 2, brake.y + brake.h / 2));
+    CHECK(!t.finger_down(3, brake.x - TouchControls::kLookClear / 2, brake.y + brake.h / 2, 1.0f));
+    CHECK(!t.opens_look(330, 200) && !t.opens_look(120, 260));
+    // Tilt steering: the zone is open screen.
+    TouchConfig tilt;
+    tilt.steering = TouchConfig::Steering::Tilt;
+    TouchControls tt = driving(tilt);
+    CHECK(tt.opens_look(120, 260));
+    CHECK(tt.finger_down(1, 120, 260, 1.0f));
+    tt.finger_move(1, 120 - kRange, 260, 1.0f);
+    tt.update(0.016, 0);
+    CHECK(tt.pad().axis_fine(PadAxis::RX) < -0.99f); // left
+    // Off, and the menus.
+    TouchConfig off;
+    off.look = false;
+    TouchControls to = driving(off);
+    CHECK(!to.opens_look(400, 200) && !to.finger_down(1, 400, 200, 1.0f));
+    TouchControls menu;
+    menu.set_layout(TouchLayout::Menu);
+    CHECK(!menu.opens_look(320, 180));
+}
+
 TEST(touch_tilt_steering) {
     TouchConfig cfg;
     cfg.steering = TouchConfig::Steering::Tilt;
@@ -247,7 +302,7 @@ TEST(touch_button_steering) {
     const Widget left = *find_widget(t, Widget::Kind::Button, PadButton::Left);
     const Widget right = *find_widget(t, Widget::Kind::Button, PadButton::Right);
     CHECK(left.x + left.w <= right.x && right.x + right.w < 320 && left.y + left.h > 300); // side by side, bottom left
-    CHECK(!t.finger_down(9, 160, 120, 1.0f)); // the rest of the left half isn't a control
+    CHECK(t.opens_look(160, 120)); // the rest of the left half isn't a control: open screen, it looks around
     CHECK(t.finger_down(1, left.x + left.w / 2, left.y + left.h / 2, 1.0f));
     t.update(0.016, 0.5f); // tilt is ignored
     CHECK(t.pad().down(PadButton::Left) && t.pad().press(PadButton::Left) == 255);
@@ -346,8 +401,9 @@ TEST(touch_left_handed_mirrors) {
 TEST(touch_config_roundtrip) {
     IniDocument ini = IniDocument::parse(
         "[touch]\nmode = on\nsteering = tilt\npedals = area\npedal_min = 0.2\nsteer_range = 9\nopacity = 0.8\n"
-        "size = 1.2\nleft_handed = on\n");
+        "size = 1.2\nleft_handed = on\nlook = off\n");
     TouchConfig c = TouchConfig::load(ini);
+    CHECK(!c.look && TouchConfig::load(IniDocument{}).look);
     CHECK(c.mode == TouchConfig::Mode::On);
     CHECK(c.steering == TouchConfig::Steering::Tilt);
     CHECK(c.pedals == TouchConfig::Pedals::Area);
@@ -357,7 +413,7 @@ TEST(touch_config_roundtrip) {
     IniDocument out;
     c.save(out);
     TouchConfig d = TouchConfig::load(out);
-    CHECK(d.mode == c.mode && d.steering == c.steering && d.pedals == c.pedals && d.left_handed);
+    CHECK(d.mode == c.mode && d.steering == c.steering && d.pedals == c.pedals && d.left_handed && !d.look);
     CHECK(std::fabs(d.size - 1.2f) < 1e-3f && std::fabs(d.opacity - 0.8f) < 1e-3f);
     TouchConfig def = TouchConfig::load(IniDocument{});
     CHECK(def.mode == TouchConfig::Mode::Auto && def.steering == TouchConfig::Steering::Drag);
@@ -652,6 +708,61 @@ TEST(input_binding_sets) {
     // Choosing the layout again resets both sets.
     b.reset(Pad, true);
     CHECK((!b.custom(Pad, true) && sources(b.set(Pad, true, Keys), accel) == V{src("key.W"), src("key.Up")}));
+}
+
+// Ours: the look around's race controls. The right stick by default (the modern layout's; Home /
+// End / Page Up / Page Down on the keyboard); the stick axes are Look left / right and Look ahead /
+// behind, the RX halves Look left and Look right, which take buttons and keys (the whole axes refuse
+// them). Replacing the stick on Look left / right keeps them.
+TEST(input_look_around_controls) {
+    auto src = [](const char* s) {
+        InputSource out;
+        CHECK((InputSource::parse(s, out)));
+        return out;
+    };
+    auto target = [](const char* s) {
+        PadTarget out;
+        CHECK((PadTarget::parse(s, out)));
+        return out;
+    };
+    auto sources = [](const Profile& p, const PadTarget& t) {
+        std::vector<InputSource> out;
+        for (const Binding& b : p.bindings)
+            if (b.target == t) out.push_back(b.source);
+        return out;
+    };
+    using V = std::vector<InputSource>;
+    constexpr DeviceKind Pad = DeviceKind::Pad;
+    constexpr BindingSet Ctl = BindingSet::Controller, Keys = BindingSet::Keyboard;
+    const PadTarget rx = target("RX"), ry = target("RY"), left = target("RX-"), right = target("RX+");
+    CHECK(race_action_name(rx) == "Look left / right" && race_action_name(ry) == "Look ahead / behind");
+    CHECK(race_action_name(left) == "Look left" && race_action_name(right) == "Look right");
+    CHECK(race_action_name(target("RY+")).empty());
+    PlayerBindings b;
+    CHECK((sources(b.set(Pad, true, Ctl), rx) == V{src("pad.rightx")} && sources(b.set(Pad, true, Ctl), ry) == V{src("pad.righty")}));
+    CHECK((sources(b.set(Pad, true, Keys), left) == V{src("key.Home")} && sources(b.set(Pad, true, Keys), right) == V{src("key.End")}));
+    CHECK((sources(b.set(Pad, true, Keys), target("RY+")) == V{src("key.PageDown")}));
+    CHECK(!b.bind(Pad, true, rx, src("pad.leftshoulder"), true)); // a button can't look both ways
+    CHECK(b.bind(Pad, true, left, src("pad.leftshoulder"), true));
+    CHECK(b.bind(Pad, true, right, src("pad.rightshoulder"), true));
+    CHECK(b.bind(Pad, true, rx, src("pad.leftx"), true)); // the left stick instead
+    const Profile& ctl = b.set(Pad, true, Ctl);
+    CHECK((sources(ctl, rx) == V{src("pad.leftx")}));
+    CHECK((sources(ctl, left) == V{src("pad.leftshoulder")} && sources(ctl, right) == V{src("pad.rightshoulder")}));
+    // A stick direction on a half reads as that direction's push.
+    CHECK(b.bind(Pad, true, left, src("pad.lefty-"), false));
+    CHECK((sources(b.set(Pad, true, Ctl), left) == V{src("pad.leftshoulder"), src("pad.lefty-")}));
+    // GT3 original reads the menu pad, whose R3 looks back (race::look_back_held): a custom set made
+    // from it keeps R3's inputs on Look back, never on the performance overlay.
+    PlayerBindings g;
+    g.set_race_layout(Pad, "gt3");
+    CHECK(g.race_reads_menu(Pad));
+    CHECK(g.bind(Pad, true, target("Cross"), src("pad.east"), true));
+    CHECK(!g.race_reads_menu(Pad));
+    const PadTarget l1 = target("L1"), r3 = target("R3");
+    CHECK((sources(g.set(Pad, true, Ctl), l1) == V{src("pad.leftshoulder"), src("pad.rightstick")}));
+    CHECK((sources(g.set(Pad, true, Keys), l1) == V{src("key.Q"), src("key.G")}));
+    CHECK(sources(g.set(Pad, true, Ctl), r3).empty() && sources(g.set(Pad, true, Keys), r3).empty());
 }
 
 // The back paddles shift by default (right up, left down) in both race layouts: the modern one

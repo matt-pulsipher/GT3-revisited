@@ -321,6 +321,8 @@ private:
     // Drive loop (screen_race_drive.cpp)
     sim::ControlInputs scripted_inputs(double t, bool& reverse) const; // GT3R_RACE script=
     void next_view(CameraRig& cam, int player);
+    // Ours: the look around from a race pad's right stick (CameraRig::set_look).
+    void look_around(App& app, CameraRig& cam, const PadState& pad) const;
     void tick(App& app, const PadState& pad);
     void update_drive(App& app, double dt);
     static ForceFeedbackState feedback(const sim::VehicleState& s, const sim::VehicleTelemetry& t, const sim::ControlInputs& in,

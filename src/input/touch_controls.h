@@ -26,6 +26,8 @@ class IniDocument;
 //                          ; pressure/size from the screen; full: always 100 %
 //   pedal_min  = 0.35      ; pressure at the bottom of a pedal (position mode)
 //   steer_range = 0.14     ; drag distance for full lock, as a fraction of screen width
+//   look       = drag      ; drag: a finger put down on the open screen, clear of the controls,
+//                          ; looks around (the race pad's right stick; let go: ahead); off
 //   tilt_deadzone = 0.04   ; tilt steering deadzone (fraction of full lock)
 //   opacity    = 0.5       ; 0..1
 //   size       = 1.0       ; control size multiplier (0.6 .. 1.6)
@@ -80,6 +82,7 @@ struct TouchConfig {
     Pedals pedals = Pedals::Position;
     float pedal_min = 0.35f;
     float steer_range = 0.14f;
+    bool look = true; // [touch] look = drag
     float tilt_deadzone = 0.04f;
     float opacity = 0.5f;
     float size = 1.0f;
@@ -174,9 +177,17 @@ public:
     void finger_move(u64 id, float x, float y, float pressure);
     void finger_up(u64 id);
     void release_all();
-    // True if (x, y) is on a control of the current layout (used to swallow
-    // the mouse events SDL synthesizes from touches).
+    // True if (x, y) is on a control of the current layout, or would look around
+    // (used to swallow the mouse events SDL synthesizes from touches).
     bool hit(float x, float y) const;
+    // Ours: a finger put down at (x, y) looks around: the driving layout's open screen, at least
+    // kLookClear from every visible control's touch area (with tilt steering the steering zone is
+    // open screen). Dragging it sideways turns the view: kLookRange for 90 degrees,
+    // twice that for behind; the race pad's right stick points that way while it is down
+    // (CameraRig::set_look), and lifting it lets the view turn back ahead.
+    bool opens_look(float x, float y) const;
+    static constexpr float kLookClear = 20.0f;      // UI units
+    static constexpr float kLookRange = 0.15f * 640; // UI units of drag for 90 degrees
 
     // Visibility in auto mode: a touch shows the controls, gamepad or
     // keyboard input hides them.
@@ -198,6 +209,7 @@ private:
         int widget = -1;
         float x = 0, y = 0, pressure = 1.0f;
         float origin_x = 0, origin_y = 0; // steering: touch-down point
+        bool look = false;     // on the open screen: looks around (opens_look), no widget
         bool seen = false;     // reported by at least one update()
         bool released = false; // lifted before any update() saw it: report once, then drop
     };

@@ -180,6 +180,29 @@ TEST(race_camera_views) {
     CHECK(g.mode() == CameraMode::Bumper);
 }
 
+// Look back (issue 170) turns every player view round: the car faces -z, so the view looks
+// along +z while held; the chase views move ahead of the car, looking back past it.
+TEST(race_camera_look_back) {
+    sim::VehicleSetup setup;
+    sim::VehicleState s;
+    auto look = [&](CameraRig& c) {
+        c.update(s, setup, PadState{}, 1.0 / 60.0);
+        const render::Mat4& v = c.view();
+        return render::Vec3{-v.at(2, 0), -v.at(2, 1), -v.at(2, 2)};
+    };
+    for (CameraMode m : {CameraMode::Bumper, CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Roof}) {
+        CameraRig c;
+        c.set_shake(false);
+        c.set_mode(m);
+        CHECK(look(c).z < -0.9f);
+        c.set_look_back(true);
+        CHECK(look(c).z > 0.9f);
+        if (m == CameraMode::Chase || m == CameraMode::ChaseFar) CHECK(c.eye().z < -3.0f);
+        c.set_look_back(false);
+        CHECK(look(c).z < -0.9f);
+    }
+}
+
 // GT3's in-car vibration: none without tyre slip; with slip the in-car view shakes (a few
 // degrees at most), the chase view never does, and the switch turns it off.
 TEST(race_camera_shake) {
@@ -210,6 +233,90 @@ TEST(race_camera_shake) {
     chase_off.set_mode(CameraMode::Chase);
     chase_off.set_shake(false);
     CHECK(diff(run(chase, 60), run(chase_off, 60)) < 1e-5f);
+}
+
+// Ours: the look around (the right stick): the stick's direction is where the view
+// turns, eased there and back ahead when let go. In-car the eye stays where it is; the chase views
+// go round the car; look back takes over while held; no mirror while turned to the side.
+TEST(race_camera_look) {
+    constexpr float kPi = 3.14159265f;
+    sim::VehicleSetup setup;
+    sim::VehicleState s; // at the origin, its nose along -z (x is its right)
+    auto run = [&](CameraRig& c, float x, float y, int frames) {
+        c.set_look(x, y);
+        for (int i = 0; i < frames; ++i) c.update(s, setup, PadState{}, 1.0 / 60.0);
+    };
+    auto forward = [](const CameraRig& c) {
+        const render::Mat4 v = c.view();
+        return render::Vec3{-v.at(2, 0), -v.at(2, 1), -v.at(2, 2)};
+    };
+    auto diff = [](const render::Mat4& x, const render::Mat4& y) {
+        float d = 0;
+        for (int i = 0; i < 16; ++i) d = std::max(d, std::fabs(x.m[i] - y.m[i]));
+        return d;
+    };
+    CameraRig plain, in_car;
+    run(plain, 0, 0, 150);
+    // Right: 90 degrees right, eased (not there in one frame), the eye in place, no mirror.
+    run(in_car, 1, 0, 1);
+    CHECK(in_car.look_yaw() > 0 && in_car.look_yaw() < 0.5f);
+    run(in_car, 1, 0, 59);
+    CHECK(near(in_car.look_yaw(), kPi / 2, 0.01f) && forward(in_car).x > 0.99f);
+    CHECK(render::length(in_car.eye() - plain.eye()) < 1e-4f);
+    CHECK(plain.shows_mirror() && !in_car.shows_mirror());
+    // Let go: back ahead, the view exactly as without.
+    run(in_car, 0, 0, 90);
+    CHECK(in_car.look_yaw() == 0 && diff(in_car.view(), plain.view()) < 1e-6f && in_car.shows_mirror());
+    // Pulled back: behind; pushed up: ahead; up and right: 45 degrees; a nudge inside kLookStart: nothing.
+    CameraRig back, up, diagonal, nudge;
+    run(back, 0.01f, 1, 60);
+    run(up, 0, -1, 60);
+    run(diagonal, 0.7071f, -0.7071f, 60);
+    run(nudge, CameraRig::kLookStart * 0.9f, 0, 60);
+    CHECK(near(std::fabs(back.look_yaw()), kPi, 0.02f) && forward(back).z > 0.99f);
+    CHECK(up.look_yaw() == 0 && nudge.look_yaw() == 0);
+    CHECK(near(diagonal.look_yaw(), kPi / 4, 0.01f));
+    // Straight back with the stick wobbling either side: the view keeps to one side (never swings
+    // round through ahead).
+    CameraRig wobble;
+    float last = 0;
+    int flips = 0;
+    for (int i = 0; i < 120; ++i) {
+        run(wobble, i % 2 ? 0.02f : -0.02f, 1, 1);
+        if (wobble.look_yaw() * last < 0) ++flips;
+        last = wobble.look_yaw();
+    }
+    CHECK(flips == 0 && near(std::fabs(last), kPi, 0.05f));
+    // The chase views go round the car: looking right, the eye is on its left.
+    CameraRig chase, far;
+    chase.set_mode(CameraMode::Chase);
+    far.set_mode(CameraMode::ChaseFar);
+    run(chase, 1, 0, 60);
+    run(far, 1, 0, 60);
+    CHECK(chase.eye().x < -3 && forward(chase).x > 0.9f);
+    CHECK(far.eye().x < -3 && forward(far).x > 0.8f);
+    // Look back takes over (exactly its view), in the far chase too (from in front of the car).
+    CameraRig held, back_only, far_back;
+    held.set_look_back(true);
+    back_only.set_look_back(true);
+    run(held, 1, 0, 60);
+    run(back_only, 0, 0, 60);
+    CHECK(diff(held.view(), back_only.view()) < 1e-6f);
+    far_back.set_mode(CameraMode::ChaseFar);
+    far_back.set_look_back(true);
+    run(far_back, 0, 0, 5);
+    CHECK(far_back.eye().z < -3 && forward(far_back).z > 0.8f);
+    // The pre-race shot ignores it.
+    CameraRig intro;
+    intro.set_intro(true, 0.5f);
+    run(intro, 1, 0, 60);
+    CHECK(intro.look_yaw() == 0);
+    // Look back held: L1, and R3 (the right stick's click) where the race reads the menu pad (GT3 original).
+    PadState l1, r3;
+    l1.buttons = u16(1u << unsigned(PadButton::L1));
+    r3.buttons = u16(1u << unsigned(PadButton::R3));
+    CHECK(look_back_held(l1, false) && look_back_held(l1, true));
+    CHECK(look_back_held(r3, true) && !look_back_held(r3, false) && !look_back_held(PadState{}, true));
 }
 
 // The car LOD by camera distance (< 30 m, < 80 m, beyond; at most the model's levels), and

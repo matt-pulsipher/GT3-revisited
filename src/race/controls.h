@@ -12,7 +12,8 @@
 //   Triangle         reverse (pressure)
 //   left stick X     steering (D-pad Left/Right also steers, ramped)
 //   R2 / L2          shift up / down (edge-triggered, manual gearbox)
-//   (the race screen: R1 change view, L1 look back (held), Start pause)
+//   (the race screen: R1 change view, L1 look back (held), Start pause; ours: the right stick
+//   looks around, look_back_held below)
 //
 // Reverse (GT3's "back" action, a pressure input like the throttle): while its value is at
 // least the throttle's, the car requests reverse gear and the value drives it (the throttle in
@@ -34,6 +35,12 @@ struct ControlConfig {
     float digital_return_rate = 5.0f;// D-pad: return to centre per second when released
     bool automatic = true;
 };
+
+// Look back while held: L1. Under GT3 original, where the race reads the menu pad itself, also R3
+// (the right stick's click, Look back's in the Modern layout), which no race action uses there.
+inline bool look_back_held(const PadState& pad, bool menu_pad) {
+    return pad.down(PadButton::L1) || (menu_pad && pad.down(PadButton::R3));
+}
 
 // Stick axis byte (0..255, 128 = centre) -> -1..1 with deadzone and response curve.
 float stick_to_steer(u8 axis, const ControlConfig& cfg = {});
