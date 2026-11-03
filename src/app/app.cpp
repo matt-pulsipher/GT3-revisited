@@ -189,7 +189,8 @@ bool App::init(int argc, char** argv) {
 #endif
     if (gpu_) {
         renderer_ = gpu_->renderer2d();
-        if (platform::is_mobile()) gpu_->warm_pipelines(); // ~65 ms each on Mali: not mid-race
+        // ~65 ms each on Mali, up to ~190 ms on a desktop driver without its shader cache: not mid-race
+        gpu_->warm_pipelines();
         // macOS switches a fullscreen window between direct-to-display and composited now and
         // then, and each switch stalls presentation for up to half a second (measured: 0 frames
         // over 40 ms per minute composited vs up to 13 direct). GT3R_DIRECT=1 for comparisons.
