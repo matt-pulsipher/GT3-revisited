@@ -110,10 +110,14 @@ probably the colour). The GTM1 holds only the **rim** at unit scale (lip
 radius ≈ 1.0, outer face at x = 0 pointing -X, barrel to x ≈ +0.17), i.e. a
 left-hand wheel. Wheels have 1 node with 4 LODs and 6 texture-LOD/variant
 tables (+0x34). Their textured packets use the runtime texture slot (`mat`
-texture field 0x1FF, set with op 0x29); the decoder uses the first texture of
-the current set (the rim image). GTTW +0x10 flags: bit 0 = texture set per
-axle, bit 1 = left/right variants, bit 2 = right wheel mirrored (asymmetric
-spokes), bit 3 = no variants (medium confidence).
+texture field 0x1FF, set with op 0x29), which holds the rim image: the first
+texture of entry 1 of the texture-LOD table (+0x34, below). The current set's
+first texture is not always that image: it differs on 53 of the 286 car files'
+wheels and 77 of the 464 wheel files (the Miata LS's is a dark copy under
+another palette, a flat disc), and on none of the 463 `menu/wheel` files.
+GTTW +0x10 flags: bit 0 = texture set per axle, bit 1 = left/right variants,
+bit 2 = right wheel mirrored (asymmetric spokes), bit 3 = no variants (medium
+confidence).
 
 ## GTM1 model
 

@@ -531,6 +531,32 @@ TEST(wheel_model_disc) {
     CHECK(n == 3);
 }
 
+// The rim's runtime texture slot holds the rim image (texture table entry 1, issue 159): on the
+// Miata LS the current set's first texture is a dark copy under another palette, a flat disc.
+TEST(wheel_rim_image_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const Bytes data = disc->volume().read(*disc->volume().find("wheel/ma2096"));
+    const gtm1::Gtm1 g = gtm1::Gtm1::parse(WheelFile::parse(data).gtm1);
+    CHECK(!g.texset_tables.empty() && g.texset_tables[0].size() > 1);
+    if (g.texset_tables.empty() || g.texset_tables[0].size() <= 1) return;
+    std::vector<scene::Texture> image;
+    gtm1::decode_texture_set(g.data.subspan(g.texsets[g.texset_tables[0][1]]), image, "");
+    CHECK(!image.empty());
+    if (image.empty()) return;
+    auto shows_image = [&](int runtime_set) {
+        gtm1::Options o;
+        o.runtime_set = runtime_set;
+        const scene::Model m = load_wheel_model(data, o);
+        for (const scene::Mesh& mesh : m.meshes)
+            for (const scene::Primitive& p : mesh.primitives)
+                if (p.texture >= 0 && m.textures[size_t(p.texture)].rgba == image[0].rgba) return true;
+        return false;
+    };
+    CHECK(shows_image(1));
+    CHECK(!shows_image(-1));
+}
+
 TEST(car_paint_variants_disc) {
     Disc* disc = test::test_disc();
     if (!disc) SKIP("needs GT3R_DISC");
