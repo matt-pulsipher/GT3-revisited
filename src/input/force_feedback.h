@@ -32,7 +32,7 @@ class IniDocument;
 struct ForceFeedbackState {
     float speed_kmh = 0;    // vehicle speed
     float brake = 0;        // brake pedal as applied, 0..1
-    bool abs_active = false;
+    float abs_level = 0;    // 0..1 the ABS at work, or a wheel locking without it (VehicleTelemetry::abs_level)
     float steer_force = 0;  // -1..1 force the wheel should apply; positive turns it clockwise (right)
     float jolt = 0;         // 0..1 impact this frame (walls, cars)
     float wheelspin = 0;    // 0..1 the drive wheels spinning under throttle (race::RumbleModel::wheelspin)
@@ -68,9 +68,10 @@ Ds5Packet ds5_trigger_packet(const TriggerEffect& left, const TriggerEffect& rig
 int wheel_spring_coefficient(const ForceFeedbackState& s, const ForceFeedbackConfig& c);
 int wheel_constant_level(const ForceFeedbackState& s, const ForceFeedbackConfig& c);
 
-// Xbox impulse trigger strength 0..1 for the brake trigger at time `t` seconds
-// (ABS pulses at ~16 Hz).
+// Xbox impulse trigger strengths 0..1: the brake's at time `t` seconds (the ABS level, pulsed at
+// ~16 Hz), the throttle's (the wheelspin).
 float impulse_brake(const ForceFeedbackState& s, double t);
+float impulse_throttle(const ForceFeedbackState& s);
 
 } // namespace ffb
 

@@ -21,9 +21,11 @@ TEST(ffb_dualsense_brake_trigger) {
     CHECK(e[2] == u8(std::lround(0.6f * 255))); // trigger_force at speed
     s.speed_kmh = 0;
     CHECK(ffb::brake_trigger_effect(s, c)[2] < e[2]); // lighter when stopped
-    s.abs_active = true;
+    s.abs_level = 1;
     ffb::TriggerEffect abs = ffb::brake_trigger_effect(s, c);
-    CHECK(abs[0] == 0x06 && abs[1] > 0 && abs[2] > 0); // vibration while ABS works
+    CHECK(abs[0] == 0x06 && abs[1] > 0 && abs[2] == 63); // vibration while ABS works, by its level from zero
+    s.abs_level = 0.25f;
+    CHECK(ffb::brake_trigger_effect(s, c)[2] == 16);
     c.triggers = false;
     CHECK(ffb::brake_trigger_effect(s, c) == ffb::trigger_off());
     c.triggers = true;
@@ -37,7 +39,7 @@ TEST(ffb_dualsense_throttle_trigger) {
     CHECK(ffb::throttle_trigger_effect(s, c) == ffb::trigger_off()); // no wheelspin: free
     s.wheelspin = 0.2f;
     ffb::TriggerEffect light = ffb::throttle_trigger_effect(s, c);
-    CHECK(light[0] == 0x06 && light[1] > 0 && light[2] > 0); // a buzz while the wheels spin
+    CHECK(light[0] == 0x06 && light[1] > 0 && light[2] == 13); // a buzz while the wheels spin, from zero
     s.wheelspin = 1;
     CHECK(ffb::throttle_trigger_effect(s, c)[2] > light[2]); // stronger with more wheelspin
     c.triggers = false;
@@ -67,11 +69,21 @@ TEST(ffb_dualsense_packet_keeps_rumble) {
 
 TEST(ffb_xbox_impulse_pulses_only_with_abs) {
     ForceFeedbackState s;
-    CHECK(ffb::impulse_brake(s, 0.01) == 0.0f);
-    s.abs_active = true;
+    CHECK(ffb::impulse_brake(s, 0.01) == 0.0f && ffb::impulse_throttle(s) == 0.0f);
+    s.abs_level = 1;
     int on = 0;
-    for (int i = 0; i < 100; ++i) on += ffb::impulse_brake(s, i / 100.0) > 0 ? 1 : 0;
-    CHECK(on > 40 && on < 60); // ~50 % duty
+    float peak = 0;
+    for (int i = 0; i < 100; ++i) {
+        on += ffb::impulse_brake(s, i / 100.0) > 0 ? 1 : 0;
+        peak = std::max(peak, ffb::impulse_brake(s, i / 100.0));
+    }
+    CHECK(on > 40 && on < 60 && std::fabs(peak - 0.8f) < 1e-6f); // ~50 % duty
+    s.abs_level = 0.5f;
+    peak = 0;
+    for (int i = 0; i < 100; ++i) peak = std::max(peak, ffb::impulse_brake(s, i / 100.0));
+    CHECK(std::fabs(peak - 0.4f) < 1e-6f); // by the ABS level
+    s.wheelspin = 0.6f;
+    CHECK(std::fabs(ffb::impulse_throttle(s) - 0.3f) < 1e-6f); // the throttle trigger: half the wheelspin
 }
 
 TEST(ffb_wheel_spring_and_force) {
@@ -107,7 +119,7 @@ TEST(ffb_config_roundtrip) {
 TEST(ffb_input_manager_without_devices) {
     InputManager input; // no devices: must be a harmless no-op
     ForceFeedbackState s;
-    s.abs_active = true;
+    s.abs_level = 1;
     input.set_force_feedback(0, s);
     input.update(0.016);
     input.update(0.5); // times out

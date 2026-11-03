@@ -68,6 +68,14 @@ bool App::init(int argc, char** argv) {
     // Silent switch, and other apps' music paused while the game plays. SDL's own default there
     // (Playback, mixed with others) played on with the switch on silent.
     SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "AVAudioSessionCategorySoloAmbient");
+#ifdef SDL_PLATFORM_WINDOWS
+    // Xbox pads through SDL's RAWINPUT driver, for their impulse triggers, unless [input] xbox_driver = xinput:
+    // SDL takes it as it starts its joysticks, so it is read from the config here.
+    {
+        const std::optional<IniDocument> cfg = IniDocument::load(game::user_data_dir() + "config.ini");
+        SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, InputManager::xbox_rawinput(cfg ? *cfg : IniDocument{}) ? "1" : "0");
+    }
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_SENSOR)) {
         LOG_ERROR("SDL_Init failed: %s", SDL_GetError());
         return false;

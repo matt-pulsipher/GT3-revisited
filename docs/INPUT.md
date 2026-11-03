@@ -34,7 +34,7 @@ generic HID joysticks, wheels and pedals. Devices hot-plug at any time.
 |---|---|
 | Rumble | DS2 large motor → low-frequency motor, small motor → high-frequency motor. In races, each player's **Rumble** (Settings → Rumble & feedback, `[playerN] rumble`) picks how the motors run: **GT3 original** (`gt3`) follows GT3's own vibration: each step's level (suspension movement, curbs under the front wheels, the front tires' drive and brake forces, wall hits) on the large motor as GT3 sends it (at most half strength), never the small motor; most controllers play its low levels much stronger than a DualShock 2, so it runs all the time there. **Modern** (`modern`) rumbles for what the car meets on both motors, so it is felt in both grips, with a lean: the body stronger on the large motor (the left grip), the tires on the small one (the right grip), the other motor at 35%, or 70% on a DualSense, whose motors play in separate grips where a split feels like a side. A wall or car hit pulses for 0.25 s by its speed change and off-road holds, leaning left; wheelspin, a slide (the tire squeal) and locked wheels hold, and curbs pulse at a rate that follows the speed, leaning right. **Auto** (`auto`, the default) is Modern on every controller. Either way, a car the AI drives, as after the finish, does not vibrate |
 | Phone vibration (Android, off by default) | `[player1] phone_vibration = on` (Settings → Rumble & feedback → Phone vibration): player 1's rumble on the device's own motor, only while the controls driving them have no rumble motor (built-in handheld controls, touch, a controller without motors). A controller that rumbles keeps it; the phone stays still |
-| Impulse triggers (Xbox One/Series) | `InputManager::set_trigger_rumble`: lock-up and ABS on the brake trigger, wheelspin on the throttle trigger |
+| Impulse triggers (Xbox One/Series) | See Force feedback: the ABS on the brake's trigger, the wheelspin on the throttle's. On Windows only through SDL's RAWINPUT driver (see Xbox controllers) |
 | Player LEDs / light bars | Set to the player number |
 | Button labels | The UI shows Cross/Circle on PlayStation pads and A/B on Xbox pads |
 | Motion sensors | `tilt` source: steer by rolling the controller (DualSense, DS4, Switch Pro, or a phone's own accelerometer on Android and iOS) |
@@ -113,6 +113,13 @@ second copy of the game can use the same pad without the game acting on it.
 The keyboard and mouse always need the game's window. VR builds always read
 their controllers (the headset's window never has the focus).
 
+**Xbox controllers** (Windows; Settings → Controls, `[input] xbox_driver`,
+`rawinput` by default): SDL reads Xbox pads through its RAWINPUT driver, which
+plays their impulse triggers (through Windows.Gaming.Input, once a button has
+been pressed). `xinput` reads them through XInput instead, which has no trigger
+motors: no impulse triggers, for a pad that misbehaves with Raw Input. SDL takes
+the choice when it starts, so a change applies after a restart.
+
 ## Remapping in the app
 
 In Settings, choices, switches and sliders change only with Left/Right or a
@@ -120,7 +127,8 @@ tap on their arrows, switch or track; Cross never changes a setting (it runs
 actions and starts a rebind).
 
 **Settings → Controls** starts with the settings for **all players** (Race
-views, Analog response, In-car camera shake, Controllers in the background),
+views, Analog response, In-car camera shake, Controllers in the background,
+Xbox controllers on Windows),
 then holds the controllers and their bindings, for player 1 and player 2
 (split screen) alike: under each player's **Controller**, **Race controls** and
 **Keyboard** rows come their bindings, inline:
@@ -399,14 +407,21 @@ vibration** (Android, player 1) and **Test rumble**, then these effects for all
 players under **Triggers and wheels**.
 
 Beyond DS2 rumble, the race sends a per-frame driving state
-(`InputManager::set_force_feedback`: speed, brake, ABS active, steering
+(`InputManager::set_force_feedback`: speed, brake, the ABS level, steering
 force, impacts, wheelspin) and each player's device turns it into native feedback:
 
 | Device | Effect |
 |---|---|
-| DualSense (PS5) | Adaptive triggers. The one bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while ABS is working. The one bound to the throttle (Cross): a 35 Hz vibration while the drive wheels spin, stronger with more wheelspin. Both sent in one packet with `SDL_SendGamepadEffect`, only when an effect changes (SDL's trigger rumble does nothing on a DualSense). The packet carries the motors' rumble as SDL's own packets do: without it the controller switches back to its audio haptics and the rumble stops until the next change. A DualSense plays the small motor (the right grip) much lighter than the large one, so its level is sent 1.75 times stronger (at most full; `dualsense_rumble`), and Modern's lean is milder there (see Rumble) |
-| Xbox One/Series | Impulse trigger on the brake trigger pulses at ~16 Hz while ABS is working (`SDL_RumbleGamepadTriggers`) |
+| DualSense (PS5) | Adaptive triggers. The one bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while the ABS is working, by its level from zero. The one bound to the throttle (Cross): a 35 Hz vibration while the drive wheels spin, by the wheelspin from zero. Both sent in one packet with `SDL_SendGamepadEffect`, only when an effect changes (SDL's trigger rumble does nothing on a DualSense). The packet carries the motors' rumble as SDL's own packets do: without it the controller switches back to its audio haptics and the rumble stops until the next change. A DualSense plays the small motor (the right grip) much lighter than the large one, so its level is sent 1.75 times stronger (at most full; `dualsense_rumble`), and Modern's lean is milder there (see Rumble) |
+| Xbox One/Series | Impulse triggers (`SDL_RumbleGamepadTriggers`): the brake's pulses at ~16 Hz while the ABS is working, up to 80 % by its level; the throttle's runs at half the wheelspin |
 | Wheels with force feedback | SDL haptics: a self-centring spring that firms up with speed (light when stopped, full from 120 km/h) and a constant force from the front tyres' lateral load (self-aligning feel; GT3's own steering-wheel force, sent at each of its 1/127 steps) plus a kick on impacts. The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
+
+The ABS level (`VehicleTelemetry::abs_level`, 0..1, the strongest wheel's) is
+GT3's own ABS at work (physics §4.5): past the tire's best braking slip it takes
+the slip over that target times G g of the pressure off. A car without the ABS
+(G 0) gives how far past that slip a wheel is locking, over 0.5. A brake
+pressure below the pedal does not count: GT3 also limits it by the tire's peak
+force, stopped or not.
 
 Effects stop by themselves ~0.25 s after the last update (pause, menus).
 The brake and throttle triggers are found from the race bindings: whichever of

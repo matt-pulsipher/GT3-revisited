@@ -116,7 +116,7 @@ TriggerEffect trigger_vibration(float start, int hz, float amplitude) {
 
 TriggerEffect brake_trigger_effect(const ForceFeedbackState& s, const ForceFeedbackConfig& c) {
     if (!c.enabled || !c.triggers) return trigger_off();
-    if (s.abs_active) return trigger_vibration(0.1f, 18, 1.0f); // ABS pulse under the finger
+    if (s.abs_level > 0) return trigger_vibration(0.1f, 18, s.abs_level); // the ABS under the finger, by its level
     // Firm pedal: resistance builds after the first 20 % of travel. Rolling
     // slowly it's lighter (less brake to feel).
     float speed = std::clamp(s.speed_kmh / 60.0f, 0.3f, 1.0f);
@@ -125,7 +125,7 @@ TriggerEffect brake_trigger_effect(const ForceFeedbackState& s, const ForceFeedb
 
 TriggerEffect throttle_trigger_effect(const ForceFeedbackState& s, const ForceFeedbackConfig& c) {
     if (!c.enabled || !c.triggers || s.wheelspin <= 0.0f) return trigger_off();
-    return trigger_vibration(0.1f, 35, 0.3f + 0.7f * std::min(s.wheelspin, 1.0f)); // wheelspin buzz
+    return trigger_vibration(0.1f, 35, std::min(s.wheelspin, 1.0f)); // wheelspin buzz, by its amount
 }
 
 int wheel_spring_coefficient(const ForceFeedbackState& s, const ForceFeedbackConfig& c) {
@@ -163,9 +163,11 @@ Ds5Packet ds5_trigger_packet(const TriggerEffect& left, const TriggerEffect& rig
 }
 
 float impulse_brake(const ForceFeedbackState& s, double t) {
-    if (!s.abs_active) return 0.0f;
-    return std::fmod(t * 16.0, 1.0) < 0.5 ? 0.8f : 0.0f; // ~16 Hz square pulse
+    if (s.abs_level <= 0) return 0.0f;
+    return std::fmod(t * 16.0, 1.0) < 0.5 ? 0.8f * std::min(s.abs_level, 1.0f) : 0.0f; // ~16 Hz square pulse
 }
+
+float impulse_throttle(const ForceFeedbackState& s) { return 0.5f * std::clamp(s.wheelspin, 0.0f, 1.0f); }
 
 } // namespace ffb
 
@@ -216,14 +218,18 @@ void ForceFeedback::apply(SDL_JoystickID id, SDL_Gamepad* gamepad, SDL_Joystick*
                 d.sent_left = l, d.sent_right = r;
                 d.sent_triggers = true;
             }
-        } else if (brake_trigger >= 0 && cfg_.triggers) {
-            // Xbox One/Series impulse triggers (no-op on pads without them).
-            float v = ffb::impulse_brake(s, time);
-            if (v > 0.0f || d.impulse_on) {
-                float l = brake_trigger == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? v : 0.0f;
-                float r = brake_trigger == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER ? v : 0.0f;
+        } else if ((brake_trigger >= 0 || throttle_trigger >= 0) && cfg_.triggers) {
+            // Xbox One/Series impulse triggers (no-op on pads without them): the ABS on the brake's trigger, the
+            // wheelspin on the throttle's.
+            auto level = [&](int axis) {
+                if (axis == brake_trigger) return ffb::impulse_brake(s, time);
+                if (axis == throttle_trigger) return ffb::impulse_throttle(s);
+                return 0.0f;
+            };
+            const float l = level(SDL_GAMEPAD_AXIS_LEFT_TRIGGER), r = level(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+            if (l > 0.0f || r > 0.0f || d.impulse_on) {
                 SDL_RumbleGamepadTriggers(gamepad, Uint16(l * 65535), Uint16(r * 65535), 100);
-                d.impulse_on = v > 0.0f;
+                d.impulse_on = l > 0.0f || r > 0.0f;
             }
         }
         return;

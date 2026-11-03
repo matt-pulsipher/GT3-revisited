@@ -153,7 +153,12 @@ struct VehicleTelemetry {
     std::array<float, 4> brake_torque{};
     float drag_force = 0;         // N
     float downforce = 0;          // N
-    bool abs_active = false, tcs_active = false;
+    // The ABS at work (physics §4.5), 0..1, the strongest wheel's: a braked wheel nearing the tyre's best braking
+    // slip (from 85 % of it) up to 0.4, then past it 0.4 + 0.6 x the share of the pressure the ABS takes off (slip
+    // over the target x G g; a car without it, G 0: how far past that slip the wheel is locking, over 0.5). Not a
+    // pressure below the pedal: GT3 limits that by the tyre's peak force too, at a standstill as well.
+    float abs_level = 0;
+    bool tcs_active = false;
     float understeer = 0, oversteer = 0; // ASCC indicators [physics §4.6]
     float throttle_processed = 0;     // throttle after the pedal shaping and TCS, before the turbo lag
     // Turbo boost of the lagged stages: Bcap(lag0, lag1) - 1 (physics §2.3), i.e. the

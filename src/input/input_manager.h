@@ -128,16 +128,23 @@ public:
     void set_rumble_mode(int player, std::string mode) { players_[player].rumble_mode = std::move(mode); }
     bool dualsense(int player) const;
     bool gt3_rumble(int player) const { return gt3r::gt3_rumble(players_[player].rumble_mode); }
-    // Impulse triggers on Xbox One/Series pads (0..1 each). No-op elsewhere.
-    void set_trigger_rumble(int player, float left, float right);
     // Driving feedback for this frame (call every frame while driving):
     // DualSense brake-trigger resistance and ABS pulse and throttle-trigger
-    // wheelspin buzz, Xbox impulse-trigger ABS pulse, wheel spring + steering force. Effects stop by themselves
-    // ~0.25 s after the last call. See docs/INPUT.md "Force feedback".
+    // wheelspin buzz, the same on Xbox impulse triggers, wheel spring + steering force. Effects stop by
+    // themselves ~0.25 s after the last call, or at once with stop_force_feedback. See docs/INPUT.md "Force
+    // feedback".
     void set_force_feedback(int player, const ForceFeedbackState& state);
+    void stop_force_feedback(int player) { players_[player].ffb_age = 1e9; }
     const ForceFeedbackConfig& ffb_config() const { return ffb_.config(); }
     void set_ffb_config(const ForceFeedbackConfig& c) { ffb_.configure(c); }
 
+    // [input] xbox_driver (Windows): "rawinput", the default, reads Xbox pads through SDL's RAWINPUT driver,
+    // which plays their impulse triggers (through Windows.Gaming.Input, once a button was pressed); "xinput"
+    // through XInput, which has no trigger motors. SDL takes it at start: App::init reads xbox_rawinput(cfg)
+    // before SDL_Init; a change applies after a restart.
+    static bool xbox_rawinput(const IniDocument& cfg);
+    bool xbox_rawinput() const { return xbox_rawinput_; }
+    void set_xbox_rawinput(bool on) { xbox_rawinput_ = on; }
     // [input] background (desktop, off by default): controllers, wheels and joysticks keep
     // driving the game while none of its windows has the focus (another window in front, as on
     // a second monitor). SDL drops their input otherwise; the keyboard and mouse need the window
@@ -333,6 +340,7 @@ private:
     double time_ = 0;
     bool phone_vibration_ = false;
     bool background_ = false;      // [input] background
+    bool xbox_rawinput_ = true;    // [input] xbox_driver
     bool background_held_ = false; // hold_background()
     SDL_Haptic* vibrator_ = nullptr; // the device's own motor, opened on first use
     bool vibrator_tried_ = false;

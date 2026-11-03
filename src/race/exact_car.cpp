@@ -129,7 +129,7 @@ void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTel
     t.downforce = h(c.downforce[0]) + h(c.downforce[1]);
     t.tcs_active = c.tcs_status == 2;
     t.tcs_status = c.tcs_status, t.asm_status = c.ascc_status;
-    // The ABS has no flag of its own: a wheel braked below the pedal (the dirt cut aside).
+    const float pedal = h(c.brake_pedal);
     for (size_t i = 0; i < 4; ++i) {
         const ex::Wheel& w = c.w[i];
         t.beta[i] = h(c.t[i].slip_angle);
@@ -146,7 +146,19 @@ void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTel
         t.smoke_emit[i] = h(w.smoke_emit);
         t.skid_pitch[i] = h(w.skid_pitch);
         t.brake_heat[i] = h(w.brake_heat);
-        if (h(c.brake_pedal) > 0.05f && h(w.brake) < h(c.brake_pedal) * 0.98f) t.abs_active = true;
+        // The ABS (ex::brakes' limit) on a braked wheel on the ground: nearing the tyre's best braking slip (its
+        // target, before ASCC's own cut) up to 0.4, then the share of the pressure the ABS takes off past it.
+        if (pedal <= 0.05f || h(w.load) <= 0) continue;
+        const size_t axle = i >> 1;
+        const float slip = h(w.slip_ratio);
+        const float target = h(ex::tire_record(c.p, int(i), w.surface).slip_brake) * h(c.p.brake_slip_scale[axle]);
+        if (target <= 0 || slip <= 0) continue;
+        float level = 0.4f * std::clamp((slip / target - 0.85f) / 0.15f, 0.0f, 1.0f);
+        if (const float over = slip - target; over > 0) {
+            const float g = h(c.p.abs_gain[axle]);
+            level = 0.4f + 0.6f * std::min(1.0f, g > 0 ? over * g * h(w.slip_gain) : over / 0.5f);
+        }
+        t.abs_level = std::max(t.abs_level, level);
     }
     t.diff_locked = {c.diff_lock[0] != 0, c.diff_lock[1] != 0};
     t.tires_worn = (c.x535 & 4) != 0;

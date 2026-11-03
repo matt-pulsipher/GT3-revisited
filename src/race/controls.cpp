@@ -71,7 +71,7 @@ sim::ControlInputs ControlMapper::update(const PadState& pad, double dt) {
 void RumbleModel::reset() {
     gt3_ = {};
     body_ = tyres_ = 0;
-    trig_l_ = trig_r_ = spin_ = 0;
+    spin_ = 0;
     impact_timer_ = impact_level_ = 0;
 }
 
@@ -115,10 +115,7 @@ void RumbleModel::update(const sim::VehicleState& s, const sim::VehicleTelemetry
             tyres_ = std::max(tyres_, 0.63f);
     }
 
-    // Ours, the triggers. Impulse triggers: ABS chatter on the brake trigger, wheelspin buzz on the throttle trigger.
-    trig_l_ = lock_amt > 0 ? (std::fmod(clock_ * 15.0, 1.0) < 0.5 ? 0.6f * lock_amt + 0.2f : 0.0f) : 0.0f;
-    trig_r_ = 0.5f * spin_amt;
-    spin_ = spin_amt;
+    spin_ = spin_amt; // the throttle triggers' (ForceFeedbackState::wheelspin)
 }
 
 PadRumble RumbleModel::rumble(bool gt3, bool dualsense) const {

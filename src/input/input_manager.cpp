@@ -130,6 +130,7 @@ void InputManager::load(const IniDocument& cfg) {
         p.wheel_steering_curve = parse_curve(cfg.get(sec, "wheel_steering_curve"));
     }
     set_background(to_lower(cfg.get("input", "background").value_or("off")) == "on");
+    xbox_rawinput_ = xbox_rawinput(cfg);
     assign_devices();
 }
 
@@ -155,6 +156,13 @@ void InputManager::save(IniDocument& cfg) const {
         p.actions.save(cfg, sec);
     }
     cfg.set("input", "background", background_ ? "on" : "off");
+#ifdef SDL_PLATFORM_WINDOWS
+    cfg.set("input", "xbox_driver", xbox_rawinput_ ? "rawinput" : "xinput");
+#endif
+}
+
+bool InputManager::xbox_rawinput(const IniDocument& cfg) {
+    return to_lower(cfg.get("input", "xbox_driver").value_or("rawinput")) != "xinput";
 }
 
 bool InputManager::is_custom(int player) const {
@@ -1011,13 +1019,6 @@ void InputManager::vibrate_phone(float strength) {
         vibrator_level_ = strength;
         vibrator_sent_ = time_;
     }
-}
-
-void InputManager::set_trigger_rumble(int player, float left, float right) {
-    const Device* d = find_device(players_[player].device);
-    if (!d || !d->gamepad) return;
-    SDL_RumbleGamepadTriggers(d->gamepad, Uint16(std::clamp(left, 0.0f, 1.0f) * 65535),
-                              Uint16(std::clamp(right, 0.0f, 1.0f) * 65535), 250);
 }
 
 } // namespace gt3r
