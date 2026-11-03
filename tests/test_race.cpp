@@ -180,6 +180,29 @@ TEST(race_camera_views) {
     CHECK(g.mode() == CameraMode::Bumper);
 }
 
+// Look back (issue 170) turns every player view round: the car faces -z, so the view looks
+// along +z while held; the chase views move ahead of the car, looking back past it.
+TEST(race_camera_look_back) {
+    sim::VehicleSetup setup;
+    sim::VehicleState s;
+    auto look = [&](CameraRig& c) {
+        c.update(s, setup, PadState{}, 1.0 / 60.0);
+        const render::Mat4& v = c.view();
+        return render::Vec3{-v.at(2, 0), -v.at(2, 1), -v.at(2, 2)};
+    };
+    for (CameraMode m : {CameraMode::Bumper, CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Roof}) {
+        CameraRig c;
+        c.set_shake(false);
+        c.set_mode(m);
+        CHECK(look(c).z < -0.9f);
+        c.set_look_back(true);
+        CHECK(look(c).z > 0.9f);
+        if (m == CameraMode::Chase || m == CameraMode::ChaseFar) CHECK(c.eye().z < -3.0f);
+        c.set_look_back(false);
+        CHECK(look(c).z < -0.9f);
+    }
+}
+
 // GT3's in-car vibration: none without tyre slip; with slip the in-car view shakes (a few
 // degrees at most), the chase view never does, and the switch turns it off.
 TEST(race_camera_shake) {

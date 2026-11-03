@@ -58,7 +58,8 @@ public:
     // the car model's frame (x right, y up, z back; origin at the wheelbase midpoint on the body's
     // lowest point). Defaults are GT3's fallbacks.
     void set_car_points(const render::Vec3& p0, const render::Vec3& p1) { point_[0] = p0, point_[1] = p1; }
-    // L1 held: look back (heading + pi, pitch negated); no mirror while held.
+    // L1 held: look back (heading + pi, pitch negated; ours, the far chase and roof, turned
+    // round too); no mirror while held.
     void set_look_back(bool on) { look_back_ = on; }
     // GT3's pre-race shot (starting camera, cameras/start.cam): while `on`, the camera follows the
     // file's record 0 in the car's frame as t goes 0 -> 1 (eye, target and zoom curves).

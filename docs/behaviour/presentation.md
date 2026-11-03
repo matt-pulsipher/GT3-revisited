@@ -2234,7 +2234,10 @@ the view does not judder.
 - **L1 held looks back.**
   - Chase: heading + π, pitch negated.
   - In-car: the forward axis reversed and the eye's z mirrored.
+  - Ours, far chase and roof (§H4): turned round the same way, the far chase's
+    eye ahead of the car looking back past it.
   - No mirror while looking back.
+  - Test `race_camera_look_back`: every player view looks back while held.
 - **Rear-view mirror** (in-car views, not in replays, not while looking back):
   - **Placement.** A 240 x 64 rectangle at (200, 20) of the frame (pushed by
     106.667 in 16:9) with a 1-unit black outline. On a 4:3 2P half it is

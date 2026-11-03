@@ -225,7 +225,9 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         bool far = mode_ == CameraMode::ChaseFar;
         float dist = (far ? 7.5f : 4.6f) + setup.length * 0.5f;
         float height = far ? 2.4f : 1.55f;
-        render::Vec3 back{std::sin(chase_yaw_), 0, std::cos(chase_yaw_)};
+        // Look back: as GT3's chase, the camera ahead of the car, looking back past it.
+        float sign = look_back_ ? -1.0f : 1.0f;
+        render::Vec3 back{sign * std::sin(chase_yaw_), 0, sign * std::cos(chase_yaw_)};
         render::Vec3 base{pos.x, chase_height_, pos.z};
         eye_ = base + back * dist + render::Vec3{0, height, 0};
         render::Vec3 target = base + render::Vec3{0, far ? 1.0f : 0.85f, 0} - back * 2.5f;
@@ -237,7 +239,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         bool roof = true;
         sim::Vec3 local = roof ? sim::Vec3{0, setup.height + 0.2f, 0.2f} : sim::Vec3{0, 0.62f, -setup.length * 0.5f + 0.15f};
         eye_ = rv(s.position + rotate(s.orientation, local));
-        render::Vec3 target = eye_ + fwd * 10.0f - up * (roof ? 0.9f : 0.25f);
+        render::Vec3 target = eye_ + fwd * (look_back_ ? -10.0f : 10.0f) - up * (roof ? 0.9f : 0.25f);
         view_ = render::look_at(eye_, target, up);
         fovy_ = roof ? 0.85f : 0.9f;
         break;
