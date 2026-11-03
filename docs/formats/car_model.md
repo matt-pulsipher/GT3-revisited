@@ -214,7 +214,12 @@ tested GEQUAL, a second pass over the same vertices passes on equal depth. Decal
 are not such passes: they are their own geometry 1-8 mm above the body (ml0002's
 sidepod and engine cover decals), so they need the depth to resolve millimetres at
 the replay cameras' 100-150 m telephoto distances (docs/dev/RENDERING.md, coordinate
-conventions).
+conventions). Most decals are drawn with depth writes off (op 0x25) and colour only
+(FBMSK 0xFF000000), before the reflection passes: the body's depth and alpha stay
+under them, so the reflection over the body's vertices covers the decal as it covers
+the paint around it (682 draws on 265 of the 286 models in `cars/day/`). The glass,
+drawn the same way, leaves its depth: in its own draw (`ty2056`), or in a depth-only
+pass (FBMSK 0xFFFFFFFF) over its vertices after its reflection (`nm0006`).
 
 Programs leave ATE on with (GREATER, 0x20) and DATE off when they end (1581
 of 1607 car/wheel streams), so that is the entry state the decoder assumes.

@@ -989,6 +989,10 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     int cut = cutout_for(prim.texture, d.alpha_test_method, d.alpha_test_ref);
                     if (cut != prim.texture) prim.texture = cut, prim.flags |= scene::kAlphaTest;
                 }
+                // Car decals are drawn with depth writes off (op 0x25), colour only: the body's depth
+                // stays under them, so the reflection passes after them add over the decal as over
+                // the paint around it (weighted by the body's alpha, which the decal keeps).
+                if (opt.weighted_reflection && !d.depth_write) prim.flags |= scene::kNoDepthWrite;
                 bool gs_tested = false;
                 if (opt.gs_state) {
                     if (!d.depth_write) prim.flags |= scene::kNoDepthWrite;

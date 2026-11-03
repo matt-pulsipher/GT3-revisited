@@ -2546,6 +2546,9 @@ car's heading; `CarShadowParams`):
 - **Lookup.** The map is read with a view-dependent lookup like the game's
   (`DrawOptions::env_gt3_lookup`), with a Fresnel-like weight 1 - 0.8 cos.
   `[video] car_reflections = off` uses a sky / ground color gradient instead.
+- **Decals.** Most decals are drawn before the reflection without writing depth,
+  so the body's reflection lies over them as over the paint around them; a
+  decal's background matches the finish it sits on.
 - **Lamp discs on point-light courses.** Of the same nine candidate lamps (§I3),
   the six strongest point lamps are drawn into the map as discs: a 10-wedge fan at
   the lamp's direction, radius = the record's disc size (+0x40) / distance,
