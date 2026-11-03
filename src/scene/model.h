@@ -51,6 +51,9 @@ enum PrimitiveFlags : u32 {
     // 255/128 that the renderer applies: GTM1 packets with a colour past 0x80 (Trial Mountain's
     // scenery). Other packets store 0x80 as 255 (gtm1.cpp expand_color).
     kVertexColor2x = 1u << 13,
+    // GS FBMSK 0xFFFFFFFF with depth writes on: the pass writes only the depth. Cars whose glass
+    // is drawn without depth writes leave its depth this way, after its reflection.
+    kDepthOnly = 1u << 14,
 };
 
 // Fixed-function lighting material of a lit primitive (GT3 cars: GTM1 material

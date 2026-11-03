@@ -1631,7 +1631,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         if (faded && key.blend == BlendMode::Opaque) key.blend = BlendMode::Alpha;
         if (v.item->dest_alpha_blend && key.blend != BlendMode::Opaque)
             key.blend = v.item->dest_alpha_blend == 1 ? BlendMode::DestAlphaLerp : BlendMode::DestAlphaAdd;
-        if (p.flags & scene::kAlphaOnly) {
+        if (p.flags & scene::kDepthOnly) {
+            key.blend = BlendMode::Opaque, key.depth_only = true;
+        } else if (p.flags & scene::kAlphaOnly) {
             if (!v.item->frame_alpha) return;
             key.blend = BlendMode::Opaque, key.alpha = AlphaWrite::Only;
         } else if (v.item->frame_alpha && !key.coverage) {
@@ -1851,8 +1853,10 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         SDL_DrawGPUIndexedPrimitives(pass, it->second.count, 1, it->second.first, 0, 0);
         ++stats_.draw_calls;
     };
+    // (Depth-only passes too: they follow the blended passes before them in model order.)
     auto prim_blended = [](const scene::Primitive& p) {
-        return (p.flags & (scene::kAlphaBlend | scene::kAdditive | scene::kMultiplyDest | scene::kAlphaOnly)) != 0;
+        return (p.flags & (scene::kAlphaBlend | scene::kAdditive | scene::kMultiplyDest | scene::kAlphaOnly |
+                           scene::kDepthOnly)) != 0;
     };
     auto split = [](const scene::Primitive& p) {
         return (p.flags & (scene::kAlphaFailBlend | scene::kAlphaTest)) == (scene::kAlphaFailBlend | scene::kAlphaTest);

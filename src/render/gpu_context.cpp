@@ -396,6 +396,13 @@ std::vector<PipelineKey> warm_keys() {
             k.blend = b, k.depth_write = b != BlendMode::Additive, k.cull = c, k.spin_copy = true;
             keys.push_back(k);
         }
+    // The cars' depth-only passes (scene::kDepthOnly), in the main views and the pictures.
+    for (bool coverage : {false, true})
+        for (CullMode c : {CullMode::Back, CullMode::None, CullMode::Front}) {
+            PipelineKey k;
+            k.cull = c, k.coverage = coverage, k.depth_only = true;
+            keys.push_back(k);
+        }
     // The replay depth of field's downsampled pictures (View3D::encode_dof).
     PipelineKey single;
     single.cull = CullMode::None, single.depth_write = false, single.single = true;
@@ -446,9 +453,9 @@ SDL_GPUGraphicsPipeline* GpuContext::pipeline(const PipelineKey& key) {
     const u64 t0 = SDL_GetTicksNS();
     SDL_GPUGraphicsPipeline* p = create_pipeline(key);
     LOG_INFO("3D pipeline built on first use in %.0f ms: blend %d, cull %d, depth write %d, lines %d, coverage %d, "
-             "alpha %d, spin copy %d",
+             "alpha %d, spin copy %d, depth only %d",
              double(SDL_GetTicksNS() - t0) / 1e6, int(key.blend), int(key.cull), int(key.depth_write), int(key.lines),
-             int(key.coverage), int(key.alpha), int(key.spin_copy));
+             int(key.coverage), int(key.alpha), int(key.spin_copy), int(key.depth_only));
     std::lock_guard lock(pipelines_mutex_);
     auto [it, added] = pipelines_.emplace(key, p); // failures too, so we don't retry every frame
     if (!added && p) SDL_ReleaseGPUGraphicsPipeline(device_, p); // the warm-up made it meanwhile
@@ -548,6 +555,7 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
                                  : SDL_GPU_COLORCOMPONENT_R | SDL_GPU_COLORCOMPONENT_G | SDL_GPU_COLORCOMPONENT_B |
                                        SDL_GPU_COLORCOMPONENT_A;
     }
+    if (key.depth_only) b.color_write_mask = 0;
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
     info.vertex_shader = key.clipped ? vs_clipped_ : key.spin_copy ? vs_copy_ : vs_;

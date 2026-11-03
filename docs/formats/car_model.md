@@ -214,7 +214,12 @@ tested GEQUAL, a second pass over the same vertices passes on equal depth. Decal
 are not such passes: they are their own geometry 1-8 mm above the body (ml0002's
 sidepod and engine cover decals), so they need the depth to resolve millimetres at
 the replay cameras' 100-150 m telephoto distances (docs/dev/RENDERING.md, coordinate
-conventions).
+conventions). Most decals are drawn with depth writes off (op 0x25) and colour only
+(FBMSK 0xFF000000), before the reflection passes: the body's depth and alpha stay
+under them, so the reflection over the body's vertices covers the decal as it covers
+the paint around it (682 draws on 265 of the 286 models in `cars/day/`). The glass,
+drawn the same way, leaves its depth: in its own draw (`ty2056`), or in a depth-only
+pass (FBMSK 0xFFFFFFFF) over its vertices after its reflection (`nm0006`).
 
 Programs leave ATE on with (GREATER, 0x20) and DATE off when they end (1581
 of 1607 car/wheel streams), so that is the entry state the decoder assumes.
@@ -245,7 +250,17 @@ are untextured with a per-vertex weight. Glass is a nearly uniform dark texture
 with GS alpha ≈ 0x73, drawn with normal blending and the alpha channel
 write-masked, so it is ~90 % dark plus the reflection on top. The glass's own
 texture is used as its reflectivity because the real Ad (whatever lies
-behind it) is unknown.
+behind it) is unknown, unless an alpha-only pass sets it.
+
+Alpha-only passes (FBMSK 0x00FFFFFF; 69 draws on 62 models in `cars/day/`) are
+drawn over the glass before its reflection: the frame alpha they write (texel ×
+vertex alpha) is the weight of the reflection passes after them over the same
+vertices (`ty2056`'s canopy: an untextured pass at 0x80, full reflectivity). The
+decoder takes them as the weight and draws nothing for them. Depth-only passes
+(FBMSK 0xFFFFFFFF with depth writes on; 101 draws on 73 models) write the depth of
+a part drawn without depth writes, after its reflection (`nm0006`'s windows);
+they are `scene::kDepthOnly` primitives, drawn in model order with the blended
+passes.
 
 Offsets in `06`/`07`/`08`/`09`/`0A` are relative to the address of the operand
 field that holds them. Ops 0x0C and 0x10 (matrices) appear in a few cars only
