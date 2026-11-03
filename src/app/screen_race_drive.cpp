@@ -54,18 +54,18 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     if (!replaying_ || !race::replay_over(backdrop_ ? race::PlayMode::Backdrop : race::PlayMode::Replay, player_.done()))
         title_clock_.step(), mark_timer_.step();
     if (replaying_) {
-        // A replay stops at the end of its recording; the menu backdrop runs on with a cleared
-        // input frame (no steering, throttle or brake; race/post_run.h). The race plays its record; the recorded inputs
-        // are the HUD's.
+        // A replay stops at the end of its recording (race/post_run.h). The race plays its record; the recorded inputs are
+        // the HUD's.
         const bool done = player_.done();
         if (race::replay_over(backdrop_ ? race::PlayMode::Backdrop : race::PlayMode::Replay, done)) return;
         in = player_.next_inputs();
         if (done && !replay_.inputs.empty()) in.automatic = replay_.inputs.back().automatic; // (the car's gearbox)
     } else {
+        if (demo_replay() && demo_over()) return; // (as a replay: nothing is simulated past its recording)
         // The race's AI drives the player's car in the run-ups (a rolling start's first 5 s, a flying start up to the line),
-        // the pit lane and after the finish (AUTO DRIVE), and with the test autopilot (auto=1, configuration 3): the pad is
-        // not read then (its frame decoded, not used).
-        const bool ai_drives = preset_.autodrive || finished_ || rolling_runup() || flying_runup() || demo_;
+        // the pit lane and after the finish (AUTO DRIVE), with the test autopilot (auto=1, configuration 3) and in the menu's
+        // race (play mode 2): the pad is not read then (its frame decoded, not used).
+        const bool ai_drives = preset_.autodrive || finished_ || rolling_runup() || flying_runup() || demo_ || backdrop_;
         sim::ControlInputs want = ai_drives ? sim::ControlInputs{} : controls_.update(pad, dt);
         if (!ai_drives) live_pad = &pad;
         // The player's reverse request (the back input at least the throttle; the shift logic's
@@ -85,7 +85,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
         }
         // Tests (GT3R_RACE demo_drive=1): the disc's recorded inputs drive the player's own,
         // judged run (its tick counter runs from the start of the run).
-        if (preset_.demo_drive && !demo_ && disc_demo_ && !finished_ && !flying_runup()) {
+        if (preset_.demo_drive && !demo_ && !backdrop_ && disc_demo_ && !finished_ && !flying_runup()) {
             want = demo_inputs(demo_drive_tick_);
             kind = disc_demo_->kind(demo_drive_tick_);
             ++demo_drive_tick_;
@@ -214,7 +214,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     if (std::exchange(practice_pit_exit_, false)) flying_start_signal(app); // free practice: START out of the pit lane
     // The pre-race shot's cuts, and its cut to the player's view, dissolve over 1 s
     // (presentation §B3).
-    if (live_view() && race::start_shot_dissolve(frames_to_signal())) start_dissolve(1.0f);
+    if (live_camera() && race::start_shot_dissolve(frames_to_signal())) start_dissolve(1.0f);
     // Races: the race's clock (0 = GO, the same for every car).
     bool lap_done = !holding && track_->lap_update(s.position, field_ ? std::max(field_->race_time(), 0.0) : race_time_);
     const bool timer_updated = !holding;
@@ -231,7 +231,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     was_started_ = started;
     if (started) {
         ++lap_ticks_;
-        if (!replaying_ && !demo_)
+        if (!replaying_ && !demo_ && !backdrop_)
             logger_.sample(track_->lap_progress() * track_->length(), s.speed_kmh, in.throttle, in.brake, s.position.x,
                            s.position.z);
     }
@@ -249,11 +249,11 @@ void RaceScreen::tick(App& app, const PadState& pad) {
         lap_times_.push_back(t);
         LOG_INFO("Race: lap %zu %s %.3f s", lap_times_.size(), car_.label.c_str(), t);
         if (!replaying_) recorder_.lap(t, lap_begin_tick_, tick_index);
-        if (!replaying_ && !demo_) logger_.finish_lap(t);
+        if (!replaying_ && !demo_ && !backdrop_) logger_.finish_lap(t);
         // Free runs (presentation §G11): a lap strictly under the session's best lap (its recording under 36,000 ticks)
         // is the best lap; the run that drove it is the one SAVE GHOST writes (the lap's ghost is the race's own: the free
         // run's lap handlers).
-        if (!replaying_ && !demo_ && lap_ghost() && preset_.ghost) {
+        if (!replaying_ && !demo_ && !backdrop_ && lap_ghost() && preset_.ghost) {
             const long long ms = std::llround(t * 1000.0);
             const long long best_ms = best_run_time_ < 0 ? -1 : std::llround(best_run_time_ * 1000.0);
             if (race::takes_best_lap(ms, race::ghost_recording_kept(lap_ticks_), best_ms)) best_run_time_ = t, best_lap_in_run_ = true;
@@ -263,14 +263,14 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     }
 
     // The run's top speed, until its finish (the machine tests' record).
-    if (!replaying_ && !demo_ && !holding && !finished_) top_speed_kmh_ = std::max(top_speed_kmh_, s.speed_kmh);
+    if (!replaying_ && !demo_ && !backdrop_ && !holding && !finished_) top_speed_kmh_ = std::max(top_speed_kmh_, s.speed_kmh);
     // The HUD's own highest speed: every tick, past the finish too (presentation §D4); in
     // replays too (the top-speed test's pop-up at the goal, §D6).
     if (!demo_) hud_top_kmh_ = std::max(hud_top_kmh_, s.speed_kmh);
     // Machine tests (presentation §B7): the split points and the goal, track distances from the
     // control line, timed within the tick from GO, for the pop-ups (the race's split line ends the run: exact_solo_step).
     machine_marks_.clear();
-    if (machine_ && !holding && ((!finished_ && !replaying_ && !demo_) || (replaying_ && !machine_->done())))
+    if (machine_ && !holding && ((!finished_ && !replaying_ && !demo_ && !backdrop_) || (replaying_ && !machine_->done())))
         machine_marks_ =
             machine_->update(dist_before, track_->race_distance(), track_->length(), clock_before, race_time_);
     // A demonstration: the race's own licence judge and end of the run (its record: race::demo_record).
@@ -282,7 +282,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
         }
     // Races: the race's finish (the race's laps, the leader has finished, or the first crossing after a time limit); the
     // place is the race order's.
-    if (field_ && !finished_ && field_->player_finish() >= 0) {
+    if (field_ && !finished_ && !backdrop_ && field_->player_finish() >= 0) {
         finished_ = true;
         track_->lap_freeze(); // no more laps after the finish (the HUD's lap time runs on)
         finish_position_ = field_->player_position();
@@ -319,7 +319,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
         }
     }
     // Start countdown beeps: count_d at 3, 2, 1, count_s at the start signal.
-    if ((field_ || tt_start_.countdown > 0) && !replaying_) {
+    if ((field_ || tt_start_.countdown > 0) && !replaying_ && !backdrop_) {
         double t = field_ ? field_->race_time() : (tt_hold_ > 0 ? -tt_hold_ : race_time_ + 1.0);
         int c = t < 0 ? int(std::ceil(-t)) : 0;
         if (rolling_) c = t < kRollingAutoDrive ? 4 : 0; // START (count_s) at the hand-over only
@@ -332,7 +332,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     // A flying start's signal: at the line crossing that ends the run-up (live runs only, as
     // the countdown beeps).
     const bool runup = flying_runup();
-    if (flying_runup_ && !runup && !replaying_ && !demo_ && !attract_) flying_start_signal(app);
+    if (flying_runup_ && !runup && !replaying_ && !demo_ && !attract_ && !backdrop_) flying_start_signal(app);
     flying_runup_ = runup;
     ambience_.tick(app.audio().voices(), h.hit ? (h.surface >> 8) : 0);
     // (No respawns, as in GT3: a car stays where it is.)
@@ -442,6 +442,7 @@ void RaceScreen::update_drive(App& app, double dt) {
             render_state_ = interpolate(prev_, vehicle_->state(), step_.alpha());
             camera_.set_track_distance(track_->distance_of(render_state_.position));
             camera_.set_lap(lap_count());
+            camera_.set_intro(race::start_shot_on(frames_to_signal()), race::start_shot_t(frames_to_signal())); // (live_camera)
             director_.set_view_mode(view_settings().mode);
             update_camera_manager(dt);
             if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
@@ -450,8 +451,9 @@ void RaceScreen::update_drive(App& app, double dt) {
                 if (player_.done() && pre_demo_run_) { // loop the run
                     start_playback(*pre_demo_run_);
                     quick_ = finish_menu_shown_ = true;
+                    camera_.set_mode(drive_camera_);
                 }
-            } else if (demo_tick_ > disc_demo_->size() + 180) {
+            } else if (demo_over()) { // as GT3's licence menu: on the step its replay ends
                 restart();
                 quick_ = true;
                 demo_tick_ = 0, demo_logged_ = false;
@@ -462,13 +464,14 @@ void RaceScreen::update_drive(App& app, double dt) {
         update_quick_menu(app, dt);
         return;
     }
-    if (theater_ && demo_ && !paused_ && disc_demo_ && demo_tick_ > disc_demo_->size() + 180) {
-        leave(app); // the theater's demonstration ran out: back to the theater
-        return;
-    }
-    if (demo_ && !theater_ &&
-        (m.pressed(PadButton::Start) || m.pressed(PadButton::Cross) || m.pressed(PadButton::Circle))) {
-        end_demo(app);
+    // A demonstration plays as a replay (presentation §A8c): its end is the recording's. The theater's goes back to the
+    // theater; the quick menu's has the race-exit transition over its last frame, then the menu it was chosen from.
+    if (demo_ && !paused_ && demo_over()) {
+        if (theater_) {
+            leave(app);
+            return;
+        }
+        begin_exit_transition(ExitThen::Menu);
         return;
     }
     // The race pad (the player's race layout, buttons in GT3's meaning): its presses this frame.
@@ -503,7 +506,7 @@ void RaceScreen::update_drive(App& app, double dt) {
     // under the "gt3" layout the race pad is the menu pad, whose R3 does nothing in a race
     // (bind it in a custom race layout; GT3R_RACE=perf=1 starts with the overlay on).
     bool own_race_pad = !app.input().race_uses_menu_pad(0);
-    if (replaying_ || (theater_ && demo_)) {
+    if (replaying_ || demo_replay()) {
         // Replays: the original's replay pad (screen_race_replay.cpp, presentation §G3).
         replay_pad(m);
         camera_.set_look_back(false);

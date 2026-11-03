@@ -131,6 +131,9 @@ ExactRace::ExactRace(const RaceSetup& s) {
     // the initialisation asks them, then the tick's inputs from the program's tables.
     cfg_ = s.rules ? *s.rules : race_config(s.event);
     if (s.laps >= 0) cfg_[1] = u8(s.laps);
+    // With records off or locked (race info + 0x6C / + 0x7C; the quick menus' races) the race has no laps and no
+    // time limit (+0x38), so no lap or clock ends it.
+    if (s.replay || s.locked) cfg_[1] = 0, cfg_[0x38] = cfg_[0x39] = 0;
     const Behaviour how = d.behaviour();
     const bool band_on = rubber_band_answer(kind_, cfg_, s.battle_catchup, how.rule(Rule::CatchupAnswer));
     const bool wear_on = wear_answer(kind_, cfg_, category_, s.battle_wear, how.rule(Rule::WearAnswer));

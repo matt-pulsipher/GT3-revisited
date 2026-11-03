@@ -1312,6 +1312,16 @@ TEST(race_demo_replay_decode) {
     CHECK(throttled > 1000);
 }
 
+// A demonstration played as a replay ends on the step that gets its first empty frame (presentation §A8c): a save of
+// T frames hands over T - 1, so the step after them; the licence box restarts it there, a menu's play mode 2 plays on.
+TEST(race_demo_replay_run_out) {
+    DemoReplay d;
+    d.frames.resize(3);
+    CHECK(!d.run_out(0) && !d.run_out(3));
+    CHECK(d.run_out(4) && d.run_out(5));
+    CHECK(DemoReplay{}.run_out(1) && !DemoReplay{}.run_out(0));
+}
+
 // The demo runs' car records (CarSaveEquipments): the car the run was recorded with. The arcade
 // time trials on dirt ran on the stage-12 ("_m") tyres, the licence tests on the stock ones.
 TEST(race_demo_car_record_disc) {

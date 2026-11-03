@@ -612,6 +612,91 @@ TEST(exact_game_exit_as_finish) {
                 steps, double(slowest), rec->frames, m ? (*m ? "matches" : "DIFFERS") : "not done");
 }
 
+// The race behind a quick menu (presentation §A8c): play mode 2, the race-flow byte 2 with records off. The solo
+// conductors give the player's car control source 1 (the AI drives; the pad is not read), the races' every car control
+// source 2; the time trial hands only a pad car back, and records off leave the race no laps and no time limit, so it never
+// ends: the car laps on and on, a GT race's field races on after its countdown. With records on (the attract demo's) the
+// same races end 3 s after car 0's last lap (event 1).
+TEST(exact_game_menu_race) {
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    data::CarDatabase& db = *database();
+    auto run = [&](const std::string& event, ex::Conductor kind, bool records_off, int max_steps, bool field = false) {
+        struct Out {
+            int laps = 0;
+            bool finished = false, ended = false, handed_back = false;
+            int control = -1;
+            float slowest = 1e9f; // after the first 20 s (a countdown's 10 s and the getaway)
+        } out;
+        const data::Event* ev = db.event(event);
+        std::optional<Bytes> file = ev ? course_file(ev->course) : std::nullopt;
+        CHECK(file.has_value());
+        if (!file) return out;
+        Vfs vfs(&test::test_disc()->volume());
+        std::unique_ptr<race::RaceTrack> track = race::make_track(vfs, *file, ev->course);
+        race::FieldConfig cfg;
+        cfg.event = event;
+        if (field) { // the event's field, the player's car the event's first
+            for (size_t k = 1; k < ev->entries.size() && cfg.opponents.size() < 5; ++k)
+                if (!ev->entries[k].empty() && ev->entries[k] != "-") cfg.opponents.push_back(ev->entries[k]);
+            cfg.max_opponents = int(cfg.opponents.size());
+            cfg.grid_by_power = true;
+        }
+        race::ExactFieldOptions o;
+        o.data = program();
+        o.course_file = std::make_shared<const Bytes>(*file);
+        o.course = ev->course;
+        o.kind = kind;
+        o.laps = ev->laps;
+        o.player.car = {ev->entries.empty() ? "r34_gtr_v_99" : ev->entries[0]};
+        o.config = 2;
+        o.records_off = records_off;
+        cfg.exact = o;
+        std::string err;
+        std::unique_ptr<race::RaceField> f = race::RaceField::create(*track, db, cfg, &err);
+        CHECK(f != nullptr);
+        if (!f) return out;
+        const ex::ExactRace& r = *race::exact_race_of(*f);
+        out.control = r.cars()[0].control;
+        for (int k = 1; field && k < r.size(); ++k)
+            if (r.cars()[size_t(k)].control != 2) out.control = -2; // (every car the AI's)
+        for (int k = 0; k < max_steps && !out.ended; ++k) {
+            f->player().step({}, 1.0 / 60.0); // (no input: the pad is not read)
+            for (const ex::RaceEvent& e : r.events()) {
+                out.ended = out.ended || e.type == 1;
+                out.handed_back = out.handed_back || e.type == 4;
+            }
+            if (k >= 1200) out.slowest = std::min(out.slowest, r.cars()[0].speed.host());
+        }
+        out.laps = std::max(0, int(r.cars()[0].laps) - 1);
+        out.finished = r.cars()[0].finished != 0;
+        std::printf("  %s (%s, records %s): control %d, %d laps, finished %s, ended %s, slowest %.1f m/s\n", event.c_str(),
+                    ex::conductor_name(kind), records_off ? "off" : "on", out.control, out.laps, out.finished ? "yes" : "no",
+                    out.ended ? "yes" : "no", double(out.slowest));
+        return out;
+    };
+    // The time trial (Midfield): the computer laps on.
+    const auto tt = run("AT010001", ex::Conductor::TimeTrial, true, 12000);
+    CHECK(tt.control == 1 && !tt.handed_back);
+    CHECK(tt.laps >= 2 && !tt.finished && !tt.ended);
+    CHECK(tt.slowest > 5.0f);
+    // The free run (Deep Forest): the same.
+    const auto fr = run("AT040001", ex::Conductor::FreeRun, true, 12000);
+    CHECK(fr.control == 1 && fr.laps >= 2 && !fr.finished && !fr.ended && fr.slowest > 5.0f);
+    // The 0-400 m machine test: past the split line, on round the test course.
+    const auto mt = run("M400", ex::Conductor::MachineTest, true, 12000);
+    CHECK(mt.control == 1 && !mt.finished && !mt.ended && mt.slowest > 5.0f);
+    // Records on: the lap ends the run and the race ends 3 s on.
+    const auto on = run("AT010001", ex::Conductor::TimeTrial, false, 12000);
+    CHECK(on.finished && on.ended);
+    // A GT race's pre-race menu (Sunday Cup race 1, 3 laps of Super Speedway): the countdown, then the field races on, 7
+    // minutes; with records on it ends after car 0's 3 laps.
+    const auto gt = run("Gsunday_e_0001", ex::Conductor::SinglePlayer, true, 60 * 420, true);
+    CHECK(gt.control == 2 && gt.handed_back); // (event 4: the countdown's start signal)
+    CHECK(gt.laps > 3 && !gt.finished && !gt.ended && gt.slowest > 5.0f);
+    const auto gt_on = run("Gsunday_e_0001", ex::Conductor::SinglePlayer, false, 60 * 420, true);
+    CHECK(gt_on.finished && gt_on.ended && gt_on.laps == 3);
+}
+
 // A licence run slower than bronze, as GT3 judges and presents it: the race flow fails it (event 9) with the result 0 and its
 // time (race info + 0x40 / + 0x44), and the licence display shows TIME EXPIRED with that time (race::license_outcome: a
 // finished run, no medal, the time); a run out of the course would be -1, FAIL with no time.

@@ -347,7 +347,7 @@ void RaceScreen::update_quick_menu(App& app, double dt) {
     const QmAction act = quick_menu_action(choice.action);
     if (choice.page == "root" && act != QmAction::Option && act != QmAction::Records && act != QmAction::Logger) {
         if (preview_) stop_preview(app);
-        stop_backdrop(app); // the race behind the menu
+        stop_backdrop(app, act != QmAction::Start); // the race behind the menu (START builds the run's race itself)
     }
     if (choice.page != "root") { // yes/no dialogs (the popup has closed itself)
         if (choice.page == "exit_sure" && act == QmAction::Exit) { // "Retire from championship?" Yes
@@ -374,6 +374,7 @@ void RaceScreen::update_quick_menu(App& app, double dt) {
         break;
     case QmAction::Demo: // its run replaces the last one: no REPLAY until the next run
         qm_items_.after_demonstration();
+        demo_loaded_ = true; // (the licence box plays it afterwards)
         update_quick_menu_items();
         start_demo();
         break;

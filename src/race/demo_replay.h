@@ -68,6 +68,10 @@ struct DemoReplay {
     sim::exact::PadFrame pad_frame(size_t i) const;
     void pad_bytes(size_t i, u8* out16) const;
     size_t size() const { return frames.size(); }
+    // Played as a replay, the save runs out on step size() + 1, the first that gets an empty frame: the playback sets its
+    // done flag there and the replay's race ends (presentation §A8c). True once `steps` race steps have run that
+    // far.
+    bool run_out(size_t steps) const { return steps > frames.size(); }
 };
 
 } // namespace gt3r::race
