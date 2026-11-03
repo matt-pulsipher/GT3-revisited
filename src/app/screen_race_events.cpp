@@ -8,7 +8,8 @@
 //   picture; "+N Laps" for a car a lap or more down (race::PassingOrder).
 // - Time trials and free runs: the gap to the session's best lap so far (race::BestLapSplits;
 //   none for the session's first lap: no stored record seeds it; kept across retries).
-// - Licence tests: the split times only (their lap time is not shown in a live test).
+// - Licence tests: the split times only, numbered on over the laps, a lap test's line short of its end included, each
+//   the time since the run's start (race::license_split_number; their lap time is not shown in a live test).
 // - Machine tests (presentation §B7, §D6): 0-400 m / 0-1000 m the split time at 400 m and, at the
 //   goal, the time to it; nothing at the line and no gaps (their stored records are not lap
 //   times). The top-speed test shows none (its HUD has no event display).
@@ -128,8 +129,10 @@ void RaceScreen::lap_events(bool timer_updated) {
         const bool license = !license_event_.empty();
         const int points = int(track_->split_points().size()) + 1; // with the line
         for (const LapCrossing& c : track_->lap_crossings()) {
-            if (license) { // splits numbered on through the laps; no lap time in a live test
-                if (!c.line) h[0].splits.push_back(green(split_text(c.lap * points + c.point + 1, c.split_ms), false));
+            if (license) { // splits numbered on through the laps, the line short of the end too; no lap time in a live test
+                if (!c.line || c.sector)
+                    h[0].splits.push_back(
+                        green(split_text(license_split_number(c.line, c.lap, c.point, points), c.split_ms), false));
                 continue;
             }
             // Time trials and free runs: the gap to the best lap so far, taken before this lap

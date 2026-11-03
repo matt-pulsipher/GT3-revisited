@@ -704,8 +704,15 @@ public:
                 x.lap = b.laps - 1;
                 x.ms = c.x530;
                 x.split_ms = (long long)c.x530 - (long long)b.x530;
-                crossings_.push_back({id_of(k), x});
                 if (k == 0) lap_done_ = true, last_lap_s_ = double(x.split_ms) / 1000.0;
+                // A licence test's line short of its end: its conductor posts the sector events with the time since
+                // its lap start, which it never moves (the run's start), instead of a lap.
+                if (const std::optional<Sector>& sx = sector_of[size_t(k)]) {
+                    x.sector = true;
+                    x.split_ms = sx->split >= 0 ? sx->split : now_ms - (long long)c.x530;
+                    x.ms = (long long)c.x530 + x.split_ms;
+                }
+                crossings_.push_back({id_of(k), x});
                 if (k < humans_)
                     LOG_INFO("Race (exact): car %d lap %d %.3f s (at %.3f s)", int(k), x.lap + 1, double(x.split_ms) / 1000.0,
                              double(x.ms) / 1000.0);

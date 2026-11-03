@@ -95,6 +95,7 @@ struct SoloRun {
     u32 result_time = 0;
     u32 best_lap = ex::kNoTime;
     std::vector<s32> events;    // the race's posts over the run (types)
+    std::vector<race::LapCrossing> crossings; // the player's line and split crossings as the game gets them
     std::optional<bool> replay; // the run's record played again matched the race
 };
 
@@ -138,6 +139,8 @@ SoloRun solo(const std::string& event, ex::Conductor kind, int max_steps, int mi
         field->player().step(inputs_of(line_driver(r.cars()[0], r.course())), 1.0 / 60.0);
         ++out.steps;
         for (const ex::RaceEvent& e : r.events()) out.events.push_back(e.type);
+        for (const race::RaceField::CarCrossing& c : field->last_crossings())
+            if (c.car == -1) out.crossings.push_back(c.crossing);
         for (const ex::RecorderEvent& e : r.flow().recorder) {
             out.ghost_restarts += e.kind == ex::RecorderEvent::ghost_restart;
             out.restart_before_ghost = out.restart_before_ghost || (e.kind == ex::RecorderEvent::ghost_restart && !out.ghost);
@@ -717,4 +720,30 @@ TEST(exact_game_licence_over_the_times) {
     CHECK(std::fabs(o.time - double(slow.result_time) / 1000.0) < 1e-9);
     std::printf("  L0A0004 at %.0f km/h: result %d, time %.3f s (bronze %.3f s): TIME EXPIRED with the time\n", 60.0,
                 int(slow.result), o.time, lt.ms[2] / 1000.0);
+}
+
+// A licence lap test's line short of its end, as GT3's licence conductor posts it: a sector with the time since
+// the run's start (the test never moves its lap start), not a lap; the game shows it as a split time (T1, T2 on A-4's
+// circle, race_license_split_numbers). The last lap's line ends the run with its judged time and is no split.
+TEST(exact_game_licence_lap_splits) {
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    g_line_pace = 60.0f;
+    SoloRun run = solo("L0A0004", ex::Conductor::License, 30000);
+    g_line_pace = 145.0f;
+    CHECK(run.finished && run.result_time != ex::kNoTime);
+    std::vector<race::LapCrossing> lines;
+    for (const race::LapCrossing& c : run.crossings)
+        if (c.line) lines.push_back(c);
+    CHECK(lines.size() == 3);
+    if (lines.size() != 3) return;
+    CHECK(lines[0].sector && lines[1].sector && !lines[2].sector);
+    CHECK(lines[0].lap == 0 && lines[1].lap == 1 && lines[2].lap == 2);
+    // The run's clock at each line, from one start (GO: a standing test), the split points' too; the judged time past both.
+    const long long start = lines[0].ms - lines[0].split_ms;
+    CHECK(lines[1].ms - lines[1].split_ms == start);
+    for (const race::LapCrossing& c : run.crossings)
+        if (!c.line) CHECK(c.ms - c.split_ms == start);
+    CHECK(lines[0].split_ms > 0 && lines[1].split_ms > lines[0].split_ms && (long long)run.result_time > lines[1].split_ms);
+    std::printf("  L0A0004: splits at the line %.3f s, %.3f s; judged %.3f s\n", lines[0].split_ms / 1000.0,
+                lines[1].split_ms / 1000.0, run.result_time / 1000.0);
 }

@@ -668,15 +668,17 @@ void Hud::draw_times(SDL_Renderer* r, const HudData& d, int view) {
         if (row.view != kAnyView && row.view != view) continue;
         const float R = anchor(row.x, 0, row.align), y = row.y;
         if (row.part == HudPart::Target) {
-            // Licence targets: gold / silver / bronze with their marks at 75 % left of the time.
+            // Licence targets: gold / silver / bronze, time lines with no label; the mark at its own size in the label's
+            // place, right-aligned at the label's edge (truncated) + the row's w, centred on y + the row's h.
             static const char* const kMarks[] = {"mark_1st", "mark_2nd", "mark_3rd"};
             const size_t i = std::min<size_t>(row.sub, 2);
             std::string t = format_time(d.license_targets[i]);
-            text(r, ux(R), uy(y), t, "sw_16", 1, kAmber, text::HAlign::Right);
-            float tw = std::max(width(t, "sw_16", 90), 90.0f);
-            if (const Image* im = image(kMarks[i]))
-                blit(r, im->tex,
-                     {ux(R - tw - 8 - im->w * 0.75f), uy(y - 4), im->w * 0.75f * vsx(), im->h * 0.75f * vsy()});
+            text(r, ux(R), uy(y), t, "sw_16", 1, kAmber, text::HAlign::Right, true);
+            const float tw = std::max(width(t, "sw_16", 90), 90.0f);
+            if (const Image* im = image(kMarks[i])) {
+                const float right = R - std::trunc(tw + 10) + row.w, cy = y + row.h;
+                blit(r, im->tex, {ux(right - im->w), uy(cy - im->h / 2), im->w * vsx(), im->h * vsy()});
+            }
             continue;
         }
         if (row.part != HudPart::TimeLine) continue;
