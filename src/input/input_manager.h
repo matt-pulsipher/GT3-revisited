@@ -99,7 +99,8 @@ public:
 
     const PadState& pad(int player) const { return players_[player].state; }
     // The pad a race reads while driving: buttons in GT3's race meaning (race_action_name),
-    // driven by the player's race layout. With the "gt3" layout it is pad() itself.
+    // driven by the player's race layout. With the "gt3" layout it reads pad()'s bindings (its
+    // pedals press from the race's own threshold; the steering curve).
     const PadState& race_pad(int player) const { return players_[player].race_state; }
     // Player 1's pad merged with every connected gamepad read with the pad layout's buttons and
     // the keyboard with its default keys, whatever player 1's controller, bindings or keyboard
@@ -181,12 +182,18 @@ public:
     // Races steer with GT3's wheel path: the device Steer (LX) is bound to is a wheel (a tagged
     // binding's device, otherwise the Controller's kind).
     bool wheel_steering(int player) const;
-    // [playerN] steering_curve / wheel_steering_curve: the race's steering is |x|^curve (1: as far
-    // as the player steers; above 1 finer near the centre, below 1 quicker off it; full lock stays
-    // at the end). A wheel (wheel_steering) has its own; these get and set the one in use.
-    static constexpr float kSteeringCurveMin = 0.5f, kSteeringCurveMax = 2.5f;
+    // [playerN] steering_curve / wheel_steering_curve: the race's steering is curved_steering(x,
+    // curve) (1: as far as the player steers; above 1 finer near the centre, below 1 quicker off it;
+    // full lock stays at the end). A wheel (wheel_steering) has its own; these get and set the one
+    // in use.
+    static constexpr float kSteeringCurveMin = 0.1f, kSteeringCurveMax = 2.5f;
     float steering_curve(int player) const { return steering_curve(players_[player]); }
     void set_steering_curve(int player, float curve);
+    // |x|^curve eased at the centre, sign kept: ((|x| + 0.1)^curve - 0.1^curve) / (1.1^curve -
+    // 0.1^curve). A plain power below 1 starts infinitely steep: a wheel's least movement off the
+    // centre swung the steering, and its force feedback with it (it oscillated at rest, issue 134).
+    // Here the centre is at most ~3.7 times linear (curve 0.1).
+    static float curved_steering(float x, float curve);
     // [playerN] controller: "auto" (pick_auto_device), part of a device name (any device,
     // whatever its type), or kKeyboardOnly. Reassigns devices.
     static constexpr const char* kKeyboardOnly = "keyboard";
@@ -275,10 +282,10 @@ private:
         DeviceKind kind = DeviceKind::Keyboard; // of `device` (assign_devices)
         PlayerBindings bindings;
         Profile menu, race; // in use: both sets for `kind` together (refresh)
-        bool race_reads_menu = false; // "gt3" with nothing custom: the race reads `state`
+        bool race_reads_menu = false; // "gt3" with nothing custom: the race reads the menu profile
         PadState state;
         std::vector<float> ramp_values; // parallel to the menu profile's bindings
-        std::vector<float> race_ramps;  // parallel to the race profile's bindings
+        std::vector<float> race_ramps;  // parallel to the race pad's bindings
         PadState race_state;
         PadRumble rumble;
         float tilt = 0.0f;
@@ -309,9 +316,10 @@ private:
     std::optional<float> read_source(const Player& p, const Device* dev, bool keyboard, const InputSource& src) const;
     void refresh(Player& p); // menu, race and race_reads_menu after a change of kind or bindings
     void evaluate(Player& p, double dt);
-    // `keyboard`: keys and mouse buttons drive `out` (a player's keyboard_active).
+    // `keyboard`: keys and mouse buttons drive `out` (a player's keyboard_active). `race`: the race
+    // pad (a pedal presses from kRacePedalPress, not the menus' threshold).
     void evaluate_profile(const Player& p, const Device* dev, bool keyboard, const Profile& prof,
-                          std::vector<float>& ramps, PadState& out, double dt) const;
+                          std::vector<float>& ramps, PadState& out, double dt, bool race = false) const;
     void evaluate_any_device(double dt); // any_device_pad()
     void evaluate_actions(Player& p, bool keyboard);
     // A chord capture's new input (from an event or a moved axis), if it fits the chord.

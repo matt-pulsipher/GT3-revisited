@@ -279,7 +279,7 @@ Circle Cross Square`, and the axes `LX LY RX RY`, optionally as halves
 | `invert` | Flip the axis |
 | `pedal` | Map a −1..1 axis to 0..1 (combine with `invert` for pedals resting at +1) |
 | `ramp=0.2` | Seconds to reach full value (makes digital inputs analog) |
-| `threshold=0.3` | Pressure at which an analog source counts as a digital press |
+| `threshold=0.3` | Pressure at which an analog source counts as a digital press (default 0.12; a `pedal` on the race pad 0.02, so it presses from the start of its travel) |
 | `device=G29%20Pedals` | Read it from that device instead of the player's Controller (below; `%20` = space, `@s:` serial, `@p:` port path) |
 
 When several bindings target the same button, the strongest value wins.
@@ -344,9 +344,12 @@ gearbox is the race entry's pedal style (the gearbox setting, as in GT3).
 
 **Steering curve** (Settings > Controls, per player: `[playerN] steering_curve`,
 and `wheel_steering_curve` while a wheel steers) shapes the race's steering
-before GT3's pad read: the car steers |x|^curve of the way to full lock for x of
-the input's travel (0.5..2.5, 1 = as far as it is moved). Above 1 is finer near
-the centre (a wheel set to a small rotation); below 1 is quicker off it (a large
+before GT3's pad read: the car steers ((x + 0.1)^curve − 0.1^curve) /
+(1.1^curve − 0.1^curve) of the way to full lock for x of the input's travel
+(0.1..2.5, 1 = as far as it is moved): |x|^curve eased at the centre, at most
+~3.7 times linear there (a plain power below 1 starts infinitely steep, and a
+wheel's force feedback oscillated around the centre). Above 1 is finer near the
+centre (a wheel set to a small rotation); below 1 is quicker off it (a large
 rotation). Full lock stays at the end of the travel. The menus read the input as
 it is.
 
