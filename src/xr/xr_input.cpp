@@ -309,21 +309,18 @@ void Session::update_input(double dt, bool pointer_allowed) {
     set(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, !wheel_mode && in.squeeze_v[0] > 0.55f);
     set(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, !wheel_mode && in.squeeze_v[1] > 0.55f);
 
-    // Rumble, renewed every frame while the game asks for it (SDL stops it with zeros).
-    for (int h = 0; h < 2; ++h) {
+    // Rumble, renewed every frame while the game asks for it (SDL stops it with zeros). Both hands play the
+    // stronger motor: a controller in each hand turns any split between the motors into a side.
+    const float amp = live ? std::clamp(std::max(in.rumble[0], in.rumble[1]), 0.0f, 1.0f) : 0.0f;
+    for (int h = 0; h < 2 && amp > 0.01f; ++h) {
         auto hi = xr_init<XrHapticActionInfo>(XR_TYPE_HAPTIC_ACTION_INFO);
         hi.action = in.haptic;
         hi.subactionPath = in.hand[h];
-        // Low-frequency rumble on the left hand, high on the right; each hand feels some of both.
-        float amp = std::clamp(h == 0 ? in.rumble[0] + 0.3f * in.rumble[1] : in.rumble[1] + 0.3f * in.rumble[0], 0.0f, 1.0f);
-        if (!live) amp = 0;
-        if (amp > 0.01f) {
-            auto v = xr_init<XrHapticVibration>(XR_TYPE_HAPTIC_VIBRATION);
-            v.amplitude = amp;
-            v.duration = XrDuration(60'000'000); // 60 ms, renewed next frame
-            v.frequency = XR_FREQUENCY_UNSPECIFIED;
-            x.xrApplyHapticFeedback(x.session, &hi, reinterpret_cast<const XrHapticBaseHeader*>(&v));
-        }
+        auto v = xr_init<XrHapticVibration>(XR_TYPE_HAPTIC_VIBRATION);
+        v.amplitude = amp;
+        v.duration = XrDuration(60'000'000); // 60 ms, renewed next frame
+        v.frequency = XR_FREQUENCY_UNSPECIFIED;
+        x.xrApplyHapticFeedback(x.session, &hi, reinterpret_cast<const XrHapticBaseHeader*>(&v));
     }
 }
 

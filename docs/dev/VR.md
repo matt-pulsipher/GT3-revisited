@@ -123,7 +123,8 @@ system's own re-centring (hold the Meta button) resets it to LOCAL's new origin.
 **Input.** OpenXR actions on `/interaction_profiles/oculus/touch_controller`
 feed an SDL virtual gamepad, "Meta Quest Touch": sticks, analog triggers, A B X Y,
 grips as shoulders, stick clicks, Menu as Start; its rumble goes to the
-controllers' haptics. VR builds' gamepad layout (`quest`) is the gamepad
+controllers' haptics, both hands at the stronger motor's level (a controller in each
+hand turns any split between the motors into a side). VR builds' gamepad layout (`quest`) is the gamepad
 layout with B as Triangle (back) and Y as Circle. The race's modern layout then gives
 right trigger throttle, left trigger brake, A/X shift up/down, Y view, B
 handbrake, left grip reverse, right stick click look back. With

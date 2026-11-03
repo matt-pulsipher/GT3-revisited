@@ -1139,6 +1139,20 @@ private:
                            a->input().set_background(v);
                            a->save_config();
                        });
+#ifdef SDL_PLATFORM_WINDOWS
+            // [input] xbox_driver: SDL takes it at start (App::init).
+            {
+                Row& xbox = choice("Xbox controllers",
+                                   "Raw Input: impulse triggers. XInput: no impulse triggers; try it if an Xbox "
+                                   "controller misbehaves.",
+                                   {"Raw Input", "XInput"}, in.xbox_rawinput() ? 0 : 1, [a](int i) {
+                                       a->input().set_xbox_rawinput(i == 0);
+                                       a->save_config();
+                                   });
+                xbox.restart = in.xbox_rawinput() != SDL_GetHintBoolean(SDL_HINT_JOYSTICK_RAWINPUT, false);
+                if (xbox.restart) xbox.desc = "Takes effect after restarting GT3 Revisited.";
+            }
+#endif
         }
         for (int p = 0; p < InputManager::kMaxPlayers; ++p) {
             heading(p == 0 ? "Player 1" : "Player 2 (split screen)");

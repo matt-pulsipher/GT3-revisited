@@ -229,9 +229,9 @@ void RaceScreen::silence(App& app) {
     crss_player_.stop(app.audio().voices());
     sfx_.stop_all(app.audio().voices());
     app.input().set_rumble(1, {});
-    app.input().set_trigger_rumble(1, 0, 0);
+    app.input().stop_force_feedback(1);
     app.input().set_rumble(0, {});
-    app.input().set_trigger_rumble(0, 0, 0);
+    app.input().stop_force_feedback(0);
 }
 
 } // namespace gt3r::race_screen

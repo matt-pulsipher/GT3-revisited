@@ -371,3 +371,52 @@ TEST(exact_replay_ghost) {
     CHECK(race::exact_playback_matches(*play).value_or(false));
     CHECK(race::exact_race_of(*play)->size() == 2 && play->opponents() == 0);
 }
+
+// The ABS level the brake triggers follow (VehicleTelemetry::abs_level): a hard stop from speed in the Sunday Cup's R34
+// works the ABS (a wheel at the tyre's best braking slip, then past it), and the brake held at a standstill gives none,
+// though GT3 keeps those wheels' pressure under the pedal by the tyre's peak force there too.
+TEST(exact_abs_level_hard_stop) {
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    data::CarDatabase& db = *database();
+    const data::Event* ev = db.event("Gsunday_e_0001");
+    CHECK(ev != nullptr);
+    if (!ev) return;
+    std::optional<Bytes> file = course_file(ev->course);
+    CHECK(file.has_value());
+    if (!file) return;
+    Vfs vfs(&test::test_disc()->volume());
+    std::unique_ptr<race::RaceTrack> track = race::make_track(vfs, *file, ev->course);
+    race::FieldConfig cfg;
+    cfg.event = ev->label;
+    cfg.max_opponents = 0;
+    race::ExactFieldOptions o;
+    o.data = program();
+    o.course_file = std::make_shared<const Bytes>(*file);
+    o.course = ev->course;
+    o.laps = ev->laps;
+    o.player.car = {"r34_gtr_v_99"};
+    cfg.exact = o;
+    std::string err;
+    std::unique_ptr<race::RaceField> live = race::RaceField::create(*track, db, cfg, &err);
+    CHECK(live != nullptr);
+    if (!live) return;
+    const ex::ExactRace& a = *race::exact_race_of(*live);
+    float braking = 0, stopped = 0, top = 0;
+    int at_rest = 0;
+    for (int k = 0; k < 1850; ++k) {
+        sim::ControlInputs in;
+        in.steer = -aim(a.cars()[0], a.course()).steer;
+        in.controller_kind = 2;
+        in.automatic = true;
+        (k < 1500 ? in.throttle : in.brake) = 1; // full throttle from the start, then a full stop held
+        live->player().step(in, 1.0 / 60.0);
+        const float level = live->player().telemetry()->abs_level, kmh = live->player().state().speed_kmh;
+        if (k < 1500) {
+            top = std::max(top, kmh);
+            CHECK(level == 0); // no brake: none
+        } else if (kmh > 1) braking = std::max(braking, level);
+        else if (kmh < 0.1f) stopped = std::max(stopped, level), ++at_rest;
+    }
+    std::printf("  top %.0f km/h, ABS level braking %.2f, at rest %.2f (%d steps)\n", top, braking, stopped, at_rest);
+    CHECK(top > 140 && braking > 0.4f && at_rest > 100 && stopped == 0);
+}

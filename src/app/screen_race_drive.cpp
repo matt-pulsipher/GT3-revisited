@@ -583,8 +583,6 @@ void RaceScreen::update_drive(App& app, double dt) {
         app.input().set_rumble(1, rumble2_on_ && !replaying_
                                       ? rumble2_.rumble(app.input().gt3_rumble(1), app.input().dualsense(1))
                                       : PadRumble{});
-        if (rumble2_on_ && !replaying_) app.input().set_trigger_rumble(1, rumble2_.trigger_left(), rumble2_.trigger_right());
-        else app.input().set_trigger_rumble(1, 0, 0);
         if (se_on() && engine2_.loaded()) {
             sim::Vec3 off2 = render_state2_.position - to_sim(camera2_.eye());
             if (camera2_.onboard()) engine2_.set_position(0.0f, 1.0f);
@@ -633,8 +631,6 @@ void RaceScreen::update_drive(App& app, double dt) {
 
     bool feel = rumble_on_ && !replaying_ && !demo_;
     app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0), app.input().dualsense(0)) : PadRumble{});
-    if (!feel) app.input().set_trigger_rumble(0, 0, 0);
-    else app.input().set_trigger_rumble(0, rumble_.trigger_left(), rumble_.trigger_right());
     if (const RaceField* f = exact_field(); f && f->opponents() > 0) {
         std::vector<const sim::VehicleState*> st;
         for (int i = 0; i < f->opponents(); ++i) st.push_back(&f->opponent_state(i));
@@ -691,7 +687,7 @@ ForceFeedbackState RaceScreen::feedback(const sim::VehicleState& s, const sim::V
     ForceFeedbackState f;
     f.speed_kmh = s.speed_kmh;
     f.brake = in.brake;
-    f.abs_active = t.abs_active;
+    f.abs_level = t.abs_level;
     f.steer_force = t.wheel_force >= 0 ? std::clamp(-float(t.wheel_force - 0x80) / 127.0f, -1.0f, 1.0f) : 0.0f;
     f.jolt = std::min(1.0f, std::max(wall, car_hit) / 5000.0f);
     f.wheelspin = rumble.wheelspin();

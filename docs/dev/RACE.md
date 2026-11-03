@@ -150,11 +150,13 @@ braking up to 0.35; a wheel on a curb (`RaceTrack::is_kerb`) pulses 0.63 at 4 Hz
 plus 0.4 Hz per m/s. Either way a car the pad does not drive
 (an AI run-up, after the finish; `VehicleTelemetry::pad_output` clear) sends nothing,
 and its motors stop. Replays and demonstrations send nothing, and the Vibration option
-(`vib1`, the quick menu's OPTIONS) turns it off. Impulse triggers (`set_trigger_rumble`,
-ours): left = ABS-style chatter when a grounded wheel locks under braking, right =
-wheelspin under throttle (`race_rumble`); a DualSense gets the wheelspin on its
-throttle trigger as an adaptive-trigger vibration (`ForceFeedbackState::wheelspin`,
-`ffb::throttle_trigger_effect`), as SDL's trigger rumble does nothing there.
+(`vib1`, the quick menu's OPTIONS) turns it off. The triggers (ours, `ForceFeedback::apply`
+from `RaceScreen::feedback`): the brake's follows GT3's ABS at work
+(`VehicleTelemetry::abs_level`, from `exact_telemetry`: the slip over the tyre's best
+braking slip times G g, the share of pressure the ABS takes off), the throttle's the
+wheelspin (`RumbleModel::wheelspin`); Xbox impulse triggers as levels, a DualSense's as
+adaptive-trigger vibrations (`ffb::brake_trigger_effect`, `throttle_trigger_effect`), as
+SDL's trigger rumble does nothing there.
 
 ## Rendering
 
