@@ -49,8 +49,8 @@ pulls decoded music through `AudioEngine::feed` and renders the voice mixer
 block by block from a copy of its voices, so the main thread's voice calls
 never wait for a block (their changes apply after it); movie playback decodes video
 on its own worker thread. `File::read_at` is
-mutex-protected, so the disc can be read from both threads. On phones and
-tablets a background thread creates the 3D pipelines at start-up
+mutex-protected, so the disc can be read from both threads. A background
+thread creates the 3D pipelines at start-up
 (`GpuContext::warm_pipelines`, [dev/RENDERING.md](dev/RENDERING.md)); the
 pipeline cache is mutex-protected. Online sessions receive on their own
 thread, and the update check runs on a detached one.

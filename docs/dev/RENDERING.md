@@ -368,16 +368,19 @@ keeps (mapped with cycling) and one command buffer per update;
 Pipelines (one per `PipelineKey`: blend, cull, depth write, alpha write, coverage, lines) are
 created on first use and cached in `GpuContext`. SDL 3.4's Vulkan backend has no pipeline
 cache, and a pipeline takes ~65 ms to create on a Galaxy A15 (Mali), a stutter the first time a
-combination appears mid-race (~200 ms on a Moto G Power 2024, Imagination BXM). On phones and
-tablets `GpuContext::warm_pipelines` creates the ~70 combinations races and menus use on a
-background thread at start-up (about 5 s on the A15, ~14 s on the Moto, while the opening movie
-and title play): the frame's own combinations, then the same for transparent pictures (coverage:
-car models on the race's gap pop-ups and results bar, the online pickers' cars), whose first
-mid-race pop-up otherwise stalled the Moto for 0.5 s. Others are still created on first use, and
-the log names each one ("3D pipeline built on first use"). On Android the compiling thread is
-named after the key while the driver works ("pipe" + blend, cull, depth write, lines, coverage,
-alpha, "x" MSAA, e.g. `pipe100000x4`), so a crash report names the pipeline, and the start-up
-log line "3D renderer: GPU …, driver …" gives the device name and driver version.
+combination appears mid-race (~200 ms on a Moto G Power 2024, Imagination BXM). Desktop drivers
+are as slow without their own shader cache (the first runs after an update or a driver install:
+50-190 ms per pipeline on an RTX 3080, a 190 ms stall at a race's GO). So everywhere
+`GpuContext::warm_pipelines` creates the ~110 combinations races and menus use on a
+background thread at start-up (about 5 s on the A15, ~14 s on the Moto, 0.4 s on an M4 Pro,
+while the opening movie and title play): the frame's own combinations, then the same for
+transparent pictures (coverage: car models on the race's gap pop-ups and results bar, the
+online pickers' cars), whose first mid-race pop-up otherwise stalled the Moto for 0.5 s. Others
+are still created on first use, and the log names each one ("3D pipeline built on first use").
+On Android the compiling thread is named after the key while the driver works ("pipe" + blend,
+cull, depth write, lines, coverage, alpha, "x" MSAA, e.g. `pipe100000x4`), so a crash report
+names the pipeline, and the start-up log line "3D renderer: GPU …, driver …" gives the device
+name and driver version.
 
 A Mali-G52 driver (r25p1, Android 11: Moto G20, realme C21Y) crashed in its shader compiler
 (a null read in `cmpbe_v2_compile_multiple_shaders`) on the first pipeline it built, on any
