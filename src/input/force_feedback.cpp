@@ -278,6 +278,18 @@ bool ForceFeedback::drives_wheel(SDL_JoystickID id) const {
     return false;
 }
 
+bool ForceFeedback::has_wheel_forces(SDL_Joystick* joystick) {
+    if (!SDL_IsJoystickHaptic(joystick) || !SDL_InitSubSystem(SDL_INIT_HAPTIC)) return false;
+    bool forces = false;
+    if (SDL_Haptic* h = SDL_OpenHapticFromJoystick(joystick)) {
+        const Uint32 features = SDL_GetHapticFeatures(h);
+        forces = (features & SDL_HAPTIC_SPRING) && (features & SDL_HAPTIC_CONSTANT);
+        SDL_CloseHaptic(h);
+    }
+    SDL_QuitSubSystem(SDL_INIT_HAPTIC);
+    return forces;
+}
+
 void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, bool restart) {
     if (!d.haptic && !d.haptic_tried) {
         d.haptic_tried = true;

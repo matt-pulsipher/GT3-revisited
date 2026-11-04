@@ -36,15 +36,22 @@ std::string section_name(int player, const char* suffix = "") {
 // first 12 % of its travel (the pressure only counts while pressed; issue 134).
 constexpr float kPressThreshold = 0.12f, kRacePedalPress = 0.02f;
 
-float parse_curve(const std::optional<std::string>& v) {
-    if (!v) return 1.0f;
+float parse_range(const std::optional<std::string>& v, float fallback, float lo, float hi) {
+    if (!v) return fallback;
     char* end = nullptr;
     const float f = std::strtof(v->c_str(), &end);
-    return end == v->c_str() ? 1.0f
-                             : std::clamp(f, InputManager::kSteeringCurveMin, InputManager::kSteeringCurveMax);
+    return end == v->c_str() ? fallback : std::clamp(f, lo, hi);
 }
 
-std::string format_curve(float v) {
+float parse_curve(const std::optional<std::string>& v) {
+    return parse_range(v, 1.0f, InputManager::kSteeringCurveMin, InputManager::kSteeringCurveMax);
+}
+
+float parse_deadzone(const std::optional<std::string>& v, float fallback) {
+    return parse_range(v, fallback, 0.0f, InputManager::kSteeringDeadzoneMax);
+}
+
+std::string format_hundredths(float v) {
     char b[16];
     std::snprintf(b, sizeof(b), "%.2f", double(v));
     return b;
@@ -133,6 +140,8 @@ void InputManager::load(const IniDocument& cfg) {
         p.rumble_mode = to_lower(cfg.get(sec, "rumble").value_or("auto"));
         p.steering_curve = parse_curve(cfg.get(sec, "steering_curve"));
         p.wheel_steering_curve = parse_curve(cfg.get(sec, "wheel_steering_curve"));
+        p.steering_deadzone = parse_deadzone(cfg.get(sec, "steering_deadzone"), kStickDeadzone);
+        p.wheel_steering_deadzone = parse_deadzone(cfg.get(sec, "wheel_steering_deadzone"), 0.0f);
     }
     set_background(to_lower(cfg.get("input", "background").value_or("off")) == "on");
     xbox_rawinput_ = xbox_rawinput(cfg);
@@ -154,8 +163,10 @@ void InputManager::save(IniDocument& cfg) const {
         cfg.set(sec, "keyboard", p.keyboard ? "on" : "off");
         if (i == 0) cfg.set(sec, "phone_vibration", phone_vibration_ ? "on" : "off");
         cfg.set(sec, "rumble", p.rumble_mode);
-        cfg.set(sec, "steering_curve", format_curve(p.steering_curve));
-        cfg.set(sec, "wheel_steering_curve", format_curve(p.wheel_steering_curve));
+        cfg.set(sec, "steering_curve", format_hundredths(p.steering_curve));
+        cfg.set(sec, "wheel_steering_curve", format_hundredths(p.wheel_steering_curve));
+        cfg.set(sec, "steering_deadzone", format_hundredths(p.steering_deadzone));
+        cfg.set(sec, "wheel_steering_deadzone", format_hundredths(p.wheel_steering_deadzone));
         cfg.set(sec, "race", p.bindings.race_layout);
         p.bindings.save(cfg, sec);
         p.actions.save(cfg, sec);
@@ -206,9 +217,9 @@ void InputManager::reset_bindings(int player) {
 }
 
 bool InputManager::wheel_source(const Player& p, const InputSource& source) const {
-    if (source.kind != InputSource::Kind::JoyAxis) return false;
+    if (source.kind != InputSource::Kind::JoyAxis && source.kind != InputSource::Kind::PadAxis) return false;
     const Device* d = source.device.empty() ? find_device(p.device) : find_tagged(source.device, p.device);
-    return d && !d->gamepad && d->wheel;
+    return d && d->wheel;
 }
 
 bool InputManager::bind(int player, const PadTarget& target, const InputSource& source, bool replace, float rest) {
@@ -277,7 +288,9 @@ void InputManager::add_device(SDL_JoystickID id) {
     }
     const char* name = d.gamepad ? SDL_GetGamepadName(d.gamepad) : SDL_GetJoystickName(d.joystick);
     d.name = name ? name : "Unknown device";
-    d.wheel = SDL_GetJoystickTypeForID(id) == SDL_JOYSTICK_TYPE_WHEEL;
+    const SDL_JoystickType type = SDL_GetJoystickTypeForID(id);
+    d.listed_wheel = type == SDL_JOYSTICK_TYPE_WHEEL;
+    d.wheel = is_wheel(type, type == SDL_JOYSTICK_TYPE_UNKNOWN && ForceFeedback::has_wheel_forces(d.joystick));
     d.dualsense = d.gamepad && SDL_GetGamepadType(d.gamepad) == SDL_GAMEPAD_TYPE_PS5;
     if (const char* serial = SDL_GetJoystickSerial(d.joystick)) d.serial = serial;
     if (const char* path = SDL_GetJoystickPath(d.joystick)) d.path = path;
@@ -325,7 +338,8 @@ void InputManager::assign_devices() {
                     const Device& d = devices_[k];
                     if (is_taken(d.id) || reserved[k]) continue;
                     ids.push_back(d.id);
-                    ranks.push_back(d.wheel ? AutoRank::Wheel : d.gamepad ? AutoRank::Gamepad : AutoRank::Other);
+                    ranks.push_back(d.listed_wheel ? AutoRank::Wheel : d.wheel ? AutoRank::LikelyWheel
+                                    : d.gamepad    ? AutoRank::Gamepad : AutoRank::Other);
                 }
                 if (int at = pick_auto_device(ranks); at >= 0) p.device = ids[size_t(at)];
             } else if (!keyboard_only(i)) {
@@ -338,6 +352,7 @@ void InputManager::assign_devices() {
             const Device* d = find_device(p.device);
             p.kind = device_kind(d != nullptr, d && d->gamepad, d && d->wheel,
                                  !is_auto && !p.wheel_device.empty() && p.device_filter == p.wheel_device);
+            if (p.kind == DeviceKind::Wheel && d && d->wheel && !d->listed_wheel) p.bindings.adopt_joystick_sets();
             refresh(p);
             if (p.device) taken.push_back(p.device);
             if (d && d->gamepad) SDL_SetGamepadPlayerIndex(d->gamepad, i);
@@ -394,18 +409,30 @@ const InputManager::Device* InputManager::tagged_steering(const Player& p) const
     for (const Binding& b : (p.race_reads_menu ? p.menu : p.race).bindings)
         if (b.target.kind == PadTarget::Kind::Axis && b.target.axis == PadAxis::LX && b.source.is_analog() &&
             !b.source.device.empty())
-            if (const Device* d = find_tagged(b.source.device, p.device); d && !d->gamepad && d->wheel) return d;
+            if (const Device* d = find_tagged(b.source.device, p.device); d && d->wheel) return d;
     return nullptr;
 }
 
 bool InputManager::wheel_steering(int player) const { return wheel_steering(players_[player]); }
 
 bool InputManager::wheel_steering(const Player& p) const {
-    return tagged_steering(p) != nullptr || p.kind == DeviceKind::Wheel;
+    if (tagged_steering(p) || p.kind == DeviceKind::Wheel) return true;
+    const Device* d = find_device(p.device);
+    return d && d->wheel; // one that maps as a gamepad: the pad's bindings
 }
 
 float InputManager::steering_curve(const Player& p) const {
     return wheel_steering(p) ? p.wheel_steering_curve : p.steering_curve;
+}
+
+float InputManager::steering_deadzone(const Player& p) const {
+    return wheel_steering(p) ? p.wheel_steering_deadzone : p.steering_deadzone;
+}
+
+void InputManager::set_steering_deadzone(int player, float deadzone) {
+    Player& p = players_[player];
+    deadzone = std::clamp(std::round(deadzone * 100.0f) / 100.0f, 0.0f, kSteeringDeadzoneMax);
+    (wheel_steering(p) ? p.wheel_steering_deadzone : p.steering_deadzone) = deadzone;
 }
 
 void InputManager::set_steering_curve(int player, float curve) {
@@ -690,6 +717,31 @@ std::optional<float> InputManager::read_source(const Player& p, const Device* de
     return std::nullopt;
 }
 
+void InputManager::note_moved_axes() {
+    constexpr int kMoved = 1638; // 5 % of the way to the axis' end
+    for (Device& d : devices_) {
+        const int n = std::min(SDL_GetNumJoystickAxes(d.joystick), 32);
+        for (int a = 0; a < n; ++a) {
+            Sint16 rest = 0; // stays 0 until the axis first reports
+            SDL_GetJoystickAxisInitialState(d.joystick, a, &rest);
+            if (std::abs(int(SDL_GetJoystickAxis(d.joystick, a)) - rest) > kMoved) d.moved_axes |= 1u << a;
+        }
+    }
+}
+
+// A `pedal` binding on an axis that has sat in the middle since it connected: nothing is there, not
+// a pedal half way down. The wheel layout's pedals are axes 1 and 2, and a wheel base can have
+// something else there (a Simucube's Y axis idles at the centre: gas and Cross held half way).
+// Until it moves: some pedals report the middle until they are first pressed.
+bool InputManager::idle_centred(const Player& p, const Device* dev, const InputSource& source) const {
+    if (source.kind != InputSource::Kind::JoyAxis || source.code >= 32) return false;
+    if (!source.device.empty()) dev = find_tagged(source.device, p.device);
+    if (!dev || (dev->moved_axes >> source.code & 1)) return false;
+    Sint16 rest = 0; // stays 0 until the axis first reports
+    SDL_GetJoystickAxisInitialState(dev->joystick, source.code, &rest);
+    return std::fabs(normalize_axis(rest)) < 0.5f;
+}
+
 void InputManager::evaluate(Player& p, double dt) {
     const Device* dev = find_device(p.device);
     const bool keyboard = keyboard_active(int(&p - players_.data()));
@@ -723,6 +775,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
     bool button_digital[kPadButtonCount] = {};
     float axis_val[kPadAxisCount] = {};
     if (ramps.size() != prof.bindings.size()) ramps.assign(prof.bindings.size(), 0.0f);
+    const float steer_deadzone = race ? steering_deadzone(p) : 0.0f;
 
     for (size_t bi = 0; bi < prof.bindings.size(); ++bi) {
         const Binding& b = prof.bindings[bi];
@@ -730,7 +783,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
         // A source that isn't there is left out, not read as 0: `pedal` and `invert` would
         // turn that 0 into a press (the wheel preset with no wheel held Cross and Square).
         std::optional<float> read = read_source(p, dev, keyboard, b.source);
-        if (!read) {
+        if (!read || (o.pedal && idle_centred(p, dev, b.source))) {
             ramps[bi] = 0.0f;
             continue;
         }
@@ -742,9 +795,12 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
             else if (b.source.half == InputSource::Half::Positive) v = std::max(v, 0.0f);
             else if (b.source.half == InputSource::Half::Negative) v = std::max(-v, 0.0f);
             // Radial shaping on magnitude, sign preserved.
+            const bool steer = race && b.target.kind == PadTarget::Kind::Axis && b.target.axis == PadAxis::LX &&
+                               b.source.kind != InputSource::Kind::Tilt && !o.pedal;
+            const float deadzone = steer ? steer_deadzone : o.deadzone;
             float m = std::fabs(v);
-            float range = std::max(o.saturation - o.deadzone, 1e-4f);
-            m = m <= o.deadzone ? 0.0f : std::min((m - o.deadzone) / range, 1.0f);
+            float range = std::max(o.saturation - deadzone, 1e-4f);
+            m = m <= deadzone ? 0.0f : std::min((m - deadzone) / range, 1.0f);
             if (o.curve != 1.0f) m = std::pow(m, o.curve);
             v = std::copysign(m, v);
         } else if (o.invert) {
@@ -826,6 +882,7 @@ void InputManager::update(double dt) {
         }
         if (captured_) capturing_ = false;
     }
+    note_moved_axes();
     for (Player& p : players_) {
         evaluate(p, dt);
         if (capturing_) p.actions_held = p.actions_pressed = 0; // the capture takes every input
@@ -894,6 +951,10 @@ std::vector<bool> reserved_devices(const std::vector<DeviceId>& devices, const s
     return out;
 }
 
+bool is_wheel(SDL_JoystickType type, bool wheel_forces) {
+    return type == SDL_JOYSTICK_TYPE_WHEEL || (type == SDL_JOYSTICK_TYPE_UNKNOWN && wheel_forces);
+}
+
 DeviceKind device_kind(bool connected, bool gamepad, bool wheel, bool named_wheel) {
     if (!connected) return DeviceKind::Keyboard;
     if (gamepad) return DeviceKind::Pad;
@@ -927,7 +988,7 @@ bool menus_drivable(const Profile& menu, bool pad, bool joystick, bool keys) {
 }
 
 int pick_auto_device(const std::vector<AutoRank>& devices) {
-    for (AutoRank rank : {AutoRank::Wheel, AutoRank::Gamepad, AutoRank::Other})
+    for (AutoRank rank : {AutoRank::Wheel, AutoRank::LikelyWheel, AutoRank::Gamepad, AutoRank::Other})
         if (auto it = std::find(devices.begin(), devices.end(), rank); it != devices.end())
             return int(it - devices.begin());
     return -1;

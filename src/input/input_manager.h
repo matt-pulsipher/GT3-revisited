@@ -59,15 +59,22 @@ PadRumble dualsense_rumble(const PadRumble& r);
 // (the default, or anything else) Modern on every controller.
 bool gt3_rumble(std::string_view mode);
 
-// What a device is to Auto: one SDL identifies as a wheel, a gamepad SDL maps, or any other
-// joystick (flight sticks, but also odd HID devices such as some keyboards, mice and macro pads).
-enum class AutoRank : u8 { Wheel, Gamepad, Other };
+// A steering wheel: one SDL identifies, or, as SDL only lists the wheels it knows, a joystick SDL
+// has no type for with a wheel's forces (ForceFeedback::has_wheel_forces; public issue 134: a
+// Simucube 3 is its Link Hub to the PC, an unlisted device, and read as a stick). A gamepad SDL maps
+// never is: its type says so.
+bool is_wheel(SDL_JoystickType type, bool wheel_forces);
+
+// What a device is to Auto: a wheel SDL lists, a wheel only by its forces (is_wheel; it may be a
+// Link Hub with just pedals on it), a gamepad SDL maps, or any other joystick (flight sticks,
+// but also odd HID devices such as some keyboards, mice and macro pads).
+enum class AutoRank : u8 { Wheel, LikelyWheel, Gamepad, Other };
 // An "auto" player's device among the ones no other player has, in connection order: the first
-// wheel, otherwise the first gamepad, otherwise the first other joystick. -1 = none.
+// of the best rank. -1 = none.
 int pick_auto_device(const std::vector<AutoRank>& devices);
 // The kind of a player's device: none connected is the keyboard's; a gamepad SDL maps the pad's;
-// a wheel (SDL's, or `named_wheel`: the device the player named was a 0.3 `preset = wheel`'s) the
-// wheel's; any other joystick has no default bindings.
+// a wheel (is_wheel, or `named_wheel`: the device the player named was a 0.3 `preset = wheel`'s)
+// the wheel's; any other joystick has no default bindings.
 DeviceKind device_kind(bool connected, bool gamepad, bool wheel, bool named_wheel);
 
 // Which connected devices (in connection order) other players' tagged bindings use (`tags`):
@@ -187,7 +194,7 @@ public:
     void clear_race_target(int player, const PadTarget& target, BindingSet set);
     std::string device_name(int player) const; // "Keyboard" (or "No device") without one
     // Races steer with GT3's wheel path: the device Steer (LX) is bound to is a wheel (a tagged
-    // binding's device, otherwise the Controller's kind).
+    // binding's device, otherwise the Controller, also when it maps as a gamepad).
     bool wheel_steering(int player) const;
     // [playerN] steering_curve / wheel_steering_curve: the race's steering is curved_steering(x,
     // curve) (1: as far as the player steers; above 1 finer near the centre, below 1 quicker off it;
@@ -201,6 +208,13 @@ public:
     // centre swung the steering, and its force feedback with it (it oscillated at rest, issue 134).
     // Here the centre is at most ~3.7 times linear (curve 0.1).
     static float curved_steering(float x, float curve);
+    // [playerN] steering_deadzone / wheel_steering_deadzone: how far Steer's stick or wheel axis
+    // moves off the centre before the race steers (a fraction of its range; in races this takes the
+    // place of those bindings' `deadzone`, the menus keep theirs). A wheel (wheel_steering) has its
+    // own; these get and set the one in use.
+    static constexpr float kSteeringDeadzoneMax = 0.3f;
+    float steering_deadzone(int player) const { return steering_deadzone(players_[player]); }
+    void set_steering_deadzone(int player, float deadzone);
     // [playerN] controller: "auto" (pick_auto_device), part of a device name (any device,
     // whatever its type), or kKeyboardOnly. Reassigns devices.
     static constexpr const char* kKeyboardOnly = "keyboard";
@@ -275,7 +289,9 @@ private:
         SDL_Joystick* joystick = nullptr; // always set
         std::string name;
         bool has_accel = false;
-        bool wheel = false; // SDL identifies it as a wheel (Auto takes it first)
+        bool wheel = false; // is_wheel (Auto takes it first)
+        bool listed_wheel = false; // SDL identifies it (not its forces alone)
+        u32 moved_axes = 0; // axes seen away from where they started (note_moved_axes)
         bool dualsense = false; // a PlayStation 5 controller (Modern rumble's mix for it, dualsense_rumble)
         std::string serial, path; // for device tags (DeviceId); empty when not reported
     };
@@ -285,6 +301,7 @@ private:
         bool keyboard = true;
         std::string rumble_mode = "auto"; // [playerN] rumble
         float steering_curve = 1.0f, wheel_steering_curve = 1.0f; // [playerN]
+        float steering_deadzone = kStickDeadzone, wheel_steering_deadzone = 0.0f; // [playerN]
         SDL_JoystickID device = 0; // 0 = none
         DeviceKind kind = DeviceKind::Keyboard; // of `device` (assign_devices)
         PlayerBindings bindings;
@@ -316,8 +333,11 @@ private:
     std::string capture_tag(SDL_JoystickID id) const; // empty for the capturing player's Controller
     const Device* tagged_steering(const Player& p) const; // a tagged wheel Steer is bound to
     bool wheel_source(const Player& p, const InputSource& source) const; // a wheel's axis
+    void note_moved_axes();
+    bool idle_centred(const Player& p, const Device* dev, const InputSource& source) const;
     bool wheel_steering(const Player& p) const;
     float steering_curve(const Player& p) const;
+    float steering_deadzone(const Player& p) const;
     // The source's value, or nothing when it can't be read: its device, axis, button or hat
     // isn't connected, or it is a key (or mouse button) and `keyboard` is off.
     std::optional<float> read_source(const Player& p, const Device* dev, bool keyboard, const InputSource& src) const;

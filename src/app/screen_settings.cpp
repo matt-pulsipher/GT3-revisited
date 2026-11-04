@@ -1241,6 +1241,16 @@ private:
                            a->input().set_keyboard(p, v);
                            a->save_config();
                        });
+            if (!in.keyboard_only(p)) {
+                const float dz = in.steering_deadzone(p);
+                slider(in.wheel_steering(p) ? "Wheel steering dead zone" : "Steering dead zone",
+                       "Races. How far the steering moves off the centre before the car steers. A wheel and other "
+                       "controllers each keep their own.",
+                       dz, 0, InputManager::kSteeringDeadzoneMax, 0.01f, percent(dz), [a, p](float v) {
+                           a->input().set_steering_deadzone(p, v);
+                           a->save_config();
+                       });
+            }
             {
                 const float c = in.steering_curve(p);
                 char text[24];

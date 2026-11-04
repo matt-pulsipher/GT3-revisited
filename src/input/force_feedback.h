@@ -95,6 +95,10 @@ public:
     // must not reach it then: SDL's DirectInput and macOS rumble resets the device's force
     // feedback the first time it runs, which removes those effects.
     bool drives_wheel(SDL_JoystickID id) const;
+    // Whether a joystick plays a wheel's forces, a spring and a constant force. A rumble motor
+    // doesn't, whatever a driver says of force feedback: this tells a wheel from a pad SDL has no
+    // mapping for (is_wheel). Opens the haptic device and closes it again.
+    static bool has_wheel_forces(SDL_Joystick* joystick);
 
 private:
     struct Dev {
