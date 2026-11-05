@@ -113,6 +113,13 @@ public:
     // rims and tyres as the menus draw them (CarModelOptions::showroom_car); off: GT3's race
     // wheels. Read when a race starts.
     bool showroom_wheels() const;
+    // [video] sharp_menu_models = on | off (default on): the menus' 3D models at
+    // the screen's resolution (menu::MenuCanvas); off: in the game's 640 x 448 page. Phones and
+    // tablets keep models with depth of field in the page either way.
+    bool sharp_menu_models() const;
+    // The size in pixels of the menus' page on the screen, for the models; 0 x 0 when they stay
+    // in the page.
+    SDL_Point menu_model_size() const;
     // [video] dynamic_resolution = on | off (default on phones and tablets): the 3D resolution
     // drops (to 50% at most) when the GPU cannot keep up and climbs while it does, up to [video]
     // render_scale, or with auto the screen's full resolution (render::DynamicScale). Fixed for

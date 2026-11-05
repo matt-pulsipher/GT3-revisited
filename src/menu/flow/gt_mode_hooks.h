@@ -13,6 +13,7 @@
 #include "menu/flow/save_page.h"
 #include "menu/flow/menu_controller.h"
 #include "menu/flow/menu_set.h"
+#include "menu/menu_canvas.h"
 #include "menu/menu_scene.h"
 
 #include <array>
@@ -153,9 +154,10 @@ const GtModeHooks& gt_mode_hooks();
 // widget drawer for every widget with a class; `box` is in target pixels.
 // `image`: the element's own decoded image, or null (a car render's image is the
 // showroom's reflection map). Lives apart from GtModeHooks because it needs the App
-// (GPU, VFS).
+// (GPU, VFS). `canvas`: the page being drawn, where its models go (MenuCanvas::on), or null.
 using GtModeWidgetDrawer = std::function<void(App& app, SDL_Renderer* r, const Element& e, const SDL_FRect& box,
-                                              float alpha, const std::string& page, const MenuImage* image)>;
+                                              float alpha, const std::string& page, const MenuImage* image,
+                                              MenuCanvas* canvas)>;
 // The decoded image of `e` in `scene`, or null.
 inline const MenuImage* element_image(const MenuScene* scene, const Element& e) {
     if (!scene || !e.image || e.image->image >= scene->images().size()) return nullptr;

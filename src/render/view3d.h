@@ -157,6 +157,12 @@ struct DrawOptions {
     // 0 = the rectangle's own pixel size. `nearest` upscales without filtering.
     int fixed_width = 0, fixed_height = 0;
     bool nearest = false;
+    // One of several pictures a frame from the same targets (a menu model at the screen's
+    // resolution): not supersampled (it would multiply every pass), and only the finished picture
+    // is cycled, which the 2D renderer reads when it submits (after every pass of the frame). The
+    // multisampled colour and the depth hold nothing between passes, and each pass would keep
+    // its own large copies of them, per frame in flight.
+    bool repeated = false;
 };
 
 // The grade pass's arithmetic on one 8-bit pixel: model.frag's gt3_grade on the CPU (tests).

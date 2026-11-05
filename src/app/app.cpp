@@ -542,6 +542,22 @@ bool App::full_car_detail() const {
     return to_lower(config_.get("video", "full_car_detail").value_or(platform::is_mobile() ? "off" : "on")) == "on";
 }
 
+bool App::sharp_menu_models() const {
+    return to_lower(config_.get("video", "sharp_menu_models").value_or("on")) == "on";
+}
+
+SDL_Point App::menu_model_size() const {
+    if (!sharp_menu_models()) return {0, 0};
+    int lw = 0, lh = 0;
+    SDL_RendererLogicalPresentation mode;
+    SDL_FRect lr;
+    if (!ui_ || !SDL_GetRenderLogicalPresentation(renderer_, &lw, &lh, &mode) || lw <= 0 || lh <= 0 ||
+        !SDL_GetRenderLogicalPresentationRect(renderer_, &lr))
+        return {0, 0};
+    const UiRect pic = ui_->picture43();
+    return {int(std::lround(pic.w * lr.w / float(lw))), int(std::lround(pic.h * lr.h / float(lh)))};
+}
+
 bool App::showroom_wheels() const {
     return to_lower(config_.get("video", "showroom_wheels").value_or(platform::is_mobile() ? "off" : "on")) == "on";
 }

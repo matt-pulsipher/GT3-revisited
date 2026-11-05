@@ -34,9 +34,13 @@ public:
     // One pass of the game's multi-pass draw (accumulation anti-aliasing / depth of
     // field): a sub-pixel shift of the picture (pixels) and an eye offset in view space
     // (metres) with the plane at `focus` kept fixed (0 = no depth of field).
+    // `aspect`: of the game's frame, when `rect` has another shape (0 = the rectangle's);
+    // `repeated`: DrawOptions::repeated.
     struct Pass {
         float px = 0, py = 0;
         float ex = 0, ey = 0, focus = 0;
+        float aspect = 0;
+        bool repeated = false;
     };
     // Draws into `rect` (cleared to `clear`; alpha 0 keeps what is behind when supported).
     void draw(SDL_Renderer* r, const SDL_FRect& rect, const float clear[4] = nullptr, const Pass* pass = nullptr);

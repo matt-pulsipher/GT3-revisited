@@ -1142,7 +1142,8 @@ page opens and side-on (yaw 90°) after about 7.4 s.
   `compulsory`) to smooth its edges. GT3 Revisited draws one pass, and one
   reflection pass, on phones and tablets (Android, iOS:
   `platform::is_mobile`), where the 3D renderer's MSAA smooths the edges
-  instead.
+  instead, and everywhere when the car is drawn at the screen's resolution
+  (§15).
 - Menu cars are the detailed `menu/cars` models with `menu/wheel` rims. Each
   wheel shows the car's own brake disc and caliper through its spokes (the
   menu car's front and rear brake parts, mirrored on the right side;
@@ -2016,7 +2017,12 @@ The race quick menus play the same set through their own `MenuSounds`.
 game's menus.
 
 - **Picture.** It draws each 640 × 448 frame into a texture shown at 4:3 in
-  the middle of the window.
+  the middle of the window. With `[video] sharp_menu_models = on` (the
+  default; Settings → Display → Sharp cars and prizes in menus) GT3 Revisited
+  draws a page's 3D models at the screen's resolution between the page's art,
+  which stays a 640 × 448 picture scaled up under and over them. Phones and
+  tablets keep models with depth of field (license cards, trophies) in the
+  640 × 448 page.
 - **Frames.** It steps the flow in 60 Hz frames, plays the flow's SEs, music
   and movies, and starts transitions over the last frame.
 - **Gameplay.** It hands requests to the registered gameplay handler, and
