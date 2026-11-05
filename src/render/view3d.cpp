@@ -134,6 +134,18 @@ float eye_depth(const Mat4& view, const Vec3& p) {
     return -(view.at(2, 0) * p.x + view.at(2, 1) * p.y + view.at(2, 2) * p.z + view.at(2, 3));
 }
 
+// Whether model.frag's PLAIN variant draws a primitive (PipelineKey::plain): no per-fragment fog,
+// no environment but a course's per-vertex one, GT3's lighting per vertex or none.
+bool plain_pass(const DrawItem& item, const scene::Primitive& p, const DrawOptions& opt) {
+    if ((opt.fog && !opt.fog_gt3) || (p.flags & scene::kDepthOnly)) return false;
+    if (p.flags & scene::kEnvironmentMap) {
+        const bool textured =
+            item.texture || (p.texture >= 0 && item.model->textures()[size_t(p.texture)].texture != nullptr);
+        if (!item.sphere_map || !textured || p.env_kind == 0) return false;
+    }
+    return (p.flags & scene::kUnlit) || p.material.valid;
+}
+
 // Whether an item resets the depth after it (DrawItem::depth_reset: the pass needs the quad).
 bool has_depth_reset(const std::vector<DrawItem>& items) {
     return std::any_of(items.begin(), items.end(), [](const DrawItem& i) { return i.depth_reset; });
@@ -545,7 +557,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     // The depth of field reads the picture and its depth, then writes the post passes' picture
     // (dof_) or, without them, the finished one.
     const float aspect = out_w / std::max(out_h, 1.0f);
-    const bool dof = dof_wanted(opt) && ensure_post(&scene_) && ensure_dof_levels(aspect, pw, ph) && ensure_quad() &&
+    const bool dof = dof_wanted(opt) && ensure_post(&scene_) && ensure_dof_levels(aspect, pw, ph, opt.dof.pyramid) && ensure_quad() &&
                      (!post || ensure_post(&dof_));
     SDL_GPUTexture* scene_target = post || dof ? scene_ : color_;
     // The picture after the scene and the depth of field: the passes after them draw into it, the
@@ -964,6 +976,7 @@ void View3D::encode_screen(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, c
         key.blend = d.blend;
         key.cull = CullMode::None;
         key.depth_write = false;
+        key.fx = frame && haze_low_valid_;
         SDL_GPUGraphicsPipeline* p = ctx_.pipeline(key);
         if (!p || d.count == 0) continue;
         SDL_BindGPUGraphicsPipeline(pass, p);
@@ -1073,8 +1086,8 @@ bool View3D::ensure_dof_texture(DofLevel& l, int w, int h) {
 // 448 lines GT3's pyramid at its sizes; taller pictures get each level at their own resolution:
 // `dx` x `dy` pixels a texel, as many as keep its blur (dof_level_blur) over 1.2 texels, and the
 // two intermediate pictures of its blur.
-bool View3D::ensure_dof_levels(float aspect, int pw, int ph) {
-    const bool frame = ph <= 448;
+bool View3D::ensure_dof_levels(float aspect, int pw, int ph, bool pyramid) {
+    const bool frame = ph <= 448 || pyramid;
     const float px[2] = {float(pw) / (480.0f * aspect), float(ph) / 448.0f}; // picture pixels a frame pixel
     int tmp_w = 1, tmp_h = 1;
     for (int k = 0; k < 5; ++k) {
@@ -1105,6 +1118,7 @@ void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass,
     key.cull = CullMode::None;
     key.depth_write = false;
     key.single = single;
+    key.resample = true;
     SDL_GPUGraphicsPipeline* p = ctx_.pipeline(key);
     if (!p) return;
     SDL_BindGPUGraphicsPipeline(pass, p);
@@ -1226,7 +1240,7 @@ void View3D::encode_dof(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, const M
         encode_resample(cmd, pass, scene_, r, 1.0f, 0.0f, true);
         SDL_EndGPURenderPass(pass);
     };
-    const bool frame = ph <= 448;
+    const bool frame = ph <= 448 || o.dof.pyramid;
     const float frame_w = 480.0f * aspect; // the frame's pixels across (its 448 lines at their spacing)
     if (frame) {
         // Level 0: GT3's 2 x 2 mean of its 640 x 448 frame; levels 1-4 from the one before: a
@@ -1604,6 +1618,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         key.depth_write = !(p.flags & scene::kNoDepthWrite) && !background && half != 2;
         key.coverage = opt.clear[3] < 1.0f;
         key.spin_copy = v.copies > 0;
+        key.plain = !v.item->wheel_blur && !key.spin_copy && plain_pass(*v.item, p, opt);
+        key.gs_filter = key.plain && v.item->texture && v.item->gs_bilinear;
+        key.fx = v.item->wheel_blur != 0 || (v.item->gs_bilinear && !key.gs_filter);
         bool faded = v.item->alpha < 1.0f;
         if (faded && key.blend == BlendMode::Opaque) key.blend = BlendMode::Alpha;
         if (v.item->dest_alpha_blend && key.blend != BlendMode::Opaque)
@@ -1873,13 +1890,6 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         std::copy(id.m.begin(), id.m.end(), vu.normal_mat);
         SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
         pushed = nullptr; // (the next mesh pushes its own)
-        const SDL_GPUTextureSamplerBinding sbs[3] = {{ctx_.white_texture(), ctx_.sampler(true, true)},
-                                                     {placeholder_cube(), ctx_.sampler(true, true)},
-                                                     {ctx_.white_texture(), ctx_.sampler(true, true)}};
-        bind_samplers(sbs);
-        FragmentUniforms fu{};
-        fu.params[0] = -1; // no alpha test
-        push_fragment(fu);
         SDL_DrawGPUIndexedPrimitives(pass, 6, 1, 0, 0, 0);
         ++stats_.draw_calls;
     };

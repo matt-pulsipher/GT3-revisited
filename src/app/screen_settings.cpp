@@ -711,6 +711,19 @@ private:
         haze.enabled = scale.enabled;
         if (!haze.enabled) haze.desc = msaa.desc;
 
+        // [video] depth_of_field = off | standard | high (App::depth_of_field)
+        static const char* const kDof[] = {"off", "standard", "high"};
+        const std::string dof = app.depth_of_field();
+        Row& focus = choice("Depth of field in replays",
+                            "GT3's soft focus in replays and demos, on some courses. Standard: GT3's own blur, "
+                            "quick on phones. High: smoother on sharp screens, and much slower on phones.",
+                            {"Off", "Standard", "High"}, dof == "off" ? 0 : dof == "standard" ? 1 : 2, [a](int i) {
+                                a->config().set("video", "depth_of_field", kDof[i]);
+                                a->save_config();
+                            });
+        focus.enabled = scale.enabled;
+        if (!focus.enabled) focus.desc = msaa.desc;
+
         // [video] gpu = auto | gles | gles_driver | 0 (App::init)
         const std::string gpu_cfg = to_lower(cfg.get("video", "gpu").value_or("auto"));
         const bool gpu_off = gpu_cfg == "0" || gpu_cfg == "off";

@@ -234,6 +234,7 @@ SDL_GPUTexture* WetRoad::render(render::View3D& v, const render::Mat4& view, con
         render::DrawItem it{blur_quad_[k & 1].get(), {}, 0};
         it.texture = t;
         it.gs_bilinear = true;
+        it.wheel_steps = {float(p_.width), float(p_.height), 0, 0};
         t = v.render_offscreen(1 + (k & 1), p_.width, p_.height, {}, {}, {0, 0, 0}, {it}, bo);
         if (!t) return nullptr;
     }
@@ -286,6 +287,7 @@ void WetRoad::add_frame_items(std::vector<render::DrawItem>& items, const render
     comp.in_order = true;
     comp.texture = buffer;
     comp.gs_bilinear = true;
+    comp.wheel_steps = {float(p_.width), float(p_.height), 0, 0};
     comp.no_fog = true;
     comp.dest_alpha_blend = p_.mode == 0x54 ? 1 : 2;
     items.push_back(comp);

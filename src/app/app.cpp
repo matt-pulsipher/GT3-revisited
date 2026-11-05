@@ -542,6 +542,10 @@ bool App::full_car_detail() const {
     return to_lower(config_.get("video", "full_car_detail").value_or(platform::is_mobile() ? "off" : "on")) == "on";
 }
 
+std::string App::depth_of_field() const {
+    return to_lower(config_.get("video", "depth_of_field").value_or(platform::is_mobile() ? "standard" : "high"));
+}
+
 bool App::showroom_wheels() const {
     return to_lower(config_.get("video", "showroom_wheels").value_or(platform::is_mobile() ? "off" : "on")) == "on";
 }

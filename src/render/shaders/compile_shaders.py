@@ -4,14 +4,14 @@
 Shaders are authored once in Vulkan GLSL (model.vert, model.frag) and
 compiled offline (model.vert twice: model_clip_vert with CLIPPED defined):
 
-    GLSL --glslangValidator--> SPIR-V   (Vulkan: Linux, Android, Windows)
+    GLSL --glslangValidator--> SPIR-V --spirv-opt -O--> SPIR-V (Vulkan: Linux, Android, Windows)
     SPIR-V --spirv-cross-----> MSL      (Metal: macOS, iOS)
     SPIR-V --spirv-cross-----> GLSL ES 3.00 (OpenGL ES 3.0: render/gpu_gles.*)
 
 The outputs are committed, so normal builds (CI, Android Gradle) need no
 shader tools. Only run this after editing a shader:
 
-    brew install glslang spirv-cross        # or the Vulkan SDK
+    brew install glslang spirv-tools spirv-cross        # or the Vulkan SDK
     python3 src/render/shaders/compile_shaders.py
 
 See docs/dev/RENDERING.md.
@@ -27,12 +27,19 @@ HERE = pathlib.Path(__file__).resolve().parent
 OUT = HERE / "generated"
 # (name, source, preprocessor definitions, extra ones for the GLSL ES build): model_clip_vert is
 # model.vert for the corners of the triangles GT3 clips at the guard band (render/guard_band.h);
-# the _copy shaders draw the modelled rims' turned copies (DrawItem::spin_turn; OpenGL ES 3.0 has
-# no sample masks).
+# model_frag_plain is model.frag for most of a race's pixels (PipelineKey::plain), model_frag_filter
+# the same with the GS's filter (PipelineKey::gs_filter), model_frag_resample the depth of field's
+# pictures (PipelineKey::resample), model_frag_fx with its rare sampling (PipelineKey::fx); the
+# _copy shaders draw the modelled rims' turned copies (DrawItem::spin_turn; OpenGL ES 3.0 has no
+# sample masks).
 SHADERS = [("model_vert", "model.vert", [], []), ("model_clip_vert", "model.vert", ["CLIPPED"], []),
-           ("model_frag", "model.frag", [], []),
+           ("model_frag", "model.frag", [], []), ("model_frag_plain", "model.frag", ["PLAIN"], []),
+           ("model_frag_filter", "model.frag", ["PLAIN", "GS_FILTER"], []),
+           ("model_frag_resample", "model.frag", ["RESAMPLE"], []),
+           ("model_frag_fx", "model.frag", ["FX"], []),
            ("model_vert_copy", "model.vert", ["SPIN_COPIES"], []),
-           ("model_frag_copy", "model.frag", ["SPIN_COPIES"], ["NO_SAMPLE_MASK"]),
+           ("model_frag_copy", "model.frag", ["SPIN_COPIES", "FX"], ["NO_SAMPLE_MASK"]),
+           ("no_color_frag", "no_color.frag", [], []),
            ("present_vert", "present.vert", [], []), ("present_frag", "present.frag", [], []),
            ("gamma_vert", "gamma.vert", [], []), ("gamma_frag", "gamma.frag", [], [])]
 
@@ -86,7 +93,11 @@ def main():
             run("glslangValidator", "-V", "--quiet", *flags, str(HERE / src), "-o", spv)
             msl = subprocess.run(["spirv-cross", spv, "--msl", "--msl-version", "20000", "--msl-decoration-binding"],
                                  check=True, capture_output=True, text=True).stdout
-            spirv = pathlib.Path(spv).read_bytes()
+            # (Phone drivers do not make up for an unoptimised module: 28 -> 22 ms a frame on an
+            # Adreno 619. The MSL and GLSL ES come from the plain module, as readable as before.)
+            opt = spv + ".opt"
+            run("spirv-opt", "-O", spv, "-o", opt)
+            spirv = pathlib.Path(opt).read_bytes()
             es_spv = spv
             if es_defines:
                 es_spv = os.path.join(tmp, name + "_es.spv")
