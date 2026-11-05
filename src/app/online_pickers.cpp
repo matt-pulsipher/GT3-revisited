@@ -608,6 +608,52 @@ void footer_actions(Ui& ui, std::string_view hint, const std::vector<FooterActio
     if (room > 16) ui.text(ui.safe().x + 8, y + 4, Ui::clip(hint, room), colors::kDim);
 }
 
+void add_arcade_cars(App& app, const data::CarDatabase& db, const game::GtData& gd, std::vector<PickerCar>& cars) {
+    for (int k = 1; k <= game::kArcadeClasses; ++k) {
+        auto list = gd.arcade_classes.find(game::arcade_class_tag(k));
+        if (list == gd.arcade_classes.end()) continue;
+        for (const game::GtData::ArcadeCar& a : list->second) {
+            game::OnlineCar oc = game::online_car_from_arcade(db, a.label, 0);
+            const data::Car* c = oc.car.empty() ? nullptr : db.car(oc.car);
+            if (!c) continue; // mod cars and labels this region lacks
+            std::string model = db.model_of(*c);
+            if (model.empty() || !app.vfs()->exists("cars/day/" + model)) continue;
+            cars.push_back(PickerCar{c->label, ascii(c->latin_name.empty() ? c->label : c->latin_name), model, -1, false, c->maker, 0,
+                                     {}, a.label, k, {}});
+        }
+    }
+}
+
+void assign_car_classes(std::vector<PickerCar>& cars, bool dirt, const std::function<const game::CarFacts&(int)>& facts) {
+    std::set<std::string> arcade_bases;
+    for (const PickerCar& e : cars)
+        if (!e.arcade.empty()) arcade_bases.insert(e.label);
+    for (size_t i = 0; i < cars.size(); ++i) {
+        PickerCar& e = cars[i];
+        const game::CarFacts& f = facts(int(i));
+        const bool as_arcade = e.arcade.empty() && e.garage < 0 && !f.arcade_class && arcade_bases.count(e.label);
+        e.arcade_class = as_arcade ? 0 : game::car_class(f, dirt);
+        e.class_text = game::car_class_text(f, dirt);
+    }
+}
+
+void value_arrows(Ui& ui, const UiRect& r, std::string_view value, Color c, HitList& hits, int left, int right, int arg,
+                  const PointerInput& pointer, float indent) {
+    constexpr float kArrowW = 24;
+    auto arrow = [&](float x, const char* glyph, int id) {
+        const UiRect a{x, r.y, kArrowW, r.h};
+        const bool hot = hovering(pointer, a);
+        ui.fill_round(a.x, a.y, a.w, a.h, 3, hot ? colors::kHighlight : Color{40, 44, 58});
+        ui.frame_round(a.x, a.y, a.w, a.h, 3, 1, hot ? colors::kAccent : colors::kOutline);
+        ui.text_center_in(a.x, a.w, r.y + (r.h - Ui::kChar) / 2, glyph, hot ? colors::kAccent : colors::kText);
+        hits.add(a, id, arg);
+    };
+    arrow(r.x, "<", left);
+    arrow(r.right() - kArrowW, ">", right);
+    const float x = r.x + kArrowW + 6 + indent;
+    ui.text(x, r.y + (r.h - Ui::kChar) / 2, Ui::clip(value, r.right() - kArrowW - 4 - x), c);
+}
+
 // --- car picker ---
 
 namespace {
@@ -735,6 +781,7 @@ void CarPicker::open(App& app, PickerArt& art, const data::CarDatabase& db, cons
     allowed_ = std::move(allowed);
     car_ = std::clamp(selected, 0, std::max(0, int(cars.size()) - 1));
     paint_ = paint;
+    from_groups_ = on_groups_button_ = false;
     pointer_.clear();
     wheel_ = 0;
     has_classes_ = std::any_of(cars.begin(), cars.end(), [](const PickerCar& c) { return c.arcade_class > 0; });
@@ -807,12 +854,17 @@ CarPicker::Result CarPicker::footer_action(App& app, int which) {
             int keep_paint = groups_[size_t(group_)].cars[size_t(pos)] == car_ ? paint_ : 0;
             enter_group(group_, pos);
             paint_ = keep_paint, paint_y_ = float(paint_);
+            from_groups_ = true;
         }
         break;
     case kBack:
         picker_sound(app, "cancel");
-        if (!in_group_ || groups_.empty()) return Result::Cancelled;
+        if (!in_group_ || groups_.empty() || !from_groups_) return Result::Cancelled;
         in_group_ = false;
+        break;
+    case kGroups:
+        picker_sound(app, "ok");
+        in_group_ = on_groups_button_ = false;
         break;
     case kToggleFilter:
         if (!allowed_) break;
@@ -896,8 +948,12 @@ CarPicker::Result CarPicker::pointer_actions(App& app) {
             if (in_group_) set_pos(app, pos_ + h->arg);
             break;
         case kPaint:
-            if (in_group_) set_paint(app, h->arg);
+            if (in_group_) on_groups_button_ = false, set_paint(app, h->arg);
             break;
+        case kGroupsButton:
+            footer_action(app, kGroups);
+            pointer_.clear();
+            return Result::None; // a new page: its own areas
         case kFooter: {
             Result r = footer_action(app, h->arg);
             pointer_.clear();
@@ -935,10 +991,15 @@ CarPicker::Result CarPicker::update(App& app) {
     int h = m.horizontal();
     if (m.pressed(PadButton::L1)) h = -10;
     if (m.pressed(PadButton::R1)) h = 10;
-    if (h) set_pos(app, pos_ + h);
-    if (int v = m.vertical()) set_paint(app, paint_ + v);
-    if (m.pressed(PadButton::Cross)) return footer_action(app, kChoose);
-    if (m.pressed(PadButton::Triangle) || m.pressed(PadButton::Circle)) footer_action(app, kBack);
+    if (h) on_groups_button_ = false, set_pos(app, pos_ + h);
+    if (int v = m.vertical()) { // the button above the colours is one step up from the first
+        if (on_groups_button_ ? v > 0 : v < 0 && paint_ <= 0) on_groups_button_ = !on_groups_button_, picker_sound(app, "cursor");
+        else if (on_groups_button_) picker_sound(app, "disable");
+        else set_paint(app, paint_ + v);
+    }
+    if (m.pressed(PadButton::Cross)) return footer_action(app, on_groups_button_ ? kGroups : kChoose);
+    if (m.pressed(PadButton::Triangle)) return footer_action(app, kBack);
+    if (m.pressed(PadButton::Circle)) return footer_action(app, from_groups_ ? kBack : kGroups);
     return Result::None;
 }
 
@@ -1076,7 +1137,7 @@ void CarPicker::render_cars(App& app, Ui& ui) {
             u32 rgb = c.garage >= 0 ? pal[0].rgb : pal[size_t(i)].rgb;
             float sz = i == cur ? 16.0f : 12.0f;
             Color k{u8(rgb), u8(rgb >> 8), u8(rgb >> 16), u8(255 * a)};
-            if (i == cur) ui.fill_round(kPaintX - sz / 2 - 2, y - sz / 2 - 2, sz + 4, sz + 4, 3, colors::kAccent);
+            if (i == cur) ui.fill_round(kPaintX - sz / 2 - 2, y - sz / 2 - 2, sz + 4, sz + 4, 3, on_groups_button_ ? colors::kOutline : colors::kAccent);
             ui.fill_round(kPaintX - sz / 2 - 1, y - sz / 2 - 1, sz + 2, sz + 2, 2, Color{0, 0, 0, u8(255 * a)});
             ui.fill_round(kPaintX - sz / 2, y - sz / 2, sz, sz, 2, k);
             if (c.garage < 0) hits_.add({kPaintX - 10, y - kPaintPitch / 2, 20, kPaintPitch}, kPaint, i);
@@ -1094,6 +1155,12 @@ void CarPicker::render_cars(App& app, Ui& ui) {
                                          : std::to_string(cur + 1) + " / " + std::to_string(n);
         if (!pname.empty()) ui.text(14, 238, Ui::clip(pname, 220), colors::kText);
         ui.text(14, 250, line, colors::kDim);
+    }
+    // The way to the maker or class page, above the colours.
+    {
+        const UiRect r{12, 56, 72, 18};
+        ui.button(r, by_class_ ? "< Classes" : "< Makers", on_groups_button_ || hovering(pointer_, r), false);
+        hits_.add({r.x - 4, r.y - 4, r.w + 8, r.h + 8}, kGroupsButton);
     }
 
     // Specs.
@@ -1170,7 +1237,9 @@ void CarPicker::render_cars(App& app, Ui& ui) {
     else ui.text_center(kStripY + 38, std::to_string(pos_ + 1) + " / " + std::to_string(n), colors::kDim);
     std::vector<FooterAction> foot{{"Cross: choose", kChoose}};
     if (allowed_) foot.push_back({allowed_only_ ? "Square: all cars" : "Square: allowed only", kToggleFilter});
-    foot.push_back({by_class_ ? "Triangle: classes" : "Triangle: makers", kBack});
+    const char* groups = by_class_ ? "classes" : "makers";
+    if (!from_groups_) foot.push_back({std::string("Circle: ") + groups, kGroups});
+    foot.push_back({from_groups_ ? std::string("Triangle: ") + groups : std::string("Triangle: back"), kBack});
     footer_actions(ui, "Left/Right: car (L1/R1: x10)   Up/Down: paint", foot, hits_, kFooter, pointer_);
 }
 
@@ -1277,7 +1346,7 @@ void CoursePicker::render(App& app, Ui& ui, PickerArt& art) {
         fill_gradient(ui, 0, 0, Ui::kWidth, Ui::kHeight, Color{24, 28, 40, u8(255 * t)}, Color{8, 9, 12, u8(255 * t)});
     fill_gradient(ui, 0, 20, Ui::kWidth, 90, Color{0, 0, 0, 150}, Color{0, 0, 0, 0});
     fill_gradient(ui, 0, 200, Ui::kWidth, 70, Color{0, 0, 0, 0}, Color{0, 0, 0, 170});
-    ui.header("COURSE SELECT", "The host chooses the course");
+    ui.header("COURSE SELECT", hint_);
 
     // Logo (or the name) at the top left, the map at the right.
     float slide = (1 - t) * 24;
@@ -1341,7 +1410,7 @@ void CoursePicker::render(App& app, Ui& ui, PickerArt& art) {
         ui.text_right(Ui::kWidth - 6, kY + 17, ">", colors::kAccent);
         hits_.add({Ui::kWidth - 20, kY - 4, 20, kIconH + 8}, kStripArrow, 1);
     }
-    footer_actions(ui, "Left/Right: course (L1/R1: x10)", {{"Cross: choose", 0}, {"Triangle: back to the lobby", 1}}, hits_,
+    footer_actions(ui, "Left/Right: course (L1/R1: x10)", {{"Cross: choose", 0}, {back_, 1}}, hits_,
                    kFooter, pointer_);
 }
 

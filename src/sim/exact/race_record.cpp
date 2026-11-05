@@ -82,6 +82,9 @@ void put_entry(Writer& w, const StartEntry& e) {
     for (u32 c : e.condition) w.put<u32>(c);
     w.put<u32>(e.best_lap);
     w.put<u32>(e.car);
+    w.put<u8>(e.driver ? 1 : 0);
+    if (e.driver)
+        for (u8 b : *e.driver) w.put<u8>(b);
 }
 
 void put_splits(Writer& w, const Splits& s) {
@@ -127,7 +130,7 @@ EntryRecords get_records(Reader& r, u32 version) {
     return e;
 }
 
-StartEntry get_entry(Reader& r) {
+StartEntry get_entry(Reader& r, u32 version) {
     StartEntry e;
     e.eq.car = r.get<u64>();
     for (u64& p : e.eq.part) p = r.get<u64>();
@@ -143,6 +146,11 @@ StartEntry get_entry(Reader& r) {
     for (u32& c : e.condition) c = r.get<u32>();
     e.best_lap = r.get<u32>();
     e.car = r.get<u32>();
+    if (version >= 5 && r.get<u8>() != 0) {
+        DriverOverrides d;
+        for (u8& b : d) b = r.get<u8>();
+        e.driver = d;
+    }
     return e;
 }
 
@@ -543,7 +551,7 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
     const u8 n = rd.get<u8>();
     if (n == 0 || n > 8) throw FormatError("race record: bad car count");
     for (u8 i = 0; i < n; ++i) {
-        r.entries.push_back(get_entry(rd));
+        r.entries.push_back(get_entry(rd, version));
         if (u32(r.entries.back().grid_slot) >= 8) throw FormatError("race record: bad grid slot");
     }
     r.frames = rd.get<u32>();

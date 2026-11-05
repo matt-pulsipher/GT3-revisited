@@ -10,7 +10,9 @@
 //   (ar/select_car), the car turning in the arcade showroom (menu/showroom_single.fbi, the
 //   page's reflection map) and the paint column with each paint's colour and name
 //   (carcolor.db / carcolor.sdb). With an `allowed` test (the lobby's rules) the pages can
-//   list only the cars allowed.
+//   list only the cars allowed. Opened on a car, the car page's back leaves the picker; a car page
+//   reached from the maker or class page goes back there. Either way a button above the colours
+//   goes to that page (Up from the first colour, or Circle).
 //   Course: the arcade course page: the course's still behind (stream/course.ipic),
 //   its logo and map, the strip of "<course>_mini" icons.
 //
@@ -41,6 +43,10 @@ class App;
 namespace data {
 class CarDatabase;
 }
+namespace game {
+struct CarFacts;
+class GtData;
+}
 
 struct PickerCar {
     std::string label, name, model;
@@ -55,6 +61,17 @@ struct PickerCar {
     int arcade_class = 0;   // the class page it is on, 1..5 (game::arcade_class_tag); 0 = none
     std::string class_text; // its class on the car page ("Class A, 4.6 kg/PS"); "" = none shown
 };
+
+// A car's id on a list, in config files and in a race request: an arcade car's label, else its car's.
+inline const std::string& car_key(const PickerCar& c) { return c.arcade.empty() ? c.label : c.arcade; }
+
+// The arcade's class lists added to `cars` (the car page's classes: the cars as the arcade races them), every car of them,
+// nothing locked. Labels this disc's region lacks cannot be built and are left out.
+void add_arcade_cars(App& app, const data::CarDatabase& db, const game::GtData& gd, std::vector<PickerCar>& cars);
+// The car page's classes for a course: every car on the class page of its class (game::car_class: its class list's, else by
+// weight per power, a rally car on dirt), each car once: the stock car of an arcade car is there as that arcade car (and
+// under its maker). `facts(i)`: car i's.
+void assign_car_classes(std::vector<PickerCar>& cars, bool dirt, const std::function<const game::CarFacts&(int)>& facts);
 
 struct PickerCourse {
     std::string label, name;
@@ -164,8 +181,8 @@ private:
         int region = -1;          // dealer region (PickerArt::maker_region)
         int cls = -1;             // class page: 1..5, 0 = the garage; -1 on the maker page
     };
-    enum Hit { kTile, kTab, kFilter, kStrip, kStripArrow, kPaint, kFooter };
-    enum Footer { kChoose, kBack, kToggleFilter, kSwitchView };
+    enum Hit { kTile, kTab, kFilter, kStrip, kStripArrow, kPaint, kGroupsButton, kFooter };
+    enum Footer { kChoose, kBack, kToggleFilter, kSwitchView, kGroups };
     void build_groups(App& app);
     // Rebuilds the groups (view or filter changed) and finds the focused car again.
     void regroup(App& app);
@@ -187,6 +204,8 @@ private:
     bool by_class_ = false, allowed_only_ = true;
     bool has_classes_ = false; // a car in a class list: the class page is offered
     bool in_group_ = false;
+    bool from_groups_ = false; // the car page was reached from the maker / class page: back returns there (else it leaves)
+    bool on_groups_button_ = false; // the pad's cursor is on the button above the colours
     int group_ = 0, pos_ = 0; // focused group, focused car within it
     int car_ = 0, paint_ = 0;
     int group_scroll_ = 0;  // first row of tiles shown
@@ -211,12 +230,15 @@ public:
     void event(const SDL_Event& e) { pointer_.event(e); }
     bool clickable(float x, float y) const { return hits_.at(x, y) != nullptr; } // Screen::clickable
     int course() const { return sel_; }
+    // The header's hint and the footer's way back.
+    void set_labels(std::string hint, std::string back) { hint_ = std::move(hint), back_ = std::move(back); }
 
 private:
     enum Hit { kStrip, kStripArrow, kFooter };
     void select(App& app, int to);
     const std::vector<PickerCourse>* courses_ = nullptr;
     std::function<u32(const std::string&)> length_m_;
+    std::string hint_ = "The host chooses the course", back_ = "Triangle: back to the lobby";
     int sel_ = 0, prev_ = -1;
     float strip_x_ = 0;
     int pulse_ = 0, fade_ = 0; // frames since the last move
@@ -235,6 +257,11 @@ struct FooterAction {
 };
 void footer_actions(Ui& ui, std::string_view hint, const std::vector<FooterAction>& actions, HitList& hits, int id,
                     const PointerInput& pointer);
+
+// A row's value in `r`, between "<" and ">" buttons that keep their place as the value changes; they go to `hits` as `left`
+// and `right` with `arg`. `indent`: room before the value for what the caller draws there (an icon, a paint chip).
+void value_arrows(Ui& ui, const UiRect& r, std::string_view value, Color c, HitList& hits, int left, int right, int arg,
+                  const PointerInput& pointer, float indent = 0);
 
 // The pointer's last position is over `r` (a mouse / VR pointer; hover highlights).
 bool hovering(const PointerInput& pointer, const UiRect& r);

@@ -1217,6 +1217,18 @@ every step, ties keep their places) is the HUD position and the player's place: 
 then running cars by distance, a running car ahead of a finished one, finished cars by finish time.
 `GT3R_RACE="event=AEAT0001"` starts one directly.
 
+Quick race's custom race is the player's own race on one page: any course, the laps and the lineup, pole first: one to five
+opponents, as many as the course's start grid holds, and the player's car and place among them (`GameRequest::opponents`,
+`opponent_paints`, `opponent_skills`, `no_rubber_band`, `laps`, `player_slot`; the page's lineup is `app/opponent_grid.h`,
+which knows nothing of Quick race). It
+runs on the arcade's Normal race, Class S's or on dirt the dirt race's, for that race's start and tyre wear. Each opponent is
+any car in any of its colours, and its skill is an arcade difficulty: the driver overrides (ai §9.2) of the arcade race of
+that difficulty, read from the disc, so they differ by release. `FieldConfig::opponent_skills` names that event per opponent
+and `sim::exact::StartEntry::driver` carries its overrides, in place of the race's. The rubber band is cleared
+(`clear_rubber_band`) unless the player turns catch-up on, since it would hold a Professional field back. Replays keep the
+overrides in the race record (version 5) and the paints in the file (format v13). A custom race can be saved under a name:
+`[quickrace_race<n>]` in config.ini, the same keys as the last one in `[quickrace_custom]`.
+
 ### Starts and event fields
 
 From the event record (database table 32; `race::event_start`):

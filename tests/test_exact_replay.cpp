@@ -24,6 +24,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <set>
 
 using namespace gt3r;
 namespace ex = gt3r::sim::exact;
@@ -96,6 +97,10 @@ struct Scenario {
     int take_over = -1;        // the AI takes player 1's car over at this step (a demonstration)
     int gearbox = -1;          // the pause menu's AT / MT changes at this step (while the pad drives)
     bool condition = false;    // the screen seeds an engine condition other than the entry's before the first step
+    // A custom race (Quick race): the opponents and their skills, the race without its rubber band.
+    std::vector<std::string> opponents = {}, skills = {};
+    bool no_rubber_band = false;
+    int player_slot = -1;
 };
 
 struct Result {
@@ -120,6 +125,10 @@ Result round_trip(const Scenario& sc) {
     race::FieldConfig cfg;
     cfg.event = sc.event;
     cfg.max_opponents = battle ? 0 : std::max(0, std::min(int(ev->cars_in_race) - 1, 5));
+    cfg.opponents = sc.opponents;
+    cfg.opponent_skills = sc.skills;
+    cfg.no_rubber_band = sc.no_rubber_band;
+    cfg.player_slot = sc.player_slot;
     race::ExactFieldOptions o;
     o.data = program();
     o.course_file = std::make_shared<const Bytes>(*file);
@@ -277,9 +286,144 @@ TEST(exact_replay_round_trip) {
         s.config = 3, s.steps = 4000;
         scenarios.push_back(s);
     }
+    // A custom race's field: each opponent's own skill, no rubber band.
+    {
+        Scenario s{"custom race", "Gsunday_e_0001", "r34_gtr_v_99"};
+        s.opponents = {"gt_one_race_99", "raybrig_nsx_00", "vitz_rs15_00"};
+        s.skills = {"APST0001", "", "AEST0001"};
+        s.no_rubber_band = true;
+        s.player_slot = 1;
+        scenarios.push_back(s);
+    }
     for (const Scenario& s : scenarios) {
         const Result r = round_trip(s);
         CHECK(r.steps == s.steps && r.frames == s.steps && r.differing == 0 && r.matched);
+    }
+}
+
+namespace {
+
+// `steps` steps of a race of the player, parked on the grid, against `opponents` with these skills.
+struct GridRace {
+    std::unique_ptr<race::RaceTrack> track;
+    std::unique_ptr<race::RaceField> field;
+    const ex::ExactRace* race = nullptr;
+};
+GridRace grid_race(const std::string& event, std::vector<std::string> opponents, std::vector<std::string> skills, bool no_band,
+                   int steps, int player_slot = -1) {
+    GridRace r;
+    data::CarDatabase& db = *database();
+    const data::Event* ev = db.event(event);
+    std::optional<Bytes> file = ev ? course_file(ev->course) : std::nullopt;
+    CHECK(file.has_value());
+    if (!file) return r;
+    Vfs vfs(&test::test_disc()->volume());
+    r.track = race::make_track(vfs, *file, ev->course);
+    race::FieldConfig cfg;
+    cfg.event = event;
+    cfg.opponents = std::move(opponents);
+    cfg.opponent_skills = std::move(skills);
+    cfg.no_rubber_band = no_band;
+    cfg.player_slot = player_slot;
+    race::ExactFieldOptions o;
+    o.data = program();
+    o.course_file = std::make_shared<const Bytes>(*file);
+    o.course = ev->course;
+    o.kind = ex::Conductor::SinglePlayer;
+    o.laps = ev->laps;
+    o.player.car = {"r34_gtr_v_99"};
+    cfg.exact = o;
+    std::string err;
+    r.field = race::RaceField::create(*r.track, db, cfg, &err);
+    if (!r.field) std::printf("  %s\n", err.c_str());
+    CHECK(r.field != nullptr);
+    if (!r.field) return r;
+    r.race = race::exact_race_of(*r.field);
+    PadState idle;
+    idle.connected = true;
+    for (int k = 0; k < steps; ++k) {
+        r.field->player().set_pad(&idle);
+        r.field->player().step(sim::ControlInputs{}, 1.0 / 60.0);
+    }
+    return r;
+}
+
+} // namespace
+
+// The events Quick race's custom race reads, on every region's disc: the four difficulties of the Class S race and the dirt race.
+TEST(exact_custom_race_skill_events) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    data::CarDatabase db;
+    CHECK(db.load(disc->volume()));
+    for (const char* cls : {"ST", "AD"})
+        for (char level : {'E', 'N', 'H', 'P'}) {
+            const data::Event* ev = db.event(std::string("A") + level + cls + "0001");
+            CHECK(ev != nullptr && ev->bytes.size() >= 0x1F4);
+            if (!ev) continue;
+            const ex::DriverOverrides d = ex::driver_overrides(ex::race_config(ev->bytes));
+            for (size_t c = 0; c < 4; ++c) CHECK(d[c] >= 50 && d[c] <= 100 && d[8 + c] >= 50 && d[8 + c] <= 100);
+        }
+}
+
+// Quick race's custom race: each opponent's driver has its own skill's overrides (an entry without one the race's event's),
+// and each skill is faster than the one before. The event's rubber band moves the cars' time scales only if the race keeps it.
+TEST(exact_custom_race_skills) {
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    const std::string car = "r34_gtr_v_99";
+    const std::vector<std::string> cars(4, car), skills = {"AEST0001", "ANST0001", "AHST0001", "APST0001"};
+    GridRace a = grid_race("Gsunday_e_0003", cars, skills, true, 7200);
+    CHECK(a.race != nullptr);
+    if (!a.race) return;
+    auto cpu = [&](const GridRace& r, int i) -> const ex::Car& { return r.race->cars()[size_t(i + 1)]; };
+    // The disc's overrides (throttle, corner speed), from the events as the race reads them.
+    for (int i = 0; i < 4; ++i) {
+        const ex::DriverOverrides d = ex::driver_overrides(ex::race_config(database()->event(skills[size_t(i)])->bytes));
+        const int cls = cpu(a, i).p.drive_class;
+        const float throttle = d[size_t(cls)] == 100 ? 1.0f : float(d[size_t(cls)]) / 100.0f;
+        CHECK(std::abs(cpu(a, i).ai.throttle_scale.host() - throttle) < 0.001f);
+        const float corner = float(d[8 + size_t(cls)]) / 100.0f;
+        CHECK(std::abs(cpu(a, i).ai.speed_scale.host() / cpu(a, 3).ai.speed_scale.host() - corner) < 0.001f);
+    }
+    // No time scale moved: 1 less the last bit, the global scale's 100 x 0.01 in EE floats, as in the arcade's Professional races.
+    for (int i = 0; i < 4; ++i) CHECK(std::abs(cpu(a, i).time_scale.host() - 1.0f) < 1e-6f);
+    // Alone on the course, each skill is faster than the one before (a few cars on a few courses are at the limit of their
+    // tyres with Hard already, and gain nothing from Professional).
+    double before = 0;
+    for (int i = 0; i < 4; ++i) {
+        GridRace alone = grid_race("Gclubman_e_0003", {car}, {skills[size_t(i)]}, true, 7200);
+        CHECK(alone.race != nullptr);
+        if (!alone.race) return;
+        const double distance = double(cpu(alone, 0).laps) * 1e5 + double(cpu(alone, 0).f3e4.host());
+        std::printf("  %s after 2 min: %.0f\n", skills[size_t(i)].c_str(), distance);
+        CHECK(distance > before);
+        before = distance;
+    }
+    // An entry with no skill drives as the event says; with the rubber band kept the leaders (far from the parked player) slow.
+    GridRace b = grid_race("Gsunday_e_0001", {car, car}, {"", "APST0001"}, false, 3600);
+    CHECK(b.race != nullptr);
+    if (!b.race) return;
+    CHECK(cpu(b, 0).ai.throttle_scale.host() < 0.9f && std::abs(cpu(b, 1).ai.throttle_scale.host() - 1.0f) < 0.001f);
+    CHECK(cpu(b, 0).time_scale < ex::F(1.0f) && cpu(b, 1).time_scale < ex::F(1.0f));
+}
+
+// The player's place in a custom race's lineup: the opponents fill the other slots in order, each once; the race's order
+// starts from the grid.
+TEST(exact_custom_race_player_place) {
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    const std::vector<std::string> cars(5, "r34_gtr_v_99");
+    for (int slot = 0; slot < 6; ++slot) {
+        GridRace r = grid_race("Gsunday_e_0003", cars, {}, true, 1, slot);
+        CHECK(r.race != nullptr);
+        if (!r.race) return;
+        CHECK(r.field->player_position() == slot + 1);
+        const std::shared_ptr<const ex::RaceRecord> rec = race::exact_recording(*r.field);
+        CHECK(rec && rec->entries.size() == 6 && rec->entries[0].grid_slot == slot);
+        if (!rec) return;
+        std::set<int> slots;
+        for (const ex::StartEntry& e : rec->entries) slots.insert(e.grid_slot);
+        CHECK(slots.size() == 6);
+        for (size_t i = 1; i < 6; ++i) CHECK(rec->entries[i].grid_slot == int(i) - 1 + (int(i) - 1 >= slot ? 1 : 0));
     }
 }
 

@@ -150,6 +150,8 @@ Bytes Replay::serialize() const {
             w.put<u32>(0); // (no car spec)
         }
     }
+    w.put<u8>(u8(std::min<size_t>(opponent_paints.size(), 64)));
+    for (size_t i = 0; i < opponent_paints.size() && i < 64; ++i) w.put<s8>(s8(std::clamp(opponent_paints[i], -1, 127)));
     {
         const Bytes xb = exact ? exact->serialize() : Bytes{};
         w.put<u32>(u32(xb.size()));
@@ -182,8 +184,8 @@ Replay Replay::parse(ByteSpan data) {
     Reader r(data.subspan(8));
     Replay rp;
     u32 version = r.get<u32>();
-    if (version >= 1 && version < kVersion) throw ReplayTooOld(kReplayTooOld);
-    if (version != kVersion) throw FormatError("unsupported replay version " + std::to_string(version));
+    if (version >= 1 && version < kOldestReplay) throw ReplayTooOld(kReplayTooOld);
+    if (version < kOldestReplay || version > kVersion) throw FormatError("unsupported replay version " + std::to_string(version));
     auto skip_spec = [&] { // (a car spec of a run before the exact core: not used)
         const u32 ns = r.get<u32>();
         if (ns > data.size()) throw FormatError("replay truncated");
@@ -241,6 +243,11 @@ Replay Replay::parse(ByteSpan data) {
             skip_spec();
             rp.battle = std::move(b);
         }
+    }
+    if (version >= 13) {
+        const u8 np = r.get<u8>();
+        if (np > 64) throw FormatError("bad replay paint count");
+        for (u8 i = 0; i < np; ++i) rp.opponent_paints.push_back(r.get<s8>());
     }
     const u32 nx = r.get<u32>();
     if (!nx) throw ReplayTooOld(kReplayTooOld); // (a run before every race ran on the exact core)

@@ -83,6 +83,14 @@ struct GameRequest {
     // Opponents (car variant labels) chosen by GT mode, e.g. a championship
     // field kept for every round; empty = draw them from the event's entries.
     std::vector<std::string> opponents;
+    // Quick race's custom race (`opponents` its cars, in grid order): each opponent's paint index (-1: the game's draw) and
+    // skill (an event label, race::FieldConfig::opponent_skills), the race without its event's rubber band, its laps (0: the
+    // event's) and the player's grid slot (-1: behind the opponents).
+    std::vector<int> opponent_paints;
+    std::vector<std::string> opponent_skills;
+    bool no_rubber_band = false;
+    int laps = 0;
+    int player_slot = -1;
     // Championship round (GT mode): 1-based round and round count, 0 = not a championship.
     int champ_round = 0;
     int champ_rounds = 0;

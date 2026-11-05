@@ -263,33 +263,8 @@ public:
         if (keyboard_.is_open() && e.type == SDL_EVENT_KEY_DOWN && e.key.key != SDLK_UP && e.key.key != SDLK_DOWN &&
             e.key.key != SDLK_LEFT && e.key.key != SDLK_RIGHT)
             app.menu().suppress();
-        std::string& s = edit_target();
-        if (e.type == SDL_EVENT_TEXT_INPUT) {
-            for (const char* c = e.text.text; *c; ++c)
-                if (s.size() < 63 && u8(*c) >= 32 && u8(*c) < 127) s += *c;
-        } else if (e.type == SDL_EVENT_KEY_DOWN) {
-            if (e.key.key == SDLK_BACKSPACE && !s.empty()) s.pop_back();
-            else if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) end_edit(app, true);
-            else if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_AC_BACK) end_edit(app, false);
-        } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && !keyboard_.is_open()) {
-            // Controller typing: up/down change the last character, right adds one, left deletes.
-            static const std::string kChars = "0123456789.:abcdefghijklmnopqrstuvwxyz-_[]";
-            auto cycle = [&](int d) {
-                if (s.empty()) s += '0';
-                size_t i = kChars.find(char(std::tolower(u8(s.back()))));
-                i = i == std::string::npos ? 0 : (i + kChars.size() + size_t(d)) % kChars.size();
-                s.back() = kChars[i];
-            };
-            switch (e.gbutton.button) {
-            case SDL_GAMEPAD_BUTTON_DPAD_UP: cycle(1); break;
-            case SDL_GAMEPAD_BUTTON_DPAD_DOWN: cycle(-1); break;
-            case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: if (s.size() < 63) s += s.empty() ? '0' : s.back(); break;
-            case SDL_GAMEPAD_BUTTON_DPAD_LEFT: if (!s.empty()) s.pop_back(); break;
-            case SDL_GAMEPAD_BUTTON_SOUTH: case SDL_GAMEPAD_BUTTON_START: end_edit(app, true); break;
-            case SDL_GAMEPAD_BUTTON_EAST: end_edit(app, false); break;
-            default: break;
-            }
-        }
+        if (const TextKeyboard::Result r = text_field_event(e, edit_target(), !keyboard_.is_open()); r != TextKeyboard::Result::None)
+            end_edit(app, r == TextKeyboard::Result::Done);
     }
 
     void render(App& app, Ui& ui) override {
@@ -414,41 +389,14 @@ private:
             cars_.push_back(e);
         }
         std::sort(cars_.begin() + ptrdiff_t(garage), cars_.end(), [](const Entry& a, const Entry& b) { return a.name < b.name; });
-        // The class lists, every car of them: online play does not wait for arcade mode's
-        // unlocks. Labels this disc's region lacks cannot be built and are left out.
-        if (gs)
-            for (int k = 1; k <= game::kArcadeClasses; ++k) {
-                auto list = gs->gt().data().arcade_classes.find(game::arcade_class_tag(k));
-                if (list == gs->gt().data().arcade_classes.end()) continue;
-                for (const game::GtData::ArcadeCar& a : list->second) {
-                    game::OnlineCar oc = game::online_car_from_arcade(db_, a.label, 0);
-                    const data::Car* c = oc.car.empty() ? nullptr : db_.car(oc.car);
-                    if (!c) continue; // mod cars (marked above) and labels this region lacks
-                    std::string model = db_.model_of(*c);
-                    if (model.empty() || !app.vfs()->exists("cars/day/" + model)) continue;
-                    cars_.push_back(Entry{c->label, ascii(c->latin_name.empty() ? c->label : c->latin_name), model, -1, false, c->maker, 0,
-                                          {}, a.label, k, {}});
-                }
-            }
+        if (gs) add_arcade_cars(app, db_, gs->gt().data(), cars_);
         facts_.assign(cars_.size(), std::nullopt);
         here_.clear(); // the database changed
     }
 
-    // The car page's classes for this course: every car on the class page of its class
-    // (game::car_class: its class list's, else by weight per power, a rally car on dirt), each
-    // car once: the stock car of an arcade car is there as that arcade car (and under its maker).
+    // The car page's classes for this course.
     void assign_classes() {
-        const bool dirt = rules_of(net::online()).dirt_course;
-        std::set<std::string> arcade_bases;
-        for (const Entry& e : cars_)
-            if (!e.arcade.empty()) arcade_bases.insert(e.label);
-        for (size_t i = 0; i < cars_.size(); ++i) {
-            Entry& e = cars_[i];
-            const game::CarFacts& f = facts_at(int(i));
-            const bool as_arcade = e.arcade.empty() && e.garage < 0 && !f.arcade_class && arcade_bases.count(e.label);
-            e.arcade_class = as_arcade ? 0 : game::car_class(f, dirt);
-            e.class_text = game::car_class_text(f, dirt);
-        }
+        assign_car_classes(cars_, rules_of(net::online()).dirt_course, [this](int i) -> const game::CarFacts& { return facts_at(i); });
     }
 
     // "Class A: Skyline GT-R V-spec II (R34)" for an arcade car.
@@ -599,7 +547,6 @@ private:
     }
 
     // The label an entry is remembered by: an arcade car's own, else its car's.
-    static const std::string& car_key(const Entry& e) { return e.arcade.empty() ? e.label : e.arcade; }
 
     static int find(const std::vector<Entry>& v, const std::string& label, int fallback) {
         for (size_t i = 0; i < v.size(); ++i)

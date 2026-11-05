@@ -163,4 +163,34 @@ void TextKeyboard::draw(Ui& ui, const std::string& text) {
     ui.footer("Cross: type   Square: delete   Start: " + done_ + "   Triangle: cancel");
 }
 
+TextKeyboard::Result text_field_event(const SDL_Event& e, std::string& s, bool pad_typing) {
+    using R = TextKeyboard::Result;
+    if (e.type == SDL_EVENT_TEXT_INPUT) {
+        for (const char* c = e.text.text; *c; ++c)
+            if (s.size() < TextKeyboard::kMaxLength && u8(*c) >= 32 && u8(*c) < 127) s += *c;
+    } else if (e.type == SDL_EVENT_KEY_DOWN) {
+        if (e.key.key == SDLK_BACKSPACE && !s.empty()) s.pop_back();
+        else if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) return R::Done;
+        else if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_AC_BACK) return R::Cancel;
+    } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad_typing) {
+        static const std::string kChars = "0123456789.:abcdefghijklmnopqrstuvwxyz-_[]";
+        auto cycle = [&](int d) {
+            if (s.empty()) s += '0';
+            size_t i = kChars.find(char(std::tolower(u8(s.back()))));
+            i = i == std::string::npos ? 0 : (i + kChars.size() + size_t(d)) % kChars.size();
+            s.back() = kChars[i];
+        };
+        switch (e.gbutton.button) {
+        case SDL_GAMEPAD_BUTTON_DPAD_UP: cycle(1); break;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN: cycle(-1); break;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: if (s.size() < TextKeyboard::kMaxLength) s += s.empty() ? '0' : s.back(); break;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT: if (!s.empty()) s.pop_back(); break;
+        case SDL_GAMEPAD_BUTTON_SOUTH: case SDL_GAMEPAD_BUTTON_START: return R::Done;
+        case SDL_GAMEPAD_BUTTON_EAST: return R::Cancel;
+        default: break;
+        }
+    }
+    return R::None;
+}
+
 } // namespace gt3r

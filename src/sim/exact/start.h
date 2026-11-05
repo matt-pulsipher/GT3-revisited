@@ -27,6 +27,7 @@
 #include "sim/exact/tick.h"
 
 #include <array>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -71,6 +72,8 @@ struct StartEntry {
     std::array<u32, 8> condition{};    // entry + 0x2104: the engine condition words
     u32 best_lap = 0;                  // entry + 0x11D8: free practice keeps the lower of it and the car's best lap
     u32 car = 0;                       // the record's address (the parameter block's tables point into it)
+    // A CPU car's own overrides in place of the race's (Quick race's custom race, not in GT3). Unset: the race's.
+    std::optional<DriverOverrides> driver;
 };
 
 // The per-car part for entry i of the race: the whole record.

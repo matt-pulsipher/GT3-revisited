@@ -43,7 +43,7 @@ struct RaceChange {
 void apply_change(ExactRace& race, const RaceChange& c);
 
 struct RaceRecord {
-    static constexpr u32 kVersion = 4; // the record's own layout (inside a replay file; versions 1 to 3 still read)
+    static constexpr u32 kVersion = 5; // the record's own layout (inside a replay file; versions 1 to 4 still read)
 
     // ---- the program and the course ----
     u64 program = 0;        // ProgramData::fingerprint of the program the race ran on
