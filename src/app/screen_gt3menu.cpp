@@ -237,7 +237,7 @@ public:
         acc_ += dt;
         while (acc_ >= kFrame) {
             acc_ -= kFrame;
-            step(app, keys);
+            step(app, keys, acc_ < kFrame);
         }
     }
 
@@ -470,9 +470,10 @@ private:
         transition_.stop();
     }
 
-    // One 60 Hz frame of the menu, including its picture (transitions
-    // accumulate on the previous frame, so every frame is drawn).
-    void step(App& app, MenuKeys keys) {
+    // One 60 Hz frame of the menu, including its picture (transitions accumulate on the previous
+    // frame, so every frame counts). `draw` false: another tick follows at once, catching up on a
+    // slow frame: only the last picture shows, and a page's 3D passes would slow the next frame.
+    void step(App& app, MenuKeys keys, bool draw = true) {
         flow_->tick(keys);
         for (const std::string& s : flow_->take_sounds()) sounds_.play(app.audio().voices(), s);
         for (std::string& m : flow_->take_log()) messages_.push_back({std::move(m), 240});
@@ -511,7 +512,7 @@ private:
             acc_ = 0;
         }
         ++pending_draws_;
-        draw_frame(app);
+        if (draw) draw_frame(app);
     }
 
     // Options menu values ([options] in config.ini): Menu BGM / Menu SE apply at once.

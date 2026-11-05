@@ -228,8 +228,7 @@ private:
             else app.audio().play_sequence(*app.vfs(), *m, bgm::kMenuVolume);
         }
         for (std::string& m : flow_->take_log()) LOG_INFO("gt setting: %s", m.c_str());
-        ++pending_draws_;
-        draw_frame(app);
+        ++pending_draws_; // drawn in render, once a shown frame however many ticks it caught up
     }
 
     void draw_frame(App& app) {
