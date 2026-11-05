@@ -23,6 +23,7 @@
 #include <SDL3/SDL_joystick.h>
 
 #include <array>
+#include <string>
 #include <vector>
 
 namespace gt3r {
@@ -36,11 +37,20 @@ struct ForceFeedbackState {
     float steer_force = 0;  // -1..1 force the wheel should apply; positive turns it clockwise (right)
     float jolt = 0;         // 0..1 impact this frame (walls, cars)
     float wheelspin = 0;    // 0..1 the drive wheels spinning under throttle (race::RumbleModel::wheelspin)
+    float understeer = 0;   // GT3's steering indicators: 0..1 the yaw rate short of what the steering asks
+    float oversteer = 0;    // 0..1 the rear tyres past their slip threshold
+    bool triggers_on = true; // the Vibration option: the triggers
+    bool wheel_on = true;    // the GT FORCE Force Feedback option: the wheel
 };
 
 struct ForceFeedbackConfig {
     bool enabled = true, triggers = true, wheel = true, invert = false;
     float strength = 1.0f, spring = 0.6f, trigger_force = 0.6f;
+    float steering = 1.0f;   // the steering force's share of `strength`, 0..1 (0: the spring alone)
+    float understeer = 0.5f; // Modern: how much of the wheel's force goes at full understeer, 0..1
+    std::string wheel_mode = "auto"; // auto (modern) | modern | gt3
+
+    bool gt3_wheel() const { return wheel_mode == "gt3"; }
 
     static ForceFeedbackConfig load(const IniDocument& ini);
     void save(IniDocument& ini) const;
@@ -64,9 +74,14 @@ TriggerEffect throttle_trigger_effect(const ForceFeedbackState& s, const ForceFe
 using Ds5Packet = std::array<u8, 47>;
 Ds5Packet ds5_trigger_packet(const TriggerEffect& left, const TriggerEffect& right, u8 low, u8 high, bool improved);
 
-// Wheel: spring coefficient and constant-force level, both 0..32767 / +-32767.
+// Wheel: spring coefficient and constant-force level, both 0..32767 / +-32767. GT3 original sends GT3's
+// force alone, over a spring that doesn't change with speed; Modern firms the spring up with speed, adds
+// a kick on impacts and lightens the wheel in understeer, and fades the spring in a slide.
 int wheel_spring_coefficient(const ForceFeedbackState& s, const ForceFeedbackConfig& c);
 int wheel_constant_level(const ForceFeedbackState& s, const ForceFeedbackConfig& c);
+// GT3's steering indicators as the wheel plays them, a step of `dt` seconds on from `felt`: they jump
+// tick to tick (0 to 0.65 and back at a turn-in, where the yaw rate lags the steering).
+float eased_indicator(float felt, float indicator, float dt);
 
 // Xbox impulse trigger strengths 0..1: the brake's at time `t` seconds (the ABS level, pulsed at
 // ~16 Hz), the throttle's (the wheelspin).
@@ -112,6 +127,8 @@ private:
         bool impulse_on = false;
         SDL_Haptic* haptic = nullptr;
         bool haptic_tried = false;
+        float understeer = 0, oversteer = 0; // ffb::eased_indicator
+        double eased_at = 0;                 // their time
         int spring_id = -1, constant_id = -1;
         int spring_coef = -1, constant_level = 0x7fffffff;
     };

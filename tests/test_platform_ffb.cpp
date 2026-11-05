@@ -105,15 +105,99 @@ TEST(ffb_wheel_spring_and_force) {
     CHECK(ffb::wheel_constant_level(s, c) == 0 && ffb::wheel_spring_coefficient(s, c) == 0);
 }
 
+// GT3 original is GT3's force alone over a plain spring: nothing on impacts, in understeer or in a slide.
+TEST(ffb_wheel_gt3_original) {
+    ForceFeedbackConfig c;
+    CHECK(!c.gt3_wheel());
+    c.wheel_mode = "gt3";
+    CHECK(c.gt3_wheel());
+    ForceFeedbackState s;
+    const int stopped = ffb::wheel_spring_coefficient(s, c);
+    CHECK(stopped == int(std::lround(c.spring * 32767.0f)));
+    s.speed_kmh = 200, s.understeer = 1, s.oversteer = 1;
+    CHECK(ffb::wheel_spring_coefficient(s, c) == stopped); // no change with speed or grip
+    s.steer_force = 0.5f, s.jolt = 1;
+    CHECK(std::abs(ffb::wheel_constant_level(s, c) - 16384) <= 1);
+}
+
+// Modern's understeer: the force and the spring go by the setting's share at full understeer, the
+// spring also out of a slide; a setting of 0 changes nothing. Bumps and hits stay.
+TEST(ffb_wheel_modern_understeer) {
+    ForceFeedbackConfig c;
+    ForceFeedbackState s;
+    s.speed_kmh = 200, s.steer_force = 0.8f;
+    const int grip = ffb::wheel_constant_level(s, c), spring = ffb::wheel_spring_coefficient(s, c);
+    s.understeer = 1;
+    CHECK(std::abs(ffb::wheel_constant_level(s, c) - grip / 2) <= 1);
+    CHECK(std::abs(ffb::wheel_spring_coefficient(s, c) - spring / 2) <= 1);
+    s.steer_force = -0.8f;
+    CHECK(std::abs(ffb::wheel_constant_level(s, c) + grip / 2) <= 1); // the same either way
+    s.steer_force = 0.8f;
+    c.understeer = 0;
+    CHECK(ffb::wheel_constant_level(s, c) == grip && ffb::wheel_spring_coefficient(s, c) == spring);
+    c.understeer = 0.5f;
+    s.understeer = 0, s.oversteer = 1;
+    CHECK(ffb::wheel_constant_level(s, c) == grip); // the slide's force is GT3's
+    CHECK(ffb::wheel_spring_coefficient(s, c) == 0);
+    s.oversteer = 0, s.steer_force = 0, s.jolt = 1;
+    CHECK(ffb::wheel_constant_level(s, c) == 16384);
+}
+
+// The steering force and the spring each go to 0 without the other, for the spring or the force alone.
+TEST(ffb_wheel_force_and_spring_apart) {
+    ForceFeedbackConfig c;
+    ForceFeedbackState s;
+    s.speed_kmh = 200, s.steer_force = 0.5f;
+    const int level = ffb::wheel_constant_level(s, c), spring = ffb::wheel_spring_coefficient(s, c);
+    c.steering = 0;
+    CHECK(ffb::wheel_constant_level(s, c) == 0 && ffb::wheel_spring_coefficient(s, c) == spring);
+    s.jolt = 1;
+    CHECK(ffb::wheel_constant_level(s, c) == 0); // no kick either
+    s.jolt = 0;
+    c.steering = 1, c.spring = 0;
+    CHECK(ffb::wheel_constant_level(s, c) == level && ffb::wheel_spring_coefficient(s, c) == 0);
+    c.spring = 0.6f, c.strength = 0.5f;
+    CHECK(std::abs(ffb::wheel_constant_level(s, c) - level / 2) <= 1);
+    CHECK(std::abs(ffb::wheel_spring_coefficient(s, c) - spring / 2) <= 1);
+}
+
+// As GT3, the GT FORCE option switches the wheel's force and Vibration doesn't; Vibration the triggers.
+TEST(ffb_options_switch_wheel_and_triggers_apart) {
+    ForceFeedbackConfig c;
+    ForceFeedbackState s;
+    s.speed_kmh = 100, s.steer_force = 0.5f, s.abs_level = 1, s.wheelspin = 1;
+    s.triggers_on = false;
+    CHECK(ffb::wheel_constant_level(s, c) != 0 && ffb::wheel_spring_coefficient(s, c) != 0);
+    CHECK(ffb::brake_trigger_effect(s, c) == ffb::trigger_off() && ffb::throttle_trigger_effect(s, c) == ffb::trigger_off());
+    CHECK(ffb::impulse_brake(s, 0) == 0 && ffb::impulse_throttle(s) == 0);
+    s.triggers_on = true, s.wheel_on = false;
+    CHECK(ffb::wheel_constant_level(s, c) == 0 && ffb::wheel_spring_coefficient(s, c) == 0);
+    CHECK(ffb::brake_trigger_effect(s, c) != ffb::trigger_off() && ffb::impulse_throttle(s) > 0);
+}
+
+TEST(ffb_indicators_eased) {
+    CHECK(ffb::eased_indicator(0, 0.65f, 0) == 0);
+    float felt = ffb::eased_indicator(0, 1, 1.0f / 60);
+    CHECK(felt > 0.06f && felt < 0.07f);                       // a one-tick spike barely moves it
+    CHECK(ffb::eased_indicator(felt, 0, 1.0f / 60) < felt);
+    CHECK(ffb::eased_indicator(0, 1, 1) == 1 && ffb::eased_indicator(0, 3, 1) == 1); // long gaps land, in range
+    for (int i = 0; i < 120; ++i) felt = ffb::eased_indicator(felt, 0.5f, 1.0f / 60);
+    CHECK(std::fabs(felt - 0.5f) < 0.01f);
+}
+
 TEST(ffb_config_roundtrip) {
-    IniDocument ini = IniDocument::parse("[ffb]\nenabled = off\nwheel = off\nstrength = 5\nspring = 0.3\ninvert = on\n");
+    IniDocument ini = IniDocument::parse("[ffb]\nenabled = off\nwheel = off\nstrength = 5\nspring = 0.3\ninvert = on\n"
+                                         "wheel_mode = GT3\nsteering = 0.25\nundersteer = 7\n");
     ForceFeedbackConfig c = ForceFeedbackConfig::load(ini);
     CHECK(!c.enabled && !c.wheel && c.triggers && c.invert);
-    CHECK(c.strength == 2.0f); // clamped
+    CHECK(c.strength == 2.0f && c.understeer == 1.0f); // clamped
     IniDocument out;
     c.save(out);
     ForceFeedbackConfig d = ForceFeedbackConfig::load(out);
     CHECK(!d.enabled && !d.wheel && d.invert && std::fabs(d.spring - 0.3f) < 1e-3f);
+    CHECK(d.gt3_wheel() && std::fabs(d.steering - 0.25f) < 1e-3f && d.understeer == 1.0f);
+    CHECK(ForceFeedbackConfig::load(IniDocument::parse("[ffb]\nwheel_mode = sideways\n")).wheel_mode == "auto");
+    CHECK(ForceFeedbackConfig::load(IniDocument::parse("[ffb]\nwheel_mode = modern\n")).wheel_mode == "modern");
 }
 
 TEST(ffb_input_manager_without_devices) {

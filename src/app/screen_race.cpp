@@ -290,6 +290,8 @@ void RaceScreen::init(App& app) {
         music_.set_first_song(app.config().get("music", "race_song").value_or(""));
     rumble_on_ = menu::flow::option_value(&app.config(), "vib1") != "off";
     rumble2_on_ = menu::flow::option_value(&app.config(), "vib2") != "off";
+    wheel_force_on_ = menu::flow::option_value(&app.config(), "force_feedback_1p") != "off";
+    wheel_force2_on_ = menu::flow::option_value(&app.config(), "force_feedback_2p") != "off";
     // Options (the original's options record): race / replay SE, ghost, wide mode (2P split).
     race_se_ = menu::flow::option_value(&app.config(), "race_se") != "off";
     replay_se_ = menu::flow::option_value(&app.config(), "replay_se") != "off";

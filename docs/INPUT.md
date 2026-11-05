@@ -444,7 +444,7 @@ force, impacts, wheelspin) and each player's device turns it into native feedbac
 |---|---|
 | DualSense (PS5) | Adaptive triggers. The one bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while the ABS is working, by its level from zero. The one bound to the throttle (Cross): a 35 Hz vibration while the drive wheels spin, by the wheelspin from zero. Both sent in one packet with `SDL_SendGamepadEffect`, only when an effect changes (SDL's trigger rumble does nothing on a DualSense). The packet carries the motors' rumble as SDL's own packets do: without it the controller switches back to its audio haptics and the rumble stops until the next change. A DualSense plays the small motor (the right grip) much lighter than the large one, so its level is sent 1.75 times stronger (at most full; `dualsense_rumble`), and Modern's lean is milder there (see Rumble) |
 | Xbox One/Series | Impulse triggers (`SDL_RumbleGamepadTriggers`): the brake's pulses at ~16 Hz while the ABS is working, up to 80 % by its level; the throttle's runs at half the wheelspin |
-| Wheels with force feedback | SDL haptics: a self-centring spring that firms up with speed (light when stopped, full from 120 km/h) and a constant force from the front tyres' lateral load (self-aligning feel; GT3's own steering-wheel force, sent at each of its 1/127 steps) plus a kick on impacts. The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
+| Wheels with force feedback | SDL haptics: GT3's own steering-wheel force as a constant force, sent at each of its 1/127 steps, over a spring, shaped by **Wheel force** (below). The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
 
 The ABS level (`VehicleTelemetry::abs_level`, 0..1, the strongest wheel's) is
 GT3's own ABS at work (physics §4.5): past the tire's best braking slip it takes
@@ -452,6 +452,22 @@ the slip over that target times G g of the pressure off. A car without the ABS
 (G 0) gives how far past that slip a wheel is locking, over 0.5. A brake
 pressure below the pedal does not count: GT3 also limits it by the tire's peak
 force, stopped or not.
+
+**Wheel force** (`[ffb] wheel_mode`, Settings → Rumble & feedback):
+
+| | GT3 original | Modern (`auto`) |
+|---|---|---|
+| Steering force | GT3's: the front tyres' lateral force, the road under them and a little resistance to turning the wheel | GT3's, lighter in understeer |
+| Spring | Plain, the same at every speed | Light when stopped, full from 120 km/h; lighter in understeer and gone in a slide |
+| Impacts | Nothing | A kick of up to half the wheel's force |
+
+GT3's lateral term reaches its limit by about 3 degrees of front slip, so past that its force stays flat as more lock goes on, and only the car's lean takes some off. **Understeer lightening** takes that share off at GT3's full understeer (the yaw rate short of what the steering asks), and the spring goes with it. GT3's understeer and oversteer indicators jump from tick to tick, so the wheel eases towards them over a quarter of a second (`ffb::eased_indicator`).
+
+GT3 sends a wheel one constant force a frame and no spring, and never touches the Logitech wheel's own spring, which stays on while it plays. Its strength on a GT Force isn't known, and SDL's DirectInput open turns a wheel's own spring off, so GT3 original plays a plain spring on every wheel at **Centring spring**.
+
+**Steering force** (`steering`) and **Centring spring** (`spring`) go to 0 apart, for the spring alone or the force alone; **Wheel strength** scales both.
+
+The game's **GT FORCE** option switches a wheel's force for its player, as in GT3; **Vibration** doesn't, and switches the triggers.
 
 Effects stop by themselves ~0.25 s after the last update (pause, menus).
 The brake and throttle triggers are found from the race bindings: whichever of
@@ -462,8 +478,11 @@ The brake and throttle triggers are found from the race bindings: whichever of
 enabled = on
 triggers = on          ; DualSense / Xbox trigger effects
 wheel = on             ; wheel spring and steering force
+wheel_mode = auto      ; auto (modern) | modern | gt3
 strength = 1.00        ; overall wheel force, 0..2
-spring = 0.60          ; centring spring at speed, 0..1
+steering = 1.00        ; steering force, 0..1
+spring = 0.60          ; centring spring, 0..1 (Modern: at speed)
+understeer = 0.50      ; Modern: force taken off at full understeer, 0..1
 trigger_force = 0.60   ; DualSense brake resistance, 0..1
 invert = off           ; flip the wheel's steering force if it pulls the wrong way
 ```

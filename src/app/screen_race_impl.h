@@ -832,6 +832,7 @@ private:
     bool practice_pit_exit_ = false;       // the player's car left the pit lane this step (START, count_s)
     int practice_pole_car_ = kNoPoleCar;   // the free practice's P.P. car (-1 the player, k opponent k; none before a lap)
     bool music_on_ = true, menu_music_on_ = true, rumble_on_ = true, rumble2_on_ = true;
+    bool wheel_force_on_ = true, wheel_force2_on_ = true; // the GT FORCE Force Feedback options
     bool aids_options_apply_ = false, asm_on_ = true, tcs_on_ = true;
     bool race_se_ = true, replay_se_ = true, ghost_on_ = true, wide_mode_ = false;
     QuickMenu quick_menu_;
