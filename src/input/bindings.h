@@ -221,6 +221,7 @@ struct PlayerBindings {
     const Profile& set(DeviceKind kind, bool race, BindingSet s) const;
     bool has_custom(DeviceKind kind, bool race) const; // custom sets kept (either set)
     bool custom(DeviceKind kind, bool race) const;     // and in use
+    bool controller_custom(DeviceKind kind, bool race) const; // the controller's set is custom and in use
     bool race_reads_menu(DeviceKind kind) const;        // "gt3", no custom race sets in use
     Profile combined(DeviceKind kind, bool race) const; // both sets: what drives the player
     // An edit: `source` goes into its own set (binding_set), alone there with `replace`; the

@@ -225,8 +225,9 @@ public:
     bool keyboard_enabled(int player) const { return players_[player].keyboard; }
     void set_keyboard(int player, bool on) { players_[player].keyboard = on; }
     // Player 1 with the keyboard off but bindings only the keyboard can drive (no device in use,
-    // or custom bindings with no controller source): the keyboard still drives them, so the game
-    // can't be left with no way to control it.
+    // custom bindings with no controller source, or a wheel SDL doesn't list on the wheel layout,
+    // whose button numbers are a guess): the keyboard still drives them, so the game can't be left
+    // with no way to control it.
     bool keyboard_fallback(int player) const;
     // The keyboard drives this player: enabled, Keyboard only, or the fallback above.
     bool keyboard_active(int player) const {

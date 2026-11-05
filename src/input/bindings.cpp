@@ -874,6 +874,11 @@ bool PlayerBindings::custom(DeviceKind kind, bool race) const {
     return has_custom(kind, race) && (race ? race_custom_on : menu_custom_on);
 }
 
+bool PlayerBindings::controller_custom(DeviceKind kind, bool race) const {
+    return kind != DeviceKind::Keyboard && (race ? race_custom_on : menu_custom_on) &&
+           (race ? controller_race : controller_menu)[controller_index(kind)];
+}
+
 void PlayerBindings::begin_custom(DeviceKind kind, bool race) {
     if (custom(kind, race)) return;
     // Both sets as they stand (the layout's; under "gt3" the menu's) become the custom ones.
