@@ -516,6 +516,50 @@ TEST(input_keyboard_only) {
     CHECK(press_return(0) && !press_return(1));
 }
 
+// Player 1 with the keyboard off on a wheel SDL doesn't list: the wheel layout's button numbers are
+// a guess, so the keyboard stays until the wheel has menu bindings of its own (issue 134: the
+// intro couldn't be skipped). A wheel SDL lists keeps the setting. Both on SDL's virtual joystick:
+// the named wheel stands in for one found by its forces, which a virtual device doesn't have.
+TEST(input_keyboard_stays_on_unlisted_wheel) {
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
+    int connected = 0;
+    SDL_free(SDL_GetJoysticks(&connected));
+    if (connected > 0) { // a real device would be player 1, not the test's
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+        SKIP("a controller is connected");
+    }
+    PadTarget cross;
+    CHECK(PadTarget::parse("Cross", cross));
+    InputSource button;
+    CHECK(InputSource::parse("joy.button0", button));
+    for (SDL_JoystickType type : {SDL_JOYSTICK_TYPE_UNKNOWN, SDL_JOYSTICK_TYPE_WHEEL}) {
+        SDL_VirtualJoystickDesc desc;
+        SDL_INIT_INTERFACE(&desc);
+        desc.type = type;
+        desc.name = "Test Hub";
+        desc.naxes = 3;
+        desc.nbuttons = 10;
+        const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+        CHECK(id != 0);
+        const bool listed = type == SDL_JOYSTICK_TYPE_WHEEL;
+        InputManager in;
+        in.load(IniDocument::parse("[player1]\ncontroller = Test Hub\nwheel_device = Test Hub\nkeyboard = off\n"));
+        SDL_UpdateJoysticks();
+        for (SDL_Event e; SDL_PollEvent(&e);) in.handle_event(e);
+        in.update(1.0 / 60);
+        CHECK(in.kind(0) == DeviceKind::Wheel && !in.keyboard_enabled(0));
+        CHECK(in.keyboard_active(0) == !listed);
+        CHECK(in.bind(0, cross, button, true));
+        CHECK(!in.keyboard_active(0)); // its own buttons: the setting holds
+        in.reset_bindings(0);
+        CHECK(in.keyboard_active(0) == !listed);
+        in.set_keyboard(0, true);
+        CHECK(in.keyboard_active(0) && !in.keyboard_fallback(0));
+        if (id) SDL_DetachVirtualJoystick(id);
+    }
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+}
+
 // Auto takes a device SDL identifies as a wheel, otherwise the first free gamepad, otherwise any
 // other joystick: an odd HID device SDL lists as a joystick (flight stick, macro pad) never takes
 // a player's gamepad. The kind of device then picks the buttons. With none connected nothing

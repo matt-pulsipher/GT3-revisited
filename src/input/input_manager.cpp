@@ -362,7 +362,11 @@ void InputManager::assign_devices() {
 
 bool InputManager::keyboard_fallback(int player) const {
     const Player& p = players_[player];
-    return player == 0 && !p.keyboard && p.menu.keyboard_only();
+    if (player != 0 || p.keyboard) return false;
+    if (p.menu.keyboard_only()) return true;
+    // The wheel layout's buttons are the usual numbers: a wheel SDL doesn't list may have others.
+    const Device* d = find_device(p.device);
+    return p.kind == DeviceKind::Wheel && d && !d->listed_wheel && !p.bindings.controller_custom(p.kind, false);
 }
 
 void InputManager::set_device_filter(int player, std::string filter) {

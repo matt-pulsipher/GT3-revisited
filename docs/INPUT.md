@@ -78,9 +78,10 @@ screenshot.
 
 **Keyboard** (`keyboard = off`, hidden under Keyboard only) stops the keyboard
 also driving a player, except player 1 with buttons only the keyboard can
-drive (no device connected, or custom bindings with only keys): their keyboard
-stays live, so the game can't be left with no way to control it. Keyboard only
-always drives the player with the keyboard.
+drive (no device connected, custom bindings with only keys, or a wheel SDL
+doesn't list on the wheel layout, whose button numbers may not be that wheel's):
+their keyboard stays live, so the game can't be left with no way to control it.
+Keyboard only always drives the player with the keyboard.
 
 Configs from before the Controller choice used `preset` (`racing`, `classic`,
 `wheel`, `keyboard`) and `device`; they are read once: `racing` and `classic`
