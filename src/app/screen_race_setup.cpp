@@ -137,6 +137,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         if (replay) {
             paint_seed_override_ = replay->paint_seed;
             race_event_ = replay->event, race_opponents_ = replay->opponents;
+            race_opponent_paints_ = replay->opponent_paints;
             if (!replay->car2.empty()) two_player_ = true, preset_.car2 = replay->car2;
         }
         race_mode_ = two_player_ || !race_event_.empty() || !race_opponents_.empty() || online_;
@@ -489,6 +490,7 @@ void RaceScreen::restart() {
     if (two_player_ && field_ && field_->has_second()) recorder_.set_second_car(preset_.car2.empty() ? car_.label : preset_.car2);
     recorder_.set_start_speed(v0);
     recorder_.set_paint_seed(paint_seed_);
+    recorder_.set_opponent_paints(race_opponent_paints_);
     begin_license();
 }
 
@@ -578,6 +580,9 @@ bool RaceScreen::build_vehicle(App& app) {
         FieldConfig cfg;
         cfg.event = race_event_;
         cfg.opponents = race_opponents_;
+        cfg.opponent_skills = race_opponent_skills_;
+        cfg.no_rubber_band = race_no_rubber_band_;
+        cfg.player_slot = race_player_slot_;
         // The event's start (standing / rolling), car count and time limit.
         rolling_ = false;
         time_limit_ = 0;
@@ -587,6 +592,7 @@ bool RaceScreen::build_vehicle(App& app) {
             // Demo races (start type 0 with a speed): every car starts moving, no countdown.
             demo_start_kmh_ = es.type == 0 && es.initial_kmh > 0 ? es.initial_kmh : 0.0f;
             if (es.cars > 1) cfg.max_opponents = std::min(es.cars - 1, 5);
+            if (!race_opponent_paints_.empty()) cfg.max_opponents = 5; // (a custom race: its own field, not the event's)
             if (es.laps == 0 && es.time_limit_s > 0) time_limit_ = es.time_limit_s;
             rolling_ = es.rolling();
             LOG_INFO("Race: event %s start type %d (%s), countdown %.0f s, %d cars, %d laps, time limit %.0f min",
@@ -615,7 +621,7 @@ bool RaceScreen::build_vehicle(App& app) {
         // The race's laps: the event's (none: 3, or its time limit), the 2P battle's Options laps.
         {
             const data::Event* ev = db_.event(race_event_);
-            race_laps_ = ev && ev->laps ? ev->laps : time_limit_ > 0 ? 0 : 3;
+            race_laps_ = race_chosen_laps_ > 0 ? race_chosen_laps_ : ev && ev->laps ? ev->laps : time_limit_ > 0 ? 0 : 3;
             if (two_player_ && replaying_ && replay_.battle) race_laps_ = replay_.battle->laps;
             else if (two_player_ && preset_.laps <= 0) race_laps_ = menu::flow::option_laps(&app.config());
             if (two_player_) battle_.laps = race_laps_;
@@ -708,6 +714,8 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
             e.id = rd32(pev->bytes, 0x110 + 4 * size_t(i));
         if (online_ && size_t(i) < net_.paint.size()) // the colour that player chose
             e.id = colors_.id_at(f.opponent_model(i), net_.paint[size_t(i)]);
+        if (size_t(i) < race_opponent_paints_.size() && race_opponent_paints_[size_t(i)] >= 0) // the colour the grid gives it
+            e.id = colors_.id_at(f.opponent_model(i), race_opponent_paints_[size_t(i)]);
         entries.push_back(e);
     }
     // The race module's generator, as left by the opponent draw; a replay re-runs

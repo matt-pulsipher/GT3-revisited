@@ -87,7 +87,7 @@ Testing variables (in the environment, or --env NAME=value):
   GT3R_GTSETTING_SCRIPT=<keys> its keys: up down left right cross triangle l1 r1 wait:<frames>
   GT3R_PRIZE=<event>:<place>   --screen gtprize
   GT3R_RECORDS_KEY=<key>       --screen gtrecords (default mt:M400)
-  GT3R_QUICKRACE=<key=value,...>  --screen quickrace: event car paint mt level course page start
+  GT3R_QUICKRACE=<key=value,...>  --screen quickrace: event car paint mt level course page laps grid catchup race save start
   GT3R_MENU=<file>[:<page>[:<focus>]]  --screen menu opens this .pmb or .imgs file
   GT3R_MOVIE=<vol path>        --screen movies plays it (from GT3R_MOVIE_START=<s> seconds)
   GT3R_MOVIE_STILLS=1          --screen movies opens the stills gallery

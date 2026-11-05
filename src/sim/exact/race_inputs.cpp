@@ -2,6 +2,7 @@
 
 #include "sim/exact/race_inputs.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -281,6 +282,17 @@ RaceConfig race_config(ByteSpan ev) {
     c[0x33] = ev[0x1C2], c[0x34] = ev[0x1C3];
     if (ev[0x1BD] != 0) c[0x32] = 0, c[0x31] = 4;
     return c;
+}
+
+DriverOverrides driver_overrides(const RaceConfig& c) {
+    DriverOverrides d;
+    std::copy_n(c.begin() + kDriverOverridesAt, d.size(), d.begin());
+    return d;
+}
+
+void clear_rubber_band(RaceConfig& c) {
+    c[0x24] = c[0x25] = c[0x26] = 0; // the slow-down
+    c[0x28] = c[0x29] = c[0x2A] = 0; // the speed-up
 }
 
 bool wear_answer(Conductor k, RaceConfig& c, u8 course_category, s32 battle_wear, Program p) {

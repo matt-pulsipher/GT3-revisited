@@ -1745,7 +1745,7 @@ TEST(race_replay_reverse) {
     CHECK(same);
 
     // Versions 1..11: refused with the older-version message; a later version: not a ReplayTooOld.
-    for (u32 v : {1u, 9u, 10u, 11u, 13u}) {
+    for (u32 v : {1u, 9u, 10u, 11u, Replay::kVersion + 1}) {
         Bytes b = recorded.serialize();
         std::memcpy(b.data() + 8, &v, 4);
         bool too_old = false, refused = false;
@@ -1758,6 +1758,53 @@ TEST(race_replay_reverse) {
         }
         CHECK(refused && too_old == (v < 12));
     }
+}
+
+// A record from before the entries had their own driver overrides (version 4: the replays saved until then) still reads.
+TEST(race_record_v4_entries) {
+    namespace ex = sim::exact;
+    ex::RaceRecord x;
+    x.entries.resize(2);
+    x.pads.assign(2, {});
+    const u64 ids[2] = {0x1111222233334444ull, 0x5555666677778888ull};
+    x.entries[0].eq.car = ids[0], x.entries[1].eq.car = ids[1];
+    Bytes b = x.serialize();
+    auto start = [&](u64 id) {
+        const u8* p = reinterpret_cast<const u8*>(&id);
+        return std::search(b.begin(), b.end(), p, p + 8) - b.begin();
+    };
+    const auto first = start(ids[0]), second = start(ids[1]);
+    b.erase(b.begin() + second + (second - first) - 1); // (each entry's last byte: whether it has overrides)
+    b.erase(b.begin() + second - 1);
+    const u32 v4 = 4;
+    std::memcpy(b.data() + 4, &v4, 4);
+    const ex::RaceRecord y = ex::RaceRecord::parse(b);
+    CHECK(y.entries.size() == 2 && y.entries[0].eq.car == ids[0] && y.entries[1].eq.car == ids[1]);
+    CHECK(!y.entries[0].driver && !y.entries[1].driver);
+}
+
+// A custom race's chosen paints survive the file (format v13); a version 12 file, without them, still plays.
+TEST(race_replay_opponent_paints) {
+    ReplayRecorder rec;
+    rec.begin("trialmt", "r34_gtr_v_99", true, 0, {}, 60.0, "Gsunday_e_0001", {"gt_one_race_99", "vitz_rs15_00"});
+    rec.set_opponent_paints({2, -1});
+    rec.record(sim::ControlInputs{});
+    Replay recorded = rec.replay();
+    recorded.exact = test::race_record_stub();
+    CHECK((Replay::parse(recorded.serialize()).opponent_paints == std::vector<int>{2, -1}));
+
+    recorded.opponent_paints.clear();
+    Bytes b = recorded.serialize();
+    CHECK(Replay::parse(b).opponent_paints.empty());
+    const u8 record[4] = {'X', 'R', 'C', 'D'};
+    auto at = std::search(b.begin(), b.end(), record, record + 4);
+    CHECK(at != b.end());
+    if (at == b.end()) return;
+    b.erase(at - 5); // (the paint count, before the race record's size)
+    const u32 v12 = 12;
+    std::memcpy(b.data() + 8, &v12, 4);
+    const Replay old = Replay::parse(b);
+    CHECK(old.opponent_paints.empty() && old.exact != nullptr && old.opponents.size() == 2);
 }
 
 // A race on the exact core in a replay (format v11): its record (setup, race entries, every car's
@@ -1790,6 +1837,7 @@ TEST(race_replay_exact_record) {
         e.asm_on = i != 1, e.tcs_on = i != 2;
         for (size_t k = 0; k < 8; ++k) e.condition[k] = u32(k * 1000 + size_t(i));
         e.best_lap = 0x157529FF, e.car = 0x4000 + u32(i);
+        if (i == 2) e.driver = ex::DriverOverrides{95, 95, 95, 90, 80, 80, 80, 80, 75, 75, 75, 75, 0, 0, 0, 0xFE};
         x.entries.push_back(e);
     }
     x.pads.assign(3, {});
@@ -1828,7 +1876,7 @@ TEST(race_replay_exact_record) {
         same = a.eq.car == b.eq.car && a.eq.part == b.eq.part && a.eq.setting == b.eq.setting && a.human == b.human &&
                a.player == b.player && a.grid_slot == b.grid_slot && a.pedal_style == b.pedal_style && a.spec_flag == b.spec_flag &&
                a.wheel_type == b.wheel_type && a.asm_on == b.asm_on && a.tcs_on == b.tcs_on && a.condition == b.condition &&
-               a.best_lap == b.best_lap && a.car == b.car;
+               a.best_lap == b.best_lap && a.car == b.car && a.driver == b.driver;
     }
     for (int i = 0; same && i < 3; ++i)
         for (u32 t = 0; same && t < 710; ++t) {

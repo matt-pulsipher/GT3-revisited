@@ -122,6 +122,7 @@ void RaceScreen::start_playback(const Replay& r) {
     if (race_mode_) { // a race's replay: its field (the opponents' paints drawn again from the race's state)
         race_event_ = replay_.event;
         race_opponents_ = replay_.opponents;
+        race_opponent_paints_ = replay_.opponent_paints;
         paint_seed_override_ = replay_.paint_seed;
     }
     // The recorded race, from its record.

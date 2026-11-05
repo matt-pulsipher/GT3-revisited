@@ -952,6 +952,12 @@ private:
     u16 pad2_prev_ = 0;
     std::string race_event_;
     std::vector<std::string> race_opponents_;
+    // Quick race's custom race (GameRequest::opponent_paints / opponent_skills / no_rubber_band / laps / player_slot); a
+    // replay's paints.
+    std::vector<int> race_opponent_paints_;
+    std::vector<std::string> race_opponent_skills_;
+    bool race_no_rubber_band_ = false;
+    int race_chosen_laps_ = 0, race_player_slot_ = -1;
     bool field_grid_by_power_ = false; // the field's rules (recorded in replays)
     ReplayBattle battle_; // 2P battle: the field's set-up (recorded in replays)
     int race_laps_ = 0;

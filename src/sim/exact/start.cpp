@@ -344,7 +344,11 @@ void setup(Car& c, Record& img, Spec& spec, const StartRace& race, const StartEn
     }
     const int cls = c.p.drive_class;
     driver_params(c.ai, driver_set(race, cls));
-    if (c.control != 0) event_overrides(c, race.rules, race.config, cls);
+    if (c.control != 0) {
+        RaceConfig rules = race.rules;
+        if (e.driver) std::copy(e.driver->begin(), e.driver->end(), rules.begin() + kDriverOverridesAt);
+        event_overrides(c, rules, race.config, cls);
+    }
     c.ai.downforce = (c.p.downforce_coef[0] + c.p.downforce_coef[1]) / c.p.weight;
     if (c.control == 0) c.pedal_style = u8(pedal);
     else if (c.control > 0 && c.control < 3) c.pedal_style = 0;

@@ -6,7 +6,7 @@
 //
 // File format (little endian), ".gt3replay" in <user data>/replays/:
 //   0x00 "GT3RRPL1"
-//   u32 version (12; files of older versions, and version 11 files without a race record, are refused: ReplayTooOld),
+//   u32 version (13; files before version 12, and version 11 files without a race record, are refused: ReplayTooOld),
 //   u32 tick count N, f64 tick rate (Hz)
 //   string course, string car (u16 length + bytes), u8 automatic, u8 paint
 //   pose start (f32 x, y, z, qw, qx, qy, qz)
@@ -41,6 +41,8 @@
 //       inputs above are for the HUD only.
 //   v12: the same layout; races on the EE's measured multiplier and divider (a v11 race, run on
 //       the earlier rounding, would play differently: refused).
+//   v13 (before the v11 race, after the v9 battle block): u8 n + n x s8 the opponents' chosen
+//       paints (Quick race's custom race; -1 = drawn from the paint seed; n = 0 for any other race).
 
 #include "base/game_random.h"
 #include "race/backend.h"
@@ -58,8 +60,9 @@ struct RaceRecord;
 
 namespace gt3r::race {
 
-// A file of a replay version before 12 (11: run on the earlier float rounding; older ones, and 11 without a race record, not on
-// the exact core): refused, not played approximately.
+// A file of a replay version before kOldestReplay (11: run on the earlier float rounding; older ones, and 11 without a race
+// record, not on the exact core): refused, not played approximately.
+inline constexpr u32 kOldestReplay = 12;
 struct ReplayTooOld : FormatError {
     using FormatError::FormatError;
 };
@@ -94,7 +97,7 @@ enum class ReplayKind : u8 {
 const char* replay_kind_name(ReplayKind k); // "Arcade", "GT", "License", ...
 
 struct Replay {
-    static constexpr u32 kVersion = 12;
+    static constexpr u32 kVersion = 13;
     std::string course, car; // database labels
     bool automatic = true;
     int paint = 0;
@@ -111,6 +114,7 @@ struct Replay {
     sim::Vec3 final_position;
     std::string event;                  // race with opponents (event label); empty = time trial
     std::vector<std::string> opponents; // opponent car labels, grid order
+    std::vector<int> opponent_paints;   // v13: their chosen paints (-1 or past the list: drawn from paint_seed)
     std::string car2;                    // 2P battle: player 2's car label
     std::vector<sim::ControlInputs> inputs2; // player 2's inputs (same length as inputs)
     float start_speed = 0;               // m/s: rolling / flying start (0 = from rest)
@@ -171,6 +175,7 @@ public:
     void set_second_car(std::string car2) { replay_.car2 = std::move(car2); }
     void set_start_speed(float mps) { replay_.start_speed = mps; }
     void set_paint_seed(u32 seed) { replay_.paint_seed = seed; }
+    void set_opponent_paints(std::vector<int> paints) { replay_.opponent_paints = std::move(paints); }
     void set_engine_condition(const sim::EngineCondition& c) { replay_.condition = c; }
     void lap(double time, u32 begin_tick, u32 end_tick); // a completed lap; keeps the best
     void finish(const sim::Vec3& final_position) { replay_.final_position = final_position; }

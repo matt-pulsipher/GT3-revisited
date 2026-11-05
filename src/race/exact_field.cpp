@@ -241,10 +241,12 @@ public:
         struct Opp {
             std::string label;
             ex::Equipment eq;
+            std::optional<ex::DriverOverrides> driver;
         };
         std::vector<Opp> opps;
         std::vector<int> figure;
-        for (const std::string& l : labels) {
+        for (size_t i = 0; i < labels.size(); ++i) {
+            const std::string& l = labels[i];
             std::string err;
             std::optional<ex::Equipment> eq = exact_equipment(db, {l}, &err);
             if (!eq) {
@@ -252,7 +254,11 @@ public:
                 continue;
             }
             if (cfg_.grid_by_power) figure.push_back(exact_grid_figure(db, *data_, *eq, cfg_.grid_hp));
-            opps.push_back({l, *eq});
+            std::optional<ex::DriverOverrides> driver;
+            if (i < cfg_.opponent_skills.size())
+                if (const data::Event* skill = db.event(cfg_.opponent_skills[i]); skill && skill->bytes.size() >= 0x1F4)
+                    driver = ex::driver_overrides(ex::race_config(skill->bytes));
+            opps.push_back({l, *eq, driver});
         }
         const int n_opp = int(opps.size());
         // The players behind the opponents (or on the given slot), player 2 next; the opponents on the other slots in their
@@ -291,6 +297,12 @@ public:
         rs.course = course_;
         static const std::vector<u8> kNoEvent(0x200, 0);
         rs.event = ev && ev->bytes.size() >= 0x1F4 ? ev->bytes : ByteSpan(kNoEvent.data(), kNoEvent.size());
+        ex::RaceConfig own_rules{};
+        if (cfg_.no_rubber_band) {
+            own_rules = ex::race_config(rs.event);
+            ex::clear_rubber_band(own_rules);
+            rs.rules = &own_rules;
+        }
         rs.course_category = exact_course_category(db, opts_.course);
         rs.kind = opts_.kind;
         rs.config = opts_.config;
@@ -388,6 +400,7 @@ public:
             ex::course_tires(db, e.eq, rs.course_category);
             e.grid_slot = slot_of[i];
             e.best_lap = seeded ? cfg_.entry_best[i + 1] : 0x157529FF;
+            e.driver = opps[i].driver;
             rs.entries.push_back(e);
         }
         // Online: the other players' cars after the opponents, each on its grid slot as the session's grid has it.

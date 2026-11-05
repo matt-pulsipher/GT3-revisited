@@ -61,6 +61,13 @@ const char* conductor_name(Conductor k);
 // 32), before the battle conductors' wear setting / rubber-band switch adjust it.
 using RaceConfig = std::array<u8, 0x40>;
 RaceConfig race_config(ByteSpan event_record);
+// The block's overrides of a CPU car's driver: throttle, brake, corner speed and corner offset per driveline class (+0xC ..
+// +0x1B; event_overrides, start.h) [ai §9.2].
+constexpr u32 kDriverOverridesAt = 0xC;
+using DriverOverrides = std::array<u8, 0x10>;
+DriverOverrides driver_overrides(const RaceConfig& c);
+// The block with no slow-down or speed-up left in its rubber band, as the arcade's Professional races have it [ai §9.3].
+void clear_rubber_band(RaceConfig& c);
 // Whether the race has tyre wear as the initialisation hands it: the wear setting's answer, 0 on dirt. The battle conductors'
 // wear setting writes the wear bytes of `cfg` for the race info's wear word (`battle_wear`: race info + 0xC; set:
 // its setting 2, else none) unless the course is dirt. NTSC-J's battle conductor hands the word on as the setting (1 and 2

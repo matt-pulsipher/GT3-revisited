@@ -136,6 +136,10 @@ struct FieldConfig {
     // (arcade: the random draw).
     bool grid_by_power = false;
     bool grid_hp = false;
+    // Quick race's custom race: each opponent's skill, an event label whose driver overrides it takes in place of the race's
+    // ("" or past the list: the race's), and the race without its event's rubber band.
+    std::vector<std::string> opponent_skills;
+    bool no_rubber_band = false;
     // The split-screen battle's options (its Options page, docs/dev/RACE.md "Options"): the catch-up for the
     // trailing player (0 off, 1 low, 2 high), the handicap in metres (> 0: player 2 starts back, < 0: player 1), tyre damage.
     int battle_catchup = 0;

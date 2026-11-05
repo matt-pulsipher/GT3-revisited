@@ -133,7 +133,14 @@ void RaceScreen::resolve_launch() {
     if (!listed) courses_.push_back({course, course});
     // Races with opponents: the event gives the field, laps and AI parameters.
     if ((rq.mode == "single_race" || rq.mode == "go_race") && db_.event(code)) race_event_ = code;
-    if (!rq.opponents.empty()) race_opponents_ = rq.opponents; // GT mode: the field drawn by the menus
+    if (!rq.opponents.empty()) { // GT mode: the field drawn by the menus; Quick race's custom race: the player's own
+        race_opponents_ = rq.opponents;
+        race_opponent_paints_ = rq.opponent_paints;
+        race_opponent_skills_ = rq.opponent_skills;
+        race_no_rubber_band_ = rq.no_rubber_band;
+        race_chosen_laps_ = rq.laps;
+        race_player_slot_ = rq.player_slot;
+    }
     // Arcade Single Race: the field is drawn from the event's pool with the race module's
     // generator (gt_mode §20.4), slots 1 .. cars-1.
     else if (rq.mode == "single_race" && ev && !online_)

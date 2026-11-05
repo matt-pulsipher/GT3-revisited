@@ -328,7 +328,7 @@ std::unique_ptr<Screen> make_boot_screen() {
     });
 }
 
-GT3R_REGISTER_PLAYER_SCREEN(boot, "boot", "Play", "Opening movie, then the game's title menu.", 1,
+GT3R_REGISTER_PLAYER_SCREEN(boot, "boot", "Play", "Opening movie, then the game's title menu.", 0,
                      [] { return make_boot_screen(); });
 GT3R_REGISTER_PLAYER_SCREEN(movies, "movies", "Movie theater", "Watch the game's movies: opening, endings and more.", 9,
                      [] { return std::make_unique<MoviesScreen>(); });

@@ -195,6 +195,23 @@ TEST(race_inputs_program_behaviour) {
 // laps a car not finished ahead of a finished one (the program's order), else the greater progress, two finished cars by the
 // earlier crossing; free practice by the smaller best lap. The matrices: car i behind car j, the lap taken over when laps
 // and metres disagree, the laps clamped to -127 .. 127.
+// An event's driver overrides, as a custom race's opponent takes them, and a race without its rubber band: the event's
+// slow-down and speed-up gone, as in the arcade's Professional races, and nothing else of the block changed.
+TEST(race_config_driver_overrides_and_rubber_band) {
+    Bytes ev(0x200, 0);
+    for (size_t k = 0x198; k < 0x1C4; ++k) ev[k] = u8(k);
+    const ex::RaceConfig full = ex::race_config(ev);
+    const ex::DriverOverrides d = ex::driver_overrides(full);
+    for (u32 k = 0; k < d.size(); ++k) CHECK(d[k] == ev[0x1A4 + k]);
+    ex::RaceConfig off = full;
+    ex::clear_rubber_band(off);
+    const ex::RubberBand band = ex::rubber_band_params(off, true);
+    CHECK(band.slow == ex::F(0.0f) && band.fast == ex::F(0.0f));
+    CHECK(band.slow_start == ex::F(0.0f) && band.slow_full == ex::F(0.0f) && band.fast_start == ex::F(0.0f) && band.fast_full == ex::F(0.0f));
+    for (u32 k = 0; k < off.size(); ++k)
+        CHECK(off[k] == ((k >= 0x24 && k <= 0x26) || (k >= 0x28 && k <= 0x2A) ? 0 : full[k]));
+}
+
 TEST(race_flow_ranking_and_gaps) {
     std::vector<ex::Car> cars(4);
     auto set = [&](size_t i, s16 laps, u8 base, float progress, u8 finished, u32 crossed, u32 best) {

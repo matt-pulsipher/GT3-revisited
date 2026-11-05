@@ -56,4 +56,9 @@ private:
     int focus_ = 0;
 };
 
+// A text field typed without the keyboard above, from what a screen's on_event gets: a real keyboard and the system's screen
+// keyboard (Enter finishes, Esc cancels), and with `pad_typing` a controller's: up/down change the last character, right adds
+// one, left deletes, A or Start finishes, B cancels.
+TextKeyboard::Result text_field_event(const SDL_Event& e, std::string& s, bool pad_typing);
+
 } // namespace gt3r
