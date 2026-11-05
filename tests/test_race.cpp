@@ -591,20 +591,17 @@ TEST(race_rumble) {
     CHECK(rm.rumble(true, false).large == 0 && rm.rumble(false, false).large == 0);
     rm.reset();
     ev = {};
-    // Wheelspin under throttle drives the throttle triggers (wheelspin) and Modern's motors.
+    // Wheelspin under throttle drives Modern's motors.
     in.throttle = 1;
     for (sim::WheelState& w : s.wheels) w.slip_ratio = -0.6f; // wheelspin
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.wheelspin() > 0.8f);
     CHECK(rm.rumble(false, false).small > 80 && leans_small());
     // Locked wheels under braking (positive slip) hold Modern's motors.
     in.throttle = 0, in.brake = 1;
     for (sim::WheelState& w : s.wheels) w.slip_ratio = 0.7f;
     rm.update(s, &t, ev, in, dt);
-    CHECK(rm.wheelspin() == 0);
     CHECK(rm.rumble(false, false).small > 80 && leans_small());
     rm.reset();
-    CHECK(rm.wheelspin() == 0);
     CHECK(rm.rumble(true, false).large == 0 && rm.rumble(false, false).large == 0);
 }
 

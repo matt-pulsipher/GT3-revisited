@@ -12,6 +12,7 @@
 #include "game/data/car_database.h"
 #include "race/backend.h"
 #include "race/exact_car.h"
+#include "race/exact_demo.h"
 #include "race/exact_field.h"
 #include "race/exact_setup.h"
 #include "race/replay.h"
@@ -563,4 +564,51 @@ TEST(exact_abs_level_hard_stop) {
     }
     std::printf("  top %.0f km/h, ABS level braking %.2f, at rest %.2f (%d steps)\n", top, braking, stopped, at_rest);
     CHECK(top > 140 && braking > 0.4f && at_rest > 100 && stopped == 0);
+}
+
+// The edge of grip the throttle triggers follow (VehicleTelemetry::traction_level), on the disc's own recorded laps: a
+// time trial's driver holds the car at the limit out of the corners, where the wheels are at no more than the tyre's
+// best slip, so the level speaks for a share of the throttle's time, and it needs the throttle.
+TEST(exact_traction_level_recorded_laps) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs an NTSC-U GT3R_DISC");
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    data::CarDatabase& db = *database();
+    Vfs vfs(&disc->volume());
+    const data::Event* ev = db.event("AT010001");
+    const Volume::Entry* de = disc->volume().find("demo/AT010001");
+    CHECK(ev != nullptr && de != nullptr);
+    if (!ev || !de) return;
+    std::optional<race::DemoReplay> demo = race::DemoReplay::parse(disc->volume().read(*de));
+    CHECK(demo.has_value());
+    if (!demo) return;
+    std::string err;
+    std::optional<ex::RaceRecord> rec = race::demo_record(*demo, *ev, db, program()->fingerprint(), 600, &err);
+    std::optional<Bytes> file = course_file(ev->course);
+    CHECK(rec.has_value() && file.has_value());
+    if (!rec || !file) return;
+    ex::ProgramData d = *program();
+    if (!(d.behaviour() == rec->behaviour) && d.can_behave(rec->behaviour)) d.set_behaviour(rec->behaviour);
+    ex::ExactRace race(rec->setup(d, db, ex::RaceCourse::load(*file, d)));
+    ex::RacePlayback play(&*rec);
+    int on_throttle = 0, nearing = 0, past = 0, off_throttle = 0, off_level = 0;
+    while (!play.done()) {
+        play.step(race);
+        const ex::Car& c = race.cars()[0];
+        sim::VehicleTelemetry t;
+        race::exact_telemetry(c, false, 0, t);
+        if (c.throttle_pedal.host() > 0.5f && c.w[2].hub_vx.host() > 3) {
+            ++on_throttle;
+            nearing += t.traction_level > 0;
+            past += t.traction_level >= 0.4f;
+        } else if (c.throttle_pedal.host() == 0) {
+            ++off_throttle;
+            off_level += t.traction_level > 0;
+        }
+    }
+    std::printf("  on throttle %d steps: nearing the edge %d, past it %d; off it %d steps, %d with a level\n", on_throttle, nearing,
+                past, off_throttle, off_level);
+    CHECK(on_throttle > 1000 && off_throttle > 100 && off_level == 0);
+    CHECK(nearing > on_throttle / 20 && nearing < on_throttle / 2); // a share of the lap, not all of it
+    CHECK(past > 0 && past < nearing);
 }

@@ -34,6 +34,8 @@ template <size_t N> F lookup_bisect(const Table<N>& t, F v) { return lookup_bise
 // The tyre record of a wheel on a surface (< 16): the axle's index byte for the surface picks the record.
 int tire_record_index(const Params& p, int wheel, u8 surface);
 const TireRecord& tire_record(const Params& p, int wheel, u8 surface);
+// Whether the TCS reads an axle's wheels (0 front, 1 rear) under a drive layout [physics §4.6].
+inline bool tcs_reads_axle(u8 layout, int axle) { return axle == 0 ? layout != 0 && layout != 5 && layout != 6 : layout != 1; }
 // An angle into [-pi, pi), and the wrapped difference a - b. The NTSC-J program adds or takes 2 pi until
 // the angle is inside (NTSC-U and PAL take whole turns at once beyond 3 pi).
 F angle_wrap(F a, Program p = Program::NtscU);

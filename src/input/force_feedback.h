@@ -36,7 +36,7 @@ struct ForceFeedbackState {
     float abs_level = 0;    // 0..1 the ABS at work, or a wheel locking without it (VehicleTelemetry::abs_level)
     float steer_force = 0;  // -1..1 force the wheel should apply; positive turns it clockwise (right)
     float jolt = 0;         // 0..1 impact this frame (walls, cars)
-    float wheelspin = 0;    // 0..1 the drive wheels spinning under throttle (race::RumbleModel::wheelspin)
+    float traction = 0;     // 0..1 the driven wheels at the edge of their grip under throttle (VehicleTelemetry::traction_level)
     float understeer = 0;   // GT3's steering indicators: 0..1 the yaw rate short of what the steering asks
     float oversteer = 0;    // 0..1 the rear tyres past their slip threshold
     bool triggers_on = true; // the Vibration option: the triggers
@@ -83,8 +83,8 @@ int wheel_constant_level(const ForceFeedbackState& s, const ForceFeedbackConfig&
 // tick to tick (0 to 0.65 and back at a turn-in, where the yaw rate lags the steering).
 float eased_indicator(float felt, float indicator, float dt);
 
-// Xbox impulse trigger strengths 0..1: the brake's at time `t` seconds (the ABS level, pulsed at
-// ~16 Hz), the throttle's (the wheelspin).
+// Xbox impulse trigger strengths 0..1, from a level the motors can play: the brake's at time `t` seconds (the ABS
+// level, throbbing at 10 Hz), the throttle's (the traction level).
 float impulse_brake(const ForceFeedbackState& s, double t);
 float impulse_throttle(const ForceFeedbackState& s);
 

@@ -326,7 +326,7 @@ private:
     void tick(App& app, const PadState& pad);
     void update_drive(App& app, double dt);
     static ForceFeedbackState feedback(const sim::VehicleState& s, const sim::VehicleTelemetry& t, const sim::ControlInputs& in,
-                                       float wall, float car_hit, const RumbleModel& rumble);
+                                       float wall, float car_hit);
     void update_gear_hint(const sim::VehicleState& s);
     void update_dirt(double dt);
     void update_pylons(double dt);

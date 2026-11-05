@@ -154,7 +154,9 @@ and its motors stop. Replays and demonstrations send nothing, and the Vibration 
 from `RaceScreen::feedback`): the brake's follows GT3's ABS at work
 (`VehicleTelemetry::abs_level`, from `exact_telemetry`: the slip over the tyre's best
 braking slip times G g, the share of pressure the ABS takes off), the throttle's the
-wheelspin (`RumbleModel::wheelspin`); Xbox impulse triggers as levels, a DualSense's as
+edge of grip (`VehicleTelemetry::traction_level`, from `exact_telemetry`: the slip and the
+slip-angle force as shares of the tyre's best, see docs/INPUT.md), neither while the
+computer drives; Xbox impulse triggers as levels, a DualSense's as
 adaptive-trigger vibrations (`ffb::brake_trigger_effect`, `throttle_trigger_effect`), as
 SDL's trigger rumble does nothing there.
 
