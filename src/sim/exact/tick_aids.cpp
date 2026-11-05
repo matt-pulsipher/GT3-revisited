@@ -99,9 +99,8 @@ void tcs(Car& c, const Aids& a) {
     if (c.torque_wot <= zero || c.throttle == zero) return;
     // The most negative slip of the driven wheels with load, and that wheel's target and gain.
     F smin = kOne, target = kOne, g = kOne;
-    const u8 layout = c.p.d.layout;
     for (int axle = 0; axle < 2; ++axle) {
-        if (layout == 1 ? axle == 1 : (layout == 0 || layout == 5 || layout == 6) && axle == 0) continue;
+        if (!tcs_reads_axle(c.p.d.layout, axle)) continue;
         for (int k = 0; k < 2; ++k) {
             const int i = 2 * axle + k;
             const Wheel& w = c.w[size_t(i)];

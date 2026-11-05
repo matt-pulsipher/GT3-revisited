@@ -689,13 +689,13 @@ void RaceScreen::update_drive(App& app, double dt) {
     if (!replaying_ && !demo_) {
         if (!finished_ && (rumble_on_ || wheel_force_on_))
             if (const sim::VehicleTelemetry* t = vehicle_->telemetry()) {
-                ForceFeedbackState f = feedback(vehicle_->state(), *t, last_in_, ffb_wall_, ffb_car_, rumble_);
+                ForceFeedbackState f = feedback(vehicle_->state(), *t, last_in_, ffb_wall_, ffb_car_);
                 f.triggers_on = rumble_on_, f.wheel_on = wheel_force_on_;
                 app.input().set_force_feedback(0, f);
             }
         if (field_ && field_->has_second() && !finished2_ && (rumble2_on_ || wheel_force2_on_))
             if (const sim::VehicleTelemetry* t2 = field_->second_telemetry()) {
-                ForceFeedbackState f = feedback(field_->second_state(), *t2, last_in2_, ffb_wall2_, ffb_car2_, rumble2_);
+                ForceFeedbackState f = feedback(field_->second_state(), *t2, last_in2_, ffb_wall2_, ffb_car2_);
                 f.triggers_on = rumble2_on_, f.wheel_on = wheel_force2_on_;
                 app.input().set_force_feedback(1, f);
             }
@@ -706,15 +706,14 @@ void RaceScreen::update_drive(App& app, double dt) {
 // The steering force is the one GT3 gives a force-feedback wheel (car +0x16D6, 0x80 centred; positive turns the wheel
 // left, as the pad frame's steering).
 ForceFeedbackState RaceScreen::feedback(const sim::VehicleState& s, const sim::VehicleTelemetry& t, const sim::ControlInputs& in,
-                                        float wall, float car_hit, const RumbleModel& rumble) {
+                                        float wall, float car_hit) {
     ForceFeedbackState f;
     f.speed_kmh = s.speed_kmh;
     f.brake = in.brake;
-    f.abs_level = t.abs_level;
+    if (t.pad_output) f.abs_level = t.abs_level, f.traction = t.traction_level; // not while the computer drives (a run-up)
     // As GT3's pad output, nothing for a car the pad doesn't drive.
     f.steer_force = t.pad_output && t.wheel_force >= 0 ? std::clamp(-float(t.wheel_force - 0x80) / 127.0f, -1.0f, 1.0f) : 0.0f;
     f.jolt = std::min(1.0f, std::max(wall, car_hit) / 5000.0f);
-    f.wheelspin = rumble.wheelspin();
     f.understeer = t.understeer, f.oversteer = t.oversteer;
     return f;
 }

@@ -34,7 +34,7 @@ generic HID joysticks, wheels and pedals. Devices hot-plug at any time.
 |---|---|
 | Rumble | DS2 large motor → low-frequency motor, small motor → high-frequency motor. In races, each player's **Rumble** (Settings → Rumble & feedback, `[playerN] rumble`) picks how the motors run: **GT3 original** (`gt3`) follows GT3's own vibration: each step's level (suspension movement, curbs under the front wheels, the front tires' drive and brake forces, wall hits) on the large motor as GT3 sends it (at most half strength), never the small motor; most controllers play its low levels much stronger than a DualShock 2, so it runs all the time there. **Modern** (`modern`) rumbles for what the car meets on both motors, so it is felt in both grips, with a lean: the body stronger on the large motor (the left grip), the tires on the small one (the right grip), the other motor at 35%, or 70% on a DualSense, whose motors play in separate grips where a split feels like a side. A wall or car hit pulses for 0.25 s by its speed change and off-road holds, leaning left; wheelspin, a slide (the tire squeal) and locked wheels hold, and curbs pulse at a rate that follows the speed, leaning right. **Auto** (`auto`, the default) is Modern on every controller. Either way, a car the AI drives, as after the finish, does not vibrate |
 | Phone vibration (Android, off by default) | `[player1] phone_vibration = on` (Settings → Rumble & feedback → Phone vibration): player 1's rumble on the device's own motor, only while the controls driving them have no rumble motor (built-in handheld controls, touch, a controller without motors). A controller that rumbles keeps it; the phone stays still |
-| Impulse triggers (Xbox One/Series) | See Force feedback: the ABS on the brake's trigger, the wheelspin on the throttle's. On Windows only through SDL's RAWINPUT driver (see Xbox controllers) |
+| Impulse triggers (Xbox One/Series) | See Force feedback: the ABS on the brake's trigger, the edge of grip on the throttle's. On Windows only through SDL's RAWINPUT driver (see Xbox controllers) |
 | Player LEDs / light bars | Set to the player number |
 | Button labels | The UI shows Cross/Circle on PlayStation pads and A/B on Xbox pads |
 | Motion sensors | `tilt` source: steer by rolling the controller (DualSense, DS4, Switch Pro, or a phone's own accelerometer on Android and iOS) |
@@ -439,12 +439,12 @@ players under **Triggers and wheels**.
 
 Beyond DS2 rumble, the race sends a per-frame driving state
 (`InputManager::set_force_feedback`: speed, brake, the ABS level, steering
-force, impacts, wheelspin) and each player's device turns it into native feedback:
+force, impacts, the edge of grip under throttle) and each player's device turns it into native feedback:
 
 | Device | Effect |
 |---|---|
-| DualSense (PS5) | Adaptive triggers. The one bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while the ABS is working, by its level from zero. The one bound to the throttle (Cross): a 35 Hz vibration while the drive wheels spin, by the wheelspin from zero. Both sent in one packet with `SDL_SendGamepadEffect`, only when an effect changes (SDL's trigger rumble does nothing on a DualSense). The packet carries the motors' rumble as SDL's own packets do: without it the controller switches back to its audio haptics and the rumble stops until the next change. A DualSense plays the small motor (the right grip) much lighter than the large one, so its level is sent 1.75 times stronger (at most full; `dualsense_rumble`), and Modern's lean is milder there (see Rumble) |
-| Xbox One/Series | Impulse triggers (`SDL_RumbleGamepadTriggers`): the brake's pulses at ~16 Hz while the ABS is working, up to 80 % by its level; the throttle's runs at half the wheelspin |
+| DualSense (PS5) | Adaptive triggers. The one bound to the brake (Square): resistance after 20 % of travel, lighter at low speed; an 18 Hz vibration while the ABS is working, by its level from zero. The one bound to the throttle (Cross): a 35 Hz vibration as the driven wheels near the edge of their grip, by the traction level from zero. Both sent in one packet with `SDL_SendGamepadEffect`, only when an effect changes (SDL's trigger rumble does nothing on a DualSense). The packet carries the motors' rumble as SDL's own packets do: without it the controller switches back to its audio haptics and the rumble stops until the next change. A DualSense plays the small motor (the right grip) much lighter than the large one, so its level is sent 1.75 times stronger (at most full; `dualsense_rumble`), and Modern's lean is milder there (see Rumble) |
+| Xbox One/Series | Impulse triggers (`SDL_RumbleGamepadTriggers`), each level played as 0.3 + 0.7 × the level: the small motors hardly turn at the bottom of their range. The brake's throbs at 10 Hz while the ABS is working, between that and 40 % of it (not on and off: a short pulse ends before the motor has spun up); the throttle's holds the traction level |
 | Wheels with force feedback | SDL haptics: GT3's own steering-wheel force as a constant force, sent at each of its 1/127 steps, over a spring, shaped by **Wheel force** (below). The wheel's own autocentre is switched off while driving. Such a wheel gets no DS2 rumble: SDL's joystick rumble on Windows (DirectInput) and macOS resets the wheel's force feedback when it starts, which removed these effects at the start of every race (issue 119) |
 
 The ABS level (`VehicleTelemetry::abs_level`, 0..1, the strongest wheel's) is
@@ -453,6 +453,19 @@ the slip over that target times G g of the pressure off. A car without the ABS
 (G 0) gives how far past that slip a wheel is locking, over 0.5. A brake
 pressure below the pedal does not count: GT3 also limits it by the tire's peak
 force, stopped or not.
+
+The traction level (`VehicleTelemetry::traction_level`, 0..1) is the same idea
+under throttle, on the wheels GT3's TCS reads. Two shares of what the tire has
+(physics §3.8): along the wheel, its slip over the tire's best drive slip (the
+TCS's target, 0.18 on tarmac); across it, how much of the friction circle the
+slip-angle force takes, or past the tire's best slip angle that angle over it.
+Combined as a circle of their own, 1 is the edge of grip: the level rises to
+0.4 from 85 % of the edge, then by 0.6 × how far past it, full at twice. A TCS
+that is cutting gives at least 0.4 + 0.6 × the share of the throttle it takes
+off, since it holds the slip short of the tire's best. The level is scaled by
+the pedal up to half travel, and none shows while the computer drives. On the
+disc's recorded time trial laps it shows for about a sixth of the time on
+throttle.
 
 **Wheel force** (`[ffb] wheel_mode`, Settings → Rumble & feedback):
 

@@ -158,6 +158,12 @@ struct VehicleTelemetry {
     // over the target x G g; a car without it, G 0: how far past that slip the wheel is locking, over 0.5). Not a
     // pressure below the pedal: GT3 limits that by the tyre's peak force too, at a standstill as well.
     float abs_level = 0;
+    // The edge of grip under throttle, 0..1, the strongest wheel's of those the TCS reads: its slip over the tyre's
+    // best drive slip and, across that, the share of the friction circle its slip-angle force takes (past the
+    // tyre's best slip angle, that angle over it) [physics §3.8]; from 85 % of the edge up to 0.4, then 0.4 + 0.6 x how
+    // far past it, full at twice. With the TCS cutting, at least 0.4 + 0.6 x the share of the throttle it takes off.
+    // Scaled by the pedal up to half travel.
+    float traction_level = 0;
     bool tcs_active = false;
     float understeer = 0, oversteer = 0; // ASCC indicators [physics §4.6]
     float throttle_processed = 0;     // throttle after the pedal shaping and TCS, before the turbo lag

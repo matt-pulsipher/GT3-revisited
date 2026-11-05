@@ -1637,7 +1637,7 @@ private:
             apply(n);
         });
         size_t base = rows_.size();
-        toggle("Trigger effects", "DualSense brake resistance, ABS pulse and wheelspin buzz; Xbox impulse triggers.", c.triggers,
+        toggle("Trigger effects", "DualSense brake resistance, ABS pulse and edge-of-grip buzz; Xbox impulse triggers.", c.triggers,
                           [apply, c](bool v) {
                               ForceFeedbackConfig n = c;
                               n.triggers = v;

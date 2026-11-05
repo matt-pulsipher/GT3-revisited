@@ -71,7 +71,6 @@ sim::ControlInputs ControlMapper::update(const PadState& pad, double dt) {
 void RumbleModel::reset() {
     gt3_ = {};
     body_ = tyres_ = 0;
-    spin_ = 0;
     impact_timer_ = impact_level_ = 0;
 }
 
@@ -114,8 +113,6 @@ void RumbleModel::update(const sim::VehicleState& s, const sim::VehicleTelemetry
         if (ev.kerb && speed > 2 && std::fmod(clock_ * (4.0 + speed * 0.4), 1.0) < 0.5)
             tyres_ = std::max(tyres_, 0.63f);
     }
-
-    spin_ = spin_amt; // the throttle triggers' (ForceFeedbackState::wheelspin)
 }
 
 PadRumble RumbleModel::rumble(bool gt3, bool dualsense) const {

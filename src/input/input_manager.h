@@ -138,7 +138,7 @@ public:
     bool gt3_rumble(int player) const { return gt3r::gt3_rumble(players_[player].rumble_mode); }
     // Driving feedback for this frame (call every frame while driving):
     // DualSense brake-trigger resistance and ABS pulse and throttle-trigger
-    // wheelspin buzz, the same on Xbox impulse triggers, wheel spring + steering force. Effects stop by
+    // edge-of-grip buzz, the same on Xbox impulse triggers, wheel spring + steering force. Effects stop by
     // themselves ~0.25 s after the last call, or at once with stop_force_feedback. See docs/INPUT.md "Force
     // feedback".
     void set_force_feedback(int player, const ForceFeedbackState& state);

@@ -109,6 +109,23 @@ void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleS
     }
 }
 
+namespace {
+
+// sim::VehicleTelemetry::traction_level at a wheel: both slips as shares of the tyre's best, the edge at 1.
+float traction_at(const ex::Car& c, size_t i) {
+    const ex::Wheel& w = c.w[i];
+    const ex::TireRecord& tire = ex::tire_record(c.p, int(i), w.surface);
+    const float best = -h(tire.slip_drive), peak = h(tire.peak_slip), circle = h(w.circle) * h(w.peak_force);
+    if (best <= 0 || peak <= 0) return 0;
+    const float along = std::max(-h(w.slip_ratio), 0.0f) / best;
+    const float angle = std::fabs(h(c.t[i].slip_angle)) * h(w.slip_fade) / peak;
+    const float across = std::max(angle, circle > 0 ? std::hypot(h(w.force_a), h(w.force_b)) / circle : 0.0f);
+    const float grip = std::hypot(along, across);
+    return grip < 1 ? 0.4f * std::clamp((grip - 0.85f) / 0.15f, 0.0f, 1.0f) : 0.4f + 0.6f * std::min(grip - 1, 1.0f);
+}
+
+} // namespace
+
 void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTelemetry& t) {
     t = sim::VehicleTelemetry{};
     t.engine_torque = h(c.clutch_torque);
@@ -130,7 +147,7 @@ void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTel
     t.tcs_active = c.tcs_status == 2;
     t.tcs_status = c.tcs_status, t.asm_status = c.ascc_status;
     t.steer_pct = c.steer_pct, t.throttle_pedal = h(c.throttle_pedal), t.brake_pedal = h(c.brake_pedal);
-    const float pedal = h(c.brake_pedal);
+    const float pedal = h(c.brake_pedal), throttle = h(c.throttle_pedal);
     for (size_t i = 0; i < 4; ++i) {
         const ex::Wheel& w = c.w[i];
         t.beta[i] = h(c.t[i].slip_angle);
@@ -147,6 +164,8 @@ void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTel
         t.smoke_emit[i] = h(w.smoke_emit);
         t.skid_pitch[i] = h(w.skid_pitch);
         t.brake_heat[i] = h(w.brake_heat);
+        if (throttle > 0.05f && h(w.load) > 0 && ex::tcs_reads_axle(c.p.d.layout, int(i >> 1)))
+            t.traction_level = std::max(t.traction_level, traction_at(c, i));
         // The ABS (ex::brakes' limit) on a braked wheel on the ground: nearing the tyre's best braking slip (its
         // target, before ASCC's own cut) up to 0.4, then the share of the pressure the ABS takes off past it.
         if (pedal <= 0.05f || h(w.load) <= 0) continue;
@@ -161,6 +180,10 @@ void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTel
         }
         t.abs_level = std::max(t.abs_level, level);
     }
+    // The TCS holds the slip short of the tyre's best, so its cut counts by itself (not a gear change's, clutch state 3).
+    if (c.tcs_status == 2 && c.clutch != 3 && throttle > 0)
+        t.traction_level = std::max(t.traction_level, 0.4f + 0.6f * std::clamp(1 - h(c.throttle) / throttle, 0.0f, 1.0f));
+    t.traction_level *= std::min(throttle * 2, 1.0f);
     t.diff_locked = {c.diff_lock[0] != 0, c.diff_lock[1] != 0};
     t.tires_worn = (c.x535 & 4) != 0;
     t.on_pit_surface = (c.x535 & 0x10) != 0;

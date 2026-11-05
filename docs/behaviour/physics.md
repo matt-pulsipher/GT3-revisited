@@ -2462,6 +2462,7 @@ below; those marked (disc) need the disc.
 | `net_exact_posed_car_contact` (disc) | an online player's posed car driving into ours: our car is pushed, and the hit reported for its owner pushes the posed car back (§5.3) |
 | `race_rumble` | GT3 original: a step's vibration level goes to the large motor as it is (100, 127) and the small motor stays off; Modern: both motors for everything, hits and off-road leaning on the large one, curbs, slides, wheelspin and locked wheels on the small one, the other motor at 0.35 (0.7 on a DualSense); both stop for a car the AI drives or a step without telemetry (§1.2) |
 | `exact_abs_level_hard_stop` (disc) | the ABS level the brake triggers follow: a hard stop from speed works it (a wheel at the tire's best braking slip, then past it); the brake held at a standstill gives none, though the tire's peak force keeps the pressure under the pedal there (§4.5) |
+| `exact_traction_level_recorded_laps` (disc) | the edge of grip the throttle triggers follow: on a recorded time trial lap it shows for a share of the time on throttle, some of it past the tire's best, and none off the throttle (§3.8, §4.6) |
 | `exact_game_exit_as_finish` (disc) | a car the pad drives sends vibration through a lap; after the finish, the AI driving it, it sends none (§1.2) |
 | `race_pylons_disc` (disc) | the license pylons are knocked about by a car's box and every touch is reported (§11) |
 

@@ -37,6 +37,9 @@ std::string fmt(float v) {
 
 u8 byte01(float v) { return u8(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); }
 
+// An impulse trigger's small motor hardly turns at the bottom of its range, so a level starts above that.
+float impulse_level(float level) { return level > 0 ? 0.3f + 0.7f * std::min(level, 1.0f) : 0.0f; }
+
 // DualSense output report effects block (SDL_SendGamepadEffect payload for
 // PS5 controllers; same layout as SDL's test/testcontroller.c DS5EffectsState_t).
 struct Ds5Effects {
@@ -131,8 +134,8 @@ TriggerEffect brake_trigger_effect(const ForceFeedbackState& s, const ForceFeedb
 }
 
 TriggerEffect throttle_trigger_effect(const ForceFeedbackState& s, const ForceFeedbackConfig& c) {
-    if (!c.enabled || !c.triggers || !s.triggers_on || s.wheelspin <= 0.0f) return trigger_off();
-    return trigger_vibration(0.1f, 35, std::min(s.wheelspin, 1.0f)); // wheelspin buzz, by its amount
+    if (!c.enabled || !c.triggers || !s.triggers_on || s.traction <= 0.0f) return trigger_off();
+    return trigger_vibration(0.1f, 35, std::min(s.traction, 1.0f)); // the edge of grip under the finger, by its level
 }
 
 namespace {
@@ -189,12 +192,15 @@ Ds5Packet ds5_trigger_packet(const TriggerEffect& left, const TriggerEffect& rig
     return out;
 }
 
+// A throb, not on and off: the motor needs longer than a short pulse to spin up, and stopped it would start again from
+// nothing. (Nor does SDL's Raw Input driver then move the pad's motors between XInput and WGI at every pulse.)
 float impulse_brake(const ForceFeedbackState& s, double t) {
-    if (!s.triggers_on || s.abs_level <= 0) return 0.0f;
-    return std::fmod(t * 16.0, 1.0) < 0.5 ? 0.8f * std::min(s.abs_level, 1.0f) : 0.0f; // ~16 Hz square pulse
+    if (!s.triggers_on) return 0.0f;
+    const float level = impulse_level(s.abs_level);
+    return std::fmod(t * 10.0, 1.0) < 0.5 ? level : 0.4f * level;
 }
 
-float impulse_throttle(const ForceFeedbackState& s) { return s.triggers_on ? 0.5f * std::clamp(s.wheelspin, 0.0f, 1.0f) : 0.0f; }
+float impulse_throttle(const ForceFeedbackState& s) { return s.triggers_on ? impulse_level(s.traction) : 0.0f; }
 
 } // namespace ffb
 
@@ -247,7 +253,7 @@ void ForceFeedback::apply(SDL_JoystickID id, SDL_Gamepad* gamepad, SDL_Joystick*
             }
         } else if ((brake_trigger >= 0 || throttle_trigger >= 0) && cfg_.triggers) {
             // Xbox One/Series impulse triggers (no-op on pads without them): the ABS on the brake's trigger, the
-            // wheelspin on the throttle's.
+            // edge of grip on the throttle's.
             auto level = [&](int axis) {
                 if (axis == brake_trigger) return ffb::impulse_brake(s, time);
                 if (axis == throttle_trigger) return ffb::impulse_throttle(s);
