@@ -47,6 +47,7 @@ public:
     static RacePlaylist with_songs(const std::vector<u64>& ids, u16 seed, size_t limit = kMaxSongs);
     // The stored list (its saved text, to_text()) when there is a valid one, else a new
     // list of `ids` whose seed is an integer draw on the shared generator.
+    // Ours: all discs share the stored list, so it takes `ids` (sync()) unless that is empty.
     static RacePlaylist stored_or_new(const std::optional<std::string>& stored, const std::vector<u64>& ids,
                                       size_t limit = kMaxSongs);
 

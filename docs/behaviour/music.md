@@ -20,6 +20,7 @@ Code: `src/audio/bgm.*` (the BGM layer), `src/audio/audio_engine.*` (output),
 `sound_race_music_replay_start`, `sound_race_music_level`,
 `sound_mads_markers_synthetic`, `sound_mads_markers_disc`,
 `sound_music_request_levels`, `sound_music_and_effects_trim`, `sound_race_playlist`,
+`sound_race_playlist_from_another_disc`,
 `sound_replay_theater_music` (`tests/test_sound_race.cpp`), `race_music_markers`
 (`tests/test_race_presentation.cpp`), `sound_seq_music_bus_and_level`
 (`tests/test_sound_seq.cpp`), `tests/test_music_list.cpp`.
@@ -267,6 +268,13 @@ Shuffle) and a 16-bit seed.
   shared generator. The options menu stores such a new list as soon as it
   makes one. A stored order with no song at the cursor's place starts a new
   pass instead of waiting.
+- **Another disc (ours).** All discs share one `config.ini`, and each
+  release names its race songs differently (`race_a..`, `race_e..`,
+  `race_j..`). So a stored list takes the songs of the disc in use when it is
+  read (`RacePlaylist::stored_or_new`): songs not on the disc leave, the
+  others keep their marks and places, the disc's other songs join at the end
+  in the list, and any change starts a new pass. The options menu stores the
+  result. A disc whose songs could not be read leaves the list as it is.
 
 **The player's own songs (ours,** `race/custom_music.h`**).** MP3, FLAC and
 WAV files in the player's music folder play as race songs too, chosen on the

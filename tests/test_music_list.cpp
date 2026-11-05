@@ -207,6 +207,33 @@ TEST(music_list_playlist_commit) {
     CHECK(p.next() == 1u); // the first listed song in the page's order
 }
 
+// Ours: one options file serves every disc, and the discs name their race songs differently,
+// so a list stored on another disc holds songs this one doesn't have. The stored list takes
+// this disc's songs: those it has keep their marks and places, the rest join, in the list. Without
+// the disc's songs (none read) it stands.
+TEST(music_list_stored_list_takes_the_disc_songs) {
+    const RacePlaylist other = RacePlaylist::with_songs({0xA1, 0xA2, 0xA3}, 0x1234);
+    RacePlaylist p = RacePlaylist::stored_or_new(other.to_text(), kIds);
+    CHECK(p.songs().size() == kIds.size() && p.shuffle() && p.has_songs() && p.remaining() == kIds.size());
+    std::vector<u64> played;
+    for (size_t i = 0; i < kIds.size(); ++i)
+        if (std::optional<size_t> k = p.next()) played.push_back(p.songs()[*k].id);
+    std::sort(played.begin(), played.end());
+    CHECK(played == kIds); // a pass plays each of this disc's songs once
+
+    std::vector<RacePlaylist::Song> songs = RacePlaylist::with_songs({0x3333, 0xA1, 0x1111}, 0x1234).songs();
+    songs[0].listed = false;
+    RacePlaylist some = RacePlaylist::with_songs({}, 0x1234);
+    some.commit(songs, false);
+    p = RacePlaylist::stored_or_new(some.to_text(), kIds);
+    std::vector<u64> ids;
+    for (const RacePlaylist::Song& s : p.songs()) ids.push_back(s.id);
+    CHECK(!p.shuffle() && (ids == std::vector<u64>{0x3333, 0x1111, 0x2222, 0x4444, 0x5555}));
+    CHECK(!p.songs()[0].listed && p.songs()[1].listed && p.songs()[4].listed);
+
+    CHECK(RacePlaylist::stored_or_new(other.to_text(), {}) == other);
+}
+
 // On the disc: the page lists every race song of bgm/ads.inf with its title / artist, in a new
 // list's order (the group's), each drawn when the cursor comes to it; the first one's preview
 // plays on entry.
