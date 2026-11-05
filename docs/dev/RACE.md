@@ -337,8 +337,8 @@ SDL's trigger rumble does nothing there.
     side by side with it on.
   - ghost: whether a better run replaces the ghost at once (on) or after "Update Ghost?" (off);
     it never hides the ghost (see "Ghost").
-  Not wired: GT FORCE force feedback and the steering-assist types (wheel input only; platform's
-  force-feedback path), the 1P tyre-damage option (no race reader in the original).
+  Not wired: the GT FORCE steering-assist types (wheel input only), the 1P tyre-damage option (no
+  race reader in the original).
 - 2P battle, 4:3 top / bottom halves (matched to captures of the original): ordinal rank top
   left with the map below it, Fastest / Last / Lap (small label, large time) top right, speed then
   a dark panel with the gear digit, a ghost "> 8", AT / MT, the bar tachometer and a red shift
@@ -2015,11 +2015,12 @@ by the course area):
 
 ## Controller force feedback
 
-Once per frame while someone drives (not paused, in replays, menus, after
-the finish or with Vibration off): `ForceFeedbackState` with speed, the
-applied brake, ABS, the steering force -(fy_FL + fy_FR) / front axle load
-(tyre fy points to the wheel's right) and a jolt from wall / car impulses
-(/ 5000). Player 2 too in a 2P battle.
+Once per frame while someone drives (not paused, in replays, menus or after
+the finish): `ForceFeedbackState` with speed, the applied brake, ABS, GT3's
+steering force (car +0x16D6; none for a car the pad doesn't drive, as its pad
+output), GT3's understeer and oversteer indicators, a jolt from wall / car
+impulses (/ 5000) and each player's two switches: `vib1` / `vib2` for the
+triggers, `force_feedback_1p` / `2p` for the wheel. Player 2 too in a 2P battle.
 
 ## Performance
 

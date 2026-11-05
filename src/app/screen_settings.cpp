@@ -1655,16 +1655,40 @@ private:
                               n.wheel = v;
                               apply(n);
                           });
+        static const char* const kWheelModes[] = {"auto", "modern", "gt3"};
+        const int wheel_mode = c.wheel_mode == "gt3" ? 2 : c.wheel_mode == "modern" ? 1 : 0;
+        choice("Wheel force",
+               "Modern: GT3's steering force with a spring that firms up with speed, a kick on impacts and a wheel "
+               "that goes light in understeer. GT3 original: GT3's force alone, over a plain spring.",
+               {"Auto: Modern", "Modern", "GT3 original"}, wheel_mode, [apply, c](int i) {
+                   ForceFeedbackConfig n = c;
+                   n.wheel_mode = kWheelModes[i];
+                   apply(n);
+               });
         slider("Wheel strength", "Overall wheel force (100% = default, up to 200%).", c.strength, 0, 2, 0.05f,
                           percent(c.strength), [apply, c](float v) {
                               ForceFeedbackConfig n = c;
                               n.strength = v;
                               apply(n);
                           });
-        slider("Centring spring", "Self-centring spring of the wheel at speed.", c.spring, 0, 1, 0.05f,
-                          percent(c.spring), [apply, c](float v) {
+        slider("Steering force", "The force from the road and the tyres, 0% for the spring alone.", c.steering, 0, 1,
+                          0.05f, percent(c.steering), [apply, c](float v) {
                               ForceFeedbackConfig n = c;
-                              n.spring = v;
+                              n.steering = v;
+                              apply(n);
+                          });
+        slider("Centring spring",
+               c.gt3_wheel() ? "A plain spring at every speed, as a wheel's own (GT3 sends none), 0% for the force alone."
+                             : "Self-centring spring of the wheel at speed, 0% for the force alone.",
+               c.spring, 0, 1, 0.05f, percent(c.spring), [apply, c](float v) {
+                   ForceFeedbackConfig n = c;
+                   n.spring = v;
+                   apply(n);
+               });
+        slider("Understeer lightening", "How much lighter the wheel goes when the front tyres stop turning the car.",
+                          c.understeer, 0, 1, 0.05f, percent(c.understeer), [apply, c](float v) {
+                              ForceFeedbackConfig n = c;
+                              n.understeer = v;
                               apply(n);
                           });
         toggle("Invert wheel force", "Flip the steering force if your wheel pulls the wrong way.", c.invert,
@@ -1673,10 +1697,12 @@ private:
                               n.invert = v;
                               apply(n);
                           });
-        // base+0 triggers, +1 resistance, +2 wheel, +3 strength, +4 spring, +5 invert.
-        for (size_t i = base; i < base + 6; ++i) rows_[i].enabled = c.enabled;
+        // base+0 triggers, +1 resistance, +2 wheel, +3 mode, +4 strength, +5 steering, +6 spring, +7 understeer, +8 invert.
+        for (size_t i = base; i < base + 9; ++i) rows_[i].enabled = c.enabled;
         if (!c.triggers) rows_[base + 1].enabled = false;
-        if (!c.wheel) rows_[base + 3].enabled = rows_[base + 4].enabled = rows_[base + 5].enabled = false;
+        if (!c.wheel)
+            for (size_t i = base + 3; i < base + 9; ++i) rows_[i].enabled = false;
+        if (c.gt3_wheel()) rows_[base + 7].enabled = false;
         info("Device (player 1)", app.input().device_name(0),
              "Effects are felt while driving.");
     }
