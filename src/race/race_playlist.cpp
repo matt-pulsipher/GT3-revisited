@@ -22,7 +22,10 @@ RacePlaylist RacePlaylist::with_songs(const std::vector<u64>& ids, u16 seed, siz
 RacePlaylist RacePlaylist::stored_or_new(const std::optional<std::string>& stored, const std::vector<u64>& ids,
                                          size_t limit) {
     if (stored)
-        if (std::optional<RacePlaylist> p = from_text(*stored, limit)) return std::move(*p);
+        if (std::optional<RacePlaylist> p = from_text(*stored, limit)) {
+            if (!ids.empty()) p->sync(ids); // ours: it may have been stored on another disc (music §2.3)
+            return std::move(*p);
+        }
     // A new list's seed is an integer draw on the shared generator (gt_mode §20.1).
     return with_songs(ids, u16(shared_random().int31()), limit);
 }

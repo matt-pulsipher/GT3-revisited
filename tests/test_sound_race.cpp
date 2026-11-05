@@ -29,6 +29,8 @@
 #include "race/race_playlist.h"
 #include "vfs/vfs.h"
 
+#include <SDL3/SDL.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -947,6 +949,31 @@ TEST(sound_race_playlist) {
     }
     // The picked song's BGM track: its file's place in the race-song group, 0 if absent.
     CHECK(RacePlaylist::track_index(0x3333, ids) == 2 && RacePlaylist::track_index(0x9999, ids) == 0);
+}
+
+// A list stored on another disc holds none of this disc's songs: the race plays this disc's list,
+// not its first song every time (music §2.3).
+TEST(sound_race_playlist_from_another_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) SKIP("no audio");
+    {
+        AudioEngine audio;
+        if (!audio.ok()) SKIP("no audio device");
+        Vfs vfs(&disc->volume());
+        std::vector<u64> ids;
+        for (const std::string& f : audio.bgm().files(vfs, bgm::kRace)) ids.push_back(db::id_hash(f));
+        CHECK(ids.size() > 1);
+        std::sort(ids.begin(), ids.end());
+        race::RaceMusic music;
+        music.load_playlist(audio, vfs, race::RacePlaylist::with_songs({0xA1, 0xA2}, 0x1234).to_text());
+        std::vector<u64> listed;
+        for (const race::RacePlaylist::Song& s : music.playlist().songs()) listed.push_back(s.id);
+        std::sort(listed.begin(), listed.end());
+        CHECK(listed == ids);
+    }
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
 // The Replay Theater page plays stream 0x1A ("Are You Gonna Go My Way", looping) at the

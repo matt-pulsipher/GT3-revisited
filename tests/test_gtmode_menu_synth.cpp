@@ -2551,6 +2551,28 @@ TEST(gtmode_synth_options_music_list) {
     CHECK(p && p->songs()[0].id == db::id_hash(w::kSongFiles[2]) && changed == 2);
 }
 
+// A list stored on another disc (music §2.3): the page shows this disc's songs, and the options
+// keep the list for the race.
+TEST(gtmode_synth_music_list_from_another_disc) {
+    World world;
+    GameFlow f(world.read, "US");
+    IniDocument cfg;
+    cfg.set("options", "music_playlist", race::RacePlaylist::with_songs({0xA1, 0xA2}, 0x1234).to_text());
+    f.set_options(&cfg, [] {});
+    CHECK(start_title(f) != nullptr);
+    choose(f, "option");
+    settle(f);
+    choose(f, "music");
+    CHECK(f.music_list() != nullptr);
+    if (!f.music_list()) return;
+    const MusicListPage& m = *f.music_list();
+    CHECK(m.rows() == 4);
+    for (int i = 0; i < 3; ++i) CHECK(m.text(i) == std::string(w::kSongTitles[i]) + " / " + w::kSongArtist);
+    const std::optional<race::RacePlaylist> p =
+        race::RacePlaylist::from_text(cfg.get("options", "music_playlist").value_or(""));
+    CHECK(p && p->songs().size() == 3 && p->songs()[0].id == db::id_hash(w::kSongFiles[0]));
+}
+
 // Attract mode: the gcf's idle time on the title starts the demos (cycling the gcf's demo
 // list), five demos, the opening movie, the title again.
 TEST(gtmode_synth_attract_mode) {

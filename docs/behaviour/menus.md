@@ -1335,6 +1335,7 @@ plays its songs from (music §2.3). The playlist is stored in `config.ini` as
 `[options] music_playlist`. When none is stored, or the stored one is
 invalid, a new one is made and stored at once: every race song of
 `bgm/ads.inf` (25 on the disc) in the disc's order, all listed, Shuffle on.
+A list stored on another disc takes this disc's songs (ours, music §2.3).
 The top page's music preview (widget `song_list`) shows the same list without
 a cursor or previews.
 

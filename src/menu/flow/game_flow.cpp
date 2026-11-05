@@ -1029,11 +1029,10 @@ race::RacePlaylist GameFlow::music_playlist() {
     std::vector<u64> ids;
     for (const MusicTrack& t : race_tracks()) ids.push_back(t.id);
     std::optional<std::string> stored = options_ ? options_->get("options", "music_playlist") : std::nullopt;
-    const bool valid = stored && race::RacePlaylist::from_text(*stored);
-    race::RacePlaylist p = race::RacePlaylist::stored_or_new(valid ? stored : std::nullopt, ids);
-    // The options always hold a list (the original makes it with a new game): a new one is
-    // kept, so the race and the next visit see the same one.
-    if (!valid && options_) options_->set("options", "music_playlist", p.to_text());
+    race::RacePlaylist p = race::RacePlaylist::stored_or_new(stored, ids);
+    // The options always hold a list (the original makes it with a new game): a new one, or
+    // one that changed for this disc, is kept, so the race and the next visit see the same one.
+    if (options_ && p.to_text() != stored) options_->set("options", "music_playlist", p.to_text());
     return p;
 }
 
