@@ -167,11 +167,11 @@ beside it instead. Saves and replays can go in another folder of your choice
 
 ### Your music
 
-Your own MP3, FLAC and WAV files can play as race songs, in place of the
-disc's or mixed with them: choose their folder in **Settings → Audio → Music
-folder** (or copy them into `music/`), then pick the **Custom** or **Both** tab
-in the game's **Options → Favorite Music List**. In races, the pause screen's
-L1 / R1 skip songs. Step by step: [MUSIC](docs/MUSIC.md).
+Your own MP3, FLAC and WAV files can play as race songs: choose their folder
+in **Settings → Audio → Music folder** (or copy them into `music/`) and they
+play in place of the disc's. The **Both** and **Original** tabs in the game's
+**Options → Favorite Music List** mix them with the disc's or go back to it. In
+races, the pause screen's L1 / R1 skip songs. Step by step: [MUSIC](docs/MUSIC.md).
 
 ### Settings
 
@@ -225,7 +225,7 @@ are only there:
 | `[touch]` | see [INPUT](docs/INPUT.md#touch-controls-phones-and-tablets) | on-screen controls on phones and tablets; Customize layout moves, resizes and hides each one |
 | `[online] server` | host name | relay server (default `gt3r.gameversions.com`; set in the lobby) |
 | `[online] update_check` | `on` / `off` | ask the relay server for a newer version at startup (Settings → Online) |
-| `[options]` | | the game's own Options menu (set in game); ours: `music_source` (`original` / `custom` / `both`) and `music_mix` (Both's `order` / `shuffle`), the music list's tabs |
+| `[options]` | | the game's own Options menu (set in game); ours: `music_source` (`original` / `custom` / `both`; unset: `custom`) and `music_mix` (Both's `order` / `shuffle`), the music list's tabs |
 | `[mods]` | | see [MODDING](docs/MODDING.md) |
 
 ### Saves

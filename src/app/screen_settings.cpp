@@ -944,8 +944,8 @@ private:
         const race::MusicLibrary& lib = app.music_library();
         const std::string folder = app.music_folder();
         const bool chosen = app.music_folder_chosen();
-        const char* formats = "MP3, FLAC and WAV files in it (and its folders) play as race songs beside the game's. "
-                              "Choose them on the Options page's Favorite Music List: Original, Custom or Both.";
+        const char* formats = "MP3, FLAC and WAV files in it (and its folders) play as race songs in place of the game's. "
+                              "Change that on the Options page's Favorite Music List: Original, Custom or Both.";
         // Phones and tablets: the chosen folder by its name (its path is long), the game's as the
         // Files app shows it.
         const bool mobile = platform::is_mobile();

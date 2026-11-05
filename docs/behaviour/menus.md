@@ -1397,7 +1397,8 @@ above the list, in its art (a title box per tab, the chosen one focused), and
 the list's window is one Order / Shuffle row shorter under it: **Original**
 (the disc's playlist, as above), **Custom** (the player's songs, a playlist of
 the same kind) and **Both** (the disc's songs, then the player's; Order /
-Shuffle there is the mix's, music §2.3). At the row's right end are the last
+Shuffle there is the mix's, music §2.3). Until a tab is chosen the page opens
+on Custom. At the row's right end are the last
 row's Order and Shuffle buttons again, the same choice, so a long list doesn't
 put it out of reach. Up from the first song reaches the row; Left / Right move
 along it (SE `cursor`, `disable` at an end) and Confirm takes the tab (SE

@@ -10,6 +10,7 @@
 //             of them); with Order they take turns, one of each, each in its own order
 // Custom and Both need custom songs; without them the disc's playlist plays whatever was chosen.
 // [options] music_source = original | custom | both, music_mix = order | shuffle (Both's).
+// No tab chosen yet counts as Custom: the player's songs as soon as there are any.
 // The custom playlist is kept in <user data>/music_playlist.txt.
 //
 // The songs as the last scan found them, and their loudness, are remembered in
@@ -57,7 +58,7 @@
 namespace gt3r::race {
 
 enum class MusicSource : u8 { Original, Custom, Both };
-MusicSource parse_music_source(std::string_view s); // "custom", "both", anything else Original
+MusicSource parse_music_source(std::string_view s); // "custom" or "", "both", anything else Original
 std::string_view music_source_name(MusicSource s);  // "original", "custom", "both"
 // The source that plays: the chosen one, or Original while there are no custom songs.
 inline MusicSource effective_music_source(MusicSource chosen, bool has_custom) {

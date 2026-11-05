@@ -10,9 +10,11 @@ converted or uploaded.
    (album folders inside it are fine). Or use **Open music folder** and copy
    your songs into the game's own `music/` folder.
 2. **Songs**, on the same page, shows how many the game found.
-3. On the title menu, open **Options → Favorite Music List** and choose the
-   **Custom** tab (only your songs) or **Both** (yours and the disc's).
-4. Race. On the pause screen, **L1 / R1** skip to the previous / next song.
+3. Race: your songs now play in place of the disc's. On the pause screen,
+   **L1 / R1** skip to the previous / next song.
+4. To change that, open **Options → Favorite Music List** on the title menu and
+   choose the **Both** tab (yours and the disc's) or **Original** (only the
+   disc's).
 
 ## Adding songs
 
@@ -50,6 +52,9 @@ found songs of yours:
 | **Original** | the disc's race songs, as GT3 plays them |
 | **Custom** | only your songs |
 | **Both** | your songs and the disc's: **Order** takes turns (a disc song, then one of yours), **Shuffle** draws from all of them |
+
+**Custom** is the one in use until you choose a tab; after that, the game keeps
+your choice.
 
 Reach the tabs with **Up** from the first song, or **L1 / R1**. Each tab's list
 works like GT3's own:

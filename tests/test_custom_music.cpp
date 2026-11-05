@@ -756,8 +756,12 @@ TEST(custom_music_mix) {
     using race::MusicSource;
     CHECK(race::parse_music_source("custom") == MusicSource::Custom && race::parse_music_source("both") == MusicSource::Both);
     CHECK(race::parse_music_source("x") == MusicSource::Original && race::music_source_name(MusicSource::Both) == "both");
+    CHECK(race::parse_music_source("original") == MusicSource::Original);
     CHECK(race::effective_music_source(MusicSource::Both, false) == MusicSource::Original);
     CHECK(race::effective_music_source(MusicSource::Custom, true) == MusicSource::Custom);
+    // No tab chosen yet: the player's songs, the disc's until there are some.
+    CHECK(race::effective_music_source(race::parse_music_source(""), true) == MusicSource::Custom);
+    CHECK(race::effective_music_source(race::parse_music_source(""), false) == MusicSource::Original);
     // Order takes turns; one list empty: the other one.
     CHECK(race::pick_custom(false, 5, 5, true, true, false, 0.9) && !race::pick_custom(false, 5, 5, true, true, true, 0.0));
     CHECK(!race::pick_custom(true, 5, 5, true, false, false, 0.0) && race::pick_custom(true, 5, 5, false, true, true, 0.9));
