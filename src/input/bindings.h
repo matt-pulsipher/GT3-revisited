@@ -236,6 +236,9 @@ struct PlayerBindings {
     void reset(DeviceKind kind, bool race); // the layout chosen; custom sets kept
     void use_custom(bool race);             // the kept custom sets chosen again
     void set_race_layout(DeviceKind kind, std::string_view layout); // chosen; custom race sets kept
+    // A wheel set up as a joystick (is_wheel in input_manager.h: earlier versions took one SDL
+    // doesn't list for a joystick): with no sets of the wheel's yet, it gets the joystick's.
+    void adopt_joystick_sets();
 
     std::vector<std::string> devices() const; // device tags any of the sets use
     // [<sec>.bindings] / [<sec>.race] (the pad's), [<sec>.wheel.*], [<sec>.joystick.*] and
@@ -251,6 +254,7 @@ struct PlayerBindings {
 
 private:
     std::optional<Profile>& slot(DeviceKind kind, bool race, BindingSet s);
+    void drop_wheel_deadzones(); // the stick dead zone on the wheel's sets' axes
     void begin_custom(DeviceKind kind, bool race); // custom sets in use, made as they stand if not
 };
 

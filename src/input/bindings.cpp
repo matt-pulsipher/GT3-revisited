@@ -959,16 +959,27 @@ void PlayerBindings::load(const IniDocument& cfg, const std::string& sec) {
                        read(sec + ".joystick.bindings", BindingSet::Controller)};
     controller_race = {read(sec + ".race", BindingSet::Controller), read(sec + ".wheel.race", BindingSet::Controller),
                        read(sec + ".joystick.race", BindingSet::Controller)};
+    drop_wheel_deadzones();
+    keyboard_menu = read(sec + ".keyboard.bindings", BindingSet::Keyboard);
+    keyboard_race = read(sec + ".keyboard.race", BindingSet::Keyboard);
+    race_custom_on = to_lower(cfg.get(sec, "race_custom").value_or("on")) != "off";
+    menu_custom_on = to_lower(cfg.get(sec, "menu_custom").value_or("on")) != "off";
+}
+
+void PlayerBindings::drop_wheel_deadzones() {
     for (std::optional<Profile>* p : {&controller_menu[1], &controller_race[1]})
         if (*p)
             for (Binding& b : (*p)->bindings)
                 if (b.source.kind == InputSource::Kind::JoyAxis && b.target.kind == PadTarget::Kind::Axis &&
                     b.options.deadzone == kStickDeadzone)
                     b.options.deadzone = 0;
-    keyboard_menu = read(sec + ".keyboard.bindings", BindingSet::Keyboard);
-    keyboard_race = read(sec + ".keyboard.race", BindingSet::Keyboard);
-    race_custom_on = to_lower(cfg.get(sec, "race_custom").value_or("on")) != "off";
-    menu_custom_on = to_lower(cfg.get(sec, "menu_custom").value_or("on")) != "off";
+}
+
+void PlayerBindings::adopt_joystick_sets() {
+    if (controller_menu[1] || controller_race[1]) return;
+    controller_menu[1] = controller_menu[2];
+    controller_race[1] = controller_race[2];
+    drop_wheel_deadzones();
 }
 
 bool PlayerBindings::load_old(const IniDocument& cfg, const std::string& sec) {

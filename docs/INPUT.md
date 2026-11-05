@@ -48,8 +48,8 @@ controller`): **Auto** (`auto`), a connected pad or wheel by name (`controller`
 holds part of its name; one that isn't connected stays listed as "(not
 connected)"), or **Keyboard only** (`keyboard`; offered only when a keyboard
 is connected, never in VR builds). Left/Right changes it; Cross does nothing
-there. Auto takes a device SDL identifies as a wheel, otherwise the first free
-gamepad, otherwise any other joystick (SDL also lists flight sticks and some
+there. Auto takes a wheel SDL lists, then one known only by its forces,
+otherwise the first free gamepad, otherwise any other joystick (SDL also lists flight sticks and some
 keyboards, mice and macro pads as joysticks, so those never take a player's
 gamepad); Settings shows it as "Auto: <name>". A device chosen by name is used
 whatever its type.
@@ -59,7 +59,7 @@ The kind of device in use picks the buttons; players don't choose a layout:
 | Kind | Buttons |
 |---|---|
 | Gamepad | DualShock 2 layout 1:1 (triggers → L2/R2 pressure); back paddles → R2 / L2 (right up, left down: GT3's shift buttons) |
-| Wheel (a device SDL identifies as a wheel) | Axis 0 steering, axes 1/2 pedals (resting at +1); typical Logitech layout. Races use GT3's steering-wheel path |
+| Wheel (a device SDL identifies as a wheel, or a joystick SDL has no type for that plays a spring and a constant force, which rumble motors don't: SDL only lists the wheels it knows, and a Simucube 3 reaches the PC as its Link Hub, which isn't listed; issue 134) | Axis 0 steering, axes 1/2 pedals (resting at +1); typical Logitech layout. A `pedal` on an axis that has stayed in the middle since it connected reads as nothing there, not half way down (a Simucube's Y axis idles at the centre). Races use GT3's steering-wheel path. A wheel earlier versions took for a joystick gets the joystick's custom bindings, if it has no wheel bindings yet |
 | Joystick (any other device SDL doesn't map as a gamepad) | None: nothing is pressed until its inputs are bound in Settings → Controls (saved to `[playerN.joystick.*]`) |
 | Keyboard (Keyboard only, or no device connected) | Keyboard only |
 
@@ -155,7 +155,8 @@ then:
   one way (bind it to Steer left / Steer right, Look left / Look right or Look
   back, or the D-pad). A stick captured on Steer or a stick axis gets
   `deadzone=0.08`; a wheel's axis gets none, and the wheel's saved sets drop the
-  `deadzone=0.08` earlier versions gave it (issue 134). An axis that rests at an
+  `deadzone=0.08` earlier versions gave it (issue 134). In races Steer's dead zone
+  is the **Steering dead zone** setting (see Race controls). An axis that rests at an
   end (a pedal, a joystick's trigger) captured on a button or a stick half reads
   over its whole travel (`pedal`, with `invert` when it rests at +1), not from
   half way; one resting in the middle (combined pedals) keeps its half.
@@ -238,6 +239,8 @@ race = modern          ; race layout (modern | gt3), used when there is no [play
 rumble = auto          ; race rumble: auto (modern) | modern | gt3 (see Native features)
 steering_curve = 1.00  ; race steering = |x|^curve, 0.5..2.5 (see Race controls)
 wheel_steering_curve = 1.00 ; the same for a wheel
+steering_deadzone = 0.08 ; race steering's dead zone, 0..0.3 (see Race controls)
+wheel_steering_deadzone = 0.00 ; the same for a wheel
 phone_vibration = off  ; Android, player 1 only: rumble on the device's own motor (see Native features)
 
 [player1.bindings]     ; the menu pad, a gamepad's inputs ([player1.wheel.bindings], [player1.joystick.bindings])
@@ -285,7 +288,7 @@ Circle Cross Square`, and the axes `LX LY RX RY`, optionally as halves
 
 | Option | Effect |
 |---|---|
-| `deadzone=0.1` | Inner deadzone, as a fraction of the range |
+| `deadzone=0.1` | Inner deadzone, as a fraction of the range (Steer in races: the Steering dead zone setting instead) |
 | `saturation=0.9` | Input level that already counts as full |
 | `curve=1.5` | Response exponent; >1 gives finer control near rest |
 | `scale=0.8` | Output multiplier |
@@ -377,6 +380,13 @@ wheel's force feedback oscillated around the centre). Above 1 is finer near the
 centre (a wheel set to a small rotation); below 1 is quicker off it (a large
 rotation). Full lock stays at the end of the travel. The menus read the input as
 it is.
+
+**Steering dead zone** (Settings > Controls, per player: `[playerN]
+steering_deadzone`, and `wheel_steering_deadzone` while a wheel steers) is how far
+a stick or wheel axis on Steer moves off the centre before the race steers, as a
+fraction of its range (0..0.3; 0.08 for sticks, 0 for wheels: 36° of a 900° wheel's
+turn at 0.08, issue 134). In races it takes the place of those bindings' `deadzone`;
+the menus keep theirs.
 
 Replays, the pause window and the quick menus read the menu pad, as in GT3.
 Start opens the pause, in replays too. In a replay, Cross switches between the
