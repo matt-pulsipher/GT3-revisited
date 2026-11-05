@@ -47,7 +47,7 @@ bool less_folded(const std::string& a, const std::string& b) {
 } // namespace
 
 MusicSource parse_music_source(std::string_view s) {
-    if (s == "custom") return MusicSource::Custom;
+    if (s.empty() || s == "custom") return MusicSource::Custom;
     if (s == "both") return MusicSource::Both;
     return MusicSource::Original;
 }

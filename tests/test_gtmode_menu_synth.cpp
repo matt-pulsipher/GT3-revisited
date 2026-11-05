@@ -3122,9 +3122,10 @@ TEST(gtmode_synth_prizes_before_the_replay) {
 }
 
 // Ours: the music list's tabs through the menus with the player's music (race/custom_music.h):
-// none without songs; Original / Custom / Both, each choice kept in [options] music_source and
-// the edit so far in its playlist; Both's two sets back into their own playlists, its Order /
-// Shuffle into [options] music_mix; a song of the player's previewed from its file.
+// none without songs; Custom with songs until a tab is chosen; Original / Custom / Both, each
+// choice kept in [options] music_source and the edit so far in its playlist; Both's two sets back
+// into their own playlists, its Order / Shuffle into [options] music_mix; a song of the player's
+// previewed from its file.
 TEST(gtmode_synth_options_music_tabs) {
     World world;
     GameFlow f(world.read, "US");
@@ -3153,7 +3154,17 @@ TEST(gtmode_synth_options_music_tabs) {
     CHECK(lib.songs().size() == 2);
     choose(f, "music");
     const MusicListPage* m = f.music_list();
-    CHECK(m && m->tabs_shown() && m->tab() == 0 && m->rows() == 4);
+    // No tab chosen yet: Custom, and nothing stored for it.
+    CHECK(m && m->tabs_shown() && m->tab() == 1 && m->rows() == 3 && !cfg.get("options", "music_source"));
+    if (!m) return;
+    // Original: the disc's songs, and the choice stays.
+    press(f, MenuKey::L1);
+    m = f.music_list();
+    CHECK(cfg.get("options", "music_source") == "original" && m && m->tab() == 0 && m->rows() == 4);
+    press(f, MenuKey::Cancel);
+    choose(f, "music");
+    m = f.music_list();
+    CHECK(m && m->tab() == 0);
     if (!m) return;
     // Custom: the player's songs, the cursor on the tabs.
     press(f, MenuKey::R1);

@@ -300,7 +300,8 @@ Options music list's tabs (menus §10.1, `[options] music_source`):
   of its songs still to come in its pass among all songs still to come;
   with Order the two take turns. A playlist with no song in its list is
   passed over.
-- Without songs in the folder Original plays, whatever was chosen. The
+- With songs in the folder and no tab chosen yet (`music_source` unset), Custom
+  plays. Without songs in the folder Original plays, whatever was chosen. The
   player's songs play at the race songs' levels, with fallback markers for
   the replay cameras (§8).
 - **Loudness.** The player's songs are brought to the disc's race songs'
