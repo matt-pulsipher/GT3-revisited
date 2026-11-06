@@ -1441,11 +1441,11 @@ TEST(gtmode_disc_change_parts_rows) {
     CHECK(row(*evo, "parts_oth_ayc_s") == pt("EQUIP") && row(*evo, "parts_eng_turbine") == pt("STAGE_3"));
     CHECK(row(*evo, "parts_eng_inter_cooler") == pt("INTERCOOLER_2") && row(*evo, "parts_sus_s_kit") == pt("SUSPENSION_3"));
     CHECK(row(*evo, "parts_oth_weight_r") == pt("STAGE_2"));
-    // The Vitz (FF, NA): no driveshaft, no intercooler without a turbo, the turbo "N/A" until a kit.
+    // The Vitz (FF, NA): no driveshaft, no intercooler (a kit changes nothing), the turbo "N/A" until a kit.
     CHECK(row(*vitz, "parts_drv_shaft") == pt("NO_EQUIP") && row(*vitz, "parts_eng_inter_cooler") == pt("NO_EQUIP"));
     CHECK(row(*vitz, "parts_eng_turbine") == pt("NOTHING"));
     CHECK(gt.fit_goods(*vitz, 79));
-    CHECK(row(*vitz, "parts_eng_turbine") == pt("STAGE_1") && row(*vitz, "parts_eng_inter_cooler") == pt("NORMAL"));
+    CHECK(row(*vitz, "parts_eng_turbine") == pt("STAGE_1") && row(*vitz, "parts_eng_inter_cooler") == pt("NO_EQUIP"));
     // Tyres; on a dirt event the dirt tyres when owned, else "----".
     CHECK(row(*vitz, "parts_tir_f") == pt("TIRE_NORMAL") && row(*vitz, "parts_tir_r") == pt("TIRE_NORMAL"));
     CHECK(gt.fit_goods(*vitz, 63));
@@ -1457,6 +1457,42 @@ TEST(gtmode_disc_change_parts_rows) {
     CHECK(!setting_parts_text(gt, &*vitz, "spring_rate_f", false));
     if (data->language == Language::US)
         CHECK(row(*evo, "parts_eng_muffler") == "Muffler/Racing" && pt("NOTHING") == "N/A" && pt("MODIFY") == "Installed");
+}
+
+// Public issue 215: a car owns the Normal of every slot its stock parts leave empty, so the
+// change-parts pages can always put a bought part back.
+TEST(gtmode_disc_stock_goods) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    auto data = std::make_shared<GtData>();
+    CHECK(data->load([&](const std::string& p) { return vfs.read(p); }));
+    GtMode gt(data);
+    std::optional<GarageCar> is = gt.make_car("altezza_as200_98"), vitz = gt.make_car("vitz_euro_00");
+    std::optional<GarageCar> evo = gt.make_car("lancer_evo6_tommi_gsr_opt_00"), race = gt.make_car("_787b_91");
+    CHECK(is && vitz && evo && race);
+    if (!is || !vitz || !evo || !race) return;
+    // The issue's Lexus IS (FR, NA): muffler, computer, NA tune, flywheel, shaft, brake controller.
+    for (int g : {36, 8, 40, 15, 46, 2}) CHECK(is->owned.test(size_t(g)));
+    CHECK(!is->owned.test(37)); // nothing better than stock
+    CHECK(!is->owned.test(23)); // no intercooler without a turbo of its own
+    // A car built with a turbo owns its intercooler; an FF car has no driveshaft.
+    CHECK(evo->owned.test(23) && evo->owned.test(78));
+    CHECK(!vitz->owned.test(46) && !vitz->owned.test(23));
+    // A racing muffler as stock owns that muffler and not the Normal it never had.
+    CHECK(race->owned.test(39) && !race->owned.test(36));
+    for (const data::Car& c : gt.db().cars()) {
+        std::optional<GarageCar> g = gt.make_car(c.label);
+        CHECK(g && g->owned.test(8) && g->owned.test(40) && g->owned.test(44));
+    }
+    // Out and back to stock: bought part fitted, then Normal again.
+    gt.state().credits = 100000000;
+    CHECK(gt.buy_car("altezza_as200_98") == 0);
+    CHECK(gt.buy_part(37) && gt.fit_part(37));
+    GarageCar& car = *gt.state().ride_car();
+    const size_t slot = size_t(part_slot(int(data::TableId::Muffler)));
+    CHECK(car.parts[slot] == find_part(gt.db(), car.car, 37)->id);
+    CHECK(gt.fit_part(36) && car.parts[slot] == gt.db().car(car.car)->parts[slot]);
 }
 
 // --- Arcade progression (gt_mode §16) ---------------------------------------------------

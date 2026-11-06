@@ -369,8 +369,9 @@ std::optional<std::string> setting_parts_text(const GtMode& gt, const GarageCar*
         int g = goods_id(t, b8(part_rec(gt, *car, t), 0x10));
         return g >= 0 ? g : goods_id(t, 0);
     };
-    // Turbo: the fitted turbine record's +0x11 (as the events' aspiration rule).
-    const bool turbo = b8(part_rec(gt, *car, 12), 0x11) != 0;
+    // A turbo the car was built with (a turbo kit does not count).
+    const data::Car* own = gt.db().car(car->car);
+    const bool turbo = own && stock_turbo(gt.db(), *own);
     if (cls == "parts_oth_ayc_s") return text(fitted(21) == 35 ? "EQUIP" : "NOTHING"); // AYC = LSD stage 5
     if (table == 12) {
         int g = fitted(12);
@@ -578,13 +579,6 @@ bool fits(int goods) {
     return false;
 }
 
-// The goods of a car's stock part in `slot`, -1 without one.
-int stock_goods(const data::CarDatabase& db, const data::Car& car, size_t slot) {
-    const int t = data::kCarPartTables[slot];
-    const ByteSpan* r = car.parts[slot] ? db.record(data::TableId(t), car.parts[slot]) : nullptr;
-    return r && r->size() > 0x10 ? goods_id(t, (*r)[0x10]) : -1;
-}
-
 using Fittable = std::array<std::vector<u64>, 27>;
 
 // A garage car's gear words 0 (reverse) .. n. An ordinary gearbox keeps its record's ratios (stock_settings), unless its
@@ -672,7 +666,7 @@ std::vector<u64> fittable_parts(const data::CarDatabase& db, const std::string& 
     const size_t front = size_t(part_slot(int(data::TableId::FrontTire)));
     for (int g = 0; g < kGoodsCount; ++g) {
         if (goods_info(g).table != table || !fits(g)) continue;
-        // Owned: bought, or the stock part's (set_stock_ownership; a front tyre set owns its rear goods).
+        // Owned: bought, or what the car comes with (stock_ownership; a front tyre set owns its rear goods).
         const bool owned = shop_sells(g) || stock_goods(db, *car, i) == g ||
                            (rear_tire_goods(g - 11) == g && stock_goods(db, *car, front) == g - 11);
         if (!owned) continue;

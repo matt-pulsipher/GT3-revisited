@@ -1502,6 +1502,11 @@ TEST(gtmode_menu_disc_change_parts_rows) {
     press(f, MenuKey::Cancel);
     CHECK(f.controller()->page_name() == "chg/change_eng");
     CHECK(widget_text(f, "parts_eng_muffler") == "Muffler/Semi-racing");
+    // Normal, which the car has no part record for (public issue 215).
+    choose(f, "status_box_eng1");
+    choose(f, "parts1");
+    press(f, MenuKey::Cancel);
+    CHECK(widget_text(f, "parts_eng_muffler") == "Normal");
 }
 
 TEST(gtmode_menu_disc_attract_mode) {

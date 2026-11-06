@@ -185,6 +185,24 @@ TEST(save_edit_condition) {
     CHECK(odometer_metres(d, odometer_units_max(d)) <= double(sim::kOdometerMax) * 2);
 }
 
+// A car saved without the Normal of its empty stock slots gets it when the save loads, and can
+// go back to stock (public issue 215).
+TEST(save_load_owns_stock_goods) {
+    const std::string path = test::temp_path("save_stock_goods.sav").string();
+    GtMode gt(world_data());
+    gt.state().credits = 1000000;
+    CHECK(gt.buy_car(w::kCoupe) == 0);
+    std::bitset<88> want = gt.state().garage[0].owned;
+    want.set(37);
+    gt.state().garage[0].owned.reset();
+    gt.state().garage[0].owned.set(37);
+    CHECK(write_save(path, gt.state()));
+    Session session(path);
+    GtMode& game = gt_mode_session()->gt();
+    CHECK(game.state().garage.size() == 1 && game.state().garage[0].owned == want);
+    CHECK(game.fit_part(40)); // the NA tune's Normal, which the car has no part for
+}
+
 // The save being played is edited as the game has it (not its file), and the game takes the
 // stored edit; another save is read from and written to its file.
 TEST(save_edit_session_saves) {
