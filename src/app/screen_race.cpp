@@ -209,7 +209,9 @@ void RaceScreen::render_loading(App& app, Ui& ui) {
     if (!loading_.valid()) return;
     SDL_Texture* prev = SDL_GetRenderTarget(r);
     SDL_SetRenderTarget(r, loading_.frame);
-    for (int i = 0; i < frames; ++i) loading_.transition.draw_frame(r, SDL_FRect{0, 0, 640, 448});
+    float fw = 640, fh = 448; // (the picture of a page with a 3D model is larger)
+    SDL_GetTextureSize(loading_.frame, &fw, &fh);
+    for (int i = 0; i < frames; ++i) loading_.transition.draw_frame(r, SDL_FRect{0, 0, fw, fh});
     SDL_SetRenderTarget(r, prev);
     const UiRect pic = ui.picture43(); // the menu's 4:3 picture in the middle
     const SDL_FRect dst{pic.x, pic.y, pic.w, pic.h};

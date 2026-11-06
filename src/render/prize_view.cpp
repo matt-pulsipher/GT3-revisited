@@ -52,6 +52,7 @@ void PrizeView::draw(SDL_Renderer* r, const SDL_FRect& rect, const float clear[4
     if (clear)
         for (int i = 0; i < 4; ++i) o.clear[i] = clear[i];
     o.composite_alpha = alpha_;
+    o.repeated = pass && pass->repeated;
     // The scene's lights (prm.md "Lights"), set like OpenGL lights after the view matrix:
     // directional, towards the light = the record's vector normalised and turned by the view
     // (camera space here, where the model is drawn). Light-model ambient (0, 0, 0); each
@@ -86,7 +87,7 @@ void PrizeView::draw(SDL_Renderer* r, const SDL_FRect& rect, const float clear[4
             for (float& c : o.light_diffuse) c = 0;
     }
     // The game's camera: 60 degrees horizontally over the 640x448 frame.
-    float aspect = rect.w / rect.h;
+    float aspect = pass && pass->aspect > 0 ? pass->aspect : rect.w / rect.h;
     float fovy = 2.0f * std::atan(std::tan(30.0f * 3.14159265f / 180.0f) / aspect);
     Mat4 proj = perspective(fovy, aspect, 0.1f, 300.0f);
     Mat4 view = Mat4::identity();

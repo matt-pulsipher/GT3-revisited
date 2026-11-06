@@ -126,7 +126,7 @@ public:
         draw_frame(app);
         const UiRect pic = ui.picture43();
         const SDL_FRect dst{pic.x, pic.y, pic.w, pic.h};
-        if (frame_) SDL_RenderTexture(app.renderer(), frame_, nullptr, &dst);
+        if (frame_) SDL_RenderTexture(app.renderer(), canvas_.shown(frame_), nullptr, &dst);
     }
 
     bool follows_aspect() const override { return true; } // the game's menus
@@ -181,7 +181,8 @@ private:
                                                           float alpha) {
             if (flow_ && flow_->controller())
                 if (const GtModeWidgetDrawer& d = gt_mode_widget_drawer(); d)
-                    d(app, r, e, box, alpha, flow_->controller()->page_name(), element_image(renderer_->drawing_scene(), e));
+                    d(app, r, e, box, alpha, flow_->controller()->page_name(), element_image(renderer_->drawing_scene(), e),
+                      &canvas_);
         });
         sounds_.load(*app.vfs());
         try {
@@ -228,8 +229,7 @@ private:
             else app.audio().play_sequence(*app.vfs(), *m, bgm::kMenuVolume);
         }
         for (std::string& m : flow_->take_log()) LOG_INFO("gt setting: %s", m.c_str());
-        ++pending_draws_;
-        draw_frame(app);
+        ++pending_draws_; // drawn in render, once a shown frame however many ticks it caught up
     }
 
     void draw_frame(App& app) {
@@ -242,13 +242,16 @@ private:
             if (!frame_) return;
             SDL_SetTextureScaleMode(frame_, SDL_SCALEMODE_LINEAR);
         }
+        const SDL_Point size = app.menu_model_size(); // (of the window: before the target changes)
         SDL_Texture* prev = SDL_GetRenderTarget(r);
         SDL_SetRenderTarget(r, frame_);
+        canvas_.begin(r, frame_, size.x, size.y);
         SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
         SDL_RenderClear(r);
         RenderOptions ro;
         ro.widget_labels = false;
         renderer_->draw_elements(flow_->draw_list(), ro, SDL_FRect{0, 0, kMenuWidth, kMenuHeight});
+        canvas_.end(r);
         SDL_SetRenderTarget(r, prev);
     }
 
@@ -260,6 +263,7 @@ private:
     std::unique_ptr<GameFlow> flow_;
     MenuSounds sounds_;
     SDL_Texture* frame_ = nullptr;
+    MenuCanvas canvas_;
     int pending_draws_ = 1;
     double acc_ = 0;
     std::string error_;

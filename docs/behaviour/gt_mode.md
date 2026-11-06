@@ -1210,6 +1210,7 @@ The card is drawn in six passes, each with a small sub-pixel offset. When the sc
 focus distance is above 1, each pass also moves the eye around a circle of the scene's
 aperture radius (depth of field). Pass *i* is blended over the passes before it at
 1 / (*i* + 1), so every pass counts equally in the average.
+At the screen's resolution (menus §15) a model with no depth of field takes one pass.
 
 **Championship trophy** (`trophy_get`, `menu/champ_NN.prm`, NN = the picked trophy
 00–09, §20.3):

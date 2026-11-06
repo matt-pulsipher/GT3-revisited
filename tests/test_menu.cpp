@@ -5,8 +5,11 @@
 #include "formats/menu/imgs.h"
 #include "formats/menu/mbl.h"
 #include "formats/menu/pmb.h"
+#include "menu/menu_canvas.h"
 #include "menu/menu_renderer.h"
 #include "menu/menu_scene.h"
+
+#include <SDL3/SDL.h>
 
 #include <cmath>
 #include <cstring>
@@ -166,4 +169,107 @@ TEST(menu_disc_files) {
     MblFile flow = MblFile::parse(vol.read(*vol.find("menu/option.mbl")));
     CHECK(!flow.legacy);
     CHECK(flow.find_page("ghost/ghost") >= 0);
+}
+
+namespace {
+
+// The target's pixel at (x, y) as 0xAABBGGRR.
+u32 target_pixel(SDL_Renderer* r, int x, int y) {
+    SDL_Surface* s = SDL_RenderReadPixels(r, nullptr);
+    if (!s) return 0;
+    SDL_Surface* rgba = SDL_ConvertSurface(s, SDL_PIXELFORMAT_RGBA32);
+    SDL_DestroySurface(s);
+    if (!rgba) return 0;
+    u32 v = 0;
+    std::memcpy(&v, static_cast<const u8*>(rgba->pixels) + size_t(y) * rgba->pitch + size_t(x) * 4, 4);
+    SDL_DestroySurface(rgba);
+    return v;
+}
+
+bool close_rgb(u32 a, u32 b, int tolerance) {
+    for (int shift = 0; shift < 24; shift += 8)
+        if (std::abs(int(a >> shift & 255) - int(b >> shift & 255)) > tolerance) return false;
+    return true;
+}
+
+void fill(SDL_Renderer* r, SDL_BlendMode mode, const SDL_FRect& box, u8 cr, u8 cg, u8 cb, u8 ca) {
+    SDL_SetRenderDrawBlendMode(r, mode);
+    SDL_SetRenderDrawColor(r, cr, cg, cb, ca);
+    SDL_RenderFillRect(r, &box);
+}
+
+// The art before the model, the model's stand-in, the art after it (elements blend or add).
+void art_before(SDL_Renderer* r) {
+    SDL_SetRenderDrawColor(r, 30, 60, 90, 255);
+    SDL_RenderClear(r);
+    fill(r, SDL_BLENDMODE_BLEND, {200, 0, 200, 448}, 200, 40, 40, 128);
+}
+void art_after(SDL_Renderer* r) {
+    fill(r, SDL_BLENDMODE_BLEND, {0, 100, 640, 100}, 20, 200, 60, 96);
+    fill(r, SDL_BLENDMODE_ADD, {0, 300, 640, 100}, 40, 50, 60, 128);
+}
+
+} // namespace
+
+// The page around a model: art over the larger picture comes out as on one flat 640 x 448 page.
+TEST(menu_canvas_art_matches_a_flat_page) {
+    SDL_Surface* surface = SDL_CreateSurface(8, 8, SDL_PIXELFORMAT_RGBA32);
+    SDL_Renderer* r = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+    CHECK(r != nullptr);
+    if (!r) {
+        SDL_DestroySurface(surface);
+        return;
+    }
+    const auto target = [&] {
+        return SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, 640, 448);
+    };
+    SDL_Texture* flat = target();
+    SDL_Texture* page = target();
+    CHECK(flat && page);
+    const SDL_FRect model{100, 50, 400, 300};
+
+    SDL_SetRenderTarget(r, flat);
+    art_before(r);
+    fill(r, SDL_BLENDMODE_NONE, model, 250, 220, 10, 255);
+    art_after(r);
+
+    {
+        MenuCanvas canvas;
+        SDL_SetRenderTarget(r, page);
+        canvas.begin(r, page, 1280, 896);
+        CHECK(canvas.on());
+        CHECK(canvas.scale_x() == 2.0f && canvas.scale_y() == 2.0f);
+        art_before(r);
+        canvas.model_begin(r);
+        fill(r, SDL_BLENDMODE_NONE, canvas.to_picture(model), 250, 220, 10, 255);
+        canvas.model_end(r);
+        art_after(r);
+        canvas.end(r);
+        SDL_Texture* shown = canvas.shown(page);
+        CHECK(shown != page);
+
+        // Inside each overlap of art and model, away from the edges the scaling softens.
+        const int spots[][2] = {{50, 20}, {50, 150}, {50, 350}, {150, 20}, {150, 150}, {150, 250}, {150, 350},
+                                {300, 150}, {300, 250}, {300, 350}, {450, 20}, {450, 150}, {450, 350}, {600, 420}};
+        for (const auto& [x, y] : spots) {
+            SDL_SetRenderTarget(r, flat);
+            const u32 want = target_pixel(r, x, y);
+            SDL_SetRenderTarget(r, shown);
+            CHECK(close_rgb(target_pixel(r, x * 2, y * 2), want, 2));
+        }
+
+        // No model: the page itself, as on a screen no larger than the page.
+        SDL_SetRenderTarget(r, page);
+        canvas.begin(r, page, 1280, 896);
+        canvas.end(r);
+        CHECK(canvas.shown(page) == page);
+        canvas.begin(r, page, 640, 448);
+        CHECK(!canvas.on());
+        canvas.end(r);
+        CHECK(canvas.shown(page) == page);
+    }
+    SDL_DestroyTexture(flat);
+    SDL_DestroyTexture(page);
+    SDL_DestroyRenderer(r);
+    SDL_DestroySurface(surface);
 }
