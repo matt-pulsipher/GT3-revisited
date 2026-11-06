@@ -67,9 +67,9 @@ works like GT3's own:
 - **L2 / R2** jump a screen of songs at a time; a drag or the mouse wheel
   scrolls.
 
-**Settings → Audio → Next race starts with**: **The same song** (default) starts
-each race, restart or replay with the song the last one ended on; **The next
-song** takes a new song every time, as GT3 does.
+**Settings → Audio → Next race starts with**: **The next song** (default) takes
+a new song every time, as GT3 does; **The same song** starts each race, restart
+or replay with the song the last one ended on.
 
 ## Skipping songs
 

@@ -316,12 +316,13 @@ Options music list's tabs (menus §10.1, `[options] music_source`):
   streams music at. The disc's songs play as GT3 plays them. The songs found and their loudness are kept in
   `music_songs.txt` (the disc's average with its songs' names and sizes),
   so the next start has them before its scan lands.
-- **Next race (ours,** `[music] next_race`**).** With `same`, the default, a
-  run (a race, a restart, the replay) starts with the race song the last
-  run ended on, from its start (`[music] race_song`, saved whenever a race
-  song starts, not by demos), instead of taking the next song; it is passed
-  over when the source playing doesn't play it, it is out of its list, or
-  its file is gone. With `next` every run takes a new song, GT3's rule.
+- **Next race (ours,** `[music] next_race`**).** With `next`, the default,
+  every run takes a new song, GT3's rule. With `same` a run (a race, a
+  restart, the replay) starts with the race song the last run ended on,
+  from its start (`[music] race_song`, saved whenever a race song starts,
+  not by demos), instead of taking the next song; it is passed over when
+  the source playing doesn't play it, it is out of its list, or its file
+  is gone.
 - **Skips.** Next / Previous song (INPUT "Song controls") stop the song and
   play another, only while a race song is heard (not a jingle, the demo
   track, the quick menus' music, nor with the run's BGM switch off). The

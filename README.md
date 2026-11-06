@@ -212,7 +212,7 @@ are only there:
 | `[music] folder` | path | your music folder (absent: the user data folder's `music/`; Settings → Audio) |
 | `[saves] folder` | path | the save folder for `saves/` and `replays/` (absent: the user data folder; Settings → Disc & saves). On Android, a folder picked there (not a path) |
 | `[music] show_song` | `on` / `off` | the race song on the pause screen, with L1 / R1 to skip (default on) |
-| `[music] next_race` | `same` / `next` | same (default): a race, restart or replay starts with the song the last one ended on, from its start; next: a new song every time, as GT3 does (Settings → Audio → Next race starts with) |
+| `[music] next_race` | `next` / `same` | next (default): a new song every time, as GT3 does; same: a race, restart or replay starts with the song the last one ended on, from its start (Settings → Audio → Next race starts with) |
 | `[music] race_song` | text | the race song playing last (`disc:` or `yours:` and its id), for `next_race = same` |
 | `[race] views` | `all` / `gt3` | race views: GT3's plus bumper without mirror and far chase, or GT3's only |
 | `[race] camera_shake` | `on` / `off` | GT3's in-car vibration |
