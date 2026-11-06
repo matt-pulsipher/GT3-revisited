@@ -66,6 +66,19 @@ struct PipelineKey {
     // A modelled rim's turned copies (DrawItem::spin_turn): model.vert's and model.frag's
     // SPIN_COPIES variants.
     bool spin_copy = false;
+    // A draw that samples its texture in one of the rare ways (DrawItem::wheel_blur, gs_bilinear;
+    // the heat haze): model.frag's FX variant. The other draws do without that code, which slows
+    // every fragment on phone GPUs even where it does not run.
+    bool fx = false;
+    // The depth of field's pictures and layers (View3D::encode_resample): model.frag's RESAMPLE
+    // variant.
+    bool resample = false;
+    // The texel, GT3's per-vertex lighting and fog, the road sheen: model.frag's PLAIN variant,
+    // most of a race's pixels (View3D's plain_pass).
+    bool plain = false;
+    // A plain draw of DrawItem::gs_bilinear (the wet road's blur and composite): the texture as
+    // the GS filters it, model.frag's PLAIN and GS_FILTER variant.
+    bool gs_filter = false;
     // Nothing but the depth is written (scene::kDepthOnly).
     bool depth_only = false;
     // Writes the depth whatever is there and no colour: View3D's depth reset after an item
@@ -183,7 +196,18 @@ public:
 private:
     GpuContext() = default;
     bool init(SDL_Window* window, const GpuOptions& options);
-    enum class Stage : u8 { Vertex, ClippedVertex, Fragment, CopyVertex, CopyFragment };
+    enum class Stage : u8 {
+        Vertex,
+        ClippedVertex,
+        Fragment,
+        PlainFragment,
+        FilterFragment,
+        ResampleFragment,
+        FxFragment,
+        CopyVertex,
+        CopyFragment,
+        NoColorFragment
+    };
     SDL_GPUShader* make_shader(Stage stage);
     bool create_samplers();
     void release_samplers();
@@ -209,6 +233,11 @@ private:
     SDL_GPUShader* vs_ = nullptr;
     SDL_GPUShader* vs_clipped_ = nullptr;
     SDL_GPUShader* fs_ = nullptr;
+    SDL_GPUShader* fs_plain_ = nullptr;    // model.frag's PLAIN variant (PipelineKey::plain)
+    SDL_GPUShader* fs_filter_ = nullptr;   // ... with GS_FILTER (PipelineKey::gs_filter)
+    SDL_GPUShader* fs_resample_ = nullptr; // model.frag's RESAMPLE variant (PipelineKey::resample)
+    SDL_GPUShader* fs_fx_ = nullptr;       // model.frag's FX variant (PipelineKey::fx)
+    SDL_GPUShader* fs_no_color_ = nullptr; // PipelineKey::depth_reset
     // model.vert's and model.frag's SPIN_COPIES variants (null: spin_turn items drawn plain)
     SDL_GPUShader *vs_copy_ = nullptr, *fs_copy_ = nullptr;
     SDL_GPUSampler* samplers_[8] = {};

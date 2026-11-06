@@ -2177,6 +2177,10 @@ the copies at the same line spacing (ours). Ours builds the copies of pictures t
 frame at their own resolution, blurred as much as the original's copies are as shown (and moved
 as far), so they are smooth instead of stretched blocks.
 
+Ours: Settings → Display → Depth of field in replays (`[video] depth_of_field`) chooses Off,
+Standard or High. Off is the default on phones and tablets. Standard keeps the game's five small
+pictures at any size. High is the default elsewhere and builds taller pictures' copies as above.
+
 **The layers**, drawn over the frame in this order, each stretched over the whole frame (half
 a frame pixel right and down) and drawn only where the scene is at its distance or further:
 

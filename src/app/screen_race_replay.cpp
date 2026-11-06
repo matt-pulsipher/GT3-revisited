@@ -562,6 +562,7 @@ void RaceScreen::apply_depth_of_field(render::DrawOptions& o) const {
     if (!replay || !e.has_env || !e.dof || dof_off_) return;
     render::DrawOptions::DepthOfField& d = o.dof;
     d.on = true;
+    d.pyramid = dof_pyramid_;
     d.f_number = e.dof_f_number;
     d.focal_mm = e.dof_focal_mm;
     d.focus = std::max(camera_.focus(), e.dof_min_focus);

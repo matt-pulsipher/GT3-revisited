@@ -113,6 +113,10 @@ public:
     // rims and tyres as the menus draw them (CarModelOptions::showroom_car); off: GT3's race
     // wheels. Read when a race starts.
     bool showroom_wheels() const;
+    // [video] depth_of_field = off | standard | high (default off on phones and tablets, high
+    // elsewhere): replays' depth of field, none, with GT3's own small pictures, or with pictures
+    // built at this one's resolution (DrawOptions::DepthOfField). Read when a race starts.
+    std::string depth_of_field() const;
     // [video] sharp_menu_models = on | off (default on): the menus' 3D models at
     // the screen's resolution (menu::MenuCanvas); off: in the game's 640 x 448 page. Phones and
     // tablets keep models with depth of field in the page either way.

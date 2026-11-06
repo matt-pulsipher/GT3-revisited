@@ -6,8 +6,13 @@
 #include "render/shaders/generated/model_clip_vert.h"
 #include "render/shaders/generated/model_frag.h"
 #include "render/shaders/generated/model_frag_copy.h"
+#include "render/shaders/generated/model_frag_filter.h"
+#include "render/shaders/generated/model_frag_fx.h"
+#include "render/shaders/generated/model_frag_plain.h"
+#include "render/shaders/generated/model_frag_resample.h"
 #include "render/shaders/generated/model_vert.h"
 #include "render/shaders/generated/model_vert_copy.h"
+#include "render/shaders/generated/no_color_frag.h"
 #include "scene/model.h"
 
 #include <algorithm>
@@ -152,7 +157,13 @@ bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
     vs_ = make_shader(Stage::Vertex);
     vs_clipped_ = make_shader(Stage::ClippedVertex);
     fs_ = make_shader(Stage::Fragment);
-    if (!vs_ || !vs_clipped_ || !fs_) return false;
+    fs_plain_ = make_shader(Stage::PlainFragment);
+    fs_filter_ = make_shader(Stage::FilterFragment);
+    fs_resample_ = make_shader(Stage::ResampleFragment);
+    fs_fx_ = make_shader(Stage::FxFragment);
+    fs_no_color_ = make_shader(Stage::NoColorFragment);
+    if (!vs_ || !vs_clipped_ || !fs_ || !fs_plain_ || !fs_filter_ || !fs_resample_ || !fs_fx_ || !fs_no_color_)
+        return false;
     vs_copy_ = make_shader(Stage::CopyVertex);
     fs_copy_ = make_shader(Stage::CopyFragment);
 
@@ -195,6 +206,11 @@ GpuContext::~GpuContext() {
         if (vs_copy_) SDL_ReleaseGPUShader(device_, vs_copy_);
         if (fs_copy_) SDL_ReleaseGPUShader(device_, fs_copy_);
         if (fs_) SDL_ReleaseGPUShader(device_, fs_);
+        if (fs_plain_) SDL_ReleaseGPUShader(device_, fs_plain_);
+        if (fs_filter_) SDL_ReleaseGPUShader(device_, fs_filter_);
+        if (fs_resample_) SDL_ReleaseGPUShader(device_, fs_resample_);
+        if (fs_fx_) SDL_ReleaseGPUShader(device_, fs_fx_);
+        if (fs_no_color_) SDL_ReleaseGPUShader(device_, fs_no_color_);
     }
     if (renderer_) SDL_DestroyRenderer(renderer_); // releases the window claim
     if (device_) SDL_DestroyGPUDevice(device_);
@@ -202,10 +218,13 @@ GpuContext::~GpuContext() {
 
 SDL_GPUShader* GpuContext::make_shader(Stage stage) {
     // Each stage's generated shader (render/shaders/generated), in Stage order.
-    static const ShaderCode kCode[] = {GT3R_SHADER_CODE(model_vert), GT3R_SHADER_CODE(model_clip_vert),
-                                       GT3R_SHADER_CODE(model_frag), GT3R_SHADER_CODE(model_vert_copy),
-                                       GT3R_SHADER_CODE(model_frag_copy)};
-    const bool vertex = stage != Stage::Fragment && stage != Stage::CopyFragment;
+    static const ShaderCode kCode[] = {GT3R_SHADER_CODE(model_vert),       GT3R_SHADER_CODE(model_clip_vert),
+                                       GT3R_SHADER_CODE(model_frag),       GT3R_SHADER_CODE(model_frag_plain),
+                                       GT3R_SHADER_CODE(model_frag_filter), GT3R_SHADER_CODE(model_frag_resample),
+                                       GT3R_SHADER_CODE(model_frag_fx),    GT3R_SHADER_CODE(model_vert_copy),
+                                       GT3R_SHADER_CODE(model_frag_copy),  GT3R_SHADER_CODE(no_color_frag)};
+    if (stage == Stage::NoColorFragment) return create_shader(kCode[size_t(stage)], false, 0, 0);
+    const bool vertex = stage == Stage::Vertex || stage == Stage::ClippedVertex || stage == Stage::CopyVertex;
     // Vertex: transforms, GT3 per-vertex lighting. Fragment: the texture, the environment cube,
     // the sphere map.
     return create_shader(kCode[size_t(stage)], vertex, vertex ? 0 : 3, vertex ? 2 : 1);
@@ -357,7 +376,8 @@ namespace {
 // pop-ups and results bar, the online pickers' cars. A pop-up's first car built three of these
 // mid-race, a 0.5 s stall on a Moto G Power 2024. Others are still created on first use.
 std::vector<PipelineKey> warm_keys() {
-    std::vector<PipelineKey> keys;
+    // The blends and frame-alpha modes first; then, of each, the variants that draw with it.
+    std::vector<PipelineKey> grid;
     for (bool coverage : {false, true}) {
         const std::vector<AlphaWrite> alphas = coverage ? std::vector<AlphaWrite>{AlphaWrite::Keep}
                                                         : std::vector<AlphaWrite>{AlphaWrite::Keep, AlphaWrite::Write,
@@ -368,25 +388,57 @@ std::vector<PipelineKey> warm_keys() {
                     for (AlphaWrite a : alphas) {
                         PipelineKey k;
                         k.blend = b, k.depth_write = depth_write, k.cull = c, k.alpha = a, k.coverage = coverage;
-                        keys.push_back(k);
+                        grid.push_back(k);
                     }
         for (BlendMode b :
              {BlendMode::Additive, BlendMode::DestAlphaAdd, BlendMode::MultiplyDest, BlendMode::DestAlphaLerp})
             for (CullMode c : {CullMode::Back, CullMode::None, CullMode::Front}) {
                 PipelineKey k;
                 k.blend = b, k.depth_write = false, k.cull = c, k.coverage = coverage;
-                keys.push_back(k);
+                grid.push_back(k);
             }
     }
-    // The course's triangles GT3 clips at the guard band (PipelineKey::clipped): the main views'
-    // blends and frame-alpha modes, back faces culled or none.
-    const size_t plain = keys.size();
-    for (size_t i = 0; i < plain; ++i)
-        if (!keys[i].coverage && keys[i].cull != CullMode::Front) {
-            PipelineKey k = keys[i];
-            k.clipped = true;
+    // Most draws are model.frag's PLAIN variant (PipelineKey::plain). The general one draws the
+    // cars' reflection and alpha-only passes, the post passes and the sphere-mapped prize scenes.
+    std::vector<PipelineKey> keys;
+    auto add = [&keys](PipelineKey k) {
+        const bool blended = k.blend != BlendMode::Opaque && k.blend != BlendMode::Alpha;
+        if (k.alpha == AlphaWrite::Only && k.blend != BlendMode::Opaque) return;
+        if (k.alpha == AlphaWrite::Only ||
+            blended || (!k.clipped && k.alpha == AlphaWrite::Keep && k.cull != CullMode::Front &&
+                        (k.depth_write || k.cull == CullMode::None)))
+            keys.push_back(k);
+        if (k.blend != BlendMode::MultiplyDest && k.blend != BlendMode::DestAlphaLerp) {
+            k.plain = true;
             keys.push_back(k);
         }
+    };
+    for (const PipelineKey& k : grid) add(k);
+    // The course's triangles GT3 clips at the guard band (PipelineKey::clipped): the main views'
+    // blends and frame-alpha modes, back faces culled or none.
+    for (PipelineKey k : grid)
+        if (!k.coverage && k.cull != CullMode::Front) {
+            k.clipped = true;
+            add(k);
+        }
+    // The rare sampling (PipelineKey::fx): the wheels' spin blurs in the main views' blends and
+    // frame-alpha modes.
+    for (PipelineKey k : grid) {
+        if (k.coverage || k.cull == CullMode::Front || k.alpha == AlphaWrite::Only || k.blend == BlendMode::MultiplyDest)
+            continue;
+        k.fx = true;
+        keys.push_back(k);
+    }
+    // The wet road's blur into its own picture and its composite (PipelineKey::gs_filter).
+    PipelineKey wet;
+    wet.cull = CullMode::None, wet.depth_write = false, wet.plain = wet.gs_filter = true;
+    wet.coverage = true;
+    keys.push_back(wet);
+    wet.coverage = false;
+    for (BlendMode b : {BlendMode::DestAlphaLerp, BlendMode::DestAlphaAdd}) {
+        wet.blend = b;
+        keys.push_back(wet);
+    }
     // The showroom rims' turned copies (DrawItem::spin_turn): their opaque and blended passes.
     for (BlendMode b : {BlendMode::Opaque, BlendMode::Alpha, BlendMode::Additive})
         for (CullMode c : {CullMode::Back, CullMode::None}) {
@@ -405,12 +457,15 @@ std::vector<PipelineKey> warm_keys() {
     PipelineKey reset;
     reset.cull = CullMode::None, reset.depth_write = false, reset.depth_reset = true;
     keys.push_back(reset);
-    // The replay depth of field's downsampled pictures (View3D::encode_dof).
-    PipelineKey single;
-    single.cull = CullMode::None, single.depth_write = false, single.single = true;
-    keys.push_back(single);
-    single.blend = BlendMode::Alpha; // (and the spin copies' filter, View3D::spin_resolve)
-    keys.push_back(single);
+    // The replay depth of field's downsampled pictures and layers (View3D::encode_dof), and the
+    // spin copies' filter (View3D::spin_resolve).
+    for (bool one_sample : {true, false})
+        for (BlendMode b : {BlendMode::Opaque, BlendMode::Alpha}) {
+            PipelineKey k;
+            k.blend = b, k.cull = CullMode::None, k.depth_write = false;
+            k.single = one_sample, k.resample = true;
+            keys.push_back(k);
+        }
     return keys;
 }
 
@@ -455,9 +510,11 @@ SDL_GPUGraphicsPipeline* GpuContext::pipeline(const PipelineKey& key) {
     const u64 t0 = SDL_GetTicksNS();
     SDL_GPUGraphicsPipeline* p = create_pipeline(key);
     LOG_INFO("3D pipeline built on first use in %.0f ms: blend %d, cull %d, depth write %d, lines %d, coverage %d, "
-             "alpha %d, spin copy %d, depth only %d, depth reset %d",
+             "alpha %d, spin copy %d, depth only %d, depth reset %d, fx %d, plain %d, gs filter %d, resample %d, "
+             "single %d, clipped %d",
              double(SDL_GetTicksNS() - t0) / 1e6, int(key.blend), int(key.cull), int(key.depth_write), int(key.lines),
-             int(key.coverage), int(key.alpha), int(key.spin_copy), int(key.depth_only), int(key.depth_reset));
+             int(key.coverage), int(key.alpha), int(key.spin_copy), int(key.depth_only), int(key.depth_reset),
+             int(key.fx), int(key.plain), int(key.gs_filter), int(key.resample), int(key.single), int(key.clipped));
     std::lock_guard lock(pipelines_mutex_);
     auto [it, added] = pipelines_.emplace(key, p); // failures too, so we don't retry every frame
     if (!added && p) SDL_ReleaseGPUGraphicsPipeline(device_, p); // the warm-up made it meanwhile
@@ -566,7 +623,13 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
     info.vertex_shader = key.clipped ? vs_clipped_ : key.spin_copy ? vs_copy_ : vs_;
-    info.fragment_shader = key.spin_copy ? fs_copy_ : fs_;
+    info.fragment_shader = key.depth_reset ? fs_no_color_
+                           : key.spin_copy ? fs_copy_
+                           : key.resample  ? fs_resample_
+                           : key.fx        ? fs_fx_
+                           : key.gs_filter ? fs_filter_
+                           : key.plain     ? fs_plain_
+                                           : fs_;
     info.vertex_input_state.vertex_buffer_descriptions = &vb;
     info.vertex_input_state.num_vertex_buffers = 1;
     info.vertex_input_state.vertex_attributes = attrs;

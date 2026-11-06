@@ -135,9 +135,11 @@ struct DrawOptions {
     // of `focal_mm` (a film 1.333 times as wide as high whose diagonal is the focal length; its
     // focal length at this view's zoom from the projection's vertical scale), the
     // f-number `f_number`, focused `focus` metres from the eye. Nothing beyond `far` metres
-    // (the original's far plane) gets more blur than at it. Not drawn by draw_to.
+    // (the original's far plane) gets more blur than at it. `pyramid`: GT3's own downsampled
+    // pictures at any size, a fraction of the work on a phone, where the picture is otherwise
+    // over 448 lines tall. Not drawn by draw_to.
     struct DepthOfField {
-        bool on = false;
+        bool on = false, pyramid = false;
         float f_number = 10, focal_mm = 35, focus = 10, far = 1000;
     } dof;
     // --- The passes between the 3D scene and the grade, and the vignette (GT3's frame order,
@@ -304,7 +306,7 @@ struct DrawItem {
     SDL_GPUTexture* texture = nullptr;
     // With texture: filtered as the GS does it (bilinear with 4-bit weights, each lerp truncated
     // to a whole 8-bit level), for a buffer that holds whole levels: GT3's wet-road blur copies
-    // and composite (race/wet_road.h).
+    // and composite (race/wet_road.h). wheel_steps[0..1] hold the buffer's size.
     bool gs_bilinear = false;
     // Blended primitives weighted by the frame-buffer alpha instead (PS2 ALPHA): 1 = 0x54,
     // (Cs - Cd) Ad + Cd; 2 = 0x58, Cs Ad + Cd. The frame alpha is kept.
@@ -464,7 +466,7 @@ private:
     // picture's width), for spin_copy_count and spin_rects_. 0 elsewhere: a copy a sample, no rects.
     float spin_px_ = 0;
     void spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle);
-    bool ensure_dof_levels(float aspect, int pw, int ph);
+    bool ensure_dof_levels(float aspect, int pw, int ph, bool pyramid);
     void encode_dof(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, const Mat4& proj, float aspect,
                     SDL_GPUTexture* out, bool cycle);
     // One quad over the pass's viewport sampling `src` (model.frag's mode 6, see dof_sample) at
