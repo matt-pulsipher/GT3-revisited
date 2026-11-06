@@ -543,7 +543,7 @@ bool App::full_car_detail() const {
 }
 
 std::string App::depth_of_field() const {
-    return to_lower(config_.get("video", "depth_of_field").value_or(platform::is_mobile() ? "standard" : "high"));
+    return to_lower(config_.get("video", "depth_of_field").value_or(platform::is_mobile() ? "off" : "high"));
 }
 
 bool App::showroom_wheels() const {

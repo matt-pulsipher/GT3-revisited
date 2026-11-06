@@ -406,7 +406,7 @@ SDL's trigger rumble does nothing there.
   the layers move it by the original level's whole shift. The same blur and shift, without the
   original's texel steps. Costs about 0.6 ms a frame at 2560 x 1440
   with 4x MSAA on an M4 Pro (`gpusync=1`). `[video] depth_of_field = standard` keeps GT3's
-  small pictures at any size (the default on phones and tablets), `off` turns it off, as
+  small pictures at any size, `off` (the default on phones and tablets) turns it off, as
   `GT3R_NO_DOF=1` does for comparisons.
 - Tyre smoke and dust (`race/tyre_smoke.*`): a 256-puff pool fed each tick by every car's wheels
   with smoke-emission intensity > 0.001 (`VehicleTelemetry::smoke_emit`, physics
