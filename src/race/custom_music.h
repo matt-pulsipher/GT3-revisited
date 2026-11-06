@@ -64,6 +64,9 @@ std::string_view music_source_name(MusicSource s);  // "original", "custom", "bo
 inline MusicSource effective_music_source(MusicSource chosen, bool has_custom) {
     return has_custom ? chosen : MusicSource::Original;
 }
+// [music] next_race: "same" starts a run with the last run's song (RaceMusic::set_first_song);
+// anything else, unset too, takes the next song of the list, GT3's rule.
+inline bool same_song_next_race(std::string_view s) { return s == "same"; }
 
 // A song of the music folder.
 struct CustomSong {

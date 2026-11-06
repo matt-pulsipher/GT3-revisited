@@ -287,9 +287,9 @@ void RaceScreen::init(App& app) {
     // Ours: the player's own songs, from the Options music list's Original / Custom / Both.
     music_.set_custom(&app.music_library(), race::parse_music_source(app.config().get("options", "music_source").value_or("")),
                       app.config().get("options", "music_mix").value_or("shuffle") != "order");
-    // Ours, [music] next_race = same (the default): the run starts with the song the last one
-    // ended on, from its start; next: a new song, as GT3 takes one every run.
-    if (app.config().get("music", "next_race").value_or("same") != "next")
+    // Ours, [music] next_race = same: the run starts with the song the last one ended on, from
+    // its start; otherwise a new song, as GT3 takes one every run (music §2.1).
+    if (race::same_song_next_race(app.config().get("music", "next_race").value_or("")))
         music_.set_first_song(app.config().get("music", "race_song").value_or(""));
     rumble_on_ = menu::flow::option_value(&app.config(), "vib1") != "off";
     rumble2_on_ = menu::flow::option_value(&app.config(), "vib2") != "off";

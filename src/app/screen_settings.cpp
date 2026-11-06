@@ -952,12 +952,12 @@ private:
                });
         if (!au.ok()) info("Audio device", "Not available", "No audio output device was found.");
         // Ours ([music] next_race; race/race_audio.h RaceMusic::set_first_song).
-        const bool same = to_lower(app.config().get("music", "next_race").value_or("same")) != "next";
+        const bool same = race::same_song_next_race(app.config().get("music", "next_race").value_or(""));
         choice("Next race starts with",
-               "The same song: a race, a restart or a replay starts with the song the last one ended on, from its "
-               "start. The next song: a new song from the list every time, as GT3 does.",
-               {"The same song", "The next song"}, same ? 0 : 1, [a](int i) {
-                   a->config().set("music", "next_race", i == 1 ? "next" : "same");
+               "The next song: a new song from the list every time, as GT3 does. The same song: a race, a restart or "
+               "a replay starts with the song the last one ended on, from its start.",
+               {"The next song", "The same song"}, same ? 1 : 0, [a](int i) {
+                   a->config().set("music", "next_race", i == 1 ? "same" : "next");
                    a->save_config();
                });
         build_music(app);

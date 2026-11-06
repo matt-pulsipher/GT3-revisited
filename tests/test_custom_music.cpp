@@ -899,6 +899,8 @@ TEST(race_music_eases_to_level) {
 // another screen through its saved text, or the last run here), passed over when it can't play;
 // without, a new song every run, as GT3 does.
 TEST(race_music_next_race_song) {
+    CHECK(!race::same_song_next_race("") && !race::same_song_next_race("next")); // unset: GT3's rule
+    CHECK(race::same_song_next_race("same"));
     const std::filesystem::path d = test::temp_dir("music_next_race");
     for (const char* n : {"one", "two", "three"}) write(d / (std::string(n) + ".wav"), wav(44100, 2, 44100, {{"INAM", n}}));
     MusicLibrary lib;
