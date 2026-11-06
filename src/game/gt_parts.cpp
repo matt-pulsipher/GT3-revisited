@@ -103,4 +103,36 @@ std::optional<PartOffer> find_part(const data::CarDatabase& db, const std::strin
     return std::nullopt;
 }
 
+namespace {
+
+// The record of the car's own part in a table, null for an empty slot.
+const ByteSpan* stock_record(const data::CarDatabase& db, const data::Car& car, data::TableId t) {
+    const int slot = part_slot(int(t));
+    const u64 id = slot < 0 ? 0 : car.parts[size_t(slot)];
+    return id ? db.record(t, id) : nullptr;
+}
+
+} // namespace
+
+bool stock_turbo(const data::CarDatabase& db, const data::Car& car) {
+    const ByteSpan* r = stock_record(db, car, data::TableId::TurbineKit);
+    return r && r->size() > 0x11 && (*r)[0x11] != 0;
+}
+
+int stock_goods(const data::CarDatabase& db, const data::Car& car, size_t slot) {
+    const int table = data::kCarPartTables[slot];
+    if (table < 0) return -1;
+    const data::TableId t = data::TableId(table);
+    if (t == data::TableId::Intercooler && !stock_turbo(db, car)) return -1;
+    if (t == data::TableId::PropellerShaft) {
+        // No driveshaft on FF, MR and RR cars (drivetrain +0x14 = 1, 3, 4).
+        const ByteSpan* d = stock_record(db, car, data::TableId::Drivetrain);
+        const int drive = d && d->size() > 0x14 ? (*d)[0x14] : 0;
+        if (drive == 1 || drive == 3 || drive == 4) return -1;
+    }
+    const ByteSpan* r = stock_record(db, car, t);
+    if (r && r->size() > 0x10) return goods_id(table, (*r)[0x10]);
+    return t == data::TableId::RacingModify ? -1 : goods_id(table, 0);
+}
+
 } // namespace gt3r::game

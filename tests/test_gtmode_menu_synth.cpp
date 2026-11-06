@@ -2622,6 +2622,40 @@ TEST(gtmode_synth_attract_mode) {
     CHECK(!f.attract() && page(f) == "root" && f.controller()->focus() == 0);
 }
 
+// What a car comes with (public issue 215): the coupe's slots are mostly empty, which owns
+// the Normal of each. The wagon is FF, the racer RR, and none has a turbo.
+TEST(gtmode_synth_stock_goods) {
+    World world;
+    GameFlow f(world.read, "US");
+    game::GtModeSession* s = start_title(f);
+    CHECK(s != nullptr);
+    if (!s) return;
+    game::GtMode& gt = s->gt();
+    std::optional<game::GarageCar> coupe = gt.make_car(w::kCoupe), wagon = gt.make_car(w::kWagon);
+    std::optional<game::GarageCar> racer = gt.make_car(w::kRacer);
+    CHECK(coupe && wagon && racer);
+    if (!coupe || !wagon || !racer) return;
+    for (int g : {0, 2, 4, 8, 10, 13, 15, 19, 26, 30, 36, 40, 44, 46, 48, 50, 54, 56, 67, 78, 83, 85})
+        CHECK(coupe->owned.test(size_t(g)));
+    CHECK(coupe->owned.count() == 22 && !coupe->owned.test(23)); // no intercooler without a turbo
+    CHECK(!wagon->owned.test(46) && !racer->owned.test(46));     // no driveshaft
+    CHECK(wagon->owned.test(36) && racer->owned.test(36));
+    // A car saved without them (only its bought muffler) gets them back.
+    game::GameState old;
+    old.garage.push_back(*coupe);
+    old.garage[0].owned.reset();
+    old.garage[0].owned.set(37);
+    gt.own_stock_goods(old);
+    CHECK(old.garage[0].owned.test(37) && (old.garage[0].owned & coupe->owned) == coupe->owned);
+    CHECK(old.garage[0].owned.count() == 23);
+    // A car this disc does not have keeps what it has.
+    old.garage[0].car = "no_such_car";
+    old.garage[0].owned.reset();
+    old.garage[0].owned.set(37);
+    gt.own_stock_goods(old);
+    CHECK(old.garage[0].owned.count() == 1);
+}
+
 // The hooks called directly for the branches the walks above do not reach: pre-checks,
 // enable rules, actions, results, the arcade helpers.
 TEST(gtmode_synth_hook_branches) {

@@ -186,6 +186,7 @@ int save_page_run(SavePage::Mode m, SavePage::Op op, const SavePage::File& f, co
             const std::string path = f.kind == SavePage::File::Kind::Open ? arg : f.id;
             try {
                 GameState st = read_any_save(path, s->gt().data());
+                s->gt().own_stock_goods(st);
                 s->guest = std::make_unique<GtMode>(s->gt().data_ptr());
                 s->guest->state() = std::move(st);
             } catch (const std::exception& e) {
@@ -200,6 +201,7 @@ int save_page_run(SavePage::Mode m, SavePage::Op op, const SavePage::File& f, co
             return read_result(err);
         }
         save_live(); // the game being left keeps its progress
+        s->gt().own_stock_goods(*st);
         live = std::move(*st);
         s->setting_work.reset();
         play(f.id);
@@ -279,6 +281,7 @@ int save_page_run(SavePage::Mode m, SavePage::Op op, const SavePage::File& f, co
         if (f.current) st = live;
         else st = read_save(f.id, &err);
         if (!st) return read_result(err);
+        s->gt().own_stock_goods(*st);
         const Ps2Export format = op == SavePage::OpExportCard  ? Ps2Export::Card
                                  : op == SavePage::OpExportRaw ? Ps2Export::Raw
                                                                : Ps2Export::Psu;

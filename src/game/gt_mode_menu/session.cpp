@@ -37,6 +37,7 @@ bool GtModeSession::load(std::string* error) {
         }
         return false;
     }
+    gt_.own_stock_goods(*s);
     gt_.state() = std::move(*s);
     return true;
 }

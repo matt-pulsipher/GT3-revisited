@@ -365,9 +365,14 @@ parts table and a stage (part record +0x10). The ids are consecutive per table
 Only the ids the US menu offers can be bought (§6.4). Racing modification (49),
 traction control (55) and stability control (84) are not among them.
 
-**Stock goods.** A new car owns the goods of its stock parts. Owning a front tire also
-owns the matching rear tire. Rally cars (car category 2, car +0xF1) also own dirt
-tires (`set_stock_ownership`).
+**Stock goods.** A new car owns the goods of its stock parts (`stock_goods`). A slot that
+holds no part counts as the category's stage-0 goods, so a part bought later can always
+be swapped back to Normal. Three things own nothing: the intercooler of a car built
+without a turbo, the driveshaft of an FF, MR or RR car, and a racing modification
+without a record. A car whose stock part is an upgrade, such as a race car's racing
+muffler, owns that part and not the Normal it never had. Owning a front tire also owns
+the matching rear tire. Rally cars (car category 2, car +0xF1) also own dirt tires
+(`stock_ownership`). A save loaded from an older version gets any of these its cars lack.
 
 ### §6.2 Buying a part
 
@@ -882,7 +887,8 @@ tires cannot be changed for a dirt event (`dirt_tire_only`).
 **Part change pages.** The `chg/` pages list the parts the car owns. Choosing one fits
 it at once (§6.3) and saves. Items for goods the car does not own are disabled. The
 `attach_*` marks show what is fitted. A stage-0 item also counts as fitted when the
-car has its stock part.
+car has its stock part. Port polish, engine balance, displacement and weight reduction
+have no page: they stay on the car once bought.
 
 **Part rows.** On Change Parts and the `chg/` category pages, each row names the part
 fitted in its slot, in the game's language (the part-name texts of `text/realtime.dat`;
@@ -891,7 +897,7 @@ parts read "Normal", "N/A" or "-", and engine works that are done read "Installe
 few rows follow the car:
 
 - Turbo: "N/A" on a car without a turbo until a turbo kit is fitted.
-- Intercooler: "-" without a turbo.
+- Intercooler: "-" on a car built without a turbo, whatever turbo kit it has.
 - Driveshaft: "-" on FF, MR and RR cars.
 - AYC: "Installed" when the AYC limited-slip is fitted, else "N/A".
 - Tires, on a dirt event: the dirt tires when the car owns them, else "----".
