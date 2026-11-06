@@ -511,7 +511,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     // targets are sized for the largest scale (render_ceiling), so the dynamic scale only changes
     // how much of them a frame uses.
     const float out_w = rect.w * sx, out_h = rect.h * sy; // on screen
-    const float limit = std::min(scale_cap_, platform::supersample_limit(out_w, out_h));
+    const float limit = opt.repeated ? 1.0f : std::min(scale_cap_, platform::supersample_limit(out_w, out_h));
     const float scale = std::min(ctx_.render_scale(), limit);
     const float alloc = std::clamp(std::max(scale, ctx_.render_ceiling()), 0.5f, limit);
     auto px = [](float v) { return std::max(1, int(std::lround(v))); };
@@ -579,7 +579,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     SDL_GPUColorTargetInfo ct{};
     ct.clear_color = {opt.clear[0], opt.clear[1], opt.clear[2], opt.clear[3]};
     ct.load_op = SDL_GPU_LOADOP_CLEAR;
-    ct.cycle = cycle;
+    ct.cycle = cycle && !(opt.repeated && msaa_);
     if (msaa_) {
         ct.texture = msaa_;
         // (The second pass goes on in it, unless the depth of field composites into it afresh.)
@@ -597,7 +597,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     dt.store_op = after_pass ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
     dt.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
     dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-    dt.cycle = cycle;
+    dt.cycle = cycle && !opt.repeated;
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &dt);
     SDL_SetGPUViewport(pass, &used_viewport);
     SDL_SetGPUScissor(pass, &used_rect);

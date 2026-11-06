@@ -701,6 +701,19 @@ private:
         rims.enabled = scale.enabled;
         if (!rims.enabled) rims.desc = msaa.desc;
 
+        Row& sharp = toggle("Sharp cars and prizes in menus",
+                            platform::is_mobile()
+                                ? "Cars and prizes in the menus are drawn at your screen's resolution, except license "
+                                  "cards and trophies. Off: at the game's own 640x448, like the menu art."
+                                : "Cars, trophies and other prizes in the menus are drawn at your screen's resolution. "
+                                  "Off: at the game's own 640x448, like the menu art.",
+                            app.sharp_menu_models(), [a](bool v) {
+                                a->config().set("video", "sharp_menu_models", v ? "on" : "off");
+                                a->save_config();
+                            });
+        sharp.enabled = scale.enabled;
+        if (!sharp.enabled) sharp.desc = msaa.desc;
+
         // [video] heat_haze = on | off (default off; RaceScreen::add_screen_passes)
         Row& haze = toggle("Heat haze in replays",
                            "GT3's heat shimmer over some trackside camera shots in replays, on some courses.",
