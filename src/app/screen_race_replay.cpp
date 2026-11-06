@@ -351,7 +351,7 @@ void RaceScreen::replay_pad(const MenuInput& m) {
         if (m.pressed(PadButton::Up)) focus_step_ = 1;
         else if (m.pressed(PadButton::Down)) focus_step_ = -1;
     }
-    if (m.pressed(PadButton::Cross) && replaying_) {
+    if (m.pressed(PadButton::Cross) && (replaying_ || race_preview_)) {
         driver_view_ = !driver_view_;
         camera_.set_mode(driver_view_ ? drive_camera_ : CameraMode::Tv);
         if (!driver_view_) { // back to the replay cameras: a new shot
@@ -449,8 +449,8 @@ void RaceScreen::step_replay_focus() {
         }
         return;
     default: // 0, 3: MANUAL only, no partner; the attract demo moves to the next car every 300 frames
-             // (once the shot's gate is open)
-        if ((attract_ || backdrop_) && ++attract_car_frames_ > 299 && director_.shot_gate()) {
+             // (once the shot's gate is open), the Preview does not (race +0x7C)
+        if (((attract_ && !race_preview_) || backdrop_) && ++attract_car_frames_ > 299 && director_.shot_gate()) {
             next = ReplayFocus::next_car(followed, 1, n);
             attract_car_frames_ = 0;
             manual = true;
@@ -480,7 +480,7 @@ void RaceScreen::update_replay_focus(double dt) {
         }
         if (focus_acc_ > 1.0) focus_acc_ = 0;
     }
-    if (driver_view_ && replaying_) { // (view mode 1 keeps its own cameras)
+    if (driver_view_ && (replaying_ || race_preview_)) { // (view mode 1 keeps its own cameras)
         const CameraMode want = view_settings().mode != 1 ? drive_camera_ : CameraMode::Tv;
         if (camera_.mode() != want) camera_.set_mode(want);
     }

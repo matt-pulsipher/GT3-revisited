@@ -389,6 +389,7 @@ inline const char* const kRimA = "syn_rim_a";
 inline const char* const kRimB = "syn_rim_b";
 constexpr s64 kMufflerPrice = 1500;                  // muf_sports (goods 37) for the coupe
 constexpr int kTitleIdleSeconds = 2;
+constexpr int kDemoTimeLimitSeconds = 90;
 // The oil gauge's colourings (r in the low byte): clean green, dirty brown.
 constexpr u32 kOilClean = 0xC000C000u, kOilDirty = 0xC0204080u;
 } // namespace world
@@ -614,6 +615,7 @@ inline void add_gcf(std::map<std::string, Bytes>& files) {
     GcfWriter g;
     Bytes idle(8, 0);
     p32(idle, 0, world::kTitleIdleSeconds);
+    p32(idle, 4, world::kDemoTimeLimitSeconds);
     g.raw(0, idle);
     // Race codes (every GT-mode result slot) and their unlock level (1 = the S licence).
     g.section(4, {GcfWriter::entry("Gsyn_e_0001", {0}), GcfWriter::entry("Gsyn_e_0002", {0}),
@@ -850,7 +852,9 @@ inline void add_gt_mode_menus(std::map<std::string, Bytes>& files) {
         .hidden("syn_ring_doc", "Synthetic Ring", 0, 0, 200, 20)
         .hidden("mark_1", {}, 61, 412, 32, 32)
         .hidden("mark_2", {}, 61, 412, 32, 32);
-    m.page("r/beginner/gsyn_e_entry", kCancel, "r/beginner/gsyn_e").item("menu1", "go_race", {}, 2);
+    m.page("r/beginner/gsyn_e_entry", kCancel, "r/beginner/gsyn_e")
+        .item("menu0", "go_preview", {}, 2)
+        .item("menu1", "go_race", {}, 2);
     // A championship's league item is named after the championship itself (as on the disc).
     m.page("r/amateur", kCancel, "r/r")
         .item("Gsynch_n_0500", {}, "r/amateur/gsynch_n")

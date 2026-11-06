@@ -13,14 +13,15 @@ void RaceScreen::music_cues(App& app) {
     RaceMusic::Cues c;
     c.music_on = replaying_ || demo_ || attract_ ? preset_.music && view_settings().bgm_on() : music_on_;
     c.menu_music_on = menu_music_on_;
-    c.replay = replaying_;
+    c.replay = replaying_ || race_preview_; // (a race song's level outside live play)
     c.songs = music_.has_songs();
     bool lic_replay = !license_event_.empty() && !attract_ && (replaying_ || demo_);
-    c.kind = lic_replay                       ? RaceMusic::Kind::LicenseReplay
-             : demo_ || attract_              ? RaceMusic::Kind::Demo
-             : !license_event_.empty()        ? RaceMusic::Kind::License
-             : two_player_                    ? RaceMusic::Kind::TwoPlayer
-                                              : RaceMusic::Kind::Race;
+    // (The Preview is an attract demo with the race's own music: needs race +0x7C clear.)
+    c.kind = lic_replay                             ? RaceMusic::Kind::LicenseReplay
+             : demo_ || (attract_ && !race_preview_) ? RaceMusic::Kind::Demo
+             : !license_event_.empty()              ? RaceMusic::Kind::License
+             : two_player_                          ? RaceMusic::Kind::TwoPlayer
+                                                    : RaceMusic::Kind::Race;
     c.paused = paused_;
     c.start_type = field_ ? music_start_type_ : tt_start_.type;
     // Held until the start signal, where the race music starts (music §2.2): a standing start's
@@ -133,7 +134,7 @@ void RaceScreen::update_tyre_sounds(App& app, const sim::VehicleState& s) {
         p.forward = cam_forward(cam);
         return p;
     };
-    const bool tv = camera_.mode() == CameraMode::Tv || replaying_;
+    const bool tv = camera_.mode() == CameraMode::Tv || replaying_ || race_preview_;
     CarSfx::Step p1 = step(camera_, s, vehicle_->setup(), vehicle_->telemetry(),
                            camera_.onboard() ? SoundView::InCarTarget : tv ? SoundView::Other : SoundView::ChaseTarget);
     // The listener moves with the followed car (as for the other cars' engines, sound §8).

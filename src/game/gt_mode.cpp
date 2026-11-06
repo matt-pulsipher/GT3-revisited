@@ -461,6 +461,7 @@ bool GtData::load(const Reader& read) {
                 demos.push_back({e.name, e.str_at(e.u32_at(4)), e.u32_at(8) ? e.str_at(e.u32_at(8)) : std::string(),
                                  int(e.u32_at(16))});
         if (auto idle = gcf.section_u32(0, 0); idle && *idle > 0 && *idle < 3600) title_idle_seconds = int(*idle);
+        if (auto limit = gcf.section_u32(0, 4); limit && *limit < 3600) demo_time_limit_seconds = int(*limit);
         // Arcade lists: group entries {name, count, list} whose list offsets
         // (relative to the group) lead to the course / car entries.
         auto groups = [&](u32 tag, auto&& each) {

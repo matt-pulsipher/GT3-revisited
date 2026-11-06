@@ -1529,6 +1529,7 @@ TEST(gtmode_menu_disc_attract_mode) {
     CHECK(r.has_value() && f.attract());
     if (!r) return;
     CHECK(r->mode == "attract_demo" && r->event.rfind("demo_", 0) == 0 && !r->course.empty());
+    CHECK(r->time_limit_s == 105);
     // Five demos that end on their own, then the opening movie, then the title.
     int demos = 1;
     for (int k = 0; k < 10; ++k) {

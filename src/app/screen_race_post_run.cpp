@@ -66,7 +66,7 @@ void RaceScreen::begin_exit_transition(ExitThen then) {
 // mode records it, then per mode (race::post_run) the prize page / win trophy and the
 // record's name entry (presentations over the race), the run's replay, the quick menu.
 void RaceScreen::after_run(App& app) {
-    if (online_ || free_run_) { // online: back to the lobby; the free practice: its pre-race menu
+    if (online_ || free_run_ || race_preview_) { // online: back to the lobby; the free practice: its pre-race menu
         leave(app);
         return;
     }

@@ -407,14 +407,17 @@ void RaceScreen::update_drive(App& app, double dt) {
         top3_pending_ = false;
         if (quick_) fill_top3();
     }
-    if (attract_) { // any button returns to the title; the demo ends a few seconds after the finish
+    if (attract_ && !race_preview_) { // any button returns to the title; the demo ends a few seconds after the finish
         bool any = false;
         for (PadButton b : {PadButton::Cross, PadButton::Circle, PadButton::Triangle, PadButton::Square,
                             PadButton::Start, PadButton::Select})
             any = any || m.pressed(b);
-        // The demo ends by itself after 1800 steps (the original's timer) or at the finish.
-        if (any || (finished_ && finish_wait_ > 5.0) || race_time_ > kAttractSeconds) {
-            attract_interrupted_ = any;
+        // Only the time limit counts as a finished demo, so the next one starts; the race's own end, 3 s after
+        // car 0's last lap, goes back to the title as a button does.
+        const bool limit = attract_limit_s_ > 0 && race_time_ >= attract_limit_s_ - 1e-9;
+        if (any || (finished_ && finish_wait_ > kAttractFinishHold) || limit) {
+            attract_interrupted_ = any || !limit;
+            LOG_INFO("Attract demo: ended at %.3f s (%s)", race_time_, any ? "button" : limit ? "time limit" : "finish");
             leave(app);
             return;
         }
@@ -492,6 +495,11 @@ void RaceScreen::update_drive(App& app, double dt) {
     auto rpressed = [&](PadButton b) { return (race_pressed & (1u << unsigned(b))) != 0; };
     // (Replays too: only Start opens their pause, presentation §G; nothing else skips one.)
     if (!paused_ && (m.pressed(PadButton::Start) || rpressed(PadButton::Start))) {
+        if (race_preview_) { // no pause: Start ends it (play mode 2, the race's frame update); no laps or time limit do
+            attract_interrupted_ = true;
+            begin_exit_transition(ExitThen::RunEnd);
+            return;
+        }
         open_pause(app);
         return;
     } else if (paused_ && !replay_opts_open_ && (m.pressed(PadButton::Start) || rpressed(PadButton::Start))) {
@@ -519,8 +527,8 @@ void RaceScreen::update_drive(App& app, double dt) {
     // (race::look_back_held; bind the overlay in a custom race layout; GT3R_RACE=perf=1 starts
     // with it on).
     bool own_race_pad = !app.input().race_uses_menu_pad(0);
-    if (replaying_ || demo_replay()) {
-        // Replays: the original's replay pad (screen_race_replay.cpp, presentation §G3).
+    if (replaying_ || demo_replay() || race_preview_) {
+        // Replays and the Preview: GT3's replay pad (screen_race_replay.cpp, presentation §G3).
         replay_pad(m);
         camera_.set_look_back(false);
         camera_.set_look(0, 0);
@@ -648,15 +656,15 @@ void RaceScreen::update_drive(App& app, double dt) {
     update_shot_filter();
     if (const float d = director_.take_dissolve(); d > 0) start_dissolve(d); // a course record's own
 
-    bool feel = rumble_on_ && !replaying_ && !demo_;
+    bool feel = rumble_on_ && !replaying_ && !demo_ && !race_preview_; // (a car the computer drives sends nothing, physics §1.2)
     app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0), app.input().dualsense(0)) : PadRumble{});
     if (const RaceField* f = exact_field(); f && f->opponents() > 0) {
         std::vector<const sim::VehicleState*> st;
         for (int i = 0; i < f->opponents(); ++i) st.push_back(&f->opponent_state(i));
         render::Vec3 e = camera_.eye();
         opp_engines_.view = camera_.onboard() ? EngineSound::View::OnboardOther
-                            : replaying_ || camera_.mode() == CameraMode::Tv ? EngineSound::View::Replay
-                                                                             : EngineSound::View::ChaseOther;
+                            : replaying_ || race_preview_ || camera_.mode() == CameraMode::Tv ? EngineSound::View::Replay
+                                                                                               : EngineSound::View::ChaseOther;
         std::vector<float> slip;
         for (int i = 0; i < f->opponents(); ++i) {
             const sim::VehicleTelemetry* t = f->opponent_telemetry(i);
@@ -670,23 +678,23 @@ void RaceScreen::update_drive(App& app, double dt) {
         sim::Vec3 off = render_state_.position - to_sim(camera_.eye());
         if (camera_.onboard()) engine_.set_position(0.0f, 1.0f);
         else engine_.set_position(off.dot(cam_right(camera_)), off.dot(cam_forward(camera_)));
-        engine_.set_view(replaying_ ? EngineSound::View::Replay
-                         : camera_.onboard() ? EngineSound::View::OnboardOwn
-                                             : EngineSound::View::ChaseOwn);
+        engine_.set_view(replaying_ || race_preview_ ? EngineSound::View::Replay
+                         : camera_.onboard()         ? EngineSound::View::OnboardOwn
+                                                     : EngineSound::View::ChaseOwn);
         engine_.update(app.audio().voices(), render_state_.engine_rpm, render_state_.throttle, dt);
     }
     if (const sim::VehicleTelemetry* t = vehicle_->telemetry()) {
         sim::Vec3 o = render_state_.position - to_sim(camera_.eye());
         SoundView view = camera_.onboard() ? SoundView::InCarTarget
-                         : camera_.mode() == CameraMode::Tv || replaying_ ? SoundView::Other
-                                                                           : SoundView::ChaseTarget;
+                         : camera_.mode() == CameraMode::Tv || replaying_ || race_preview_ ? SoundView::Other
+                                                                                            : SoundView::ChaseTarget;
         if (se_on()) extra_.update(sfx_, app.audio().voices(),
                       extra_frame(vehicle_->facts().value_or(CarFacts{}), *t, render_state_, sound_car_, camera_.onboard(),
                                   o.dot(cam_right(camera_)), o.dot(cam_forward(camera_)), view));
     }
     update_course_ambience(app);
     // Controller force feedback (triggers, wheels) while someone is driving.
-    if (!replaying_ && !demo_) {
+    if (!replaying_ && !demo_ && !race_preview_) {
         if (!finished_ && (rumble_on_ || wheel_force_on_))
             if (const sim::VehicleTelemetry* t = vehicle_->telemetry()) {
                 ForceFeedbackState f = feedback(vehicle_->state(), *t, last_in_, ffb_wall_, ffb_car_);

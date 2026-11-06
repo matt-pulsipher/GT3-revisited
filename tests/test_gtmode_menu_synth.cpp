@@ -226,6 +226,7 @@ TEST(gtmode_synth_world_loads) {
     CHECK(d.color_rgb(d.color_id(w::kCoupe, 1)) == 0x002020C0);
     CHECK(d.starting_credits() == w::kStartCredits && d.car_wash_price() == 60 && d.wheel_price() == 700);
     CHECK(d.title_idle_seconds == w::kTitleIdleSeconds);
+    CHECK(d.demo_time_limit_seconds == w::kDemoTimeLimitSeconds);
     CHECK(d.catalog.dealers.size() == 3);
     const game::DealerCar* racer = d.catalog.dealer_car("_syn_racer_03");
     CHECK(racer && racer->car == w::kRacer && racer->region == "jp");
@@ -1298,6 +1299,18 @@ TEST(gtmode_synth_race_and_prizes) {
     // Entering race 1: the request GT mode prepared; a day passes.
     choose(f, "Gsyn_e_0001");
     CHECK(page(f) == "r/beginner/gsyn_e_entry");
+    // Its Preview: the computer's race of this event, no day passes, and back on the same item.
+    choose(f, "menu0");
+    std::optional<GameRequest> pv = wait_request(f);
+    CHECK(pv.has_value());
+    if (!pv) return;
+    CHECK(pv->mode == "go_preview" && pv->race_code == "Gsyn_e_0001" && pv->event == "Gsyn_e_0001" && pv->car.empty());
+    CHECK(gt.state().day == 1);
+    GameResult pv_result;
+    pv_result.mode = pv->mode, pv_result.race_code = pv->race_code, pv_result.event = pv->event;
+    finish_game(f, pv_result);
+    CHECK(f.control() == "gt_mode" && page(f) == "r/beginner/gsyn_e_entry" && f.controller()->focus() == 0);
+    CHECK(gt.state().day == 1 && gt.state().races == 0);
     choose(f, "menu1");
     std::optional<GameRequest> r = wait_request(f);
     CHECK(r.has_value());
@@ -2596,6 +2609,7 @@ TEST(gtmode_synth_attract_mode) {
     if (!r) return;
     CHECK(frames > w::kTitleIdleSeconds * 60 && frames < w::kTitleIdleSeconds * 60 + 60);
     CHECK(r->mode == "attract_demo" && r->page == "root" && r->car.empty());
+    CHECK(r->time_limit_s == w::kDemoTimeLimitSeconds);
     CHECK((r->event == "demo_syn_1" && r->course == "syn_ring") ||
           (r->event == "demo_syn_2" && r->course == "syn_hill"));
     std::vector<std::string> events{r->event};
@@ -2773,6 +2787,14 @@ TEST(gtmode_synth_hook_branches) {
     res.car_dirt = 0.9;
     const s64 c1 = gt.state().credits;
     CHECK(h.on_result(res).empty());
+    CHECK(gt.state().races == 1 && gt.state().credits == c1 && gt.state().ride_car()->cond.dirt == 0.8f);
+    CHECK(!h.presentation() && !h.next_request());
+    // A Preview is no race of the player's: nothing counted, the ride car as it was (its dirt 0 is the demo's).
+    GameResult pv_res;
+    pv_res.mode = "go_preview";
+    pv_res.race_code = pv_res.event = "Gsyn_e_0001";
+    pv_res.car_dirt = 0;
+    CHECK(h.on_result(pv_res).empty());
     CHECK(gt.state().races == 1 && gt.state().credits == c1 && gt.state().ride_car()->cond.dirt == 0.8f);
     CHECK(!h.presentation() && !h.next_request());
     GameResult lic;

@@ -1748,3 +1748,19 @@ TEST(gtmode_disc_attract_demo_field) {
         for (const std::string& f : field) CHECK(std::find(ev->entries.begin(), ev->entries.end(), f) != ev->entries.end());
     }
 }
+
+// Every release's gcf section 0: the title idle time and the demos' time limit, which ends a demo long before
+// its 20 laps could.
+TEST(gtmode_disc_attract_time_limit) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    auto data = std::make_shared<GtData>();
+    CHECK(data->load([&](const std::string& p) { return vfs.read(p); }));
+    CHECK(data->title_idle_seconds == 20 && data->demo_time_limit_seconds == 105);
+    CHECK(!data->demos.empty());
+    for (const GtData::Demo& d : data->demos) {
+        const data::Event* ev = data->db.event(d.event);
+        CHECK(ev && ev->laps == 20);
+    }
+}

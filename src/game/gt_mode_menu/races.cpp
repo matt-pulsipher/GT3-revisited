@@ -117,7 +117,7 @@ std::vector<std::string> on_result(const GameResult& r) {
     // (physics §10.3), before any prize car shifts the garage.
     apply_condition(gt, r);
     // The dirt the race built up on the car (washed off at the car wash).
-    if (r.car_dirt >= 0 && r.mode != "attract_demo")
+    if (r.car_dirt >= 0 && r.mode != "attract_demo" && r.mode != "go_preview")
         if (GarageCar* ride = gt.state().ride_car()) ride->cond.dirt = float(std::clamp(r.car_dirt, 0.0, 0.8));
     const int place = r.finished && r.position > 0 ? r.position - 1 : -1;
     Award a;
@@ -253,8 +253,8 @@ std::optional<GameRequest> resume_request() {
     return r;
 }
 
-// Attract mode: the title idle time (gcf section 0) and the demo races (gcf
-// section 12, cycling; the F1 demos only once the S license is held).
+// Attract mode: the title idle time and the demos' time limit (gcf section 0) and the
+// demo races (gcf section 12, cycling; the F1 demos only once the S license is held).
 int attract_idle_frames() {
     const MenuState& ms = menu_state();
     return ms.data ? ms.data->title_idle_seconds * 60 : 0;
@@ -273,6 +273,7 @@ std::optional<GameRequest> attract_demo() {
         r.race_code = r.event = d.event;
         r.course = d.course;
         r.car = d.car; // "" for every demo on the disc: the pool fills slot 0 too
+        r.time_limit_s = ms.data->demo_time_limit_seconds;
         r.page = "root";
         return r;
     }

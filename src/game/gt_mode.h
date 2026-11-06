@@ -69,6 +69,7 @@ public:
     std::vector<Demo> demos;          // gcf section 12, attract mode
     std::vector<std::string> race_songs; // bgm/ads.inf race_* files ("race_a01.ads"), index order
     int title_idle_seconds = 20;      // gcf section 0, first word: title idle time before attract mode
+    int demo_time_limit_seconds = 0;  // gcf section 0, second word: an attract demo's time limit (0 = none)
     // Name entry page: item -> character, per language (menu/<lang>/name_entry1.pmb).
     std::map<std::string, std::map<std::string, std::string>> name_chars;
     // The characters of `lang`'s name entry page, else the region's own language's.

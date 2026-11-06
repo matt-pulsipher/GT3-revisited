@@ -161,8 +161,9 @@ void RaceScreen::on_event(App& app, const SDL_Event& e) {
 // Phones: driving touch controls while racing, menu controls otherwise (the quick menus
 // run over the race stage: a GT race's field behind them is not a replay).
 TouchLayout RaceScreen::touch_layout() const {
-    // (A demonstration plays like a replay: the menu buttons end it.)
-    return stage_ == Stage::Drive && !paused_ && !replaying_ && !demo_ && !quick_ ? TouchLayout::Driving : TouchLayout::Menu;
+    // (A demonstration plays like a replay, the Preview is the computer's: the menu buttons end them.)
+    return stage_ == Stage::Drive && !paused_ && !replaying_ && !demo_ && !race_preview_ && !quick_ ? TouchLayout::Driving
+                                                                                                     : TouchLayout::Menu;
 }
 
 bool RaceScreen::follows_aspect() const {

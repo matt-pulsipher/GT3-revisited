@@ -307,6 +307,7 @@ public:
         rs.kind = opts_.kind;
         rs.config = opts_.config;
         rs.replay = opts_.records_off;
+        rs.locked = opts_.locked;
         rs.laps = opts_.laps;
         if (solo) {
             // The licence test's and machine test's laps byte is their type: the event's. The race information's words.

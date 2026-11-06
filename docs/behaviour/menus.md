@@ -628,9 +628,9 @@ frames: gray 0.1 (12.8 / 255) at alpha 1 − 0.5^(n − 10) after n frames
 follows (§11.1: the prize page, the name entry, the replay, the quick menu, or
 the menus) appears as a cut. The same transition runs over the last frame of
 every replay that goes back to a quick menu, at its end or on its pause
-EXIT, before the quick menu cuts in. EXIT from the pause menu of a Replay
-Theater run, an online run or the attract demo leaves at once, without the
-wash.
+EXIT, before the quick menu cuts in. It also runs when Start ends a Preview.
+EXIT from the pause menu of a Replay Theater run, an online run or the attract
+demo leaves at once, without the wash.
 
 Changes made with `open_control` are cuts. Most stay in the same control,
 such as entering the GT Mode map from the title (same `gt_mode` control) or
@@ -709,11 +709,13 @@ frames, on this disc (measured).
   configuration's demo list. Demos
   marked for the S license (the F1 demos) are skipped until the S license is
   held.
-- **When a demo ends on its own,** the next demo starts, up to five. After
-  the fifth, the opening movie `stream/opening.pss` plays, then the title.
-- **A demo that does not finish** (the player pressed a key) ends attract
-  mode and returns to the title. Starting a demo sets the title focus to
-  Arcade, so the title comes back on Arcade, also after the opening movie.
+- **A demo's time limit** comes from the same configuration and is 105 s on
+  every release. At the limit the next demo starts, up to five. After the
+  fifth, the opening movie `stream/opening.pss` plays, then the title.
+- **Any other end** finishes attract mode and returns to the title: a key, or
+  the race's own end 3 s after the followed car's last lap. The demos have 20
+  laps, so the limit always comes first. Starting a demo sets the title focus
+  to Arcade, so the title comes back on Arcade, also after the opening movie.
 
 ### §7.3 Music and movies per page
 
@@ -783,7 +785,13 @@ their entry's movie once the cursor rests (§9.1).
   `go_machine_test` (whose race code is the item name), `go_free_run` and
   `go_preview` raise a race request (§7.5). Afterwards the menus resume on the
   same page, except that a race entry page (a name ending in `_entry`)
-  resumes on its back page, the race list.
+  resumes on its back page, the race list. After `go_preview` the entry page
+  itself resumes, with PREVIEW focused.
+- **Preview.** `go_preview` is a race the computer drives: the event's own
+  cars from its pool, none of the player's, with the replay cameras, no HUD
+  and the game's mark. It has no laps or time limit, so it runs until Start
+  ends it; the other buttons act as in a replay. No day passes and the ride
+  car is not touched.
 - **Save pages.** `go_save_in_home` opens the save page (Save game) and
   returns to the home page. `go_trade` opens the save page as "Trade" to load
   a friend's garage, then shows its cars on `hm/hm_gr_trade`; leaving that

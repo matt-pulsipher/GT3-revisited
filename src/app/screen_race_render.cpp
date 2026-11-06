@@ -804,7 +804,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     remove_wet_road(wet_items); // (the wet road's frame items belong to this view only)
     hitch::draw_ms = double(SDL_GetTicksNS() - h_c1) / 1e6;
     hitch::meshes = view_->stats().meshes_drawn;
-    if (!replaying_ && camera_.shows_mirror() && (!split || horizontal))
+    if (!replaying_ && !race_preview_ && camera_.shows_mirror() && (!split || horizontal))
         draw_mirror(app, ui, rect, o, false, split);
     if (split) {
         if (!view2_) view2_ = std::make_unique<render::View3D>(*app.gpu());

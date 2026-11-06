@@ -347,8 +347,9 @@ Phase 6:
   rankings in `GameState::rankings` (native save), filled from license,
   machine-test and arcade time-trial results.
 - **Attract mode** (GameFlow): 20 s idle on the title → up to five
-  `attract_demo` races (gcf demo list) → opening movie → title; any
-  interrupted demo returns to the title.
+  `attract_demo` races (gcf demo list, each up to section 0's time limit,
+  105 s) → opening movie → title; a demo that ends any other way returns
+  to the title.
 
 Phase 7:
 

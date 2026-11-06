@@ -746,6 +746,7 @@ private:
     std::vector<double> run_laps_; // the last live run's laps (the replays re-run lap_times_)
     bool abandoned_ = false;
     bool attract_ = false, attract_interrupted_ = false; // title-screen attract demo
+    bool race_preview_ = false; // GT Mode's Preview: an attract demo of the chosen event, endless, with the race songs
     bool theater_ = false;     // started by the Replay Theater (theater_replay / theater_demo / logger)
     // The Analyzer (data logger): the theater's (logger_mode_) or the quick menu's; its REPLAY's ghost (track B's lap).
     Analyzer analyzer_;
@@ -786,7 +787,8 @@ private:
     bool driver_view_ = false;
     int attract_car_frames_ = 0;
     std::string theater_demo_; // theater_demo: the demonstration's event code
-    static constexpr double kAttractSeconds = 1800.0 / 60.0; // Arcade demo's 1800-step timer
+    double attract_limit_s_ = 0; // the attract demo's time limit (GameRequest::time_limit_s, 0 = none)
+    static constexpr double kAttractFinishHold = 3.0; // seconds from car 0's last lap to the race's end
     float demo_start_kmh_ = 0;    // demo events: every car starts at this speed
     bool setting_pending_ = false;
     bool tt_failed_ = false;

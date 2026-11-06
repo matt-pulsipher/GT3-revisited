@@ -301,8 +301,9 @@ void GameFlow::game_finished() {
         return;
     }
     if (in_attract_) {
-        // Attract mode: up to five demo races while nobody interrupts (a demo that
-        // ends on its own reports finished), then the opening movie, then the title.
+        // Attract mode: up to five demo races, each ending at its time limit (reported as
+        // finished; a key or the race's own end go back to the title), then the opening
+        // movie, then the title.
         if (attract_movie_ || !result || !result->finished) {
             in_attract_ = attract_movie_ = false;
             open_control("gt_mode", "root", title_focus_);
@@ -855,14 +856,15 @@ void GameFlow::handle_gt(const MenuEvent& e) {
             r.race_code = a == "go_machine_test" ? e.item : race_code_;
             r.page = e.page;
             // Back from the race: GT mode resumes at the page, race entry
-            // pages ("..._entry") at their parent race list.
+            // pages ("..._entry") at their parent race list; a Preview on the item it was started from.
+            const bool preview = a == "go_preview";
             resume_set_ = "gt_mode";
             resume_page_ = e.page;
-            if (resume_page_.size() > 6 && resume_page_.compare(resume_page_.size() - 6, 6, "_entry") == 0) {
+            if (!preview && resume_page_.size() > 6 && resume_page_.compare(resume_page_.size() - 6, 6, "_entry") == 0) {
                 if (const MenuSet::PageRef p = set_->page(e.page); p.flow && !p.flow->back.empty())
                     resume_page_ = p.flow->back;
             }
-            resume_focus_ = -1;
+            resume_focus_ = preview && ctl_ ? ctl_->focus() : -1;
             if (const GtModeHooks& h = gt_mode_hooks(); h.prepare_request) h.prepare_request(r);
             request_race(std::move(r));
         } else if (a == "go_replay_theater") {
@@ -1030,7 +1032,7 @@ race::RacePlaylist GameFlow::music_playlist() {
     for (const MusicTrack& t : race_tracks()) ids.push_back(t.id);
     std::optional<std::string> stored = options_ ? options_->get("options", "music_playlist") : std::nullopt;
     race::RacePlaylist p = race::RacePlaylist::stored_or_new(stored, ids);
-    // The options always hold a list (the original makes it with a new game): a new one, or
+    // The options always hold a list (GT3 makes it with a new game): a new one, or
     // one that changed for this disc, is kept, so the race and the next visit see the same one.
     if (options_ && p.to_text() != stored) options_->set("options", "music_playlist", p.to_text());
     return p;

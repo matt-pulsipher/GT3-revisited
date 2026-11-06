@@ -39,7 +39,7 @@ where noted. `GtData::load` (`src/game/gt_mode.cpp`) reads:
 | Source | What GT Mode takes from it |
 |---|---|
 | `database/paramdb_us.db` (+ string tables) | cars (price, flags, category, region), parts, events, regulations, courses (`docs/formats/database.md`) |
-| `gameconf/product.gcf` (`src/game/gcf.*`) | constants (`initial`, `car_wash`, `oil_change`, `wheel`), section 0 (title idle time), section 4 (the 364 GT-mode result codes and their unlock level), section 12 (attract demos), section 15 (prize sets), sections 8 and 14 (arcade course and car lists) |
+| `gameconf/product.gcf` (`src/game/gcf.*`) | constants (`initial`, `car_wash`, `oil_change`, `wheel`), section 0 (title idle time, demo time limit), section 4 (the 364 GT-mode result codes and their unlock level), section 12 (attract demos), section 15 (prize sets), sections 8 and 14 (arcade course and car lists) |
 | `menu/gt_mode.mbl` (`src/game/gt_catalog.*`) | what GT Mode offers: dealer cars (`cd/` pages, action `set_car_code`), race series (`r/<tier>/<series>` pages, `set_race_code` / `set_race_code_champ`), license tests (`lc/lc_<id>` pages, `go_license`), tune-shop pages. The game has no separate list of these: its menus are the list. |
 | `database/carcolor.db` / `.sdb` | paint lists per body model and paint names (§7) |
 | `bgm/ads.inf` | the race songs, for the options block of a PS2 save (§12) |
@@ -916,7 +916,8 @@ The setting files are in §19.
 ## §15 Attract demo field
 
 After 20 s idle on the title (gcf section 0), the title plays demo races from gcf
-section 12 in turn. The F1 demos (level 1) play only once the save holds the S license.
+section 12 in turn, each up to the time limit in section 0's second word (105 s on
+every release), which comes long before the demos' 20 laps. The F1 demos (level 1) play only once the save holds the S license.
 There are 10 demos on this disc, two of them F1. Every demo on the disc has no car of
 its own (word +8 is empty). The engine therefore draws the **whole** field, slots 0 to
 cars − 1, from the event's pool with the race generator (§20.4). Slot 0 is the car the

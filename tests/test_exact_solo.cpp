@@ -619,11 +619,13 @@ TEST(exact_game_exit_as_finish) {
 // conductors give the player's car control source 1 (the AI drives; the pad is not read), the races' every car control
 // source 2; the time trial hands only a pad car back, and records off leave the race no laps and no time limit, so it never
 // ends: the car laps on and on, a GT race's field races on after its countdown. With records on (the attract demo's) the
-// same races end 3 s after car 0's last lap (event 1).
+// same races end 3 s after car 0's last lap (event 1); GT Mode's Preview has them on and sets race info + 0x7C,
+// which clears the same laps and time limit: its field races on as well.
 TEST(exact_game_menu_race) {
     if (!database() || !program()) SKIP("needs GT3R_DISC");
     data::CarDatabase& db = *database();
-    auto run = [&](const std::string& event, ex::Conductor kind, bool records_off, int max_steps, bool field = false) {
+    auto run = [&](const std::string& event, ex::Conductor kind, bool records_off, int max_steps, bool field = false,
+                   bool locked = false) {
         struct Out {
             int laps = 0;
             bool finished = false, ended = false, handed_back = false;
@@ -653,6 +655,7 @@ TEST(exact_game_menu_race) {
         o.player.car = {ev->entries.empty() ? "r34_gtr_v_99" : ev->entries[0]};
         o.config = 2;
         o.records_off = records_off;
+        o.locked = locked;
         cfg.exact = o;
         std::string err;
         std::unique_ptr<race::RaceField> f = race::RaceField::create(*track, db, cfg, &err);
@@ -698,6 +701,10 @@ TEST(exact_game_menu_race) {
     CHECK(gt.laps > 3 && !gt.finished && !gt.ended && gt.slowest > 5.0f);
     const auto gt_on = run("Gsunday_e_0001", ex::Conductor::SinglePlayer, false, 60 * 420, true);
     CHECK(gt_on.finished && gt_on.ended && gt_on.laps == 3);
+    // Its Preview: records on, locked; past the 3 laps with no end.
+    const auto gt_preview = run("Gsunday_e_0001", ex::Conductor::SinglePlayer, false, 60 * 420, true, true);
+    CHECK(gt_preview.control == 2 && gt_preview.handed_back);
+    CHECK(gt_preview.laps > 3 && !gt_preview.finished && !gt_preview.ended && gt_preview.slowest > 5.0f);
 }
 
 // A licence run slower than bronze, as GT3 judges and presents it: the race flow fails it (event 9) with the result 0 and its

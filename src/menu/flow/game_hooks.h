@@ -48,6 +48,7 @@ struct GameRequest {
     std::string car;        // car id chosen in the menus (pmb element name without a leading '_'; empty = default)
     std::string car_class;  // arcade class chosen ("class_c", ...)
     std::string page;       // menu page the request came from
+    int time_limit_s = 0;   // attract_demo: the demo's time limit in seconds (0 = none)
 
     // GT mode (filled by game/gt_mode_actions.cpp; empty / null elsewhere):
     std::string event;      // event record label (database table 32), e.g. "Gsunday_e_0001", "L0B0001"

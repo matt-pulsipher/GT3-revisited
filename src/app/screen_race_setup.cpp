@@ -641,6 +641,7 @@ bool RaceScreen::build_vehicle(App& app) {
         // configuration 3, the race's AI drives the players' cars (the pads decoded).
         o.config = attract_ || backdrop_ ? 2 : preset_.autodrive ? 3 : 0;
         o.records_off = backdrop_;
+        o.locked = race_preview_; // (the Preview's runner, after building the race)
         o.laps = race_laps_;
         if (two_player_) {
             o.second.car = launch_source2_.value_or(ExactCarSource{car2});

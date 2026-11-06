@@ -135,7 +135,7 @@ struct DrawOptions {
     // of `focal_mm` (a film 1.333 times as wide as high whose diagonal is the focal length; its
     // focal length at this view's zoom from the projection's vertical scale), the
     // f-number `f_number`, focused `focus` metres from the eye. Nothing beyond `far` metres
-    // (the original's far plane) gets more blur than at it. `pyramid`: GT3's own downsampled
+    // (GT3's far plane) gets more blur than at it. `pyramid`: GT3's own downsampled
     // pictures at any size, a fraction of the work on a phone, where the picture is otherwise
     // over 448 lines tall. Not drawn by draw_to.
     struct DepthOfField {

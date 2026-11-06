@@ -160,11 +160,14 @@ void RaceScreen::resolve_launch() {
     // (Quick race practice with a car of the player's choice: that car's own paint.)
     event_paint_id_ = ev && license_mode && (!rq.practice || rq.car.empty()) ? license.color : 0xFFFFFFFFu;
     // Title-screen attract demo: the event's cars all driven by the computer, TV cameras,
-    // no HUD; any button ends it.
+    // no HUD; any button ends it. GT Mode's Preview is the same race on the event the menus
+    // chose (gt_mode §11): the player's car is not in it, and only Start ends it.
     std::string attract_slot0;
-    if (rq.mode == "attract_demo" && ev) {
+    if ((rq.mode == "attract_demo" || rq.mode == "go_preview") && ev) {
         attract_ = true;
+        race_preview_ = rq.mode == "go_preview";
         race_event_ = code;
+        attract_limit_s_ = rq.time_limit_s;
         preset_.autodrive = true;
         preset_.hud = false;
         preset_.cam = int(CameraMode::Tv);
