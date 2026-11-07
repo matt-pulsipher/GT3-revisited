@@ -64,7 +64,8 @@ namespace {
 
 constexpr u8 kAll = 7; // NTSC-U, PAL and NTSC-J (a bit per Program)
 
-// ---- the tables' content checks: what a table's shape and values must be (no values of any program) -----------------------
+// ---- the tables' content checks: what a table's shape and values look like in GT3, for finding one by its content (tier 2;
+// no values of any program). A table GT3's code places only has to pass its limit below. ----------------------------------
 
 bool rising(ByteSpan b, size_t o, size_t n, bool strict) {
     for (size_t k = 1; k < n; ++k)
@@ -185,6 +186,16 @@ bool check_effect_scales(ByteSpan b) { // 8 scales 0 .. 4
 }
 bool check_none(ByteSpan) { return true; } // no shape to tell it by (found only through its routine)
 
+// ---- the limits: what the engine needs of any table, whatever its values (GT3's code takes the rest) --------------------
+// The rolling-resistance curve's 1 .. 8 points (statics()).
+bool limit_static(ByteSpan b) { return b[0x0B] >= 1 && b[0x0B] <= 8; }
+// A surface's effect kind: one of the 16 effect records of the course (ExactRace::emit).
+bool limit_effect_kinds(ByteSpan b) {
+    for (size_t o = 0; o < b.size(); o += 4)
+        if (word_at(b, o) > 15) return false;
+    return true;
+}
+
 using T = ProgramData::Table;
 struct TableDef {
     T id;
@@ -192,11 +203,12 @@ struct TableDef {
     bool (*check)(ByteSpan);
     T base = T::Count; // a table it sits next to in every release (tier 2: found from that one's place) ...
     s32 offset = 0;    // ... at this offset from its start
+    bool (*limit)(ByteSpan) = nullptr; // what the engine needs of it (none: any values)
 };
 // In Table's order.
 constexpr size_t kTables_n = size_t(ProgramData::kTables);
 const TableDef kTableDefs[] = {
-    {T::Static, "the static physics block", check_static},
+    {T::Static, "the static physics block", check_static, T::Count, 0, limit_static},
     {T::Effects, "the tyre effect block", check_effects},
     {T::Controller, "the controller settings", check_controller},
     {T::SurfaceClass, "the surface classes", check_classes},
@@ -215,7 +227,7 @@ const TableDef kTableDefs[] = {
     {T::Messages, "the HUD messages", check_messages},
     {T::MachineSectors, "the machine test sectors", check_machine_sectors},
     {T::StickCurve, "the stick response curve", check_stick_curve},
-    {T::EffectKinds, "the tyre effect kinds", check_effect_kinds},
+    {T::EffectKinds, "the tyre effect kinds", check_effect_kinds, T::Count, 0, limit_effect_kinds},
     {T::EffectScales, "the tyre effect scales", check_effect_scales},
     {T::EffectParams, "the tyre effect parameters", check_none},
 };
@@ -351,10 +363,14 @@ ProgramData ProgramData::load(ByteSpan program, u32 load_address, u32 entry_poin
     std::array<u32, kTables_n> at{};
     // What each recognised piece says the program is (a bit per release), for the program's identity.
     std::vector<u8> votes;
-    auto fits = [&](const TableDef& t, u32 a) {
+    // A table GT3's code places (by_code: its routine's address, or a fixed offset from such a table) only needs what the
+    // engine needs of it; one found by its content must also look like GT3's.
+    std::array<bool, kTables_n> by_code{};
+    auto placed = [&](const TableDef& t, u32 a) {
         const u32 n = size(t.id);
-        return a >= x.text_end() && x.in_image(a, n) && t.check(x.bytes(a, n));
+        return a >= x.text_end() && x.in_image(a, n) && (!t.limit || t.limit(x.bytes(a, n)));
     };
+    auto fits = [&](const TableDef& t, u32 a) { return placed(t, a) && t.check(x.bytes(a, size(t.id))); };
 
     // Tier 1: the table's routine, the address from its instructions.
     for (size_t i = 0; i < kTables_n; ++i) {
@@ -366,13 +382,13 @@ ProgramData ProgramData::load(ByteSpan program, u32 load_address, u32 entry_poin
             if (s.id != t.id) continue;
             for (u32 w : x.find(s.hash, s.words)) {
                 u32 a = 0;
-                if (!decode(x, w, s, a) || !fits(t, a)) continue;
+                if (!decode(x, w, s, a) || !placed(t, a)) continue;
                 if (found && found != a) clash = true;
                 found = a, mask |= s.programs;
                 d.sites_[i] = {w, s.words, s.hi, s.lo};
             }
         }
-        if (found && !clash) at[i] = found, d.tiers_[i] = 1, votes.push_back(mask);
+        if (found && !clash) at[i] = found, d.tiers_[i] = 1, by_code[i] = true, votes.push_back(mask);
         else d.sites_[i] = {};
     }
     // Tier 2: the table it is part of, else the one place in the program's data with the table's shape.
@@ -382,7 +398,8 @@ ProgramData ProgramData::load(ByteSpan program, u32 load_address, u32 entry_poin
             if (at[i]) continue;
             if (t.base != T::Count) {
                 const size_t j = size_t(t.base);
-                if (at[j] && fits(t, at[j] + u32(t.offset))) at[i] = at[j] + u32(t.offset), d.tiers_[i] = 2;
+                const u32 a = at[j] + u32(t.offset);
+                if (at[j] && (by_code[j] ? placed(t, a) : fits(t, a))) at[i] = a, d.tiers_[i] = 2, by_code[i] = by_code[j];
                 if (at[i] || pass == 0) continue;
             }
             if (pass == 0 || t.check == check_none) continue;
@@ -417,12 +434,13 @@ ProgramData ProgramData::load(ByteSpan program, u32 load_address, u32 entry_poin
     d.program_ = Program(agree && !votes.empty() ? lowest(agree) : most);
     const u8 self = u8(1u << int(d.program_));
 
-    // Each rule: the program's own variant, else the one variant found, else NTSC-U's (an issue).
+    // Each rule: the program's own variant, else the one variant found, else the program's release's (an issue: a build's
+    // routine of its own, its nearest release's rules the closest guess).
     d.own_ = {d.program_, 60};
     bool all_rules = true;
     for (int r = 0; r < kRules; ++r) {
         const Rule rule = Rule(r);
-        Program v = Program::NtscU;
+        Program v = d.program_;
         bool ok = true;
         if ((found[size_t(r)] & self) || (!found[size_t(r)] && (absent[size_t(r)] & self))) v = d.program_;
         else if (found[size_t(r)]) v = Program(lowest(found[size_t(r)]));
@@ -430,35 +448,40 @@ ProgramData ProgramData::load(ByteSpan program, u32 load_address, u32 entry_poin
         d.recognised_[size_t(r)] = ok;
         if (!ok) {
             all_rules = false;
-            d.issues_.push_back(std::string(rule_name(rule)) + ": not a known release's code; NTSC-U's rules");
+            d.issues_.push_back(std::string(rule_name(rule)) + ": not a known release's code; " + program_name(d.program_) +
+                                "'s rules");
         }
         d.own_.variant[size_t(r)] = v == d.program_ ? Behaviour::kFollow : u8(v);
     }
     d.behaviour_ = d.own_;
 
-    // The tables: GT3's values, the variant of the release the disc's table equals (not found or unlike every release's:
-    // NTSC-U's, an issue).
+    // The tables: GT3's values, the variant of the release the disc's table equals; one GT3's code places but unlike every
+    // release's is changed on this disc and its own values serve; one found only by its content and unlike every release's,
+    // or not found, an issue: GT3's values of the program's release.
     bool all_tables = true;
     for (size_t i = 0; i < kTables_n; ++i) {
         const TableDef& t = kTableDefs[i];
         d.ranges_[i].where = at[i];
-        Program v = Program::NtscU;
+        Program v = d.program_;
         bool matched = false;
+        ByteSpan b;
         if (at[i]) {
-            const ByteSpan b = x.bytes(at[i], size(t.id));
+            b = x.bytes(at[i], size(t.id));
             for (int p = 0; p < kPrograms && !matched; ++p) {
                 const ByteSpan g = gt3_table(t.id, Program(p));
                 if (std::equal(b.begin(), b.end(), g.begin(), g.end())) v = Program(p), matched = true;
             }
-            if (matched && d.tiers_[i] != 1)
+            if (matched && !by_code[i])
                 d.issues_.push_back(std::string(t.what) + ": found by its content (its routine is not a known release's)");
         }
-        if (!matched)
+        const bool changed = at[i] && !matched && by_code[i];
+        if (changed) d.issues_.push_back(std::string(t.what) + ": changed on this disc");
+        else if (!matched)
             d.issues_.push_back(std::string(t.what) + (at[i] ? ": unlike every release's on this disc" : ": not found on this disc") +
-                                "; GT3's NTSC-U values");
-        all_tables = all_tables && matched && d.tiers_[i] == 1;
-        d.releases_[i] = v, d.matched_[i] = matched;
-        const ByteSpan g = gt3_table(t.id, v);
+                                "; GT3's values");
+        all_tables = all_tables && (matched || changed) && by_code[i];
+        d.releases_[i] = v, d.matched_[i] = matched, d.changed_[i] = changed;
+        const ByteSpan g = changed ? b : gt3_table(t.id, v);
         d.ranges_[i].bytes.assign(g.begin(), g.end());
     }
     d.known_ = agree != 0 && !votes.empty() && all_tables && all_rules;
@@ -478,6 +501,19 @@ ProgramData ProgramData::synthetic(Program p) {
     d.own_ = d.behaviour_ = {p, 60};
     d.recognised_.fill(true);
     for (size_t i = 0; i < kTables_n; ++i) d.ranges_[i].bytes.assign(size(T(i)), 0);
+    return d;
+}
+
+bool ProgramData::changed() const { return std::find(changed_.begin(), changed_.end(), true) != changed_.end(); }
+
+ProgramData ProgramData::gt3_tables() const {
+    ProgramData d = *this;
+    for (size_t i = 0; i < kTables_n; ++i)
+        if (d.changed_[i]) {
+            const ByteSpan g = gt3_table(T(i), d.releases_[i]);
+            d.ranges_[i].bytes.assign(g.begin(), g.end());
+            d.changed_[i] = false;
+        }
     return d;
 }
 

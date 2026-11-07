@@ -11,6 +11,7 @@
 #include "disc/disc.h"
 #include "disc/region.h"
 #include "game/data/car_database.h"
+#include "game/gt_mode.h"
 #include "race/exact_setup.h"
 #include "sim/exact/program_tables.h"
 #include "vfs/vfs.h"
@@ -168,11 +169,47 @@ TEST(program_locate_damaged) {
         threw = true;
     }
     CHECK(!threw && m.tier(T::Static) == 0 && !m.table_matched(T::Static));
-    CHECK(has_issue(m, "the static physics block: not found on this disc; GT3's NTSC-U values"));
+    CHECK(has_issue(m, "the static physics block: not found on this disc; GT3's values"));
     CHECK(m.b(T::Static, 0x0B) == d.b(T::Static, 0x0B) && m.b(T::StickCurve, 255) == d.b(T::StickCurve, 255)); // GT3's values
 }
 
-// A rule's routine not any known release's: that routine keeps NTSC-U's rules, reported; the rest stay the disc's.
+// A table GT3's code places with values of its own (a modified game's tuning): the disc's values serve, values only the
+// shape check refuses included (no slipstream: the divisor 0; a one-point rolling curve), and the program stays known with
+// the table changed (an issue). gt3_tables() gives GT3's values back (the stock fingerprint), which the races every machine
+// shares play on (record_program_data). Past what the engine takes (nine rolling points) the table is not found and GT3's
+// values serve.
+TEST(program_locate_changed) {
+    std::optional<CoreImage> c = disc_core();
+    if (!c) SKIP("needs GT3R_DISC");
+    const ex::ProgramData d = load(*c);
+    const u32 at = d.table_start(T::Static);
+    CHECK(at != 0 && d.tier(T::Static) == 1 && !d.changed());
+    if (!at) return;
+    CoreImage mod = *c;
+    mod.program[at - c->load_address] = 0;        // +0x00 the slipstream shares' divisor: none
+    mod.program[at + 0x0B - c->load_address] = 1; // one rolling-resistance point
+    mod.program[at + 0x1D - c->load_address] = 1; // the kerb's bump amplitude: 1 mm
+    const ex::ProgramData m = load(mod);
+    CHECK(m.tier(T::Static) == 1 && m.table_changed(T::Static) && !m.table_matched(T::Static) && m.changed());
+    CHECK(m.known() && m.program() == d.program() && has_issue(m, "the static physics block: changed on this disc"));
+    CHECK(m.b(T::Static, 0) == 0 && m.b(T::Static, 0x0B) == 1 && m.b(T::Static, 0x1D) == 1);
+    CHECK(m.b(T::Static, 0x1C) == d.b(T::Static, 0x1C) && m.fingerprint() != d.fingerprint());
+    const ex::ProgramData g = m.gt3_tables();
+    CHECK(!g.changed() && g.fingerprint() == d.fingerprint() && g.b(T::Static, 0x1D) == d.b(T::Static, 0x1D));
+    CHECK(d.gt3_tables().fingerprint() == d.fingerprint());
+    const auto own = std::make_shared<const ex::ProgramData>(m), stock = std::make_shared<const ex::ProgramData>(d);
+    CHECK(race::record_program_data(own, m.fingerprint()) == own);
+    const auto shared = race::record_program_data(own, d.fingerprint());
+    CHECK(shared && !shared->changed() && shared->fingerprint() == d.fingerprint());
+    CHECK(!race::record_program_data(stock, m.fingerprint()) && race::record_program_data(stock, d.fingerprint()) == stock);
+    mod.program[at + 0x0B - c->load_address] = 9;
+    const ex::ProgramData n = load(mod);
+    CHECK(n.tier(T::Static) == 0 && !n.table_changed(T::Static) && !n.changed() && !n.known());
+    CHECK(has_issue(n, "the static physics block: not found on this disc; GT3's values") && n.b(T::Static, 0x0B) == d.b(T::Static, 0x0B));
+}
+
+// A rule's routine not any known release's: that routine keeps its program's release's rules, reported; the rest stay the
+// disc's.
 TEST(program_locate_unknown_rule) {
     std::optional<CoreImage> c = disc_core();
     if (!c) SKIP("needs GT3R_DISC");
@@ -183,8 +220,12 @@ TEST(program_locate_unknown_rule) {
     CoreImage bad = *c;
     wr(bad, a + 8, rd(*c, a + 8) ^ 0x00010000);
     const ex::ProgramData b = load(bad);
-    CHECK(!b.recognised(ex::Rule::LicenceStop) && b.behaviour().rule(ex::Rule::LicenceStop) == ex::Program::NtscU);
-    CHECK(has_issue(b, "the licence test's stop: not a known release's code; NTSC-U's rules"));
+    CHECK(!b.recognised(ex::Rule::LicenceStop) && b.behaviour().rule(ex::Rule::LicenceStop) == d.program());
+    CHECK(has_issue(b, std::string("the licence test's stop: not a known release's code; ") + ex::program_name(d.program()) + "'s rules"));
+    // Online races follow NTSC-U's rules, that routine too.
+    ex::ProgramData online = b;
+    online.set_behaviour({ex::Program::NtscU, 60});
+    CHECK(online.behaviour().rule(ex::Rule::LicenceStop) == ex::Program::NtscU);
     CHECK(b.program() == d.program() && b.behaviour().rule(ex::Rule::LapRecord) == d.program());
 }
 
@@ -210,13 +251,13 @@ TEST(program_locate_other_builds) {
                 const T t = T(i);
                 ++tiers[d.tier(t)];
                 matched += d.table_matched(t);
-                std::string values = d.table_matched(t) ? ", GT3's values" : "";
+                std::string values = d.table_matched(t) ? ", GT3's values" : d.table_changed(t) ? ", changed" : "";
                 if (d.table_matched(t) && ex::gt3_table_differs(t, ex::Program::Pal)) // which release's
                     values += std::string(" (") + ex::program_name(d.table_release(t)) + "'s)";
                 std::printf("    table tier %d%s: %s\n", d.tier(t), values.c_str(), ex::ProgramData::what(t));
                 CHECK(d.table_matched(t) || has_issue(d, std::string(ex::ProgramData::what(t)) + ":"));
                 const ByteSpan g = ex::gt3_table(t, d.table_release(t));
-                CHECK(d.b(t, 0) == g[0]); // GT3's values serve
+                CHECK(d.table_changed(t) || d.b(t, 0) == g[0]); // GT3's values serve (but where GT3's code places a changed one)
             }
             int rules = 0;
             for (int r = 0; r < ex::kRules; ++r) rules += d.recognised(ex::Rule(r));
@@ -256,6 +297,10 @@ TEST(program_locate_other_builds) {
             }
             std::printf("    course files: %d of %d read by the exact core%s%s\n", read, courses, course_error.empty() ? "" : "; ",
                         course_error.c_str());
+            // The data GT mode needs (its database, game config, colours, menus).
+            game::GtData gt;
+            const bool gt_ok = gt.load([&](const std::string& p) { return vfs.read(p); });
+            std::printf("    GT mode data: %s\n", gt_ok ? "read" : ("not readable: " + gt.error()).c_str());
         } catch (const std::exception& e) {
             threw = true;
             std::printf("    exception: %s\n", e.what());

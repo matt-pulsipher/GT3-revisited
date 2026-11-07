@@ -2,17 +2,19 @@
 
 // The game program's own data that the tick's inputs are built from (race_inputs.h): the static physics block, the tyre
 // effect block, the controller settings, two surface tables and the race start's, the car spec's and the race flow's
-// tables (Table). Their values are GT3's (program_tables.h: the same in its three releases but for PAL's HUD message
-// times), and ProgramData serves the variant of the disc's release.
+// tables (Table). GT3's values are in the source (program_tables.h: the same in its three releases but for PAL's HUD
+// message times).
 //
 // The disc's program is checked against them, any build the same way, the four known discs and builds no one has mapped:
 // each table is found through the routine that addresses it, recognised by a hash of its code with everything that moves
-// between builds masked (program_locate.h), its address decoded from that routine's instructions (tier 1); a table whose
-// routine is not found is searched for in the program's data by its shape (sizes, ranges, sorted breakpoints, the table it
-// is part of: its content check) and taken only when exactly one place passes (tier 2). The disc's table picks the release
-// variant it equals; one not found or unlike every release's is an issue and NTSC-U's values serve. The routines whose
-// rules differ between the releases are recognised the same way (Behaviour::variant); one no known release has keeps
-// NTSC-U's rules (an issue). b() / h() / w() read a table by its id and an offset.
+// between builds masked (program_locate.h), its address decoded from that routine's instructions (tier 1; a table at a
+// fixed offset from one found so is placed by GT3's code too); a table whose routine is not found is searched for in the
+// program's data by its shape (sizes, ranges, sorted breakpoints, the table it is part of: its content check) and taken
+// only when exactly one place passes (tier 2). A table GT3's code places is the disc's, with any values the engine can
+// take (a modified game's own tuning: changed()); one found only by its shape must equal a release's, and one not found
+// or unlike every release's is an issue and GT3's values of the program's release serve. The routines whose rules differ
+// between the releases are recognised the same way (Behaviour::variant); one no known release has keeps the program's
+// release's rules (an issue). b() / h() / w() read a table by its id and an offset.
 
 #include "base/bytes.h"
 #include "sim/exact/program.h"
@@ -67,17 +69,25 @@ public:
     // Every table zero and release p's, nothing located, its rules (the disc-free tests fill the tables with poke()).
     static ProgramData synthetic(Program p = Program::NtscU);
 
-    // What could not be found or recognised, one line each ("the static physics block: not found", "the rubber band: not a
-    // known release's code; NTSC-U's rules"). Empty for the known discs.
+    // What could not be found or recognised and what the disc changes, one line each ("the static physics block: not found
+    // on this disc; GT3's values", "the rubber band: not a known release's code; PAL's rules", "the static physics block:
+    // changed on this disc"). Empty for the known discs.
     const std::vector<std::string>& issues() const { return issues_; }
     // How each table was found on the disc: 1 its routine, 2 its content, 0 not found.
     int tier(Table t) const { return tiers_[size_t(t)]; }
     // The table's start in this program (0: not found).
     u32 table_start(Table t) const { return ranges_[size_t(t)].where; }
-    // The release whose values a table has (the disc's table equals them), and whether the disc's table matched one at all
-    // (false: NTSC-U's values serve).
+    // The release whose values a table has (the disc's table equals them; else the program's release, whose variant serves
+    // and whose step counts the disc's own values are in), and whether the disc's table matched one at all.
     Program table_release(Table t) const { return releases_[size_t(t)]; }
     bool table_matched(Table t) const { return matched_[size_t(t)]; }
+    // A table GT3's code places whose values are unlike every release's: the disc's own values serve (a modified game).
+    bool table_changed(Table t) const { return changed_[size_t(t)]; }
+    bool changed() const;
+    // This program data with GT3's values in every changed table (the program's release's): what races every machine and
+    // disc must run the same take, online races and the game's own recorded demos. A copy equal to this one (the same
+    // fingerprint) when nothing is changed.
+    ProgramData gt3_tables() const;
     // What a table holds, for the messages ("the static physics block").
     static const char* what(Table t);
     // Whether routine r was recognised (one of the known releases' variants, or a release's known lack of it).
@@ -91,7 +101,8 @@ public:
     u32 rule_site(Rule r) const { return rule_at_[size_t(r)]; }
 
     // The disc's program: the known release whose code it has (an unknown build: the release most of its recognised
-    // routines and tables match; known() false: then GT3's tables and, for each routine not recognised, NTSC-U's rules).
+    // routines and tables match; known() false: then GT3's tables where its own are not placed by GT3's code and, for each
+    // routine not recognised, that release's rules). A known program may still have changed tables (changed()).
     Program program() const { return program_; }
     bool known() const { return known_; }
     // How the races behave (sim/program.h; the builders here follow it, the caller hands it to Car::behaviour,
@@ -129,6 +140,7 @@ private:
     std::array<int, kTables> tiers_{};
     std::array<Program, kTables> releases_{};
     std::array<bool, kTables> matched_{};
+    std::array<bool, kTables> changed_{};
     std::array<Site, kTables> sites_{};
     std::array<bool, kRules> recognised_{};
     std::array<u32, kRules> rule_at_{};

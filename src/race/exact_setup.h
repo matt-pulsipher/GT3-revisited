@@ -32,9 +32,14 @@ namespace ex = sim::exact;
 // The program data of the disc in `vfs` (its CORE.GT3), checked once per program; null with *error set only when the disc
 // has no program that decodes.
 std::shared_ptr<const ex::ProgramData> exact_program_data(const Vfs& vfs, std::string* error = nullptr);
+// The program data a race record plays on: `d` when the record has its fingerprint, else `d`'s GT3 tables
+// (ProgramData::gt3_tables: an online race's or one of the game's demos on a disc with changed tables); null for another
+// program's or tables' record.
+std::shared_ptr<const ex::ProgramData> record_program_data(const std::shared_ptr<const ex::ProgramData>& d, u64 program);
 // Which physics a disc's races run on: the one place a game's core is chosen from its program. GT3's for GT3's releases
-// (own); any other program races on GT3's core too (own false: GT3's tables, NTSC-U's rules for the routines not
-// recognised) until a core of its own exists.
+// and builds of GT3's code (own; with the disc's own values where it changes GT3's tables: ProgramData::changed); any
+// other program races on GT3's core too (own false: GT3's tables where its own are not placed by GT3's code, its nearest
+// release's rules for the routines not recognised) until a core of its own exists.
 enum class RaceCore : u8 { Gt3 };
 struct RacePhysics {
     RaceCore core = RaceCore::Gt3;

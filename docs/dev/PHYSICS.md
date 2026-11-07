@@ -83,16 +83,20 @@ ai §n) refer to those pages. The race screen drives the core through
   constants, the race configuration from the event, the wear curve, the rubber
   band's parameters and every race mode's conductor answers).
 - **The program's tables** (`program_tables.cpp`: GT3's 20 small tables as
-  values; `program_data.h` serves the disc's release's variant and checks the
-  disc's tables against them, each found through the routine that addresses it
-  by a hash of its masked code (`program_locate.h`) or by its content, and
-  recognizes the rules' routines the same way, per routine (`sim::Rule`,
-  `Behaviour::variant`). A table not found or unlike every release's, or a
-  routine not recognized, is an issue (logged) and NTSC-U's values / rules
-  serve, so every disc whose program can be read races. Where a routine differs between the releases the
-  port branches on `Car::behaviour` (`ProgramData::behaviour()` is the disc's
-  rules at 60 steps a second; `set_behaviour` picks NTSC-U's rules for online and
-  the demos), the collision body on `Body::behaviour`.
+  values; `program_data.h` finds the disc's tables, each through the routine
+  that addresses it by a hash of its masked code (`program_locate.h`) or by its
+  content, and recognizes the rules' routines the same way, per routine
+  (`sim::Rule`, `Behaviour::variant`). A table GT3's code places is the
+  disc's, a modified game's own values included (`changed()`, within the
+  engine's limits); one found only by its content must equal a release's. A
+  table not found or unlike every release's, or a routine not recognized, is
+  an issue (logged) and GT3's values / the program's release's rules serve, so
+  every disc whose program can be read races. Online races and the game's
+  demos run on `gt3_tables()` (GT3's values) with NTSC-U's rules. Where a
+  routine differs between the releases the port branches on `Car::behaviour`
+  (`ProgramData::behaviour()` is the disc's rules at 60 steps a second;
+  `set_behaviour` picks NTSC-U's rules for online and the demos), the
+  collision body on `Body::behaviour`.
 - **The whole race** (`race.h`, `race.cpp`): `ExactRace` holds a race's state
   (the car records, the collision bodies, the race inputs, the AI course and
   plan, the course's ground, progress and collision queries in a shared
@@ -195,7 +199,10 @@ keep their recent results (`ee_math.cpp`).
 ## Open points
 
 - Other games on the engine (GT Concept) race on GT3's tables and NTSC-U's
-  rules (Settings > Disc & saves says so); their own physics is not supported yet.
+  rules (no piece of their code names a release; Settings > Disc & saves says
+  so); their own physics is not supported yet. A modified GT3 whose program
+  changes a table races with its values (Settings says "with this disc's
+  changes"); changes made by emulator cheats are not read.
   A disc whose program cannot be read cannot race: the race screen says so.
 - Electric mod cars race on their donor car's engine (docs/MODDING.md).
 - The HUD's boost gauge reads the turbo's boost factor from the two lagged stages

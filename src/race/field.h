@@ -68,9 +68,10 @@ struct ExactHuman {
 // A race on the exact core (exact_field.h): GT3's own race step, cars and race flow.
 struct ExactFieldOptions {
     std::shared_ptr<const sim::exact::ProgramData> data;
-    // Whose rules the race follows (sim/program.h): unset, the disc's own release's (`data`'s behaviour, the races the player
-    // drives); online races and the game's demos (attract, quick-menu demonstration, licence demonstrations) NTSC-U's, on a copy
-    // of `data` with that behaviour. Every race steps 60 times a second (tick_hz).
+    // Whose rules the race follows (sim/program.h): unset, the disc's own release's (`data`'s behaviour and tables, the races
+    // the player drives); online races and the game's demos (attract, quick-menu demonstration, licence demonstrations)
+    // NTSC-U's, on a copy of `data` with that behaviour and GT3's own tables (ProgramData::gt3_tables: a disc's changed
+    // tables are its own races'). Every race steps 60 times a second (tick_hz).
     std::optional<sim::Program> rules;
     std::shared_ptr<const Bytes> course_file; // the course file (its road, AI lines, driver sets, Env0), shared
     ByteSpan course_bytes() const { return course_file ? ByteSpan(*course_file) : ByteSpan{}; }

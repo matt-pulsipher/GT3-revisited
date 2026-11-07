@@ -180,7 +180,8 @@ players' cars from its own disc, so a car races only where it is the same car.
 - **Parameter block digest.** Every descriptor carries the SHA-256 of the car's parameter
   block P as an online race builds it (`game::online_car_params` / `online_car_digest`:
   `sim::exact::race_params` of the descriptor's equipment through `exact_online_source` and
-  `exact_equipment`, with NTSC-U's rules at 60 steps a second as every online race, a road
+  `exact_equipment`, with GT3's own tables (`ProgramData::gt3_tables`: a disc's changed
+  tables are its offline races') and NTSC-U's rules at 60 steps a second as every online race, a road
   course, ASM and TCS on, the descriptor's engine condition). P is what the race reads of the
   car: mass and extents, engine curves, gearing, tyres, suspension, aids. Names, prices and
   model ids are not in it, so a car whose records differ only there is the same car.

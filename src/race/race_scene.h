@@ -155,10 +155,11 @@ public:
     // `car_file` is cars/day/<model>; wheels are placed from `wheels`.
     // `wheel_file` (optional): a bought wheel (wheel/<label>, GTTW) replacing the car's own.
     // `showroom_car`, `showroom_wheel` (optional): LOD 0's wheels as the menus draw them
-    // ([video] showroom_wheels; CarModelOptions::showroom_car, showroom_wheel).
+    // ([video] showroom_wheels; CarModelOptions::showroom_car, showroom_wheel). `stand_in_rim`
+    // (optional): the menus' rim for a race rim with nothing to draw (CarModelOptions::stand_in_rim).
     CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::string& model, const WheelSpec& wheels,
               int paint = 0, ByteSpan wheel_file = {}, const CarBodyMod& body_mod = {}, ByteSpan showroom_car = {},
-              ByteSpan showroom_wheel = {});
+              ByteSpan showroom_wheel = {}, std::function<std::optional<Bytes>()> stand_in_rim = {});
 
     // Car draw items for the (interpolated) state. LOD is picked from the
     // camera distance (car_lod).

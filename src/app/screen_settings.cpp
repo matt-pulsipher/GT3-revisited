@@ -1882,7 +1882,11 @@ private:
                 info("Race physics", "Unavailable", "This disc's program can't be read (details in the log).");
             } else {
                 const race::RacePhysics how = race::race_physics(*exact);
-                if (how.own)
+                if (how.own && exact->changed())
+                    info("Race physics", std::string(race::race_core_name(how.core)) + " (with this disc's changes)",
+                         "This disc changes some of Gran Turismo 3's physics values, and its races use them. Online races and "
+                         "the game's demos use Gran Turismo 3's own values (details in the log).");
+                else if (how.own)
                     info("Race physics", race::race_core_name(how.core));
                 else
                     info("Race physics", std::string(race::race_core_name(how.core)) + " (this disc's own physics isn't supported yet)",

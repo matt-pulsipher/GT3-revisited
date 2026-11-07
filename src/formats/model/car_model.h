@@ -17,6 +17,7 @@
 #include "scene/model.h"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -90,6 +91,10 @@ struct CarModelOptions {
     // Empty = the car file's own at every LOD.
     ByteSpan showroom_car;
     ByteSpan showroom_wheel;
+    // A rim (a GTTW file) drawn at its full detail at every LOD when the model's own draws nothing
+    // at its full detail (a modified game's wheel that only its other kind of model has), read
+    // only then: in races the menus' (menu_rim), in the menus the race's (race_rim).
+    std::function<std::optional<Bytes>()> stand_in_rim;
     std::optional<WheelSpec> wheel_spec; // placement; estimated from the body when absent
     bool brake = false;        // the brake-lamp branch of the node programs (lit lenses)
     CarBodyMod body_mod;       // mod cars: stretched or replaced body
@@ -106,5 +111,11 @@ int gtm1_lod_count(const gtm1::Gtm1& g, u32 node);
 // Decodes a whole car file into a Model: mesh "body" (+ "node<N>" effects,
 // + "wheel_fl/fr/rl/rr"). Textures of every set used are included.
 scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt = {}, const std::string& name = {});
+// A car's rims as CarModelOptions::stand_in_rim takes them: the race's (a fitted wheel's
+// wheel/<wheel>, else the GTTW section of cars/day/<model>) and the menus' (menu/wheel/<wheel>,
+// else menu/cars/<model>'s); none when `read` has neither.
+using FileReader = std::function<std::optional<Bytes>(const std::string&)>;
+std::optional<Bytes> race_rim(const FileReader& read, const std::string& model, const std::string& wheel = {});
+std::optional<Bytes> menu_rim(const FileReader& read, const std::string& model, const std::string& wheel = {});
 
 } // namespace gt3r

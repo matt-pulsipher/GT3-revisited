@@ -115,10 +115,11 @@ void RaceScreen::begin_license() {
         if (disc_demo_) LOG_INFO("Demo %s: %zu frames, %.3f s", demo_code.c_str(), disc_demo_->size(),
                                  disc_demo_->time_ms / 1000.0);
         else LOG_WARN("Demo %s: no demo run (%s)", demo_code.c_str(), err.c_str());
-        // The race GT3's replay playback builds from the save, played like a replay.
+        // The race GT3's replay playback builds from the save, played like a replay (on GT3's own tables, as it was recorded).
         const data::Event* dev = db_.event(demo_code);
         if (disc_demo_ && dev && load_program_data(*app_))
-            if (std::optional<sim::exact::RaceRecord> r = race::demo_record(*disc_demo_, *dev, db_, exact_data_->fingerprint(), 180, &err)) {
+            if (std::optional<sim::exact::RaceRecord> r =
+                    race::demo_record(*disc_demo_, *dev, db_, exact_data_->gt3_tables().fingerprint(), 180, &err)) {
                 // (the demonstration's car's sparks, as GT3's playback races it)
                 r->sparks = race::exact_spark_points(db_, {db_.label(r->entries[0].eq.car)},
                                                      [this](const std::string& m) { return car_spark_points(*app_, m); });

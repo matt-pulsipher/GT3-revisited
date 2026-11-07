@@ -197,13 +197,14 @@ public:
     bool build(const data::CarDatabase& db, std::string* error) {
         db_ = &db;
         data_ = opts_.data;
-        if (opts_.rules && *opts_.rules != data_->behaviour().rules) { // (another release's rules: a copy that follows them)
+        // Online races and the game's demos: a copy with their rules and GT3's own tables (ProgramData::gt3_tables).
+        if (opts_.rules && (*opts_.rules != data_->behaviour().rules || data_->changed())) {
             const sim::Behaviour how{*opts_.rules, 60};
             if (!data_->can_behave(how)) {
                 if (error) *error = std::string(sim::program_name(how.rules)) + " rules on the " + sim::program_name(data_->program()) + " program";
                 return false;
             }
-            auto d = std::make_shared<ex::ProgramData>(*data_);
+            auto d = std::make_shared<ex::ProgramData>(data_->gt3_tables());
             d->set_behaviour(how);
             data_ = std::move(d);
         }
@@ -471,7 +472,8 @@ public:
     // A replay's race: built from the record's setup (no grid, car or event decisions made again).
     bool build_playback(const data::CarDatabase& db, std::string* error) {
         const ex::RaceRecord& r = *opts_.playback;
-        if (r.program != data_->fingerprint()) {
+        if (auto d = record_program_data(data_, r.program)) data_ = std::move(d);
+        else {
             if (error) *error = "the replay was recorded with another version of the game";
             return false;
         }

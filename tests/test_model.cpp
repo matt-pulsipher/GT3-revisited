@@ -907,3 +907,64 @@ TEST(showroom_wheels_in_race_disc) {
     CHECK(verts(no_menu_model, "wheel_fl", 0) == verts(race_fitted, "wheel_fl", 0));
     CHECK(verts(no_menu_model, "wheel_fl_tyre", 0) == verts(menu, "wheel_fl_tyre", 0));
 }
+
+// A rim with nothing to draw (a modified game's wheels that one kind of model lacks): in races the menus' rim stands in at
+// every LOD whatever the showroom wheels setting (a fitted wheel's own menu rim; none for a fitted wheel without one); in
+// the menus the race's (stand_in_rim, race_rim). An unknown opcode at every node's start makes a rim draw nothing.
+TEST(wheel_stand_ins_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    data::CarDatabase db;
+    CHECK(db.load(disc->volume()));
+    std::optional<WheelSpec> ws = wheel_spec_for_car(db, "slk230_komp_00");
+    CHECK(ws.has_value());
+    if (!ws) return;
+    auto& vol = disc->volume();
+    const Bytes race_file = vol.read(*vol.find("cars/day/mb0007")), menu_file = vol.read(*vol.find("menu/cars/mb0007"));
+    // `file` with the GTTW at `at` drawing nothing.
+    auto empty_rim = [](Bytes file, size_t at) {
+        const gtm1::Gtm1 g = gtm1::Gtm1::parse(WheelFile::parse(ByteSpan(file).subspan(at)).gtm1);
+        const size_t base = at + rd32(file, at + 0x1C);
+        for (u32 n : g.nodes) file[base + n] = 0x58;
+        return file;
+    };
+    const Bytes no_race_rim = empty_rim(race_file, rd32(race_file, 0x10)), no_menu_rim = empty_rim(menu_file, rd32(menu_file, 0x10));
+    auto rim_verts = [](const scene::Model& m, int lod) {
+        std::vector<float> out;
+        for (const scene::Mesh& mesh : m.meshes)
+            if (mesh.name == "wheel_fl" && mesh.lod == lod)
+                for (const scene::Vertex& v : mesh.vertices) out.insert(out.end(), v.pos, v.pos + 3);
+        return out;
+    };
+    auto read = [&](const std::string& p) -> std::optional<Bytes> {
+        const Volume::Entry* e = vol.find(p);
+        return e ? std::optional<Bytes>(vol.read(*e)) : std::nullopt;
+    };
+    CarModelOptions ro; // as the race loads it, the showroom wheels setting off
+    ro.lod = -1;
+    ro.wheel_spec = ws;
+    ro.stand_in_rim = [&] { return menu_rim(read, "mb0007"); };
+    CarModelOptions mo; // as the menus load it
+    mo.lod = 0;
+    mo.menu_tyres = true;
+    mo.wheel_spec = ws;
+    const scene::Model race = load_car_model(race_file, ro, "mb0007"), menu = load_car_model(menu_file, mo, "mb0007");
+    CHECK(!rim_verts(race, 0).empty() && rim_verts(race, 0) != rim_verts(menu, 0)); // (the setting off: the race's rim)
+    CarModelOptions bare = ro;
+    bare.stand_in_rim = {};
+    CHECK(rim_verts(load_car_model(no_race_rim, bare, "mb0007"), 0).empty());
+    const scene::Model stood_in = load_car_model(no_race_rim, ro, "mb0007");
+    int lods = 0;
+    for (const scene::Mesh& mesh : race.meshes) lods = std::max(lods, mesh.lod + 1);
+    for (int lod = 0; lod < lods; ++lod) CHECK(!rim_verts(stood_in, lod).empty() && rim_verts(stood_in, lod) == rim_verts(menu, 0));
+    // The menus: an empty menu rim shows the race's.
+    CHECK(rim_verts(load_car_model(no_menu_rim, mo, "mb0007"), 0).empty());
+    CarModelOptions ms = mo;
+    ms.stand_in_rim = [&] { return race_rim(read, "mb0007"); };
+    const scene::Model menu_stood_in = load_car_model(no_menu_rim, ms, "mb0007");
+    CHECK(!rim_verts(menu_stood_in, 0).empty() && rim_verts(menu_stood_in, 0) == rim_verts(race, 0));
+    // Not read while the menu rim draws.
+    bool asked = false;
+    ms.stand_in_rim = [&] { return asked = true, std::optional<Bytes>(); };
+    CHECK(rim_verts(load_car_model(menu_file, ms, "mb0007"), 0) == rim_verts(menu, 0) && !asked);
+}

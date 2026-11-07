@@ -112,8 +112,8 @@ facts follow.
 - **Node programs** are byte code, run when a node is drawn. Arguments follow the op byte. Multi-byte values are unaligned.
   - 00: end.
   - 01: no-op.
-  - 02 `u8` / 03 `u16`: call node.
-  - 04 `u8` / 05 `u16`: draw chunk.
+  - 02 `u8` / 03 `u16`: call node (a node the model lacks: nothing).
+  - 04 `u8` / 05 `u16`: draw chunk (a chunk the model lacks: nothing).
   - 06: `s16`, then `u8 n`, then `s16 rel[n]`. A switch on an engine-supplied selector. If the selector ≥ n, the program skips the table; otherwise it jumps by `rel[sel]`, relative to that field.
   - 07: 16-byte sphere, then `u8 n`, then `s16 rel[n]`. A distance LOD switch: branch `min(lod, n-1)`.
   - 08 `s8` / 09 `s16`: relative jump (from the operand).

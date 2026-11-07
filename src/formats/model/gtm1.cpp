@@ -251,8 +251,12 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         std::memcpy(&f, &v, 4);
         return f;
     };
+    // What a model does not have draws nothing (a modified game's models call nodes and draw chunks they lack, and use
+    // opcodes no disc's model has): a draw of a chunk past the model's into a scratch draw, a call of a node past them
+    // skipped, the node's program ended at an unknown opcode.
+    Draw unknown_chunk;
     auto draw = [&](u32 chunk, size_t op) -> Draw& {
-        if (chunk >= chunks.size()) throw FormatError("GTM1 draw of unknown chunk");
+        if (chunk >= chunks.size()) return unknown_chunk = Draw{};
         Draw d;
         d.chunk = chunk;
         d.op = u32(op);
@@ -277,22 +281,23 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         return out.back();
     };
     auto s16_at = [&](size_t o) { return s32(s16(rd16(data, o))); };
+    // The node's end: the render state it leaves (Options::carry_state).
+    auto leave = [&] {
+        if (!state) return;
+        state->alpha_mode = alpha_mode, state->fb_mask = fb_mask;
+        state->alpha_test = ate, state->dest_alpha_test = date, state->depth_write = zwrite;
+        state->depth_test = ztest, state->cull = cull;
+        state->alpha_test_method = atst, state->alpha_test_ref = aref, state->alpha_fail = afail;
+        state->env_c0 = env_c0, state->env_c1 = env_c1;
+    };
     for (int steps = 0; steps < 100000; ++steps) {
         if (pc >= data.size()) throw FormatError("GTM1 program ran off the end");
         u8 op = data[pc];
         size_t a = pc + 1; // operand address
         switch (op) {
-        case 0x00:
-            if (state) {
-                state->alpha_mode = alpha_mode, state->fb_mask = fb_mask;
-                state->alpha_test = ate, state->dest_alpha_test = date, state->depth_write = zwrite;
-                state->depth_test = ztest, state->cull = cull;
-                state->alpha_test_method = atst, state->alpha_test_ref = aref, state->alpha_fail = afail;
-                state->env_c0 = env_c0, state->env_c1 = env_c1;
-            }
-            return;
-        case 0x02: run_at(data[a], p, stack, out, depth + 1, nullptr); pc = a + 1; continue;
-        case 0x03: run_at(rd16(data, a), p, stack, out, depth + 1, nullptr); pc = a + 2; continue;
+        case 0x00: leave(); return;
+        case 0x02: if (data[a] < nodes.size()) run_at(data[a], p, stack, out, depth + 1, nullptr); pc = a + 1; continue;
+        case 0x03: if (rd16(data, a) < nodes.size()) run_at(rd16(data, a), p, stack, out, depth + 1, nullptr); pc = a + 2; continue;
         case 0x04: draw(data[a], pc); pc = a + 1; continue;
         case 0x05: draw(operand16(a), pc); pc = a + 2; continue;
         case 0x06: { // u16 callback id, u8 n, s16 rel[n]; rel relative to its own field
@@ -400,7 +405,7 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         case 0x31: pano_set = true, pano = {rdf(data, a), rdf(data, a + 4), rdf(data, a + 8)}; pc = a + 12; continue;
         default: {
             int n = fixed_operand_bytes(op);
-            if (n < 0) throw FormatError("GTM1 program: unknown opcode " + std::to_string(op));
+            if (n < 0) return leave();
             pc = a + n; // render-state ops: not needed for geometry
             continue;
         }
