@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -18,10 +19,17 @@ namespace {
 
 constexpr XrViewConfigurationType kStereo = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 
+SDL_GPUTexture* gpu_texture(SDL_Texture* t) {
+    return static_cast<SDL_GPUTexture*>(
+        SDL_GetPointerProperty(SDL_GetTextureProperties(t), SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, nullptr));
+}
+
 // Optional instance extensions, used when the runtime has them.
+const char kFrameControllers[] = "XR_VALVE_frame_controller_interaction"; // (newer than our headers)
 const char* const kOptionalExtensions[] = {
     XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME,
     XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME,
+    kFrameControllers,
 };
 
 float clampf(float v, float lo, float hi) { return std::isfinite(v) ? std::clamp(v, lo, hi) : lo; }
@@ -79,6 +87,8 @@ Settings Settings::load(const IniDocument& cfg) {
     if (auto v = number(cfg, "hud_distance")) s.hud_distance = clampf(*v, 0.5f, 5.0f);
     if (auto v = number(cfg, "hud_width")) s.hud_width = clampf(*v, 0.4f, 5.0f);
     if (auto v = number(cfg, "hud_drop")) s.hud_drop = clampf(*v, -1.0f, 1.0f);
+    if (auto v = number(cfg, "seat_forward")) s.seat_forward = clampf(*v, -0.6f, 0.6f);
+    if (auto v = number(cfg, "seat_height")) s.seat_height = clampf(*v, -0.6f, 0.6f);
     if (auto v = number(cfg, "refresh")) s.refresh_hz = int(clampf(*v, 60, 144));
     if (auto v = number(cfg, "resolution")) s.eye_scale = clampf(*v, 0.5f, 1.5f);
     return s;
@@ -95,6 +105,8 @@ void Settings::save(IniDocument& cfg) const {
     cfg.set("vr", "hud_distance", fmt(hud_distance));
     cfg.set("vr", "hud_width", fmt(hud_width));
     cfg.set("vr", "hud_drop", fmt(hud_drop));
+    cfg.set("vr", "seat_forward", fmt(seat_forward));
+    cfg.set("vr", "seat_height", fmt(seat_height));
     cfg.set("vr", "refresh", std::to_string(refresh_hz));
     cfg.set("vr", "resolution", fmt(eye_scale));
 }
@@ -102,7 +114,146 @@ void Settings::save(IniDocument& cfg) const {
 // ---------------------------------------------------------------------------
 // Device and session
 
+namespace {
+
+#if !defined(__ANDROID__)
+enum class Probe { Headset, NoHeadset, NoRuntime };
+
+// An instance of the runtime the loader picks now, and whether it has a headset. It stays while
+// this lives: SteamVR started by it shuts down again (~20 s later) once it has no instance. One
+// at a time (the loader allows one instance).
+class RuntimeLook {
+public:
+    RuntimeLook() {
+        if (!(loaded_ = SDL_OpenXR_LoadLibrary())) return;
+        gipa_ = reinterpret_cast<PFN_xrGetInstanceProcAddr>(SDL_OpenXR_GetXrGetInstanceProcAddr());
+        PFN_xrCreateInstance create_instance = nullptr;
+        auto ci = xr_init<XrInstanceCreateInfo>(XR_TYPE_INSTANCE_CREATE_INFO);
+        std::strcpy(ci.applicationInfo.applicationName, "GT3 Revisited");
+        ci.applicationInfo.apiVersion = XR_API_VERSION_1_0;
+        const XrResult r = fn(XR_NULL_HANDLE, "xrCreateInstance", create_instance) ? create_instance(&ci, &inst_)
+                                                                                   : XR_ERROR_RUNTIME_UNAVAILABLE;
+        if (XR_FAILED(r)) {
+            LOG_INFO("VR: no OpenXR runtime (%d)", int(r));
+            inst_ = XR_NULL_HANDLE;
+            return;
+        }
+        fn(inst_, "xrDestroyInstance", destroy_);
+        PFN_xrGetInstanceProperties properties = nullptr;
+        auto ip = xr_init<XrInstanceProperties>(XR_TYPE_INSTANCE_PROPERTIES);
+        name_ = fn(inst_, "xrGetInstanceProperties", properties) && XR_SUCCEEDED(properties(inst_, &ip)) ? ip.runtimeName
+                                                                                                         : "?";
+        check();
+    }
+    ~RuntimeLook() {
+        if (inst_ && destroy_) destroy_(inst_);
+        if (loaded_) SDL_OpenXR_UnloadLibrary();
+    }
+    RuntimeLook(const RuntimeLook&) = delete;
+    RuntimeLook& operator=(const RuntimeLook&) = delete;
+
+    // Looks for the headset (again).
+    Probe check() {
+        PFN_xrGetSystem get_system = nullptr;
+        if (!inst_ || !fn(inst_, "xrGetSystem", get_system)) return result_ = Probe::NoRuntime;
+        auto gi = xr_init<XrSystemGetInfo>(XR_TYPE_SYSTEM_GET_INFO);
+        gi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
+        XrSystemId system = XR_NULL_SYSTEM_ID;
+        const XrResult r = get_system(inst_, &gi, &system);
+        if (XR_SUCCEEDED(r)) LOG_INFO("VR: %s has a headset", name_.c_str());
+        else LOG_INFO("VR: %s has no headset (%d)", name_.c_str(), int(r));
+        return result_ = XR_SUCCEEDED(r) ? Probe::Headset : Probe::NoHeadset;
+    }
+    Probe result() const { return result_; }
+
+private:
+    template <class F>
+    bool fn(XrInstance inst, const char* name, F& f) {
+        f = nullptr;
+        if (gipa_) gipa_(inst, name, reinterpret_cast<PFN_xrVoidFunction*>(&f));
+        return f != nullptr;
+    }
+    bool loaded_ = false;
+    PFN_xrGetInstanceProcAddr gipa_ = nullptr;
+    XrInstance inst_ = XR_NULL_HANDLE;
+    PFN_xrDestroyInstance destroy_ = nullptr;
+    std::string name_;
+    Probe result_ = Probe::NoRuntime;
+};
+#endif
+
+// Desktops: points the loader (XR_RUNTIME_JSON) at the first of the candidates with a headset:
+// the [vr] runtime chosen, or (auto) the system's choice, then SteamVR while it runs. A PC with
+// Meta Horizon Link has Meta's as the system's choice, while a Steam Frame or a headset streamed
+// by Steam Link is in SteamVR (only the game added to Steam and started there got it). A
+// player's own XR_RUNTIME_JSON: that one. False: no headset.
+bool choose_runtime(const std::string& choice) {
+#if defined(__ANDROID__)
+    (void)choice;
+    return true; // the Quest's (one attempt: its runtime cannot be set up twice in a process)
+#else
+    static const bool player_env = [] {
+        const char* e = SDL_getenv("XR_RUNTIME_JSON");
+        return e && *e;
+    }();
+    if (player_env) return RuntimeLook().result() == Probe::Headset;
+    std::string steamvr;
+    std::vector<std::string> candidates; // manifests; empty: the system's choice
+    for (const RuntimeFile& f : installed_runtimes()) {
+        if (f.key == "steamvr") steamvr = f.manifest;
+        if (f.key == choice) candidates.push_back(f.manifest);
+    }
+    const std::string system = system_runtime();
+    if (candidates.empty()) {
+        candidates.push_back("");
+        if (!steamvr.empty() && !same_file(steamvr, system) && steamvr_running()) candidates.push_back(steamvr);
+    }
+    for (const std::string& m : candidates) {
+        if (m.empty()) SDL_unsetenv_unsafe("XR_RUNTIME_JSON");
+        else SDL_setenv_unsafe("XR_RUNTIME_JSON", m.c_str(), 1);
+        // SteamVR not running: started as its shortcut does. An instance starts its server alone,
+        // which reports the headset but gives SDL no graphics device for it (no compositor).
+        const bool is_steamvr = same_file(m.empty() ? system : m, steamvr);
+        if (is_steamvr && !steamvr_running() && start_steamvr(steamvr)) LOG_INFO("VR: starting SteamVR");
+        RuntimeLook look;
+        // SteamVR starting: until its compositor runs, seconds later, SDL gets no graphics device
+        // from it. The look's instance keeps it up meanwhile (it shuts down again ~20 s after its
+        // last instance goes); SDL's own follows it at once.
+        if (is_steamvr && !steamvr_compositor_running() && (steamvr_running() || look.result() == Probe::Headset)) {
+            LOG_INFO("VR: waiting for SteamVR to start");
+            int waited = 0;
+            for (; waited < 45 && !steamvr_compositor_running() && (waited < 10 || steamvr_running()); ++waited)
+                SDL_Delay(1000);
+            LOG_INFO("VR: SteamVR's compositor %s after %d s", steamvr_compositor_running() ? "up" : "not up", waited);
+            for (int i = 0; i < 5 && look.check() != Probe::Headset; ++i) SDL_Delay(1000);
+        }
+        if (look.result() == Probe::Headset) return true;
+    }
+    return false;
+#endif
+}
+
+} // namespace
+
+std::vector<std::pair<std::string, std::string>> Session::runtime_choices() {
+    std::vector<std::pair<std::string, std::string>> r;
+    for (const RuntimeFile& f : installed_runtimes()) r.emplace_back(f.key, f.name);
+    return r;
+}
+
+bool Session::retry_device(int attempt) {
+#if defined(__ANDROID__)
+    (void)attempt;
+    return false;
+#else
+    if (attempt >= 10) return false;
+    LOG_INFO("VR: the headset's software is not ready; trying again");
+    return true;
+#endif
+}
+
 bool Session::prepare_device(SDL_PropertiesID props, DeviceRequest& req) {
+    if (!choose_runtime(req.runtime)) return false;
     if (!SDL_OpenXR_LoadLibrary()) {
         LOG_INFO("VR: no OpenXR loader (%s)", SDL_GetError());
         return false;
@@ -191,7 +342,8 @@ bool Session::Impl::make_chain(Chain& c, int w, int h) {
     return true;
 }
 
-bool Session::Impl::make_present_pipeline() {
+// A pipeline that draws a canvas over the whole viewport (present.vert, present.frag).
+SDL_GPUGraphicsPipeline* Session::Impl::canvas_pipeline(SDL_GPUTextureFormat target, bool premultiplied) {
     SDL_GPUShaderCreateInfo si{};
     si.format = SDL_GPU_SHADERFORMAT_SPIRV;
     si.entrypoint = "main";
@@ -205,9 +357,17 @@ bool Session::Impl::make_present_pipeline() {
     si.num_samplers = 1;
     si.num_uniform_buffers = 1;
     SDL_GPUShader* fs = SDL_CreateGPUShader(device, &si);
+    SDL_GPUGraphicsPipeline* pipeline = nullptr;
     if (vs && fs) {
         SDL_GPUColorTargetDescription color{};
-        color.format = format;
+        color.format = target;
+        if (premultiplied) {
+            SDL_GPUColorTargetBlendState& b = color.blend_state;
+            b.enable_blend = true;
+            b.src_color_blendfactor = b.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            b.dst_color_blendfactor = b.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+            b.color_blend_op = b.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        }
         SDL_GPUGraphicsPipelineCreateInfo pi{};
         pi.vertex_shader = vs;
         pi.fragment_shader = fs;
@@ -217,17 +377,91 @@ bool Session::Impl::make_present_pipeline() {
         pi.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
         pi.target_info.color_target_descriptions = &color;
         pi.target_info.num_color_targets = 1;
-        present = SDL_CreateGPUGraphicsPipeline(device, &pi);
+        pipeline = SDL_CreateGPUGraphicsPipeline(device, &pi);
     }
     if (vs) SDL_ReleaseGPUShader(device, vs);
     if (fs) SDL_ReleaseGPUShader(device, fs);
-    SDL_GPUSamplerCreateInfo smp{}; // canvas and image are the same size: texel for pixel
-    smp.min_filter = smp.mag_filter = SDL_GPU_FILTER_NEAREST;
+    return pipeline;
+}
+
+SDL_GPUSampler* Session::Impl::canvas_sampler(SDL_GPUFilter filter) {
+    SDL_GPUSamplerCreateInfo smp{};
+    smp.min_filter = smp.mag_filter = filter;
     smp.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     smp.address_mode_u = smp.address_mode_v = smp.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    present_sampler = SDL_CreateGPUSampler(device, &smp);
+    return SDL_CreateGPUSampler(device, &smp);
+}
+
+bool Session::Impl::make_present_pipeline() {
+    present = canvas_pipeline(format, false);
+    present_sampler = canvas_sampler(SDL_GPU_FILTER_NEAREST); // same size as the image: texel for pixel
     if (!present || !present_sampler) LOG_WARN("VR: present pass: %s", SDL_GetError());
     return present && present_sampler;
+}
+
+bool Session::mirror_to(SDL_Window* window) {
+    Impl& x = *impl_;
+    if (!SDL_ClaimWindowForGPUDevice(x.device, window)) {
+        LOG_WARN("VR: no picture in the window: %s", SDL_GetError());
+        return false;
+    }
+    // Not held to the desktop's refresh when the driver allows it.
+    if (SDL_WindowSupportsGPUPresentMode(x.device, window, SDL_GPU_PRESENTMODE_MAILBOX))
+        SDL_SetGPUSwapchainParameters(x.device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, SDL_GPU_PRESENTMODE_MAILBOX);
+    const SDL_GPUTextureFormat f = SDL_GetGPUSwapchainTextureFormat(x.device, window);
+    x.mirror_opaque = x.canvas_pipeline(f, false);
+    x.mirror_panel = x.canvas_pipeline(f, true);
+    x.mirror_sampler = x.canvas_sampler(SDL_GPU_FILTER_LINEAR);
+    x.mirror = window;
+    if (x.mirror_opaque && x.mirror_panel && x.mirror_sampler) return true;
+    LOG_WARN("VR: no picture in the window: %s", SDL_GetError());
+    x.release_mirror();
+    return false;
+}
+
+void Session::Impl::release_mirror() {
+    if (mirror_opaque) SDL_ReleaseGPUGraphicsPipeline(device, mirror_opaque);
+    if (mirror_panel) SDL_ReleaseGPUGraphicsPipeline(device, mirror_panel);
+    if (mirror_sampler) SDL_ReleaseGPUSampler(device, mirror_sampler);
+    if (mirror) SDL_ReleaseWindowFromGPUDevice(device, mirror);
+    mirror_opaque = mirror_panel = nullptr;
+    mirror_sampler = nullptr;
+    mirror = nullptr;
+}
+
+void Session::Impl::draw_mirror(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* canvas, int canvas_w, int canvas_h,
+                                SDL_GPUTexture* eye, int eye_w, int eye_h) {
+    SDL_GPUTexture* target = nullptr;
+    Uint32 w = 0, h = 0;
+    // Every frame, whatever it shows: with a window claimed, SDL recycles finished GPU work only
+    // in a submit that asked for its swapchain (without that, frames filled the GPU's memory
+    // within minutes). No texture while the window is busy or minimized: it misses this frame,
+    // the headset waits for nothing.
+    if (!SDL_AcquireGPUSwapchainTexture(cmd, mirror, &target, &w, &h) || !target) return;
+    SDL_GPUColorTargetInfo ct{};
+    ct.texture = target;
+    ct.load_op = SDL_GPU_LOADOP_CLEAR;
+    ct.clear_color = {0, 0, 0, 1};
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    auto draw = [&](SDL_GPUGraphicsPipeline* pipeline, SDL_GPUTexture* tex, const SDL_FRect& r, bool premultiplied) {
+        SDL_BindGPUGraphicsPipeline(pass, pipeline);
+        const SDL_GPUViewport vp{r.x, r.y, r.w, r.h, 0, 1};
+        SDL_SetGPUViewport(pass, &vp);
+        SDL_GPUTextureSamplerBinding b{tex, mirror_sampler};
+        SDL_BindGPUFragmentSamplers(pass, 0, &b, 1);
+        const float mode[4] = {premultiplied ? 1.0f : 0.0f, 1.0f, 0, 0}; // the canvas's bytes as they are
+        SDL_PushGPUFragmentUniformData(cmd, 0, mode, sizeof(mode));
+        SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    };
+    const SDL_FRect shown = fit_picture(canvas_w, canvas_h, float(w), float(h), false);
+    if (eye) {
+        draw(mirror_opaque, eye, fit_picture(eye_w, eye_h, float(w), float(h), true), false);
+        draw(mirror_panel, canvas, shown, true);
+    } else {
+        draw(mirror_opaque, canvas, shown, false);
+    }
+    SDL_EndGPURenderPass(pass);
 }
 
 void Session::Impl::release_chain(Chain& c) {
@@ -259,6 +493,15 @@ std::unique_ptr<Session> Session::create(SDL_GPUDevice* device, SDL_Renderer* re
     s->settings_ = settings;
     if (!x.instance || !x.load_functions()) return nullptr;
 
+    auto ip = xr_init<XrInstanceProperties>(XR_TYPE_INSTANCE_PROPERTIES);
+    if (XR_SUCCEEDED(x.xrGetInstanceProperties(x.instance, &ip))) {
+        char v[32];
+        std::snprintf(v, sizeof(v), " %u.%u.%u", unsigned(XR_VERSION_MAJOR(ip.runtimeVersion)),
+                      unsigned(XR_VERSION_MINOR(ip.runtimeVersion)), unsigned(XR_VERSION_PATCH(ip.runtimeVersion)));
+        s->runtime_name_ = std::string(ip.runtimeName) + v;
+        LOG_INFO("VR: runtime %s", s->runtime_name_.c_str());
+    }
+    for (const std::string& e : req.extensions) x.frame_controllers = x.frame_controllers || e == kFrameControllers;
     auto sp = xr_init<XrSystemProperties>(XR_TYPE_SYSTEM_PROPERTIES);
     if (XR_SUCCEEDED(x.xrGetSystemProperties(x.instance, x.system, &sp)))
         LOG_INFO("VR: %s (vendor %u), %ux%u max swapchain", sp.systemName, sp.vendorId,
@@ -347,6 +590,7 @@ Session::~Session() {
     if (!impl_) return;
     Impl& x = *impl_;
     if (x.device) SDL_WaitForGPUIdle(x.device);
+    x.release_mirror();
     x.destroy_input();
     if (x.present) SDL_ReleaseGPUGraphicsPipeline(x.device, x.present);
     if (x.present_sampler) SDL_ReleaseGPUSampler(x.device, x.present_sampler);
@@ -527,6 +771,12 @@ void Session::end_frame() {
     const bool stereo = stereo_ && eyes_valid_;
     hud_panel_ = stereo; // where the canvas shows (the pointer aims there next frame)
 
+    auto mirror = [&](SDL_GPUCommandBuffer* cmd) {
+        if (x.mirror)
+            x.draw_mirror(cmd, gpu_texture(canvas_), canvas_w_, canvas_h_, stereo ? gpu_texture(eyes_[0].canvas) : nullptr,
+                          eyes_[0].width, eyes_[0].height);
+    };
+
     XrCompositionLayerProjectionView pv[2] = {
         xr_init<XrCompositionLayerProjectionView>(XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW),
         xr_init<XrCompositionLayerProjectionView>(XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW)};
@@ -558,8 +808,7 @@ void Session::end_frame() {
         if (cmd) {
             for (auto& [c, tex] : jobs) {
                 if (!c->held || !tex) continue;
-                auto* src = static_cast<SDL_GPUTexture*>(
-                    SDL_GetPointerProperty(SDL_GetTextureProperties(tex), SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, nullptr));
+                SDL_GPUTexture* src = gpu_texture(tex);
                 if (!src) continue;
                 SDL_GPUColorTargetInfo ct{};
                 ct.texture = c->images[c->acquired];
@@ -575,6 +824,7 @@ void Session::end_frame() {
                 SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
                 SDL_EndGPURenderPass(pass);
             }
+            mirror(cmd);
             SDL_SubmitGPUCommandBuffer(cmd);
         }
         t2 = SDL_GetTicksNS();
@@ -618,6 +868,11 @@ void Session::end_frame() {
                 quad.size = {settings_.screen_width, settings_.screen_width * aspect};
             }
             layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
+        }
+    } else if (x.mirror) { // the headset isn't showing the game: the window still does
+        if (SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(x.device)) {
+            mirror(cmd);
+            SDL_SubmitGPUCommandBuffer(cmd);
         }
     }
 

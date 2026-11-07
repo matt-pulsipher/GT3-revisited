@@ -39,6 +39,29 @@ TouchControls driving(TouchConfig cfg = {}) {
 
 } // namespace
 
+// The VR controllers' menu layout (B back, Y Circle) on their pad alone: a real pad in the same
+// VR build keeps the pad's, and races are the same on both.
+TEST(input_vr_pad_menu_layout) {
+    auto reads = [](const Profile& p, const char* target) {
+        PadTarget t;
+        PadTarget::parse(target, t);
+        for (const Binding& b : p.bindings)
+            if (b.target == t) return b.source.to_string();
+        return std::string();
+    };
+    constexpr DeviceKind Pad = DeviceKind::Pad;
+    constexpr BindingSet Ctl = BindingSet::Controller;
+    PlayerBindings b;
+    CHECK(reads(b.set(Pad, false, Ctl), "Circle") == "pad.east" && reads(b.set(Pad, false, Ctl), "Triangle") == "pad.north");
+    const std::string race_circle = reads(b.set(Pad, true, Ctl), "Circle");
+    b.vr_pad = true;
+    CHECK(reads(b.set(Pad, false, Ctl), "Circle") == "pad.north" && reads(b.set(Pad, false, Ctl), "Triangle") == "pad.east");
+    CHECK(reads(b.set(Pad, true, Ctl), "Circle") == race_circle);
+    CHECK(reads(b.set(DeviceKind::Wheel, false, Ctl), "R1") == "joy.button4"); // a wheel keeps its own
+    b.race_layout = "gt3"; // the race reads the menu pad
+    CHECK(reads(b.set(Pad, true, Ctl), "Circle") == "pad.north");
+}
+
 TEST(touch_hidden_until_touched) {
     TouchControls t = driving();
     CHECK(!t.visible());
@@ -572,6 +595,9 @@ TEST(input_auto_prefers_a_wheel) {
     CHECK(pick_auto_device({R::Gamepad, R::Wheel}) == 1); // a wheel connects: it takes over
     CHECK(pick_auto_device({R::Wheel, R::Gamepad}) == 0);
     CHECK(pick_auto_device({R::Other, R::Gamepad}) == 1); // an unknown joystick never beats a gamepad
+    CHECK(pick_auto_device({R::VrControllers, R::Gamepad}) == 1); // a real pad, then the VR controllers
+    CHECK(pick_auto_device({R::VrControllers, R::Wheel}) == 1);
+    CHECK(pick_auto_device({R::Other, R::VrControllers}) == 1);
     CHECK(pick_auto_device({R::Gamepad, R::Other}) == 0);
     CHECK(pick_auto_device({R::Other, R::Wheel}) == 1);
     CHECK(pick_auto_device({R::LikelyWheel, R::Wheel}) == 1); // a Link Hub with pedals, then the wheel

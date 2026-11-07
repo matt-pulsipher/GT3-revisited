@@ -74,6 +74,13 @@ certificate, so the first launch needs one extra step:
   SideQuest / Meta Quest Developer Hub). Copy your disc image into the
   headset's **Download** folder over USB. The game is in the library under
   **Unknown Sources**. Details: [VR](docs/dev/VR.md).
+- **PC VR** (Windows x64, Quest Link, SteamVR or any other OpenXR runtime): use
+  `gt3r-windows-x64-vr.zip` in place of the Windows package. Start your headset's
+  software first; with no headset the game opens in its window. With both Meta's
+  software and SteamVR installed, **Settings → VR → Headset software** picks one.
+  Wheels, pads and VR controllers all drive, and the window shows what the headset
+  shows. Bind **Recenter view** to a wheel button in **Settings → Controls**, or
+  press F9. Details: [VR](docs/dev/VR.md).
 - **iPhone and iPad** (iOS 16 or later): there is no package, because an iOS
   app has to be signed for the device it runs on. Build it on a Mac and install
   it with Xcode and your own Apple ID; a free account is enough
@@ -85,7 +92,8 @@ Direct links to the newest release, always the same:
 [gt3r-macos-arm64.zip](https://github.com/matt-pulsipher/GT3-revisited/releases/latest/download/gt3r-macos-arm64.zip),
 [gt3r-linux-x86_64.tar.gz](https://github.com/matt-pulsipher/GT3-revisited/releases/latest/download/gt3r-linux-x86_64.tar.gz),
 [gt3r-android.apk](https://github.com/matt-pulsipher/GT3-revisited/releases/latest/download/gt3r-android.apk),
-[gt3r-quest.apk](https://github.com/matt-pulsipher/GT3-revisited/releases/latest/download/gt3r-quest.apk).
+[gt3r-quest.apk](https://github.com/matt-pulsipher/GT3-revisited/releases/latest/download/gt3r-quest.apk),
+[gt3r-windows-x64-vr.zip](https://github.com/matt-pulsipher/GT3-revisited/releases/latest/download/gt3r-windows-x64-vr.zip).
 The game's **Download update** uses them.
 
 Or build it yourself ([Building](#building)); a build from source needs none
@@ -135,7 +143,7 @@ game:
 | Quit | |
 
 Keys: **F11** toggles fullscreen and **F12** saves a screenshot to
-`screenshots/` in the user data folder.
+`screenshots/` in the user data folder. In PC VR, **F9** recenters the view.
 
 ### User data folder
 
@@ -504,6 +512,8 @@ original program's code in any form.
   [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which the Windows, macOS and Linux packages ship.
 - The [Khronos](https://github.com/KhronosGroup/OpenGL-Registry) OpenGL ES 3.0
   headers (`third_party/khronos`), MIT and Apache 2.0, for the OpenGL ES renderer.
+- The [Khronos OpenXR loader](https://github.com/KhronosGroup/OpenXR-SDK),
+  Apache 2.0, in the PC VR package with its license (`LICENSE-OpenXR.txt`).
 - [ANGLE](https://chromium.googlesource.com/angle/angle), BSD 3-Clause, built
   with vcpkg: Windows packages ship `libEGL.dll` and `libGLESv2.dll` with its
   license (`LICENSE-ANGLE.txt`).

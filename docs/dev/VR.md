@@ -1,13 +1,13 @@
-# VR headsets (Meta Quest)
+# VR headsets (Meta Quest, PC VR)
 
 The game runs in a VR headset through OpenXR. Menus, movies and replays show on a
 large virtual screen in front of the player; while driving, the race is drawn in
 stereo from the player's tracked head, seated in the car (in-car views) or floating
-behind it (chase views), with the HUD on a panel in front. The Touch controllers
-drive the same virtual DualShock 2 as any pad.
+behind it (chase views), with the HUD on a panel in front. The VR controllers
+drive the same virtual DualShock 2 as any pad; on a PC a wheel or a pad does too.
 
-Builds with `GT3R_XR` (the Quest APK, `-Pquest`) contain it; every other build
-compiles none of it.
+Builds with `GT3R_XR` (the Quest APK, `-Pquest`; the Windows package
+`gt3r-windows-x64-vr.zip`) contain it; every other build compiles none of it.
 
 ## Status (2026-10-19)
 
@@ -18,7 +18,9 @@ compiles none of it.
 | Disc from the system file picker (the release APK has no `run-as`) | ✅ verified on the Quest 3 (2026-10-19): Settings > Disc & saves > Browse for a disc image opens the picker over the game; a disc in Download opens through its `content://` URI |
 | Quest 2 / 3S / Pro | ⚠️ unverified (same APK; Quest 2 has less GPU headroom: lower `[vr] resolution` if it misses frames) |
 | Linux + Monado (simulated headset) | ✅ the session, swapchains, frames and stereo races run under Monado's null compositor (below); used for testing without a headset |
-| PC VR (SteamVR, Quest Link) | ⚠️ unverified: desktop builds with `-DGT3R_XR=ON` use the active OpenXR runtime when there is one (Vulkan only: Windows and Linux) |
+| PC VR (Quest Link, SteamVR) | ✅ played by hand on a Quest 3 over Quest Link (USB). Under SteamVR's null headset on an RTX 3080, with Meta's as the system's runtime: stereo races (~120 fps at 1852x2056 per eye), auto takes the running SteamVR, `runtime = steamvr` starts it, and SteamVR makes a `frame_controller` binding from ours. The window, its mouse and Recenter view also under Monado on Linux |
+| Wheel and force feedback in VR | ⚠️ unverified on a real wheel: they use the desktop's input, and SDL opens force feedback for use without window focus |
+| Index, Vive, Windows Mixed Reality and Steam Frame controllers | ⚠️ unverified: bindings suggested from the OpenXR specification (the Steam Frame's from Valve's) |
 | Car body in the in-car view (`[vr] car_body`) | ❌ off by default: GT3's car models have inward-facing cabin panels, which wall the eye in black |
 
 ## Building
@@ -55,6 +57,18 @@ adb must be uninstalled first (which deletes its saves: back up `files/saves/`).
 Desktop (PC VR, or Monado for testing): `cmake -S . -B build-xr -DGT3R_XR=ON`
 (fetches SDL at the pinned commit). Without an OpenXR loader or runtime it opens
 the normal window.
+
+Windows package: the same with `-DGT3R_SDL_SHARED=ON`, as CI's `windows-x64-vr`
+row does. On Windows the configure step also downloads Khronos's OpenXR loader
+(`openxr_loader.dll`, from their NuGet package, at the OpenXR version of SDL's
+headers), which goes next to `gt3r.exe` with `LICENSE-OpenXR.txt`. It stays a
+package of its own while VR takes SDL's development branch: wheels and every other
+Windows player keep the tested SDL 3.4. The AMD fullscreen fix goes with it
+(`cmake/patches/sdl-main-vulkan-amd-fullscreen.patch`), because the window has a
+swapchain here too. When SDL 3.6 is released and the main package moves to it, the
+two packages can become one; `[vr] enabled` would then have to default to off, since
+opening OpenXR starts SteamVR on any computer that has it. The package's own
+**Download update** asks for `gt3r-windows-x64-vr.zip`.
 
 ## How it works
 
@@ -117,15 +131,66 @@ below eye level, tilted to face the eyes). Both are in the seated space, so in
 the in-car view the HUD rides with the car.
 
 **Seated space.** The runtime's LOCAL space re-centred on the head (position and
-heading) on the first tracked frame and by Settings > VR > Recentre view. The
-system's own re-centring (hold the Meta button) resets it to LOCAL's new origin.
+heading) on the first tracked frame and by Recenter view: Settings > VR, F9, or the
+inputs the player gives it in Settings > Controls (`PadAction::RecenterView`; a wheel
+button, for a player with no controllers in hand). The system's own re-centring (hold
+the Meta button) resets it to LOCAL's new origin. In the in-car views `[vr]
+seat_forward` and `seat_height` move the eye point from the car's camera, within the
+car, to line it up with a real seat and wheel.
 
-**Input.** OpenXR actions on `/interaction_profiles/oculus/touch_controller`
-feed an SDL virtual gamepad, "Meta Quest Touch": sticks, analog triggers, A B X Y,
-grips as shoulders, stick clicks, Menu as Start; its rumble goes to the
-controllers' haptics, both hands at the stronger motor's level (a controller in each
-hand turns any split between the motors into a side). VR builds' gamepad layout (`quest`) is the gamepad
-layout with B as Triangle (back) and Y as Circle. The race's modern layout then gives
+**The desktop's window.** `xr::Session::mirror_to` claims the window for the GPU
+device, separately from the offscreen 2D renderer, and `end_frame` draws into it in
+the same command buffer: the screen letterboxed, or in a stereo frame the left eye
+filling the window, cropped, with the HUD panel over it. The swapchain texture is
+acquired without waiting, in mailbox mode when the driver has it, so the window
+drops frames rather than holding the headset to the desktop's refresh. It is asked
+for on every frame, even one the headset isn't showing and even when it comes back empty
+(a minimized window): with a claimed window SDL recycles finished GPU work only in a
+submit that asked for its swapchain, and a test run that skipped those frames filled
+the GPU's memory within minutes. The mouse works
+on it: `App::mirror_pointer` takes its events from the window to UI units through the
+same fit. The Quest has no such window.
+
+**Which runtime (desktops).** The loader runs the system's OpenXR runtime unless
+`XR_RUNTIME_JSON` names another's manifest. A PC often has two: Meta Horizon Link makes
+Meta's the system's one, and SteamVR registers itself only while it is the system's
+one, so with both installed a SteamVR headset (a Steam Frame, a Quest over Steam Link,
+an Index) got Meta's runtime and the window (added to Steam and started from there,
+the game got SteamVR's). `Session::prepare_device` now looks for a headset
+first (`RuntimeLook`: an instance and `xrGetSystem`), in `[vr] runtime`'s choice,
+or for `auto` in the system's runtime and then SteamVR's while SteamVR is running, and
+points `XR_RUNTIME_JSON` at the first with one (`xr_runtimes.cpp` finds SteamVR's
+manifest through OpenVR's `openvrpaths.vrpath` and Meta's in the registry). A player's
+own `XR_RUNTIME_JSON` is the only one looked at. SteamVR (chosen, or the system's) that
+isn't running is started as its own shortcut does (`vrstartup.exe`): an instance starts
+its server alone, which reports the headset but has no compositor, so SDL can't get the
+GPU from it (`xrGetVulkanGraphicsDevice2KHR`: "failed to determine output device" in
+SteamVR's client log), and shuts down again about 20 s after its last instance goes.
+Until the compositor (`vrcompositor.exe`) runs, the game waits (up to 45 s) with the
+look's instance open; a device that still fails after a headset was found is tried
+again each second for 10 s (`Session::retry_device`). The Quest makes one attempt (its runtime cannot be
+set up twice in a process).
+
+**Input.** OpenXR actions feed an SDL virtual gamepad, "Meta Quest Touch" on the Quest
+and "VR controllers" on a desktop: sticks, analog triggers, A B X Y, grips as shoulders,
+stick clicks, Menu as Start; its rumble goes to the controllers' haptics, both hands at
+the stronger motor's level (a controller in each hand turns any split between the motors
+into a side). The actions are suggested for Touch controllers
+(`/interaction_profiles/oculus/touch_controller`, which set the layout) and for what a
+PC may have instead (`kControllers`, `xr_input.cpp`):
+
+| Controllers | Differs from Touch |
+|---|---|
+| Valve Index | left A / B are X / Y; pressing the left trackpad is Menu |
+| HTC Vive | the trackpads are the sticks, pressed for A / X; right menu button B; no Y or stick clicks |
+| Windows Mixed Reality | trackpads pressed for A / X; right menu button B; no Y |
+| Steam Frame (`XR_VALVE_frame_controller_interaction`) | A B X Y all on the right hand, as on a pad; the bumpers are shoulders like the grips; Menu or View is Start; the D-pad does nothing. Without the extension SteamVR shows them to the game as Touch controllers, all three top buttons as B / Y |
+
+The controllers' menu layout (`quest`) is the gamepad layout with B as Triangle (back)
+and Y as Circle; `PlayerBindings::vr_pad` gives it to their pad alone, so on a PC a real
+pad keeps the gamepad layout (on the Quest every pad has it). Auto takes a wheel first, then
+a real pad, then the VR controllers, which keep pointing at the menus either way. The
+race's modern layout then gives
 right trigger throttle, left trigger brake, A/X shift up/down, Y view, B
 handbrake, left grip reverse, right stick click look back (the right stick's look around is off
 in stereo: the head looks around). With
@@ -160,7 +225,10 @@ controllers and a system device as Android gamepads (vendor 0x2833), which the
 input manager ignores in VR builds.
 
 **Frame pacing.** `xrWaitFrame` paces the loop; the step is the difference of
-predicted display times. The runtime starts at CPU / GPU level 2: the session asks
+predicted display times. Nothing else may hold the loop: `[video] limit_60fps` sets
+SDL's main loop rate, which held a 72 Hz headset to 60 frames a second (every sixth
+frame missed, a judder over Quest Link), so `App::apply_frame_limit` does nothing in VR
+and Settings shows VSync and the limit as the headset's. The runtime starts at CPU / GPU level 2: the session asks
 for sustained-high (`XR_EXT_performance_settings`). `[vr] refresh` picks among
 the rates the headset offers (`XR_FB_display_refresh_rate`, 90 Hz default).
 
@@ -169,6 +237,7 @@ the rates the headset offers (`XR_FB_display_refresh_rate`, 90 Hz default).
 | Key | Default | |
 |---|---|---|
 | `enabled` | `on` | `off` (or `--no-vr`): the window, as on a phone |
+| `runtime` | `auto` | desktops: `steamvr` or `meta` (Settings > VR > Headset software, when the PC has them); `auto`: the system's OpenXR runtime, then SteamVR while it runs. Restart |
 | `stereo` | `on` | races in 3D; `off`: on the virtual screen |
 | `level_horizon` | `off` | in-car view follows the car's heading only |
 | `car_body` | `off` | the own car's body around the in-car view (see Status) |
@@ -176,7 +245,8 @@ the rates the headset offers (`XR_FB_display_refresh_rate`, 90 Hz default).
 | `wheel_degrees` | `180` | wheel rotation lock to lock |
 | `screen_width`, `screen_distance` | `2.6`, `2.4` | metres |
 | `hud_width`, `hud_distance`, `hud_drop` | `1.5`, `1.3`, `0.12` | metres |
-| `refresh` | `90` | Hz (nearest offered) |
+| `seat_forward`, `seat_height` | `0`, `0` | metres from the car's camera, in-car views (-0.6..0.6) |
+| `refresh` | `90` | Hz (nearest offered; where the headset offers a choice to games: PC runtimes set it themselves) |
 | `resolution` | `1.0` | eye size x the recommended size (0.5..1.5); restart |
 
 ## Testing
@@ -204,6 +274,30 @@ undo). A screenshot of the headset view:
 launch from adb while the headset shows a system dialog (e.g. "controllers
 required") is held until it is dismissed in the headset.
 
+**On a PC.** A Quest over Quest Link or Steam Link tests the Meta and SteamVR
+runtimes (`[vr] runtime`, above). Without a runtime or a headset the package opens
+the normal window. Quest Link's refresh rate is set in the Meta Horizon Link app
+(the headset's Graphics Preferences; 72 Hz unless changed), not by the game. Settings >
+VR > Running in names the runtime in use.
+
+**On a PC without a headset:** SteamVR's null driver. `XR_RUNTIME_JSON` picks SteamVR
+for the game alone and `VR_CONFIG_PATH` gives it a config folder of its own, so the
+installed settings stay as they are. In that folder, `steamvr.vrsettings`:
+
+```json
+{
+  "steamvr": { "requireHmd": false, "forcedDriver": "null", "activateMultipleDrivers": true },
+  "driver_null": { "enable": true, "windowWidth": 960, "windowHeight": 540 },
+  "power": { "pauseCompositorOnStandby": false }
+}
+```
+
+Set both variables, start `SteamVR\bin\win64\vrstartup.exe` from that shell, wait for it
+(25 s), close `steamvr_room_setup.exe` if it opened, then start the game. Without
+`pauseCompositorOnStandby` the session stays in `SYNCHRONIZED`, which shows nothing. The
+null headset reports a head rolled 180 degrees, so the eyes are upside down; it has no
+controllers, so the session stops at `VISIBLE`. Close the game and SteamVR afterwards.
+
 **Without a headset** (Linux, e.g. the OrbStack VM): Monado's null compositor
 with its simulated HMD.
 
@@ -221,11 +315,13 @@ XR_RUNTIME_JSON=/usr/share/openxr/1/openxr_monado.json GT3R_VR_EYE_SIZE=720 GT3R
 `--shot` writes the canvas (the HUD over transparency) and `out-eyes.png` (both
 eyes). The simulated HMD recommends 128x128 eyes, where distant textures fall to
 their smallest mip levels and look black: `GT3R_VR_EYE_SIZE` overrides the size.
+The window shows the mirror under `xvfb`, so a screenshot of the X display checks it.
 
 ## Open items
 
 - The own car's body in the in-car view: hide its cabin panels (the inward-facing
-  primitives) and keep the bonnet, wings and mirrors
+  primitives) and keep the bonnet, wings and mirrors. GT3 has no cockpit, so with a real
+  wheel in front of the player there is nothing to see of the car until then
 - Passthrough or a modelled room behind the menus' screen (`XR_FB_passthrough`)
 - A curved screen (`XR_KHR_composition_layer_cylinder`), and the HUD's elements as
   separate panels (gauges low, lap times high)

@@ -565,15 +565,21 @@ private:
         }
 
         bool vsync = cfg.get("video", "vsync").value_or("1") != "0";
-        toggle("VSync", "Wait for the display refresh: no tearing. Off: lower input latency.", vsync, [a](bool v) {
-            a->config().set("video", "vsync", v ? "1" : "0");
-            SDL_SetRenderVSync(a->renderer(), v ? 1 : 0);
-            a->save_config();
-        });
-        toggle("Limit to 60 fps",
-               "On 120 Hz and faster displays, draw about 60 frames a second (the game runs at 60 Hz). "
-               "Steadier when the computer is busy.",
-               app.limit_60fps(), [a](bool v) { a->set_limit_60fps(v); });
+        if (vr) // (App::apply_frame_limit)
+            info("VSync", "Set by the headset", "The headset draws a frame for each of its refreshes.");
+        else
+            toggle("VSync", "Wait for the display refresh: no tearing. Off: lower input latency.", vsync, [a](bool v) {
+                a->config().set("video", "vsync", v ? "1" : "0");
+                SDL_SetRenderVSync(a->renderer(), v ? 1 : 0);
+                a->save_config();
+            });
+        if (vr)
+            info("Limit to 60 fps", "Not in VR", "The headset draws a frame for each of its refreshes.");
+        else
+            toggle("Limit to 60 fps",
+                   "On 120 Hz and faster displays, draw about 60 frames a second (the game runs at 60 Hz). "
+                   "Steadier when the computer is busy.",
+                   app.limit_60fps(), [a](bool v) { a->set_limit_60fps(v); });
         toggle("FPS counter", "Show the frames drawn per second in a corner of the screen.", app.show_fps(),
                [a](bool v) { a->set_show_fps(v); });
 
@@ -804,10 +810,30 @@ private:
     void build_vr(App& app) {
         App* a = &app;
         xr::Session* x = app.xr();
+        // [vr] runtime: on a PC with more than one kind of VR software (GpuOptions::xr_runtime).
+        const std::vector<std::pair<std::string, std::string>> runtimes = xr::Session::runtime_choices();
+        if (!runtimes.empty()) {
+            std::vector<std::string> keys{"auto"}, names{"Automatic"};
+            for (const auto& [key, name] : runtimes) keys.push_back(key), names.push_back(name);
+            const std::string now = to_lower(app.config().get("vr", "runtime").value_or("auto"));
+            int ri = 0;
+            for (size_t i = 0; i < keys.size(); ++i)
+                if (keys[i] == now) ri = int(i);
+            choice("Headset software",
+                   "The VR software the game runs in, from its next start. Automatic: the one Windows uses for VR; "
+                   "SteamVR instead while it is running, if that one has no headset.",
+                   names, ri, [a, keys](int i) {
+                       a->config().set("vr", "runtime", keys[size_t(i)]);
+                       a->save_config();
+                   });
+        }
         if (!x) {
-            info("Headset", "Not in use", "No VR headset found when the game started; it runs in a window.");
+            info("Headset", "Not in use",
+                 "No VR headset found when the game started; it runs in a window. Start your headset's software "
+                 "first, then the game.");
             return;
         }
+        if (!x->runtime_name().empty()) info("Running in", x->runtime_name());
         const xr::Settings s = x->settings();
         auto apply = [a](const xr::Settings& n) { a->set_xr_settings(n); };
         toggle("Races in 3D", "Drive in stereo from the car's seat or behind it. Off: races on the screen, like menus.",
@@ -873,6 +899,23 @@ private:
                    n.hud_distance = v;
                    apply(n);
                });
+        auto seat = [](float v) {
+            char b[16];
+            std::snprintf(b, sizeof(b), "%+.2f m", double(v));
+            return std::string(b);
+        };
+        slider("Seat height", "In-car views: your eyes above or below the car's camera.", s.seat_height, -0.6f, 0.6f, 0.02f,
+               seat(s.seat_height), [apply, s](float v) {
+                   xr::Settings n = s;
+                   n.seat_height = v;
+                   apply(n);
+               });
+        slider("Seat forward", "In-car views: your eyes ahead of or behind the car's camera.", s.seat_forward, -0.6f, 0.6f,
+               0.02f, seat(s.seat_forward), [apply, s](float v) {
+                   xr::Settings n = s;
+                   n.seat_forward = v;
+                   apply(n);
+               });
         const std::vector<float>& rates = x->refresh_rates();
         if (!rates.empty()) {
             std::vector<std::string> names;
@@ -899,7 +942,10 @@ private:
                               apply(n);
                           });
         (void)res;
-        action("Recentre view", "Puts the seat and the screen where you are looking now.", "", [x] { x->recenter(); });
+        action("Recenter view",
+               "Puts the seat and the screen where you are looking now. F9 does it too, and so do the inputs you "
+               "give it in Controls.",
+               "", [x] { x->recenter(); });
         info("Eyes", std::to_string(x->eye(0).width) + " x " + std::to_string(x->eye(0).height) + " pixels");
     }
 #endif
@@ -1357,6 +1403,12 @@ private:
         // Ours: the race song controls (chords), whatever the race layout.
         heading(who + "song controls").columns = true;
         for (PadAction act : {PadAction::NextSong, PadAction::PreviousSong}) action_binding(app, p, act);
+#if GT3R_XR
+        if (app.xr()) {
+            heading(who + "headset").columns = true;
+            action_binding(app, p, PadAction::RecenterView);
+        }
+#endif
         heading(who + "menu buttons").columns = true;
         {
             static const char* const kKinds[] = {"Controller layout", "Wheel layout", "Keyboard layout",
@@ -1437,15 +1489,17 @@ private:
         return r;
     }
 
-    // A song control's chords, in the two columns like a button's inputs.
+    // An action's chords, in the two columns like a button's inputs.
     Row& action_binding(App& app, int p, PadAction act) {
         App* a = &app;
         InputManager& in = app.input();
         const std::string label(pad_action_name(act));
         Row& r = add(Row::Kind::Binding, label,
-                     "In races, while a race song plays. Cross, then hold the inputs together and let go: keys, or a "
-                     "controller's buttons, triggers and stick directions (up to 4; they may share other controls). "
-                     "Square adds one. Select clears the highlighted column (Left/Right).");
+                     std::string(act == PadAction::RecenterView ? "Puts the seat and the screen where you are looking now."
+                                                                : "In races, while a race song plays.") +
+                         " Cross, then hold the inputs together and let go: keys, or a "
+                         "controller's buttons, triggers and stick directions (up to 4; they may share other controls). "
+                         "Square adds one. Select clears the highlighted column (Left/Right).");
         r.player = p;
         r.action = int(act);
         auto chords = [&](BindingSet set) {

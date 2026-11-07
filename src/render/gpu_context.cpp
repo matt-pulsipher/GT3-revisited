@@ -51,9 +51,11 @@ bool GpuContext::open_sdl_gpu(SDL_Window* window, const GpuOptions& options) {
     // depth normally, draw directly and write no clip distances. Anisotropic filtering is the one
     // we use: a GPU without it gets a second try with it off (anisotropy_ = false).
 #if GT3R_XR
-    // A headset: one attempt through its OpenXR runtime (the Quest runtime cannot be set up a
-    // second time in a process), with the same features as below.
-    if (options.xr) {
+    // A headset: through its OpenXR runtime, with the same features as below. One attempt on the
+    // Quest (its runtime cannot be set up a second time in a process); desktops try again for a
+    // while when the runtime's compositor is still starting (Session::retry_device).
+    xr_request_.runtime = options.xr_runtime;
+    for (int attempt = 0; options.xr && !device_; ++attempt) {
         SDL_PropertiesID props = SDL_CreateProperties();
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, options.debug);
@@ -61,12 +63,20 @@ bool GpuContext::open_sdl_gpu(SDL_Window* window, const GpuOptions& options) {
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, true);
-        if (xr::Session::prepare_device(props, xr_request_)) {
-            device_ = SDL_CreateGPUDeviceWithProperties(props);
-            if (device_) xr_ = true;
-            else LOG_INFO("VR: no headset (%s); using the window", SDL_GetError());
-        }
+        const bool prepared = xr::Session::prepare_device(props, xr_request_);
+        if (prepared) device_ = SDL_CreateGPUDeviceWithProperties(props);
         SDL_DestroyProperties(props);
+        if (device_) {
+            xr_ = true;
+        } else if (!prepared) {
+            LOG_INFO("VR: no headset; using the window");
+            break;
+        } else if (!xr::Session::retry_device(attempt)) {
+            LOG_INFO("VR: no headset (%s); using the window", SDL_GetError());
+            break;
+        } else {
+            SDL_Delay(1000);
+        }
     }
     for (bool aniso : {true, false}) {
         if (device_) break;

@@ -1,9 +1,9 @@
 #if GT3R_XR
 
-// Touch controllers as an SDL virtual gamepad, so the input system (bindings, remapping, the
-// race layouts, rumble) treats them like any other pad: thumbsticks, triggers (analog), A B X Y,
-// grips as shoulders, stick clicks, the menu button as Start. With [vr] steering = wheel the
-// grips grab an invisible steering wheel instead and the hands' roll steers.
+// VR controllers as an SDL virtual gamepad, so the input system (bindings, remapping, the race
+// layouts, rumble) treats them like any other pad: thumbsticks, triggers (analog), A B X Y, grips
+// as shoulders, stick clicks, the menu button as Start. With [vr] steering = wheel the grips grab
+// an invisible steering wheel instead and the hands' roll steers.
 
 #include "xr/xr_internal.h"
 
@@ -46,6 +46,47 @@ render::Vec3 forward(const Pose& p) {
     // rotate(q, (0, 0, -1))
     return {-2 * (p.qx * p.qz + p.qw * p.qy), -2 * (p.qy * p.qz - p.qw * p.qx), -(1 - 2 * (p.qx * p.qx + p.qy * p.qy))};
 }
+
+// What each kind of controller has for the actions (OpenXR's interaction profiles; the Quest's
+// Touch controllers set the layout, the others follow as far as their buttons go). squeeze, stick
+// and stick_click are on both hands, and so is shoulder (squeezes too). Null: it has none.
+struct ControllerBindings {
+    const char* profile;
+    const char* squeeze;
+    const char* stick;
+    const char* stick_click;
+    const char* a; // the right hand's lower button
+    const char* b;
+    const char* x; // the left hand's
+    const char* y;
+    const char* menu;
+    const char* shoulder = nullptr;
+    const char* menu_alt = nullptr;
+    bool frame_extension = false; // needs XR_VALVE_frame_controller_interaction
+};
+const ControllerBindings kControllers[] = {
+    {"/interaction_profiles/oculus/touch_controller", "squeeze/value", "thumbstick", "thumbstick/click",
+     "/user/hand/right/input/a/click", "/user/hand/right/input/b/click", "/user/hand/left/input/x/click",
+     "/user/hand/left/input/y/click", "/user/hand/left/input/menu/click"},
+    // No menu button for games: pressing the left trackpad is Start.
+    {"/interaction_profiles/valve/index_controller", "squeeze/value", "thumbstick", "thumbstick/click",
+     "/user/hand/right/input/a/click", "/user/hand/right/input/b/click", "/user/hand/left/input/a/click",
+     "/user/hand/left/input/b/click", "/user/hand/left/input/trackpad/force"},
+    // A trackpad for the stick, which then is pressed as A / X; no Y.
+    {"/interaction_profiles/htc/vive_controller", "squeeze/click", "trackpad", nullptr,
+     "/user/hand/right/input/trackpad/click", "/user/hand/right/input/menu/click",
+     "/user/hand/left/input/trackpad/click", nullptr, "/user/hand/left/input/menu/click"},
+    {"/interaction_profiles/microsoft/motion_controller", "squeeze/click", "thumbstick", "thumbstick/click",
+     "/user/hand/right/input/trackpad/click", "/user/hand/right/input/menu/click",
+     "/user/hand/left/input/trackpad/click", nullptr, "/user/hand/left/input/menu/click"},
+    // The Steam Frame's (without the extension SteamVR shows them as Touch controllers, its top
+    // buttons all as B / Y): A B X Y as on a pad, all on the right hand, the bumpers as shoulders
+    // like the grips, Menu or View as Start.
+    {"/interaction_profiles/valve/frame_controller_valve", "squeeze/value", "thumbstick", "thumbstick/click",
+     "/user/hand/right/input/a/click", "/user/hand/right/input/b/click", "/user/hand/right/input/x/click",
+     "/user/hand/right/input/y/click", "/user/hand/right/input/menu/click", "bumper/click",
+     "/user/hand/left/input/view/click", true},
+};
 
 bool SDLCALL pad_rumble(void* user, Uint16 low, Uint16 high) {
     auto* in = static_cast<Input*>(user);
@@ -96,28 +137,36 @@ bool Session::Impl::create_input() {
               action(in.haptic, "haptic", "Vibration", XR_ACTION_TYPE_VIBRATION_OUTPUT, true);
     if (!ok) return false;
 
-    std::vector<XrActionSuggestedBinding> b;
-    auto bind = [&](XrAction a, const char* p) { b.push_back({a, path(p)}); };
-    for (const char* hand : {"/user/hand/left", "/user/hand/right"}) {
-        std::string h = hand;
-        bind(in.trigger, (h + "/input/trigger/value").c_str());
-        bind(in.squeeze, (h + "/input/squeeze/value").c_str());
-        bind(in.stick, (h + "/input/thumbstick").c_str());
-        bind(in.stick_click, (h + "/input/thumbstick/click").c_str());
-        bind(in.grip_pose, (h + "/input/grip/pose").c_str());
-        bind(in.aim_pose, (h + "/input/aim/pose").c_str());
-        bind(in.haptic, (h + "/output/haptic").c_str());
+    for (const ControllerBindings& c : kControllers) {
+        if (c.frame_extension && !frame_controllers) continue;
+        std::vector<XrActionSuggestedBinding> b;
+        auto bind = [&](XrAction a, const std::string& p) { b.push_back({a, path(p.c_str())}); };
+        auto bind_if = [&](XrAction a, const char* p) {
+            if (p) bind(a, p);
+        };
+        for (const std::string h : {"/user/hand/left/", "/user/hand/right/"}) {
+            bind(in.trigger, h + "input/trigger/value");
+            bind(in.squeeze, h + "input/" + c.squeeze);
+            bind(in.stick, h + "input/" + c.stick);
+            if (c.stick_click) bind(in.stick_click, h + "input/" + c.stick_click);
+            if (c.shoulder) bind(in.squeeze, h + "input/" + c.shoulder);
+            bind(in.grip_pose, h + "input/grip/pose");
+            bind(in.aim_pose, h + "input/aim/pose");
+            bind(in.haptic, h + "output/haptic");
+        }
+        bind_if(in.a, c.a);
+        bind_if(in.b, c.b);
+        bind_if(in.x, c.x);
+        bind_if(in.y, c.y);
+        bind_if(in.menu, c.menu);
+        bind_if(in.menu, c.menu_alt);
+        auto sb = xr_init<XrInteractionProfileSuggestedBinding>(XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING);
+        sb.interactionProfile = path(c.profile);
+        sb.countSuggestedBindings = u32(b.size());
+        sb.suggestedBindings = b.data();
+        // (Only Touch's must be taken: a runtime refusing the others leaves those controllers unbound.)
+        if (!check(xrSuggestInteractionProfileBindings(instance, &sb), c.profile) && &c == kControllers) return false;
     }
-    bind(in.a, "/user/hand/right/input/a/click");
-    bind(in.b, "/user/hand/right/input/b/click");
-    bind(in.x, "/user/hand/left/input/x/click");
-    bind(in.y, "/user/hand/left/input/y/click");
-    bind(in.menu, "/user/hand/left/input/menu/click");
-    auto sb = xr_init<XrInteractionProfileSuggestedBinding>(XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING);
-    sb.interactionProfile = path("/interaction_profiles/oculus/touch_controller");
-    sb.countSuggestedBindings = u32(b.size());
-    sb.suggestedBindings = b.data();
-    if (!check(xrSuggestInteractionProfileBindings(instance, &sb), "xrSuggestInteractionProfileBindings")) return false;
 
     auto ai = xr_init<XrSessionActionSetsAttachInfo>(XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO);
     ai.countActionSets = 1;
@@ -144,7 +193,11 @@ bool Session::Impl::create_input() {
     d.axis_mask = (1u << SDL_GAMEPAD_AXIS_LEFTX) | (1u << SDL_GAMEPAD_AXIS_LEFTY) | (1u << SDL_GAMEPAD_AXIS_RIGHTX) |
                   (1u << SDL_GAMEPAD_AXIS_RIGHTY) | (1u << SDL_GAMEPAD_AXIS_LEFT_TRIGGER) |
                   (1u << SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+#if defined(__ANDROID__)
     d.name = "Meta Quest Touch";
+#else
+    d.name = "VR controllers";
+#endif
     d.userdata = &in;
     d.Rumble = pad_rumble;
     in.pad_id = SDL_AttachVirtualJoystick(&d);

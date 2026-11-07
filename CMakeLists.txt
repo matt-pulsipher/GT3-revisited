@@ -159,6 +159,12 @@ if(WIN32 AND GT3R_ANGLE_DIR)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GT3R_ANGLE_FILES} $<TARGET_FILE_DIR:gt3r>)
 endif()
 
+# Windows VR builds: the OpenXR loader next to gt3r.exe (cmake/Dependencies.cmake).
+if(GT3R_OPENXR_LOADER)
+  add_custom_command(TARGET gt3r POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GT3R_OPENXR_LOADER} $<TARGET_FILE_DIR:gt3r>)
+endif()
+
 # UI font (Barlow, SIL OFL 1.1, third_party/fonts/barlow) compiled into the
 # executable, rasterised at runtime with stb_truetype (public domain).
 set(GT3R_UI_FONTS

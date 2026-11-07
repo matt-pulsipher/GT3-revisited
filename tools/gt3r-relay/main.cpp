@@ -25,7 +25,8 @@
 //   --release-url URL        where the games' "Download update" goes (https://..., at most 128
 //                            characters). {asset} in it becomes the player's package
 //                            (gt3r-windows-x64.zip, gt3r-macos-arm64.zip, gt3r-linux-x86_64.tar.gz,
-//                            gt3r-android.apk); the release notes page is the URL cut at /download/:
+//                            gt3r-android.apk, gt3r-windows-x64-vr.zip, gt3r-quest.apk); the release
+//                            notes page is the URL cut at /download/:
 //                            https://github.com/<owner>/<repo>/releases/latest/download/{asset}
 //   --versions-file PATH     the same as "latest = ...", "min_online = ...", "release_url = ..."
 //                            lines (over the flags); re-read on SIGHUP (systemctl reload

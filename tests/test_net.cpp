@@ -2724,6 +2724,8 @@ TEST(net_release_asset_per_platform) {
     using A = net::CpuArch;
     using P = net::RvPlatform;
     CHECK(net::release_asset(P::Windows, A::X64) == "gt3r-windows-x64.zip");
+    CHECK(net::release_asset(P::Windows, A::X64, true) == "gt3r-windows-x64-vr.zip"); // the VR build
+    CHECK(net::release_asset(P::Windows, A::Arm64, true).empty());
     CHECK(net::release_asset(P::Windows, A::Arm64).empty()); // no Windows arm64 package
     CHECK(net::release_asset(P::Windows, A::Other).empty());
     CHECK(net::release_asset(P::MacOS, A::Arm64) == "gt3r-macos-arm64.zip");
@@ -2742,7 +2744,11 @@ TEST(net_release_asset_per_platform) {
 #if defined(__APPLE__) && defined(__aarch64__)
     CHECK(net::this_release_asset() == "gt3r-macos-arm64.zip");
 #elif defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))
+#if GT3R_XR
+    CHECK(net::this_release_asset() == "gt3r-windows-x64-vr.zip");
+#else
     CHECK(net::this_release_asset() == "gt3r-windows-x64.zip");
+#endif
 #elif defined(__linux__) && !defined(__ANDROID__) && defined(__x86_64__)
     CHECK(net::this_release_asset() == "gt3r-linux-x86_64.tar.gz");
 #endif

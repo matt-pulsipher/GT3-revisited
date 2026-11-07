@@ -885,6 +885,7 @@ is always the newest:
 | Linux x86_64 | `gt3r-linux-x86_64.tar.gz` |
 | Android (arm64, x86_64) | `gt3r-android.apk` (only when the APK was built) |
 | Meta Quest (the VR build, `GT3R_XR`) | `gt3r-quest.apk` (likewise) |
+| Windows x64, the VR build | `gt3r-windows-x64-vr.zip` |
 
 The relay's `release_url` may hold an `{asset}` placeholder
 (`net::update_links`, `net::release_asset`; tested in

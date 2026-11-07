@@ -1,7 +1,8 @@
 #pragma once
 
 // Private to src/xr: the OpenXR state behind xr::Session (xr_session.cpp: instance, session,
-// spaces, swapchains, frames; xr_input.cpp: controller actions and the virtual gamepad).
+// spaces, swapchains, frames; xr_input.cpp: controller actions and the virtual gamepad;
+// xr_runtimes.cpp: the runtimes a desktop has).
 
 #if GT3R_XR
 
@@ -13,6 +14,7 @@
 #include <SDL3/SDL_openxr.h>
 
 #include <array>
+#include <string>
 #include <vector>
 
 namespace gt3r::xr {
@@ -27,8 +29,9 @@ T xr_init(XrStructureType type) {
 
 // Core functions, resolved through xrGetInstanceProcAddr once the instance exists.
 #define GT3R_XR_FUNCTIONS(X)                                                                                  \
-    X(xrDestroyInstance) X(xrPollEvent) X(xrResultToString) X(xrGetSystemProperties) X(xrBeginSession)        \
-    X(xrEndSession) X(xrDestroySession) X(xrRequestExitSession) X(xrCreateReferenceSpace) X(xrDestroySpace)   \
+    X(xrDestroyInstance) X(xrGetInstanceProperties) X(xrPollEvent) X(xrResultToString)                        \
+    X(xrGetSystemProperties) X(xrBeginSession) X(xrEndSession) X(xrDestroySession) X(xrRequestExitSession)    \
+    X(xrCreateReferenceSpace) X(xrDestroySpace)                                                               \
     X(xrLocateSpace) X(xrLocateViews) X(xrEnumerateViewConfigurationViews) X(xrEnumerateSwapchainImages)      \
     X(xrWaitFrame) X(xrBeginFrame) X(xrEndFrame) X(xrAcquireSwapchainImage) X(xrWaitSwapchainImage)           \
     X(xrReleaseSwapchainImage) X(xrStringToPath) X(xrCreateActionSet) X(xrDestroyActionSet) X(xrCreateAction) \
@@ -87,6 +90,8 @@ struct Session::Impl {
     PFN_xrPerfSettingsSetPerformanceLevelEXT xrPerfSettingsSetPerformanceLevelEXT = nullptr;
     std::vector<float> rates;
     float rate = 72;
+    // XR_VALVE_frame_controller_interaction (optional): Steam Frame controllers' own bindings
+    bool frame_controllers = false;
 
     XrSessionState state = XR_SESSION_STATE_UNKNOWN;
     bool running = false, exit = false, focus_lost = false;
@@ -100,6 +105,11 @@ struct Session::Impl {
     // The present pass: canvases drawn into the swapchain images (a copy into them stalls).
     SDL_GPUGraphicsPipeline* present = nullptr;
     SDL_GPUSampler* present_sampler = nullptr;
+    // The desktop's window (Session::mirror_to).
+    SDL_Window* mirror = nullptr;
+    SDL_GPUGraphicsPipeline* mirror_opaque = nullptr;
+    SDL_GPUGraphicsPipeline* mirror_panel = nullptr; // the HUD over the eye
+    SDL_GPUSampler* mirror_sampler = nullptr;
     SDL_PixelFormat canvas_format = SDL_PIXELFORMAT_ABGR8888; // = GpuContext::kColorFormat
     Chain eyes[2], quad;
     XrFrameState frame = xr_init<XrFrameState>(XR_TYPE_FRAME_STATE);
@@ -122,7 +132,12 @@ struct Session::Impl {
     bool make_chain(Chain& c, int w, int h);
     void release_chain(Chain& c);
     bool make_space(XrReferenceSpaceType type, const XrPosef& pose, XrSpace& out);
+    SDL_GPUGraphicsPipeline* canvas_pipeline(SDL_GPUTextureFormat target, bool premultiplied);
+    SDL_GPUSampler* canvas_sampler(SDL_GPUFilter filter);
     bool make_present_pipeline();
+    void draw_mirror(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* canvas, int canvas_w, int canvas_h, SDL_GPUTexture* eye,
+                     int eye_w, int eye_h);
+    void release_mirror();
     void apply_refresh_rate(int hz);
     // xr_input.cpp
     bool create_input();
@@ -131,6 +146,19 @@ struct Session::Impl {
 
 XrPosef to_xr(const Pose& p);
 Pose from_xr(const XrPosef& p);
+
+// xr_runtimes.cpp: OpenXR runtimes on this computer besides the system's choice ([vr] runtime).
+struct RuntimeFile {
+    std::string key;      // the [vr] runtime setting: steamvr, meta
+    std::string name;     // for Settings
+    std::string manifest; // its JSON manifest (the loader's XR_RUNTIME_JSON)
+};
+std::vector<RuntimeFile> installed_runtimes(); // Windows; elsewhere none
+std::string system_runtime();                  // the system's choice (Windows: the registry's), empty if unknown
+bool steamvr_running();                        // its server
+bool steamvr_compositor_running();
+bool start_steamvr(const std::string& manifest); // as its own shortcut does (vrstartup)
+bool same_file(const std::string& a, const std::string& b);
 
 } // namespace gt3r::xr
 

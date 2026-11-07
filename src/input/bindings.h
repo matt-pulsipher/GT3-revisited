@@ -113,9 +113,9 @@ struct Profile {
 // "pad" is the DualShock 2 layout 1:1 (triggers -> L2/R2, the back paddles too: right R2, left
 // L2, GT3's shift buttons); "wheel" is a typical USB wheel; "keyboard" is keyboard only. All of
 // them also include the keyboard bindings, so a pad is never required.
-// "quest" (VR builds' pad) is "pad" with B as back (Triangle) and Y as Circle.
+// "quest" (the VR controllers' pad) is "pad" with B as back (Triangle) and Y as Circle.
 Profile make_preset(std::string_view name);
-std::string_view pad_preset(); // "pad"; "quest" in VR builds
+std::string_view pad_preset(); // "pad"; "quest" in the Quest APK, where every pad has it
 
 // Race controls. While driving, the race reads a second virtual pad per player whose buttons
 // always mean what they meant in GT3 (Cross accelerate, Square brake, Triangle reverse, R2/L2
@@ -170,11 +170,12 @@ enum class BindingSet : u8 { Controller, Keyboard };
 BindingSet binding_set(const InputSource& s); // Keyboard for keys, mouse buttons and tilt
 
 // Ours: things a player does that are none of the DualShock 2's buttons, each bound to chords
-// (Settings -> Controls, [playerN.actions]; none by default). The race's song controls.
-enum class PadAction : u8 { NextSong, PreviousSong, Count };
+// (Settings -> Controls, [playerN.actions]; none by default). The race's song controls; in a
+// headset, Recenter view.
+enum class PadAction : u8 { NextSong, PreviousSong, RecenterView, Count };
 constexpr size_t kPadActionCount = static_cast<size_t>(PadAction::Count);
-std::string_view pad_action_key(PadAction a);  // its config key: "next_song", "previous_song"
-std::string_view pad_action_name(PadAction a); // as Settings names it: "Next song", "Previous song"
+std::string_view pad_action_key(PadAction a);  // its config key: "next_song", "previous_song", ...
+std::string_view pad_action_name(PadAction a); // as Settings names it: "Next song", "Previous song", ...
 
 // Inputs held together: one to four of one set (keys, or one controller's buttons, triggers and
 // stick directions). It fires when the last of them goes down; a chord may share inputs with
@@ -217,6 +218,7 @@ struct PlayerBindings {
     std::string race_layout = "modern";
     bool race_custom_on = true, menu_custom_on = true; // [playerN] race_custom / menu_custom
     bool player2 = false; // the keyboard's layout around I / J / K / L, apart from player 1's
+    bool vr_pad = false;  // the pad is the VR controllers: its menu layout is "quest"
 
     const Profile& set(DeviceKind kind, bool race, BindingSet s) const;
     bool has_custom(DeviceKind kind, bool race) const; // custom sets kept (either set)

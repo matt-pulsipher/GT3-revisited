@@ -57,8 +57,9 @@ void SDLCALL on_dialog(void* user, const char* const* files, int) {
 bool App::init(int argc, char** argv) {
     SDL_SetAppMetadata("GT3 Revisited", GT3R_VERSION, "org.gt3revisited.gt3r");
 #if GT3R_XR
-    // In a headset the (invisible) window never has keyboard focus, and SDL drops joystick
-    // input without it: the controllers' virtual gamepad and Bluetooth pads alike.
+    // In a headset the window doesn't have keyboard focus (on the Quest it is invisible, on a PC
+    // the headset's software may take it), and SDL drops joystick input without it: the
+    // controllers' virtual gamepad, pads and wheels alike.
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     // Nor does Android's screen keyboard open over an immersive app: text is typed on the game's
     // own (app/text_keyboard.h), so SDL doesn't ask for it.
@@ -170,6 +171,7 @@ bool App::init(int argc, char** argv) {
 #if GT3R_XR
     // A headset when there is one ([vr] enabled = off or --no-vr: the window, as on a phone).
     gpu_opts.xr = to_lower(config_.get("vr", "enabled").value_or("on")) != "off";
+    gpu_opts.xr_runtime = to_lower(config_.get("vr", "runtime").value_or("auto"));
     for (int i = 1; i < argc; ++i)
         if (std::string(argv[i]) == "--no-vr") gpu_opts.xr = false;
 #endif
@@ -179,6 +181,7 @@ bool App::init(int argc, char** argv) {
         xr_ = xr::Session::create(gpu_->device(), gpu_->renderer2d(), gpu_->xr_request(), xr::Settings::load(config_));
         if (xr_) {
             gpu_->set_render_scale(1.0f); // eyes are sized by [vr] resolution; the canvas is small
+            if (!platform::is_mobile()) xr_->mirror_to(window_);
         } else { // a headset runtime but no working session: the window after all
             LOG_WARN("VR: session setup failed; using the window");
             gpu_.reset();
@@ -433,6 +436,11 @@ void App::set_fullscreen(bool on) {
 // 144 -> 72, 240 -> 60; 60 and 90 Hz -> every refresh) as SDL's main loop rate (SDL's renderers
 // only offer vsync on or off), which with vsync still presents on a refresh.
 void App::apply_frame_limit() {
+#if GT3R_XR
+    // A headset paces the frames (Session::begin_frame): a main loop rate under its refresh (60
+    // for a 72 Hz headset) made it miss frames, a judder.
+    if (xr_) return;
+#endif
     const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_));
     const double hz = mode ? mode->refresh_rate : 0;
     if (hz <= 0) return;
@@ -756,6 +764,11 @@ SDL_AppResult App::iterate() {
     pointer_script();
     touch_.update(dt, touch_layout, *input_);
     input_->update(dt);
+#if GT3R_XR
+    if (xr_)
+        for (int p = 0; p < InputManager::kMaxPlayers; ++p)
+            if (input_->action_pressed(p, PadAction::RecenterView)) xr_->recenter();
+#endif
     if (modal || (top && top->wants_menu_input()))
         menu_.update(!modal && top->menu_input_any_device() ? input_->any_device_pad() : input_->menu_pad(), dt);
     else menu_.update(PadState{}, dt);
@@ -916,6 +929,9 @@ SDL_AppResult App::event(const SDL_Event& e) {
         set_dialog_result(e.drop.data);
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F12 && !e.key.repeat) screenshot_requested_ = true;
     if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F11 && !e.key.repeat) set_fullscreen(!fullscreen());
+#if GT3R_XR
+    if (xr_ && e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F9 && !e.key.repeat) xr_->recenter();
+#endif
     // Fullscreen entered or left another way (macOS green button, window manager).
     if ((e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) && !platform::is_mobile()) {
         const char* v = e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ? "on" : "off";
@@ -936,6 +952,9 @@ SDL_AppResult App::event(const SDL_Event& e) {
         display_insets_.reset(), insets_retry_ = 0; // re-query (rotation, foldables)
     SDL_Event local = e; // pointer coordinates in UI space
     SDL_ConvertEventToRenderCoordinates(renderer_, &local);
+#if GT3R_XR
+    if (xr_) mirror_pointer(local);
+#endif
     if (updates().dialog_open()) { // modal: pointers go to the update dialog only
         updates().dialog_event(*this, local);
         return SDL_APP_CONTINUE;
@@ -1230,19 +1249,8 @@ void App::xr_pointer() {
         ui_->set_pointer(false, 0, 0);
         return;
     }
-    // Canvas pixels -> UI units through the canvas's logical presentation (layout_ui).
-    float x = u * float(xr_->canvas_width()), y = v * float(xr_->canvas_height());
-    SDL_Texture* prev = SDL_GetRenderTarget(renderer_);
-    SDL_SetRenderTarget(renderer_, xr_->canvas());
-    int lw = 0, lh = 0;
-    SDL_RendererLogicalPresentation mode = SDL_LOGICAL_PRESENTATION_DISABLED;
-    SDL_FRect lr{};
-    if (SDL_GetRenderLogicalPresentation(renderer_, &lw, &lh, &mode) && mode != SDL_LOGICAL_PRESENTATION_DISABLED &&
-        lw > 0 && lh > 0 && SDL_GetRenderLogicalPresentationRect(renderer_, &lr) && lr.w > 0 && lr.h > 0) {
-        x = (x - lr.x) * float(lw) / lr.w;
-        y = (y - lr.y) * float(lh) / lr.h;
-    }
-    SDL_SetRenderTarget(renderer_, prev);
+    float x = 0, y = 0;
+    canvas_to_ui(u, v, x, y);
     if (!xr_pointer_on_ || x != xr_pointer_x_ || y != xr_pointer_y_) {
         SDL_Event e{};
         e.type = SDL_EVENT_MOUSE_MOTION;
@@ -1272,6 +1280,38 @@ void App::xr_pointer() {
                                                    : !screens_.empty() && screens_.back()->clickable(x, y);
     xr_->set_a_clicks(clickable);
     ui_->set_pointer(true, x, y);
+}
+
+// Canvas pixels -> UI units through the canvas's logical presentation (layout_ui).
+void App::canvas_to_ui(float u, float v, float& x, float& y) {
+    x = u * float(xr_->canvas_width()), y = v * float(xr_->canvas_height());
+    SDL_Texture* prev = SDL_GetRenderTarget(renderer_);
+    SDL_SetRenderTarget(renderer_, xr_->canvas());
+    int lw = 0, lh = 0;
+    SDL_RendererLogicalPresentation mode = SDL_LOGICAL_PRESENTATION_DISABLED;
+    SDL_FRect lr{};
+    if (SDL_GetRenderLogicalPresentation(renderer_, &lw, &lh, &mode) && mode != SDL_LOGICAL_PRESENTATION_DISABLED &&
+        lw > 0 && lh > 0 && SDL_GetRenderLogicalPresentationRect(renderer_, &lr) && lr.w > 0 && lr.h > 0) {
+        x = (x - lr.x) * float(lw) / lr.w;
+        y = (y - lr.y) * float(lh) / lr.h;
+    }
+    SDL_SetRenderTarget(renderer_, prev);
+}
+
+// The mouse on the desktop's window, which shows the canvas whole (xr::Session::mirror_to): the
+// offscreen renderer leaves its events in window units.
+void App::mirror_pointer(SDL_Event& e) {
+    float* x = nullptr;
+    float* y = nullptr;
+    if (e.type == SDL_EVENT_MOUSE_MOTION) x = &e.motion.x, y = &e.motion.y;
+    else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) x = &e.button.x, y = &e.button.y;
+    else if (e.type == SDL_EVENT_MOUSE_WHEEL) x = &e.wheel.mouse_x, y = &e.wheel.mouse_y;
+    else return;
+    int ww = 0, wh = 0;
+    SDL_GetWindowSize(window_, &ww, &wh);
+    if (ww <= 0 || wh <= 0) return;
+    const SDL_FRect r = xr::fit_picture(xr_->canvas_width(), xr_->canvas_height(), float(ww), float(wh), false);
+    canvas_to_ui((*x - r.x) / r.w, (*y - r.y) / r.h, *x, *y);
 }
 #endif
 
