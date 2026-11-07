@@ -2708,7 +2708,8 @@ halo-sized square is on screen. Per kept lamp:
    0.5 + 0.5 sin(2π (t / P + phase)) for blinking lamps.
 3. **Visibility.** The fraction of a 10 x 10 pixel box (of the 448-line frame)
    at the lamp, 0.2 m nearer than it, that passes the depth test, doubled and
-   capped at 1; the engine casts a 3 x 3 grid of rays against the scenery.
+   capped at 1; the engine casts a 3 x 3 grid of rays against the scenery and
+   the bodies of the cars the camera draws.
 4. **Glow.** The disc's `race/flare.bin` (three untextured meshes: a 0.425 m disc
    and three thin rays 60 degrees apart, a six-point star) at the lamp pulled
    0.5 m towards the camera, scaled by the glow size, not depth-tested: vertex
@@ -2718,7 +2719,8 @@ halo-sized square is on screen. Per kept lamp:
 5. **Halo.** Beyond 1 m, the flare system's own disc of radius halo at the
    pulled point: a 14-sided fan, its center at full color and alpha, its rim 0
    (`race::Flare::disc_mesh`), color RGB x I x gain x 0.5 at full visibility (not
-   D), added as the glow is, depth-tested (one ray from the camera here).
+   D), added as the glow is, depth-tested per pixel against the scenery and the
+   cars (in VR, one ray from the camera at its center).
 
 Without `race/flare.bin` the glow is a procedural stand-in sprite of radius
 glow x 1.17 m (ours). Decoded from the disc:
@@ -2737,7 +2739,8 @@ painted into the scenery.
 - **Car time of day.** Env0 flag 0x80000 loads `cars/eve/`, else 0x8000
   `cars/night/`, else `cars/day/`.
 - **Lamp glows** (`race::CarLampGlows`, Env0 flag 0x8000: night and dusk courses)
-  are drawn from the car's GTCI lamp lists:
+  are drawn from the GTCI lamp lists of the cars the camera draws (so not the
+  camera's own car in the in-car view, or the car an on-board replay shot rides):
 
   | List | When | Drawn as |
   |---|---|---|

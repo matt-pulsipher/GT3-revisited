@@ -1,9 +1,10 @@
 #pragma once
 
-// CPU ray test against the course's opaque scenery and backdrop triangles, for the sun
-// glare's visibility (the original depth-tests an N x N box around the sun pixel against
-// the finished frame; we cast rays through the same box). Triangles are binned in an XZ
-// grid; a ray walks the grid until it passes above the highest triangle.
+// CPU ray test against a model's opaque triangles: the course's scenery and backdrop, for the
+// sun glare's and the lamp glows' visibility, and each car's body (in its own frame), for the
+// lamp glows' (GT3 depth-tests a box of pixels around the point against the finished
+// frame; we cast rays through the same box). Triangles are binned in an XZ grid; a ray walks the
+// grid from where it meets it until it passes above the highest triangle.
 
 #include "render/math3d.h"
 #include "scene/model.h"

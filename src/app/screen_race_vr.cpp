@@ -65,10 +65,10 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
         for (size_t i = player_items_[0]; i < player_items_[1]; ++i) items_[i].single_sided = true;
     const float fovy = std::atan(e0.tan_up) - std::atan(e0.tan_down);
     const float sun_v = sun_visibility(head_pos, fovy, float(e0.height));
-    auto occl = [this](const render::Vec3& a, const render::Vec3& b) {
-        return course_scene_ && course_scene_->occluder().segment_blocked(a, b);
-    };
-    const std::vector<CarLampGlows::Car> lamp_list = car_lamps_.active() ? lamp_cars() : std::vector<CarLampGlows::Car>{};
+    // The glows of the cars as the flat view has them: on board, not the own car's (its body here is
+    // seen from inside, so it hides nothing either).
+    const GlowCars glow = has_glows() ? glow_cars(!camera_.onboard(), true, -1) : GlowCars{};
+    auto occl = [&](const render::Vec3& a, const render::Vec3& b) { return glow_blocked(glow, a, b); };
     // The sky domes centred on each eye, not on the head between them: they are small (Route
     // 11's is 33-51 m), so a shared centre put the sky at that distance in stereo, nearer than
     // the scenery drawn over it. Centred on the eye it has no parallax: at infinity.
@@ -101,7 +101,7 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
         remove_wet_road(wet_items); // (the wet road's frame items belong to this eye only)
         sun_.draw(r, full, view, fr, sun_v);
         lamps_.draw(r, full, view, eye, fr, occl);
-        if (car_lamps_.active()) car_lamps_.draw(r, full, view, eye, fr, lamp_list, occl);
+        if (car_lamps_.active()) car_lamps_.draw(r, full, view, eye, fr, glow.lamps, occl);
         if (exit_transition_ > kExitHold) { // the race -> menu grey wash, over the whole view (presentation §C1)
             const SDL_FColor w = menu::flow::ScreenTransition::delay_fadeout_cover(exit_transition_);
             SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);

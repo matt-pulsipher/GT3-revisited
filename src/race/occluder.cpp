@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace gt3r::race {
 
@@ -63,10 +64,22 @@ void Occluder::build(float cell) {
 
 bool Occluder::blocked(const Vec3& o, const Vec3& d, float max_dist) const {
     if (cells_.empty()) return false;
+    // The stretch of the ray over the grid (a cell's margin around it: a point up to a cell short
+    // of the first row still counts as in it); none: nothing to hit.
+    float t0 = 0, t1 = max_dist;
+    auto slab = [&](float p, float v, float lo, float hi) {
+        if (v == 0) return p >= lo && p <= hi;
+        float a = (lo - p) / v, b = (hi - p) / v;
+        if (a > b) std::swap(a, b);
+        t0 = std::max(t0, a), t1 = std::min(t1, b);
+        return t0 <= t1;
+    };
+    if (!slab(o.x, d.x, x0_ - cell_, x0_ + float(nx_ + 1) * cell_) || !slab(o.z, d.z, z0_ - cell_, z0_ + float(nz_ + 1) * cell_))
+        return false;
     ++frame_;
     // March along the ray in half-cell steps; stop above the highest triangle or out of the grid.
     float step = cell_ * 0.5f;
-    for (float s = 0; s < max_dist; s += step) {
+    for (float s = std::floor(t0 / step) * step; s < max_dist; s += step) {
         Vec3 p = o + d * s;
         if (p.y > max_y_ && d.y >= 0) return false;
         int ix = int((p.x - x0_) / cell_), iz = int((p.z - z0_) / cell_);

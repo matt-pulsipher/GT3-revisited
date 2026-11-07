@@ -640,19 +640,19 @@ render::DrawOptions RaceScreen::draw_options() const {
 // glare and the lamp glows go into the picture before the grade (graded, under the vignette); the
 // heat haze lenses and the vignette belong to the 1P frame's replays.
 void RaceScreen::add_screen_passes(render::DrawOptions& o, const SDL_FRect& rect, const CameraRig& cam,
-                                   float sun_visibility, bool second, bool split) {
+                                   float sun_visibility, bool second, bool split, const GlowCars* glow) {
     if (!second) ++view_frame_;
     render::ScreenBatch& ob = second ? overlay2_batch_ : overlay_batch_;
     ob.clear();
     ob.rect = rect;
     const render::Vec3 eye = cam.eye();
     sun_.add(ob, rect, cam.view(), cam.frustum(rect.w / rect.h), sun_visibility);
-    if (!second) {
-        auto occl = [this](const render::Vec3& a, const render::Vec3& b) {
-            return course_scene_ && course_scene_->occluder().segment_blocked(a, b);
-        };
-        lamps_.add(ob, rect, cam.view(), eye, cam.frustum(rect.w / rect.h), occl);
-        if (car_lamps_.active()) car_lamps_.add(ob, rect, cam.view(), eye, cam.frustum(rect.w / rect.h), lamp_cars(), occl);
+    if (glow) {
+        auto occl = [&](const render::Vec3& a, const render::Vec3& b) { return glow_blocked(*glow, a, b); };
+        // The halos in the view's depth: its depth test hides them behind the scenery and the cars.
+        const render::Mat4 proj = cam.projection(rect.w / rect.h);
+        lamps_.add(ob, rect, cam.view(), eye, cam.frustum(rect.w / rect.h), occl, &proj);
+        if (car_lamps_.active()) car_lamps_.add(ob, rect, cam.view(), eye, cam.frustum(rect.w / rect.h), glow->lamps, occl, &proj);
     }
     o.overlay = &ob;
     if (second || split) return; // the 2P halves: no haze, no vignette
@@ -771,13 +771,15 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     // In-car view: own car not drawn; a replay's on-board car mount: the followed car not drawn.
     const bool mount_in = camera_.replay_on_board();
     const bool followed_player = !(field_ && replay_focus_ >= 0);
-    hidden_opponent_ = mount_in && !followed_player ? replay_focus_ : -1;
+    const bool own_car = !camera_.onboard() && !(mount_in && followed_player);
+    const int hidden = mount_in && !followed_player ? replay_focus_ : -1;
+    hidden_opponent_ = hidden;
     // The wheels: GT3 blurs them in the 1P frame, not in the 2P halves (docs/formats/car_model.md
     // "Wheel spin blur").
     const WheelView wv{camera_.view(), camera_.projection(rect.w / rect.h), eye, !split, wheel_env_};
     wheel_view_ = &wv;
     spark_pass_ = !split, spark_view_ = camera_.view(); // (the split-screen halves draw none)
-    collect_items(eye, cam_right(camera_), !camera_.onboard() && !(mount_in && followed_player), true,
+    collect_items(eye, cam_right(camera_), own_car, true,
                   smoke_view(camera_, rect.w / rect.h * CameraRig::kPixelAspect, camera_.fovy()), split ? ItemsView::Split : ItemsView::Main);
     spark_pass_ = false;
     wheel_view_ = nullptr;
@@ -798,7 +800,8 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     // heat haze) and the vignette (presentation §L6).
     const float sun_v = sun_visibility(eye, camera_.fovy(), rect.h);
     if (debug_ && sun_.params().enabled && (++sun_log_ % 60) == 0) LOG_INFO("sun visibility %.2f", sun_v);
-    add_screen_passes(ov, rect, camera_, sun_v, false, split);
+    const GlowCars glow = has_glows() ? glow_cars(own_car, true, hidden) : GlowCars{};
+    add_screen_passes(ov, rect, camera_, sun_v, false, split, &glow);
     ov.guard_near = camera_.gt3_near();
     view_->draw(ui.renderer(), rect, camera_.view(), camera_.projection(rect.w / rect.h), eye, items_, ov);
     remove_wet_road(wet_items); // (the wet road's frame items belong to this view only)
@@ -815,7 +818,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
                       smoke_view(camera2_, rect2.w / rect2.h * CameraRig::kPixelAspect, camera2_.fovy()), ItemsView::Split);
         wheel_view_ = nullptr;
         render::DrawOptions o2 = o;
-        add_screen_passes(o2, rect2, camera2_, sun_visibility(eye2, camera2_.fovy(), rect2.h), true, true);
+        add_screen_passes(o2, rect2, camera2_, sun_visibility(eye2, camera2_.fovy(), rect2.h), true, true, nullptr);
         o2.guard_near = camera2_.gt3_near();
         view2_->draw(ui.renderer(), rect2, camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, items_, o2);
         if (horizontal && !replaying_ && camera2_.shows_mirror())
@@ -998,22 +1001,31 @@ size_t RaceScreen::add_wet_road(const render::Vec3& eye, const render::Mat4& vie
     return frame.size();
 }
 
-// Every car's lamps for the glow pass: the player, player 2 and the opponents.
-std::vector<CarLampGlows::Car> RaceScreen::lamp_cars() const {
-    std::vector<CarLampGlows::Car> out;
+// The cars a view draws, for the glow passes: their lamps (GT3 visits each car's lamps from its car
+// pass, so only the drawn cars': not the camera's own car on board) and their bodies.
+RaceScreen::GlowCars RaceScreen::glow_cars(bool player, bool second, int hidden_opponent) const {
+    GlowCars out;
     auto add = [&](const CarVisual* v, const sim::VehicleState& s, const sim::VehicleSetup& su, size_t idx) {
-        if (!v || v->lamps().empty()) return;
-        out.push_back({&v->lamps(), v->body_matrix(s, su), brake_lamps_.factor(idx), brake_lamps_.now(idx)});
+        if (!v) return;
+        const render::Mat4 m = v->body_matrix(s, su);
+        if (!v->lamps().empty()) out.lamps.push_back({&v->lamps(), m, brake_lamps_.factor(idx), brake_lamps_.now(idx)});
+        if (!v->occluder().empty()) out.bodies.emplace_back(&v->occluder(), render::inverse(m));
     };
-    add(car_visual_.get(), render_state_, vehicle_->setup(), 0);
-    if (field_ && field_->has_second())
+    if (player) add(car_visual_.get(), render_state_, vehicle_->setup(), 0);
+    if (second && field_ && field_->has_second())
         add(car2_visual_ ? car2_visual_.get() : car_visual_.get(), render_state2_, field_->second_setup(), 1);
     if (const RaceField* f = exact_field())
         for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
-            if (opp_visuals_[size_t(i)])
+            if (opp_visuals_[size_t(i)] && i != hidden_opponent)
                 add(opp_visuals_[size_t(i)].get(), interpolate(f->opponent_prev_state(i), f->opponent_state(i), step_.alpha()),
                     f->opponent_setup(i), 2 + size_t(i));
     return out;
+}
+
+bool RaceScreen::glow_blocked(const GlowCars& cars, const render::Vec3& a, const render::Vec3& b) const {
+    for (const auto& [body, to_body] : cars.bodies)
+        if (body->segment_blocked(to_body.transform_point(a), to_body.transform_point(b))) return true;
+    return course_scene_ && course_scene_->occluder().segment_blocked(a, b);
 }
 
 } // namespace gt3r::race_screen
