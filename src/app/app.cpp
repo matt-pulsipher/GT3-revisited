@@ -7,6 +7,7 @@
 #include "disc/region.h"
 #include "gt3r_version.h"
 #include "formats/png_writer.h"
+#include "formats/texture_pack.h"
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
 #include "game/save_folder.h"
@@ -358,6 +359,7 @@ void App::set_language(const std::string& code) {
 void App::rescan_mods() {
     if (!vfs_) return;
     vfs_->scan_mods(mods_dir(), &config_);
+    texture_pack::set_pack(vfs_->textures()); // for what loads from now on
     game::reload_gt_mode_data(); // loaded at the first title menu, with the mods of then
     measure_disc_music();
 }
@@ -367,6 +369,7 @@ void App::set_mod_enabled(const std::string& id, bool enabled) {
     save_config();
     if (!vfs_) return;
     vfs_->set_mod_enabled(id, enabled);
+    texture_pack::set_pack(vfs_->textures());
     game::reload_gt_mode_data();
     measure_disc_music();
 }
@@ -395,6 +398,7 @@ std::string App::open_disc(const std::string& path) {
         disc_ = std::move(disc);
         vfs_ = std::make_unique<Vfs>(&disc_->volume());
         vfs_->scan_mods(mods_dir(), &config_);
+        texture_pack::set_pack(vfs_->textures());
         apply_language();
         measure_disc_music();
         config_.set("game", "disc", full);
@@ -651,6 +655,7 @@ void App::close_disc() {
     if (audio_) audio_->stop_music();
     music_.set_disc_songs({}, {}); // its songs' measuring reads this disc
     game::close_gt_mode(); // its data, reader and save library belong to this disc
+    texture_pack::set_pack(nullptr);
     vfs_.reset();
     disc_.reset();
 }

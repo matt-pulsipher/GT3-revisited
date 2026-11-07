@@ -1,19 +1,27 @@
 // Mods: the installed mods (on/off, details, the cars each adds and why one did not load),
 // installing mods from a .zip (vfs/mod_archive.h), removing them, and the mods folder in the
 // system's file manager (platform/user_files.h; on Android the Files app, since the folder is
-// in private app storage there). docs/MODDING.md "Installing mods".
+// in private app storage there). docs/MODDING.md "Installing mods". Texture pack tools: saving
+// every texture of the disc (formats/texture_pack.h) and converting a PCSX2 texture pack into
+// a mod (formats/pcsx2_textures.h), docs/MODDING.md "Texture packs".
 
 #include "app/app.h"
 #include "app/screen_registry.h"
 #include "base/config.h"
+#include "base/file.h"
+#include "base/log.h"
+#include "formats/pcsx2_textures.h"
 #include "formats/text/charset.h"
+#include "formats/texture_pack.h"
 #include "game/data/car_database.h"
 #include "platform/ios_files.h"
+#include "platform/music_folder.h"
 #include "platform/user_files.h"
 #include "vfs/mod_archive.h"
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <mutex>
@@ -33,6 +41,14 @@ bool is_zip_name(std::string_view s) { return s.size() > 4 && to_lower(s.substr(
 // Every build has a mods folder to unpack into and to open.
 constexpr bool can_install() { return true; }
 constexpr bool can_open_folder() { return true; }
+// PCSX2 packs live on computers: the folder dialog of a computer picks one.
+bool can_convert_pcsx2() {
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    return false;
+#else
+    return can_install();
+#endif
+}
 
 // A file picked in the system dialog. The dialog may answer from another thread, and after the
 // screen is gone, so the callback holds its own reference.
@@ -103,6 +119,106 @@ private:
     std::string error_;
 };
 
+// Saving every texture of the disc, or converting a PCSX2 texture pack, off the main thread:
+// both read every game file (a minute or so on a computer). The mods must not change meanwhile.
+class TextureJob {
+public:
+    enum class Kind { Save, Convert };
+
+    ~TextureJob() {
+        cancel_ = true;
+        if (thread_.joinable()) thread_.join();
+    }
+
+    // Save: the textures into `dir`. Convert: PCSX2's pack folder `pack` into the mod folder `dir`.
+    void start(Kind kind, const Vfs& vfs, std::string dir, std::string pack, std::string mod_name) {
+        kind_ = kind;
+        dir_ = dir;
+        thread_ = std::thread([this, &vfs, dir = std::move(dir), pack = std::move(pack), mod_name = std::move(mod_name)] {
+            run(vfs, dir, pack, mod_name);
+            done_.store(true, std::memory_order_release);
+        });
+    }
+    Kind kind() const { return kind_; }
+    const std::string& dir() const { return dir_; }
+    bool done() const { return done_.load(std::memory_order_acquire); }
+    float progress() const { return progress_.load(std::memory_order_relaxed); }
+    void cancel() { cancel_ = true; }
+    bool cancelled() const { return cancel_; }
+    // Once done.
+    const std::string& message() const { return message_; }
+    bool ok() const { return ok_; }
+
+private:
+    void run(const Vfs& vfs, const std::string& dir, const std::string& pack, const std::string& mod_name) {
+        std::vector<std::string> paths;
+        if (const Volume* v = vfs.base())
+            for (const Volume::Entry& e : v->entries())
+                if (e.size && texture_pack::dump_reads(e.path)) paths.push_back(e.path);
+        const bool save = kind_ == Kind::Save;
+        texture_pack::Dump dump(dir);
+        texture_pack::Pcsx2Index index;
+        bool written = true;
+        for (size_t i = 0; i < paths.size() && !cancel_; ++i) {
+            progress_ = float(i) / float(paths.size()) * (save ? 1.0f : 0.8f);
+            std::optional<Bytes> data = vfs.read(paths[i]);
+            if (!data) continue;
+            try {
+                if (save) dump.add_file(paths[i], *data, &written);
+                else index.add_file(paths[i], *data);
+            } catch (const std::exception& e) {
+                LOG_WARN("Textures: %s: %s", paths[i].c_str(), e.what());
+            }
+        }
+        if (cancel_) {
+            message_ = save ? "Stopped saving textures." : "Stopped converting the pack.";
+            return;
+        }
+        if (save) {
+            written = dump.finish() && written;
+            ok_ = written;
+            message_ = "Saved " + std::to_string(dump.saved()) + " textures to " + dir +
+                       (written ? "." : " (some could not be written).");
+            return;
+        }
+        texture_pack::Pcsx2Import r = texture_pack::import_pcsx2_pack(
+            pack, index, dir + "/textures", [&](const std::string& p) { return vfs.read(p); },
+            [&](size_t done, size_t total) { progress_ = 0.8f + 0.2f * float(done) / float(std::max<size_t>(total, 1)); });
+        if (!host_path_exists(dir + "/mod.ini")) {
+            const std::string ini = "[mod]\nname = " + mod_name + "\ndescription = Converted from a PCSX2 texture pack.\n";
+            write_host_file(dir + "/mod.ini", ByteSpan(reinterpret_cast<const u8*>(ini.data()), ini.size()));
+        }
+        // What was left out and why, for the pack's maker.
+        std::string report = "# PCSX2 texture pack conversion (docs/MODDING.md \"PCSX2 texture packs\")\n# from " + pack + "\n";
+        auto list = [&](const char* title, const std::vector<std::string>& names) {
+            if (names.empty()) return;
+            report += std::string("\n") + title + "\n";
+            for (const std::string& n : names) report += n + "\n";
+        };
+        list("# Not recognised (pictures the game makes while it runs, like text, or another release's):", r.unmatched);
+        list("# No dump of the same name in dumps/:", r.no_dump);
+        list("# Failed:", r.failed);
+        write_host_file(dir + "/pcsx2-import.txt", ByteSpan(reinterpret_cast<const u8*>(report.data()), report.size()));
+        ok_ = r.converted > 0;
+        message_ = "Converted " + std::to_string(r.converted) + " of " + std::to_string(r.pictures) + " pictures into " +
+                   mod_name + ".";
+        if (!r.unmatched.empty())
+            message_ += " " + std::to_string(r.unmatched.size()) +
+                        " were not recognised (pictures the game makes while it runs, such as text).";
+        if (!r.no_dump.empty())
+            message_ += " " + std::to_string(r.no_dump.size()) + " have no dump of the same name in dumps/.";
+        if (!r.failed.empty()) message_ += " " + std::to_string(r.failed.size()) + " failed (see pcsx2-import.txt).";
+    }
+
+    Kind kind_ = Kind::Save;
+    std::string dir_;
+    std::thread thread_;
+    std::atomic<bool> done_{false}, cancel_{false};
+    std::atomic<float> progress_{0};
+    std::string message_;
+    bool ok_ = false;
+};
+
 std::string with_version(const std::string& name, const std::string& version) {
     return version.empty() ? name : name + " v" + version;
 }
@@ -151,13 +267,26 @@ public:
     }
 
     void update(App& app, double) override {
-        // Testing and screenshots: GT3R_MOD_ZIP=<archive> installs it as if picked.
-        if (const char* zip = SDL_getenv("GT3R_MOD_ZIP"); zip && *zip && !env_done_) {
+        // Testing and screenshots: GT3R_MOD_ZIP=<archive> installs it as if picked;
+        // GT3R_PCSX2_PACK=<folder> converts that PCSX2 pack as if picked; GT3R_SAVE_TEXTURES=1 saves
+        // every texture as if confirmed.
+        if (!env_done_) {
             env_done_ = true;
-            begin_install(app, zip);
+            if (const char* zip = SDL_getenv("GT3R_MOD_ZIP"); zip && *zip) begin_install(app, zip);
+            else if (const char* pack = SDL_getenv("GT3R_PCSX2_PACK"); pack && *pack && app.vfs()) convert_pack(app, pack);
+            else if (const char* save = SDL_getenv("GT3R_SAVE_TEXTURES"); save && *save == '1' && app.vfs()) {
+                start_texture_job(app, TextureJob::Kind::Save, dump_dir(app), "", "");
+                scripted_ = true; // no file manager window at the end
+            }
         }
         poll_pick(app);
         poll_job(app);
+        poll_texture_job(app);
+        poll_pack_pick(app);
+        if (texture_job_) {
+            if (app.menu().pressed(PadButton::Triangle)) texture_job_->cancel();
+            return;
+        }
         if (rescan_ && !job_) {
             rescan_ = false;
             rescan(app);
@@ -179,6 +308,8 @@ public:
         if (m.pressed(PadButton::Square) && n) ask_remove(app, sel_);
         if (m.pressed(PadButton::Start)) pick(app);
         if (m.pressed(PadButton::Select) && can_open_folder()) open_folder(app);
+        if (m.pressed(PadButton::Circle) && can_install()) ask_save_textures(app);
+        if (m.pressed(PadButton::R1) && can_convert_pcsx2()) ask_convert(app);
         if (m.pressed(PadButton::Triangle)) app.pop();
     }
 
@@ -196,6 +327,8 @@ public:
         ui.text(lay_.back.right() + 12, std::floor(lay_.back.y + (lay_.back.h - Ui::kChar) / 2), "MODS", colors::kAccent);
         if (lay_.install.w > 0) ui.button(lay_.install, kInstallLabel, false, pressed(Target::Install), true);
         if (lay_.open.w > 0) ui.button(lay_.open, kOpenLabel, false, pressed(Target::Open));
+        if (lay_.textures.w > 0) ui.button(lay_.textures, kTexturesLabel, false, pressed(Target::Textures));
+        if (lay_.convert.w > 0) ui.button(lay_.convert, kConvertLabel, false, pressed(Target::Convert));
 
         render_list(app, ui, mods);
         if (!mods.empty()) render_details(app, ui, mods[size_t(sel_)]);
@@ -223,10 +356,14 @@ public:
         const Color sc = message_.empty() ? colors::kDim : message_bad_ ? colors::kBad : colors::kGood;
         for (size_t i = 0; i < lines.size(); ++i) ui.text(S.x + 8, sy + 5 + float(i) * 11, lines[i], sc);
         if (!touch)
-            ui.footer(can_install() ? "Cross: on/off   Square: remove   Start: install .zip   Select: open folder   Triangle: back"
-                                    : "Cross: on/off   Square: remove   Triangle: back");
+            ui.footer(can_convert_pcsx2() ? "Cross: on/off  Square: remove  Start: install .zip  Select: open folder  "
+                                            "Circle: save textures  R1: PCSX2 pack  Triangle: back"
+                      : can_install()     ? "Cross: on/off   Square: remove   Start: install .zip   Select: open folder   "
+                                            "Circle: save textures   Triangle: back"
+                                          : "Cross: on/off   Square: remove   Triangle: back");
 
         if (job_) render_progress(ui);
+        if (texture_job_) render_texture_progress(ui);
         if (confirm_) render_confirm(ui);
     }
 
@@ -237,18 +374,20 @@ public:
 private:
     static constexpr const char* kInstallLabel = "Install from .zip";
     static constexpr const char* kOpenLabel = "Open folder";
+    static constexpr const char* kTexturesLabel = "Save textures";
+    static constexpr const char* kConvertLabel = "PCSX2 pack";
 
     struct Target {
-        enum Kind { None, Back, Install, Open, Remove, Row, Toggle, Yes, No } kind = None;
+        enum Kind { None, Back, Install, Open, Textures, Convert, Remove, Row, Toggle, Yes, No } kind = None;
         int index = 0;
         bool operator==(const Target& o) const { return kind == o.kind && index == o.index; }
     };
     struct Layout {
-        UiRect back, install, open, list, details, remove, yes, no;
+        UiRect back, install, open, textures, convert, list, details, remove, yes, no;
         float bar_bottom = 20, strip_y = 318, row_h = 30;
     };
     struct Confirm {
-        enum Kind { None, Remove, Replace } kind = None;
+        enum Kind { None, Remove, Replace, SaveTextures, Convert } kind = None;
         std::string title, yes;
         std::vector<std::string> lines;
         std::string mod_id; // Remove
@@ -263,6 +402,8 @@ private:
         case Target::Back: app.pop(); break;
         case Target::Install: pick(app); break;
         case Target::Open: open_folder(app); break;
+        case Target::Textures: ask_save_textures(app); break;
+        case Target::Convert: ask_convert(app); break;
         case Target::Remove: ask_remove(app, sel_); break;
         case Target::Row: sel_ = t.index; break;
         case Target::Toggle:
@@ -416,6 +557,15 @@ private:
     void answer(App& app, bool yes) {
         Confirm c = std::move(confirm_);
         confirm_ = Confirm{};
+        if (c.kind == Confirm::SaveTextures) {
+            if (yes) start_texture_job(app, TextureJob::Kind::Save, dump_dir(app), "", "");
+            return;
+        }
+        if (c.kind == Confirm::Convert) {
+            if (yes && !platform::start_folder_pick(app.window(), "")) say("Could not show the folder picker.", true);
+            pack_pick_ = yes;
+            return;
+        }
         if (c.kind == Confirm::Replace) {
             if (yes) job_->install(app.mods_dir(), staging_dir(app));
             else job_.reset();
@@ -435,6 +585,106 @@ private:
         say("Removed " + name + ".", false);
     }
 
+    // --- texture packs ---
+
+    static std::string dump_dir(App& app) {
+        return app.data_dir() + texture_pack::dump_folder(app.disc() ? app.disc()->info().serial : std::string());
+    }
+
+    void ask_save_textures(App& app) {
+        if (!can_install() || !app.vfs() || texture_job_ || job_) return;
+        confirm_ = Confirm{};
+        confirm_.kind = Confirm::SaveTextures;
+        confirm_.title = "Save every texture?";
+        confirm_.lines = {"The disc's textures are saved as PNG pictures, each once, named so that a texture pack "
+                          "can replace them: about 400 MB, a minute or two.",
+                          "Folder: " + dump_dir(app)};
+        confirm_.yes = "Save";
+        confirm_.focus_yes = true;
+    }
+
+    void ask_convert(App& app) {
+        if (!can_convert_pcsx2() || !app.vfs() || texture_job_ || job_ || pack_pick_) return;
+        confirm_ = Confirm{};
+        confirm_.kind = Confirm::Convert;
+        confirm_.title = "Convert a PCSX2 texture pack?";
+        confirm_.lines = {"Pick the pack's folder in PCSX2's textures folder (" +
+                              (app.disc() ? texture_pack::pcsx2_serial(app.disc()->info().serial) : std::string("the game's serial")) +
+                              "), with its replacements and PCSX2's dumps of the same pictures.",
+                          "The pictures become a mod. Reading the disc takes a minute or so."};
+        confirm_.yes = "Pick folder";
+        confirm_.focus_yes = true;
+    }
+
+    // The PCSX2 pack folder that `picked` names: itself, or the disc's folder in it.
+    static std::string pack_folder(App& app, const std::string& picked) {
+        if (host_is_directory(picked + "/replacements")) return picked;
+        const std::string serial = app.disc() ? texture_pack::pcsx2_serial(app.disc()->info().serial) : std::string();
+        if (!serial.empty() && host_is_directory(picked + "/" + serial + "/replacements")) return picked + "/" + serial;
+        if (host_is_directory(picked + "/textures/" + serial + "/replacements")) return picked + "/textures/" + serial;
+        return {};
+    }
+
+    void poll_pack_pick(App& app) {
+        if (!pack_pick_) return;
+        std::optional<platform::FolderAnswer> a = platform::take_folder_pick();
+        if (!a) return;
+        pack_pick_ = false;
+        if (a->kind == platform::FolderAnswer::Failed) say("Could not show the folder picker.", true);
+        if (a->kind == platform::FolderAnswer::Picked && app.vfs()) convert_pack(app, a->path);
+    }
+
+    void convert_pack(App& app, const std::string& picked) {
+        const std::string pack = pack_folder(app, picked);
+        if (pack.empty()) {
+            say("That folder has no replacements folder. Pick the game's folder in PCSX2's textures folder.", true);
+            return;
+        }
+        std::string base = pack.substr(pack.find_last_of('/') + 1), id = "pcsx2";
+        for (char c : base) id += (std::isalnum(u8(c)) ? char(std::tolower(u8(c))) : '_');
+        if (id == "pcsx2") id = "pcsx2_pack";
+        else id.insert(5, "_");
+        start_texture_job(app, TextureJob::Kind::Convert, app.mods_dir() + "/" + id, pack, "PCSX2 texture pack (" + base + ")");
+    }
+
+    void start_texture_job(App& app, TextureJob::Kind kind, const std::string& dir, const std::string& pack,
+                           const std::string& mod_name) {
+        say("", false);
+        texture_job_ = std::make_unique<TextureJob>();
+        texture_job_->start(kind, *app.vfs(), dir, pack, mod_name);
+    }
+
+    void poll_texture_job(App& app) {
+        if (!texture_job_ || !texture_job_->done()) return;
+        std::unique_ptr<TextureJob> job = std::move(texture_job_);
+        say(job->message(), !job->ok() && !job->cancelled());
+        if (job->kind() == TextureJob::Kind::Convert && job->ok()) {
+            const std::string id = job->dir().substr(job->dir().find_last_of('/') + 1);
+            app.config().set("mods", id, "on"); // converting = wanting it
+            app.save_config();
+            rescan(app); // the new mod, and its pictures in the texture pack
+            select(app, id);
+        } else if (job->kind() == TextureJob::Kind::Save && job->ok() && can_open_folder() && !scripted_) {
+            platform::open_user_folder(dump_dir(app), app.data_dir());
+        }
+    }
+
+    void render_texture_progress(Ui& ui) {
+        ui.fill(0, 0, ui.width(), ui.height(), Color{0, 0, 0, 150});
+        const UiRect& S = ui.safe();
+        const float w = std::min(380.0f, S.w - 40), h = 62;
+        const UiRect p{std::floor(S.x + (S.w - w) / 2), std::floor(S.y + (S.h - h) / 2), w, h};
+        ui.fill_round(p.x, p.y, p.w, p.h, 6, colors::kPanel);
+        ui.frame_round(p.x, p.y, p.w, p.h, 6, 1, colors::kOutline);
+        const bool save = texture_job_->kind() == TextureJob::Kind::Save;
+        ui.text(p.x + 14, p.y + 12, save ? "Saving the disc's textures..." : "Converting the PCSX2 texture pack...",
+                colors::kText);
+        const float v = texture_job_->progress();
+        ui.bar(p.x + 14, p.y + 32, w - 70, 8, v, colors::kAccent);
+        ui.text_right(p.right() - 14, p.y + 31, std::to_string(int(v * 100)) + "%", colors::kDim);
+        ui.text(p.x + 14, p.y + 45, texture_job_->cancelled() ? "Stopping..." : ui.touch() ? "" : "Triangle: stop", colors::kDim);
+    }
+
     // --- drawing ---
 
     bool pressed(Target::Kind k, int index = 0) const {
@@ -451,6 +701,10 @@ private:
         const float ow = std::ceil(Ui::text_width(kOpenLabel)) + pad, iw = std::ceil(Ui::text_width(kInstallLabel)) + pad;
         l.open = can_open_folder() ? UiRect{S.right() - 6 - ow, l.back.y, ow, l.back.h} : UiRect{S.right(), l.back.y, 0, 0};
         l.install = can_install() ? UiRect{l.open.x - 6 - iw, l.back.y, iw, l.back.h} : UiRect{};
+        const float tw = std::ceil(Ui::text_width(kTexturesLabel)) + pad, cw = std::ceil(Ui::text_width(kConvertLabel)) + pad;
+        const float left = can_install() ? l.install.x : l.open.x;
+        l.convert = can_convert_pcsx2() ? UiRect{left - 6 - cw, l.back.y, cw, l.back.h} : UiRect{left, l.back.y, 0, 0};
+        l.textures = can_install() ? UiRect{l.convert.x - (l.convert.w > 0 ? 6 : 0) - tw, l.back.y, tw, l.back.h} : UiRect{};
         const float strip_h = 26, footer_h = touch ? 0.0f : 16.0f;
         l.strip_y = ui.height() - footer_h - strip_h - (touch ? ui.height() - S.bottom() : 0);
         const float top = l.bar_bottom + 5, split = std::floor(S.x + S.w * 0.5f);
@@ -503,6 +757,8 @@ private:
             const float x = tx + ui.toggle_width() + 10;
             std::string right;
             if (!mod.cars.empty()) right = std::to_string(mod.cars.size()) + (mod.cars.size() == 1 ? " car" : " cars");
+            else if (!mod.textures.empty())
+                right = std::to_string(mod.textures.size()) + (mod.textures.size() == 1 ? " texture" : " textures");
             const float rw = right.empty() ? 0 : Ui::text_width(right) + 10;
             ui.text(x, std::floor(cy - 10), Ui::clip(with_version(mod.name, mod.version), r.right() - x - 8 - rw),
                     s ? colors::kAccent : mod.enabled ? colors::kText : colors::kDim);
@@ -542,6 +798,7 @@ private:
         count(mod.files.size(), " game file", " game files");
         count(mod.cars.size(), " car", " cars");
         count(mod.makers.size(), " maker", " makers");
+        count(mod.textures.size(), " texture", " textures");
         line((what.empty() ? std::string("Nothing to load") : what) + "   priority " + std::to_string(mod.priority) +
                  (mod.enabled ? "" : "   (off)"),
              colors::kDim);
@@ -648,10 +905,12 @@ private:
             if (lay_.no.contains(x, y)) return {Target::No};
             return {};
         }
-        if (job_) return {};
+        if (job_ || texture_job_) return {};
         if (lay_.back.contains(x, y)) return {Target::Back};
         if (lay_.install.w > 0 && lay_.install.contains(x, y)) return {Target::Install};
         if (lay_.open.w > 0 && lay_.open.contains(x, y)) return {Target::Open};
+        if (lay_.textures.w > 0 && lay_.textures.contains(x, y)) return {Target::Textures};
+        if (lay_.convert.w > 0 && lay_.convert.contains(x, y)) return {Target::Convert};
         if (!rows_.empty() && lay_.remove.contains(x, y)) return {Target::Remove};
         if (lay_.list.contains(x, y))
             for (size_t i = 0; i < rows_.size(); ++i) {
@@ -673,6 +932,9 @@ private:
 
     std::shared_ptr<PickSlot> pick_;
     std::unique_ptr<InstallJob> job_;
+    std::unique_ptr<TextureJob> texture_job_;
+    bool pack_pick_ = false; // the PCSX2 pack's folder picker is open
+    bool scripted_ = false;  // GT3R_SAVE_TEXTURES started the save
     std::string job_name_;
     Confirm confirm_;
     std::string message_;

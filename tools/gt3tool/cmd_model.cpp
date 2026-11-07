@@ -3,6 +3,7 @@
 #include "tool.h"
 
 #include "formats/model/car_model.h"
+#include "formats/model/gltf_export.h"
 #include "formats/model/prm_model.h"
 #include "formats/model/wheel_model.h"
 #include "formats/model/wheel_spec.h"
@@ -104,90 +105,6 @@ bool write_obj(const scene::Model& model, const std::string& dir, const std::str
     return save(dir + "/" + name + ".mtl", bytes(mtl)) && save(dir + "/" + name + ".obj", bytes(obj));
 }
 
-// Minimal glTF 2.0 export: <name>.gltf + <name>.bin, textures shared with the OBJ PNGs.
-bool write_gltf(const scene::Model& model, const std::string& dir, const std::string& name) {
-    Bytes bin;
-    auto put = [&](const void* p, size_t n) {
-        const u8* b = static_cast<const u8*>(p);
-        bin.insert(bin.end(), b, b + n);
-        while (bin.size() % 4) bin.push_back(0);
-    };
-    std::string views, accessors, meshes, nodes, materials, images, textures;
-    int nview = 0, nacc = 0;
-    auto view = [&](size_t off, size_t len, int target) {
-        views += (nview ? "," : "") + std::string("{\"buffer\":0,\"byteOffset\":") + std::to_string(off) +
-                 ",\"byteLength\":" + std::to_string(len) + ",\"target\":" + std::to_string(target) + "}";
-        return nview++;
-    };
-    auto accessor = [&](int v, int comp, size_t count, const char* type, const std::string& extra) {
-        accessors += (nacc ? "," : "") + std::string("{\"bufferView\":") + std::to_string(v) +
-                     ",\"componentType\":" + std::to_string(comp) + ",\"count\":" + std::to_string(count) +
-                     ",\"type\":\"" + type + "\"" + extra + "}";
-        return nacc++;
-    };
-    for (size_t t = 0; t < model.textures.size(); ++t) {
-        images += (t ? "," : "") + std::string("{\"uri\":\"") + name + "_tex" + std::to_string(t) + ".png\"}";
-        textures += (t ? "," : "") + std::string("{\"source\":") + std::to_string(t) + "}";
-    }
-    // material per (texture, blend): index = (texture + 1) * 2 + blend
-    int nmat = int(model.textures.size() + 1) * 2;
-    for (int i = 0; i < nmat; ++i) {
-        int tex = i / 2 - 1;
-        bool blend = i & 1;
-        materials += (i ? "," : "") + std::string("{\"pbrMetallicRoughness\":{") +
-                     (tex >= 0 ? "\"baseColorTexture\":{\"index\":" + std::to_string(tex) + "}," : "") +
-                     "\"metallicFactor\":0}" + (blend ? ",\"alphaMode\":\"BLEND\"" : ",\"alphaMode\":\"MASK\"") +
-                     "}";
-    }
-    char buf[256];
-    for (size_t mi = 0; mi < model.meshes.size(); ++mi) {
-        const scene::Mesh& m = model.meshes[mi];
-        std::vector<float> pos, nrm, uv;
-        std::vector<u32> col;
-        float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
-        for (const scene::Vertex& v : m.vertices) {
-            for (int k = 0; k < 3; ++k) {
-                pos.push_back(v.pos[k]), nrm.push_back(v.normal[k]);
-                mn[k] = std::min(mn[k], v.pos[k]), mx[k] = std::max(mx[k], v.pos[k]);
-            }
-            uv.push_back(v.uv[0]), uv.push_back(v.uv[1]);
-            col.push_back(v.color);
-        }
-        size_t n = m.vertices.size();
-        size_t o = bin.size(); put(pos.data(), pos.size() * 4); int vp = view(o, pos.size() * 4, 34962);
-        o = bin.size(); put(nrm.data(), nrm.size() * 4); int vn = view(o, nrm.size() * 4, 34962);
-        o = bin.size(); put(uv.data(), uv.size() * 4); int vu = view(o, uv.size() * 4, 34962);
-        o = bin.size(); put(col.data(), col.size() * 4); int vc = view(o, col.size() * 4, 34962);
-        std::snprintf(buf, sizeof(buf), ",\"min\":[%g,%g,%g],\"max\":[%g,%g,%g]", mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]);
-        int ap = accessor(vp, 5126, n, "VEC3", buf), an = accessor(vn, 5126, n, "VEC3", "");
-        int au = accessor(vu, 5126, n, "VEC2", ""), ac = accessor(vc, 5121, n, "VEC4", ",\"normalized\":true");
-        std::string prims;
-        for (size_t pi = 0; pi < m.primitives.size(); ++pi) {
-            const scene::Primitive& pr = m.primitives[pi];
-            o = bin.size();
-            put(m.indices.data() + pr.first_index, size_t(pr.index_count) * 4);
-            int ai = accessor(view(o, size_t(pr.index_count) * 4, 34963), 5125, pr.index_count, "SCALAR", "");
-            int mat = (pr.texture + 1) * 2 + ((pr.flags & scene::kAlphaBlend) ? 1 : 0);
-            prims += (pi ? "," : "") + std::string("{\"attributes\":{\"POSITION\":") + std::to_string(ap) +
-                     ",\"NORMAL\":" + std::to_string(an) + ",\"TEXCOORD_0\":" + std::to_string(au) +
-                     ",\"COLOR_0\":" + std::to_string(ac) + "},\"indices\":" + std::to_string(ai) +
-                     ",\"material\":" + std::to_string(mat) + "}";
-        }
-        meshes += (mi ? "," : "") + std::string("{\"name\":\"") + m.name + "\",\"primitives\":[" + prims + "]}";
-        nodes += (mi ? "," : "") + std::string("{\"mesh\":") + std::to_string(mi) + ",\"name\":\"" + m.name +
-                 "_lod" + std::to_string(m.lod) + "\"}";
-    }
-    std::string scene_nodes;
-    for (size_t i = 0; i < model.meshes.size(); ++i) scene_nodes += (i ? "," : "") + std::to_string(i);
-    std::string json = "{\"asset\":{\"version\":\"2.0\",\"generator\":\"gt3tool\"},\"scene\":0,\"scenes\":[{\"nodes\":[" +
-                       scene_nodes + "]}],\"nodes\":[" + nodes + "],\"meshes\":[" + meshes + "],\"materials\":[" +
-                       materials + "]," + (images.empty() ? "" : "\"images\":[" + images + "],\"textures\":[" + textures + "],") +
-                       "\"accessors\":[" + accessors + "],\"bufferViews\":[" + views +
-                       "],\"buffers\":[{\"uri\":\"" + name + ".bin\",\"byteLength\":" + std::to_string(bin.size()) + "}]}";
-    return save(dir + "/" + name + ".bin", bin) &&
-           save(dir + "/" + name + ".gltf", ByteSpan(reinterpret_cast<const u8*>(json.data()), json.size()));
-}
-
 void print_summary(const scene::Model& m) {
     size_t v = 0, t = 0, p = 0;
     for (const scene::Mesh& mesh : m.meshes)
@@ -217,7 +134,10 @@ int cmd_model(Disc& disc, const Args& a) {
         std::printf("  %-10s %6zu vertices %6zu triangles %3zu primitives\n", mesh.name.c_str(), mesh.vertices.size(),
                     mesh.indices.size() / 3, mesh.primitives.size());
     if (!write_obj(model, a[1], name)) return 1;
-    return (!m.gltf || write_gltf(model, a[1], name)) ? 0 : 1;
+    if (!m.gltf) return 0;
+    GlbExportOptions o;
+    o.lod = m.car.lod;
+    return save(a[1] + "/" + name + ".glb", export_glb(model, o)) ? 0 : 1;
 }
 
 int cmd_model_survey(Disc& disc, const Args& a) {
@@ -346,7 +266,7 @@ GT3TOOL_COMMAND(prm, "prm", "<vol-path> [outdir] [--frame=N] [--packets]",
 GT3TOOL_COMMAND(model, "model",
                 "<vol-path> <outdir> [--lod=N|-1] [--paint=N] [--effects] [--no-wheels] [--no-reflection] [--node=N] "
                 "[--gltf]",
-                "export a car / wheel / prize (.prm) / GTM1 model to OBJ+MTL+PNG (+glTF)", 2, cmd_model);
+                "export a car / wheel / prize (.prm) / GTM1 model to OBJ+MTL+PNG (+ binary glTF)", 2, cmd_model);
 GT3TOOL_COMMAND(model_survey, "model-survey", "[prefix]", "decode every car, wheel and prize (.prm) model (all LODs)", 0,
                 cmd_model_survey);
 

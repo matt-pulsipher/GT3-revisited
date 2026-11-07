@@ -1,6 +1,7 @@
 #pragma once
 
 #include "disc/volume.h"
+#include "formats/texture_pack.h"
 
 #include <functional>
 #include <map>
@@ -16,6 +17,7 @@ class IniDocument;
 //   mod.ini   [mod] name, version, author, description, priority
 //   files/    files mirroring GT3.VOL paths; each overrides or adds a file
 //   cars/     new car definitions (*.ini, see game/data/mod_cars.h)
+//   textures/ replacement textures (PNGs named by key, formats/texture_pack.h)
 // See docs/MODDING.md.
 struct ModInfo {
     std::string id; // directory name
@@ -29,6 +31,7 @@ struct ModInfo {
     std::vector<std::string> files; // VOL-relative paths provided
     std::vector<std::string> cars;  // host paths of cars/*.ini (game/data/mod_cars.h)
     std::vector<std::string> makers; // host paths of makers/*.ini
+    std::vector<std::pair<u64, std::string>> textures; // textures/: key and host path of each picture
 };
 
 // Layered read-only filesystem: enabled mods (by priority) over GT3.VOL.
@@ -55,6 +58,9 @@ public:
     std::optional<Stream> open_stream(const std::string& path) const;
     // "disc" or the providing mod's id; empty if missing.
     std::string source_of(const std::string& path) const;
+    // The enabled mods' replacement textures, the higher priority's picture winning a key; null
+    // when there are none.
+    std::shared_ptr<const texture_pack::Pack> textures() const { return textures_; }
     // Merged listing (mod-added files included). Dirs end with '/'.
     std::vector<std::string> list_dir(const std::string& dir) const;
 
@@ -86,6 +92,7 @@ private:
     std::vector<ModInfo> mods_;
     std::map<std::string, std::string> overrides_; // vol path -> host path
     std::map<std::string, std::string> override_source_; // vol path -> mod id
+    std::shared_ptr<const texture_pack::Pack> textures_;
 };
 
 std::string normalize_vfs_path(std::string_view path);

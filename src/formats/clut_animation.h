@@ -77,6 +77,8 @@ public:
     u32 min_alpha(u32 r) const;
     // Recolours the records whose animations changed colour since the last call; returns them.
     std::vector<u32> refresh();
+    // Stops recolouring texture record `index` (a texture pack replaced it).
+    void erase(u32 index);
 
 private:
     struct Record {

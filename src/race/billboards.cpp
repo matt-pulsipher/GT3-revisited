@@ -4,6 +4,7 @@
 #include "formats/clut_animation.h"
 #include "formats/gs_memory.h"
 #include "formats/tex1.h"
+#include "formats/texture_pack.h"
 
 #include <algorithm>
 #include <cmath>
@@ -44,6 +45,7 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
             for (size_t i = 0; i < tex.textures.size(); ++i) {
                 Tex1::Image img = tex.decode(gs, i);
                 if (const std::vector<u32>* px = clut.rgba(u32(i)); px && px->size() == img.rgba.size()) img.rgba = *px;
+                if (texture_pack::replace_decoded(td, i, img)) clut.erase(u32(i)); // a pack's picture: not animated
                 scene::Texture t;
                 t.name = name + "/billboard" + std::to_string(i);
                 t.width = img.width, t.height = img.height;

@@ -3,6 +3,7 @@
 #include "formats/clut_animation.h"
 #include "formats/gs_memory.h"
 #include "formats/tex1.h"
+#include "formats/texture_pack.h"
 
 #include <algorithm>
 #include <cmath>
@@ -545,7 +546,7 @@ std::vector<PaintVariant> paint_variants(ByteSpan tex1) {
 }
 
 int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const std::string& prefix, int paint,
-                       ClutTextures* clut) {
+                       ClutTextures* clut, bool use_pack) {
     Tex1 t = Tex1::parse(tex1);
     GsMemory gs;
     t.upload(tex1, gs);
@@ -571,13 +572,24 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
         out.push_back(std::move(st));
     }
     // CLUT animations: the textures they feed show the animations' state (at their reset here).
+    ClutTextures c;
     if (!t.clut_animations.empty() && !pv) {
-        ClutTextures c(tex1);
+        c = ClutTextures(tex1);
         for (u32 r : c.records())
             if (const std::vector<u32>* px = c.rgba(r); px && px->size() == out[size_t(first) + r].rgba.size())
                 out[size_t(first) + r].rgba = *px;
-        if (clut) *clut = std::move(c);
     }
+    // Texture pack pictures, keyed by the textures as decoded so far. A replaced texture no
+    // longer follows its CLUT animations.
+    if (use_pack && texture_pack::current_pack())
+        for (size_t i = size_t(first); i < out.size(); ++i) {
+            scene::Texture& st = out[i];
+            std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(st.width, st.height, st.rgba.data());
+            if (!r) continue;
+            st.width = r->width, st.height = r->height, st.rgba = r->rgba;
+            c.erase(u32(i - size_t(first)));
+        }
+    if (clut && !c.empty()) *clut = std::move(c);
     return first;
 }
 

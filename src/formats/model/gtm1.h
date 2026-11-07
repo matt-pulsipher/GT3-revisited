@@ -412,7 +412,9 @@ std::vector<PaintVariant> paint_variants(ByteSpan tex1);
 // has one). Indexed textures honour TEX0.CSA. Textures fed by the set's CLUT
 // animations show the animations' reset state; `clut` (when given) receives them
 // (empty without animations). Shared by the car/wheel/course loaders.
+// `use_pack`: textures the texture pack replaces (formats/texture_pack.h) take its pictures,
+// and their CLUT animations stop; false gives the disc's textures (the keys are made from them).
 int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const std::string& prefix, int paint = 0,
-                       ClutTextures* clut = nullptr);
+                       ClutTextures* clut = nullptr, bool use_pack = true);
 
 } // namespace gt3r::gtm1

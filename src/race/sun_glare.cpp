@@ -3,6 +3,7 @@
 #include "base/log.h"
 #include "formats/gs_memory.h"
 #include "formats/tex1.h"
+#include "formats/texture_pack.h"
 #include "render/view3d.h"
 #include "vfs/vfs.h"
 
@@ -188,6 +189,7 @@ void SunGlare::load(const Vfs& vfs, SDL_Renderer* r, render::GpuContext* gpu, By
         tex.upload(*data, gs);
         Tex1::Image img = tex.decode(gs, 0);
         // (decode() already maps the GS alpha 0..0x80 to 0..255.)
+        texture_pack::replace_decoded(*data, 0, img);
         if (img.rgba.size() >= size_t(img.width) * img.height)
             tex_.create(r, gpu, int(img.width), int(img.height), img.rgba.data());
     } catch (const std::exception& e) {

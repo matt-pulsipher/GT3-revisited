@@ -79,8 +79,9 @@ void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {
             if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.cars.push_back(root + "/cars/" + name);
         for (const std::string& name : list_host_dir(root + "/makers"))
             if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.makers.push_back(root + "/makers/" + name);
-        LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, priority %d, %s", mod.name.c_str(), mod.id.c_str(), mod.files.size(),
-                 mod.cars.size(), mod.priority, mod.enabled ? "enabled" : "disabled");
+        mod.textures = texture_pack::pictures_in(root + "/textures");
+        LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, %zu textures, priority %d, %s", mod.name.c_str(), mod.id.c_str(),
+                 mod.files.size(), mod.cars.size(), mod.textures.size(), mod.priority, mod.enabled ? "enabled" : "disabled");
         mods_.push_back(std::move(mod));
     }
     // Stable order: priority, then id, so load order is deterministic.
@@ -106,6 +107,11 @@ void Vfs::rebuild_index() {
             override_source_[f] = m.id;
         }
     }
+    auto pack = std::make_shared<texture_pack::Pack>();
+    for (auto m = mods_.rbegin(); m != mods_.rend(); ++m) // descending priority: the first file of a key stays
+        if (m->enabled)
+            for (const auto& [key, path] : m->textures) pack->add_file(key, path, m->id);
+    textures_ = pack->size() ? std::move(pack) : nullptr;
 }
 
 bool Vfs::exists(const std::string& path) const {

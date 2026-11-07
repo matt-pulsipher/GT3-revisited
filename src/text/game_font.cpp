@@ -83,7 +83,8 @@ SDL_FRect GameFont::render(const TextLayout& lay, const TextStyle& style) {
             SDL_SetTextureAlphaMod(t, style.color.a);
             SDL_RenderTexture(r, t, &src, &dst);
         } else if (atlas) {
-            SDL_FRect src{float(q.sx), float(q.sy), float(q.sw), float(q.sh)};
+            const float* k = atlas_scale_[v];
+            SDL_FRect src{q.sx * k[0], q.sy * k[1], q.sw * k[0], q.sh * k[1]};
             SDL_RenderTexture(r, atlas, &src, &dst);
         }
     }
@@ -132,8 +133,11 @@ bool GameFonts::load(const Vfs& vfs, SDL_Renderer* renderer) {
             auto f = std::unique_ptr<GameFont>(new GameFont(this, &lf));
             for (int v = 0; v < kFontVariants; ++v) {
                 const Tex1::Image& img = lf.atlas[v];
-                if (img.width && img.height)
-                    f->atlas_[v] = make_texture(renderer, int(img.width), int(img.height), img.rgba.data());
+                const Tex1::Image& shown = lf.pack_atlas[v].width ? lf.pack_atlas[v] : img;
+                if (!img.width || !img.height) continue;
+                f->atlas_[v] = make_texture(renderer, int(shown.width), int(shown.height), shown.rgba.data());
+                f->atlas_scale_[v][0] = float(shown.width) / float(img.width);
+                f->atlas_scale_[v][1] = float(shown.height) / float(img.height);
             }
             fonts_.push_back(std::move(f));
         }

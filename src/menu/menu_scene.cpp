@@ -1,6 +1,7 @@
 #include "menu/menu_scene.h"
 
 #include "base/log.h"
+#include "formats/texture_pack.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -22,6 +23,7 @@ MenuScene MenuScene::load(ByteSpan data, std::string path) {
             GsMemory gs;
             set.upload(tex, gs);
             Tex1::Image img = set.decode(gs, 0);
+            texture_pack::replace_decoded(tex, 0, img); // the elements' UVs address a pack's picture the same way
             s.images_[i] = {img.width, img.height, std::move(img.rgba)};
         } catch (const std::exception& e) {
             ++s.image_failures_;

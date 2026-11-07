@@ -5,7 +5,9 @@
 
 #include "app/app.h"
 #include "app/screen_registry.h"
+#include "base/file.h"
 #include "base/log.h"
+#include "formats/model/gltf_export.h"
 #include "render/test_models.h"
 #include "render/view3d.h"
 
@@ -44,8 +46,9 @@ bool inside(const SDL_FRect& r, float x, float y) { return x >= r.x && y >= r.y 
 
 class ModelViewerScreen : public Screen {
 public:
-    ModelViewerScreen(std::string title, std::vector<std::string> items, ModelLoader load)
-        : title_(std::move(title)), items_(std::move(items)), load_(std::move(load)) {
+    ModelViewerScreen(std::string title, std::vector<std::string> items, ModelLoader load, ModelExport exports)
+        : title_(std::move(title)), items_(std::move(items)), load_(std::move(load)), exports_(std::move(exports)) {
+        if (exports_.folder.empty()) exports_.folder = file_name(title_);
         apply_debug_state();
     }
 
@@ -99,6 +102,11 @@ public:
             else options_.cull.reset();
         }
         if (m.pressed(PadButton::L3)) show_grid_ = !show_grid_;
+        if ((m.pressed(PadButton::R2) || (debug_export_ && loaded_ >= 0)) && n > 0) {
+            debug_export_ = false;
+            save_glb(app, loaded_ >= 0 ? loaded_ : sel_);
+        }
+        if (notice_time_ > 0) notice_time_ -= dt;
         camera_.update(pad, dt);
     }
 
@@ -153,18 +161,22 @@ public:
             ui.text_center_in(vr.x, vr.w, vr.y + vr.h / 2 - 4, msg, colors::kDim);
         }
         if (!error_.empty()) ui.text(vr.x + 6, vr.y + 6, Ui::clip(error_, vr.w - 12), colors::kBad);
+        if (notice_time_ > 0)
+            ui.text(vr.x + 6, vr.y + (error_.empty() ? 6 : 18), Ui::clip(notice_, vr.w - 12),
+                    notice_bad_ ? colors::kBad : colors::kGood);
 
         if (!fullscreen_) draw_list(ui);
         draw_stats(app, ui, vr);
-        ui.footer(fullscreen_ ? "Stick: orbit L1/R1: zoom X: spin []: wire Sel: LOD Start: cull Tri: back"
-                              : "Up/Down: select  Cross: view  Square: wireframe  L1/R1: zoom  Triangle: back");
+        ui.footer(fullscreen_ ? "Stick: orbit L1/R1: zoom X: spin []: wire Sel: LOD Start: cull R2: export Tri: back"
+                              : "Up/Down: select  Cross: view  Square: wireframe  L1/R1: zoom  R2: export  Triangle: back");
     }
 
 private:
     // GT3R_VIEWER="item=2,wire=1,lod=-1,cull=0,full=1,yaw=0.5,pitch=0.3,zoom=0.8,spin=0" presets the
     // viewer state, so `--shot` screenshots can show any configuration. find=<text> selects the
     // first item containing it; clean=1 draws only the model over the whole window on a flat
-    // magenta (key=1) or the clear colour, for cut-out renders (mod pictures).
+    // magenta (key=1) or the clear colour, for cut-out renders (mod pictures). export=1 saves the
+    // first item loaded as R2 does.
     void apply_debug_state() {
         const char* env = SDL_getenv("GT3R_VIEWER");
         if (!env) return;
@@ -199,6 +211,7 @@ private:
             else if (k == "zoom") debug_zoom_ = v;
             else if (k == "spin") camera_.turntable = v != 0;
             else if (k == "grid") show_grid_ = v != 0;
+            else if (k == "export") debug_export_ = v != 0;
         }
     }
 
@@ -239,6 +252,41 @@ private:
         else
             std::snprintf(line, sizeof(line), "LOD %s  %s  cull %s", lod, wire_name(options_.wire), cull_name(options_.cull));
         ui.text(vr.x + 6, y + 10, line, colors::kDim);
+    }
+
+    // A file name from an item's label: its first word ("<id>  <name>" in the car viewer).
+    static std::string file_name(const std::string& label) {
+        std::string out;
+        for (char c : label.substr(0, label.find("  "))) {
+            const bool keep = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+            out += keep ? char(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c) : '_';
+        }
+        return out.empty() ? std::string("model") : out.substr(0, 64);
+    }
+
+    void save_glb(App& app, int index) {
+        notice_time_ = 6;
+        notice_bad_ = true;
+        try {
+            scene::Model model = (exports_.load ? exports_.load : load_)(app, size_t(index));
+            GlbExportOptions o;
+            o.lod = options_.lod;
+            const Bytes glb = export_glb(model, o);
+            const std::string rel = "exports/" + exports_.folder + "/" + file_name(items_[size_t(index)]) +
+                                    (o.lod > 0 ? "_lod" + std::to_string(o.lod) : "") + ".glb";
+            const std::string path = app.data_dir() + rel;
+            if (!host_make_dir(app.data_dir() + "exports/" + exports_.folder) || !write_host_file(path, glb)) {
+                notice_ = "Could not save " + path;
+                LOG_WARN("Viewer: %s", notice_.c_str());
+                return;
+            }
+            notice_ = "Saved " + rel;
+            notice_bad_ = false;
+            LOG_INFO("Viewer: saved %s (%zu bytes)", path.c_str(), glb.size());
+        } catch (const std::exception& e) {
+            notice_ = std::string("Could not export: ") + e.what();
+            LOG_WARN("Viewer: %s", notice_.c_str());
+        }
     }
 
     void update_stats() {
@@ -286,11 +334,16 @@ private:
     std::string title_;
     std::vector<std::string> items_;
     ModelLoader load_;
+    ModelExport exports_;
+    std::string notice_; // the last export's result, shown for notice_time_ seconds
+    double notice_time_ = 0;
+    bool notice_bad_ = false;
     int sel_ = 0, loaded_ = -1, first_row_ = 0, max_lod_ = 0;
     double settle_ = 1.0; // load the first item immediately
     bool fullscreen_ = false, show_grid_ = true, clean_ = false;
     std::string error_;
     int debug_lod_ = -2;
+    bool debug_export_ = false;
     std::optional<float> debug_yaw_, debug_pitch_, debug_zoom_;
     render::ModelStats stats_;
     std::vector<render::ModelStats> lod_stats_; // [0] = all LODs, [1 + n] = LOD n
@@ -302,8 +355,9 @@ private:
 
 } // namespace
 
-std::unique_ptr<Screen> make_model_viewer(std::string title, std::vector<std::string> items, ModelLoader load) {
-    return std::make_unique<ModelViewerScreen>(std::move(title), std::move(items), std::move(load));
+std::unique_ptr<Screen> make_model_viewer(std::string title, std::vector<std::string> items, ModelLoader load,
+                                          ModelExport exports) {
+    return std::make_unique<ModelViewerScreen>(std::move(title), std::move(items), std::move(load), std::move(exports));
 }
 
 GT3R_REGISTER_SCREEN_NO_DISC(model_viewer_demo, "viewer", "3D viewer (test scene)",

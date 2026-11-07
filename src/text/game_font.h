@@ -91,6 +91,7 @@ private:
     GameFonts* owner_;
     const LatinFont* data_;
     SDL_Texture* atlas_[kFontVariants] = {};
+    float atlas_scale_[kFontVariants][2] = {{1, 1}, {1, 1}}; // texels per glyph-table unit (texture packs)
 };
 
 class GameFonts {

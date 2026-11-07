@@ -1,5 +1,7 @@
 #include "formats/text/fnt.h"
 
+#include "formats/texture_pack.h"
+
 #include <algorithm>
 #include <map>
 
@@ -96,8 +98,10 @@ FontFile FontFile::parse(ByteSpan d) {
             img.width = w;
             img.height = h;
             img.rgba = gs.decode_rgba(t0, w, h);
+            if (std::optional<texture_pack::Image> r = texture_pack::replacement(sub, size_t(v), {0, 0, w, h}))
+                font.pack_atlas[v] = {r->width, r->height, std::move(r->rgba)};
         }
-        if (set.textures.size() == 1) font.atlas[1] = font.atlas[0];
+        if (set.textures.size() == 1) font.atlas[1] = font.atlas[0], font.pack_atlas[1] = font.pack_atlas[0];
         f.fonts.push_back(std::move(font));
     }
     return f;

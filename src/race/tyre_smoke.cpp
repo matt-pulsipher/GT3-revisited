@@ -3,6 +3,7 @@
 #include "base/log.h"
 #include "formats/gs_memory.h"
 #include "formats/tex1.h"
+#include "formats/texture_pack.h"
 
 #include <algorithm>
 #include <cmath>
@@ -66,6 +67,7 @@ bool TyreSmoke::load(render::GpuContext& ctx, ByteSpan e, ByteSpan tex) {
         GsMemory gs;
         t.upload(tex, gs);
         Tex1::Image img = t.decode(gs, 0);
+        texture_pack::replace_decoded(tex, 0, img);
         scene::Texture st;
         st.name = "smoke";
         st.width = img.width, st.height = img.height;
