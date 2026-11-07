@@ -34,6 +34,8 @@ struct Imgs {
 
     // Index into `entries` by name; -1 if missing.
     int find(std::string_view name) const;
+    // Entry `i`'s Tex1 set in the file `data`.
+    ByteSpan set(ByteSpan data, size_t i) const { return data.subspan(entries.at(i).offset, entries.at(i).size); }
     // Decodes entry `i` (texture 0 of its Tex1 set) to RGBA8.
     Tex1::Image decode(ByteSpan data, size_t i) const;
 };

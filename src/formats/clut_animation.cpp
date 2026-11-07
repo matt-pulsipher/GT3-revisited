@@ -186,6 +186,11 @@ const std::vector<u32>* ClutTextures::rgba(u32 index) const {
     return nullptr;
 }
 
+void ClutTextures::erase(u32 index) {
+    records_.erase(std::remove_if(records_.begin(), records_.end(), [&](const Record& r) { return r.index == index; }),
+                   records_.end());
+}
+
 u32 ClutTextures::min_alpha(u32 index) const {
     const std::vector<Tex1::ClutAnimation>& anims = player_.animations();
     for (const Record& r : records_) {

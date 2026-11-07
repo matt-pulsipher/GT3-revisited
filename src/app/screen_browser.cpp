@@ -1,10 +1,14 @@
 // Asset browser: navigates the merged (disc + mods) filesystem and previews
-// textures and audio. Doubles as the first consumer of the format decoders.
+// textures and audio. Doubles as the first consumer of the format decoders. Each texture shows
+// its texture pack key (and the mod replacing it); Square saves the file's textures as the
+// texture dump does (formats/texture_pack.h).
 
 #include "app/app.h"
 #include "app/screen_registry.h"
 #include "base/log.h"
+#include "formats/pcsx2_textures.h"
 #include "formats/tex1.h"
+#include "formats/texture_pack.h"
 
 #include <algorithm>
 
@@ -87,6 +91,7 @@ public:
             }
         }
         if (m.pressed(PadButton::Circle)) app.audio().stop_music();
+        if (m.pressed(PadButton::Square) && !preview_.path.empty()) save_textures(app, preview_.path);
     }
 
     void render(App& app, Ui& ui) override {
@@ -141,7 +146,7 @@ public:
             double pos = app.audio().music_position(), len = app.audio().music_length();
             ui.bar(px + 6, Ui::kHeight - 40, pw - 12, 6, len > 0 ? float(pos / len) : 0.0f, colors::kAccent);
         }
-        ui.footer("Cross: open  Triangle: up  L1/R1: page  Left/Right: texture  Circle: stop");
+        ui.footer("Cross: open  Triangle: up  L1/R1: page  Left/Right: texture  Square: save textures  Circle: stop");
     }
 
 private:
@@ -163,6 +168,18 @@ private:
             }
     }
 
+    // The file's textures into the texture dump folder, named by key.
+    void save_textures(App& app, const std::string& path) {
+        std::optional<Bytes> data = app.vfs()->read(path);
+        if (!data) return;
+        const std::string root = app.data_dir() + texture_pack::dump_folder(app.disc() ? app.disc()->info().serial : "");
+        texture_pack::Dump dump(root);
+        bool ok = true;
+        dump.add_file(path, *data, &ok);
+        preview_.summary = ok ? "Saved " + std::to_string(dump.textures()) + " texture(s) to " + root + "/" + path
+                              : "Could not save to " + root;
+    }
+
     void open(App& app, const std::string& path) {
         preview_.clear();
         preview_.path = path;
@@ -181,11 +198,13 @@ private:
         std::snprintf(sz, sizeof(sz), "%zu bytes, source: %s", data->size(), app.vfs()->source_of(path).c_str());
         preview_.summary = sz;
         try {
+            const std::shared_ptr<const texture_pack::Pack> pack = app.vfs()->textures();
             for (size_t off : find_tex1_sets(*data)) {
                 ByteSpan sub = ByteSpan(*data).subspan(off);
                 Tex1 set = Tex1::parse(sub);
                 GsMemory gs;
                 set.upload(sub, gs);
+                const std::vector<u64> keys = texture_pack::keys_of_set(sub);
                 for (size_t i = 0; i < set.textures.size(); ++i) {
                     Tex1::Image img = set.decode(gs, i);
                     if (img.width == 0 || img.height == 0 || img.width > 2048 || img.height > 2048) continue;
@@ -196,10 +215,13 @@ private:
                     SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
                     preview_.textures.push_back(t);
                     const Tex0& t0 = set.textures[i].tex0;
-                    char label[96];
-                    std::snprintf(label, sizeof(label), "set @%zx tex %zu/%zu  %ux%u %s", off, i + 1,
-                                  set.textures.size(), img.width, img.height, psm_name(t0.psm));
-                    preview_.labels.push_back(label);
+                    char label[160];
+                    std::snprintf(label, sizeof(label), "set @%zx tex %zu/%zu  %ux%u %s  key %s", off, i + 1,
+                                  set.textures.size(), img.width, img.height, psm_name(t0.psm),
+                                  i < keys.size() ? texture_pack::key_name(keys[i]).c_str() : "-");
+                    std::string text = label;
+                    if (pack && i < keys.size() && pack->contains(keys[i])) text += "  (replaced: " + pack->source_of(keys[i]) + ")";
+                    preview_.labels.push_back(text);
                 }
             }
         } catch (const std::exception& e) {

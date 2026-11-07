@@ -61,14 +61,21 @@ struct Tex1 {
     std::vector<Buffer> buffers;
     std::vector<ClutAnimation> clut_animations;
 
+    // A part of a texture, in its texels.
+    struct Region {
+        u32 x = 0, y = 0, width = 0, height = 0;
+    };
+
     static bool is_tex1(ByteSpan data);
     // `data` must begin with the "Tex1" header.
     static Tex1 parse(ByteSpan data);
 
     // Uploads all buffers into a fresh GS memory model.
     void upload(ByteSpan data, GsMemory& gs) const;
-    // Decodes texture `i`; cropped to the CLAMP region when it uses
-    // REGION_CLAMP, otherwise the full power-of-two size.
+    // What decode() keeps of texture `i`: the CLAMP region on an axis that uses REGION_CLAMP,
+    // otherwise the full power-of-two size.
+    Region region(size_t i) const;
+    // Decodes texture `i`, cropped to region(i).
     Image decode(const GsMemory& gs, size_t i) const;
 };
 

@@ -98,21 +98,20 @@ void Tex1::upload(ByteSpan data, GsMemory& gs) const {
     }
 }
 
-Tex1::Image Tex1::decode(const GsMemory& gs, size_t i) const {
+Tex1::Region Tex1::region(size_t i) const {
     const Texture& t = textures.at(i);
+    Region r{0, 0, t.tex0.width(), t.tex0.height()};
+    if (t.clamp.wms == 2 && t.clamp.maxu >= t.clamp.minu) r.x = t.clamp.minu, r.width = t.clamp.maxu - t.clamp.minu + 1;
+    if (t.clamp.wmt == 2 && t.clamp.maxv >= t.clamp.minv) r.y = t.clamp.minv, r.height = t.clamp.maxv - t.clamp.minv + 1;
+    return r;
+}
+
+Tex1::Image Tex1::decode(const GsMemory& gs, size_t i) const {
+    const Region r = region(i);
     Image img;
-    u32 x0 = 0, y0 = 0;
-    img.width = t.tex0.width();
-    img.height = t.tex0.height();
-    if (t.clamp.wms == 2 && t.clamp.maxu >= t.clamp.minu) {
-        x0 = t.clamp.minu;
-        img.width = t.clamp.maxu - t.clamp.minu + 1;
-    }
-    if (t.clamp.wmt == 2 && t.clamp.maxv >= t.clamp.minv) {
-        y0 = t.clamp.minv;
-        img.height = t.clamp.maxv - t.clamp.minv + 1;
-    }
-    img.rgba = gs.decode_rgba(t.tex0, img.width, img.height, x0, y0);
+    img.width = r.width;
+    img.height = r.height;
+    img.rgba = gs.decode_rgba(textures.at(i).tex0, img.width, img.height, r.x, r.y);
     return img;
 }
 

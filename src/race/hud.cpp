@@ -4,6 +4,7 @@
 #include "formats/gs_memory.h"
 #include "formats/menu/imgs.h"
 #include "formats/tex1.h"
+#include "formats/texture_pack.h"
 #include "race/time_text.h"
 #include "vfs/vfs.h"
 
@@ -200,8 +201,11 @@ void Hud::load(const Vfs& vfs, SDL_Renderer* r, const std::string& language) {
                         dst = {make_texture(r, img.width, img.height, px), float(img.width), float(img.height)};
                     }
                 }
-                if (SDL_Texture* t = make_texture(r, img.width, img.height, img.rgba))
-                    images_[imgs.entries[i].name] = {t, float(img.width), float(img.height)};
+                // Laid out at the disc picture's size; a texture pack's picture (not for the coded
+                // tyre gauge) only draws it sharper.
+                const float w = float(img.width), h = float(img.height);
+                if (imgs.entries[i].name != "tire_gage") texture_pack::replace_decoded(imgs.set(*data, i), 0, img);
+                if (SDL_Texture* t = make_texture(r, img.width, img.height, img.rgba)) images_[imgs.entries[i].name] = {t, w, h};
             }
         } catch (const std::exception& e) {
             LOG_WARN("HUD: %s", e.what());
@@ -226,9 +230,10 @@ void Hud::set_course_map(SDL_Renderer* r, ByteSpan g) {
         tex.upload(t, gs);
         Tex1::Image img = tex.decode(gs, 0);
         // The map art uses PS2 alpha (0x80 = opaque); decode() already maps it to 0..255.
-        map_.tex = make_texture(r, img.width, img.height, img.rgba);
         map_.w = float(img.width);
         map_.h = float(img.height);
+        texture_pack::replace_decoded(t, 0, img);
+        map_.tex = make_texture(r, img.width, img.height, img.rgba);
     } catch (const std::exception& e) {
         LOG_WARN("HUD: course map: %s", e.what());
     }
@@ -1147,7 +1152,9 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         SDL_SetTextureAlphaMod(im->tex, 70);
         SDL_RenderTexture(r, im->tex, nullptr, &dst);
         SDL_SetTextureAlphaMod(im->tex, 255);
-        SDL_FRect src{0, 0, im->w * frac, im->h};
+        float tw = im->w, th = im->h; // the texture's own size (a texture pack's picture is larger)
+        SDL_GetTextureSize(im->tex, &tw, &th);
+        SDL_FRect src{0, 0, tw * frac, th};
         SDL_FRect lit{dst.x, dst.y, dst.w * frac, dst.h};
         SDL_RenderTexture(r, im->tex, &src, &lit);
         if (horizontal) {

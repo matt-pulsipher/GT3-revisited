@@ -4,6 +4,7 @@
 #include "formats/course/course_model.h"
 #include "formats/gs_memory.h"
 #include "formats/tex1.h"
+#include "formats/texture_pack.h"
 #include "render/gpu_context.h"
 #include "render/gpu_model.h"
 #include "vfs/vfs.h"
@@ -113,6 +114,7 @@ bool WetRoad::load(render::GpuContext& ctx, const Vfs& vfs, ByteSpan course, Byt
                 GsMemory gs;
                 t.upload(*img, gs);
                 Tex1::Image im = t.decode(gs, 0);
+                texture_pack::replace_decoded(*img, 0, im);
                 scene::Model m;
                 scene::Texture st;
                 st.name = "reflection";

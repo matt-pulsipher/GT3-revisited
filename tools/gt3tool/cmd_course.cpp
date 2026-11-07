@@ -1,15 +1,16 @@
 // Course commands: inspect course files, export OBJ, render offline previews.
 //
 //   course-info   <vol-path>                       sections, road and AI line stats
-//   course-obj    <vol-path> <outdir> [opts]       OBJ + MTL + PNG textures (+ road / lines)
+//   course-obj    <vol-path> <outdir> [opts]       OBJ + MTL + PNG textures (+ road / lines; glb: binary glTF too)
 //   course-shot   <vol-path> <out.png> [opts]      software-rendered preview
 //   course-survey [prefix]                         decode every course file, report coverage
 //
-// Options: top | persp (shot view), road, lines, sky, scenery2, reflections, noscenery, courseline, size=N.
+// Options: top | persp (shot view), road, lines, sky, scenery2, reflections, noscenery, courseline, size=N, glb.
 
 #include "tool.h"
 
 #include "formats/course/course_model.h"
+#include "formats/model/gltf_export.h"
 #include "formats/png_writer.h"
 
 #include <algorithm>
@@ -113,6 +114,12 @@ int cmd_course_obj(Disc& disc, const Args& a) {
     }
     bool ok = save(dir + "/" + name + ".obj", ByteSpan(reinterpret_cast<const u8*>(obj.data()), obj.size())) &&
               save(dir + "/" + name + ".mtl", ByteSpan(reinterpret_cast<const u8*>(mtl.data()), mtl.size()));
+    if (ok && has_opt(a, 2, "glb")) {
+        GlbExportOptions o;
+        o.lod = -1;
+        o.reflections = has_opt(a, 2, "reflections");
+        ok = save(dir + "/" + name + ".glb", export_glb(m, o));
+    }
     std::printf("%zu meshes, %zu textures -> %s\n", m.meshes.size(), m.textures.size(), dir.c_str());
     return ok ? 0 : 1;
 }
@@ -303,8 +310,8 @@ int cmd_course_survey(Disc& disc, const Args& a) {
 
 GT3TOOL_COMMAND(course_info, "course-info", "<vol-path>", "course sections, road and AI line stats", 1,
                 cmd_course_info);
-GT3TOOL_COMMAND(course_obj, "course-obj", "<vol-path> <outdir> [road] [lines] [sky] [scenery2]",
-                "export a course as OBJ+MTL+PNG", 2, cmd_course_obj);
+GT3TOOL_COMMAND(course_obj, "course-obj", "<vol-path> <outdir> [road] [lines] [sky] [scenery2] [glb]",
+                "export a course as OBJ+MTL+PNG (glb: and binary glTF)", 2, cmd_course_obj);
 GT3TOOL_COMMAND(course_shot, "course-shot", "<vol-path> <out.png> [top|persp] [road] [lines] [size=N]",
                 "software-render a course preview", 2, cmd_course_shot);
 GT3TOOL_COMMAND(course_survey, "course-survey", "[prefix] [textures]", "decode every course file", 0,

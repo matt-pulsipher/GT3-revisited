@@ -59,6 +59,9 @@ struct LatinFont {
     std::vector<i8> profiles;      // profile bytes, profile_rows per profile
     // Glyph atlas per variant (RGBA8, GS alpha already expanded).
     std::array<Tex1::Image, kFontVariants> atlas;
+    // A texture pack's picture of the atlas (formats/texture_pack.h), empty when none: drawn in
+    // its place, the glyph rectangles scaled to its size.
+    std::array<Tex1::Image, kFontVariants> pack_atlas;
 
     // nullptr when `code` is outside [first, last].
     const FontGlyph* glyph(u32 code) const {

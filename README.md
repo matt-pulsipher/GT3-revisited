@@ -28,7 +28,7 @@ disk or redistributed.
 | **Modern display** | any resolution and aspect ratio, widescreen, high refresh rates (or a 60 fps limit), MSAA, dynamic resolution, or the original 640×448 look |
 | **VR** | Meta Quest: the menus on a large virtual screen, races in stereo from the driver's seat, Touch controllers (sticks and analog triggers, or grab a steering wheel) |
 | **Controllers** | keyboard, any gamepad, wheels and pedals, all remappable; analog pressure buttons, DualSense adaptive triggers, Xbox impulse triggers, wheel force feedback, tilt steering, touch controls on phones and tablets (move, resize or hide each one) |
-| **Mods** | replace any game file, add music, add new cars (electric ones too) to the dealers |
+| **Mods** | replace any game file, add music, add new cars (electric ones too) to the dealers, texture packs at any resolution (PCSX2 packs convert) |
 
 ## How it's built
 
@@ -358,7 +358,10 @@ the .zip onto the window on a computer), turns them on and off, and removes
 them. Mods live in `mods/` in the user data folder; **Open folder** opens it
 (on Android and iOS, in the Files app). A mod can replace any file of the game, add
 music, or add cars, defined in small text files, that appear at the dealers,
-in the arcade and online. See [MODDING](docs/MODDING.md).
+in the arcade and online. Texture packs replace the game's textures with PNG
+pictures at any size: **Save textures** saves the disc's textures to start from,
+and **PCSX2 pack** turns a texture pack made for PCSX2 into a mod. The car and
+course viewers export models for Blender. See [MODDING](docs/MODDING.md).
 
 ## Differences from the original
 
@@ -455,6 +458,8 @@ gt3tool info    <iso>                      identify the disc
 gt3tool ls      <iso> [dir]                list GT3.VOL
 gt3tool extract <iso> <prefix> <outdir>    extract files (decompressed)
 gt3tool tex     <iso> <vol-path> <outdir>  textures to PNG
+gt3tool tex-dump <iso> <outdir>            every texture, named for texture packs
+gt3tool model   <iso> <vol-path> <outdir> --gltf  a car model for Blender (glb)
 gt3tool wav     <iso> <vol-path> <out.wav> music to WAV
 gt3tool bgm     <iso>                      list soundtrack
 gt3tool car     <iso> <label>              a car's catalogue specs

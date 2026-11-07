@@ -25,7 +25,7 @@ What a .zip may hold:
 
 - One mod or several. A mod is a folder with a `mod.ini`. A .zip without any
   `mod.ini` is one mod when its top level, or its only top folder, has
-  `files/`, `cars/` or `makers/`.
+  `files/`, `cars/`, `makers/` or `textures/`.
 - Each mod installs as `mods/<its folder's name>/`. A mod whose `mod.ini` is
   at the top of the .zip is named after the .zip file.
 - Anything beside the mods (a README at the top, `__MACOSX/`) is left out.
@@ -54,6 +54,8 @@ mods/
     files/
       menu/license_bg.img          <- replaces this file from GT3.VOL
       bgm/race_a05.ads             <- replaces a music track
+    textures/
+      tyres/tread-0123456789abcdef.png  <- replaces the texture with this key (see "Texture packs")
 ```
 
 Paths under `files/` mirror the paths inside GT3.VOL, which you can see with
@@ -88,6 +90,96 @@ gt3tool tex game.iso menu/license_bg.img work/png/
 
 Edit, re-encode and drop the result into `mods/<id>/files/...`. Then use
 `gt3r --browse menu/license_bg.img` to check it quickly.
+
+For textures, a texture pack (below) is easier: plain PNG pictures at any size, no PS2 formats.
+
+## Texture packs
+
+A mod's `textures/` folder holds PNG pictures that replace the game's textures as the game
+loads them: car bodies and wheels, courses, prize models, menus, the race HUD and course map,
+the game's fonts and the race effects (sparks, tyre smoke, the sun's glare, wet-road streaks,
+course billboards). A picture can be any size up to 4096 x 4096: draw it at 2x or 4x the
+original for sharper textures. A texture keeps its place and size on screen; only its pixels
+change.
+
+**Names.** Each texture has a key, 16 hex digits made from its pixels. A picture replaces the
+texture whose key its file name ends in, after `-`, `_`, `.` or a space:
+`0123456789abcdef.png`, `tread-0123456789abcdef.png`. The rest of the name, and any folders
+under `textures/`, are yours to choose. When two enabled mods replace the same texture, the
+higher `priority` wins.
+
+**Getting the textures.**
+
+- **Save textures** on the Mods screen saves every texture of the disc, each once, as a PNG
+  named with its key, in `texture-dump/<serial>/` in the user data folder: one folder per game
+  file (`cars/day/am0006/`, `menu/US/gt_mode3.pmb/`...). It takes a minute or two and about
+  400 MB. `textures.txt` there lists every key with each file and texture that uses it, so a
+  texture shared by several files (saved under the first) can be found from the others.
+- The **Asset browser** (Developer options) shows each texture's key, and the mod replacing
+  it; **Square** saves the open file's textures into the same folder.
+- `gt3tool tex-dump <iso> <outdir> [prefix]` saves them from the command line;
+  `gt3tool tex-keys <iso> <vol-path>` lists a file's keys.
+
+Copy a saved picture into your mod's `textures/`, keep the key at the end of its name, and edit
+or upscale it.
+
+**Good to know:**
+
+- Car colours: the textures a paint colour changes are saved once per colour (`-paint3` in the
+  name), each with its own key; the rest are saved once.
+- Animated textures (course lights and signs that change colour) are saved with their first
+  colours. A replaced one shows the picture and no longer animates.
+- Alpha 255 is opaque (the game's 0x80 is saved as 255).
+- A change applies to what loads next: a race, a menu page, a model in a viewer.
+- Movies, and the images the game composes while it runs (text set into video memory, screen
+  copies), are not textures of the disc. Movies can be replaced as files through `files/`.
+
+For tool makers, the key: FNV-1a (64-bit) over 32-bit little-endian words (the width, the
+height, then the texels row by row as RGBA8 with R in the low byte), finished with SplitMix64's
+mix (`h ^= h >> 30; h *= 0xBF58476D1CE4E5B9; h ^= h >> 27; h *= 0x94D049BB133111EB;
+h ^= h >> 31`). The pixels are the whole texture as `gtm1::decode_texture_set` decodes it: its
+full TEX0 size, the CLUT offset (CSA) applied, a car paint's palette, palette animations at
+their start (`src/formats/texture_pack.h`).
+
+### PCSX2 texture packs
+
+**PCSX2 pack** on the Mods screen (on computers) turns a texture pack made for PCSX2's texture
+replacement into a mod. Pick the pack's folder in PCSX2's `textures` folder (named after the
+disc's serial, such as `SCUS-97102`), or that `textures` folder itself. Beside the pack's
+`replacements/` it needs PCSX2's `dumps/` of the same pictures: PCSX2 names a picture after
+hashes of the console's video memory, so each is recognised by its original in `dumps/`. If a
+pack comes without them, turn on texture dumping in PCSX2 and play the parts of the game the
+pack covers.
+
+The pictures become the mod `pcsx2_<folder>`, with a `pcsx2-import.txt` listing the ones left
+out:
+
+- images PCSX2 dumped that the game composes while it runs (text set into video memory, screen
+  copies), which are most of what PCSX2 dumps besides the disc's textures;
+- textures of another release of the game, where they differ from the disc in use;
+- DDS pictures (PNG only), and mipmap levels (`-mip1`...: the game makes its own).
+
+PCSX2's alpha (128 = opaque) is converted. A picture of part of a texture (PCSX2's
+`r<width>x<height>` names) is placed into a picture of the whole texture at the same scale.
+
+From the command line: `gt3tool tex-pcsx2 <iso> <PCSX2 textures/<serial> folder> <mod dir>`.
+
+## Exporting models
+
+The **Car viewer** and **Course viewer** (Developer options) save the model shown as binary
+glTF with **R2** (C on the keyboard): `exports/cars/<model>.glb` or
+`exports/courses/<course>.glb` in the user data folder, at the level of detail shown (all
+levels: one node per level). Blender (File > Import > glTF 2.0) and most 3D programs open it.
+
+The file has glTF's axes (+Y up, the model facing +Z, metres), every texture embedded as PNG,
+the vertex colours (course scenery is lit by them: its materials are unlit,
+`KHR_materials_unlit`), and a node per mesh (a car's body, each wheel and tyre). Reflection
+passes and the passes drawn over other surfaces are left out. Material names follow the car
+model loader's (see "Car models"), so an exported body, edited and saved as `.glb` without its
+wheel and tyre nodes, can come back as a mod car's own body.
+
+From the command line: `gt3tool model <iso> <vol-path> <outdir> --gltf` (cars, wheels, prize
+models) and `gt3tool course-obj <iso> <vol-path> <outdir> glb`.
 
 ## Adding cars
 
@@ -345,14 +437,12 @@ come from the donor's car file; the shadow is stretched to the car's size.
 | Kind | Status |
 |---|---|
 | Music (`.ads`) | Works now: replace tracks; the jukebox and the game pick them up. Titles, artists and the song markers that time the replays' Video-mode cuts still come from `bgm/ads.inf` (music §8); the Options music list previews the intro file `bgm/i_<file>` |
-| Textures in `.img` files | Works now (needs a Tex1 encoder; a PNG import tool is planned) |
+| Textures | Works now: PNG texture packs at any size (see "Texture packs"), PCSX2 packs converted; whole `.img` files through `files/` too |
 | New cars (`cars/*.ini`) | Works now: data-only cars on a disc car's shell or their own glTF body, including electric ones, sold at GT Mode dealers, new makers included (see above) |
 | Any other file | Overrides are loaded wherever the game reads the file (menus, models, courses, sounds, databases, movies) |
 
 ## Planned
 
-- **PNG texture replacement packs** keyed by decoded-texture hash, so
-  artists never have to touch PS2 formats.
 - **Data patches**: small text files that change individual database
   records (e.g. one car's power or price) instead of replacing whole
   databases, so several mods can combine.

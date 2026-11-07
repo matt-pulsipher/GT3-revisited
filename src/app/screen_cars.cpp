@@ -107,7 +107,7 @@ public:
                     m.bounds_max[1] += spec->axle[0].ride_height;
                 }
             return m;
-        }));
+        }, {"cars", {}}));
     }
     void render(App&, Ui&) override {}
 
