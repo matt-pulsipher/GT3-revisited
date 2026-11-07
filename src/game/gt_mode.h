@@ -415,6 +415,14 @@ public:
 
     // Prize cars a result unlocks (scans every prize set).
     std::vector<int> award_prizes(const std::string& code);
+    // The prize sets the results earn whatever result is checked, never given (prize flags): a
+    // series all won, a championship or endurance race won, a licence all gold, a league, the
+    // whole game, a completion threshold, every time trial cleared. Results set by hand (the save
+    // editor) are never checked: these are the prize cars they have earned.
+    std::vector<const PrizeSet*> earned_prizes() const;
+    // Gives every earned_prizes set as one prize-car check gives its sets (a stir, then each
+    // set's roll in the gcf's order; a full garage takes none: take_prizes_refused).
+    std::vector<int> award_earned_prizes();
     // Off: results record everything but the prize cars (no roll, no car; the saves written
     // from a copy of the game before the menus record the result, whose car_get rolls the car).
     void set_prize_cars(bool on) { prize_cars_ = on; }
@@ -543,6 +551,12 @@ private:
     int prize_paint(const PrizeCar& pc);   // paint index of a prize candidate (random when unset)
     int pick_prize(const PrizeSet& set);   // weighted candidate pick
     int add_prize_car_paint(const std::string& car, int paint, const std::string& origin);
+    // One prize-car check: the sets `due` picks, in the gcf's order (award_prizes).
+    std::vector<int> give_prizes(const std::function<bool(const PrizeSet&)>& due);
+    bool prize_earned(const PrizeSet& set) const;
+    // The result slots of a series prize set ("X_0000": the slots X_00NN), and how many are won.
+    std::pair<int, int> series_results(const std::string& set) const;
+    bool time_trials_cleared() const; // every time trial's record beaten (arcade_compulsory_complete)
     std::bitset<88> stock_ownership(const std::string& car) const; // the goods a car comes with
     void arcade_unlock_pass(ArcadeOutcome& out);
     bool fit(GarageCar& c, int goods) const;

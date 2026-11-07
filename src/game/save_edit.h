@@ -2,9 +2,10 @@
 
 // The save editor's changes to a GT Mode game (Home -> Save editor, app/screen_save_editor.cpp):
 // what a player can set directly, kept consistent the way the game keeps it. Nothing here plays
-// a race or pays a prize: results, medals and cars are set as chosen, and the prize cars they
-// would have won are not given (a prize set not yet awarded is still given when the game next
-// checks it, e.g. a series won again).
+// a race or pays a prize: results, medals and cars are set as chosen. The prize cars the results
+// earn come only when asked for (Receive prize cars: GtMode::earned_prizes /
+// award_earned_prizes); otherwise the game gives a set not yet given at its next check (a
+// series' set when a race of the series is won again).
 
 #include "game/gt_mode.h"
 
@@ -17,7 +18,7 @@ namespace gt3r::game {
 // days at five.
 constexpr s64 kEditMaxMoney = 999'999'999;
 constexpr u32 kEditMaxDays = 99'999;
-constexpr u32 kEditMaxCount = 99'999; // races, wins
+constexpr u32 kEditMaxCount = 99'999; // races, wins, trophies
 
 // Races and wins: wins never exceed races (the status page's win ratio), so lowering one
 // lowers the other and raising wins raises races.

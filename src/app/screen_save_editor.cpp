@@ -1,10 +1,11 @@
 // Save editor (Home -> Save editor, gt3r --screen saveeditor): changes a GT Mode save of the
 // disc's save library (game/save_library.h). First the library's saves, then the chosen one on
 // tabbed pages laid out as Settings: Career (credits, prize money, the day, races and wins, the
-// endings seen), Garage (the cars: paint, odometer, engine, oil, dirt, the active car - the
-// game's ride car; add any car of the game with the online lobby's car page, or remove one),
-// Licenses (each test's medal), Races (each race's best place, championships won) and Arcade
-// (course groups and car levels open). The changes (game/save_edit.h) stay in a copy until Save
+// trophies, the endings seen), Garage (the cars: paint, odometer, engine, oil, dirt, the active
+// car - the game's ride car; add any car of the game with the online lobby's car page, or remove
+// one), Licenses (each test's medal), Races (each race's best place, championships won) and
+// Arcade (course groups and car levels open). Licenses and Races both offer the prize cars the
+// results have earned and not received. The changes (game/save_edit.h) stay in a copy until Save
 // (Start, or the top bar's button) writes them; leaving with changes asks first. The save being
 // played is edited as the game has it, which can be a race ahead of its file, and the game takes
 // the saved changes (game::store_edited_save).
@@ -607,6 +608,9 @@ private:
                1, game::format_credits(s.wins), [&s](s64 v) { game::set_wins(s, u32(v)); });
         number("Prize money won", "All the prize money won so far, as GT Mode's Status page shows it. Not money to spend.",
                s.prize_money, 0, game::kEditMaxMoney, 10000, credits(s.prize_money), [&s](s64 v) { s.prize_money = v; });
+        number("Trophies",
+               "Trophies won, as the Status page counts them: every top-three race finish, championship and arcade race won.",
+               s.trophies, 0, game::kEditMaxCount, 1, game::format_credits(s.trophies), [&s](s64 v) { s.trophies = u32(v); });
         info("Completion", gt_->completion_text(),
              "How much of the game is done: races won, license tests, arcade results. It follows the other pages.");
         heading("Endings");
@@ -718,9 +722,34 @@ private:
         });
     }
 
+    // The prize cars the results have earned and not received (on both result pages): rolled and
+    // given as the game gives them (GtMode::award_earned_prizes).
+    void prize_row() {
+        if (due_rev_ != rev_) due_rev_ = rev_, due_ = gt_->earned_prizes().size();
+        const bool full = int(gt_->state().garage.size()) >= game::kMaxGarageCars;
+        Row& r = action("Receive prize cars",
+                        due_ && full ? "The garage is full (200 cars)."
+                                     : "The prize cars these results have earned and not received: series and championships "
+                                       "won, licenses all gold, leagues complete.",
+                        due_ ? std::to_string(due_) + " waiting" : "None waiting", [this] { receive_prizes(); });
+        r.enabled = due_ > 0 && !full;
+    }
+
+    void receive_prizes() {
+        const std::vector<int> got = gt_->award_earned_prizes();
+        const int refused = gt_->take_prizes_refused();
+        if (got.empty() && !refused) return;
+        changed();
+        std::string note = got.size() == 1 ? "Received the " + car_name(gt_->state().garage[size_t(got[0])].car) + "."
+                                           : "Received " + std::to_string(got.size()) + " prize cars.";
+        if (refused) note += " The garage is full: " + std::to_string(refused) + " not received.";
+        show_note(note);
+    }
+
     void build_licenses() {
-        action("Gold in every test", "Every license test won with gold (the prize cars for all gold are not given).", "",
-               [this] {
+        prize_row();
+        action("Gold in every test",
+               "Every license test won with gold; Receive prize cars then gives the licenses' prize cars.", "", [this] {
                    game::set_every_license_medal(*gt_, Medal::Gold);
                    changed();
                });
@@ -774,7 +803,8 @@ private:
         for (const std::string& c : codes) won += s.best_position(c) == 0;
         char b[64];
         std::snprintf(b, sizeof b, "%d of %zu won", won, codes.size());
-        action("Win every race", "Every race and championship won (their prize cars are not given).", b, [this] {
+        prize_row();
+        action("Win every race", "Every race and championship won; Receive prize cars then gives their prize cars.", b, [this] {
             game::win_every_race(*gt_);
             changed();
         });
@@ -1262,6 +1292,8 @@ private:
     u64 rev_ = 0;        // counts the changes (and opens): the garage list's figures follow it
     u64 garage_rev_ = ~u64(0);
     std::vector<std::string> garage_values_; // each car's power and odometer
+    u64 due_rev_ = ~u64(0);
+    size_t due_ = 0; // prize sets earned, not received
     int tab_ = kCareer;
     int car_ = -1;     // the garage car whose page is open
     int car_row_ = -1; // its row on the garage page

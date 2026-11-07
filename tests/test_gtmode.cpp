@@ -785,6 +785,40 @@ TEST(gtmode_disc_game_complete_prize) {
     CHECK(gt.award_prizes("L0B0000").empty() && gt.state().garage.size() == 1); // once
 }
 
+// Every prize set of the disc is earned by the results that win it, with no check (the save
+// editor's Receive prize cars, public issue 210), on every release: none at the start;
+// everything but the 100 % completion set with every GT-mode result won, every licence gold and
+// every time trial cleared; all of them with the arcade won too. Each set's car comes once.
+TEST(gtmode_disc_earned_prizes) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    auto data = std::make_shared<GtData>();
+    CHECK(data->load([&](const std::string& p) { return vfs.read(p); }));
+    GtMode gt(data);
+    GameState& s = gt.state();
+    CHECK(gt.earned_prizes().empty());
+    size_t sets = 0;
+    for (const PrizeSet& p : data->prizes) sets += !p.cars.empty();
+    CHECK(sets >= 90);
+    for (const std::string& c : data->race_codes) s.race_best[c] = 0;
+    for (LicenseTestRecord& t : s.license_tests) t.medal = Medal::Gold, t.best_time = 1;
+    s.arcade.at_best_rank.fill(0);
+    std::vector<const PrizeSet*> due = gt.earned_prizes();
+    CHECK(due.size() == sets - 1 && gt.completion() < 1);
+    for (const PrizeSet* p : due) CHECK(p->name != "achieve_complete");
+    for (int i = 0; i < gt.arcade_course_count(); ++i) s.arcade.best[size_t(2 * gt.arcade_course_count() + i)] = 0;
+    CHECK(gt.completion() == 1 && gt.earned_prizes().size() == sets);
+    std::vector<int> got = gt.award_earned_prizes();
+    CHECK(got.size() == sets && s.garage.size() == sets && s.prize_cars == sets && s.prizes_given.size() == sets);
+    CHECK(gt.earned_prizes().empty() && gt.award_earned_prizes().empty());
+    // The A licence's car, as its check gives it (gt_mode §9: one candidate).
+    const PrizeSet* a = data->prize_set("L0A0000");
+    CHECK(a && a->cars.size() == 1);
+    for (int g : got)
+        if (a && s.garage[size_t(g)].origin == a->name) CHECK(s.garage[size_t(g)].car == data->prize_candidate(a->cars[0]).car);
+}
+
 TEST(gtmode_disc_entry_rules) {
     NEED_DATA();
     GtMode gt(data);
