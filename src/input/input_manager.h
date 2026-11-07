@@ -66,9 +66,9 @@ bool gt3_rumble(std::string_view mode);
 bool is_wheel(SDL_JoystickType type, bool wheel_forces);
 
 // What a device is to Auto: a wheel SDL lists, a wheel only by its forces (is_wheel; it may be a
-// Link Hub with just pedals on it), a gamepad SDL maps, or any other joystick (flight sticks,
-// but also odd HID devices such as some keyboards, mice and macro pads).
-enum class AutoRank : u8 { Wheel, LikelyWheel, Gamepad, Other };
+// Link Hub with just pedals on it), a gamepad SDL maps, the VR controllers' gamepad, or any other
+// joystick (flight sticks, but also odd HID devices such as some keyboards, mice and macro pads).
+enum class AutoRank : u8 { Wheel, LikelyWheel, Gamepad, VrControllers, Other };
 // An "auto" player's device among the ones no other player has, in connection order: the first
 // of the best rank. -1 = none.
 int pick_auto_device(const std::vector<AutoRank>& devices);
@@ -292,6 +292,7 @@ private:
         bool has_accel = false;
         bool wheel = false; // is_wheel (Auto takes it first)
         bool listed_wheel = false; // SDL identifies it (not its forces alone)
+        bool vr_pad = false; // the VR controllers' gamepad (xr::Session; Auto takes a real pad before it)
         u32 moved_axes = 0; // axes seen away from where they started (note_moved_axes)
         bool dualsense = false; // a PlayStation 5 controller (Modern rumble's mix for it, dualsense_rumble)
         std::string serial, path; // for device tags (DeviceId); empty when not reported

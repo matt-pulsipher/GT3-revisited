@@ -426,7 +426,7 @@ bool Profile::keyboard_only() const {
 }
 
 std::string_view pad_preset() {
-#if GT3R_XR
+#if GT3R_XR && defined(__ANDROID__)
     return "quest";
 #else
     return "pad";
@@ -710,8 +710,9 @@ Profile player2_race() {
 
 // A set's layout: the kind's preset, or its modern race layout, from that set's inputs; the
 // keyboard's around I / J / K / L for player 2.
-const Profile& layout(DeviceKind kind, bool race, BindingSet s, bool player2) {
+const Profile& layout(DeviceKind kind, bool race, BindingSet s, bool player2, bool vr_pad) {
     static const Profile none;
+    static const Profile vr_menu = part_of(make_preset("quest"), BindingSet::Controller);
     static const std::array<Profile, 8> layouts = [] {
         auto menu = [](DeviceKind k) { return make_preset(device_kind_preset(k)); };
         auto racing = [](DeviceKind k) { return make_race_preset("modern", device_kind_preset(k)); };
@@ -726,6 +727,7 @@ const Profile& layout(DeviceKind kind, bool race, BindingSet s, bool player2) {
     }();
     if (s == BindingSet::Keyboard) return layouts[player2 ? (race ? 7 : 6) : (race ? 5 : 2)];
     if (kind == DeviceKind::Keyboard || kind == DeviceKind::Joystick) return none; // no defaults
+    if (vr_pad && kind == DeviceKind::Pad && !race) return vr_menu; // (its race layout is any pad's)
     return layouts[(race ? 3 : 0) + controller_index(kind)];
 }
 
@@ -770,8 +772,12 @@ std::string unescape_tag(std::string_view enc) {
 
 } // namespace
 
-std::string_view pad_action_key(PadAction a) { return a == PadAction::NextSong ? "next_song" : "previous_song"; }
-std::string_view pad_action_name(PadAction a) { return a == PadAction::NextSong ? "Next song" : "Previous song"; }
+std::string_view pad_action_key(PadAction a) {
+    return a == PadAction::NextSong ? "next_song" : a == PadAction::PreviousSong ? "previous_song" : "recenter_view";
+}
+std::string_view pad_action_name(PadAction a) {
+    return a == PadAction::NextSong ? "Next song" : a == PadAction::PreviousSong ? "Previous song" : "Recenter view";
+}
 
 std::string Chord::to_string() const {
     std::string out;
@@ -861,7 +867,7 @@ const Profile& PlayerBindings::set(DeviceKind kind, bool race, BindingSet s) con
     const std::optional<Profile>& c = const_cast<PlayerBindings*>(this)->slot(kind, race, s);
     if (c && (race ? race_custom_on : menu_custom_on)) return *c;
     if (race && race_layout == "gt3") return set(kind, false, s);
-    return layout(kind, race, s, player2);
+    return layout(kind, race, s, player2, vr_pad);
 }
 
 bool PlayerBindings::has_custom(DeviceKind kind, bool race) const {
@@ -1001,7 +1007,7 @@ bool PlayerBindings::load_old(const IniDocument& cfg, const std::string& sec) {
                     p.bindings.push_back(b);
             if (p.bindings.empty()) continue;
             controller_inputs |= s == BindingSet::Controller;
-            if (same_bindings(p, layout(kind, race, s, player2))) continue;
+            if (same_bindings(p, layout(kind, race, s, player2, vr_pad))) continue;
             p.name = "custom";
             slot(kind, race, s) = std::move(p);
         }

@@ -1,6 +1,6 @@
 #pragma once
 
-// VR headsets through OpenXR (Meta Quest; docs/dev/VR.md). Without GT3R_XR none of this is
+// VR headsets through OpenXR (Meta Quest, PC VR; docs/dev/VR.md). Without GT3R_XR none of this is
 // compiled.
 //
 // The game keeps drawing with its 2D renderer, into a canvas (a render target) instead of a
@@ -14,7 +14,8 @@
 //   ... update, then draw into canvas() and, for a stereo frame, eye(i).canvas ...
 //   SDL_RenderPresent()     submits the 2D renderer's work
 //   end_frame()             copies the canvases into the headset's swapchains and submits
-//                           the layers (the screen, or the eyes plus the HUD panel)
+//                           the layers (the screen, or the eyes plus the HUD panel); a
+//                           desktop's window shows the same picture (mirror_to)
 
 #if GT3R_XR
 
@@ -23,8 +24,10 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gt3r {
@@ -52,6 +55,12 @@ struct Eye {
     }
 };
 
+// A w x h picture centred on a tw x th target: whole inside it, or (`cover`) filling it, cropped.
+inline SDL_FRect fit_picture(int w, int h, float tw, float th, bool cover) {
+    const float a = tw / float(w), b = th / float(h), k = cover ? std::max(a, b) : std::min(a, b);
+    return {(tw - float(w) * k) / 2, (th - float(h) * k) / 2, float(w) * k, float(h) * k};
+}
+
 // [vr] in config.ini (Settings > VR).
 struct Settings {
     bool stereo = true;          // stereo = on: races in 3D; off: on the virtual screen
@@ -62,6 +71,7 @@ struct Settings {
     float screen_distance = 2.4f, screen_width = 2.6f; // menus' virtual screen (metres)
     float hud_distance = 1.3f, hud_width = 1.5f;       // the race HUD panel in front of the car
     float hud_drop = 0.12f;                            // HUD panel centre below eye level
+    float seat_forward = 0, seat_height = 0;           // in-car views: from the car's camera (metres)
     int refresh_hz = 90;      // refresh = 72 | 80 | 90 | 120 (what the headset offers)
     float eye_scale = 1.0f;   // resolution = 0.7 .. 1.3 of the headset's recommended size
     static Settings load(const IniDocument& cfg);
@@ -72,13 +82,23 @@ class Session {
 public:
     // Properties for SDL_CreateGPUDeviceWithProperties that create the device through the
     // headset's OpenXR runtime (instance and system written back on success), with the
-    // optional extensions the runtime supports. False when no OpenXR loader or runtime exists.
+    // optional extensions the runtime supports. False when no OpenXR loader or runtime exists,
+    // or (desktops) no runtime has a headset: `runtime`, the [vr] runtime setting, says which
+    // ones are looked at (xr_runtimes.cpp).
     struct DeviceRequest {
+        std::string runtime; // auto: the system's OpenXR runtime, then a running SteamVR; steamvr; meta
         u64 instance = 0, system = 0;
         std::vector<std::string> extensions;
         std::vector<const char*> names;
     };
     static bool prepare_device(SDL_PropertiesID props, DeviceRequest& req);
+    // After SDL_CreateGPUDeviceWithProperties failed with prepare_device's properties: whether to
+    // wait a second and try again (desktops, for a while: the runtime has a headset, but its
+    // compositor may still be starting, as SteamVR's is just after it starts).
+    static bool retry_device(int attempt);
+    // The [vr] runtime choices besides auto that this computer has, as (setting, name): Windows,
+    // SteamVR and Meta's when installed; elsewhere none.
+    static std::vector<std::pair<std::string, std::string>> runtime_choices();
 
     // The session for a device created with prepare_device's properties. `renderer` is the
     // device's offscreen 2D renderer (canvases are its render targets).
@@ -101,6 +121,9 @@ public:
     bool begin_frame();
     // After SDL_RenderPresent: hands this frame's canvases to the compositor.
     void end_frame();
+    // Desktops: `window` shows what the headset shows from now on: the screen, or the left eye
+    // cropped to the window under the HUD. Never paces the headset's frames. False: it stays empty.
+    bool mirror_to(SDL_Window* window);
     // Seconds between the headset's frames (the display refresh).
     double frame_interval() const;
     // Predicted display time of the current frame (XrTime, nanoseconds).
@@ -127,6 +150,8 @@ public:
     void set_settings(const Settings& s);
     // Display refresh rates the headset offers (empty: fixed rate).
     const std::vector<float>& refresh_rates() const;
+    // The OpenXR runtime in use, with its version ("SteamVR/OpenXR 2.15.4").
+    const std::string& runtime_name() const { return runtime_name_; }
 
     // Controllers (xr_input.cpp): reads the actions into the virtual gamepad. With
     // `pointer_allowed` (menus, not driving) the right controller also points at the virtual
@@ -145,6 +170,7 @@ private:
     Session() = default;
     std::unique_ptr<Impl> impl_;
     Settings settings_;
+    std::string runtime_name_;
     SDL_Texture* canvas_ = nullptr;
     int canvas_w_ = 1280, canvas_h_ = 720;
     Eye eyes_[2];

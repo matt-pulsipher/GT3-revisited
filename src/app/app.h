@@ -249,6 +249,9 @@ private:
     s64 xr_last_display_ = 0; // previous frame's display time (frame step)
     // The right controller's pointer on the virtual screen: mouse events to the screens.
     void xr_pointer();
+    // A point of the canvas, (u, v) in 0..1 from the top left, in UI units.
+    void canvas_to_ui(float u, float v, float& x, float& y);
+    void mirror_pointer(SDL_Event& e);
     bool xr_pointer_on_ = false, xr_pointer_down_ = false;
     float xr_pointer_x_ = 0, xr_pointer_y_ = 0;
 #endif

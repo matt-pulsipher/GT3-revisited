@@ -70,9 +70,9 @@ std::string initial_race_layout(const IniDocument& cfg, const std::string& sec, 
 }
 
 // The pad's layout, keyboard included: any_device_pad() reads every controller and the keyboard with it.
-const Profile& pad_layout() {
-    static const Profile prof = make_preset(pad_preset());
-    return prof;
+const Profile& pad_layout(bool vr_pad = false) {
+    static const Profile prof = make_preset(pad_preset()), vr = make_preset("quest");
+    return vr_pad ? vr : prof;
 }
 
 } // namespace
@@ -291,6 +291,9 @@ void InputManager::add_device(SDL_JoystickID id) {
     const SDL_JoystickType type = SDL_GetJoystickTypeForID(id);
     d.listed_wheel = type == SDL_JOYSTICK_TYPE_WHEEL;
     d.wheel = is_wheel(type, type == SDL_JOYSTICK_TYPE_UNKNOWN && ForceFeedback::has_wheel_forces(d.joystick));
+#if GT3R_XR
+    d.vr_pad = SDL_IsJoystickVirtual(id); // (the game makes no other)
+#endif
     d.dualsense = d.gamepad && SDL_GetGamepadType(d.gamepad) == SDL_GAMEPAD_TYPE_PS5;
     if (const char* serial = SDL_GetJoystickSerial(d.joystick)) d.serial = serial;
     if (const char* path = SDL_GetJoystickPath(d.joystick)) d.path = path;
@@ -339,6 +342,7 @@ void InputManager::assign_devices() {
                     if (is_taken(d.id) || reserved[k]) continue;
                     ids.push_back(d.id);
                     ranks.push_back(d.listed_wheel ? AutoRank::Wheel : d.wheel ? AutoRank::LikelyWheel
+                                    : d.vr_pad     ? AutoRank::VrControllers
                                     : d.gamepad    ? AutoRank::Gamepad : AutoRank::Other);
                 }
                 if (int at = pick_auto_device(ranks); at >= 0) p.device = ids[size_t(at)];
@@ -352,6 +356,7 @@ void InputManager::assign_devices() {
             const Device* d = find_device(p.device);
             p.kind = device_kind(d != nullptr, d && d->gamepad, d && d->wheel,
                                  !is_auto && !p.wheel_device.empty() && p.device_filter == p.wheel_device);
+            p.bindings.vr_pad = d && d->vr_pad;
             if (p.kind == DeviceKind::Wheel && d && d->wheel && !d->listed_wheel) p.bindings.adopt_joystick_sets();
             refresh(p);
             if (p.device) taken.push_back(p.device);
@@ -767,7 +772,7 @@ void InputManager::evaluate_any_device(double dt) {
     std::vector<float> ramps; // the controller bindings have none
     for (const Device& d : devices_) {
         if (!d.gamepad) continue;
-        evaluate_profile(none, &d, false, pad_layout(), ramps, s, dt);
+        evaluate_profile(none, &d, false, pad_layout(d.vr_pad), ramps, s, dt);
         pads.push_back(s);
     }
     any_pad_ = merge_pads(pads);
@@ -992,7 +997,7 @@ bool menus_drivable(const Profile& menu, bool pad, bool joystick, bool keys) {
 }
 
 int pick_auto_device(const std::vector<AutoRank>& devices) {
-    for (AutoRank rank : {AutoRank::Wheel, AutoRank::LikelyWheel, AutoRank::Gamepad, AutoRank::Other})
+    for (AutoRank rank : {AutoRank::Wheel, AutoRank::LikelyWheel, AutoRank::Gamepad, AutoRank::VrControllers, AutoRank::Other})
         if (auto it = std::find(devices.begin(), devices.end(), rank); it != devices.end())
             return int(it - devices.begin());
     return -1;

@@ -1,0 +1,179 @@
+SDL main (the desktop VR builds' SDL 3.6): sdl-vulkan-amd-fullscreen.patch, moved to where that code
+is on SDL main. Applied by cmake/Dependencies.cmake.
+
+diff --git a/src/gpu/vulkan/SDL_gpu_vulkan.c b/src/gpu/vulkan/SDL_gpu_vulkan.c
+index 15d518b..f03fa08 100644
+--- a/src/gpu/vulkan/SDL_gpu_vulkan.c
++++ b/src/gpu/vulkan/SDL_gpu_vulkan.c
+@@ -36,6 +36,25 @@
+ #include "../xr/SDL_gpu_openxr.h"
+ #endif
+ 
++#if defined(SDL_PLATFORM_WINDOWS) && !defined(VK_EXT_full_screen_exclusive)
++// From vulkan_win32.h, which needs <windows.h>: the parts of VK_EXT_full_screen_exclusive used here.
++#define VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME "VK_EXT_full_screen_exclusive"
++typedef enum VkFullScreenExclusiveEXT
++{
++    VK_FULL_SCREEN_EXCLUSIVE_DEFAULT_EXT = 0,
++    VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT = 1,
++    VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT = 2,
++    VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT = 3,
++    VK_FULL_SCREEN_EXCLUSIVE_MAX_ENUM_EXT = 0x7FFFFFFF
++} VkFullScreenExclusiveEXT;
++typedef struct VkSurfaceFullScreenExclusiveInfoEXT
++{
++    VkStructureType sType;
++    void *pNext;
++    VkFullScreenExclusiveEXT fullScreenExclusive;
++} VkSurfaceFullScreenExclusiveInfoEXT;
++#endif
++
+ #include <SDL3/SDL_vulkan.h>
+ 
+ #include "../SDL_sysgpu.h"
+@@ -68,6 +87,8 @@ typedef struct VulkanExtensions
+     Uint8 MSFT_layered_driver;
+     // Only required for decoding HDR ASTC textures
+     Uint8 EXT_texture_compression_astc_hdr;
++    // Only used to keep AMD's Windows driver out of exclusive fullscreen
++    Uint8 EXT_full_screen_exclusive;
+ } VulkanExtensions;
+ 
+ // Defines
+@@ -1154,6 +1175,7 @@ struct VulkanRenderer
+     bool supportsColorspace;
+     bool supportsPhysicalDeviceProperties2;
+     bool supportsPortabilityEnumeration;
++    bool supportsSurfaceCapabilities2;
+     bool supportsFillModeNonSolid;
+     bool supportsMultiDrawIndirect;
+ 
+@@ -4649,6 +4671,9 @@ static Uint32 VULKAN_INTERNAL_CreateSwapchain(
+ {
+     VkResult vulkanResult;
+     VkSwapchainCreateInfoKHR swapchainCreateInfo;
++#ifdef SDL_PLATFORM_WINDOWS
++    VkSurfaceFullScreenExclusiveInfoEXT fullScreenExclusiveInfo;
++#endif
+     VkImage *swapchainImages;
+     VkSemaphoreCreateInfo semaphoreCreateInfo;
+     SwapchainSupportDetails swapchainSupportDetails;
+@@ -4803,6 +4828,17 @@ static Uint32 VULKAN_INTERNAL_CreateSwapchain(
+     swapchainCreateInfo.clipped = VK_TRUE;
+     // The old swapchain could belong to a surface that no longer exists due to app switching.
+     swapchainCreateInfo.oldSwapchain = windowData->needsSurfaceRecreate ? (VkSwapchainKHR)0 : windowData->swapchain;
++#ifdef SDL_PLATFORM_WINDOWS
++    if (renderer->supports.EXT_full_screen_exclusive) {
++        /* AMD's Windows driver makes a window that covers the whole monitor exclusive
++         * fullscreen on its own, and the window can freeze when it does (borderless
++         * fullscreen from SDL_SetWindowFullscreen). Keep it a composited window. */
++        fullScreenExclusiveInfo.sType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
++        fullScreenExclusiveInfo.pNext = NULL;
++        fullScreenExclusiveInfo.fullScreenExclusive = VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT;
++        swapchainCreateInfo.pNext = &fullScreenExclusiveInfo;
++    }
++#endif
+     vulkanResult = renderer->vkCreateSwapchainKHR(
+         renderer->logicalDevice,
+         &swapchainCreateInfo,
+@@ -11253,7 +11289,7 @@ static inline Uint8 CheckDeviceExtensions(
+         supports->ext = 1;                   \
+     }
+         CHECK(KHR_swapchain)
+-        else CHECK(KHR_maintenance1) else CHECK(KHR_driver_properties) else CHECK(KHR_portability_subset) else CHECK(MSFT_layered_driver) else CHECK(EXT_texture_compression_astc_hdr)
++        else CHECK(KHR_maintenance1) else CHECK(KHR_driver_properties) else CHECK(KHR_portability_subset) else CHECK(MSFT_layered_driver) else CHECK(EXT_texture_compression_astc_hdr) else CHECK(EXT_full_screen_exclusive)
+ #undef CHECK
+     }
+ 
+@@ -11269,7 +11305,8 @@ static inline Uint32 GetDeviceExtensionCount(VulkanExtensions *supports)
+         supports->KHR_driver_properties +
+         supports->KHR_portability_subset +
+         supports->MSFT_layered_driver +
+-        supports->EXT_texture_compression_astc_hdr);
++        supports->EXT_texture_compression_astc_hdr +
++        supports->EXT_full_screen_exclusive);
+ }
+ 
+ static inline void CreateDeviceExtensionArray(
+@@ -11287,6 +11324,7 @@ static inline void CreateDeviceExtensionArray(
+     CHECK(KHR_portability_subset)
+     CHECK(MSFT_layered_driver)
+     CHECK(EXT_texture_compression_astc_hdr)
++    CHECK(EXT_full_screen_exclusive)
+ #undef CHECK
+ }
+ 
+@@ -11311,6 +11349,7 @@ static Uint8 VULKAN_INTERNAL_CheckInstanceExtensions(
+     bool *supportsColorspace,
+     bool *supportsPhysicalDeviceProperties2,
+     bool *supportsPortabilityEnumeration,
++    bool *supportsSurfaceCapabilities2,
+     int *firstUnsupportedExtensionIndex)
+ {
+     Uint32 extensionCount, i;
+@@ -11363,6 +11402,16 @@ static Uint8 VULKAN_INTERNAL_CheckInstanceExtensions(
+         availableExtensions,
+         extensionCount);
+ 
++    // Only needed for EXT_full_screen_exclusive (Windows)!
++#ifdef SDL_PLATFORM_WINDOWS
++    *supportsSurfaceCapabilities2 = SupportsInstanceExtension(
++        VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME,
++        availableExtensions,
++        extensionCount);
++#else
++    *supportsSurfaceCapabilities2 = false;
++#endif
++
+     SDL_free(availableExtensions);
+     return allExtensionsSupported;
+ }
+@@ -11973,12 +12022,13 @@ static Uint8 VULKAN_INTERNAL_CreateInstance(VulkanRenderer *renderer, VulkanFeat
+      * VK_EXT_swapchain_colorspace
+      * VK_EXT_debug_utils
+      * VK_KHR_portability_enumeration
++     * VK_KHR_get_surface_capabilities2
+      *
+      * Plus additional opt-in extensions.
+      */
+     instanceExtensionNames = SDL_stack_alloc(
+         const char *,
+-        instanceExtensionCount + 4 + extraInstanceExtensionCount);
++        instanceExtensionCount + 5 + extraInstanceExtensionCount);
+     const char** nextInstanceExtensionNamePtr = instanceExtensionNames;
+     SDL_memcpy((void *)nextInstanceExtensionNamePtr, originalInstanceExtensionNames, instanceExtensionCount * sizeof(const char *));
+     nextInstanceExtensionNamePtr += instanceExtensionCount;
+@@ -11996,6 +12046,7 @@ static Uint8 VULKAN_INTERNAL_CreateInstance(VulkanRenderer *renderer, VulkanFeat
+             &renderer->supportsColorspace,
+             &renderer->supportsPhysicalDeviceProperties2,
+             &renderer->supportsPortabilityEnumeration,
++            &renderer->supportsSurfaceCapabilities2,
+             &firstUnsupportedExtensionIndex)) {
+         if (renderer->debugMode) {
+             SDL_LogError(SDL_LOG_CATEGORY_GPU,
+@@ -12037,6 +12088,11 @@ static Uint8 VULKAN_INTERNAL_CreateInstance(VulkanRenderer *renderer, VulkanFeat
+         createFlags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+     }
+ 
++    if (renderer->supportsSurfaceCapabilities2) {
++        *nextInstanceExtensionNamePtr++ = VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME;
++        instanceExtensionCount++;
++    }
++
+     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+     createInfo.pNext = NULL;
+     createInfo.flags = createFlags;
+@@ -12534,6 +12590,13 @@ static Uint8 VULKAN_INTERNAL_DeterminePhysicalDevice(VulkanRenderer *renderer, V
+         renderer->physicalDevice,
+         &renderer->memoryProperties);
+ 
++    // EXT_full_screen_exclusive: AMD only (see VULKAN_INTERNAL_CreateSwapchain)
++    if (renderer->physicalDeviceProperties.properties.vendorID != 0x1002 ||
++        !renderer->supportsSurfaceCapabilities2 ||
++        !renderer->supportsPhysicalDeviceProperties2) {
++        renderer->supports.EXT_full_screen_exclusive = 0;
++    }
++
+     return 1;
+ }
+ 

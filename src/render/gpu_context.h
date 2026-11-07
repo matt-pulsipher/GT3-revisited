@@ -98,6 +98,7 @@ struct GpuOptions {
     // VR builds (GT3R_XR): create the device through the headset's OpenXR runtime when there is
     // one; the 2D renderer then draws offscreen (canvases of xr::Session) instead of the window.
     bool xr = false;
+    std::string xr_runtime = "auto"; // [vr] runtime (xr::Session::DeviceRequest::runtime)
 };
 
 class Uploader;

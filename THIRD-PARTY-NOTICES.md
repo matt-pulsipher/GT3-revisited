@@ -14,8 +14,8 @@ also include the components below; their notices follow.
 libchdr and its dependencies are fetched at build time from the pinned tag and
 are not committed to this repository; the texts below are those of the pinned
 versions. The other third-party components (SDL 3, zlib, Barlow, stb_truetype,
-dr_mp3/dr_wav, the Khronos headers, and ANGLE on Windows) are credited in
-`README.md` and ship with their own license files.
+dr_mp3/dr_wav, the Khronos headers, ANGLE on Windows, and the OpenXR loader in the
+PC VR package) are credited in `README.md` and ship with their own license files.
 
 ## libchdr
 

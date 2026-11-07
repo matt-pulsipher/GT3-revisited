@@ -29,7 +29,7 @@ option(GT3R_SDL_SHARED "Build the fetched SDL3 as a shared library" OFF)
 # VR headsets (docs/dev/VR.md): SDL_GPU's OpenXR support arrives with SDL 3.6, so these
 # builds take SDL from its development branch at a pinned commit (the Quest APK's
 # android/fetch-sdl.sh --xr fetches the same one); every other build stays on 3.4.
-option(GT3R_XR "OpenXR mode for VR headsets (Meta Quest); needs SDL 3.6 with SDL_GPU OpenXR" OFF)
+option(GT3R_XR "OpenXR mode for VR headsets (Meta Quest, PC VR); needs SDL 3.6 with SDL_GPU OpenXR" OFF)
 set(GT3R_SDL_TAG release-3.4.12)
 set(GT3R_SDL_SHALLOW TRUE)
 if(GT3R_XR)
@@ -54,15 +54,16 @@ if(NOT SDL3_FOUND)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
   endif()
   set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
-  # Our fixes to SDL 3.4 (cmake/patches; the VR builds' SDL 3.6 takes none). A source tree given
-  # with FETCHCONTENT_SOURCE_DIR_SDL3 is used as it is.
-  set(GT3R_SDL_PATCH "")
-  if(NOT GT3R_XR)
-    find_package(Git REQUIRED)
-    set(GT3R_SDL_PATCH PATCH_COMMAND "${CMAKE_COMMAND}" "-DGIT=${GIT_EXECUTABLE}"
-        "-DPATCHES=${CMAKE_CURRENT_LIST_DIR}/patches/sdl-vulkan-amd-fullscreen.patch"
-        -P "${CMAKE_CURRENT_LIST_DIR}/ApplyPatches.cmake")
+  # Our fixes to SDL (cmake/patches; the VR builds' pinned commit has its own copy). A source tree
+  # given with FETCHCONTENT_SOURCE_DIR_SDL3 is used as it is.
+  find_package(Git REQUIRED)
+  set(_sdl_patch sdl-vulkan-amd-fullscreen.patch)
+  if(GT3R_XR)
+    set(_sdl_patch sdl-main-vulkan-amd-fullscreen.patch)
   endif()
+  set(GT3R_SDL_PATCH PATCH_COMMAND "${CMAKE_COMMAND}" "-DGIT=${GIT_EXECUTABLE}"
+      "-DPATCHES=${CMAKE_CURRENT_LIST_DIR}/patches/${_sdl_patch}"
+      -P "${CMAKE_CURRENT_LIST_DIR}/ApplyPatches.cmake")
   FetchContent_Declare(SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
     GIT_TAG ${GT3R_SDL_TAG}
@@ -81,6 +82,18 @@ if(GT3R_XR)
                         "on Android run android/fetch-sdl.sh --xr")
   endif()
   set(GT3R_OPENXR_INCLUDE_DIR ${sdl3_SOURCE_DIR}/src/video/khronos)
+  # Windows: the Khronos OpenXR loader, which SDL opens when the game starts (no loader, no
+  # headset: the window); it ships next to gt3r.exe. Keep it at the OpenXR version of the headers
+  # SDL builds with, like the Quest APK's (android/app/build.gradle). Its NuGet package is a zip.
+  if(WIN32)
+    set(_openxr ${CMAKE_BINARY_DIR}/_deps/openxr_loader)
+    file(DOWNLOAD https://github.com/KhronosGroup/OpenXR-SDK/releases/download/release-1.1.65/OpenXR.Loader.1.1.65.nupkg
+         ${_openxr}/loader.zip
+         EXPECTED_HASH SHA256=05638c526f07ba3a5f1084bbc3308d654d5167f844ffa1e35515325cb72e0c34)
+    file(ARCHIVE_EXTRACT INPUT ${_openxr}/loader.zip DESTINATION ${_openxr}
+         PATTERNS native/x64/release/bin/openxr_loader.dll)
+    set(GT3R_OPENXR_LOADER ${_openxr}/native/x64/release/bin/openxr_loader.dll)
+  endif()
 endif()
 
 # --- zlib: GT3 stores compressed files as gzip / raw deflate ---------------

@@ -1,9 +1,10 @@
 // VR headsets (docs/dev/VR.md): the race in stereo while driving. The headset's seated space
 // (origin at the player's head, -z ahead) is placed in the world at the view's eye point: in
-// the in-car views at the car's camera point 0, turning with the car (or with its heading
-// only, [vr] level_horizon); in the chase views at the chase camera, level, turning with its
-// lagged heading. Each eye is that placement times the eye's tracked pose. Replays, the
-// pre-race shot, 2P split screen and the debug cameras stay on the virtual screen.
+// the in-car views at the car's camera point 0 ([vr] seat_forward, seat_height from there),
+// turning with the car (or with its heading only, [vr] level_horizon); in the chase views at
+// the chase camera, level, turning with its lagged heading. Each eye is that placement times
+// the eye's tracked pose. Replays, the pre-race shot, 2P split screen and the debug cameras
+// stay on the virtual screen.
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
@@ -27,21 +28,16 @@ bool RaceScreen::vr_stereo(App& app, bool split) const {
 render::Mat4 RaceScreen::vr_base(const xr::Settings& st) const {
     const sim::Quat& q = render_state_.orientation;
     const render::Vec3 eye = camera_.eye();
-    float yaw = 0;
-    if (camera_.onboard()) {
-        if (!st.level_horizon) { // the car's full attitude
-            render::Mat4 rot = render::rotate_quat(q.w, q.x, q.y, q.z);
-            if (camera_.look_back()) rot = rot * render::rotate_y(kPi);
-            return render::translate(eye) * rot;
-        }
-        sim::Vec3 f = rotate(q, {0, 0, -1});
-        yaw = std::atan2(-f.x, -f.z);
-        if (camera_.look_back()) yaw += kPi;
-    } else { // chase: the rig's lagged heading (look-back included), level
-        sim::Vec3 f = cam_forward(camera_);
-        yaw = std::atan2(-f.x, -f.z);
+    if (camera_.onboard()) { // the car's full attitude or its heading, the seat moved within the car
+        const sim::Vec3 f = rotate(q, {0, 0, -1});
+        const render::Mat4 car = st.level_horizon ? render::rotate_y(std::atan2(-f.x, -f.z))
+                                                  : render::rotate_quat(q.w, q.x, q.y, q.z);
+        const render::Mat4 seat = render::translate(eye) * car * render::translate({0, st.seat_height, -st.seat_forward});
+        return camera_.look_back() ? seat * render::rotate_y(kPi) : seat;
     }
-    return render::translate(eye) * render::rotate_y(yaw);
+    // Chase: the rig's lagged heading (look-back included), level.
+    const sim::Vec3 f = cam_forward(camera_);
+    return render::translate(eye) * render::rotate_y(std::atan2(-f.x, -f.z));
 }
 
 void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) {

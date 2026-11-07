@@ -10,7 +10,8 @@
 # min_online: games below it cannot create or join sessions (default: latest). 0.0.0 = no minimum.
 # url: where "Download update" goes (default: keep the one already set; the first run needs it).
 #   {asset} becomes the player's package (gt3r-windows-x64.zip, gt3r-macos-arm64.zip,
-#   gt3r-linux-x86_64.tar.gz, gt3r-android.apk); the release notes page is the URL cut at /download/.
+#   gt3r-linux-x86_64.tar.gz, gt3r-android.apk, gt3r-windows-x64-vr.zip, gt3r-quest.apk); the release
+#   notes page is the URL cut at /download/.
 # Writes /etc/gt3r-relay/versions.conf (deploy.sh installs a relay that reads it), then
 # `systemctl reload gt3r-relay`, and shows the relay's log line that confirms the new values.
 set -eu

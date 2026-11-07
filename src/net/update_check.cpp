@@ -95,7 +95,9 @@ CpuArch this_arch() {
 
 std::string release_asset(RvPlatform platform, CpuArch arch, bool vr) {
     switch (platform) {
-    case RvPlatform::Windows: return arch == CpuArch::X64 ? "gt3r-windows-x64.zip" : "";
+    case RvPlatform::Windows:
+        if (arch != CpuArch::X64) return "";
+        return vr ? "gt3r-windows-x64-vr.zip" : "gt3r-windows-x64.zip";
     case RvPlatform::MacOS: return arch == CpuArch::Arm64 ? "gt3r-macos-arm64.zip" : "";
     case RvPlatform::Linux: return arch == CpuArch::X64 ? "gt3r-linux-x86_64.tar.gz" : "";
     case RvPlatform::Android: // one APK for arm64-v8a and x86_64; the Quest APK is arm64 only
