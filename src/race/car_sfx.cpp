@@ -100,6 +100,8 @@ Placement place_voice(float x, float z, float vol) {
     return p;
 }
 
+float distance_gain(float x, float z) { return std::min(1.0f, 32.0f / std::max(std::hypot(x, z), 0.25f)); }
+
 bool CarSfx::bind(const std::vector<std::shared_ptr<const sound::InstBank>>& banks,
                   const std::vector<sound::SoundEffect>& index) {
     bound_ = true;
@@ -154,8 +156,8 @@ void CarSfx::update(RaceSfx& sfx, VoiceMixer& mixer, const Step& st) {
     float ws = wall_strength(st.wall_impulse), cs = car_strength(st.car_impulse);
     if (ws > 0 || cs > 0) {
         bool car = cs >= ws;
-        sim::Vec3 d = s.position - st.eye;
-        sfx.play(mixer, car ? "clash2" : "clash", clash_volume(st.view, car ? cs : ws, d.length()));
+        sim::Vec3 d = s.position - st.eye; // (horizontal in the camera's frame)
+        sfx.play(mixer, car ? "clash2" : "clash", clash_volume(st.view, car ? cs : ws, std::hypot(d.dot(st.right), d.dot(st.forward))));
     }
 }
 
@@ -191,34 +193,63 @@ CarExtraSounds::Step CarExtraSounds::step_inputs(const sim::VehicleTelemetry& t,
 
 void CarExtraSounds::step(const Step& s) {
     turbo_.step(s.turbo, s.throttle, prev_load_, s.load, s.torque, s.lag0, s.lag1);
+    turbo_.tick();
     prev_load_ = s.load;
 }
 
-void CarExtraSounds::update(RaceSfx& sfx, VoiceMixer& mixer, const Frame& f) {
-    float pan = EngineSound::pan_for_offset(f.x, f.z);
-    if (wind_.loaded()) {
-        car_sound::Wind w = car_sound::wind(f.u, f.slipstream, f.cd);
-        wind_.update_at(mixer, float(w.rpm), sfx_gain(f.view, kChWind) * f.dist_gain * w.gain, f.x, f.z, f.doppler);
+bool CarExtraSounds::bind(const std::vector<std::shared_ptr<const sound::InstBank>>& banks,
+                          const std::vector<sound::SoundEffect>& index) {
+    bound_ = true;
+    bool all = true;
+    const char* names[kLoops] = {car_sound::kWhine, car_sound::kTurboSpool, car_sound::kInCar};
+    for (size_t l = 0; l < size_t(kLoops); ++l) {
+        int bank = -1, region = -1;
+        bool ok = LoopEffect::resolve(index, names[l], 0, bank, region) && bank >= 0 && size_t(bank) < banks.size() &&
+                  banks[size_t(bank)];
+        all = all && ok;
+        loops_[l].set(ok ? banks[size_t(bank)] : nullptr, region);
     }
-    car_sound::Loop ic = car_sound::in_car(f.u, f.slipstream, f.cd);
-    sfx.hold(mixer, prefix_ + "incar", car_sound::kInCar, sfx_gain(f.view, kChInCar) * f.dist_gain * ic.gain, ic.pitch,
-             pan);
-    car_sound::Loop wh = car_sound::whine(f.whine, f.clutch, f.torque, f.ratio, f.first_ratio, f.shaft);
-    sfx.hold(mixer, prefix_ + "whine", car_sound::kWhine, sfx_gain(f.view, kChWhine) * f.dist_gain * wh.gain, wh.pitch,
-             pan);
-    turbo_.frame();
-    car_sound::Loop sp = turbo_.spool();
-    sfx.hold(mixer, prefix_ + "turbo", car_sound::kTurboSpool, sfx_gain(f.view, kChTurbo) * f.dist_gain * sp.gain,
-             sp.pitch, pan);
-    if (turbo_.blow_off() > 0) {
-        float d = std::max(std::hypot(f.x, f.z), 0.25f); // the game does not clamp 32/d here
-        sfx.play(mixer, car_sound::kBlowOff, sfx_gain(f.view, kChBlowOff) * turbo_.blow_off() * 32.0f / d, 1, pan);
+    return all;
+}
+
+void CarExtraSounds::update(RaceSfx& sfx, VoiceMixer& mixer, const Frame& f) {
+    if (!bound_ && sfx.loaded()) bind(sfx.banks(), sfx.index());
+    if (!f.wind) wind_.stop(mixer);
+    else if (wind_.loaded()) {
+        car_sound::Wind w = car_sound::wind(f.u, f.slipstream, f.cd);
+        wind_.update_at(mixer, float(w.rpm), sfx_gain(f.view, kChWind) * distance_gain(f.x, f.z) * w.gain, f.x, f.z,
+                        f.doppler);
+    }
+    // The loops: the channel gain x the model's, placed at (x, z) with min(1, 32/d); the whine's and the
+    // in-car loop's pitch moves with the Doppler factor, the spool's does not.
+    const car_sound::Loop wh = car_sound::whine(f.whine, f.clutch, f.torque, f.ratio, f.first_ratio, f.shaft);
+    const car_sound::Loop sp = turbo_.spool(), ic = car_sound::in_car(f.u, f.slipstream, f.cd);
+    const float vol[kLoops] = {sfx_gain(f.view, kChWhine) * wh.gain, sfx_gain(f.view, kChTurbo) * sp.gain,
+                               sfx_gain(f.view, kChInCar) * ic.gain};
+    const float pitch[kLoops] = {f.doppler * wh.pitch, sp.pitch, f.doppler * ic.pitch};
+    for (size_t l = 0; l < size_t(kLoops); ++l) {
+        Placement p = place_voice(f.x, f.z, vol[l]);
+        float left = p.left, right = p.right;
+        if (mixer.surround_cue()) {
+            cues_[l].update(p.x_over_d, p.z_over_d);
+            if (cues_[l].invert_l) left = -left;
+            if (cues_[l].invert_r) right = -right;
+        }
+        out_[l] = {left, right, pitch[l], p.priority};
+        loops_[l].update(mixer, left, right, pitch[l], p.priority);
+    }
+    if (const float b = turbo_.take_blow_off(); b > 0) { // at the car itself, 32/d not clamped
+        float d = std::max(std::hypot(f.car_x, f.car_z), 0.25f);
+        sfx.play(mixer, car_sound::kBlowOff, sfx_gain(f.view, kChBlowOff) * b * 32.0f / d, 1,
+                 EngineSound::pan_for_offset(f.car_x, f.car_z));
     }
 }
 
-void CarExtraSounds::stop(RaceSfx& sfx, VoiceMixer& mixer) {
+void CarExtraSounds::stop(VoiceMixer& mixer) {
     wind_.stop(mixer);
-    for (const char* k : {"incar", "whine", "turbo"}) sfx.hold(mixer, prefix_ + k, "", 0);
+    for (LoopEffect& l : loops_) l.stop(mixer);
+    for (SurroundCue& c : cues_) c.reset();
+    out_ = {};
 }
 
 } // namespace gt3r::race

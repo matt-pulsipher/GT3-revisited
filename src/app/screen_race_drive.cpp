@@ -183,6 +183,10 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     if (p2)
         if (const sim::VehicleTelemetry* t2 = field_->second_telemetry())
             extra2_.step(CarExtraSounds::step_inputs(*t2, field_->second_facts().value_or(CarFacts{}).turbo));
+    if (const RaceField* f = exact_field()) // (every car's turbo: heard when the replay's camera rides it)
+        for (int i = 0; i < f->opponents() && size_t(i) < opp_sound_.size(); ++i)
+            if (const sim::VehicleTelemetry* t = f->opponent_telemetry(i))
+                opp_sound_[size_t(i)].extra.step(CarExtraSounds::step_inputs(*t, opp_sound_[size_t(i)].facts.turbo));
     if (p2) {
         const sim::VehicleState& s2 = field_->second_state();
         RumbleModel::Events ev2;
@@ -199,12 +203,18 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     }
     if (debug_ && (++debug_ticks_ % 30) == 0) {
         const sim::VehicleState& v = vehicle_->state();
+        // The player's car as the sounds hear it: its view (sound §6.4), distance gain and Doppler factor.
+        const SoundListener l = sound_listener();
+        const sim::Vec3 o = v.position - l.eye;
+        const bool at_camera = l.target == 0 && l.kind == CameraSound::Cockpit;
         LOG_INFO("t=%.1f pos(%.1f %.1f %.1f) %.1f km/h gear %d rpm %.0f in(st %.2f th %.2f br %.2f) lap %.3f reverb %.3f "
-                 "turbo %d amb(air %.2f city %.2f crowd %.2f sea %.2f) driver %d",
+                 "turbo %d amb(air %.2f city %.2f crowd %.2f sea %.2f) driver %d sound(view %d gain %.2f doppler %.3f)",
                  race_time_, v.position.x, v.position.y, v.position.z, v.speed_kmh, v.gear, v.engine_rpm, in.steer,
                  in.throttle, in.brake, track_->lap_progress(), ambience_.depth(), extra_.turbo().level(),
                  crss_.channel(0).l + crss_.channel(0).r, crss_.channel(1).l + crss_.channel(1).r,
-                 crss_.channel(3).l + crss_.channel(3).r, crss_.channel(4).l + crss_.channel(4).r, vehicle_->driver_kind());
+                 crss_.channel(3).l + crss_.channel(3).r, crss_.channel(4).l + crss_.channel(4).r, vehicle_->driver_kind(),
+                 int(sound_view(l.kind, l.target == 0)), at_camera ? 1.0f : distance_gain(o.dot(l.right), o.dot(l.forward)),
+                 l.doppler(v));
     }
     const sim::VehicleState& s = vehicle_->state();
     // Machine tests: the track distance and the clock before this tick (presentation §B7).
@@ -610,20 +620,6 @@ void RaceScreen::update_drive(App& app, double dt) {
         app.input().set_rumble(1, rumble2_on_ && !replaying_
                                       ? rumble2_.rumble(app.input().gt3_rumble(1), app.input().dualsense(1))
                                       : PadRumble{});
-        if (se_on() && engine2_.loaded()) {
-            sim::Vec3 off2 = render_state2_.position - to_sim(camera2_.eye());
-            if (camera2_.onboard()) engine2_.set_position(0.0f, 1.0f);
-            else engine2_.set_position(off2.dot(cam_right(camera2_)), off2.dot(cam_forward(camera2_)));
-            engine2_.set_view(camera2_.onboard() ? EngineSound::View::OnboardOwn : EngineSound::View::ChaseOwn);
-            engine2_.update(app.audio().voices(), render_state2_.engine_rpm, render_state2_.throttle, dt);
-        }
-        if (const sim::VehicleTelemetry* t2 = field_->second_telemetry()) {
-            sim::Vec3 o2 = render_state2_.position - to_sim(camera2_.eye());
-            if (se_on()) extra2_.update(sfx_, app.audio().voices(),
-                           extra_frame(field_->second_facts().value_or(CarFacts{}), *t2, render_state2_, sound_car2_,
-                                       camera2_.onboard(), o2.dot(cam_right(camera2_)), o2.dot(cam_forward(camera2_)),
-                                       camera2_.onboard() ? SoundView::InCarTarget : SoundView::ChaseTarget));
-        }
     }
     camera_.set_track_distance(track_->distance_of(render_state_.position));
     camera_.set_lap(lap_count());
@@ -658,40 +654,7 @@ void RaceScreen::update_drive(App& app, double dt) {
 
     bool feel = rumble_on_ && !replaying_ && !demo_ && !race_preview_; // (a car the computer drives sends nothing, physics §1.2)
     app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0), app.input().dualsense(0)) : PadRumble{});
-    if (const RaceField* f = exact_field(); f && f->opponents() > 0) {
-        std::vector<const sim::VehicleState*> st;
-        for (int i = 0; i < f->opponents(); ++i) st.push_back(&f->opponent_state(i));
-        render::Vec3 e = camera_.eye();
-        opp_engines_.view = camera_.onboard() ? EngineSound::View::OnboardOther
-                            : replaying_ || race_preview_ || camera_.mode() == CameraMode::Tv ? EngineSound::View::Replay
-                                                                                               : EngineSound::View::ChaseOther;
-        std::vector<float> slip;
-        for (int i = 0; i < f->opponents(); ++i) {
-            const sim::VehicleTelemetry* t = f->opponent_telemetry(i);
-            slip.push_back(t ? t->slipstream : 0.0f);
-        }
-        if (se_on()) opp_engines_.update(app.audio().voices(), {e.x, e.y, e.z}, render_state_.velocity, cam_right(camera_),
-                            cam_forward(camera_), st, dt, &slip);
-    }
-    if (se_on() && engine_.loaded()) {
-        // Stereo placement: centred on board, else the car's offset from the camera.
-        sim::Vec3 off = render_state_.position - to_sim(camera_.eye());
-        if (camera_.onboard()) engine_.set_position(0.0f, 1.0f);
-        else engine_.set_position(off.dot(cam_right(camera_)), off.dot(cam_forward(camera_)));
-        engine_.set_view(replaying_ || race_preview_ ? EngineSound::View::Replay
-                         : camera_.onboard()         ? EngineSound::View::OnboardOwn
-                                                     : EngineSound::View::ChaseOwn);
-        engine_.update(app.audio().voices(), render_state_.engine_rpm, render_state_.throttle, dt);
-    }
-    if (const sim::VehicleTelemetry* t = vehicle_->telemetry()) {
-        sim::Vec3 o = render_state_.position - to_sim(camera_.eye());
-        SoundView view = camera_.onboard() ? SoundView::InCarTarget
-                         : camera_.mode() == CameraMode::Tv || replaying_ || race_preview_ ? SoundView::Other
-                                                                                            : SoundView::ChaseTarget;
-        if (se_on()) extra_.update(sfx_, app.audio().voices(),
-                      extra_frame(vehicle_->facts().value_or(CarFacts{}), *t, render_state_, sound_car_, camera_.onboard(),
-                                  o.dot(cam_right(camera_)), o.dot(cam_forward(camera_)), view));
-    }
+    update_car_sounds(app, dt);
     update_course_ambience(app);
     // Controller force feedback (triggers, wheels) while someone is driving.
     if (!replaying_ && !demo_ && !race_preview_) {

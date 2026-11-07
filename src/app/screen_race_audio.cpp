@@ -1,5 +1,5 @@
-// Sound glue: the race music cues, course ambience (CRSS) listeners, every car's tyre
-// loops, the inputs of the per-car extra sounds (wind, whine, turbo) and silencing everything.
+// Sound glue: the race music cues, course ambience (CRSS) listeners, every car's engine, extra sounds
+// (wind, whine, turbo) and tyre loops from the camera, and silencing everything.
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
@@ -118,8 +118,120 @@ void RaceScreen::update_course_ambience(App& app) {
     crss_player_.update(app.audio().voices(), crss_);
 }
 
-// Every car runs the tyre routine (sound §7.6): its wheels' loops placed from the camera with the
-// view's gains (the followed car's, or the other cars'), and the followed cars' collision one-shots.
+RaceScreen::SoundListener RaceScreen::sound_listener() const {
+    SoundListener l;
+    l.eye = to_sim(camera_.eye());
+    l.right = cam_right(camera_), l.forward = cam_forward(camera_);
+    l.velocity = to_sim(camera_.eye_velocity());
+    l.kind = camera_.sound_kind();
+    // The camera's target: a field replay's or attract run's followed car, none while the cameras aim at a pair
+    // (presentation §G3); else the player's car.
+    if ((replaying_ || attract_) && field_ && !two_player_) l.target = replay_partner_ >= 0 ? -1 : replay_focus_ + 1;
+    return l;
+}
+
+float RaceScreen::SoundListener::doppler(const sim::VehicleState& s) const {
+    sim::Vec3 d = s.position - eye;
+    float n = d.length();
+    return OpponentEngines::doppler(n > 1e-3f ? d * (1.0f / n) : sim::Vec3{0, 0, 1}, s.velocity, velocity);
+}
+
+namespace {
+
+// Where a car's sounds are heard from the camera (sound §6.5): the car's offset along the camera's axes,
+// and its units' and loops' (at the camera for the target in the cockpit).
+struct CarPlace {
+    float x = 0, z = 0, car_x = 0, car_z = 0;
+};
+CarPlace car_place(const sim::Vec3& pos, const sim::Vec3& eye, const sim::Vec3& right, const sim::Vec3& forward,
+                   bool at_camera) {
+    const sim::Vec3 d = pos - eye;
+    CarPlace p;
+    p.car_x = d.dot(right), p.car_z = d.dot(forward);
+    if (!at_camera) p.x = p.car_x, p.z = p.car_z;
+    return p;
+}
+
+void place_engine(EngineSound& e, SoundView view, const CarPlace& p) {
+    e.set_view(engine_view(view));
+    e.set_position(p.x, p.z);
+    e.set_volume(distance_gain(p.x, p.z));
+}
+
+void place_extra(CarExtraSounds::Frame& f, const CarPlace& p, float doppler) {
+    f.x = p.x, f.z = p.z, f.car_x = p.car_x, f.car_z = p.car_z;
+    f.doppler = doppler;
+}
+
+} // namespace
+
+// GT3 sends every car's sounds the same way (sound §6-§8): one view per car from the camera's kind and whether it is the
+// camera's target, every unit and loop faded by 32/d from the camera and moved by the Doppler of the car and the camera.
+void RaceScreen::update_car_sounds(App& app, double dt) {
+    if (!se_on()) return;
+    VoiceMixer& mixer = app.audio().voices();
+    const SoundListener l = sound_listener();
+    const bool cockpit = l.kind == CameraSound::Cockpit;
+    {
+        const SoundView view = sound_view(l.kind, l.target == 0);
+        const CarPlace p = car_place(render_state_.position, l.eye, l.right, l.forward, cockpit && l.target == 0);
+        const float dop = l.doppler(render_state_);
+        if (engine_.loaded()) {
+            place_engine(engine_, view, p);
+            engine_.update(mixer, render_state_.engine_rpm, render_state_.throttle, dt, dop);
+        }
+        if (const sim::VehicleTelemetry* t = vehicle_->telemetry()) {
+            CarExtraSounds::Frame f = extra_frame(vehicle_->facts().value_or(CarFacts{}), *t, render_state_, sound_car_, view);
+            place_extra(f, p, dop);
+            extra_.update(sfx_, mixer, f);
+        }
+    }
+    if (const RaceField* f = exact_field(); f && f->opponents() > 0) {
+        std::vector<const sim::VehicleState*> st;
+        std::vector<float> slip;
+        for (int i = 0; i < f->opponents(); ++i) {
+            st.push_back(&f->opponent_state(i));
+            const sim::VehicleTelemetry* t = f->opponent_telemetry(i);
+            slip.push_back(t ? t->slipstream : 0.0f);
+        }
+        opp_engines_.update(mixer, l.eye, l.velocity, l.right, l.forward, st, dt, l.kind, l.target - 1, &slip);
+        // Their extra loops (their wind is OpponentEngines'): the target's turbo, whine and in-car in a car mount, the
+        // voiced cars' gearbox whine on the TV cameras.
+        for (int i = 0; i < f->opponents() && size_t(i) < opp_sound_.size(); ++i) {
+            OpponentSound& o = opp_sound_[size_t(i)];
+            const bool target = i + 1 == l.target;
+            const sim::VehicleTelemetry* t = f->opponent_telemetry(i);
+            if (!t || (!target && !opp_engines_.voiced(i))) {
+                o.extra.stop(mixer);
+                continue;
+            }
+            const sim::VehicleState& s = f->opponent_state(i);
+            CarExtraSounds::Frame fr = extra_frame(o.facts, *t, s, o.car, sound_view(l.kind, target));
+            place_extra(fr, car_place(s.position, l.eye, l.right, l.forward, cockpit && target), l.doppler(s));
+            fr.wind = false;
+            o.extra.update(sfx_, mixer, fr);
+        }
+    }
+    if (two_player_ && field_ && field_->has_second()) { // player 2 from its own camera, its own car the target (no Doppler)
+        const CameraSound k2 = camera2_.sound_kind();
+        const SoundView view = sound_view(k2, true);
+        const CarPlace p = car_place(render_state2_.position, to_sim(camera2_.eye()), cam_right(camera2_), cam_forward(camera2_),
+                                     k2 == CameraSound::Cockpit);
+        if (engine2_.loaded()) {
+            place_engine(engine2_, view, p);
+            engine2_.update(mixer, render_state2_.engine_rpm, render_state2_.throttle, dt);
+        }
+        if (const sim::VehicleTelemetry* t2 = field_->second_telemetry()) {
+            CarExtraSounds::Frame f2 =
+                extra_frame(field_->second_facts().value_or(CarFacts{}), *t2, render_state2_, sound_car2_, view);
+            place_extra(f2, p, 1.0f);
+            extra2_.update(sfx_, mixer, f2);
+        }
+    }
+}
+
+// Every car runs the tyre routine (sound §7.6): its wheels' loops placed from the camera with its view's gains, and
+// the followed cars' collision one-shots.
 void RaceScreen::update_tyre_sounds(App& app, const sim::VehicleState& s) {
     VoiceMixer& mixer = app.audio().voices();
     auto step = [](const CameraRig& cam, const sim::VehicleState& st, const sim::VehicleSetup& setup,
@@ -134,30 +246,20 @@ void RaceScreen::update_tyre_sounds(App& app, const sim::VehicleState& s) {
         p.forward = cam_forward(cam);
         return p;
     };
-    const bool tv = camera_.mode() == CameraMode::Tv || replaying_ || race_preview_;
-    CarSfx::Step p1 = step(camera_, s, vehicle_->setup(), vehicle_->telemetry(),
-                           camera_.onboard() ? SoundView::InCarTarget : tv ? SoundView::Other : SoundView::ChaseTarget);
-    // The listener moves with the followed car (as for the other cars' engines, sound §8).
-    sim::Vec3 listener_v = s.velocity;
-    if ((replaying_ || attract_) && field_ && replay_focus_ >= 0 && replay_focus_ < field_->opponents())
-        listener_v = field_->opponent_state(replay_focus_).velocity;
-    auto doppler = [&](const sim::VehicleState& st, const sim::Vec3& eye) {
-        sim::Vec3 d = st.position - eye;
-        float n = d.length();
-        return OpponentEngines::doppler(n > 1e-3f ? d * (1.0f / n) : sim::Vec3{0, 0, 1}, st.velocity, listener_v);
-    };
-    p1.doppler = doppler(s, p1.eye);
+    const SoundListener l = sound_listener();
+    CarSfx::Step p1 = step(camera_, s, vehicle_->setup(), vehicle_->telemetry(), sound_view(l.kind, l.target == 0));
+    p1.doppler = l.doppler(s);
     p1.wall_impulse = replaying_ ? 0.0f : vehicle_->wall_impulse();
     p1.car_impulse = replaying_ ? 0.0f : vehicle_->car_impulse();
     car_sfx_.update(sfx_, mixer, p1);
     if (field_ && field_->has_second()) {
         CarSfx::Step p2 = step(camera2_, field_->second_state(), field_->second_setup(), field_->second_telemetry(),
-                               camera2_.onboard() ? SoundView::InCarTarget : SoundView::ChaseTarget);
+                               sound_view(camera2_.sound_kind(), true));
         p2.wall_impulse = field_->second_wall_impulse();
         p2.car_impulse = field_->second_car_impulse();
         car_sfx2_.update(sfx_, mixer, p2);
     }
-    // The other cars: the "other car" gains, placed and attenuated (32/d) like the followed car's.
+    // The other cars: placed and faded (32/d) like the followed car's.
     const RaceField* f = exact_field();
     const int n = f ? f->opponents() : 0;
     if (int(opp_sfx_.size()) != n) {
@@ -165,11 +267,10 @@ void RaceScreen::update_tyre_sounds(App& app, const sim::VehicleState& s) {
         opp_sfx_.clear();
         opp_sfx_.resize(size_t(n));
     }
-    const SoundView other = camera_.onboard() ? SoundView::InCarOther : tv ? SoundView::Other : SoundView::ChaseOther;
     for (int i = 0; i < n; ++i) {
         const sim::VehicleState& os = f->opponent_state(i);
-        CarSfx::Step p = step(camera_, os, f->opponent_setup(i), f->opponent_telemetry(i), other);
-        p.doppler = doppler(os, p.eye);
+        CarSfx::Step p = step(camera_, os, f->opponent_setup(i), f->opponent_telemetry(i), sound_view(l.kind, i + 1 == l.target));
+        p.doppler = l.doppler(os);
         opp_sfx_[size_t(i)].update(sfx_, mixer, p);
     }
 }
@@ -194,7 +295,7 @@ RaceScreen::SoundCar RaceScreen::car_sound_facts(const std::string& label) const
 }
 
 CarExtraSounds::Frame RaceScreen::extra_frame(const CarFacts& facts, const sim::VehicleTelemetry& t, const sim::VehicleState& s,
-                                              const SoundCar& car, bool onboard, float x, float z, SoundView view) {
+                                              const SoundCar& car, SoundView view) {
     CarExtraSounds::Frame f;
     f.u = s.speed_kmh / 3.6f;
     f.slipstream = t.slipstream;
@@ -212,8 +313,6 @@ CarExtraSounds::Frame RaceScreen::extra_frame(const CarFacts& facts, const sim::
     float rear = 0.5f * (std::fabs(s.wheels[2].angular_velocity) + std::fabs(s.wheels[3].angular_velocity));
     sim::Drive d = facts.drive;
     f.shaft = d == sim::Drive::FF ? front : d == sim::Drive::AWD ? 0.5f * (front + rear) : rear;
-    if (onboard) x = 0, z = 1; // the followed car's own sounds sit in front in the in-car view
-    f.x = x, f.z = z;
     f.view = view;
     return f;
 }
@@ -225,8 +324,9 @@ void RaceScreen::silence(App& app) {
     car_sfx_.stop(app.audio().voices());
     car_sfx2_.stop(app.audio().voices());
     for (CarSfx& c : opp_sfx_) c.stop(app.audio().voices());
-    extra_.stop(sfx_, app.audio().voices());
-    extra2_.stop(sfx_, app.audio().voices());
+    extra_.stop(app.audio().voices());
+    extra2_.stop(app.audio().voices());
+    for (OpponentSound& o : opp_sound_) o.extra.stop(app.audio().voices());
     crss_player_.stop(app.audio().voices());
     sfx_.stop_all(app.audio().voices());
     app.input().set_rumble(1, {});

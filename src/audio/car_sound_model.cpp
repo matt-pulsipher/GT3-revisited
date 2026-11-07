@@ -53,8 +53,8 @@ void Turbo::step(bool turbo, float throttle, float prev_load, float load, float 
     }
     // Blow-off: fires once when the throttle drops under 75 %, with the boost
     // load above 0.8 setting the strength; re-armed above 90 % throttle. The
-    // trigger waits for the next frame() (one sound per firing step, whatever
-    // the display rate).
+    // trigger waits for tick(), the one-shot for the next displayed frame (one
+    // sound per firing step, whatever the display rate).
     if (!fired_) {
         if (throttle < 0.75f) {
             trigger_ = std::max(trigger_, std::max(prev_load - 0.8f, 0.0f) / 256.0f);
@@ -76,9 +76,9 @@ void Turbo::step(bool turbo, float throttle, float prev_load, float load, float 
     level_ = u8(std::clamp(int(v * v * 128.0f), 1, 127));
 }
 
-void Turbo::frame() {
+void Turbo::tick() {
     level_ = u8(std::min(127, int(level_ * tuning::kTurboLevelScale)));
-    blow_off_ = trigger_ * tuning::kBlowOffScale;
+    blow_off_ = std::max(blow_off_, trigger_ * tuning::kBlowOffScale);
     trigger_ = 0;
 }
 

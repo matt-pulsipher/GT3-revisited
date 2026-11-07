@@ -12,6 +12,8 @@
 
 #include "base/bytes.h"
 
+#include <utility>
+
 namespace gt3r::car_sound {
 
 // se.inf names of the effects the models drive.
@@ -64,8 +66,9 @@ Loop in_car(float u, float y, float cd);
 Loop whine(bool enabled, int clutch_state, float torque, float ratio, float first_ratio, float shaft);
 
 // Turbo spool level/pitch and blow-off trigger, per car. step() runs every
-// physics step with the turbo state, frame() once per game frame before
-// reading the outputs.
+// physics step with the turbo state and tick() right after it (GT3's 60 Hz car
+// sound step, before the sounds read the outputs); the sounds read them once per
+// displayed frame.
 class Turbo {
 public:
     // turbo: the car has a turbo model; throttle 0..1: the processed throttle
@@ -74,21 +77,23 @@ public:
     // torque: this step's engine torque (N m); lag0/lag1: stage lag states
     // (physics §2.3).
     void step(bool turbo, float throttle, float prev_load, float load, float torque, int lag0, int lag1);
-    void frame();
+    // The level's scale (once per 60 Hz step, whatever the display rate) and the step's blow-off.
+    void tick();
     void reset() { *this = Turbo{}; }
 
     // Spool loop ("turbine"): gain level/128, pitch spool/6144.
     Loop spool() const { return {level_ / 128.0f, spool_ / tuning::kTurboPitchDiv}; }
-    // Blow-off one-shot ("b_off") gain for this frame; 0 = nothing to play.
-    float blow_off() const { return blow_off_; }
+    // Blow-off one-shot ("b_off") gain: the strongest firing since the last call, played once;
+    // 0 = nothing to play.
+    float take_blow_off() { return std::exchange(blow_off_, 0.0f); }
     int level() const { return level_; }
 
 private:
     u8 level_ = 0;
     u16 spool_ = 0;
     bool fired_ = false; // blow-off played; re-armed above 90% throttle
-    float trigger_ = 0;  // raw blow-off trigger since the last frame()
-    float blow_off_ = 0;
+    float trigger_ = 0;  // raw blow-off trigger of the step
+    float blow_off_ = 0; // waiting for take_blow_off()
 };
 
 } // namespace gt3r::car_sound

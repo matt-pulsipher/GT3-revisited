@@ -18,6 +18,7 @@
 #include "race/custom_music.h"
 #include "race/music_markers.h"
 #include "race/race_playlist.h"
+#include "race/sound_view.h"
 #include "sim/sim_types.h"
 
 #include <memory>
@@ -230,11 +231,12 @@ private:
 };
 
 // Engine notes of the other cars, placed like GT3 does: volume
-// min(1, 32 / d) (d = horizontal distance to the camera, >= 0.25 m), Doppler
-// (c + v_listener) / (c + v_source) along the camera->car direction
-// (c = 331.45 m/s), per-view channel gains ("other car" columns). GT3 sounds
-// every car and lets the voice allocator drop quiet voices; we give the
-// nearest `max_voiced` cars a note (4 voices each) to stay inside 46 voices.
+// min(1, 32 / d) (d = horizontal distance to the camera in its frame, >= 0.25 m),
+// Doppler (c + v_listener) / (c + v_source) along the camera->car direction
+// (c = 331.45 m/s), the listener moving with the camera, and each car's view
+// (race::sound_view). GT3 sounds every car and lets the voice allocator drop
+// quiet voices; we give the nearest `max_voiced` cars a note (4 voices each) to
+// stay inside 46 voices.
 class OpponentEngines {
 public:
     struct Car {
@@ -243,16 +245,19 @@ public:
         float cd = 0.35f; // drag coefficient for the wind unit
     };
     void load(Vfs& vfs, const std::vector<Car>& cars);
-    // `listener`/`listener_velocity`: camera position and the followed car's velocity.
-    // `right`/`forward`: the listener's (camera's) unit axes, for GT3's stereo pan.
+    // `listener`/`listener_velocity`: the camera's position and velocity (CameraRig::eye_velocity).
+    // `right`/`forward`: the listener's (camera's) unit axes, for GT3's stereo pan. `kind`: the
+    // camera's sound kind; `target`: the car the camera follows (-1 none), heard with the target's
+    // view and, in the cockpit, at the camera.
     void update(VoiceMixer& mixer, const sim::Vec3& listener, const sim::Vec3& listener_velocity,
                 const sim::Vec3& right, const sim::Vec3& forward, const std::vector<const sim::VehicleState*>& states,
-                double dt, const std::vector<float>* slipstream = nullptr);
+                double dt, CameraSound kind, int target, const std::vector<float>* slipstream = nullptr);
     void stop(VoiceMixer& mixer);
+    // Car i has its engine note now (one of the nearest max_voiced).
+    bool voiced(int i) const { return i >= 0 && size_t(i) < active_.size() && active_[size_t(i)]; }
 
     int max_voiced = 5;    // cars with an engine note at once
     int max_wind = 2;      // of those, the nearest with their wind unit (voice budget)
-    EngineSound::View view = EngineSound::View::ChaseOther;
     // GT3: full volume within 32 m, then 32 / d.
     static float attenuation(float horizontal_distance);
     // Doppler factor for a source moving with v_src and a listener with v_lis

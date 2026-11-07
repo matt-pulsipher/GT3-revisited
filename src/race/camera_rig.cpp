@@ -90,9 +90,30 @@ void CameraRig::snap(const sim::VehicleState& s) {
     lag_time_ = 0;
     chase_height_ = s.position.y;
     snapped_ = true;
+    last_cut_.reset(); // (the eye jumps)
 }
 
 void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setup, const PadState& pad, double dt) {
+    place(s, setup, pad, dt);
+    // The listener's motion for the sounds' Doppler: the eye's displacement, restarted at a cut.
+    const std::pair<Shot, int> cut{shot(), director_ ? director_->cut_serial() : -1};
+    if (dt > 0) eye_velocity_ = last_cut_ == cut ? (eye_ - last_eye_) * float(1.0 / dt) : render::Vec3{};
+    last_eye_ = eye_, last_cut_ = cut;
+}
+
+CameraSound CameraRig::sound_kind() const {
+    if (intro_) return CameraSound::Other; // (GT3's starting camera)
+    switch (mode_) {
+    case CameraMode::Bumper:
+    case CameraMode::Roof: return CameraSound::Cockpit;
+    case CameraMode::Chase:
+    case CameraMode::ChaseFar: return CameraSound::Chase;
+    case CameraMode::Tv: return replay_car_mount_ ? CameraSound::Cockpit : CameraSound::Other;
+    default: return CameraSound::Other;
+    }
+}
+
+void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup, const PadState& pad, double dt) {
     float fdt = float(std::min(dt, 0.1));
     if (!snapped_) snap(s);
     // The replay aim is for this update only.
@@ -284,7 +305,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
         render::Vec3 target = aim + render::Vec3{0, 0.7f, 0};
         director_record_ = -1;
         director_haze_ = false;
-        replay_on_board_ = false;
+        replay_on_board_ = replay_car_mount_ = false;
         if (director_) {
             ReplayDirector::Shot shot =
                 director_->update(track_s_, lap_, aim, dt, 16.0f / 9.0f, replay_pair ? &*replay_pair : nullptr);
@@ -299,6 +320,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
                 view_ = render::look_at(eye_, eye_ + of * 10.0f - ou * 0.25f, ou);
                 fovy_ = 0.9f;
                 focus_ = 100.0f;
+                replay_car_mount_ = true;
                 break;
             }
             // View mode 1's procedural cameras (presentation §G15) on the followed car, planned
@@ -321,6 +343,7 @@ void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setu
                 eye_ = proc_.eye();
                 focus_ = proc_.focus();
                 replay_on_board_ = proc_.on_board();
+                replay_car_mount_ = proc_.kind() == ProceduralCamera::Mount;
                 fovy_ = std::clamp(ReplayDirector::zoom_fovy(proc_.zoom()), 0.02f, 2.4f);
                 break;
             }

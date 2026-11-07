@@ -410,7 +410,7 @@ void OpponentEngines::load(Vfs& vfs, const std::vector<Car>& cars) {
 
 void OpponentEngines::update(VoiceMixer& mixer, const sim::Vec3& listener, const sim::Vec3& lv, const sim::Vec3& right,
                              const sim::Vec3& forward, const std::vector<const sim::VehicleState*>& states, double dt,
-                             const std::vector<float>* slipstream) {
+                             CameraSound kind, int target, const std::vector<float>* slipstream) {
     size_t n = std::min(states.size(), engines_.size());
     std::vector<std::pair<float, size_t>> by_distance;
     for (size_t i = 0; i < n; ++i) by_distance.push_back({(states[i]->position - listener).length(), i});
@@ -432,20 +432,21 @@ void OpponentEngines::update(VoiceMixer& mixer, const sim::Vec3& listener, const
         sim::Vec3 d = s.position - listener;
         float dist = d.length();
         sim::Vec3 dir = dist > 1e-3f ? d * (1.0f / dist) : sim::Vec3{0, 0, 1};
-        e.set_view(view);
-        e.set_position(d.dot(right), d.dot(forward)); // pan + front/back (surround cue)
-        e.set_volume(attenuation(std::hypot(d.x, d.z)));
+        const bool is_target = int(i) == target;
+        const SoundView sv = sound_view(kind, is_target);
+        // In the cockpit the target's units sit at the camera (sound §6.5).
+        const bool at_camera = is_target && kind == CameraSound::Cockpit;
+        const float x = at_camera ? 0.0f : d.dot(right), z = at_camera ? 0.0f : d.dot(forward);
+        e.set_view(engine_view(sv));
+        e.set_position(x, z); // pan + front/back (surround cue)
+        e.set_volume(distance_gain(x, z));
         float dop = doppler(dir, s.velocity, lv);
         e.update(mixer, s.engine_rpm, s.throttle, dt, dop);
         if (i < winds_.size() && !wind[i]) winds_[i]->stop(mixer);
         else if (i < winds_.size() && winds_[i]->loaded()) {
-            SoundView sv = view == EngineSound::View::OnboardOther ? SoundView::InCarOther
-                           : view == EngineSound::View::Replay      ? SoundView::Other
-                                                                    : SoundView::ChaseOther;
             float y = slipstream && i < slipstream->size() ? (*slipstream)[i] : 0.0f;
             car_sound::Wind w = car_sound::wind(s.speed_kmh / 3.6f, y, cd_[i]);
-            winds_[i]->update_at(mixer, float(w.rpm), sfx_gain(sv, kChWind) * attenuation(std::hypot(d.x, d.z)) * w.gain,
-                                 d.dot(right), d.dot(forward), dop);
+            winds_[i]->update_at(mixer, float(w.rpm), sfx_gain(sv, kChWind) * distance_gain(x, z) * w.gain, x, z, dop);
         }
         active_[i] = true;
     }
