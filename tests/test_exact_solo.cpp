@@ -62,6 +62,8 @@ std::optional<Bytes> course_file(const std::string& label) {
 // Aim at the car's AI line ahead; full throttle below a speed that falls with the aim's angle, the brake above it (its top:
 // g_line_pace km/h).
 float g_line_pace = 145.0f;
+// The Options menu's Ghost for the runs (ExactFieldOptions::ghost_option).
+bool g_ghost_option = true;
 ex::PadFrame line_driver(const ex::Car& c, const ex::RaceCourse& course) {
     ex::PadFrame f;
     f.flags = 0x1F;
@@ -88,7 +90,10 @@ sim::ControlInputs inputs_of(const ex::PadFrame& f) {
 struct SoloRun {
     std::shared_ptr<const ex::RaceRecord> record; // the run's
     int steps = 0, laps = 0, ghost_restarts = 0, ghost_moving = 0;
+    int ghost_driven = 0; // steps after a ghost restart with the ghost car's throttle pressed (its recording, not rolling on)
+    int ghost_drawn = 0;  // steps with the ghost car drawn (race::exact_ghost, the screen's)
     bool finished = false, best = false, ghost = false;
+    bool ghost_ask = false; // race info + 0x48 left set at the end: the lap that beat the ghost is not the ghost yet
     bool restart_before_ghost = false; // the ghost car restarted before this run made a ghost (a ghost from the runs before)
     bool record_has_ghost = false;     // the run's record starts with a ghost (RaceRecord::recorders)
     s32 result = 0;
@@ -124,6 +129,7 @@ SoloRun solo(const std::string& event, ex::Conductor kind, int max_steps, int mi
     o.laps = ev->laps;
     o.player.car = {car};
     o.free_run = visit;
+    o.ghost_option = g_ghost_option;
     const race::LicenseTimes lt = race::license_times(*ev);
     for (size_t k = 0; k < 3; ++k) o.licence_times[k] = u32(std::max(0, lt.ms[k]));
     cfg.exact = o;
@@ -148,11 +154,14 @@ SoloRun solo(const std::string& event, ex::Conductor kind, int max_steps, int mi
             out.ghost = out.ghost || e.kind == ex::RecorderEvent::ghost;
         }
         if (r.size() > 1 && out.ghost_restarts > 0 && r.cars()[1].speed.host() > 5.0f) ++out.ghost_moving;
+        if (r.size() > 1 && out.ghost_restarts > 0 && r.cars()[1].throttle_pedal.host() > 0.1f) ++out.ghost_driven;
+        if (sim::VehicleState g; race::exact_ghost(*field, 1.0f, g, nullptr)) ++out.ghost_drawn;
         out.laps = std::max(0, int(r.cars()[0].laps) - 1);
         if (r.cars()[0].finished != 0 && !out.finished) out.finished = true, k = std::max(k, max_steps - 120); // (two seconds on)
         if (min_laps > 0 && out.laps >= min_laps) break;
     }
     out.result = r.flow().result, out.result_time = r.flow().result_time;
+    out.ghost_ask = r.flow().ghost != 0;
     out.best_lap = r.cars()[0].best_lap;
     // The run's record played back: the same race (its hash at the end).
     std::shared_ptr<const ex::RaceRecord> rec = race::exact_recording(*field);
@@ -168,9 +177,9 @@ SoloRun solo(const std::string& event, ex::Conductor kind, int max_steps, int mi
     if (!play) return out;
     for (u32 k = 0; k < rec->frames; ++k) play->player().step({}, 1.0 / 60.0);
     out.replay = race::exact_playback_matches(*play);
-    std::printf("  %s (%s): %d steps, %d laps, finished %s, result %d, best lap %u, ghost restarts %d (moving %d), replay %s\n",
+    std::printf("  %s (%s): %d steps, %d laps, finished %s, result %d, best lap %u, ghost restarts %d (moving %d, driven %d, drawn %d), replay %s\n",
                 event.c_str(), ex::conductor_name(kind), out.steps, out.laps, out.finished ? "yes" : "no", int(out.result),
-                out.best_lap, out.ghost_restarts, out.ghost_moving,
+                out.best_lap, out.ghost_restarts, out.ghost_moving, out.ghost_driven, out.ghost_drawn,
                 out.replay ? (*out.replay ? "matches" : "DIFFERS") : "not done");
     return out;
 }
@@ -230,7 +239,8 @@ TEST(exact_game_solo_modes) {
     CHECK(fr.laps >= 3);
     CHECK(fr.best && fr.ghost);
     CHECK(fr.ghost_restarts >= 2);
-    CHECK(fr.ghost_moving > 600); // (the ghost car runs its lap)
+    CHECK(fr.ghost_moving > 600 && fr.ghost_driven > 600); // (the ghost car drives its lap)
+    CHECK(!fr.ghost_ask); // (the Ghost option on: the lap became the ghost at once)
     CHECK(fr.replay && *fr.replay);
     // GT mode's free run before a race (free practice, Sunday Cup's Super Speedway): laps on, the session's best.
     SoloRun fp = solo("Gsunday_e_0001", ex::Conductor::FreePractice, 30000, 2);
@@ -390,8 +400,31 @@ TEST(exact_game_free_run_visit) {
     CHECK(!ex::SoloRecorders(true).ghost_from_best(ex::SoloRecorders(true))); // (no best lap: nothing)
     SoloRun with = solo("AT040001", ex::Conductor::FreeRun, 20000, 1, other);
     CHECK(with.record_has_ghost && with.restart_before_ghost);
-    CHECK(with.ghost_moving > 300);
+    CHECK(with.ghost_moving > 300 && with.ghost_driven > 300);
     CHECK(with.replay && *with.replay);
+}
+
+// The free run with the Options menu's Ghost off (presentation §A8a, issue 225): a lap that beats the ghost does not become
+// it at once: the ghost's playback stays empty, so the ghost car is never put on the lap's start; race info +
+// 0x48 stays set for "Update Ghost?" after the run, whose YES gives the visit's next run the best lap's ghost.
+TEST(exact_game_free_run_ghost_option_off) {
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    struct Restore {
+        ~Restore() { g_ghost_option = true; }
+    } restore;
+    g_ghost_option = false;
+    auto visit = std::make_shared<ex::SoloRecorders>(true);
+    SoloRun off = solo("AT040001", ex::Conductor::FreeRun, 40000, 3, visit);
+    CHECK(off.best && off.ghost && off.ghost_ask);
+    CHECK(off.ghost_restarts == 0 && off.ghost_drawn == 0); // (no ghost car rolling on with an empty playback)
+    CHECK(visit->ghost_empty && visit->snapshot[2].time != ex::kNoTime);
+    CHECK(off.replay && *off.replay);
+    visit->best_to_ghost(false); // "Update Ghost?": YES
+    CHECK(!visit->ghost_empty && visit->snapshot[0].time == visit->snapshot[2].time);
+    SoloRun next = solo("AT040001", ex::Conductor::FreeRun, 20000, 1, visit);
+    CHECK(next.record_has_ghost && next.restart_before_ghost);
+    CHECK(next.ghost_moving > 300 && next.ghost_driven > 300);
+    CHECK(next.replay && *next.replay);
 }
 
 // The data logger's pass over a replay (GT3's Analyzer): the run's record played with race info + 0x70 / + 0x74 set records car

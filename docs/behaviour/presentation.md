@@ -1975,9 +1975,10 @@ restarted run's ghost car takes the visit's ghost lap at its first crossing
 
 **When the ghost changes.** With the Options menu's Ghost on (the default) a
 better run replaces the ghost at once (a free run's lap: from the next line
-crossing); with it off the ghost stays, and the quick menu after the run opens on
-"Update Ghost?", whose YES makes the best run (lap) the ghost (`ghost_dlg`). The
-option never hides the ghost.
+crossing); with it off the ghost stays (a free run with no ghost yet shows none
+for the rest of the run), and the quick menu after the run opens on
+"Update Ghost?", whose YES makes the best run (lap) the ghost (`ghost_dlg`; test
+`exact_game_free_run_ghost_option_off`). The option never hides the ghost.
 
 **Select** (the controller's own, as the original's pad) shows or hides the ghost
 for the rest of the visit (shown at first).

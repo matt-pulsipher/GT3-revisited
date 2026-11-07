@@ -355,6 +355,7 @@ FreeRunRecorder SoloRecorders::inputs(const Behaviour& how) const {
     r.ghost = !ghost_empty;
     if (ghost.has_store()) r.ghost_time = snapshot[ghost.store / kRecordStore].time, r.ghost_start = &snapshot[ghost.store / kRecordStore];
     r.lap_start = &snapshot[lap.store / kRecordStore];
+    r.ghost_option = ghost_option;
     return r;
 }
 
@@ -685,7 +686,7 @@ void race_mode_lap(std::span<Car> cars, std::span<const s32> order, int i, s32 l
                         if (!in.recorder.ghost || lap < in.recorder.ghost_time) {
                             flow.ghost = 1;
                             flow.recorder.push_back(recorder_event(RecorderEvent::ghost, 0, lap));
-                            ghost = in.recorder.lap_start; // the lap just kept, at once
+                            if (in.recorder.ghost_option) ghost = in.recorder.lap_start; // the lap just kept, at once
                         }
                     }
                 }
