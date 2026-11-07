@@ -107,7 +107,9 @@ CarFile CarFile::parse(ByteSpan data) {
     if (!is_car(data)) throw FormatError("not a car model file");
     u32 off[6];
     for (int i = 0; i < 6; ++i) off[i] = rd32(data, 4 * i);
-    if (off[5] > data.size()) throw FormatError("car model truncated");
+    // The end (+0x14, the file size on the discs) is not needed to find the sections; a modified game's files leave it 0
+    // or state more than they have.
+    if (off[5] == 0 || off[5] > data.size()) off[5] = u32(data.size());
     for (int i = 1; i < 5; ++i)
         if (off[i + 1] < off[i]) throw FormatError("car model sections out of order");
     CarFile c;
@@ -178,12 +180,50 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
         wo.weighted_reflection = true;
         wo.runtime_set = 1; // the rim image
         // Showroom wheels: LOD 0's rim and tyre texture from the menu car file.
-        const bool showroom = lod == 0 && CarFile::is_car(opt.showroom_car);
+        const bool menu_car = CarFile::is_car(opt.showroom_car);
+        const bool showroom = lod == 0 && menu_car;
         const CarFile src = showroom ? CarFile::parse(opt.showroom_car) : f;
         const ByteSpan rim = showroom && !opt.showroom_wheel.empty() ? opt.showroom_wheel
                              : !opt.wheel_override.empty()           ? opt.wheel_override
                                                                      : src.wheel;
-        scene::Model wheel = load_wheel_model(rim, wo, "wheel");
+        scene::Model wheel;
+        std::string rim_error;
+        try {
+            wheel = load_wheel_model(rim, wo, "wheel");
+        } catch (const std::exception& e) {
+            rim_error = e.what();
+        }
+        // A rim with nothing to draw at its full detail (a modified game's wheel that only its other kind of model has):
+        // that one stands in at its full detail at every LOD, whatever the showroom wheels setting: the showroom one
+        // (a fitted wheel's own menu rim, else the car's), else stand_in_rim. GT3's own race rims draw nothing at the
+        // lowest LOD; those stay empty.
+        auto draws_at_full_detail = [&](ByteSpan r) {
+            gtm1::Options o = wo;
+            o.run.lod = 0;
+            try {
+                return !load_wheel_model(r, o, "wheel").meshes.empty();
+            } catch (const std::exception&) {
+                return false;
+            }
+        };
+        const bool no_rim = wheel.meshes.empty() && (lod == 0 || !draws_at_full_detail(rim));
+        if (!showroom && menu_car && no_rim) {
+            const ByteSpan menu_rim = !opt.showroom_wheel.empty() ? opt.showroom_wheel
+                                      : opt.wheel_override.empty() ? CarFile::parse(opt.showroom_car).wheel
+                                                                   : ByteSpan{};
+            if (!menu_rim.empty()) {
+                gtm1::Options mo = wo;
+                mo.run.lod = 0;
+                wheel = load_wheel_model(menu_rim, mo, "wheel");
+            }
+        }
+        if (no_rim && wheel.meshes.empty() && opt.stand_in_rim)
+            if (std::optional<Bytes> other = opt.stand_in_rim(); other && WheelFile::is_wheel(*other)) {
+                gtm1::Options so = wo;
+                so.run.lod = 0;
+                wheel = load_wheel_model(*other, so, "wheel");
+            }
+        if (wheel.meshes.empty() && !rim_error.empty()) throw FormatError(rim_error);
         int tyre_tex = -1;
         TyreShape tyre;
         if (src.tire.size() > 0x20 && rd32(src.tire, 0x1C) < src.tire.size()) {
@@ -281,6 +321,25 @@ void apply_body_mod(scene::Model& m, const CarBodyMod& mod, const std::string& n
 }
 
 } // namespace
+
+namespace {
+
+std::optional<Bytes> car_rim(const FileReader& read, const std::string& path) {
+    std::optional<Bytes> car = read(path);
+    if (!car || !CarFile::is_car(*car)) return std::nullopt;
+    const ByteSpan w = CarFile::parse(*car).wheel;
+    return Bytes(w.begin(), w.end());
+}
+
+} // namespace
+
+std::optional<Bytes> race_rim(const FileReader& read, const std::string& model, const std::string& wheel) {
+    return wheel.empty() ? car_rim(read, "cars/day/" + model) : read("wheel/" + wheel);
+}
+
+std::optional<Bytes> menu_rim(const FileReader& read, const std::string& model, const std::string& wheel) {
+    return wheel.empty() ? car_rim(read, "menu/cars/" + model) : read("menu/wheel/" + wheel);
+}
 
 scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std::string& name) {
     CarFile f = CarFile::parse(data);

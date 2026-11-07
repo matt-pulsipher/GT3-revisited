@@ -271,9 +271,12 @@ private:
     sim::EngineCondition live_condition() const;
     std::optional<Bytes> read_car(App& app, const std::string& model) const;
     // [video] showroom_wheels: the model's menu/cars file and a fitted wheel's
-    // menu/wheel/<label> (CarVisual's showroom_car, showroom_wheel); none when off.
+    // menu/wheel/<label> (CarVisual's showroom_car, showroom_wheel); none when off. `stand_in`: the
+    // menus' rim, read only for a race rim with nothing to draw, whatever the setting
+    // (CarModelOptions::stand_in_rim).
     struct ShowroomFiles {
         std::optional<Bytes> car, wheel;
+        std::function<std::optional<Bytes>()> stand_in;
         ByteSpan car_span() const { return car ? ByteSpan(*car) : ByteSpan{}; }
         ByteSpan wheel_span() const { return wheel ? ByteSpan(*wheel) : ByteSpan{}; }
     };

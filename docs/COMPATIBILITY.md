@@ -22,8 +22,16 @@ with `tested = false`: it opens without the warning, and `gt3tool info` says
 The race physics is Gran Turismo 3's own, with its values built in. It
 recognizes each release by the code of the disc's program, so another build of
 the game gets its own release's rules as long as that code matches one of the
-releases above; a part that is unlike every release uses the US rules, and
-Settings > Disc & saves > Race physics says so (details in the log).
+releases above; a part that is unlike every release uses the rules of the
+release it is nearest, and Settings > Disc & saves > Race physics says so
+(details in the log).
+
+A modified copy of the game opens like any other disc. Where its program
+changes Gran Turismo 3's physics values, its races use them (Settings shows
+"Gran Turismo 3 (with this disc's changes)"); online races and the game's
+demos keep Gran Turismo 3's own values. Changes a mod makes with emulator
+cheat files are not applied: they patch the running game's memory, which GT3
+Revisited does not run.
 
 Other games on the same engine, such as GT Concept, open too. Their races will
 use Gran Turismo 3's physics (Settings > Disc & saves shows "Race physics: Gran

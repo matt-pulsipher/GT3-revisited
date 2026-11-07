@@ -55,9 +55,18 @@ std::shared_ptr<const ex::ProgramData> exact_program_data(const Vfs& vfs, std::s
     return data;
 }
 
+std::shared_ptr<const ex::ProgramData> record_program_data(const std::shared_ptr<const ex::ProgramData>& d, u64 program) {
+    if (!d) return nullptr;
+    if (program == d->fingerprint()) return d;
+    if (!d->changed()) return nullptr;
+    auto shared = std::make_shared<const ex::ProgramData>(d->gt3_tables());
+    return program == shared->fingerprint() ? shared : nullptr;
+}
+
 RacePhysics race_physics(const ex::ProgramData& d) {
-    // GT3's releases race on GT3's core; any other program (another build, another game on the engine) too, with GT3's
-    // tables and NTSC-U's rules where its own are not recognised, until it has a core of its own (chosen here).
+    // GT3's releases and builds of its code race on GT3's core; any other program (another game on the engine) too, with
+    // GT3's tables and its nearest release's rules where its own are not recognised, until it has a core of its own
+    // (chosen here).
     return {RaceCore::Gt3, d.known()};
 }
 

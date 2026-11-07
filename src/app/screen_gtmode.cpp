@@ -678,6 +678,7 @@ private:
         // Menu cars load menu/cars/<model> (e.g. the Miata there is the open roadster;
         // cars/day/ has the hardtop the race uses), the race files as a fallback.
         std::optional<Bytes> file = model.empty() ? std::nullopt : app.vfs()->read("menu/cars/" + model);
+        const bool menu_model = file.has_value();
         if (!file && !model.empty()) file = app.vfs()->read("cars/day/" + model);
         if (!file) return nullptr;
         try {
@@ -692,9 +693,15 @@ private:
             // A fitted wheel: the menus load the detailed menu/wheel/<code> model,
             // the race wheel/<code>.
             if (!wheel.empty()) wheel_file = app.vfs()->read("menu/wheel/" + wheel);
+            const bool menu_wheel = wheel_file.has_value();
             if (!wheel.empty() && !wheel_file) wheel_file = app.vfs()->read("wheel/" + wheel);
             else if (!opt.body_mod.wheel.empty()) wheel_file = app.vfs()->read("wheel/" + opt.body_mod.wheel);
             if (wheel_file) opt.wheel_override = *wheel_file;
+            // A menu rim with nothing to draw: the race's (a fitted wheel's wheel/<code>, else the car's).
+            if (menu_wheel || (menu_model && !wheel_file))
+                opt.stand_in_rim = [&app, model, rim = menu_wheel ? wheel : std::string()] {
+                    return race_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model, rim);
+                };
             scene::Model m = load_car_model(*file, opt, model);
             // Showroom pose: the body rides q (ride height, spec 0x5C) above the floor, the
             // wheels stay on it (wheel centres R - q below the body origin).

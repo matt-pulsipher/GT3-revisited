@@ -31,7 +31,7 @@ model.
 0x08 u32                "GTM1" body model
 0x0C u32                "GTTR" tyre
 0x10 u32                "GTTW" wheel
-0x14 u32                end of data (file size - 64)
+0x14 u32                end of data (file size - 64; a modified game's files may leave it 0: the reader then takes the file's end)
 0x18..0x3F 0
 end: 64 bytes, "dummy" + zeros
 ```
@@ -168,8 +168,8 @@ the node is drawn. Operand sizes (bytes after the opcode); all
 |---|---|---|
 | 00 | 0 | end |
 | 01 | 0 | no-op |
-| 02 / 03 | u8 / u16 | call node |
-| 04 / 05 | u8 / u16 | draw chunk |
+| 02 / 03 | u8 / u16 | call node (a node the model lacks: nothing) |
+| 04 / 05 | u8 / u16 | draw chunk (a chunk the model lacks: nothing) |
 | 06 | u16 id, u8 n, s16 rel[n] | switch on the model's callback value `id` (out of range = skip). Cars: id 0 = the brake pedal (branch 1: lit lenses); ids 1-5 set the phase of the next op 0x35 (below) and give 0 |
 | 07 | 16 B sphere, u8 n, s16 rel[n] | LOD switch, branch = min(lod, n-1) |
 | 08 / 09 | s8 / s16 | relative jump |
@@ -191,6 +191,8 @@ the node is drawn. Operand sizes (bytes after the opcode); all
 | 2B / 2C | u8 / u16 | select texture set (index into 0x2C, or the 0x34 table of the active texture LOD) |
 | 34 | f32 | phase (clamped 0..1) of the next op 0x35 |
 | 35 | u16 base, u16 count | draw an animated chunk range: chunk base + min(phase x count, count - 1), morphed by the fraction (course.md "+0x3C") |
+
+An op none of these (no disc's model has one; a modified game's may) ends the node's program there.
 
 Render-state ops that matter for cars (each sets GS drawing state):
 
@@ -532,7 +534,12 @@ takes the menus' wheel in place of the race's: the `menu/cars` file's rim
 `menu/wheel/<label>` (its race `wheel/<label>` when there is none), with the
 menus' tyre detail. Levels 1 and 2 keep the race's. Placement is the same for
 both, so the menus' wheel sits where the race's would
-(`CarModelOptions::showroom_car`, `showroom_wheel`). Across the 286 cars of
+(`CarModelOptions::showroom_car`, `showroom_wheel`). Whatever the setting, a rim
+that draws nothing at its full detail (a modified game's wheel that only the
+other kind of model has) has the other stand in at its full detail at every
+level: the menus' in races, the race's in the menus
+(`CarModelOptions::stand_in_rim`, `race_rim`, `menu_rim`). GT3's own race rims
+draw nothing at the lowest level; those stay empty. Across the 286 cars of
 NTSC-U 1.10 the menus' rims have a median of 1,413 triangles against 112 for
 race level 0: about 5,200 more triangles a car with four wheels. GT3's rim
 blur (wheel spin blur, below) is made for a flat rim's image: the races blur a

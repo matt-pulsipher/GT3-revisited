@@ -2679,7 +2679,8 @@ k = 0, so no glare is drawn.
   spokes painted on and cut out, and simpler tyres; only the menus load the
   modelled rims and finer tyres (`menu/cars`, `menu/wheel`). Ours draws the
   menus' wheels at full detail with `[video] showroom_wheels = on` (the default
-  except on phones and tablets). Ours blurs their spinning modelled rims over
+  except on phones and tablets). A wheel that has only one kind of model (a
+  modified game's) draws that one in both places, whatever the setting. Ours blurs their spinning modelled rims over
   the same turn GT3 blurs its rims over, by copies of the rim itself, so the
   blur grows smoothly from a standstill.
 - Ours: `DrawItem::in_order` draws an item whole at its place (its opaque

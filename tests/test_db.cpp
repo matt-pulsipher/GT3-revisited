@@ -79,6 +79,11 @@ TEST(db_containers_synthetic) {
     db::Table tab = db::Table::parse(tabs[0]);
     CHECK(tab.size() == 2 && tab.record_size == 16 && tab.version == 0x0827);
     CHECK(tab.id_of(1) == db::id_hash("n"));
+    // As GT3 reads an archive: by its offsets alone, another tag taken (a modified game's "GTAr").
+    Bytes other = ar;
+    std::memcpy(other.data(), "GTAr", 4);
+    auto other_tabs = db::parse_archive(other);
+    CHECK(other_tabs.size() == 1 && other_tabs[0].data() == other.data() + 0x18 && other_tabs[0].size() == t.size());
 
     bool threw = false;
     try {

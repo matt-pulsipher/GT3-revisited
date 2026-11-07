@@ -66,8 +66,8 @@ struct Table {
     u64 id_of(size_t i) const { return rd64(records[i], 0); }
 };
 
-// GTAR: "GTAR", u32 table count, u32 data offset, u32 unknown (7),
-// u32 offsets[count + 1] relative to the data offset.
+// GTAR: "GTAR", u32 table count, u32 data offset, u32 7 (GT3 clears these low bits of an offset; the discs' offsets are
+// 16-byte aligned), u32 offsets[count + 1] relative to the data offset. As GT3 reads it, the tag is not checked.
 std::vector<ByteSpan> parse_archive(ByteSpan data);
 
 // Resolves id codes to labels using an IDDB + STDB pair, falling back to a

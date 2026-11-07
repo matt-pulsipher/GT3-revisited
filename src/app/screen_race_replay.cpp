@@ -102,7 +102,7 @@ bool RaceScreen::can_play(const Replay& r, std::string* why) {
         if (why) *why = "This replay cannot be played on this disc.";
         return false;
     }
-    if (r.exact->program != exact_data_->fingerprint()) {
+    if (!race::record_program_data(exact_data_, r.exact->program)) {
         if (why) *why = "This replay was recorded with another version of the game and cannot be played.";
         return false;
     }

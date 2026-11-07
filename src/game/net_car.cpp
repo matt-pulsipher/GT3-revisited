@@ -227,8 +227,8 @@ std::optional<sim::exact::ParamImage> online_car_params(const data::CarDatabase&
     const race::ExactCarSource src = race::exact_online_source(db, c, {}, &cond); // (an arcade car: its road tyres)
     std::optional<ex::Equipment> eq = race::exact_equipment(db, src);
     if (!eq) return std::nullopt;
-    ex::ProgramData rules = d;
-    rules.set_behaviour({sim::Program::NtscU, 60}); // every online race's (docs/dev/ONLINE.md "Model")
+    ex::ProgramData rules = d.gt3_tables(); // every online race's tables and rules (docs/dev/ONLINE.md "Model")
+    rules.set_behaviour({sim::Program::NtscU, 60});
     ex::ConvertInputs in;
     in.base = ex::kParams; // P's address in a race's record (the record at 0)
     in.condition = race::exact_condition_words(cond);

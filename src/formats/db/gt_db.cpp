@@ -72,9 +72,11 @@ Table Table::parse(ByteSpan d) {
 }
 
 std::vector<ByteSpan> parse_archive(ByteSpan d) {
-    if (!has_magic(d, "GTAR")) throw FormatError("not a GTAR archive");
+    // As GT3 reads it: by the offsets alone, the tag unread (a modified game's tools may write another than
+    // "GTAR").
+    if (d.size() < 16) throw FormatError("GTAR: truncated");
     u32 count = rd32(d, 4), base = rd32(d, 8);
-    if (count > 4096) throw FormatError("GTAR: bad count");
+    if (count > 4096 || 20 + size_t(count) * 4 > d.size()) throw FormatError("GTAR: bad count");
     std::vector<ByteSpan> out;
     for (u32 i = 0; i < count; ++i) {
         size_t a = size_t(base) + rd32(d, 16 + size_t(i) * 4), b = size_t(base) + rd32(d, 20 + size_t(i) * 4);

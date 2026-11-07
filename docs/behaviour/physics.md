@@ -18,7 +18,7 @@ ground-frame details and leaving the road (§6–§11). Code comments cite its s
 | `src/sim/exact/race.*`, `race_flow.*`, `tick_race.cpp`, `pit_lane.h`, `race_record.*` | a whole race: the step for all cars, laps, finish, ranking, rubber band, pit lane; a race kept for replays |
 | `src/sim/exact/start.*` | placing the cars at the start (§9) |
 | `src/sim/exact/params_build.*`, `spec_build.cpp` | a car's parameters from the database and the player's settings (§6) |
-| `src/sim/exact/race_inputs.*`, `program_data.*`, `program_tables.*`, `program_locate.*` | the race's constants: the game's small built-in tables (GT3's values, checked against the player's disc), the event's rules, the race mode |
+| `src/sim/exact/race_inputs.*`, `program_data.*`, `program_tables.*`, `program_locate.*` | the race's constants: the game's small built-in tables (GT3's values, checked against the player's disc; a modified disc's own where GT3's code reads them), the event's rules, the race mode |
 | `src/sim/exact/course_ground.*`, `course_query.*` | the ground under the wheels; race progress, grid and sectors |
 | `src/sim/exact/pad_read.*` | the pad read: a controller into the frame the driver input reads (§4.4) |
 | `src/sim/exact/ai_course.*`, `ai_setup.*` | the AI's lines and driver parameters ([ai.md](ai.md)) |
@@ -124,10 +124,14 @@ rate when it commits (§5.3) and its wall friction and push-out lack two zero-le
 and PAL's oversteer indicator for AI-driven cars is 0 below 25 km/h (§4.6). The step counts
 on this page are at 60 steps a second.
 
-A disc of another game on the same engine, or a GT3 build that GT3 Revisited does not fully
-recognize, races on GT3's physics with GT3's built-in tables and NTSC-U's rules for each
-behavior it does not recognize. Settings > Disc & saves shows the race physics, with a note
-when GT3's stands in for the disc's own.
+A modified GT3 whose program changes one of the game's small built-in tables races with the
+disc's values (any the engine can take); online races and the game's demos keep GT3's own
+values. A disc of another game on the same engine, or a GT3 build that GT3 Revisited does
+not fully recognize, races on GT3's physics with GT3's built-in tables where its own are not
+read by GT3's code, and for each behavior it does not recognize the rules of the release its
+program is nearest (NTSC-U's when nothing tells). Settings > Disc & saves shows the race
+physics, with a note when the disc changes GT3's values or GT3's physics stands in for the
+disc's own.
 
 In a free run, when the ghost car restarts its lap a fraction of a step behind, the race
 runs one extra step for the ghost car alone during the race flow (§1.2).

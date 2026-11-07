@@ -483,9 +483,11 @@ void CarTurntable::draw(App& app, const SDL_FRect& dst, const data::CarDatabase&
         s.shown_car = car.label;
         s.model.reset();
         std::optional<Bytes> file;
+        bool menu_model = false;
         if (!car.model.empty()) {
             // Menu cars load menu/cars/<model> (the showroom's own models), the race files as a fallback.
             file = app.vfs()->read("menu/cars/" + car.model);
+            menu_model = file.has_value();
             if (!file) file = app.vfs()->read("cars/day/" + car.model);
         }
         if (file) try {
@@ -499,6 +501,11 @@ void CarTurntable::draw(App& app, const SDL_FRect& dst, const data::CarDatabase&
                 if (!car.wheel.empty()) wheel_file = app.vfs()->read("wheel/" + car.wheel);
                 else if (!opt.body_mod.wheel.empty()) wheel_file = app.vfs()->read("wheel/" + opt.body_mod.wheel);
                 if (wheel_file) opt.wheel_override = *wheel_file;
+                // A menu rim with nothing to draw: the race car's.
+                if (menu_model && !wheel_file)
+                    opt.stand_in_rim = [&app, model = car.model] {
+                        return race_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model);
+                    };
                 scene::Model m = load_car_model(*file, opt, car.model);
                 // Showroom pose: the body rides q (ride height) above the floor, the wheels on it.
                 if (auto spec = sim::build_car_spec(db, car.label); spec && spec->axle[0].ride_height > 0) {
