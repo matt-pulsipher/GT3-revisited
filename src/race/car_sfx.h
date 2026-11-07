@@ -12,6 +12,7 @@
 #include "audio/loop_effect.h"
 #include "audio/surround_cue.h"
 #include "race/race_sfx.h"
+#include "race/sound_view.h"
 #include "sim/sim_types.h"
 
 #include <array>
@@ -21,9 +22,8 @@
 
 namespace gt3r::race {
 
-// GT3's camera views for sound: 0 in-car target, 1 in-car other, 2 chase
-// target, 3 chase other, 4 any other camera (replay/TV).
-enum class SoundView : u8 { InCarTarget, InCarOther, ChaseTarget, ChaseOther, Other };
+// The engine's view gains are the table's first two columns, in the same view order.
+inline EngineSound::View engine_view(SoundView v) { return EngineSound::View(int(v)); }
 
 // Channel gains (table of the race sound code), by view and channel.
 enum SfxChannel : int {
@@ -74,6 +74,9 @@ struct Placement {
     float x_over_d = 0, z_over_d = 1; // for the surround cue
 };
 Placement place_voice(float x, float z, float vol);
+// The distance gain of a car's engine units and loops at (x, z) in the listener's frame: min(1, 32/d),
+// d the horizontal distance, at least 0.25 m. The same for every car, the followed one too.
+float distance_gain(float x, float z);
 
 class CarSfx {
 public:
@@ -116,7 +119,8 @@ private:
 
 // The car's sounds besides the engine and tyres (docs/formats/sound.md "Race car
 // sounds besides the engine"): the rn_01.es wind unit, the in-car loop, the
-// transmission whine and the turbo spool / blow-off. One per voiced car.
+// transmission whine and the turbo spool / blow-off. The three loops are the car's
+// first effect slots, played and placed like its tyre loops (place_voice, LoopEffect).
 class CarExtraSounds {
 public:
     // Per physics step (turbo model).
@@ -135,26 +139,39 @@ public:
         float torque = 0;      // N m
         float ratio = 1, first_ratio = 1;
         float shaft = 0;       // driven axle speed, rad/s
-        float x = 0, z = 1;    // position in listener space (m: right, forward)
-        float dist_gain = 1;   // min(1, 32/d); 1 for the followed car
-        float doppler = 1;
+        // The units' and loops' position in listener space (m: right, forward; the target's sit
+        // at the camera in the cockpit, sound §6.5) and the car's own (the blow-off's distance).
+        float x = 0, z = 0;
+        float car_x = 0, car_z = 0;
+        float doppler = 1;     // the car's Doppler factor (sound §8); the spool's pitch has none
+        bool wind = true;      // the wind unit (other cars: OpponentEngines plays theirs)
         SoundView view = SoundView::ChaseTarget;
     };
-    explicit CarExtraSounds(std::string slot_prefix = "p1_") : prefix_(std::move(slot_prefix)) {}
     bool load(Vfs& vfs);
+    // Binds the loops to their effects' first regions (as CarSfx::bind); update() does it on first use.
+    bool bind(const std::vector<std::shared_ptr<const sound::InstBank>>& banks, const std::vector<sound::SoundEffect>& index);
     // The turbo model's inputs after a physics step of `v` (sound §7.5): the processed
     // throttle (after TCS and the shift cut, so 0 through an upshift), the turbo load,
     // the engine torque and the stage lag states.
     static Step step_inputs(const sim::VehicleTelemetry& t, bool turbo);
+    // A physics step: the turbo model's step and tick.
     void step(const Step& s);
     void update(RaceSfx& sfx, VoiceMixer& mixer, const Frame& f);
-    void stop(RaceSfx& sfx, VoiceMixer& mixer);
+    void stop(VoiceMixer& mixer);
     void reset() { turbo_.reset(), prev_load_ = 0; }
     const car_sound::Turbo& turbo() const { return turbo_; }
 
+    // The loops, in slot order: the whine (turbine2), the spool (turbine), the in-car loop.
+    enum Loop : int { kWhine, kSpool, kInCar, kLoops };
+    // A loop's voice as last sent (CarSfx::Voice).
+    const CarSfx::Voice& voice(Loop l) const { return out_[size_t(l)]; }
+
 private:
-    std::string prefix_;
+    bool bound_ = false;
     EngineUnit wind_;
+    std::array<LoopEffect, kLoops> loops_{};
+    std::array<SurroundCue, kLoops> cues_{};
+    std::array<CarSfx::Voice, kLoops> out_{};
     car_sound::Turbo turbo_;
     float prev_load_ = 0;
 };

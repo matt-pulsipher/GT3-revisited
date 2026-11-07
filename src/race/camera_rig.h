@@ -7,6 +7,7 @@
 #include "input/virtual_pad.h"
 #include "race/procedural_cameras.h"
 #include "race/replay_cameras.h"
+#include "race/sound_view.h"
 #include "render/math3d.h"
 #include "sim/sim_types.h"
 
@@ -14,6 +15,7 @@
 
 #include <cmath>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace gt3r::race {
@@ -137,6 +139,15 @@ public:
     // The replay camera is one of view mode 1's on-board car mounts (in-car, a bumper, the
     // driver's head): the followed car is not drawn.
     bool replay_on_board() const { return mode_ == CameraMode::Tv && replay_on_board_; }
+    // The camera's kind for the race sounds (GT3's camera manager type over the camera's own
+    // kind): the in-car views, the replay's car mounts (on board or outside: view mode 1's mounts,
+    // mode 2's on-board cut) are car-mounted; the chase views chase; every other camera, and the
+    // pre-race shot, other.
+    CameraSound sound_kind() const;
+    // The eye's velocity over the last update() (m/s): the listener's motion for every car's
+    // Doppler (GT3: the camera's own displacement over the frame). Zero on the update of a cut
+    // (shot() or the director's cut changed), where the eye jumps.
+    render::Vec3 eye_velocity() const { return eye_velocity_; }
     // The depth of field's focus distance (presentation §G17; GT3's camera +0xD0) as of the last
     // update(): a course shot's distance from its eye to its aim (the car's point 0.4 m up, or
     // the record's target), the procedural cameras' (ProceduralCamera::focus), 100 m for the
@@ -158,6 +169,8 @@ public:
     float gt3_near() const { return 0.1f * 0.7002f * 0.7f * ReplayDirector::kYScale / std::tan(fovy_ * 0.5f); }
 
 private:
+    void place(const sim::VehicleState& s, const sim::VehicleSetup& setup, const PadState& pad, double dt);
+
     CameraMode mode_ = CameraMode::Bumper; // GT3's default view: in-car (both halves in 2P)
     render::Vec3 eye_{0, 2, 5};
     render::Mat4 view_;
@@ -205,6 +218,10 @@ private:
     // Mode 1's procedural camera of the current cut (the director's cut serial), stepped at 60 Hz.
     ProceduralCamera proc_;
     bool replay_on_board_ = false;
+    bool replay_car_mount_ = false; // a car mount (procedural, inside or out) or mode 2's on-board cut
+    // The eye's motion: the last update's eye and cut (eye_velocity).
+    render::Vec3 eye_velocity_{}, last_eye_{};
+    std::optional<std::pair<Shot, int>> last_cut_;
     float focus_ = 100.0f;
     int proc_serial_ = -1;
     double proc_acc_ = 0;

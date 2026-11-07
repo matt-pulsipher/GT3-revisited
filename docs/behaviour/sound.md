@@ -393,7 +393,10 @@ cap, and a negative gain inverts that side's phase (the surround cue,
 §6.5); pitch = region pitch $\times$ factor. It keys on when either side
 becomes non-zero, updates while playing, keys off when both sides are 0, and
 passes a stealing priority (§2.1), which it re-sends with every update while
-the voice plays. The tire loops (§7.6) and the course ambience (§9) use it.
+the voice plays. Every car's effect slots (its tire loops, §7.6, and its
+whine, spool and in-car loops, §7.3-§7.5) and the course ambience (§9) use
+it; the slots are placed by §7.6's placement, so a faint loop still plays
+(no 0.01 floor, unlike the held loops of §5.3).
 
 ## §6 Engine sound model
 
@@ -479,25 +482,40 @@ four-fold with the throttle, while the engine bank is loudest when coasting
 or at full throttle and dips at part throttle.
 
 A bank's gain is $\ell/64 \cdot G_{view,bank}\cdot \text{volume}$ (volume is
-the distance attenuation for other cars, §8, and 1 for the followed car),
-placed in stereo by §6.5 and converted to 14-bit side volumes (each side
-capped at 0x3FFF).
+the distance attenuation $\min(1,\ 32/d)$ of §6.5, for every car, the
+followed one too), placed in stereo by §6.5 and converted to 14-bit side
+volumes (each side capped at 0x3FFF).
 
 ### §6.4 View gains
 
-The camera decides how loud each bank is (`EngineSound::View`):
+The camera decides how loud each bank is (`EngineSound::View`). Every car
+has one view for all its sounds (engine, exhaust, wind, the extra loops of
+§7, the tires), from the camera's **kind** and whether the car is the
+camera's **target**, the car it follows (`race::sound_view`,
+`CameraRig::sound_kind`):
+
+| Camera kind | Cameras |
+|---|---|
+| car-mounted | the in-car views; in replays every car mount, inside or outside the car (view mode 1's mounts: in-car, bumpers, the driver's head, mirrors, roof, sills, outside points), and mode 2's on-board cut |
+| chase | the chase views (also the driver's chase view in a replay) |
+| other | every other camera: the TV camera, the replay's course shots and its other procedural cameras, the pre-race shot |
+
+The target is the player's car in live play (in a 2P battle, each half's
+own car from its own camera). In a replay or attract run on a field it is
+the followed car, and no car at all while the cameras aim at a pair of cars
+(a battle, presentation §G3).
 
 | View | Used for | Engine | Exhaust |
 |---|---|---|---|
-| 0 onboard (own) | the followed car, cockpit camera | 3.0 | 2.5 |
-| 1 onboard (other) | other cars, cockpit camera | 0.3 | 1.3 |
-| 2 chase (own) | the followed car, chase and other live cameras | 1.0 | 3.0 |
+| 0 onboard (own) | the target, car-mounted camera | 3.0 | 2.5 |
+| 1 onboard (other) | other cars, car-mounted camera | 0.3 | 1.3 |
+| 2 chase (own) | the target, chase camera | 1.0 | 3.0 |
 | 3 chase (other) | other cars, chase camera | 0.3 | 1.3 |
-| 4 replay / TV | the followed car in replays; other cars in replays and the TV camera | 0.5 | 3.3 |
+| 4 replay / TV | every car, any other camera | 0.5 | 3.3 |
 
-In the cockpit the mechanical note dominates; outside, the exhaust does.
-The view order is cockpit first for other cars, but replay first for the
-followed car (in a replay its engine uses view 4 even from the cockpit).
+In the cockpit the mechanical note dominates; outside, the exhaust does. So
+a replay's car-mount shots play the followed car's cockpit mix, turbo and
+whine included (§7.1), and its trackside shots the TV mix.
 
 ### §6.5 Stereo placement and surround cue
 
@@ -507,9 +525,15 @@ forward), with $d = \max(\sqrt{x^2+z^2},\ 0.25)$:
 $$\alpha = \mathrm{clamp}\!\left(\left(\tfrac{x}{d}+1\right)\tfrac{\pi}{4},\ 0,\ \tfrac{\pi}{2}\right),\qquad
 \text{left} = g\cos\alpha,\quad \text{right} = g\sin\alpha$$
 
-a constant-power pan, 0.7071 each at the center. The followed car in the
-cockpit view is placed at $(0, 1)$: centered, in front. Otherwise its offset
-from the camera is taken along the camera's right and forward axes.
+a constant-power pan, 0.7071 each at the center, and the distance
+attenuation $\min(1,\ 32/d)$: full volume within 32 m, half at 64 m. Every
+car's units and loops are placed and attenuated this way, the target's too,
+so a car passing a trackside camera grows louder as it comes in and fades
+as it leaves. In a car-mounted view the target's units sit at the camera
+itself ($(0, 0)$: centered, full volume, and behind for the surround cue);
+otherwise a car's offset from the camera is taken along the camera's right
+and forward axes. The one-shots (blow-off, collisions) are placed at the
+car's own offset in every view.
 
 **Surround cue** (optional, off by default; Settings → Audio, `[audio]
 surround_cue`): two per-source flags invert the left or right volume. In
@@ -550,20 +574,20 @@ electric mod car in the field has no engine note (§8).
 ## §7 Other per-car race sounds
 
 Besides the engine, **every** car has its tire loops (`race::CarSfx`,
-§7.6). Each **followed** car (player 1, and player 2 in a 2P battle) also
-has collision effects (§7.7) and a set of extra sounds
-(`race::CarExtraSounds`, models in `src/audio/car_sound_model.*`). Other
-cars have, besides their tires, only their engine and, for the nearest two,
-their wind unit (§8).
+§7.6) and a set of extra sounds (`race::CarExtraSounds`, models in
+`src/audio/car_sound_model.*`): the wind unit, the in-car loop, the
+transmission whine, the turbo spool and the blow-off. The channel gains
+(§7.1) leave most of them silent for other cars: the target plays them all,
+other cars only their wind (the nearest two, §8) and, on the TV cameras, a
+gearbox whine (the nearest five). The followed cars (player 1, and player 2
+in a 2P battle) also have collision effects (§7.7).
 
 ### §7.1 Channel gains
 
-Every race sound is scaled by a gain for its channel and the camera view
-(`race::sfx_gain`). Views: 0 in-car (followed car), 1 in-car (other car),
-2 chase (followed), 3 chase (other), 4 replays and the TV camera (the
-followed car's extra sounds and, for every car, the tire loops, §7.6). For
-these sounds the cockpit takes precedence: a cockpit camera in a replay
-still uses view 0 or 1.
+Every race sound is scaled by a gain for its channel and the car's view
+(`race::sfx_gain`; the views of §6.4): 0 car-mounted camera, target; 1
+car-mounted, other car; 2 chase, target; 3 chase, other car; 4 any other
+camera.
 
 | Channel | 0 | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|---|
@@ -584,8 +608,9 @@ still uses view 0 or 1.
 | dirt | 1.4 | 1.0 | 1.0 | 1.0 | 1.0 |
 
 The engine and exhaust columns are the view gains of §6.4. Note the zeros:
-the turbo, blow-off and in-car sounds are heard only from your own cockpit,
-and there is no wind noise in the cockpit.
+the turbo, blow-off and in-car sounds are heard only from the target's
+car-mounted views (your cockpit; in a replay every car-mount shot of the
+followed car), and there is no wind noise there.
 
 ### §7.2 Wind and road noise
 
@@ -601,13 +626,15 @@ $$\text{gain} = \min(0.001\cdot C_d\cdot u^2\,(1-y),\ 0.5)$$
 
 where ramp is linear between the two points and held beyond them. The unit
 plays at gain $\times$ the wind channel gain (§7.1) $\times$ the distance
-attenuation (1 for the followed car), placed like the engine.
+attenuation (§6.5), placed like the engine, its pitch times the car's
+Doppler factor (§8).
 
 ### §7.3 In-car loop
 
 The `in_car` loop: gain $\min(0.004\cdot C_d\cdot u^2(1-y),\ 2.0)$, pitch
-factor $\mathrm{ramp}(|u|;\ 10\text{ km/h}\mapsto 0.9,\ 320\text{ km/h}\mapsto 1.5)$.
-Its channel gain is non-zero only in your own cockpit.
+factor $\mathrm{ramp}(|u|;\ 10\text{ km/h}\mapsto 0.9,\ 320\text{ km/h}\mapsto 1.5)$
+times the Doppler factor. Its channel gain is non-zero only in the target's
+car-mounted views.
 
 ### §7.4 Transmission whine
 
@@ -622,7 +649,11 @@ front for FF, the four-wheel mean for 4WD, rear otherwise):
 $$\text{gain} = 0.3 + 0.7\cdot\frac{\min(|\tau|, 490)\cdot r_g}{490\cdot r_1},\qquad
 \text{pitch} = 0.3 + 3.2\cdot\frac{|\omega|}{1047.2}$$
 
-(490 N m is 50 kgf m; 1047.2 rad/s is 10,000 rpm.)
+(490 N m is 50 kgf m; 1047.2 rad/s is 10,000 rpm.) The pitch is times the
+Doppler factor. The whine, the spool and the in-car loop are the car's first
+three effect slots: each plays its effect's first region as a looping effect
+(§5.4), placed and attenuated like a tire voice (§7.6, at the car's units'
+position, §6.5).
 
 ### §7.5 Turbo spool and blow-off
 
@@ -637,25 +668,29 @@ states (`turbo_lag`; physics §2.3):
 
 - **Spool level.** While $\lambda > 0.75$ and $\tau > 0$: level
   $\mathrm{clamp}(\lfloor 128 v^2\rfloor, 1, 127)$ with
-  $v = (\lambda - 0.75)\cdot\min(\tau/588, 1)$; otherwise level 1. Once per
-  frame the level is scaled by 0.2 (truncated), so a level below 5 reads 0
-  after the frame: the spool is silent unless the load is above 0.75 and
-  the engine pulls. The `turbine` loop plays at gain level/128 and pitch
-  factor $\max(\text{lag}_0, \text{lag}_1)/6144$.
+  $v = (\lambda - 0.75)\cdot\min(\tau/588, 1)$; otherwise level 1. Right
+  after every step the level is scaled by 0.2 (truncated), so a level below
+  5 reads 0: the spool is silent unless the load is above 0.75 and the
+  engine pulls. The scale runs once per step (GT3's 60 Hz frame), whatever
+  the display rate; the sounds read the level once per displayed frame. The
+  `turbine` loop plays at gain level/128 and pitch factor
+  $\max(\text{lag}_0, \text{lag}_1)/6144$ (no Doppler).
 - **Blow-off.** Armed at start and whenever the throttle is above 90 %;
   when an armed step sees the throttle under 75 % it fires once with
   strength $\max(\lambda - 0.8, 0)/256$ and disarms. The strongest firing
-  since the last frame is kept and played once on the next frame, whatever
-  the display rate: the `b_off` one-shot at volume channel gain
-  $\times\ 2.5\cdot$strength $\times\ 32/d$ ($d$ the distance to the
-  camera, at least 0.25 m; this $32/d$ is not capped at 1).
+  since the last displayed frame is kept and played once on the next one,
+  whatever the display rate: the `b_off` one-shot at volume channel gain
+  $\times\ 2.5\cdot$strength $\times\ 32/d$, panned from the car ($d$ the
+  car's own horizontal distance from the camera in its frame, at least
+  0.25 m, also in the cockpit; this $32/d$ is not capped at 1).
 
 Because the processed throttle drops to 0 in a shift, every upshift made
 with the load above 0.8 fires the blow-off, even with the pedal held flat
 (`sound_turbo_blow_off_on_upshift`: the R34 `r34_gtr_v_99` at full
 throttle on the machine test's straight makes 3 upshifts and 3 blow-offs, up
-to about 0.056 of the region's level in the cockpit, above the 0.01
-threshold of §5.3; the pad's throttle held at 1 fires none).
+to about 0.056 of the region's level in the cockpit with the car 1 m from
+the eye, above the 0.01 threshold of §5.3; the pad's throttle held at 1
+fires none).
 
 ### §7.6 Tires
 
@@ -716,13 +751,11 @@ own side. Its stealing priority (§2.1) is $\lfloor 255\,(1-|g|)\rfloor$, and 0
 when $|g| \ge 1$: the louder the loop, the fewer voices may take it. With the
 surround cue on (§6.5) each voice has its own pair of flags.
 
-**Views and Doppler.** The followed car uses view 0 in the cockpit (replays
-included), else 4 on the TV camera and in replays, else 2 (player 2: 0 or 2,
-from its own camera); the other cars use view 1 from the cockpit, else 4 on
-the TV camera and in replays, else 3 (§7.1). The Doppler factor is that of §8, with
-the listener moving with the followed car (in replays and attract runs, the
-field car being followed), so the followed car's own wheels play at a factor
-of 1; player 2's wheels have no Doppler.
+**Views and Doppler.** Each car's wheels use the car's view (§6.4; player 2
+from its own camera). The Doppler factor is that of §8, with the listener
+moving with the camera: a car riding along with the camera (in the cockpit,
+chased) plays at about 1, a car passing a still trackside camera rises and
+falls in pitch. Player 2's wheels have no Doppler.
 
 ### §7.7 Collisions
 
@@ -738,7 +771,7 @@ Each race step, the stronger of the two decides:
 
 The one-shot plays centered at volume
 $\min(1,\ G_{clash}\cdot\text{strength}\cdot 0.6\cdot 32/\max(d, 0.25))$, with
-$d$ the camera-to-car distance. It is keyed again on every step with such
+$d$ the car's horizontal distance from the camera in its frame. It is keyed again on every step with such
 a hit; there is no cooldown. A wall hit becomes audible from
 $|j| = 10\,000$ N s. In the cockpit $d$ is
 about a meter, so any audible hit plays at full volume. The `clash3`
@@ -760,27 +793,37 @@ race SE option is off.
 
 - the cars are sorted by distance from the camera; the **nearest 5** get an
   engine note (4 voices each, which keeps the total inside 46 voices), and
-  the nearest 2 of those also their wind unit (§7.2, at the "other car"
-  wind gain); notes of cars that drop out of the set are keyed off;
+  the nearest 2 of those also their wind unit (§7.2, at their view's wind
+  gain); notes of cars that drop out of the set are keyed off;
 - **attenuation** $\min(1,\ 32/\max(d_h, 0.25))$ with $d_h$ the horizontal
-  distance to the camera: full volume within 32 m, half at 64 m;
+  distance to the camera in its frame (along its right and forward axes):
+  full volume within 32 m, half at 64 m;
 - **Doppler** along the unit direction from the listener to the car, with
   the source and listener velocity components clamped to $\pm c/2$:
 
   $$D = \mathrm{clamp}\!\left(\frac{c + v_{lis}}{c + v_{src}},\ 0.25,\ 3.99\right),\qquad c = 331.45\text{ m/s}$$
 
-  The listener moves with the followed car. A car closing at 30 m/s is
-  raised by about 10 % (1.0995).
-- the view is "onboard (other)" from the cockpit, "replay / TV" in replays
-  and on the TV camera, and "chase (other)" otherwise (§6.4);
+  The listener moves with the camera: $v_{lis}$ is the eye's velocity, its
+  displacement over the last frame (GT3 takes the camera's and the car's
+  displacements over the frame; `CameraRig::eye_velocity`), and 0 on the
+  frame of a cut, where the eye jumps. A car closing at 30 m/s on a still
+  camera is raised by about 10 % (1.0995); passing a trackside camera at
+  180 km/h it drops by about 5 semitones (1.178 coming in, 0.869 going
+  away). The followed car's engine, wind and loops take the same factor
+  (about 1 while the camera rides with it);
+- each car's view (§6.4): in a field replay the followed car is the target
+  among them; in a car-mounted view the target's units sit at the camera;
 - placement and surround cue as §6.5, from the car's offset along the
   camera's axes; rpm and throttle are the car's own.
 
 Other cars have their tire loops (§7.6, every car, not only the nearest
-five) but no turbo, whine, in-car or collision sounds (their channel gains
-in the other-car views are zero or they are not modeled). Online, remote
-players' cars are field cars and are heard the same way, without the extra
-sounds (`docs/dev/ONLINE.md`).
+five) and their extra sounds (§7; `RaceScreen::update_car_sounds`): their
+turbo model runs after every race step, and the camera's target among them
+plays all of them, the nearest five otherwise only a gearbox whine on the
+other cameras (channel gain 0.2; the other-car views' turbo, blow-off and
+in-car gains are 0). Their collisions are not heard. Online, remote
+players' cars are field cars and are heard the same way
+(`docs/dev/ONLINE.md`).
 
 ## §9 Course ambience
 
@@ -867,21 +910,27 @@ region with the right gain, with the same priority rule.
 - Engine notes, the wind, in-car, whine and turbo loops, the blow-off and
   the course ambience are computed once per displayed frame from the
   interpolated car state; every car's tire loops, the collision effects, the
-  countdown, the reverb depth and the turbo model's step run with each
-  physics step (60 Hz).
+  countdown, the reverb depth and the turbo model (its step and the spool
+  level's scale) run with each physics step (60 Hz).
 
 ## §11 Approximations and open points
 
 - **Throttle as the bank-level input.** The bank levels (§6.3) are driven by
   the throttle and "drive engaged" is always true; the input behaves like a
   throttle, but this is the engine's inference.
-- **Other cars' engines** are voiced only for the nearest five (§8); with
-  every car voiced the voice allocator would have to drop the quiet ones.
-  Their tire loops play for every car and rely on the stealing priorities
-  (§7.6) instead.
+- **Other cars' engines** are voiced only for the nearest five (§8), with
+  their wind for the nearest two and their whine for the five; with every
+  car voiced the voice allocator would have to drop the quiet ones. Their
+  tire loops play for every car and rely on the stealing priorities (§7.6)
+  instead.
 - `body_noiz` and `clash3` are not played.
-- The view labels (§6.4, §7.1) are this engine's reading of when each
-  column applies.
+- The camera kinds (§6.4) are GT3's camera types for its own cameras; ours
+  map onto them by what they show (the free orbit and our fallback TV
+  cameras count as other cameras).
+- **The listener at a cut.** GT3 takes the camera's displacement over the
+  frame; whether its previous position follows a cut is not known. Ours
+  restarts the eye's velocity at every cut (0 for that frame), so a cut
+  never bends the pitch.
 - The mixer's volume slew (§2.4) and output trim are our own additions for
   clean output; the music stream takes the same trim (§2.4) to keep the
   balance between music and effects.

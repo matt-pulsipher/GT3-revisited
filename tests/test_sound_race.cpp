@@ -56,24 +56,26 @@ TEST(sound_car_models) {
     CHECK(whine(false, 1, 400, 3, 3, 500).gain == 0 && whine(true, 0, 400, 3, 3, 500).gain == 0);
     Loop wh = whine(true, 1, 490, 3, 3, 1047.1976f);
     CHECK(std::abs(wh.gain - 1.0f) < 1e-5f && std::abs(wh.pitch - 3.5f) < 1e-4f);
-    // Turbo: level from the load above 0.75, scaled 0.2 per frame; blow-off
+    // Turbo: level from the load above 0.75, scaled 0.2 per step; blow-off
     // once when the throttle drops under 75 %, re-armed above 90 %.
     Turbo t;
     t.step(true, 1.0f, 1.75f, 1.75f, 600, 3000, 0);
-    t.frame();
-    CHECK(t.level() == 25 && std::abs(t.spool().pitch - 3000 / 6144.0f) < 1e-5f && t.blow_off() == 0);
+    t.tick();
+    CHECK(t.level() == 25 && std::abs(t.spool().pitch - 3000 / 6144.0f) < 1e-5f && t.take_blow_off() == 0);
+    CHECK(t.level() == 25); // read again (a frame without a step, above 60 Hz): not scaled again
     t.step(true, 0.2f, 1.6f, 0.5f, 100, 2000, 0);
-    t.frame();
-    CHECK(std::abs(t.blow_off() - (1.6f - 0.8f) / 256 * 2.5f) < 1e-6f);
+    t.tick();
     t.step(true, 0.2f, 0.5f, 0.5f, 100, 1000, 0);
-    t.frame();
-    CHECK(t.blow_off() == 0); // not again until re-armed
+    t.tick(); // two steps before the next frame (below 60 Hz): the firing waits for it
+    CHECK(std::abs(t.take_blow_off() - (1.6f - 0.8f) / 256 * 2.5f) < 1e-6f);
+    CHECK(t.take_blow_off() == 0); // played once, not again until re-armed
     t.step(true, 0.95f, 0.5f, 0.6f, 100, 1000, 0);
+    t.tick();
     t.step(true, 0.5f, 1.2f, 0.6f, 100, 1000, 0);
-    t.frame();
-    CHECK(t.blow_off() > 0);
+    t.tick();
+    CHECK(t.take_blow_off() > 0);
     t.step(false, 1, 2, 2, 600, 0, 0);
-    t.frame();
+    t.tick();
     CHECK(t.level() == 0);
 }
 
@@ -244,6 +246,43 @@ TEST(sound_tyre_voice_placement) {
     // Within 25 cm the source is first moved back along z by 0.25 - d (here: behind, centred).
     Placement near_ = place_voice(0, 0.1f, 1);
     CHECK(close(near_.z_over_d, -1) && close(near_.left, near_.right));
+}
+
+// The extra loops (issue 222) are the car's first effect slots, placed like its tyre loops: no
+// floor under a faint spool in the cockpit, every car (the followed one too) faded by 32/d from the
+// camera, the whine's pitch moved by the Doppler factor, the spool's not.
+TEST(sound_car_extra_loops) {
+    using namespace race;
+    std::vector<sound::SoundEffect> index;
+    for (const char* n : {car_sound::kWhine, car_sound::kTurboSpool, car_sound::kInCar}) index.push_back({n, 0, 0, 0});
+    VoiceMixer m;
+    RaceSfx sfx; // (no one-shots)
+    CarExtraSounds car;
+    CHECK(car.bind({loop_bank(12900)}, index));
+    for (int i = 0; i < 2; ++i) car.step({true, 1.0f, 1.0f, 600, 3000, 0}); // load 1.0 at 600 N m: raw 8, 1 after the scale
+    CHECK(car.turbo().level() == 1);
+    CarExtraSounds::Frame f;
+    f.view = SoundView::InCarTarget; // the target in the cockpit: at the camera
+    f.u = 30, f.whine = true, f.torque = 300, f.ratio = 2, f.first_ratio = 3, f.shaft = 300;
+    f.doppler = 1.1f;
+    car.update(sfx, m, f);
+    const CarSfx::Voice& spool = car.voice(CarExtraSounds::kSpool);
+    CHECK(close(std::hypot(spool.left, spool.right), 0.5f / 128.0f) && close(spool.pitch, 3000 / 6144.0f)); // (0.004)
+    CHECK(car.voice(CarExtraSounds::kInCar).left > 0 && m.active_voices() == 3);
+    // On a trackside camera 64 m away: the TV gains (no spool, no in-car loop) at half volume.
+    f.view = SoundView::Other;
+    f.x = 0, f.z = 64;
+    car.update(sfx, m, f);
+    const car_sound::Loop wh = car_sound::whine(true, 1, 300, 2, 3, 300);
+    const CarSfx::Voice& whine = car.voice(CarExtraSounds::kWhine);
+    CHECK(close(std::hypot(whine.left, whine.right), 0.2f * wh.gain * 0.5f) && close(whine.pitch, 1.1f * wh.pitch));
+    CHECK(car.voice(CarExtraSounds::kSpool).left == 0 && car.voice(CarExtraSounds::kInCar).left == 0);
+    std::vector<s16> out(2 * 4800);
+    m.mix(out.data(), 4800); // (keyed-off voices finish their release)
+    CHECK(m.active_voices() == 1);
+    car.stop(m);
+    m.mix(out.data(), 4800);
+    CHECK(m.active_voices() == 0);
 }
 
 TEST(sound_car_sfx_per_wheel_voices) {
@@ -1012,19 +1051,19 @@ TEST(sound_turbo_blow_off_on_upshift) {
         processed.step(st.turbo, st.throttle, prev_load, st.load, st.torque, st.lag0, st.lag1);
         pad.step(st.turbo, in.throttle, prev_load, st.load, st.torque, st.lag0, st.lag1);
         prev_load = st.load;
-        processed.frame();
-        pad.frame();
+        processed.tick();
+        pad.tick();
         if (car.state().gear > gear && gear >= 1) ++upshifts, last_shift = i;
         gear = car.state().gear;
-        if (processed.blow_off() > 0) {
+        if (const float b = processed.take_blow_off(); b > 0) {
             ++fired;
             late += i - last_shift > 2; // fires on the shift itself
-            loudest = std::max(loudest, processed.blow_off());
+            loudest = std::max(loudest, b);
         }
-        fired_pad += pad.blow_off() > 0;
+        fired_pad += pad.take_blow_off() > 0;
     }
-    // In the cockpit (channel gain 0.2, 32 / d with d = 1 m) the one-shot plays above the
-    // effects' 0.01 floor.
+    // In the cockpit (channel gain 0.2, 32 / d with the car about 1 m from the eye) the one-shot
+    // plays above the effects' 0.01 floor.
     const float cockpit = race::sfx_gain(race::SoundView::InCarTarget, race::kChBlowOff) * loudest * 32.0f;
     std::printf("  turbo: %d upshifts, %d blow-offs (pad throttle: %d), cockpit volume up to %.3f\n", upshifts,
                 fired, fired_pad, cockpit);

@@ -1846,7 +1846,10 @@ pure red pixel gray (75, 75, 75).
   are silent.
 - **Collision one-shots** are not played in replays: the impulses are passed as
   zero.
-- **Sound view.** Engine notes use the replay view gains (§M3).
+- **Sound view.** Every car's sounds take the view of the replay's camera
+  (§M3): a car-mount shot plays the followed car's cockpit mix, turbo
+  included; a trackside shot the TV mix, each car faded by its distance from
+  the camera and bent in pitch as it passes ([sound.md](sound.md) §6.4, §8).
 
 ### §G9 Replay Theater
 
@@ -3155,15 +3158,20 @@ the levels are the music topic (test `sound_music_request_levels`).
 
 ### §M3 Sound view
 
-The camera chooses the gain column (`SoundView`, `sfx_gain`):
+The camera chooses the gain column (`SoundView`, `sfx_gain`, `race::sound_view`),
+one per car for all its sounds:
 
-- in-car view: "in-car, target car";
-- chase view: "chase, target car";
-- TV camera or any replay: "other camera".
+- a car-mounted camera (the in-car view; in replays every car mount, inside or
+  outside the car): "in-car";
+- a chase view: "chase";
+- any other camera (the TV camera, the replay's trackside and procedural shots,
+  the pre-race shot): "other camera";
 
-Opponents use the "other car" columns, and their engines the replay view in
-replays. Engine notes are panned from the car's offset in the viewing camera's
-frame; the own car is centered in the in-car view.
+with the "target car" columns for the car the camera follows (the player's
+car live, the followed car in a field replay, none while the camera aims at a
+pair) and the "other car" columns for the rest. Every car is panned from its
+offset in the viewing camera's frame and faded by 32/d; the target is centered
+at the camera in a car-mounted view ([sound.md](sound.md) §6.4, §6.5).
 
 Gains per view and channel (`kGains` in `src/race/car_sfx.cpp`):
 

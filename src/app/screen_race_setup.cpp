@@ -250,8 +250,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         crss_player_.load(sfx_.banks(), sfx_.index());
     }
     // Wind (rn_01.es), in-car, whine and turbo for the followed cars.
-    extra_.stop(sfx_, app.audio().voices());
-    extra2_.stop(sfx_, app.audio().voices());
+    extra_.stop(app.audio().voices());
+    extra2_.stop(app.audio().voices());
     extra_.reset();
     extra2_.reset();
     extra_.load(*app.vfs());
@@ -761,8 +761,10 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         }
         opp_visuals_.push_back(v);
     }
-    // Engine notes of the opponents (their base car's sound bank).
+    // Engine notes of the opponents (their base car's sound bank) and their extra sounds.
     std::vector<OpponentEngines::Car> sounds;
+    for (OpponentSound& o : opp_sound_) o.extra.stop(app.audio().voices());
+    opp_sound_.clear();
     for (int i = 0; i < f.opponents(); ++i) {
         const std::string& l = f.opponent_label(i);
         std::string car = db_.car(l) ? l : "";
@@ -771,8 +773,11 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         if (car.empty())
             for (const data::CarVariant& v : db_.arcade_cars())
                 if (v.label == l) car = v.car;
+        OpponentSound& o = opp_sound_.emplace_back();
+        o.facts = f.opponent_facts(i).value_or(CarFacts{});
+        o.car = car_sound_facts(l);
         OpponentEngines::Car c;
-        c.cd = car_sound_facts(l).cd;
+        c.cd = o.car.cd;
         if (const data::Car* dc = db_.car(car)) {
             data::CarDatabase::EngineSound es = db_.engine_sound(*dc);
             c.sound_id = es.id, c.variant = es.variant;

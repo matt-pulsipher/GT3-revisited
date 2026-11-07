@@ -195,12 +195,12 @@ disc's CORE.GT3 (bytes `B[i]`, read once at race start):
   factor `0.3 + 3.2 * |shaft| / 1047.2` with `shaft` the driven axle's
   angular speed (rear, front or the 4WD mix by drive layout).
 - **Turbo spool** (se.inf `turbine`, channel "turbo", only heard in the
-  in-car view of your own car): turbo cars only. Each physics step, while
+  car-mounted views of the camera's target: your cockpit, a replay's car mounts): turbo cars only. Each physics step, while
   the previous boost load is above 0.75 the raw level is
   `clamp(int(128 * v^2), 1, 127)` with `v = (load - 0.75) * min(T/588, 1)`
-  (T = engine torque, N m; level 1 if T <= 0); otherwise the level keeps its
-  value. Once per frame the level is scaled by 0.2 in place (so it decays
-  geometrically when not refreshed). Gain level/128, pitch factor
+  (T = engine torque, N m; level 1 if T <= 0); otherwise level 1. Right
+  after each step (once per 60 Hz frame, before the sounds read it) the
+  level is scaled by 0.2 in place. Gain level/128, pitch factor
   `max(stage-0 lag, stage-1 lag) / 6144` (the turbo lag states).
 - **Blow-off** (se.inf `b_off` one-shot, channel "blow-off", in-car own
   view only): armed while the throttle is above 90 %; when the throttle

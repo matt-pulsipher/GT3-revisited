@@ -181,6 +181,55 @@ TEST(race_camera_views) {
     CHECK(g.mode() == CameraMode::Bumper);
 }
 
+// The race sounds' view of the camera (issue 222): the in-car views are car-mounted, the chase views
+// chase, every other camera (and the pre-race shot) other; each car's view by whether it is the
+// camera's target. The eye's velocity is the listener's motion, restarted at a cut.
+TEST(race_camera_sound_kind) {
+    CameraRig c;
+    CHECK(c.sound_kind() == CameraSound::Cockpit);
+    c.set_intro(true, 0.5f);
+    CHECK(c.sound_kind() == CameraSound::Other);
+    c.set_intro(false, 1.0f);
+    for (CameraMode m : {CameraMode::Chase, CameraMode::ChaseFar}) {
+        c.set_mode(m);
+        CHECK(c.sound_kind() == CameraSound::Chase);
+    }
+    for (CameraMode m : {CameraMode::Tv, CameraMode::Orbit}) { // (a TV camera without a car mount)
+        c.set_mode(m);
+        CHECK(c.sound_kind() == CameraSound::Other);
+    }
+    CHECK(sound_view(CameraSound::Cockpit, true) == SoundView::InCarTarget &&
+          sound_view(CameraSound::Cockpit, false) == SoundView::InCarOther &&
+          sound_view(CameraSound::Chase, true) == SoundView::ChaseTarget &&
+          sound_view(CameraSound::Chase, false) == SoundView::ChaseOther &&
+          sound_view(CameraSound::Other, true) == SoundView::Other && sound_view(CameraSound::Other, false) == SoundView::Other);
+    CHECK(engine_view(SoundView::InCarTarget) == EngineSound::View::OnboardOwn &&
+          engine_view(SoundView::Other) == EngineSound::View::Replay);
+    // Every car's units fade by 32/d from the camera, the followed car's too (at the camera: full).
+    CHECK(distance_gain(0, 0) == 1.0f && distance_gain(30, 0) == 1.0f && near(distance_gain(0, 64), 0.5f) &&
+          near(distance_gain(-96, 128), 0.2f));
+
+    // A car driving straight at 30 m/s: the chase camera moves with it; a cut restarts.
+    sim::VehicleSetup setup;
+    sim::VehicleState s;
+    s.velocity = {0, 0, -30};
+    CameraRig chase;
+    chase.set_mode(CameraMode::Chase);
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 4; ++i) {
+        chase.update(s, setup, PadState{}, dt);
+        if (i == 0) CHECK(chase.eye_velocity().z == 0); // the first update: nothing to compare
+        s.position = s.position + s.velocity * float(dt);
+    }
+    CHECK(near(chase.eye_velocity().z, -30.0f, 0.05f) && near(chase.eye_velocity().x, 0.0f, 0.05f));
+    chase.set_mode(CameraMode::Bumper);
+    chase.update(s, setup, PadState{}, dt);
+    CHECK(chase.eye_velocity().z == 0); // the cut to the in-car view
+    s.position = s.position + s.velocity * float(dt);
+    chase.update(s, setup, PadState{}, dt);
+    CHECK(near(chase.eye_velocity().z, -30.0f, 0.05f));
+}
+
 // Look back (issue 170) turns every player view round: the car faces -z, so the view looks
 // along +z while held; the chase views move ahead of the car, looking back past it.
 TEST(race_camera_look_back) {
