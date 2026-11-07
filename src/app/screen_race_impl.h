@@ -389,7 +389,17 @@ private:
     // Returns the number of frame items inserted at items_[scenery_items_] (remove them after the draw).
     size_t add_wet_road(const render::Vec3& eye, const render::Mat4& view, const render::Mat4& proj,
                         const render::Frustum& fr, const render::DrawOptions& o);
-    std::vector<CarLampGlows::Car> lamp_cars() const;
+    // The cars a view draws (collect_items' `player` and `second`, the opponents but
+    // `hidden_opponent`), for the glow passes: their lamps (GT3 visits the lamps of the cars the
+    // camera draws: not its own car on board) and their bodies, which hide glows behind them.
+    struct GlowCars {
+        std::vector<CarLampGlows::Car> lamps;
+        std::vector<std::pair<const Occluder*, render::Mat4>> bodies; // world -> the body's frame
+    };
+    GlowCars glow_cars(bool player, bool second, int hidden_opponent) const;
+    bool has_glows() const { return lamps_.count() > 0 || car_lamps_.active(); }
+    // The glows' ray test: the course's scenery and the bodies of `cars`.
+    bool glow_blocked(const GlowCars& cars, const render::Vec3& a, const render::Vec3& b) const;
     static sim::Vec3 to_sim(const render::Vec3& v) { return {v.x, v.y, v.z}; }
     FieldLap field_lap2() const { return field_ && field_->has_second() ? field_->second_laps() : FieldLap{}; }
 
@@ -807,9 +817,10 @@ private:
     render::ScreenBatch haze_batch_, overlay_batch_, overlay2_batch_, vignette_batch_;
     int view_frame_ = 0, haze_log_ = 0; // GT3R_RACE_DEBUG's haze lines: the main view's frames (as GT3R_CAPTURE3D counts)
     // This frame's passes on the main view's options: the overlay (glare, lamps) for `rect`
-    // (`second`: player 2's view); the haze and the vignette (replays only).
+    // (`second`: player 2's view, `glow`: the view's cars, null for no lamp glows); the haze and
+    // the vignette (replays only).
     void add_screen_passes(render::DrawOptions& o, const SDL_FRect& rect, const CameraRig& cam, float sun_visibility,
-                           bool second, bool split);
+                           bool second, bool split, const GlowCars* glow);
     int sun_log_ = 0;
     Billboards billboards_;
     bool original_res_ = false, original_nearest_ = true;

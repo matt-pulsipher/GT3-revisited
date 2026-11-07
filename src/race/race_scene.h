@@ -179,6 +179,9 @@ public:
     // The car's camera mounts (GTCI): view mode 1's car-mounted shots.
     const std::vector<CarMount>& mounts() const { return mounts_; }
     render::Mat4 body_matrix(const sim::VehicleState& s, const sim::VehicleSetup& setup) const;
+    // The body's opaque LOD-0 triangles in the model frame: what the lamp glows' ray tests see of
+    // the car (GT3's depth test sees the drawn car).
+    const Occluder& occluder() const { return occluder_; }
     void set_shadow(const CarShadowParams& p);
     bool shadow_set() const { return shadow_set_; }
     // The brake parts inside the wheels (race/brake.bin; the car file's GTCI records which).
@@ -213,6 +216,7 @@ private:
     };
     mutable std::array<Morph, 2> morph_;
     CarLampSet lamps_;
+    Occluder occluder_;
     std::vector<CarMount> mounts_;
     // Each wheel: the tyre (with its black faces) and the rim, drawn spinning; the band, the tyres'
     // arch shade, turned by the camber only; the brake parts (rotor and caliper, steered, not

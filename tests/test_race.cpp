@@ -35,6 +35,7 @@
 #include "sim/exact/race.h"
 #include "race/interp.h"
 #include "race/lamp_glows.h"
+#include "race/occluder.h"
 #include "race/race_audio.h"
 #include "race/replay.h"
 #include "sim/exact/race_record.h"
@@ -2255,6 +2256,45 @@ TEST(race_flare_disc_mesh) {
     const race::Flare::Vertex& c = m.verts[1];
     CHECK((race::Flare::gs_color(c, {2, 1, 0.017f}, 1) == std::array<u8, 4>{255, 255, 4, 255}));
     CHECK((race::Flare::gs_color(c, {0.5f, 0.5f, 0.5f}, 0) == std::array<u8, 4>{127, 127, 127, 0}));
+    // A halo at a depth: every vertex there, for the view's depth test; without one, in front.
+    render::ScreenBatch b;
+    const render::Frustum fr = render::Frustum::symmetric(1.0f, 1.0f);
+    race::Flare::add_mesh(m, b, fr, {0, 0, 100, 100}, 0, 0, 10, 1, 1, {1, 1, 1}, 1, 0.25f);
+    race::Flare::add_mesh(m, b, fr, {0, 0, 100, 100}, 0, 0, 10, 1, 1, {1, 1, 1}, 1);
+    CHECK(b.verts.size() == 56);
+    for (size_t i = 0; i < b.verts.size(); ++i) CHECK(b.verts[i].depth == (i < 28 ? 0.25f : 1.0f));
+}
+
+// The glows' ray test against a car body (in its own frame): rays from far outside its grid
+// still meet it; glass (no depth writes) and rays past, over or short of it do not.
+TEST(race_occluder_car_body) {
+    scene::Model car;
+    scene::Mesh& mesh = car.meshes.emplace_back();
+    auto quad = [&](float z, u32 flags) { // x -1..1, y 0..1.5 at z
+        const u32 first = u32(mesh.indices.size()), base = u32(mesh.vertices.size());
+        const float c[4][2] = {{-1, 0}, {1, 0}, {1, 1.5f}, {-1, 1.5f}};
+        for (const auto& p : c) {
+            scene::Vertex v{};
+            v.pos[0] = p[0], v.pos[1] = p[1], v.pos[2] = z;
+            mesh.vertices.push_back(v);
+        }
+        for (u32 i : {0u, 1u, 2u, 0u, 2u, 3u}) mesh.indices.push_back(base + i);
+        scene::Primitive pr;
+        pr.first_index = first, pr.index_count = 6, pr.flags = flags;
+        mesh.primitives.push_back(pr);
+    };
+    quad(0, 0);
+    quad(2, scene::kAlphaBlend | scene::kNoDepthWrite);
+    race::Occluder o;
+    o.add(car);
+    o.build(0.25f);
+    CHECK(o.triangles() == 2);
+    CHECK(o.segment_blocked({0, 0.5f, -100}, {0, 0.5f, 100}));
+    CHECK(o.segment_blocked({0.5f, 1, 80}, {-0.5f, 0.2f, -60}));
+    CHECK(!o.segment_blocked({0, 0.5f, -100}, {0, 0.5f, -1}));  // short of it
+    CHECK(!o.segment_blocked({5, 0.5f, -100}, {5, 0.5f, 100}));  // past its side
+    CHECK(!o.segment_blocked({0, 2, -100}, {0, 2, 100}));        // over it
+    CHECK(!o.segment_blocked({0, 0.5f, 1}, {0, 0.5f, 10}));      // through the glass only
 }
 
 // The sun disc (presentation §I6): its colours from Env0, 10 m out along the sun in the

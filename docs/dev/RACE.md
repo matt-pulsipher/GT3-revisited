@@ -1954,9 +1954,12 @@ by the course area):
   slivers, soft and broken up; compared with a PCSX2 capture, 2026-10-22). VR eyes draw
   them with the 2D renderer (`render::submit_2d`). Visibility: a 3 × 3 ray
   grid over the original's 10-pixel box, to 0.2 m in front of the lamp, against
-  the course occluder (cars do not occlude; the original's depth test sees
-  them). The halo is the flare system's 14-segment disc (`Flare::disc_mesh`, the sun disc's
-  mesh) in the same batch as the glows, tested with one ray at its centre. Seattle 69 lamps
+  the course occluder and the bodies of the cars the view draws (`CarVisual::occluder`:
+  each body's opaque LOD-0 triangles in its own frame; `RaceScreen::glow_blocked`), as
+  GT3's depth test sees them. The halo is the flare system's 14-segment disc
+  (`Flare::disc_mesh`, the sun disc's mesh) in the same batch as the glows, at the pulled
+  point's depth (`ScreenBatch::Vertex::depth`), so the view's depth test hides it per pixel
+  behind the scenery and the cars, as the GS's does; VR eyes test it with one ray at its centre. Seattle 69 lamps
   (stadium lights), Route 5 / 11
   about 300 (street and tunnel lamps).
 - **Billboards** (`race::Billboards`, BLBd): every sprite as a quad turning
@@ -1973,7 +1976,9 @@ by the course area):
   of day from Env0: flag 0x80000 `cars/eve/`, else 0x8000 `cars/night/`, else
   `cars/day/`. On Env0 flag 0x8000 courses (night and dusk: route5 / route11 families,
   L_circle*, seattle, laguna, smtnorth, r_deepforest, r_grandvalley, r_smtsouth ...) the
-  car lamp glow pass (`race::CarLampGlows`) draws the GTCI lists (+0x40 headlamps always,
+  car lamp glow pass (`race::CarLampGlows`) draws, for the cars the view draws
+  (`RaceScreen::glow_cars`: GT3 visits the lamps from its car pass, so the camera's own car
+  on board has none), the GTCI lists (+0x40 headlamps always,
   +0x50 brake lamps while braking at k/4 or 1, +0x48 tail lamps as a halo only) with the
   Env0 +0x9F0 lamp type (colour x intensity, glow x 8, halo, gain, attenuation c / l / q,
   max distance). At most 100 records pass the screen test at the record's test point (in
@@ -1984,8 +1989,8 @@ by the course area):
   n = 0; a negative product: no glow) and the occlusion box's visibility at the test point;
   tail lamps never get it. Every kept record gets a halo (colour x gain x 0.5, not D or I);
   stretched (bar) lamps an elliptical one. No reversing lamps and no headlight switch exist.
-  The 10x10 depth-box occlusion test is a 3 x 3 ray grid here (`race::Occluder`; cars do not
-  occlude). The car lamps' streaks on wet roads
+  The 10x10 depth-box occlusion test is a 3 x 3 ray grid here (`race::Occluder`: the course and
+  the drawn cars' bodies). The car lamps' streaks on wet roads
   belong to the wet-road reflection (below).
 - **Wet-road reflection** (`race::WetRoad`; courses with a slot 9
   model: route5, route5_dry, route11 and their reverse layouts, three L_circle tests). After the
@@ -2142,9 +2147,8 @@ filling the options each frame:
 - Near-road "shimmer" at speed (Super Speedway, Trial Mountain) is the sheen's noise texture
   (256x128) moving under the camera; the original shows the same grain. Our textures are
   mipmapped, so this is not minification aliasing.
-- Lamp glows (see "Lamp glows", "Car lamps"): cars do not hide lamps (the original's depth test
-  sees them); a halo is hidden or shown whole by one ray (the original depth-tests it per
-  pixel); bar lamps' elliptical halos lie along the screen axes (the original turns them with
+- Lamp glows (see "Lamp glows", "Car lamps"): the glow's box test is a 3 x 3 ray grid (GT3
+  counts the box's pixels); bar lamps' elliptical halos lie along the screen axes (GT3 turns them with
   the lamp's projected x axis).
 - Wheels (see "Rendering"): the tyre and rim geometry keep the body's level (GT3 switches the
   tyre's segments, its level-2 hexagon and level-3 drum by the wheel's own level, which only the

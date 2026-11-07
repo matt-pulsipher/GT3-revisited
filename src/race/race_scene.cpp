@@ -338,6 +338,8 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
             }
     }
     body_ = std::make_unique<render::GpuModel>(ctx, body);
+    occluder_.add(body);
+    occluder_.build(0.25f);
     if (!morphs_.empty()) {
         scene::Model mm; // the textures the morph parts use, then their meshes at the defaults
         mm.name = model + "_morph";

@@ -14,10 +14,11 @@
 // camera, scaled by glow size x 10, not depth-tested: vertex RGB x colour (RGB x intensity x
 // attenuation x blink x D, clamped to 255), vertex alpha x visibility, added as Cs As / 128.
 // Visibility is the GS depth test of a 10 x 10 pixel box at the lamp 0.2 m nearer than it,
-// 2 x the passing fraction, capped at 1 (a ray grid against the course occluder here). The
-// halo is the flare system's 14-segment disc (Flare::disc_mesh) of the halo size at the pulled
-// point, depth-tested (one ray here), colour x gain x 0.5 at full visibility, added as the
-// glow is, drawn for every kept lamp further than 1 m.
+// 2 x the passing fraction, capped at 1 (a ray grid against the course occluder and the drawn
+// cars' bodies here). The halo is the flare system's 14-segment disc (Flare::disc_mesh) of the
+// halo size at the pulled point, depth-tested (by the 3D view; one ray in the 2D renderer),
+// colour x gain x 0.5 at full visibility, added as the glow is, drawn for every kept lamp
+// further than 1 m.
 
 #include "base/bytes.h"
 #include "formats/course/visibility.h"
@@ -57,9 +58,11 @@ public:
     // original's 448 lines in the original-resolution frame), not over the output.
     void add(render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect, float x, float y, float d,
              float s, const std::array<float, 3>& col, float vis) const;
-    // One mesh, as add(), scaled by `sx` across and `sy` up (view space).
+    // One mesh, as add(), scaled by `sx` across and `sy` up (view space), at clip depth `depth`
+    // (ScreenBatch::Vertex::depth; 1: in front of everything, not depth-tested in effect).
     static void add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect,
-                         float x, float y, float d, float sx, float sy, const std::array<float, 3>& col, float vis);
+                         float x, float y, float d, float sx, float sy, const std::array<float, 3>& col, float vis,
+                         float depth = 1.0f);
     // The vertex program's colour of a vertex as the GS gets it (0..255 per channel; the
     // alpha's 0x80 = 1.0): trunc(min(255, vertex RGB x col)), trunc(min(255, vertex alpha x
     // trunc(255 vis) / 255)).
@@ -96,9 +99,11 @@ public:
     void tick(double seconds) { time_ += seconds; }
     using Blocked = std::function<bool(const render::Vec3&, const render::Vec3&)>;
     // Adds the glows over `rect` to `b`, which the view draws before its grade (presentation
-    // §L6). `blocked(from, to)`: true if the segment is occluded.
+    // §L6). `blocked(from, to)`: true if the segment is occluded. `proj`: the view's projection,
+    // in whose depth the halos are placed for the view's depth test, as GT3's GS tests
+    // them (null: each halo tested with one ray at its centre).
     void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
-             const render::Frustum& fr, const Blocked& blocked) const;
+             const render::Frustum& fr, const Blocked& blocked, const render::Mat4* proj = nullptr) const;
     void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
              float fovy, const Blocked& blocked) const {
         add(b, rect, view, eye, render::Frustum::symmetric(fovy, rect.w / rect.h), blocked);
@@ -118,8 +123,8 @@ private:
 };
 
 // Car lamp glows (GT3's car lamp pass; on courses with Env0 flag 0x8000,
-// docs/dev/RACE.md "Car lamps"). Lamps come from the car file's GTCI lists, visited per car
-// as headlamps (+0x40, always), brake lamps (+0x50, while braking: flag bit 0 at k/4, others
+// docs/dev/RACE.md "Car lamps"). Lamps come from the car file's GTCI lists, visited per car the
+// view draws (not the camera's own car on board) as headlamps (+0x40, always), brake lamps (+0x50, while braking: flag bit 0 at k/4, others
 // at 1 while the pedal is down now), tail lamps (+0x48); at most 100 records pass the screen
 // test (the test point in front, within the max distance, a square of halo x max(a, b) on
 // screen). One lamp type in Env0 +0x9F0 (colour x intensity, glow x 8, halo, gain,
@@ -158,7 +163,8 @@ public:
     using Blocked = LampGlows::Blocked;
     // As LampGlows::add / draw.
     void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
-             const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked) const;
+             const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked,
+             const render::Mat4* proj = nullptr) const;
     void add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
              float fovy, const std::vector<Car>& cars, const Blocked& blocked) const {
         add(b, rect, view, eye, render::Frustum::symmetric(fovy, rect.w / rect.h), cars, blocked);

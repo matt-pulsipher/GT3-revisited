@@ -57,6 +57,12 @@ render::Vec3 to_view(const render::Mat4& v, const render::Vec3& p) {
             v.at(2, 0) * p.x + v.at(2, 1) * p.y + v.at(2, 2) * p.z + v.at(2, 3)};
 }
 
+// The clip depth of a view-space point `z` in front of the camera in `proj` (reversed: 1 at the
+// near plane), for the view's depth test (ScreenBatch::Vertex::depth).
+float clip_depth(const render::Mat4& proj, float z) {
+    return std::clamp((proj.at(2, 3) - proj.at(2, 2) * z) / z, 0.0f, 1.0f);
+}
+
 // The original's occlusion test for a lamp glow: a depth test of a 10 x 10 pixel box (of the
 // PS2's 448-line frame) around the screen point (px, py) at depth z - 0.2 m, worth 2 x the
 // passing fraction, capped at 1. Here a 3 x 3 grid of rays to that depth against `blocked`.
@@ -144,7 +150,7 @@ std::array<u8, 4> Flare::gs_color(const Vertex& v, const std::array<float, 3>& c
 }
 
 void Flare::add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect, float x,
-                     float y, float d, float sx, float sy, const std::array<float, 3>& col, float vis) {
+                     float y, float d, float sx, float sy, const std::array<float, 3>& col, float vis, float depth) {
     std::vector<render::ScreenBatch::Vertex> verts;
     verts.reserve(m.verts.size());
     for (const Vertex& v : m.verts) {
@@ -153,6 +159,7 @@ void Flare::add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustu
         render::ScreenBatch::Vertex sv;
         sv.x = fr.screen_x(vx, vd, rect.x, rect.w), sv.y = fr.screen_y(vy, vd, rect.y, rect.h);
         for (int i = 0; i < 4; ++i) sv.rgba[i] = float(c[size_t(i)]) / 255.0f;
+        sv.depth = depth;
         verts.push_back(sv);
     }
     std::vector<u32> idx(m.tris.begin(), m.tris.end());
@@ -248,7 +255,7 @@ void LampGlows::draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4&
 }
 
 void LampGlows::add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
-                    const render::Frustum& fr, const Blocked& blocked) const {
+                    const render::Frustum& fr, const Blocked& blocked, const render::Mat4* proj) const {
     if (lists_.empty() || (flare_.empty() && !glow_.valid())) return;
     // The lamps the original keeps this frame: the lists of the nodes visible from the
     // camera, in that order (every list without visibility data), at most 100 that pass the
@@ -313,14 +320,14 @@ void LampGlows::add(render::ScreenBatch& b, const SDL_FRect& rect, const render:
                 add_sprite(b, glow_, k.px, k.py, glow_r, glow_r, rgb);
             }
         }
-        // Halo: the disc mesh of the halo size at the pulled point, depth-tested there (a ray
-        // here), colour x gain x 0.5 at full visibility, not scaled by D.
+        // Halo: the disc mesh of the halo size at the pulled point, depth-tested there (by the
+        // view, or a ray at its centre), colour x gain x 0.5 at full visibility, not scaled by D.
         if (ty.halo > 0 && ty.halo_gain > 0 && z > 1 && zp > 0) {
             float halo_r = ty.halo * fr.per_metre(zp, rect.h);
-            if (halo_r > 0.5f && !blocked(eye, eye + (l.pos - eye) * (zp / z))) {
+            if (halo_r > 0.5f && (proj || !blocked(eye, eye + (l.pos - eye) * (zp / z)))) {
                 const float c = ty.intensity * att * ty.halo_gain * 0.5f, f = zp / z;
                 Flare::add_mesh(Flare::disc_mesh(), b, fr, rect, k.v.x * f, k.v.y * f, zp, ty.halo, ty.halo,
-                                {ty.rgb[0] * c, ty.rgb[1] * c, ty.rgb[2] * c}, 1.0f);
+                                {ty.rgb[0] * c, ty.rgb[1] * c, ty.rgb[2] * c}, 1.0f, proj ? clip_depth(*proj, zp) : 1.0f);
             }
         }
     }
@@ -376,7 +383,8 @@ void CarLampGlows::draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Ma
 }
 
 void CarLampGlows::add(render::ScreenBatch& b, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
-                       const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked) const {
+                       const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked,
+                       const render::Mat4* proj) const {
     if (!active_) return;
     const LampType& ty = type_;
     auto c8 = [](float v) { return float(u8(std::clamp(v, 0.0f, 1.0f) * 255.0f)) / 255.0f; };
@@ -438,9 +446,9 @@ void CarLampGlows::add(render::ScreenBatch& b, const SDL_FRect& rect, const rend
                 add_sprite(b, glow_, px, py, glow_r, glow_r, rgb);
             }
         }
-        // Halo: the disc mesh at the pulled point (depth-tested there; a ray here), colour x gain x
-        // 0.5 at full visibility, not scaled by D or I. Bar lamps: an ellipse along the lamp's
-        // projected x axis.
+        // Halo: the disc mesh at the pulled point (depth-tested there: by the view, or a ray at its
+        // centre), colour x gain x 0.5 at full visibility, not scaled by D or I. Bar lamps: an
+        // ellipse along the lamp's projected x axis.
         float hx = ty.halo * l.a, hy = hx; // metres
         if (bar) {
             render::Vec3 xa = normalize(xdir(car.model, l.xaxis));
@@ -449,10 +457,10 @@ void CarLampGlows::add(render::ScreenBatch& b, const SDL_FRect& rect, const rend
             hy = ty.halo * l.b;
         }
         if (ty.halo_gain > 0 && z > 1 && (hx * per_m > 0.5f || hy * per_m > 0.5f) &&
-            !blocked(eye, eye + (car.model.transform_point(l.pos) - eye) * f)) {
+            (proj || !blocked(eye, eye + (car.model.transform_point(l.pos) - eye) * f))) {
             const float k = ty.halo_gain * 0.5f;
             Flare::add_mesh(Flare::disc_mesh(), b, fr, rect, gv.x * f, gv.y * f, zp, hx, hy,
-                            {col[0] * k, col[1] * k, col[2] * k}, 1.0f);
+                            {col[0] * k, col[1] * k, col[2] * k}, 1.0f, proj ? clip_depth(*proj, zp) : 1.0f);
         }
     };
     for (const Car& car : cars) {
