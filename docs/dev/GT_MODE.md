@@ -769,7 +769,13 @@ ours: Settings-style pages over a save of the library (Career, Garage, Licenses,
 Arcade). Its changes (`game/save_edit.h`, `GtMode::add_car` / `remove_car`) keep the state
 consistent the way the game does (wins never exceed races, a medal's best time earns that
 medal, the licence card follows the licence, the ride car follows a removal) but play
-nothing: no prize car or prize money is given for a result set by hand. It edits
+nothing: no prize money is given for a result set by hand, and no prize car until Receive
+prize cars (Licenses and Races pages) gives every set the results earn
+(`GtMode::earned_prizes` / `award_earned_prizes`: the conditions of `award_prizes` without
+the checked code, prize flags respected, rolled as one car_get check rolls them). GT3 itself
+checks a series' set only with a win in that series and a licence set only with that
+licence's test, so results set by hand earn nothing there until
+such a win. It edits
 the save being played as the session has it (`editable_save`: it can be a race ahead of
 its file), and `store_edited_save` writes the file and hands the running game the edit.
 

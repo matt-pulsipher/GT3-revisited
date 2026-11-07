@@ -34,6 +34,25 @@ bool ends(const std::string& s, const char* p) {
     return s.size() >= v.size() && s.compare(s.size() - v.size(), v.size(), v) == 0;
 }
 
+// The league of a league prize key (GtMode::league_complete's tier), null for another key.
+const char* league_key_tier(const std::string& key) {
+    if (key == "gtmode_beginner_complete") return "beginner";
+    if (key == "gtmode_amateur_complete") return "amateur";
+    if (key == "gtmode_pro_complete") return "pro";
+    if (key == "gtmode_dirt_complete") return "dirt";
+    if (key == "gtmode_enduro_complete") return "end";
+    return nullptr;
+}
+
+// The completion a completion prize key needs, 0 for another key: program constants 0.5,
+// 0.75 and 1.0.
+float completion_key_ratio(const std::string& key) {
+    if (key == "achieve_half") return 0.5f;
+    if (key == "achieve_3_quoter") return 0.75f;
+    if (key == "achieve_complete") return 1.0f;
+    return 0;
+}
+
 // Championship points per finishing place: program constant, the signed bytes read by
 // place (after them the program's data holds zeros, so places 7 and 8 score none).
 // The same table.
@@ -1463,20 +1482,13 @@ std::string GtMode::completion_file_text(float percent) {
 }
 
 std::vector<int> GtMode::award_prizes(const std::string& code) {
-    std::vector<int> got;
-    prize_rolls_.clear();
-    if (!prize_cars_) return got;
     const std::string series = code.size() > 4 ? code.substr(0, code.size() - 4) : code;
-    bool stirred = false;
-    for (const PrizeSet& set : data_->prizes) {
-        if (set.cars.empty()) continue;
+    return give_prizes([&](const PrizeSet& set) {
         const std::string& n = set.name;
         bool multi = set.cars.size() > 1;
         bool eligible = false;
         if (n == "arcade_compulsory_complete") {
-            // Every arcade time trial cleared (best rank 0).
-            eligible = true;
-            for (int r : state_.arcade.at_best_rank) eligible = eligible && r == 0;
+            eligible = time_trials_cleared();
         } else if (n == code) {
             // Championship (…_0500/_0700/_1000), endurance (E…_0001), license (L??0000) or a series set
             // named by the code itself: the caller has established the win.
@@ -1485,27 +1497,72 @@ std::vector<int> GtMode::award_prizes(const std::string& code) {
         } else if (ends(n, "_0000") && n.size() > 4 && n.substr(0, n.size() - 4) == series &&
                    license_index_of(n) < 0) {
             // Every race of the series won.
-            eligible = true;
-            for (const std::string& rc : data_->race_codes)
-                if (rc.size() == n.size() && rc.compare(0, series.size(), series) == 0 && !ends(rc, "_0000"))
-                    eligible = eligible && state_.best_position(rc) == 0;
+            auto [races, won] = series_results(n);
+            eligible = won == races;
         }
         // A league's key only with a code of that league (by the code's class; the G
         // codes' league by "_e_" / "_n_" / "_h_"): the league is complete.
-        else if (n == "gtmode_beginner_complete") eligible = code_league(code) == "beginner" && league_complete("beginner");
-        else if (n == "gtmode_amateur_complete") eligible = code_league(code) == "amateur" && league_complete("amateur");
-        else if (n == "gtmode_pro_complete") eligible = code_league(code) == "pro" && league_complete("pro");
-        else if (n == "gtmode_dirt_complete") eligible = code_league(code) == "dirt" && league_complete("dirt");
-        else if (n == "gtmode_enduro_complete") eligible = code_league(code) == "end" && league_complete("end");
+        else if (const char* tier = league_key_tier(n)) eligible = code_league(code) == tier && league_complete(tier);
         // The whole game: checked with a GT-mode code (not arcade), every GT-mode result won.
         else if (n == "gtmode_complete") eligible = gt_mode_code(code) && all_races_won();
-        // Completion at or over a program constant: 0.5, 0.75, 1.0
-        else if (n == "achieve_half") eligible = completion() >= 0.5f;
-        else if (n == "achieve_3_quoter") eligible = completion() >= 0.75f;
-        else if (n == "achieve_complete") eligible = completion() >= 1.0f;
-        if (!eligible) continue;
-        if (!multi && state_.prizes_given.count(n)) continue;
-        if (multi && n != code) continue;
+        // Completion at or over a program constant (completion_key_ratio).
+        else if (const float ratio = completion_key_ratio(n); ratio > 0) eligible = completion() >= ratio;
+        if (!eligible) return false;
+        if (!multi && state_.prizes_given.count(n)) return false;
+        return !multi || n == code;
+    });
+}
+
+std::vector<const PrizeSet*> GtMode::earned_prizes() const {
+    std::vector<const PrizeSet*> sets;
+    for (const PrizeSet& set : data_->prizes)
+        if (!set.cars.empty() && !state_.prizes_given.count(set.name) && prize_earned(set)) sets.push_back(&set);
+    return sets;
+}
+
+std::vector<int> GtMode::award_earned_prizes() {
+    return give_prizes([this](const PrizeSet& set) { return !state_.prizes_given.count(set.name) && prize_earned(set); });
+}
+
+// The conditions of award_prizes without the checked code: each key as a check by its own
+// result would find it (a series won by its last race, a league by a race of the league).
+bool GtMode::prize_earned(const PrizeSet& set) const {
+    const std::string& n = set.name;
+    if (n == "arcade_compulsory_complete") return time_trials_cleared();
+    if (int lic = license_index_of(n); lic >= 0) return license_all_gold(lic);
+    if (const char* tier = league_key_tier(n)) return league_complete(tier);
+    if (n == "gtmode_complete") return all_races_won();
+    if (const float ratio = completion_key_ratio(n); ratio > 0) return completion() >= ratio;
+    if (ends(n, "_0000")) {
+        auto [races, won] = series_results(n);
+        return races > 0 && won == races;
+    }
+    return state_.best_position(n) == 0; // a championship or endurance race: its own result
+}
+
+std::pair<int, int> GtMode::series_results(const std::string& set) const {
+    const size_t prefix = set.size() - 4; // (the set's name less its "0000")
+    int races = 0, won = 0;
+    for (const std::string& rc : data_->race_codes)
+        if (rc.size() == set.size() && rc.compare(0, prefix, set, 0, prefix) == 0 && !ends(rc, "_0000"))
+            ++races, won += state_.best_position(rc) == 0;
+    return {races, won};
+}
+
+bool GtMode::time_trials_cleared() const {
+    for (int r : state_.arcade.at_best_rank)
+        if (r != 0) return false;
+    return true;
+}
+
+std::vector<int> GtMode::give_prizes(const std::function<bool(const PrizeSet&)>& due) {
+    std::vector<int> got;
+    prize_rolls_.clear();
+    if (!prize_cars_) return got;
+    bool stirred = false;
+    for (const PrizeSet& set : data_->prizes) {
+        if (set.cars.empty() || !due(set)) continue;
+        const std::string& n = set.name;
         // The car_get control opens with a stir (gt_mode §20.3), even when the garage is full.
         if (!stirred) stir_random(), stirred = true;
         if (int(state_.garage.size()) >= kMaxGarageCars) { // garage full: nothing given

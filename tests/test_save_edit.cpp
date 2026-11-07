@@ -157,6 +157,59 @@ TEST(save_edit_race_results) {
     CHECK(s.race_best.empty() && gt.completion() == 0);
 }
 
+// The prize cars results set by hand have earned (public issue 210): none until a set's
+// condition holds; a series all won, a championship won, a licence all gold and the whole game
+// each give their car once, rolled as a check rolls it; a full garage takes none and they stay
+// earned; a set the game already gave is not earned again.
+TEST(save_edit_earned_prizes) {
+    const std::shared_ptr<GtData> data = world_data();
+    GtMode gt(data);
+    GameState& s = gt.state();
+    CHECK(gt.earned_prizes().empty() && gt.award_earned_prizes().empty());
+    set_race_best(s, "Gsyn_e_0001", 0);
+    CHECK(gt.earned_prizes().empty()); // one of the series' two races
+    set_race_best(s, "Gsyn_e_0002", 0);
+    std::vector<const PrizeSet*> due = gt.earned_prizes();
+    CHECK(due.size() == 1 && due[0]->name == "Gsyn_e_0000");
+    {
+        // The same car and (a fixed colour) paint as the series' own check, its last race won.
+        GtMode check(data);
+        check.state().race_best["Gsyn_e_0001"] = 0;
+        check.record_race("Gsyn_e_0002", 0);
+        std::vector<int> got = gt.award_earned_prizes();
+        CHECK(got.size() == 1 && s.garage.size() == 1 && check.state().garage.size() == 1);
+        CHECK(s.garage[0].car == w::kRacer && s.garage[0].color == check.state().garage[0].color);
+        CHECK(s.garage[0].origin == "Gsyn_e_0000" && gt.last_prize_rolls().size() == 1);
+    }
+    CHECK(s.prizes_given.count("Gsyn_e_0000") && s.prize_cars == 1 && s.ride == 0);
+    CHECK(gt.earned_prizes().empty() && gt.award_earned_prizes().empty() && s.garage.size() == 1);
+    // The championship, a licence all gold and (every result won) the whole game: in the gcf's order.
+    set_every_license_medal(gt, Medal::Gold);
+    win_every_race(gt);
+    due = gt.earned_prizes();
+    CHECK(due.size() == 3 && due[0]->name == "Gsynch_n_0500" && due[1]->name == "L0B0000" &&
+          due[2]->name == "gtmode_complete");
+    // A full garage: nothing given, still earned.
+    GtMode full(data);
+    full.state() = s;
+    while (int(full.state().garage.size()) < kMaxGarageCars) CHECK(full.add_car(w::kWagon, 0) == 0);
+    CHECK(full.award_earned_prizes().empty() && full.take_prizes_refused() == 3 && full.earned_prizes().size() == 3);
+    std::vector<int> got = gt.award_earned_prizes();
+    CHECK(got.size() == 3 && s.garage.size() == 4 && s.prize_cars == 4 && gt.take_prizes_refused() == 0);
+    CHECK(s.garage[size_t(got[0])].origin == "Gsynch_n_0500" && s.garage[size_t(got[1])].origin == "L0B0000");
+    CHECK(s.garage[size_t(got[2])].origin == "gtmode_complete" && s.garage[size_t(got[2])].car == w::kCoupe);
+    CHECK(gt.earned_prizes().empty());
+    // Results cleared and set again: the sets were given, nothing more.
+    clear_race_results(s);
+    win_every_race(gt);
+    CHECK(gt.earned_prizes().empty() && gt.award_earned_prizes().empty() && s.garage.size() == 4);
+    // Not with prize cars off (a copy of the game).
+    GtMode copy(data);
+    copy.set_prize_cars(false);
+    win_every_race(copy);
+    CHECK(copy.earned_prizes().size() == 3 && copy.award_earned_prizes().empty() && copy.state().garage.empty());
+}
+
 // Every arcade course group (SINGLE_RACE levels 0 and 1: level 2) and car level open; an open
 // game stays as open as it is.
 TEST(save_edit_arcade) {
