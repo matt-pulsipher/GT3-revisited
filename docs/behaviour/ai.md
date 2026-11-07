@@ -1055,6 +1055,7 @@ The public tests that drive the AI (the disc tests need the player's disc, `GT3R
 | `race_field_event` | an arcade event on Trial Mountain: five opponents from the event, the player's car held through the 10 s countdown and moving after GO, six standings |
 | `exact_game_solo_modes` | the time trial's AI run-up and its hand-back, one timed lap ending the run; a license test judged; the 0–400 m machine test; a free run whose ghost car is put back on its recording at each crossing; free practice running laps |
 | `exact_game_free_run_visit` | a free run's ghost kept from run to run of a visit, and a loaded ghost |
+| `exact_game_free_run_ghost_option_off` | with the Ghost option off a free run's better lap leaves the ghost as it is (none yet: no ghost car shown); "Update Ghost?" YES gives the next run the ghost |
 | `exact_replay_round_trip` | races recorded through the race screen (on the pad, from inputs, a split-screen battle, a race demonstration with the AI's take-over, the autopilot) replay to the same race, every car record equal |
 | `exact_replay_ghost` | a time trial's whole-run ghost drives the earlier run again from its pad frames |
 | `exact_demo_records` | the disc's demonstrations built as race records, through a replay file, play on the race; each ends on the time its save records (every one on the NTSC-U and NTSC-J discs; on the PAL disc's data all but the AT02 time trial) |

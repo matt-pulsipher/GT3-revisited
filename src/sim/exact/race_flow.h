@@ -114,8 +114,11 @@ struct FreeRunRecorder {
     u32 ghost_time = kNoTime; // its header's lap time
     const Snapshot* ghost_start = nullptr; // its header (of its +0xC4): the ghost car's lap start
     // The lap recording's header (of +0x128): the lap's start (lap_start at the last crossing). A lap that becomes the
-    // ghost (RecorderEvent::ghost) is the ghost car's start at once.
+    // ghost at once (RecorderEvent::ghost with the Ghost option on) is the ghost car's start at once.
     const Snapshot* lap_start = nullptr;
+    // The Options menu's Ghost: off, a lap that beats the ghost leaves the ghost's playback as it is (empty, or the
+    // old lap) until "Update Ghost?" after the run.
+    bool ghost_option = true;
 };
 // What the free run's lap handlers do to the recorders, in order.
 struct RecorderEvent {
