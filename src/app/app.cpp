@@ -71,6 +71,13 @@ bool App::init(int argc, char** argv) {
     // Silent switch, and other apps' music paused while the game plays. SDL's own default there
     // (Playback, mixed with others) played on with the switch on silent.
     SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "AVAudioSessionCategorySoloAmbient");
+#ifdef SDL_PLATFORM_ANDROID
+    // Logitech wheels' force feedback (G29 in PS3 mode, G27, G25, Driving Force GT): Android plays none
+    // for them, so SDL's Logitech driver talks to the wheel over USB itself. SDL leaves its USB drivers
+    // off on Android, where opening one asks the player for permission; this one alone is on. Refused,
+    // the wheel steers as before, without force feedback.
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_LG4FF, "1");
+#endif
 #ifdef SDL_PLATFORM_WINDOWS
     // Xbox pads through SDL's RAWINPUT driver, for their impulse triggers, unless [input] xbox_driver = xinput:
     // SDL takes it as it starts its joysticks, so it is read from the config here.

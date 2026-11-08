@@ -19,7 +19,7 @@ Builds with `GT3R_XR` (the Quest APK, `-Pquest`; the Windows package
 | Quest 2 / 3S / Pro | ⚠️ unverified (same APK; Quest 2 has less GPU headroom: lower `[vr] resolution` if it misses frames) |
 | Linux + Monado (simulated headset) | ✅ the session, swapchains, frames and stereo races run under Monado's null compositor (below); used for testing without a headset |
 | PC VR (Quest Link, SteamVR) | ✅ played by hand on a Quest 3 over Quest Link (USB). Under SteamVR's null headset on an RTX 3080, with Meta's as the system's runtime: stereo races (~120 fps at 1852x2056 per eye), auto takes the running SteamVR, `runtime = steamvr` starts it, and SteamVR makes a `frame_controller` binding from ours. The window, its mouse and Recenter view also under Monado on Linux |
-| Wheel and force feedback in VR | ⚠️ unverified on a real wheel: they use the desktop's input, and SDL opens force feedback for use without window focus |
+| Wheel and force feedback in VR | ⚠️ unverified on a real wheel: they use the desktop's input, and SDL opens force feedback for use without window focus. On the Quest, players report a G29 in PS3 mode steers with no force feedback; force feedback there comes only from SDL's Logitech USB driver (G29 in PS3 mode, G27, G25, Driving Force GT; [INPUT](../INPUT.md#force-feedback-ffb)) |
 | Index, Vive, Windows Mixed Reality and Steam Frame controllers | ⚠️ unverified: bindings suggested from the OpenXR specification (the Steam Frame's from Valve's) |
 | Car body in the in-car view (`[vr] car_body`) | ❌ off by default: GT3's car models have inward-facing cabin panels, which wall the eye in black |
 

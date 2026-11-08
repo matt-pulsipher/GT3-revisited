@@ -483,6 +483,11 @@ GT3 sends a wheel one constant force a frame and no spring, and never touches th
 
 The game's **GT FORCE** option switches a wheel's force for its player, as in GT3; **Vibration** doesn't, and switches the triggers.
 
+**Android and the Quest** play no force feedback on wheels themselves. A Logitech G29 (in PS3
+mode), G27, G25 or Driving Force GT on USB gets it from SDL's own Logitech driver, which talks to
+the wheel directly: the first time, Android asks whether GT3 Revisited may use the wheel. Refused,
+and on other wheels, the wheel steers without force feedback.
+
 Effects stop by themselves ~0.25 s after the last update (pause, menus).
 The brake and throttle triggers are found from the race bindings: whichever of
 `pad.lefttrigger` / `pad.righttrigger` drives Square (brake) and Cross (accelerate).
