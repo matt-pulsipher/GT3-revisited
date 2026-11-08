@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <numbers>
 #include <optional>
 #include <utility>
 
@@ -191,6 +192,7 @@ TouchConfig TouchConfig::load(const IniDocument& ini) {
     c.pedal_min = parse_float(get("pedal_min"), c.pedal_min, 0.0f, 1.0f);
     c.steer_range = parse_float(get("steer_range"), c.steer_range, 0.03f, 0.5f);
     if (auto v = get("look")) c.look = to_lower(*v) != "off" && *v != "0";
+    c.tilt_range = parse_float(get("tilt_range"), c.tilt_range, 10.0f, 90.0f);
     c.tilt_deadzone = parse_float(get("tilt_deadzone"), c.tilt_deadzone, 0.0f, 0.5f);
     c.opacity = parse_float(get("opacity"), c.opacity, 0.05f, 1.0f);
     c.size = parse_float(get("size"), c.size, 0.6f, 1.6f);
@@ -211,6 +213,7 @@ void TouchConfig::save(IniDocument& ini) const {
     ini.set("touch", "pedal_min", format_float(pedal_min));
     ini.set("touch", "steer_range", format_float(steer_range));
     ini.set("touch", "look", look ? "drag" : "off");
+    ini.set("touch", "tilt_range", format_float(tilt_range));
     ini.set("touch", "tilt_deadzone", format_float(tilt_deadzone));
     ini.set("touch", "opacity", format_float(opacity));
     ini.set("touch", "size", format_float(size));
@@ -648,7 +651,7 @@ bool TouchControls::visible() const {
 // Pad output
 // ---------------------------------------------------------------------------
 
-void TouchControls::update(double, float tilt) {
+void TouchControls::update(double, float roll) {
     pad_ = PadState{};
     for (Widget& w : widgets_) {
         w.active = false;
@@ -707,10 +710,12 @@ void TouchControls::update(double, float tilt) {
         }
     }
     if (layout_ == TouchLayout::Driving && cfg_.steering == TouchConfig::Steering::Tilt) {
-        float m = std::fabs(tilt);
+        // tilt_range degrees of roll steer to full lock.
+        float x = std::clamp(roll / (cfg_.tilt_range * std::numbers::pi_v<float> / 180.0f), -1.0f, 1.0f);
+        float m = std::fabs(x);
         float dz = cfg_.tilt_deadzone;
         m = m <= dz ? 0.0f : std::min((m - dz) / (1.0f - dz), 1.0f);
-        lx = std::copysign(m, tilt);
+        lx = std::copysign(m, x);
         for (Widget& w : widgets_)
             if (w.kind == Widget::Kind::Steering) w.value = lx;
     }

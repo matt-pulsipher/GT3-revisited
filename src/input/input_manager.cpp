@@ -686,6 +686,7 @@ void InputManager::update_tilt(Player& p, const Device* dev) {
     if (!ok) return;
     // Roll around the axis pointing at the player (clockwise = right).
     float roll = platform::steering_roll(accel);
+    p.tilt_roll = roll;
     p.tilt = std::clamp(roll / kTiltRange, -1.0f, 1.0f);
 }
 

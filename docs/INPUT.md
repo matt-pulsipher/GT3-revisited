@@ -530,11 +530,12 @@ Each screen picks a layout:
 ```ini
 [touch]
 mode = auto            ; auto | on | off
-steering = drag        ; drag | tilt (roll the device like a wheel, ±45° = full lock) | buttons (Left / Right)
+steering = drag        ; drag | tilt (roll the device like a wheel) | buttons (Left / Right)
 pedals = position      ; position | area (touch pressure/size, where the screen reports it) | full
 pedal_min = 0.35       ; pressure at the bottom of a pedal (position mode)
 steer_range = 0.14     ; drag distance for full lock, fraction of the screen width
 look = drag            ; drag (a finger on the open screen looks around) | off
+tilt_range = 45        ; tilt steering: degrees of roll for full lock
 tilt_deadzone = 0.04   ; fraction of full lock
 opacity = 0.50
 size = 1.00            ; 0.6 .. 1.6

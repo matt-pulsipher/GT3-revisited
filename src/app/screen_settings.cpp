@@ -1859,6 +1859,12 @@ private:
                    n.look = v;
                    apply(n);
                });
+        slider("Tilt range", "Tilt steering: roll the device this far for full lock.", c.tilt_range, 10, 90,
+               1.0f, std::to_string(int(std::lround(c.tilt_range))) + " deg", [apply, c](float v) {
+                   TouchConfig n = c;
+                   n.tilt_range = v;
+                   apply(n);
+               });
         slider("Tilt deadzone", "Tilt steering ignores this much turn around the centre.", c.tilt_deadzone, 0, 0.5f,
                0.01f, percent(c.tilt_deadzone), [apply, c](float v) {
                    TouchConfig n = c;

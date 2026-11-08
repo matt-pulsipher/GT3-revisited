@@ -380,7 +380,7 @@ bool TouchOverlay::event(const SDL_Event& e) {
 
 void TouchOverlay::update(double dt, TouchLayout layout, InputManager& input) {
     controls_.set_layout(layout);
-    controls_.update(dt, input.tilt(0));
+    controls_.update(dt, input.tilt_roll(0));
     input.set_overlay(0, controls_.pad());
 }
 

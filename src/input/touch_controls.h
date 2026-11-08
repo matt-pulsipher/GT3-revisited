@@ -28,6 +28,7 @@ class IniDocument;
 //   steer_range = 0.14     ; drag distance for full lock, as a fraction of screen width
 //   look       = drag      ; drag: a finger put down on the open screen, clear of the controls,
 //                          ; looks around (the race pad's right stick; let go: ahead); off
+//   tilt_range = 45        ; tilt steering: degrees of roll for full lock
 //   tilt_deadzone = 0.04   ; tilt steering deadzone (fraction of full lock)
 //   opacity    = 0.5       ; 0..1
 //   size       = 1.0       ; control size multiplier (0.6 .. 1.6)
@@ -83,6 +84,7 @@ struct TouchConfig {
     float pedal_min = 0.35f;
     float steer_range = 0.14f;
     bool look = true; // [touch] look = drag
+    float tilt_range = 45.0f;  // degrees of roll for full lock (tilt steering)
     float tilt_deadzone = 0.04f;
     float opacity = 0.5f;
     float size = 1.0f;
@@ -195,8 +197,9 @@ public:
     void note_other_input();
     bool visible() const;
 
-    // `tilt` is the device roll, -1..1 = full lock (InputManager::tilt).
-    void update(double dt, float tilt);
+    // `roll` is the device roll in radians (InputManager::tilt_roll): tilt_range
+    // degrees of it is full lock with tilt steering.
+    void update(double dt, float roll);
     // Contribution to player 1's pad; neutral when hidden.
     const PadState& pad() const { return pad_; }
     // An action control pressed down in the last update() (one frame per press).

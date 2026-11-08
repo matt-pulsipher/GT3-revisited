@@ -133,6 +133,8 @@ public:
     void set_overlay(int player, const PadState& overlay) { players_[player].overlay = overlay; }
     // Device/controller roll for this player, -1..1 = full lock (the `tilt` source).
     float tilt(int player) const { return players_[player].tilt; }
+    // The same roll unclamped, in radians (the touch controls normalize it by their own range).
+    float tilt_roll(int player) const { return players_[player].tilt_roll; }
     void set_rumble(int player, const PadRumble& rumble);
     // Phone vibration (see use_phone_vibrator). Available on Android, where SDL exposes the
     // device's vibrator as a haptic device.
@@ -324,7 +326,8 @@ private:
         std::vector<float> race_ramps;  // parallel to the race pad's bindings
         PadState race_state;
         PadRumble rumble;
-        float tilt = 0.0f;
+        float tilt = 0.0f;      // roll / 45 degrees, clamped: the `tilt` source
+        float tilt_roll = 0.0f; // the same roll unclamped, in radians (touch steering)
         PadState overlay; // set_overlay()
         ActionBindings actions;
         u8 actions_held = 0, actions_pressed = 0; // bit (1 << PadAction)
