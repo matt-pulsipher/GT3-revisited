@@ -66,6 +66,26 @@ TEST(platform_tilt_landscape_phone_reading) {
     CHECK(std::fabs(platform::steering_roll(raw)) > 1.5f);
 }
 
+TEST(platform_tilt_roll_filter) {
+    const double dt = 1.0 / 60.0;
+    // The first sample goes through as it is (no pull from a zero start).
+    platform::RollFilter first;
+    CHECK(first.filter(0.3f, dt) == 0.3f);
+    // Sensor jitter on a still phone is smoothed to almost nothing.
+    platform::RollFilter still;
+    still.filter(0.0f, dt);
+    float worst = 0.0f;
+    for (int i = 0; i < 120; ++i)
+        worst = std::max(worst, std::fabs(still.filter(i % 2 ? -0.01f : 0.01f, dt)));
+    CHECK(worst < 0.005f);
+    // A real turn is followed fast: half a radian is there within a few frames.
+    platform::RollFilter turn;
+    turn.filter(0.0f, dt);
+    float out = 0.0f;
+    for (int i = 0; i < 10; ++i) out = turn.filter(0.5f, dt);
+    CHECK(out > 0.45f);
+}
+
 TEST(platform_render_scale) {
     CHECK(!platform::parse_render_scale("auto"));
     CHECK(!platform::parse_render_scale(""));

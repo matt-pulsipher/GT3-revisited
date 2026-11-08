@@ -672,7 +672,7 @@ std::optional<InputManager::CapturedInput> InputManager::poll_capture() {
     return out;
 }
 
-void InputManager::update_tilt(Player& p, const Device* dev) {
+void InputManager::update_tilt(Player& p, const Device* dev, double dt) {
     float accel[3] = {0, 0, 0};
     bool ok = false;
     if (dev && dev->has_accel) {
@@ -684,8 +684,9 @@ void InputManager::update_tilt(Player& p, const Device* dev) {
         ok = true;
     }
     if (!ok) return;
-    // Roll around the axis pointing at the player (clockwise = right).
-    float roll = platform::steering_roll(accel);
+    // Roll around the axis pointing at the player (clockwise = right), smoothed:
+    // unfiltered accelerometer jitter trembles the steering and the meter.
+    float roll = p.tilt_filter.filter(platform::steering_roll(accel), dt);
     p.tilt_roll = roll;
     p.tilt = std::clamp(roll / kTiltRange, -1.0f, 1.0f);
 }
@@ -757,7 +758,7 @@ bool InputManager::idle_centred(const Player& p, const Device* dev, const InputS
 void InputManager::evaluate(Player& p, double dt) {
     const Device* dev = find_device(p.device);
     const bool keyboard = keyboard_active(int(&p - players_.data()));
-    update_tilt(p, dev);
+    update_tilt(p, dev, dt);
     evaluate_profile(p, dev, keyboard, p.menu, p.ramp_values, p.state, dt);
     evaluate_profile(p, dev, keyboard, p.race_reads_menu ? p.menu : p.race, p.race_ramps, p.race_state, dt, true);
     // The steering curve: the race's steering only (the menus read the stick as it is).

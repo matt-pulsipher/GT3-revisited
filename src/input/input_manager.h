@@ -2,6 +2,7 @@
 
 #include "input/bindings.h"
 #include "input/force_feedback.h"
+#include "platform/device_tilt.h"
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
@@ -328,6 +329,7 @@ private:
         PadRumble rumble;
         float tilt = 0.0f;      // roll / 45 degrees, clamped: the `tilt` source
         float tilt_roll = 0.0f; // the same roll unclamped, in radians (touch steering)
+        platform::RollFilter tilt_filter; // the roll's smoothing: sensor jitter
         PadState overlay; // set_overlay()
         ActionBindings actions;
         u8 actions_held = 0, actions_pressed = 0; // bit (1 << PadAction)
@@ -369,7 +371,7 @@ private:
     // A chord capture's new input (from an event or a moved axis), if it fits the chord.
     void add_chord_input(const InputSource& s);
     void update_chord_capture();
-    void update_tilt(Player& p, const Device* dev);
+    void update_tilt(Player& p, const Device* dev, double dt);
     // SDL trigger axis bound to a pedal (Square the brake, Cross the throttle), or -1.
     int pedal_trigger(const Player& p, PadButton pedal) const;
     void vibrate_phone(float strength);       // 0 stops it

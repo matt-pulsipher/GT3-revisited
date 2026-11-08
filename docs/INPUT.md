@@ -282,7 +282,7 @@ Circle Cross Square`, and the axes `LX LY RX RY`, optionally as halves
 | `joy.axis<N>[+/-]` | Raw joystick axis (wheels and pedals) |
 | `joy.button<N>` | Raw joystick button |
 | `joy.hat<N>.<up/down/left/right>` | Joystick hat direction |
-| `tilt[+/-]` | Controller roll from the accelerometer (±45° = full lock; turning clockwise = positive). On phones and tablets the reading is remapped to the current screen orientation |
+| `tilt[+/-]` | Controller roll from the accelerometer (±45° = full lock; turning clockwise = positive). On phones and tablets the reading is remapped to the current screen orientation; sensor jitter is smoothed (a 1€ filter) |
 | `mouse.<left/right/middle>` | Mouse button |
 
 **Options** (after a source):

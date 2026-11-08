@@ -3,10 +3,24 @@
 #include <SDL3/SDL_video.h>
 
 #include <cmath>
+#include <numbers>
 
 namespace gt3r::platform {
 
 namespace {
+
+// RollFilter's tuning: how hard a nearly still roll is smoothed (Hz), how much
+// a moving one opens the filter per rad/s of speed, and the smoothing of that
+// speed estimate itself.
+constexpr float kMinCutoff = 1.0f;
+constexpr float kBeta = 2.0f;
+constexpr float kRateCutoff = 1.0f;
+
+// Weight of one sample in an exponential low-pass at `cutoff` Hz, `dt` apart.
+float euro_alpha(float cutoff, float dt) {
+    const float tau = 1.0f / (2.0f * std::numbers::pi_v<float> * cutoff);
+    return 1.0f / (1.0f + tau / dt);
+}
 
 int orientation_degrees(SDL_DisplayOrientation o) {
     switch (o) {
@@ -45,6 +59,19 @@ void accel_to_display(const float in[3], float out[3], int rotation_degrees) {
 float steering_roll(const float a[3]) {
     // Turning clockwise moves the "up" reading towards the display's -X.
     return std::atan2(-a[0], std::sqrt(a[1] * a[1] + a[2] * a[2]));
+}
+
+float RollFilter::filter(float roll, double dt) {
+    if (dt <= 0.0) return roll;
+    if (!primed_) {
+        x_ = roll, dx_ = 0.0f, primed_ = true;
+        return x_;
+    }
+    const float fdt = static_cast<float>(dt);
+    const float speed = (roll - x_) / fdt;
+    dx_ += euro_alpha(kRateCutoff, fdt) * (speed - dx_);
+    x_ += euro_alpha(kMinCutoff + kBeta * std::fabs(dx_), fdt) * (roll - x_);
+    return x_;
 }
 
 } // namespace gt3r::platform
