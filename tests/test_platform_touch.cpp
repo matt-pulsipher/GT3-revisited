@@ -1045,6 +1045,20 @@ TEST(input_wheel_identified) {
     CHECK(!is_wheel(SDL_JOYSTICK_TYPE_GAMEPAD, true) && !is_wheel(SDL_JOYSTICK_TYPE_FLIGHT_STICK, true));
 }
 
+// SDL's Logitech driver (macOS, Linux, Android) sends a G29's, G27's or G25's pedals as axes 2 gas,
+// 3 brake, 1 clutch; the wheel layout's are 1 gas, 2 brake, as on Windows, where SDL leaves the
+// wheel to DirectInput. Read through that driver, the clutch accelerated and the gas braked.
+TEST(input_logitech_driver_pedals) {
+    CHECK(logitech_driver_pedals(0x046d, 0xc24f, 'h')); // G29
+    CHECK(logitech_driver_pedals(0x046d, 0xc29b, 'h') && logitech_driver_pedals(0x046d, 0xc299, 'h')); // G27, G25
+    CHECK(!logitech_driver_pedals(0x046d, 0xc24f, 0));     // the same wheel through the system's input
+    CHECK(!logitech_driver_pedals(0x046d, 0xc29a, 'h'));   // Driving Force GT: gas 1, brake 2 already
+    CHECK(!logitech_driver_pedals(0x346e, 0xc24f, 'h'));   // another maker
+    CHECK(logitech_driver_axis(0) == 0);                   // steering
+    CHECK(logitech_driver_axis(1) == 2 && logitech_driver_axis(2) == 3 && logitech_driver_axis(3) == 1);
+    CHECK(logitech_driver_axis(4) == 4);
+}
+
 // A wheel earlier versions took for a joystick keeps what was bound on it, without the stick's dead
 // zone; one that already has wheel bindings keeps those.
 TEST(input_wheel_adopts_joystick_sets) {
