@@ -826,6 +826,8 @@ private:
     bool dof_off_ = SDL_getenv("GT3R_NO_DOF") != nullptr; // compare without the replay depth of field
     bool dof_pyramid_ = false; // [video] depth_of_field = standard (App::depth_of_field)
     bool heat_haze_ = false; // [video] heat_haze = on (default off): replays' heat haze lenses
+    bool vignette_ = true;   // [video] replay_vignette = off (default on): no replay vignette
+    bool trail_ = true;      // [video] replay_trail = off (default on): no trail in replay view mode 1
     LampGlows lamps_;
     // The passes between the 3D scene and the grade, and the replay vignette (presentation §L6):
     // the heat haze lenses (stepped every 60 Hz tick), and this frame's batches for View3D.

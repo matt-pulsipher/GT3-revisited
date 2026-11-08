@@ -2136,7 +2136,8 @@ camera, §G15) the shot gets a trail: the last picture shown is drawn over the n
 one at weight min(timer, 0.8) (rounded down to 1/128), so moving things smear;
 the last picture holds its own trail. The timer is 0.5 .. 2.0 at the cut; with
 p = 0.5 it falls by 0.02 a frame and the trail ends once it is below 0, otherwise
-it stays.
+it stays. Ours: on unless the player turns it off (Settings → Display → Motion trail in
+replays, `[video] replay_trail`).
 
 Both are drawn by the full-screen pass (§G6) after the grade: the graded picture,
 the replay vignette (§L6), then the frozen picture at the dissolve's weight, then
@@ -3008,7 +3009,8 @@ radius in pixels of the 640 x 448 frame, +0x958 RGBA) to an inner one (+0x954,
 +0x968), blended over the picture; inside the inner circle nothing changes. Most
 courses: 420 / 200, black at 0.4 outside, clear inside, so the corners are about
 35 % darker. Grand Valley, Seattle, Smokey Mountain North and the Tahiti courses
-have none. Ours: `race::vignette_ring` (test `race_vignette_ring`).
+have none. Ours: `race::vignette_ring` (test `race_vignette_ring`); on unless the player
+turns it off (Settings → Display → Vignette in replays, `[video] replay_vignette`).
 
 ### §L7 Sparks
 

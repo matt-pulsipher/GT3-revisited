@@ -29,6 +29,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
     full_car_detail_ = app.full_car_detail();
     showroom_wheels_ = app.showroom_wheels();
     heat_haze_ = to_lower(app.config().get("video", "heat_haze").value_or("off")) == "on";
+    vignette_ = to_lower(app.config().get("video", "replay_vignette").value_or("on")) != "off";
+    trail_ = to_lower(app.config().get("video", "replay_trail").value_or("on")) != "off";
     dof_off_ = dof_off_ || app.depth_of_field() == "off";
     dof_pyramid_ = app.depth_of_field() == "standard";
     // [video] original_res = on: the 3D scene at the PS2's 640x448 in a 4:3 frame,
