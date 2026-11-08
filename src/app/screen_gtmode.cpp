@@ -154,6 +154,7 @@ public:
 private:
     struct Loaded {
         std::unique_ptr<render::GpuModel> model;
+        std::unique_ptr<render::GpuModel> shadow; // node 6 on the floor (null when the file has none)
         float bmin[3]{}, bmax[3]{};
     };
     struct Targets {
@@ -185,6 +186,13 @@ private:
     float game_aspect(const SDL_FRect& page) const {
         const float a = page.w / std::max(page.h, 1.0f);
         return canvas_ ? a * canvas_->scale_y() / canvas_->scale_x() : a;
+    }
+    // A car's floor shadow at `t`: drawn whole before the cars' opaque meshes (it writes no
+    // depth, so the body and wheels drawn after it cover it, as in GT3).
+    static render::DrawItem shadow_item(const render::GpuModel* shadow, const render::Mat4& t) {
+        render::DrawItem it{shadow, t, 0};
+        it.in_order = true;
+        return it;
     }
     // While it lives the canvas's picture is the render target.
     struct InPicture {
@@ -349,8 +357,13 @@ private:
             o.clear[0] = o.clear[1] = o.clear[2] = bg;
             o.clear[3] = 1;
             render::View3D& v = bg > 0.5f ? *view_white_ : *view_black_;
+            // GT3 draws the floor shadow (node 6, colour bias 0 and scale 1: its own texture and
+            // vertex colours) in every car pass, before the body, and never in the mirror.
+            std::vector<render::DrawItem> items;
+            if (m.shadow) items.push_back(shadow_item(m.shadow.get(), {}));
+            items.push_back({m.model.get(), {}, 0});
             jittered(r, tex, w, h, passes, [&](const render::Mat4& pj) {
-                v.draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, pj, eye, {{m.model.get(), {}, 0}}, o);
+                v.draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, pj, eye, items, o);
             });
         }, fade);
     }
@@ -423,7 +436,15 @@ private:
             for (size_t i = 0; i < sc.cars.size(); ++i) {
                 const game::CarGetScene::Car& c = sc.cars[i];
                 if (c.lit != lit || !models[i]) continue;
-                render::DrawItem it{models[i]->model.get(), render::translate({c.x, c.y, c.z}) * render::rotate_y(c.heading * d2r), 0};
+                const render::Mat4 at = render::translate({c.x, c.y, c.z}) * render::rotate_y(c.heading * d2r);
+                // The floor shadow twice, as the page draws it (gt_mode §10.1): the showroom's
+                // (colour bias 0, scale 1), then the race's contact shadow with its colour set to
+                // black at alpha 1 (the same colours), lifted 2 cm.
+                if (const render::GpuModel* sh = models[i]->shadow.get()) {
+                    items.push_back(shadow_item(sh, at));
+                    items.push_back(shadow_item(sh, at * render::translate({0, 0.02f, 0})));
+                }
+                render::DrawItem it{models[i]->model.get(), at, 0};
                 it.tint = lit ? sc.shade : 0.0f;
                 it.reflection_scale = it.tint;
                 items.push_back(it);
@@ -685,6 +706,7 @@ private:
             CarModelOptions opt;
             opt.lod = 0;
             opt.menu_tyres = true;
+            opt.floor_shadow = true;
             opt.paint = paint;
             race::CarSetup setup = race::car_setup_from_database(s->gt().db(), car);
             opt.wheel_spec = setup.wheels;
@@ -703,6 +725,13 @@ private:
                     return race_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model, rim);
                 };
             scene::Model m = load_car_model(*file, opt, model);
+            // The floor shadow (node 6) is drawn on its own, on the floor: it stays out of the
+            // ride-height lift, the floor mirror and the car's framing (menus §9.5).
+            auto is_shadow = [](const scene::Mesh& mesh) { return mesh.name == "node6"; };
+            scene::Model shadow = scene::extract(m, is_shadow);
+            std::erase_if(m.meshes, is_shadow);
+            m.compute_bounds();
+            if (!shadow.meshes.empty()) l.shadow = std::make_unique<render::GpuModel>(*app.gpu(), shadow);
             // Showroom pose: the body rides q (ride height, spec 0x5C) above the floor, the
             // wheels stay on it (wheel centres R - q below the body origin).
             if (auto spec = sim::build_car_spec(s->gt().db(), car)) {
@@ -717,6 +746,7 @@ private:
         } catch (const std::exception& ex) {
             LOG_WARN("gt mode: car %s: %s", car.c_str(), ex.what());
             l.model.reset();
+            l.shadow.reset();
         }
         return l.model ? &l : nullptr;
     }

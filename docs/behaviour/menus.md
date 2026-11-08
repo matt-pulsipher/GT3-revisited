@@ -1146,6 +1146,9 @@ page opens and side-on (yaw 90°) after about 7.4 s.
   arcade pages, or 38 frames on the GT Mode pages.
 - A mirrored floor reflection is added at 0.65 × the fade × (1 − the car's
   dirt). The `buycar` popup has no floor reflection.
+- The car's floor shadow is drawn under it in every pass, before the body,
+  and never in the reflection: node 6 of the menu car, a textured quad on the
+  floor, in its own texture and vertex colours (no shadow colour is added).
 - The car is drawn in 4 jittered passes that are averaged (2 for `split` and
   `compulsory`) to smooth its edges. GT3 Revisited draws one pass, and one
   reflection pass, on phones and tablets (Android, iOS:

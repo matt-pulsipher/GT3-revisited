@@ -1247,6 +1247,8 @@ prize-model flag (§3.2).
 - every candidate of the set stands on a slowly turning carousel, each turning on its own spot
   and shown as a black silhouette. A light on the floor marks the car the roulette is on: it
   comes on at once and fades out over 20 frames when the roulette moves on;
+- each car's floor shadow (the showrooms', see [menus.md](menus.md) §9.5) is drawn twice
+  under it, the second copy 2 cm above the first, so it is darker than in the showrooms;
 - the roulette rests on the first candidate for 120 frames, then moves from car to car at 0.1
   car a frame for 60 frames, then slows down (never below one car every 60 frames). It travels
   whole turns of the carousel (12 cars' worth for 2, 3 or 4 candidates) plus the way to the car
