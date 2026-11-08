@@ -19,6 +19,8 @@ int cmd_info(Disc& disc, const Args&) {
     std::printf("Volume ID : %s\nSerial    : %s\nVersion   : %s\nVideo     : %s\nStatus    : %s (%s)\n",
                 i.volume_id.c_str(), i.serial.c_str(), i.version.c_str(), i.video.c_str(),
                 i.verified ? "verified" : i.reported ? "reported working" : "unverified", i.description.c_str());
+    std::printf("Files     : %s%s\nDisc key  : %s\n", i.digest.c_str(), i.modified ? " (modified: not the release's)" : "",
+                i.key.c_str());
     CoreImage core = CoreImage::decode(disc.read_core_gt3());
     std::printf("CORE.GT3  : %zu bytes at 0x%08X, entry 0x%08X\n", core.program.size(), core.load_address,
                 core.entry_point);

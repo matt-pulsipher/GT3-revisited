@@ -2,6 +2,7 @@
 
 #include "base/config.h"
 #include "base/log.h"
+#include "base/sha256.h"
 #include "disc/core_image.h"
 #include "disc/chd_image.h"
 
@@ -16,20 +17,43 @@ struct KnownDisc {
     const char* serial;
     const char* version;
     const char* description;
+    const char* digest; // DiscInfo::digest of the release's own files; null when not known here
     bool tested = true; // false: a version players reported working
 };
 
 // Discs this project has been tested against, and ones players reported working. Add entries as
 // they are verified (see docs/COMPATIBILITY.md).
 constexpr KnownDisc kKnownDiscs[] = {
-    {"PBPX_955.03", "1.10", "Gran Turismo 3 A-Spec (NTSC-U/C)"},
-    {"SCUS_971.02", "1.00", "Gran Turismo 3 A-Spec (NTSC-U/C)"}, // same CORE.GT3 and GT3.VOL as 1.10
-    {"SCES_502.94", "1.00", "Gran Turismo 3 A-Spec (PAL)"},
-    {"SCES_502.94", "2.00", "Gran Turismo 3 A-Spec (PAL)", false},
-    {"SCPS_150.09", "1.01", "Gran Turismo 3 A-Spec (NTSC-J)"},
+    {"PBPX_955.03", "1.10", "Gran Turismo 3 A-Spec (NTSC-U/C)", "164c486ca0a61886"},
+    {"SCUS_971.02", "1.00", "Gran Turismo 3 A-Spec (NTSC-U/C)", "164c486ca0a61886"}, // same CORE.GT3 and GT3.VOL as 1.10
+    {"SCES_502.94", "1.00", "Gran Turismo 3 A-Spec (PAL)", "075246ad42a4b418"},
+    {"SCES_502.94", "2.00", "Gran Turismo 3 A-Spec (PAL)", nullptr, false},
+    {"SCPS_150.09", "1.01", "Gran Turismo 3 A-Spec (NTSC-J)", "059939eff137da8f"},
 };
 
+bool known_serial(std::string_view serial) {
+    for (const KnownDisc& k : kKnownDiscs)
+        if (serial == k.serial) return true;
+    return false;
+}
+
 } // namespace
+
+std::string short_serial(std::string_view serial) {
+    std::string out;
+    for (char c : serial)
+        if (c != '.') out += c == '_' ? '-' : c;
+    return out;
+}
+
+std::string disc_key(const DiscInfo& info) {
+    if (known_serial(info.serial)) return region_key(info.region);
+    std::string key;
+    for (char c : short_serial(info.serial)) // a folder name on every system
+        key += (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ? c : '_';
+    if (key.empty() || key.size() > 32) key = "disc-" + info.digest.substr(0, 8);
+    return key;
+}
 
 std::string incomplete_image(u64 file_bytes, u64 volume_bytes) {
     if (volume_bytes == 0 || file_bytes >= volume_bytes) return {};
@@ -91,14 +115,28 @@ std::unique_ptr<Disc> Disc::open(const std::string& path) {
     if (!core || vols.empty())
         throw FormatError("This does not look like a Gran Turismo 3 disc image (CORE.GT3 / GT3.VOL missing).");
 
+    // The fingerprint: the program and the volumes' tables of contents (every file's name, place and size).
+    const Bytes program = core->first->read(core->second);
+    {
+        Sha256 h;
+        h.update(program);
+        for (const Vol& v : vols) h.update(disc->file_->read_at(v.offset, std::min<u64>(v.toc, v.size)));
+        const std::array<u8, 32> d = h.finish();
+        static constexpr char kHex[] = "0123456789abcdef";
+        for (size_t i = 0; i < 8; ++i) info.digest += kHex[d[i] >> 4], info.digest += kHex[d[i] & 15];
+    }
+
     for (const KnownDisc& k : kKnownDiscs) {
         if (info.serial == k.serial && info.version == k.version) {
             info.verified = k.tested;
             info.reported = !k.tested;
             info.description = k.description;
+            info.modified = k.digest && info.digest != k.digest;
         }
     }
-    if (info.reported) {
+    if (info.modified) {
+        LOG_WARN("Disc %s v%s: files differ from the release's (a modified copy)", info.serial.c_str(), info.version.c_str());
+    } else if (info.reported) {
         LOG_INFO("Disc %s v%s: reported working", info.serial.c_str(), info.version.c_str());
     } else if (!info.verified) {
         info.description = "Unverified Gran Turismo 3 disc";
@@ -108,7 +146,7 @@ std::unique_ptr<Disc> Disc::open(const std::string& path) {
     // The region: the data set the disc's program loads, else the boot file's name, else the video mode.
     std::optional<Region> region;
     try {
-        region = region_of_program(CoreImage::decode(core->first->read(core->second)).program);
+        region = region_of_program(CoreImage::decode(program).program);
     } catch (const std::exception& e) {
         LOG_WARN("CORE.GT3: %s", e.what());
     }
@@ -116,14 +154,16 @@ std::unique_ptr<Disc> Disc::open(const std::string& path) {
     if (!region && info.video == "PAL") region = Region::Europe; // a PAL video mode: a European release
     if (!region) LOG_WARN("Disc %s: region not recognised; using the NTSC-U data set", info.serial.c_str());
     info.region = region.value_or(Region::America);
+    info.key = disc_key(info);
 
     disc->volume_ = std::make_unique<Volume>(*disc->file_, vols[0].offset, vols[0].size);
     for (size_t k = 1; k < vols.size(); ++k) disc->volume_->add_part(vols[k].offset, vols[k].size);
     Disc* d = disc.get();
     disc->volume_->set_program_reader([d] { return d->read_core_gt3(); });
     disc->volume_->set_region(info.region);
-    LOG_INFO("Opened %s (%s v%s, %s, %s data)", path.c_str(), info.serial.c_str(), info.version.c_str(), info.video.c_str(),
-             region_name(info.region));
+    disc->volume_->set_identity(info.key, info.serial);
+    LOG_INFO("Opened %s (%s v%s, %s, %s data, files %s, key %s)", path.c_str(), info.serial.c_str(), info.version.c_str(),
+             info.video.c_str(), region_name(info.region), info.digest.c_str(), info.key.c_str());
     return disc;
 }
 

@@ -418,8 +418,19 @@ private:
 
     void toggle(App& app, int i) {
         const ModInfo& mod = app.vfs()->mods()[size_t(i)];
+        if (!mod.for_disc) {
+            say(mod.name + " is made for other discs (" + discs_text(mod) + "): it stays off on this one.", true);
+            return;
+        }
         app.set_mod_enabled(mod.id, !mod.enabled);
         cars_loaded_ = false;
+    }
+
+    // mod.ini's discs, as written.
+    static std::string discs_text(const ModInfo& mod) {
+        std::string out;
+        for (const std::string& d : mod.discs) out += (out.empty() ? "" : ", ") + d;
+        return out;
     }
 
     void rescan(App& app) {
@@ -579,7 +590,8 @@ private:
             say("Could not remove " + name + ": " + err, true);
             return;
         }
-        app.config().remove("mods", c.mod_id);
+        for (const IniDocument::Section& sec : app.config().sections()) // [mods] and every disc's [mods.<disc key>]
+            if (sec.name == "mods" || sec.name.rfind("mods.", 0) == 0) app.config().remove(sec.name, c.mod_id);
         app.save_config();
         rescan(app);
         say("Removed " + name + ".", false);
@@ -753,7 +765,7 @@ private:
             if (s) ui.fill_round(r.x, r.y + 3, 3, r.h - 6, 1.5f, colors::kAccent);
             const float tx = r.x + 10, cy = r.y + r.h / 2;
             toggles_[i] = {tx - 4, r.y, ui.toggle_width() + 8, r.h};
-            ui.toggle_pill(tx, cy, mod.enabled);
+            ui.toggle_pill(tx, cy, mod.active());
             const float x = tx + ui.toggle_width() + 10;
             std::string right;
             if (!mod.cars.empty()) right = std::to_string(mod.cars.size()) + (mod.cars.size() == 1 ? " car" : " cars");
@@ -761,9 +773,12 @@ private:
                 right = std::to_string(mod.textures.size()) + (mod.textures.size() == 1 ? " texture" : " textures");
             const float rw = right.empty() ? 0 : Ui::text_width(right) + 10;
             ui.text(x, std::floor(cy - 10), Ui::clip(with_version(mod.name, mod.version), r.right() - x - 8 - rw),
-                    s ? colors::kAccent : mod.enabled ? colors::kText : colors::kDim);
+                    s ? colors::kAccent : mod.active() ? colors::kText : colors::kDim);
             if (!right.empty()) ui.text_right(r.right() - 8, std::floor(cy - 10), right, colors::kDim);
-            const std::string sub = !mod.description.empty() ? mod.description : !mod.author.empty() ? "by " + mod.author : mod.id;
+            const std::string sub = !mod.for_disc              ? "Made for other discs: " + discs_text(mod)
+                                    : !mod.description.empty() ? mod.description
+                                    : !mod.author.empty()      ? "by " + mod.author
+                                                               : mod.id;
             ui.text(x, std::floor(cy + 2), Ui::clip(sub, r.right() - x - 8), colors::kDim);
         }
         SDL_SetRenderClipRect(ui.renderer(), nullptr);
@@ -800,8 +815,11 @@ private:
         count(mod.makers.size(), " maker", " makers");
         count(mod.textures.size(), " texture", " textures");
         line((what.empty() ? std::string("Nothing to load") : what) + "   priority " + std::to_string(mod.priority) +
-                 (mod.enabled ? "" : "   (off)"),
+                 (!mod.for_disc ? "" : mod.enabled ? "" : "   (off on this disc)"),
              colors::kDim);
+        line(mod.discs.empty() ? std::string("For every disc")
+                               : "For " + discs_text(mod) + (mod.for_disc ? "" : " (not this disc)"),
+             mod.for_disc ? colors::kDim : colors::kBad);
         line("Folder: mods/" + mod.id, colors::kDim);
         if (!mod.cars.empty()) {
             y += 5;
@@ -818,7 +836,7 @@ private:
             db_ok_ = db_.load(*app.vfs());
         }
         if (y + Ui::kChar > bottom) return;
-        ui.text(x, y, mod.enabled ? "Cars" : "Cars (the mod is off)", colors::kText);
+        ui.text(x, y, mod.active() ? "Cars" : "Cars (the mod is off)", colors::kText);
         y += 12;
         for (const std::string& file : mod.cars) {
             if (y + Ui::kChar > bottom) break;
@@ -845,7 +863,7 @@ private:
                 text = buf, c = colors::kGood;
             } else if (db_ok_ && !err.empty()) {
                 text = base + ": " + err, c = colors::kBad;
-            } else if (db_ok_ && mod.enabled) {
+            } else if (db_ok_ && mod.active()) {
                 text = base + ": replaced by another mod";
             }
             ui.text(x + 8, y, Ui::clip(text, w - 8), c);

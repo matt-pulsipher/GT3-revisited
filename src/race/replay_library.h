@@ -1,21 +1,29 @@
 #pragma once
 
-// The saved replays as the Replay Theater lists them: native files in one folder per region,
-// <save folder>/replays/ (NTSC-U; replays/jp/, replays/eu/ for the others, whose cars and AI
-// lines differ; the save folder: game/save_folder.h), where every save from a race lands (time
-// trial, arcade, licence, GT mode, quick race, 2P). No slots and no capacity: as many as the
-// disk holds.
+// The saved replays as the Replay Theater lists them: native files in one folder per disc key
+// (DiscInfo::key), <save folder>/replays/ (NTSC-U; replays/jp/, replays/eu/ for the other
+// releases, whose cars and AI lines differ; replays/<serial>/ for a disc of its own, such as a
+// modified copy under another serial; the save folder: game/save_folder.h), where every save from
+// a race lands (time trial, arcade, licence, GT mode, quick race, 2P). No slots and no capacity:
+// as many as the disk holds.
 
 #include "disc/region.h"
 #include "race/replay.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gt3r::race {
 
-// <save_dir>/replays, or <save_dir>/replays/<region key> outside NTSC-U.
+// <save_dir>/replays for the disc key "us", else <save_dir>/replays/<disc key>.
+std::string replay_dir(const std::string& save_dir, std::string_view disc_key);
+// The folder of a region's releases (disc key = region key).
 std::string replay_dir(const std::string& save_dir, Region region = Region::America);
+// First use of a disc of its own (a disc key that is not its region's): when its folder does not
+// exist yet it is created and the region's replays (its subfolders not included) are copied in.
+// Earlier versions saved every disc's replays in its region's folder. Returns the number copied.
+int seed_replay_dir(const std::string& save_dir, std::string_view disc_key, Region region);
 
 struct ReplayEntry {
     std::string path, name; // full path / file name

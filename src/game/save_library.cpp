@@ -62,10 +62,11 @@ bool same_save_file(const std::string& a, const std::string& b) {
 
 SaveLibrary::SaveLibrary(std::string dir, bool tracked) : dir_(with_sep(std::move(dir))), tracked_(tracked) {}
 
-std::string SaveLibrary::user_dir(Region region) {
+std::string SaveLibrary::user_dir(std::string_view disc_key) {
     std::string dir = save_folder() + "saves/";
-    return region == Region::America ? dir : dir + region_key(region) + "/";
+    return disc_key == region_key(Region::America) ? dir : dir + std::string(disc_key) + "/";
 }
+std::string SaveLibrary::user_dir(Region region) { return user_dir(region_key(region)); }
 std::string SaveLibrary::legacy_path() { return user_data_dir() + "gtmode.sav"; }
 
 int SaveLibrary::migrate(const std::string& legacy) {

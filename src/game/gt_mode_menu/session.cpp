@@ -71,10 +71,11 @@ bool ensure_gt_mode_session(const std::function<std::optional<Bytes>(const std::
 
 SaveLibrary& save_library() {
     MenuState& ms = menu_state();
-    // The disc region's library; made again when GT3R_GTMODE_SAVE changes (tests).
+    // The disc's library (its disc key's); made again when GT3R_GTMODE_SAVE changes (tests).
     const char* env = std::getenv("GT3R_GTMODE_SAVE");
     const Region region = region_data(ms.reader).region;
-    const std::string want = std::string(region_key(region)) + "|" + (env ? env : "");
+    const std::string key = disc_key_of(ms.reader);
+    const std::string want = key + "|" + (env ? env : "");
     if (ms.library && want != ms.library_env) ms.library.reset();
     ms.library_env = want;
     if (!ms.library) {
@@ -84,14 +85,20 @@ SaveLibrary& save_library() {
             dir = sl == std::string::npos ? std::string(".") : dir.substr(0, sl);
             ms.library = std::make_unique<SaveLibrary>(dir, false);
         } else {
-            ms.library = std::make_unique<SaveLibrary>(SaveLibrary::user_dir(region));
-            if (saving_enabled() && region == Region::America) // earlier versions played NTSC-U data only
+            ms.library = std::make_unique<SaveLibrary>(SaveLibrary::user_dir(key));
+            if (saving_enabled() && key == region_key(Region::America)) // earlier versions played NTSC-U data only
                 if (int n = ms.library->migrate(SaveLibrary::legacy_path()); n > 0)
                     LOG_INFO("gt mode: %d save(s) copied into %s", n, ms.library->dir().c_str());
             // Versions up to 0.3 kept a PAL disc's games in saves/ too (on the NTSC-U data set,
             // which the PAL set extends): the PAL library starts with copies of them, once.
-            if (saving_enabled() && region == Region::Europe)
+            if (saving_enabled() && key == region_key(Region::Europe))
                 if (int n = ms.library->copy_library(SaveLibrary::user_dir(Region::America)); n > 0)
+                    LOG_INFO("gt mode: %d save(s) copied into %s", n, ms.library->dir().c_str());
+            // A disc of its own (a modified copy under another serial, another game on the
+            // engine): earlier versions kept its games in its region's library, which its own
+            // starts with copies of, once.
+            if (saving_enabled() && key != region_key(region))
+                if (int n = ms.library->copy_library(SaveLibrary::user_dir(region)); n > 0)
                     LOG_INFO("gt mode: %d save(s) copied into %s", n, ms.library->dir().c_str());
         }
     }

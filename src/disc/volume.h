@@ -66,12 +66,18 @@ public:
     // The release's data set (disc/region.h), set by the owner (Disc: from its program).
     void set_region(Region r) { region_ = r; }
     Region region() const { return region_; }
+    // The disc's serial ("PBPX_955.03") and where it keeps its saves, replays and mod choices
+    // (DiscInfo::key), set by the owner (Disc); without one, the region's key.
+    void set_identity(std::string key, std::string serial) { disc_key_ = std::move(key), serial_ = std::move(serial); }
+    std::string disc_key() const { return disc_key_.empty() ? region_key(region_) : disc_key_; }
+    const std::string& serial() const { return serial_; }
 
 private:
     void walk(ByteSpan toc, u32 node, const std::string& prefix, int depth, u8 part);
     void read_toc(u8 part);
     std::function<Bytes()> program_reader_;
     Region region_ = Region::America;
+    std::string disc_key_, serial_;
     static std::string node_name(ByteSpan toc, u32 offset);
 
     Reader& file_;

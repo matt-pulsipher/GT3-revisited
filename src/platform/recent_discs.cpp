@@ -1,7 +1,11 @@
 #include "platform/recent_discs.h"
 
+#include "base/sha256.h"
+#include "disc/region.h"
+
 #include <algorithm>
 #include <cctype>
+#include <set>
 
 namespace gt3r::platform {
 
@@ -31,6 +35,14 @@ std::string normalized(std::string_view p) {
 
 std::string recent_key(int i) { return "recent" + std::to_string(i + 1); }
 
+constexpr const char* kRecordSection = "disc_library";
+
+// A record's key: the first 16 hex digits of the SHA-256 of the normalized path (a path may hold '=').
+std::string record_key(std::string_view path) {
+    const std::string n = normalized(path);
+    return sha256_hex(ByteSpan(reinterpret_cast<const u8*>(n.data()), n.size())).substr(0, 16);
+}
+
 // The iOS app folder part of `p`, "/Containers/Data/Application/<UUID>", as [begin, end); both
 // npos when `p` is in no app folder. What comes before it differs for the same folder: the
 // system reports /private/var/... and /var/... alike.
@@ -59,7 +71,7 @@ bool same_disc_path(std::string_view a, std::string_view b) { return normalized(
 
 std::vector<std::string> load_recent_discs(const IniDocument& cfg) {
     std::vector<std::string> out;
-    for (int i = 0; i < kMaxRecentDiscs; ++i) {
+    for (int i = 0; i < kMaxLibraryDiscs; ++i) {
         auto v = cfg.get("game", recent_key(i));
         if (!v || v->empty()) continue;
         if (std::none_of(out.begin(), out.end(), [&](const std::string& p) { return same_disc_path(p, *v); }))
@@ -74,14 +86,53 @@ void save_recent_discs(IniDocument& cfg, const std::vector<std::string>& list) {
         return kv.first.size() > 6 && kv.first.compare(0, 6, "recent") == 0 &&
                std::all_of(kv.first.begin() + 6, kv.first.end(), [](char c) { return c >= '0' && c <= '9'; });
     });
-    for (size_t i = 0; i < list.size() && i < size_t(kMaxRecentDiscs); ++i) cfg.set("game", recent_key(int(i)), list[i]);
+    std::set<std::string> kept;
+    for (size_t i = 0; i < list.size() && i < size_t(kMaxLibraryDiscs); ++i) {
+        cfg.set("game", recent_key(int(i)), list[i]);
+        kept.insert(record_key(list[i]));
+    }
+    IniDocument::Section& r = cfg.get_or_add(kRecordSection);
+    std::erase_if(r.entries, [&](const auto& kv) { return !kept.count(kv.first); });
+}
+
+std::optional<DiscRecord> load_disc_record(const IniDocument& cfg, std::string_view path) {
+    const std::optional<std::string> v = cfg.get(kRecordSection, record_key(path));
+    if (!v) return std::nullopt;
+    std::vector<std::string_view> f;
+    size_t at = 0;
+    while (f.size() < 6) { // the description, last, may hold '|'
+        const size_t bar = v->find('|', at);
+        if (bar == std::string::npos) return std::nullopt;
+        f.push_back(std::string_view(*v).substr(at, bar - at));
+        at = bar + 1;
+    }
+    DiscRecord r;
+    r.serial = f[0], r.version = f[1], r.region = f[2], r.digest = f[3], r.key = f[4];
+    r.known = f[5].find('k') != std::string_view::npos;
+    r.modified = f[5].find('m') != std::string_view::npos;
+    r.description = v->substr(at);
+    return r;
+}
+
+void save_disc_record(IniDocument& cfg, std::string_view path, const DiscRecord& r) {
+    std::string flags = std::string(r.known ? "k" : "") + (r.modified ? "m" : "");
+    cfg.set(kRecordSection, record_key(path),
+            r.serial + "|" + r.version + "|" + r.region + "|" + r.digest + "|" + r.key + "|" + flags + "|" + r.description);
+}
+
+std::string disc_record_label(const DiscRecord& r) {
+    const std::optional<Region> region = region_from_key(r.region);
+    std::string out = r.known && region ? region_name(*region) : r.key;
+    if (!r.version.empty()) out += " v" + r.version;
+    if (r.modified) out += ", modified";
+    return out;
 }
 
 std::vector<std::string> push_recent_disc(std::vector<std::string> list, const std::string& path) {
     if (path.empty()) return list;
     list = remove_recent_disc(std::move(list), path);
     list.insert(list.begin(), path);
-    if (list.size() > size_t(kMaxRecentDiscs)) list.resize(kMaxRecentDiscs);
+    if (list.size() > size_t(kMaxLibraryDiscs)) list.resize(kMaxLibraryDiscs);
     return list;
 }
 

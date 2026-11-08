@@ -12,10 +12,23 @@
 
 namespace gt3r::race {
 
-std::string replay_dir(const std::string& save_dir, Region region) {
+std::string replay_dir(const std::string& save_dir, std::string_view disc_key) {
     std::string d = save_dir;
     if (!d.empty() && d.back() != '/' && d.back() != '\\') d += '/';
-    return d + (region == Region::America ? "replays" : std::string("replays/") + region_key(region));
+    return d + (disc_key == region_key(Region::America) ? std::string("replays") : "replays/" + std::string(disc_key));
+}
+
+std::string replay_dir(const std::string& save_dir, Region region) { return replay_dir(save_dir, region_key(region)); }
+
+int seed_replay_dir(const std::string& save_dir, std::string_view disc_key, Region region) {
+    if (disc_key.empty() || disc_key == region_key(region)) return 0;
+    const std::string to = replay_dir(save_dir, disc_key), from = replay_dir(save_dir, region);
+    if (host_is_directory(to) || !host_is_directory(from) || !host_make_dir(to)) return 0;
+    int n = 0;
+    for (const ReplayFile& f : list_replays(from))
+        if (host_copy_file(f.path, to + "/" + f.name)) ++n;
+    if (n) LOG_INFO("Replays: %d copied from %s into %s", n, from.c_str(), to.c_str());
+    return n;
 }
 
 std::optional<Replay> read_replay_file(const std::string& path, std::string* error) {

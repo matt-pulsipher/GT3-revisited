@@ -18,6 +18,7 @@
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
 #include "platform/mac_layer.h"
+#include "race/replay_library.h"
 
 #include <algorithm>
 #include <cmath>
@@ -275,10 +276,10 @@ bool App::init(int argc, char** argv) {
     return true;
 }
 
-void App::push_game_start() {
+void App::push_game_start(bool movie) {
     const bool ask = vfs_ && vfs_->region().languages().size() > 1 && !language_chosen();
     for (const ScreenEntry& entry : screen_registry())
-        if (std::string_view(entry.id) == (ask ? "language" : "boot")) {
+        if (std::string_view(entry.id) == (ask ? "language" : movie ? "boot" : "gt3menu")) {
             push(entry.factory());
             return;
         }
@@ -365,9 +366,9 @@ void App::rescan_mods() {
 }
 
 void App::set_mod_enabled(const std::string& id, bool enabled) {
-    config_.set("mods", id, enabled ? "on" : "off");
-    save_config();
     if (!vfs_) return;
+    config_.set(vfs_->mods_section(), id, enabled ? "on" : "off"); // this disc's choice
+    save_config();
     vfs_->set_mod_enabled(id, enabled);
     texture_pack::set_pack(vfs_->textures());
     game::reload_gt_mode_data();
@@ -401,8 +402,13 @@ std::string App::open_disc(const std::string& path) {
         texture_pack::set_pack(vfs_->textures());
         apply_language();
         measure_disc_music();
+        const DiscInfo& info = disc_->info();
+        race::seed_replay_dir(save_folder(), info.key, info.region); // its saves: SaveLibrary, on GT Mode's first use
         config_.set("game", "disc", full);
         platform::save_recent_discs(config_, platform::push_recent_disc(recent_discs(), full));
+        platform::save_disc_record(config_, full,
+                                   {info.serial, info.version, region_key(info.region), info.digest, info.key,
+                                    info.description, info.verified || info.reported, info.modified});
         save_config();
         last_error_.clear();
         failed_disc_path_.clear();
@@ -420,6 +426,10 @@ std::vector<std::string> App::recent_discs() const {
     if (list.empty())
         if (auto d = config_.get("game", "disc"); d && !d->empty()) list.push_back(*d);
     return list;
+}
+
+std::optional<platform::DiscRecord> App::disc_record(const std::string& path) const {
+    return platform::load_disc_record(config_, path);
 }
 
 void App::forget_recent_disc(const std::string& path) {
@@ -741,11 +751,12 @@ SDL_AppResult App::iterate() {
     chosen.swap(dialog_result_);
     SDL_UnlockMutex(dialog_mutex_);
     if (!chosen.empty()) {
+        const bool switching = disc_ != nullptr; // from the library: straight to the title menu
         last_error_ = open_disc(chosen);
-        if (disc_) {
+        if (disc_ && last_error_.empty()) { // a disc that failed leaves the open one as it was
             screens_.clear();
             push(make_hub_screen());
-            push_game_start();
+            push_game_start(!switching);
         }
     }
 

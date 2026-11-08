@@ -167,7 +167,7 @@ std::vector<TheaterEntry> replay_theater_entries(int kind, const std::string& re
 
 void install_replay_theater(std::string save_dir, const Vfs* vfs) {
     menu::flow::TheaterBackend b;
-    const std::string dir = race::replay_dir(save_dir, vfs ? vfs->region().region : Region::America);
+    const std::string dir = race::replay_dir(save_dir, vfs ? vfs->disc_key() : region_key(Region::America));
     b.list = [dir, vfs](int kind) { return replay_theater_entries(kind, dir, vfs); };
     b.remove = [](const TheaterEntry& e) { return e.deletable && race::delete_replay_file(e.id); };
     menu::flow::set_theater_backend(std::move(b));
