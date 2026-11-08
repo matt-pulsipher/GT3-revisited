@@ -1475,8 +1475,11 @@ licence tests and some attract demos set any). Licence tests: slot 0
 is the test car (entry 0) and gives its paint (e.g. B-2 Viper GTS 0x101, red
 with silver stripes; 31 of the 48 tests set one, all in the model's list; the
 rally tests and most race cars are 0xFFFFFFFF). Race reads it for `go_license` and
-`tt_event=L…` (test `race_license_car_paint_disc`). Machine tests, arcade time
-trials (`AT…`) and the attract demo's player slot are 0xFFFFFFFF. Unset
+`tt_event=L…` (test `race_license_car_paint_disc`). Machine tests and arcade time
+trials (`AT…`) are 0xFFFFFFFF. The attract demo (and GT Mode's Preview) has no player
+car: its slot-0 car takes its pool entry's id (`event_paint_id_`) or, without one, is drawn
+as entry 0 with the others (`draw_player_paint_`; the car, built before the draw, is built
+again in its paint by `build_player_visual`). Unset
 cars get a colour at race start in entry order (player first): each candidate
 weighted 0.984375^j, divided by 1 + similarity to every other car's
 candidates (fixed colours: 10000 sim^64), sorted ascending, then picked with

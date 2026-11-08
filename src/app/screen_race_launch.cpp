@@ -188,6 +188,7 @@ void RaceScreen::resolve_launch() {
             race_opponents_.assign(field.begin() + 1, field.end());
             race_opponent_color_ids_.assign(ids.begin() + 1, ids.end());
             event_paint_id_ = ids[0];
+            draw_player_paint_ = !own && ids[0] == 0xFFFFFFFFu; // (drawn with the others, entry 0 first)
             if (std::string c = base_car(field[0]); !c.empty()) preset_.car = car = c;
         }
     }
