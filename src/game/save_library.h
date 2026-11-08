@@ -23,6 +23,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gt3r::game {
@@ -40,9 +41,13 @@ public:
     // `dir`: the library folder (created on the first write). `tracked`: whether the
     // current save is remembered in current.txt (off for GT3R_GTMODE_SAVE).
     explicit SaveLibrary(std::string dir, bool tracked = true);
-    // The library of a region's games (each release keeps its own, as on the PS2's memory
-    // cards): <save folder>/saves/ for NTSC-U, <save folder>/saves/<region key>/ for the
-    // others (the save folder: the user data folder unless the player chose another).
+    // The library of a disc key's games (DiscInfo::key; each release keeps its own, as on the
+    // PS2's memory cards): <save folder>/saves/ for "us", <save folder>/saves/<disc key>/ for
+    // the others: the other regions' releases (saves/eu/, saves/jp/) and discs of their own,
+    // such as a modified copy under another serial (saves/SCEF-50294/). The save folder: the
+    // user data folder unless the player chose another.
+    static std::string user_dir(std::string_view disc_key);
+    // The library of a region's releases (disc key = region key).
     static std::string user_dir(Region region = Region::America);
     // The single save of earlier versions: <user data>/gtmode.sav.
     static std::string legacy_path();
@@ -56,7 +61,8 @@ public:
     // every *.sav of the library `from` (its subfolders not included) is copied in, and its
     // current save stays the current one; the originals stay where they are. Versions up to
     // 0.3 kept every disc's games in saves/ (all on the NTSC-U data set, also from a PAL disc),
-    // so a PAL library starts with them. Returns the number of saves copied.
+    // so a PAL library starts with them; earlier versions kept a disc of its own's games in its
+    // region's library, so its library starts with those. Returns the number of saves copied.
     int copy_library(const std::string& from);
 
     // Every *.sav in the folder, newest first.

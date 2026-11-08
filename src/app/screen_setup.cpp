@@ -67,6 +67,7 @@ public:
     }
 
     void on_event(App& app, const SDL_Event& e) override {
+        if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) library_.clear(); // the images looked for again
         if (float x, y; xr_hover(e, x, y)) // the VR pointer focuses what it is over (ui.h)
             if (int i = item_at(x, y); i >= 0) sel_ = i;
         switch (gesture_.feed(e)) {
@@ -169,7 +170,7 @@ public:
                 ui.text(rx + 8, ry + 6 + 11 * float(i), lines[i], i == 0 ? colors::kBad : i == 1 && !app.failed_disc_path().empty() ? colors::kText : colors::kDim);
             ry += h + 10;
         }
-        ui.text(rx, ry, "Recent disc images", colors::kAccent);
+        ui.text(rx, ry, "Disc library", colors::kAccent);
         ry += 14;
         const float rh = touch ? 40.0f : 34.0f;
         if (recent_count_ == 0) {
@@ -193,7 +194,12 @@ public:
                 std::string name = platform::disc_file_name(it.path);
                 std::string dir = it.path.substr(0, it.path.size() >= name.size() ? it.path.size() - name.size() : 0);
                 const float mid = r.y + r.h / 2;
-                ui.text(r.x + 10, std::floor(mid - 10), Ui::elide(name, rtw - 16), focused ? colors::kAccent : colors::kText);
+                // What it is (platform::DiscRecord), beside the name.
+                const std::optional<platform::DiscRecord> rec = app.disc_record(it.path);
+                const std::string what = rec ? platform::disc_record_label(*rec) : std::string();
+                const float ww = what.empty() ? 0 : Ui::text_width(what) + 10;
+                ui.text(r.x + 10, std::floor(mid - 10), Ui::elide(name, rtw - 16 - ww), focused ? colors::kAccent : colors::kText);
+                if (!what.empty()) ui.text_right(r.right() - 20, std::floor(mid - 10), what, colors::kDim);
                 ui.text(r.x + 10, std::floor(mid + 2), Ui::elide(dir.empty() ? "(picked file)" : dir, rtw - 16), colors::kDim);
                 ui.text_right(r.right() - 8, std::floor(mid - 4), ">", focused ? colors::kAccent : colors::kOutline);
             } else {
@@ -225,10 +231,19 @@ private:
 
     void rebuild(App& app) {
         items_.clear();
-        // Recent discs that still exist (the failed one is shown above).
-        for (const std::string& p : app.recent_discs())
-            if (int(items_.size()) < 4 && disc_available(p) && !platform::same_disc_path(p, app.failed_disc_path()))
-                items_.push_back({Item::Recent, "", p});
+        // Library images that are there (the failed one is shown above). Looked for once, not on
+        // every frame: a drive that is not connected can take seconds to answer.
+        if (std::vector<std::string> library = app.recent_discs(); library != library_) {
+            library_ = std::move(library);
+            there_.clear();
+            for (const std::string& p : library_) {
+                if (std::count(there_.begin(), there_.end(), 1) > 4) break; // four, besides a failed one
+                there_.push_back(disc_available(p));
+            }
+        }
+        for (size_t i = 0; i < there_.size(); ++i)
+            if (int(items_.size()) < 4 && there_[i] && !platform::same_disc_path(library_[i], app.failed_disc_path()))
+                items_.push_back({Item::Recent, "", library_[i]});
         recent_count_ = int(items_.size());
         items_.push_back({Item::Browse, "Open disc image", ""});
         items_.push_back({Item::Settings, "Settings", ""});
@@ -248,6 +263,8 @@ private:
 
     std::vector<Item> items_;
     std::vector<UiRect> rects_; // last frame's, for taps
+    std::vector<std::string> library_; // App::recent_discs() as of the last look
+    std::vector<char> there_;          // per image of library_ (as far as looked): found
     int recent_count_ = 0;
     int sel_ = 0;
     int pressed_ = -1;
@@ -268,7 +285,7 @@ public:
         if (developer) {
             items_.push_back({"Back", "Return to the main menu.", Item::Back});
         } else {
-            items_.push_back({"Change disc image...", "Open a different disc image (recent discs, or browse).", Item::Disc});
+            items_.push_back({"Discs...", "Your disc library: switch to another disc, or add one.", Item::Disc});
             items_.push_back({"Developer options", "Viewers, test screens and other tools for working on GT3 Revisited.",
                               Item::Developer});
             if (kCanQuit) items_.push_back({"Quit", "Leave GT3 Revisited.", Item::Quit});
@@ -426,7 +443,10 @@ public:
                                       : std::string(items_[size_t(sel_)].help),
                          tw),
                 colors::kText);
-        std::string status = "Mods loaded: " + std::to_string(app.vfs()->mods().size());
+        const auto& mods = app.vfs()->mods();
+        std::string status = "Mods loaded: " + std::to_string(std::count_if(mods.begin(), mods.end(), [](const ModInfo& m) {
+                                 return m.active();
+                             }));
         if (developer_)
             if (std::string more = status + "    Tools for developers; not part of the game"; Ui::text_width(more) <= tw)
                 status = more;

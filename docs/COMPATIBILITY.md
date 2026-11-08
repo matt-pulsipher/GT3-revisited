@@ -14,10 +14,37 @@ Images not in this list run with a warning until someone verifies them.
 | `SCPS_150.09` | 1.01 | NTSC-J | ✅ verified |
 
 To verify a new version, run `gt3tool info`, `gt3tool bgm` and a few
-`gt3tool tex` commands, and check the asset browser. Then add its serial to
-`kKnownDiscs` in `src/disc/disc.cpp` (a version players report working goes in
-with `tested = false`: it opens without the warning, and `gt3tool info` says
-"reported working").
+`gt3tool tex` commands, and check the asset browser. Then add its serial and the
+`Files` fingerprint `gt3tool info` prints to `kKnownDiscs` in
+`src/disc/disc.cpp` (a version players report working goes in with
+`tested = false` and no fingerprint: it opens without the warning, and
+`gt3tool info` says "reported working").
+
+## The disc library
+
+Every disc image you open joins the disc library (Settings > Disc & saves, or
+Discs... in the main menu; up to 32), which remembers what each one is: its
+release, region and version. Picking another disc there goes straight to its
+title menu.
+
+Each disc is recognised by a fingerprint of its files: its program
+(`CORE.GT3`) and the list of files in its game volume, with their places and
+sizes. A disc with a release's serial and version whose fingerprint isn't that
+release's is a modified copy: the library and Settings say "modified". It
+counts as that release for saves, replays and mod choices.
+
+Saves, replays and mod choices go by disc key:
+
+| Disc | Key | Saves | Replays |
+|---|---|---|---|
+| NTSC-U (1.00 and 1.10) | `us` | `saves/` | `replays/` |
+| PAL | `eu` | `saves/eu/` | `replays/eu/` |
+| NTSC-J | `jp` | `saves/jp/` | `replays/jp/` |
+| any other serial, e.g. a modified disc under a serial of its own (`SCEF_502.94`) or GT Concept | the serial as PCSX2 writes it (`SCEF-50294`) | `saves/SCEF-50294/` | `replays/SCEF-50294/` |
+
+Earlier versions kept every disc's saves and replays in its region's folders,
+so the first time a disc with a key of its own opens, its folders start with
+copies of its region's (once; the originals stay).
 
 The race physics is Gran Turismo 3's own, with its values built in. It
 recognizes each release by the code of the disc's program, so another build of
@@ -81,7 +108,8 @@ The game's language decides the rest, as in the original releases:
   `config.ini` (`[gt3menu] lang_eu`). NTSC-U and NTSC-J discs run in their own
   language only, as the originals do.
 - Each region keeps its own GT Mode saves (`saves/` for NTSC-U, `saves/jp/`,
-  `saves/eu/`), and PS2 saves import and export under the release's own memory
+  `saves/eu/`; a disc with a serial of its own keeps its own too: [The disc
+  library](#the-disc-library)), and PS2 saves import and export under the release's own memory
   card name (`BASCUS-97102`, `BESCES-50294`, `BISCPS-15009`). Versions up to
   0.3 kept every disc's games in `saves/`; the first time a PAL disc opens GT
   Mode, its folder starts with copies of them (the originals stay).

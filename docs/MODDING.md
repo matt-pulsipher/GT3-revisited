@@ -74,10 +74,25 @@ version = 1.0
 author = you
 description = Replaces the license test background.
 priority = 10        ; higher wins when two mods provide the same file
+discs = eu           ; optional: the discs it is for (below); absent: every disc
 ```
 
-A new mod is enabled. Enable or disable mods from the Mods screen; the choice is
-stored in `config.ini` under `[mods]`.
+A new mod is enabled. Enable or disable mods from the Mods screen. Each disc
+keeps its own choices: they are stored in `config.ini` under `[mods.<disc key>]`
+(`[mods.us]`, `[mods.eu]`, `[mods.SCEF-50294]`; disc keys: [COMPATIBILITY](COMPATIBILITY.md#the-disc-library)),
+and a disc without a choice for a mod yet takes the one under `[mods]`, where
+earlier versions kept them.
+
+`discs` names the discs a mod is made for, separated by commas: disc keys (`us`,
+`eu`, `jp`, or a serial of its own such as `SCEF-50294`) or serials, written
+either way (`SCES_502.94` or `SCES-50294`). A serial names one release (`PBPX-95503`
+is NTSC-U 1.10, not 1.00); `eu` means the PAL releases only, not a modified disc
+under a serial of its own. On other discs the mod stays off, and the Mods screen
+says which discs it is for. Give `files/` mods a `discs` line: a file replaced
+for one release can break another disc (a PAL car list on a modified PAL disc
+with cars of its own). Texture packs and mod cars rarely need one: a texture is
+only replaced where its pixels are the same, and a mod car whose donor isn't on
+the disc doesn't load.
 
 ## Workflow
 

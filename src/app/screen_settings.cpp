@@ -106,6 +106,7 @@ public:
         if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
             access_refused_ = false;
             saves_view_.folder.clear(); // the save folder looked at again
+            disc_view_.stale = true;    // and the library's images
         }
         build(app);
         float hx = 0, hy = 0;
@@ -1867,32 +1868,66 @@ private:
             for (size_t i = first; i < rows_.size(); ++i) rows_[i].dim = true;
     }
 
+    // The Disc & saves page's slow answers, found once per disc and visit: its rows are built on every
+    // event and frame (reading the disc's program each time froze the page: issue 235), and a drive
+    // that is not connected can take seconds to say a file is missing.
+    struct DiscView {
+        const Disc* disc = nullptr;
+        std::vector<std::string> library; // App::recent_discs() as of the last look
+        bool stale = true;                // look again (another page, back in the foreground)
+        std::string physics, physics_desc;
+        std::vector<char> there; // per library image: found
+        std::vector<std::optional<platform::DiscRecord>> records;
+    } disc_view_;
+
+    void look_at_discs(App& app) {
+        DiscView& v = disc_view_;
+        std::vector<std::string> library = app.recent_discs();
+        if (!v.stale && v.disc == app.disc() && v.library == library) return;
+        v.stale = false;
+        v.disc = app.disc();
+        v.library = std::move(library);
+        v.there.clear(), v.records.clear();
+        for (const std::string& p : v.library) v.there.push_back(disc_available(p)), v.records.push_back(app.disc_record(p));
+        v.physics.clear(), v.physics_desc.clear();
+        if (!app.disc()) return;
+        // The race physics (race_physics: the disc's own, or GT3's standing in for a program it does not know).
+        std::string why;
+        if (const auto exact = race::exact_program_data(*app.vfs(), &why); !exact) {
+            v.physics = "Unavailable", v.physics_desc = "This disc's program can't be read (details in the log).";
+        } else if (const race::RacePhysics how = race::race_physics(*exact); how.own && exact->changed()) {
+            v.physics = std::string(race::race_core_name(how.core)) + " (with this disc's changes)";
+            v.physics_desc = "This disc changes some of Gran Turismo 3's physics values, and its races use them. Online "
+                             "races and the game's demos use Gran Turismo 3's own values (details in the log).";
+        } else if (how.own) {
+            v.physics = race::race_core_name(how.core);
+        } else {
+            v.physics = std::string(race::race_core_name(how.core)) + " (this disc's own physics isn't supported yet)";
+            v.physics_desc = "Races on this disc use Gran Turismo 3's physics: parts of its program are not like Gran "
+                             "Turismo 3's (details in the log).";
+        }
+    }
+
     void build_disc(App& app) {
         App* a = &app;
         IniDocument& cfg = app.config();
+        look_at_discs(app);
         std::string current = app.disc() ? cfg.get("game", "disc").value_or("") : "";
         if (app.disc()) {
             const DiscInfo& d = app.disc()->info();
             info("Current disc", d.description);
             if (!d.problem.empty()) info("Disc image", "Incomplete", d.problem);
             info("", d.serial + "  v" + d.version + "  " + region_name(d.region));
-            // The race physics (race_physics: the disc's own, or GT3's standing in for a program it does not know).
-            std::string why;
-            if (const auto exact = race::exact_program_data(*app.vfs(), &why); !exact) {
-                info("Race physics", "Unavailable", "This disc's program can't be read (details in the log).");
-            } else {
-                const race::RacePhysics how = race::race_physics(*exact);
-                if (how.own && exact->changed())
-                    info("Race physics", std::string(race::race_core_name(how.core)) + " (with this disc's changes)",
-                         "This disc changes some of Gran Turismo 3's physics values, and its races use them. Online races and "
-                         "the game's demos use Gran Turismo 3's own values (details in the log).");
-                else if (how.own)
-                    info("Race physics", race::race_core_name(how.core));
-                else
-                    info("Race physics", std::string(race::race_core_name(how.core)) + " (this disc's own physics isn't supported yet)",
-                         "Races on this disc use Gran Turismo 3's physics: parts of its program are not like Gran Turismo 3's "
-                         "(details in the log).");
-            }
+            if (d.modified)
+                info("Files", "Modified",
+                     "This disc's files are not the release's own: a patched copy. Its saves, replays and mod choices "
+                     "are the release's.");
+            // A disc of its own (disc_key): another serial than the releases'.
+            if (d.key != region_key(d.region))
+                info("Saves and replays", "Its own (" + d.key + ")",
+                     "This disc keeps its GT Mode games, replays and mod choices apart from other discs' (saves/" + d.key +
+                         ", replays/" + d.key + "). It started with copies of the " + region_name(d.region) + " ones.");
+            info("Race physics", disc_view_.physics, disc_view_.physics_desc);
             info("File", platform::disc_file_name(current), "");
             // PAL: the language chosen at the first start.
             const std::vector<Language> langs = app.vfs()->region().languages();
@@ -1910,24 +1945,31 @@ private:
         } else {
             info("Current disc", "None");
         }
-        action("Browse for a disc image...", "Pick a .iso or .chd made from your own Gran Turismo 3 A-Spec disc.", "",
+        action("Add a disc image...",
+               "Pick a .iso or .chd made from your own disc: it joins the disc library below and opens.", "",
                [a] { a->show_open_dialog(); });
         if (!app.last_error().empty() && !app.failed_disc_path().empty())
             info("Last error", app.last_error(), elide_middle(app.failed_disc_path(), 77));
 
         build_saves(app);
 
-        std::vector<std::string> recent = app.recent_discs();
-        if (!recent.empty()) heading("Recent disc images");
-        for (const std::string& p : recent) {
+        const DiscView& v = disc_view_;
+        if (!v.library.empty()) heading("Disc library");
+        for (size_t i = 0; i < v.library.size(); ++i) {
+            const std::string& p = v.library[i];
             bool is_current = !current.empty() && platform::same_disc_path(p, current);
-            bool ok = disc_available(p);
-            std::string where = is_current ? "In use" : ok ? p : "Missing: " + p;
+            bool ok = v.there[i];
+            // What it is, as of when it was last opened (none yet for images from before the library).
+            const std::optional<platform::DiscRecord>& rec = v.records[i];
+            const std::string what = rec ? platform::disc_record_label(*rec) : std::string();
+            const std::string where =
+                (rec && !rec->description.empty() ? rec->description + (rec->modified ? ", modified" : "") + ": " : "") +
+                elide_middle(p, 72) + ". ";
             Row& r = action(platform::disc_file_name(p),
-                            is_current ? "This disc is open. Square: remove from the list."
-                            : ok       ? "Cross: open this disc (restarts the game). Square: remove."
-                                       : "Not found (moved or drive not connected). Square: remove.",
-                            where, [a, p, is_current] {
+                            where + (is_current ? "This disc is open. Square: remove from the library."
+                                     : ok       ? "Cross: switch to this disc (back to its title menu). Square: remove."
+                                                : "Not found (moved or drive not connected). Square: remove."),
+                            is_current ? "In use" : !ok ? "Missing" : what, [a, p, is_current] {
                                 if (!is_current) a->request_disc(p);
                             });
             r.enabled = ok;
@@ -2015,6 +2057,7 @@ private:
         follow_sel_ = true;
         dragging_ = -1;
         press_ = Press{};
+        disc_view_.stale = true;
         build(app);
     }
 

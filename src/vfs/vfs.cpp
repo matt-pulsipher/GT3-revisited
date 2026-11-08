@@ -2,6 +2,7 @@
 
 #include "base/config.h"
 #include "base/log.h"
+#include "disc/disc.h"
 
 #include <SDL3/SDL_filesystem.h>
 
@@ -54,8 +55,19 @@ void collect_files(const std::string& root, const std::string& rel, std::vector<
 
 } // namespace
 
+bool mod_for_disc(const std::vector<std::string>& discs, std::string_view key, std::string_view serial) {
+    if (discs.empty()) return true;
+    const std::string k = to_lower(key), s = to_lower(serial), ss = to_lower(short_serial(serial));
+    for (const std::string& d : discs) {
+        const std::string n = to_lower(trim(d));
+        if (n == k || (!s.empty() && (n == s || n == ss))) return true;
+    }
+    return false;
+}
+
 void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {
     mods_.clear();
+    const std::string key = disc_key(), section = mods_section(), serial = base_ ? base_->serial() : std::string();
     for (const std::string& id : list_host_dir(mods_dir)) {
         std::string root = mods_dir + "/" + id;
         if (!host_is_directory(root)) continue;
@@ -69,9 +81,16 @@ void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {
             mod.author = ini->get("mod", "author").value_or("");
             mod.description = ini->get("mod", "description").value_or("");
             mod.priority = std::atoi(ini->get("mod", "priority").value_or("0").c_str());
+            const std::string discs = ini->get("mod", "discs").value_or("");
+            for (std::string_view d : split(discs, ','))
+                if (!trim(d).empty()) mod.discs.emplace_back(trim(d));
         }
-        if (config)
-            if (auto on = config->get("mods", mod.id)) mod.enabled = to_lower(*on) != "off" && *on != "0";
+        mod.for_disc = mod_for_disc(mod.discs, key, serial);
+        if (config) {
+            std::optional<std::string> on = config->get(section, mod.id);
+            if (!on) on = config->get("mods", mod.id);
+            if (on) mod.enabled = to_lower(*on) != "off" && *on != "0";
+        }
         std::vector<std::string> files;
         collect_files(root + "/files", "", files, 0);
         for (auto& f : files) mod.files.push_back(normalize_vfs_path(f));
@@ -81,7 +100,8 @@ void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {
             if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.makers.push_back(root + "/makers/" + name);
         mod.textures = texture_pack::pictures_in(root + "/textures");
         LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, %zu textures, priority %d, %s", mod.name.c_str(), mod.id.c_str(),
-                 mod.files.size(), mod.cars.size(), mod.textures.size(), mod.priority, mod.enabled ? "enabled" : "disabled");
+                 mod.files.size(), mod.cars.size(), mod.textures.size(), mod.priority,
+                 !mod.for_disc ? "for other discs" : mod.enabled ? "enabled" : "disabled");
         mods_.push_back(std::move(mod));
     }
     // Stable order: priority, then id, so load order is deterministic.
@@ -101,7 +121,7 @@ void Vfs::rebuild_index() {
     overrides_.clear();
     override_source_.clear();
     for (const ModInfo& m : mods_) { // ascending priority: later wins
-        if (!m.enabled) continue;
+        if (!m.active()) continue;
         for (const std::string& f : m.files) {
             overrides_[f] = m.root + "/files/" + f;
             override_source_[f] = m.id;
@@ -109,7 +129,7 @@ void Vfs::rebuild_index() {
     }
     auto pack = std::make_shared<texture_pack::Pack>();
     for (auto m = mods_.rbegin(); m != mods_.rend(); ++m) // descending priority: the first file of a key stays
-        if (m->enabled)
+        if (m->active())
             for (const auto& [key, path] : m->textures) pack->add_file(key, path, m->id);
     textures_ = pack->size() ? std::move(pack) : nullptr;
 }
@@ -124,7 +144,7 @@ std::optional<Bytes> Vfs::read(const std::string& path) const {
     if (p == kModCarsList) { // "<mod id>\t<host path>" per line, mods in ascending priority
         std::string text;
         for (const ModInfo& m : mods_)
-            if (m.enabled) {
+            if (m.active()) {
                 for (const std::string& f : m.makers) text += m.id + "\t" + f + "\n"; // makers first
                 for (const std::string& f : m.cars) text += m.id + "\t" + f + "\n";
             }
@@ -134,6 +154,11 @@ std::optional<Bytes> Vfs::read(const std::string& path) const {
     if (p == kRegionFile) {
         if (!base_) return std::nullopt;
         std::string key = region_key(base_->region());
+        return Bytes(key.begin(), key.end());
+    }
+    if (p == kDiscKeyFile) {
+        if (!base_) return std::nullopt;
+        std::string key = disc_key();
         return Bytes(key.begin(), key.end());
     }
     if (p == kLanguageFile) {
@@ -211,6 +236,12 @@ Language language_of(const std::function<std::optional<Bytes>(const std::string&
     if (std::optional<Bytes> b = read ? read(Vfs::kLanguageFile) : std::nullopt)
         if (std::optional<Language> l = text::language_from_code(std::string(b->begin(), b->end()))) return *l;
     return region_data(read).default_language();
+}
+
+std::string disc_key_of(const std::function<std::optional<Bytes>(const std::string&)>& read) {
+    if (std::optional<Bytes> b = read ? read(Vfs::kDiscKeyFile) : std::nullopt; b && !b->empty())
+        return std::string(b->begin(), b->end());
+    return region_key(region_data(read).region);
 }
 
 std::string course_file_path(const Vfs& vfs, std::string_view label) {

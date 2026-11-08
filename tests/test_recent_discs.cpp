@@ -1,4 +1,4 @@
-// Recent disc list ([game] recent1..recent5) and saved-path resolution.
+// The disc library ([game] recent1..recentN, [disc_library]) and saved-path resolution.
 
 #include "test_framework.h"
 
@@ -11,16 +11,17 @@ using namespace gt3r::platform;
 
 TEST(recent_discs_push_moves_to_front_and_caps) {
     std::vector<std::string> l;
-    for (int i = 0; i < 7; ++i) l = push_recent_disc(l, "/isos/disc" + std::to_string(i) + ".iso");
-    CHECK(int(l.size()) == kMaxRecentDiscs);
-    CHECK(l.front() == "/isos/disc6.iso");
+    const int n = kMaxLibraryDiscs + 2;
+    for (int i = 0; i < n; ++i) l = push_recent_disc(l, "/isos/disc" + std::to_string(i) + ".iso");
+    CHECK(int(l.size()) == kMaxLibraryDiscs);
+    CHECK(l.front() == "/isos/disc" + std::to_string(n - 1) + ".iso");
     CHECK(l.back() == "/isos/disc2.iso");
     l = push_recent_disc(l, "/isos/disc4.iso");
     CHECK(l.front() == "/isos/disc4.iso");
-    CHECK(int(l.size()) == kMaxRecentDiscs);
+    CHECK(int(l.size()) == kMaxLibraryDiscs);
     CHECK(std::count(l.begin(), l.end(), std::string("/isos/disc4.iso")) == 1);
-    l = remove_recent_disc(l, "/isos/disc6.iso");
-    CHECK(int(l.size()) == kMaxRecentDiscs - 1);
+    l = remove_recent_disc(l, "/isos/disc5.iso");
+    CHECK(int(l.size()) == kMaxLibraryDiscs - 1);
 }
 
 TEST(recent_discs_windows_paths_dedupe) {
@@ -47,6 +48,28 @@ TEST(recent_discs_ini_roundtrip) {
     save_recent_discs(back, {"/only.iso"});
     CHECK(!back.get("game", "recent2"));
     CHECK(load_recent_discs(back).size() == 1);
+}
+
+TEST(recent_discs_records) {
+    IniDocument cfg;
+    DiscRecord pal{"SCES_502.94", "1.00", "eu", "075246ad42a4b418", "eu", "Gran Turismo 3 A-Spec (PAL)", true, true};
+    DiscRecord mod{"SCEF_502.94", "1.00", "eu", "1e8d5712926622d2", "SCEF-50294", "Unverified | odd disc", false, false};
+    save_recent_discs(cfg, {"D:\\ISO\\GT3 = PAL.iso", "/isos/gt3c.iso"});
+    save_disc_record(cfg, "D:\\ISO\\GT3 = PAL.iso", pal);
+    save_disc_record(cfg, "/isos/gt3c.iso", mod);
+    IniDocument back = IniDocument::parse(cfg.serialize());
+    // The same file however its path is written.
+    std::optional<DiscRecord> a = load_disc_record(back, "d:/iso/gt3 = pal.iso"), b = load_disc_record(back, "/isos/gt3c.iso");
+    CHECK(a && b && !load_disc_record(back, "/isos/GT3C.iso"));
+    if (!a || !b) return;
+    CHECK(a->serial == pal.serial && a->version == "1.00" && a->region == "eu" && a->digest == pal.digest && a->key == "eu");
+    CHECK(a->known && a->modified && a->description == pal.description);
+    CHECK(!b->known && !b->modified && b->description == "Unverified | odd disc" && b->key == "SCEF-50294");
+    CHECK(disc_record_label(*a) == "PAL v1.00, modified");
+    CHECK(disc_record_label(*b) == "SCEF-50294 v1.00");
+    // Leaving the library drops the record.
+    save_recent_discs(back, {"/isos/gt3c.iso"});
+    CHECK(!load_disc_record(back, "D:\\ISO\\GT3 = PAL.iso") && load_disc_record(back, "/isos/gt3c.iso"));
 }
 
 TEST(recent_discs_path_candidates) {

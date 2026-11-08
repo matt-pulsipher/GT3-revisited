@@ -569,9 +569,9 @@ private:
     void apply_post_pass(render::DrawOptions& o) const;
     // The replay depth of field (presentation §G17) for the full-frame view.
     void apply_depth_of_field(render::DrawOptions& o) const;
-    // The disc region's replays (race::replay_dir).
+    // The disc's replays (race::replay_dir, by its disc key).
     std::string replay_dir(App& app) const {
-        return race::replay_dir(app.save_folder(), app.vfs() ? app.vfs()->region().region : Region::America);
+        return race::replay_dir(app.save_folder(), app.vfs() ? app.vfs()->disc_key() : region_key(Region::America));
     }
 
     // After a run (screen_race_post_run.cpp; race/post_run.h): the race-exit transition, the

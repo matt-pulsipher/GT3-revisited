@@ -9,6 +9,7 @@
 #include "input/input_manager.h"
 #include "platform/aspect.h"
 #include "platform/display_insets.h"
+#include "platform/recent_discs.h"
 #include "race/custom_music.h"
 #include "render/dynamic_scale.h"
 #include "render/gamma_pass.h"
@@ -20,6 +21,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -78,9 +80,11 @@ public:
     // Opens `path` on the next frame, like a file picked in the dialog: on
     // success the screen stack restarts (hub + game start) for the new disc.
     void request_disc(const std::string& path) { set_dialog_result(path); }
-    // [game] recent1..5, most recent first (see platform/recent_discs.h).
+    // The disc library: [game] recent1..N, most recent first (see platform/recent_discs.h).
     std::vector<std::string> recent_discs() const;
     void forget_recent_disc(const std::string& path);
+    // What a library image is, as of when it was last opened (nullopt: not opened by this version yet).
+    std::optional<platform::DiscRecord> disc_record(const std::string& path) const;
     // The path of the last disc image that failed to open (empty after a success).
     const std::string& failed_disc_path() const { return failed_disc_path_; }
 
@@ -219,9 +223,10 @@ public:
     bool language_chosen() const;
     // Chooses the language (one of languages(); others are ignored) and keeps it in the config.
     void set_language(const std::string& code);
-    // The game's start: the opening movie, then the title menu; first the language page on a
-    // PAL disc whose language was not chosen yet.
-    void push_game_start();
+    // The game's start: the opening movie (unless `movie` is false: another disc picked from
+    // the library goes straight on), then the title menu; first the language page on a PAL
+    // disc whose language was not chosen yet.
+    void push_game_start(bool movie = true);
     // The languages the disc runs in (disc/region.h playable_languages): NTSC-U US, NTSC-J
     // JP, PAL BR, FR, GR, IT, SP.
     std::vector<std::string> languages() const;

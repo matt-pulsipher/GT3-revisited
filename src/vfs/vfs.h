@@ -14,7 +14,7 @@ namespace gt3r {
 class IniDocument;
 
 // A mod is a directory under <user data>/mods/<id>/ containing:
-//   mod.ini   [mod] name, version, author, description, priority
+//   mod.ini   [mod] name, version, author, description, priority, discs
 //   files/    files mirroring GT3.VOL paths; each overrides or adds a file
 //   cars/     new car definitions (*.ini, see game/data/mod_cars.h)
 //   textures/ replacement textures (PNGs named by key, formats/texture_pack.h)
@@ -26,7 +26,11 @@ struct ModInfo {
     std::string author;
     std::string description;
     int priority = 0; // higher wins
-    bool enabled = true;
+    bool enabled = true; // the player's choice for this disc ([mods.<disc key>], else [mods])
+    // mod.ini's discs: the discs the mod is for (disc keys or serials: "eu, SCEF-50294"); empty: every disc.
+    std::vector<std::string> discs;
+    bool for_disc = true; // the open disc is one of `discs`
+    bool active() const { return enabled && for_disc; }
     std::string root; // absolute path to the mod directory
     std::vector<std::string> files; // VOL-relative paths provided
     std::vector<std::string> cars;  // host paths of cars/*.ini (game/data/mod_cars.h)
@@ -40,7 +44,8 @@ class Vfs {
 public:
     explicit Vfs(Volume* base);
 
-    // Scans `mods_dir` for mods; enable state comes from `[mods]` in `config`.
+    // Scans `mods_dir` for mods; the player's choices come from `config`: [mods.<disc key>] for
+    // this disc, else [mods] (the choices before discs had their own).
     void scan_mods(const std::string& mods_dir, const IniDocument* config);
     const std::vector<ModInfo>& mods() const { return mods_; }
     void set_mod_enabled(const std::string& id, bool enabled);
@@ -67,6 +72,10 @@ public:
     Volume* base() const { return base_; }
     // The disc's regional data set (NTSC-U when there is no disc).
     RegionData region() const { return {base_ ? base_->region() : Region::America}; }
+    // Where the disc keeps its saves, replays and mod choices (DiscInfo::key; "us" when there is no disc).
+    std::string disc_key() const { return base_ ? base_->disc_key() : region_key(Region::America); }
+    // The config section of this disc's mod choices: "mods.<disc key>".
+    std::string mods_section() const { return "mods." + disc_key(); }
     // The game's language (disc/region.h), which the app sets from its config; the region's
     // own (RegionData::default_language) until then.
     Language language() const { return language_ ? *language_ : region().default_language(); }
@@ -84,6 +93,8 @@ public:
     static constexpr const char* kRegionFile = "disc/.region";
     // Virtual file: the game's language code ("US", "BR", ...; language()). Not moddable.
     static constexpr const char* kLanguageFile = "disc/.language";
+    // Virtual file: the disc key (disc_key()). Not moddable.
+    static constexpr const char* kDiscKeyFile = "disc/.key";
 
 private:
     void rebuild_index();
@@ -101,6 +112,10 @@ std::string normalize_vfs_path(std::string_view path);
 RegionData region_data(const std::function<std::optional<Bytes>(const std::string&)>& read);
 // The game's language through a reader (Vfs::kLanguageFile), else the region's own.
 Language language_of(const std::function<std::optional<Bytes>(const std::string&)>& read);
+// The disc key through a reader (Vfs::kDiscKeyFile), else its region's key.
+std::string disc_key_of(const std::function<std::optional<Bytes>(const std::string&)>& read);
+// A mod.ini discs list names the disc (its key or serial, either way written; any case).
+bool mod_for_disc(const std::vector<std::string>& discs, std::string_view key, std::string_view serial);
 
 // A course file's path: the one the game reads (RegionData::course_path in the language),
 // else another folder's that has it; "" when none does.

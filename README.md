@@ -117,9 +117,11 @@ You can also drag the `.iso` or `.chd` onto the window. On Android and the Quest
 **Open disc image** and pick the file ([android/README.md](android/README.md)). On
 iOS, **Open disc image** shows the Files app's picker: the image can be anywhere it
 reaches (On My iPhone, a network share, another app's folder) and is read where it
-is, never copied. The path is remembered, with the last five discs you opened. If the remembered disc
+is, never copied. Every disc you open joins the disc library (**Discs...** in the main menu,
+or Settings > Disc & saves), which remembers what each one is; picking another disc there
+goes straight to its title menu. If the remembered disc
 is missing at startup (moved, or on a drive that isn't connected), the first
-screen says which file failed and offers the recent discs that still exist.
+screen says which file failed and offers the library's discs that are there.
 
 The game starts like GT3: the opening movie (skip with Cross/Start), then the
 title menu. Press **Select** on the title menu, or click/tap the **GT3R
@@ -138,7 +140,7 @@ game:
 | Movie theater | the game's movies |
 | Car database | specs, torque curves, upgrades and events |
 | Save editor | change a GT Mode save (below) |
-| Change disc image... | recent discs, or browse |
+| Discs... | your disc library: switch discs, or add one |
 | Developer options | asset browser, viewers and test screens for working on the project |
 | Quit | |
 
@@ -165,8 +167,8 @@ beside it instead. Saves and replays can go in another folder of your choice
 | In the folder | |
 |---|---|
 | `config.ini` | settings (below) |
-| `saves/` | GT Mode saves (below), unless Settings chooses another save folder |
-| `replays/` | saved replays (`.gt3replay`), listed by the Replay Theater and Time trial; in the save folder too |
+| `saves/` | GT Mode saves (below), unless Settings chooses another save folder; a folder per region and per disc of its own ([COMPATIBILITY](docs/COMPATIBILITY.md#the-disc-library)) |
+| `replays/` | saved replays (`.gt3replay`), listed by the Replay Theater and Time trial; in the save folder too, by disc as `saves/` |
 | `mods/` | installed mods ([MODDING](docs/MODDING.md)) |
 | `music/` | your own race music (below), unless Settings chooses another folder |
 | `music_playlist.txt` | your songs' playlist (their order and check marks) |
@@ -194,7 +196,8 @@ are only there:
 | Section / key | Values | |
 |---|---|---|
 | `[game] disc` | path | disc opened at startup |
-| `[game] recent1`..`recent5` | paths | recently opened discs, newest first |
+| `[game] recent1`..`recent32` | paths | the disc library, most recently opened first |
+| `[disc_library]` | | what each library disc is, as of when it was last opened |
 | `[app] start` | `game` / `hub` | start with the game, or in Developer options |
 | `[video] fullscreen` | `on` / `off` | desktop window mode (F11) |
 | `[video] aspect` | `16:9` / `4:3` / `fill` | the game's picture: 16:9 (default), 4:3 like on a 4:3 TV, or the whole screen (races use its full width; menus and movies stay 4:3) |
@@ -235,7 +238,7 @@ are only there:
 | `[online] server` | host name | relay server (default `gt3r.gameversions.com`; set in the lobby) |
 | `[online] update_check` | `on` / `off` | ask the relay server for a newer version at startup (Settings → Online) |
 | `[options]` | | the game's own Options menu (set in game); ours: `music_source` (`original` / `custom` / `both`; unset: `custom`) and `music_mix` (Both's `order` / `shuffle`), the music list's tabs |
-| `[mods]` | | see [MODDING](docs/MODDING.md) |
+| `[mods.<disc key>]`, `[mods]` | | each disc's mod choices, and earlier versions' ([MODDING](docs/MODDING.md)) |
 
 ### Saves
 

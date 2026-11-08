@@ -682,7 +682,10 @@ files, any number of them (`game/save_library.*`):
   before; the next launch continues it.
 - **Regions**: each release has its own library, as each had its own memory
   card folder: `saves/` (NTSC-U), `saves/jp/`, `saves/eu/`
-  (`SaveLibrary::user_dir(Region)`). Changing discs drops the GT-mode session
+  (`SaveLibrary::user_dir`, by the disc key `Vfs::disc_key`, read through
+  `disc_key_of`). A disc with a serial of its own (a modified copy such as
+  `SCEF_502.94`, another game on the engine) has `saves/<its key>/`, which starts
+  with copies of its region's library the first time (once). Changing discs drops the GT-mode session
   and data (`close_gt_mode`). Versions up to 0.3 kept every disc's games in
   `saves/` (on the NTSC-U data set, which the PAL set extends: the same cars and
   wheels plus the Vauxhall variants), so the first time a PAL disc's library is
