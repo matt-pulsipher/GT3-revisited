@@ -23,4 +23,22 @@ void accel_to_display(const float in[3], float out[3], int rotation_degrees);
 // the device or pad is turned clockwise as seen by the player (steer right).
 float steering_roll(const float accel[3]);
 
+// A 1€ (one-euro) filter (Casiez, Roussel and Vogel, CHI 2012) for the roll:
+// an exponential low-pass whose cutoff follows the signal's speed, so a
+// nearly still reading is smoothed hard (sensor jitter stays out of the
+// steering and the on-screen meter) while a fast turn is followed almost
+// raw, without lag.
+class RollFilter {
+public:
+    // The filtered roll. `dt` is the frame time in seconds; the first call
+    // (or one after reset()) returns the input as it is.
+    float filter(float roll, double dt);
+    void reset() { primed_ = false; }
+
+private:
+    float x_ = 0.0f;  // filtered roll
+    float dx_ = 0.0f; // filtered roll speed
+    bool primed_ = false;
+};
+
 } // namespace gt3r::platform

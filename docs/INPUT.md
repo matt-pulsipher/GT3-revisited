@@ -282,7 +282,7 @@ Circle Cross Square`, and the axes `LX LY RX RY`, optionally as halves
 | `joy.axis<N>[+/-]` | Raw joystick axis (wheels and pedals) |
 | `joy.button<N>` | Raw joystick button |
 | `joy.hat<N>.<up/down/left/right>` | Joystick hat direction |
-| `tilt[+/-]` | Controller roll from the accelerometer (±45° = full lock; turning clockwise = positive). On phones and tablets the reading is remapped to the current screen orientation |
+| `tilt[+/-]` | Controller roll from the accelerometer (±45° = full lock; turning clockwise = positive). On phones and tablets the reading is remapped to the current screen orientation; sensor jitter is smoothed (a 1€ filter) |
 | `mouse.<left/right/middle>` | Mouse button |
 
 **Options** (after a source):
@@ -530,11 +530,12 @@ Each screen picks a layout:
 ```ini
 [touch]
 mode = auto            ; auto | on | off
-steering = drag        ; drag | tilt (roll the device like a wheel, ±45° = full lock) | buttons (Left / Right)
+steering = drag        ; drag | tilt (roll the device like a wheel) | buttons (Left / Right)
 pedals = position      ; position | area (touch pressure/size, where the screen reports it) | full
 pedal_min = 0.35       ; pressure at the bottom of a pedal (position mode)
 steer_range = 0.14     ; drag distance for full lock, fraction of the screen width
 look = drag            ; drag (a finger on the open screen looks around) | off
+tilt_range = 45        ; tilt steering: degrees of roll for full lock
 tilt_deadzone = 0.04   ; fraction of full lock
 opacity = 0.50
 size = 1.00            ; 0.6 .. 1.6
