@@ -94,10 +94,7 @@ AudioEngine::AudioEngine(const std::string& device) : device_name_(device) {
     // The voices play at unity gain: the volumes are the mixer's bus gains.
     // An early device open can be refused (seen on Android, where an open later in the app's
     // life succeeds): keep the streams unbound and let the switcher thread retry the open.
-    if (!use_device(find_playback_device(device_name_))) {
-        LOG_ERROR("Audio unavailable: %s; retrying in the background", SDL_GetError());
-        request_switch();
-    }
+    if (!use_device(find_playback_device(device_name_))) request_switch();
 }
 
 AudioEngine::~AudioEngine() {
@@ -139,16 +136,19 @@ bool AudioEngine::use_device(SDL_AudioDeviceID phys) {
         std::lock_guard lock(device_mutex_);
         bound = move_stream(music_stream_, music, old_music);
         bound = move_stream(sfx_stream_, voices, old_voices) && bound;
-        if (bound) device_ = phys;
+        if (bound) {
+            device_ = phys;
+        } else {
+            // A failed bind leaves a stream unbound or on the new pair: put each stream back on
+            // the device it had (if any), still under the lock so no pause lands on the new
+            // pair, which then closes; the open fails and is retried like a failed open.
+            SDL_UnbindAudioStream(music_stream_);
+            SDL_UnbindAudioStream(sfx_stream_);
+            if (old_music) SDL_BindAudioStream(old_music, music_stream_);
+            if (old_voices) SDL_BindAudioStream(old_voices, sfx_stream_);
+        }
     }
     if (!bound) {
-        // A failed bind leaves a stream unbound or on the new pair: put each stream back on
-        // the device it had (if any), drop the new pair, and fail the open so it is retried
-        // like a failed open.
-        SDL_UnbindAudioStream(music_stream_);
-        SDL_UnbindAudioStream(sfx_stream_);
-        if (old_music) SDL_BindAudioStream(old_music, music_stream_);
-        if (old_voices) SDL_BindAudioStream(old_voices, sfx_stream_);
         SDL_CloseAudioDevice(music);
         SDL_CloseAudioDevice(voices);
         return false;
@@ -188,11 +188,13 @@ void AudioEngine::request_switch() {
 void AudioEngine::run_switcher() {
     std::unique_lock lock(switch_mutex_);
     for (;;) {
-        // While no device is open, retry about once a second (an open refused early can be
-        // accepted later); with a device open, wait for the next request only.
+        // While no device is open, retry (an open refused early can be accepted later): after
+        // 1 s, then twice as long after each failure up to 30 s, so a machine without any
+        // audio isn't polled every second; with a device open, wait for the next request only.
         if (device_ == 0) {
-            switch_cv_.wait_for(lock, std::chrono::seconds(1),
-                                [this] { return switch_requested_ || switch_quit_; });
+            const int failures = std::clamp(open_failures_.load(), 1, 6);
+            const auto wait = std::min(std::chrono::seconds(1 << (failures - 1)), std::chrono::seconds(30));
+            switch_cv_.wait_for(lock, wait, [this] { return switch_requested_ || switch_quit_; });
         } else {
             switch_cv_.wait(lock, [this] { return switch_requested_ || switch_quit_; });
         }

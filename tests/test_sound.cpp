@@ -321,3 +321,25 @@ TEST(sound_output_device_choice) {
     }
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
+
+// A refused first open (seen on Android early in the app's life) is retried: an engine made
+// while no device can open stays without one, then opens it once one can, on retry().
+TEST(sound_output_open_retry) {
+    if (SDL_WasInit(SDL_INIT_AUDIO)) SKIP("audio already initialized");
+    bool init = false;
+    {
+        AudioEngine audio; // SDL audio is down: the open fails, the streams stay
+        CHECK(!audio.ok());
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+        init = SDL_InitSubSystem(SDL_INIT_AUDIO);
+        SDL_ResetHint(SDL_HINT_AUDIO_DRIVER);
+        if (init) {
+            audio.retry();
+            for (int i = 0; i < 200 && !audio.ok(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            CHECK(audio.ok());
+            CHECK(audio.output_device_id() == SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK);
+        }
+    }
+    if (!init) SKIP("no SDL dummy audio driver");
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+}

@@ -50,8 +50,8 @@ public:
     bool ok() const { return device_ != 0; } // an output device is open
 
     // Asks the switcher thread to open the output now when none is open (a failed open is
-    // retried about once a second anyway; this hurries it, e.g. on returning to the
-    // foreground). A stream creation failure is still fatal.
+    // retried anyway, 1 s after the first failure and backing off to every 30 s; this hurries
+    // it, e.g. on returning to the foreground). A stream creation failure is still fatal.
     void retry();
 
     // The output device by name, empty for the system default (which follows the system's own
