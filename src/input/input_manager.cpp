@@ -290,6 +290,8 @@ void InputManager::add_device(SDL_JoystickID id) {
     d.name = name ? name : "Unknown device";
     const SDL_JoystickType type = SDL_GetJoystickTypeForID(id);
     d.listed_wheel = type == SDL_JOYSTICK_TYPE_WHEEL;
+    d.logitech_pedals = !d.gamepad && logitech_driver_pedals(SDL_GetJoystickVendorForID(id), SDL_GetJoystickProductForID(id),
+                                                             SDL_GetJoystickGUIDForID(id).data[14]);
     d.wheel = is_wheel(type, type == SDL_JOYSTICK_TYPE_UNKNOWN && ForceFeedback::has_wheel_forces(d.joystick));
 #if GT3R_XR
     d.vr_pad = SDL_IsJoystickVirtual(id); // (the game makes no other)
@@ -591,7 +593,7 @@ void InputManager::update_chord_capture() {
         if (!d) continue;
         for (size_t a = 0; a < base.size(); ++a) {
             const float v = d->gamepad ? normalize_axis(SDL_GetGamepadAxis(d->gamepad, SDL_GamepadAxis(a)))
-                                       : normalize_axis(SDL_GetJoystickAxis(d->joystick, int(a)));
+                                       : normalize_axis(SDL_GetJoystickAxis(d->joystick, sdl_axis(*d, int(a))));
             const float delta = v - base[a];
             if (std::fabs(delta) < 0.5f) continue;
             InputSource s;
@@ -658,7 +660,7 @@ void InputManager::begin_capture(int player) {
                 axes.push_back(normalize_axis(SDL_GetGamepadAxis(d.gamepad, SDL_GamepadAxis(a))));
         else
             for (int a = 0; a < SDL_GetNumJoystickAxes(d.joystick); ++a)
-                axes.push_back(normalize_axis(SDL_GetJoystickAxis(d.joystick, a)));
+                axes.push_back(normalize_axis(SDL_GetJoystickAxis(d.joystick, sdl_axis(d, a))));
         capture_baseline_.emplace_back(d.id, std::move(axes));
     }
 }
@@ -717,7 +719,7 @@ std::optional<float> InputManager::read_source(const Player& p, const Device* de
         return SDL_GetJoystickButton(dev->joystick, src.code) ? 1.0f : 0.0f;
     case InputSource::Kind::JoyAxis:
         if (!dev || src.code >= SDL_GetNumJoystickAxes(dev->joystick)) return std::nullopt;
-        return normalize_axis(SDL_GetJoystickAxis(dev->joystick, src.code));
+        return normalize_axis(SDL_GetJoystickAxis(dev->joystick, sdl_axis(*dev, src.code)));
     case InputSource::Kind::JoyHat:
         if (!dev || src.code >= SDL_GetNumJoystickHats(dev->joystick)) return std::nullopt;
         return (SDL_GetJoystickHat(dev->joystick, src.code) & src.hat_dir) ? 1.0f : 0.0f;
@@ -732,8 +734,8 @@ void InputManager::note_moved_axes() {
         const int n = std::min(SDL_GetNumJoystickAxes(d.joystick), 32);
         for (int a = 0; a < n; ++a) {
             Sint16 rest = 0; // stays 0 until the axis first reports
-            SDL_GetJoystickAxisInitialState(d.joystick, a, &rest);
-            if (std::abs(int(SDL_GetJoystickAxis(d.joystick, a)) - rest) > kMoved) d.moved_axes |= 1u << a;
+            SDL_GetJoystickAxisInitialState(d.joystick, sdl_axis(d, a), &rest);
+            if (std::abs(int(SDL_GetJoystickAxis(d.joystick, sdl_axis(d, a))) - rest) > kMoved) d.moved_axes |= 1u << a;
         }
     }
 }
@@ -747,7 +749,7 @@ bool InputManager::idle_centred(const Player& p, const Device* dev, const InputS
     if (!source.device.empty()) dev = find_tagged(source.device, p.device);
     if (!dev || (dev->moved_axes >> source.code & 1)) return false;
     Sint16 rest = 0; // stays 0 until the axis first reports
-    SDL_GetJoystickAxisInitialState(dev->joystick, source.code, &rest);
+    SDL_GetJoystickAxisInitialState(dev->joystick, sdl_axis(*dev, source.code), &rest);
     return std::fabs(normalize_axis(rest)) < 0.5f;
 }
 
@@ -874,7 +876,7 @@ void InputManager::update(double dt) {
             if (!d) continue;
             for (size_t a = 0; a < base.size(); ++a) {
                 float v = d->gamepad ? normalize_axis(SDL_GetGamepadAxis(d->gamepad, SDL_GamepadAxis(a)))
-                                     : normalize_axis(SDL_GetJoystickAxis(d->joystick, int(a)));
+                                     : normalize_axis(SDL_GetJoystickAxis(d->joystick, sdl_axis(*d, int(a))));
                 float delta = v - base[a];
                 if (std::fabs(delta) <= best) continue;
                 best = std::fabs(delta);
@@ -962,6 +964,20 @@ std::vector<bool> reserved_devices(const std::vector<DeviceId>& devices, const s
 
 bool is_wheel(SDL_JoystickType type, bool wheel_forces) {
     return type == SDL_JOYSTICK_TYPE_WHEEL || (type == SDL_JOYSTICK_TYPE_UNKNOWN && wheel_forces);
+}
+
+bool logitech_driver_pedals(u16 vendor, u16 product, u8 driver) {
+    // G29 (native mode, which the driver switches it to), G27, G25: SDL_hidapi_lg4ff.c's axes.
+    return vendor == 0x046d && (product == 0xc24f || product == 0xc29b || product == 0xc299) && driver == 'h';
+}
+
+int logitech_driver_axis(int axis) {
+    switch (axis) {
+    case 1: return 2; // gas
+    case 2: return 3; // brake
+    case 3: return 1; // clutch
+    default: return axis;
+    }
 }
 
 DeviceKind device_kind(bool connected, bool gamepad, bool wheel, bool named_wheel) {

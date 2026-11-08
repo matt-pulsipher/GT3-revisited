@@ -65,6 +65,15 @@ bool gt3_rumble(std::string_view mode);
 // never is: its type says so.
 bool is_wheel(SDL_JoystickType type, bool wheel_forces);
 
+// A Logitech G29, G27 or G25 driven by SDL's own Logitech driver over USB (`driver`: the joystick
+// GUID's driver byte, 'h' for SDL's USB drivers; macOS, Linux and Android use it, Windows doesn't).
+// That driver sends the pedals as axes 2 gas, 3 brake, 1 clutch.
+bool logitech_driver_pedals(u16 vendor, u16 product, u8 driver);
+// The SDL axis the game reads as joystick axis `axis` of such a wheel: the pedals in the order
+// Windows gives them (1 gas, 2 brake, 3 clutch), the wheel preset's, so a binding means the same
+// pedal everywhere.
+int logitech_driver_axis(int axis);
+
 // What a device is to Auto: a wheel SDL lists, a wheel only by its forces (is_wheel; it may be a
 // Link Hub with just pedals on it), a gamepad SDL maps, the VR controllers' gamepad, or any other
 // joystick (flight sticks, but also odd HID devices such as some keyboards, mice and macro pads).
@@ -292,6 +301,7 @@ private:
         bool has_accel = false;
         bool wheel = false; // is_wheel (Auto takes it first)
         bool listed_wheel = false; // SDL identifies it (not its forces alone)
+        bool logitech_pedals = false; // logitech_driver_pedals: joystick axes read through logitech_driver_axis
         bool vr_pad = false; // the VR controllers' gamepad (xr::Session; Auto takes a real pad before it)
         u32 moved_axes = 0; // axes seen away from where they started (note_moved_axes)
         bool dualsense = false; // a PlayStation 5 controller (Modern rumble's mix for it, dualsense_rumble)
@@ -325,6 +335,8 @@ private:
 
     void add_device(SDL_JoystickID id);
     void remove_device(SDL_JoystickID id);
+    // The SDL axis behind joystick axis `a` of a device (logitech_driver_axis for its pedals).
+    static int sdl_axis(const Device& d, int a) { return d.logitech_pedals ? logitech_driver_axis(a) : a; }
     void assign_devices();
     const Device* find_device(SDL_JoystickID id) const;
     std::vector<DeviceId> device_ids() const; // the connected devices, for device tags

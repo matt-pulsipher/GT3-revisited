@@ -59,7 +59,7 @@ The kind of device in use picks the buttons; players don't choose a layout:
 | Kind | Buttons |
 |---|---|
 | Gamepad | DualShock 2 layout 1:1 (triggers → L2/R2 pressure); back paddles → R2 / L2 (right up, left down: GT3's shift buttons) |
-| Wheel (a device SDL identifies as a wheel, or a joystick SDL has no type for that plays a spring and a constant force, which rumble motors don't: SDL only lists the wheels it knows, and a Simucube 3 reaches the PC as its Link Hub, which isn't listed; issue 134) | Axis 0 steering, axes 1/2 pedals (resting at +1); typical Logitech layout. A `pedal` on an axis that has stayed in the middle since it connected reads as nothing there, not half way down (a Simucube's Y axis idles at the centre). Races use GT3's steering-wheel path. A wheel earlier versions took for a joystick gets the joystick's custom bindings, if it has no wheel bindings yet |
+| Wheel (a device SDL identifies as a wheel, or a joystick SDL has no type for that plays a spring and a constant force, which rumble motors don't: SDL only lists the wheels it knows, and a Simucube 3 reaches the PC as its Link Hub, which isn't listed; issue 134) | Axis 0 steering, axes 1/2 pedals (resting at +1); typical Logitech layout. SDL's own Logitech driver (macOS, Linux, Android) sends a G29's, G27's or G25's pedals as axes 2 gas, 3 brake, 1 clutch; the game reads them as axes 1 gas, 2 brake, 3 clutch, the order Windows gives them, so a binding means the same pedal everywhere. A `pedal` on an axis that has stayed in the middle since it connected reads as nothing there, not half way down (a Simucube's Y axis idles at the centre). Races use GT3's steering-wheel path. A wheel earlier versions took for a joystick gets the joystick's custom bindings, if it has no wheel bindings yet |
 | Joystick (any other device SDL doesn't map as a gamepad) | None: nothing is pressed until its inputs are bound in Settings → Controls (saved to `[playerN.joystick.*]`) |
 | Keyboard (Keyboard only, or no device connected) | Keyboard only |
 
@@ -482,6 +482,11 @@ GT3 sends a wheel one constant force a frame and no spring, and never touches th
 **Steering force** (`steering`) and **Centring spring** (`spring`) go to 0 apart, for the spring alone or the force alone; **Wheel strength** scales both.
 
 The game's **GT FORCE** option switches a wheel's force for its player, as in GT3; **Vibration** doesn't, and switches the triggers.
+
+**Android and the Quest** play no force feedback on wheels themselves. A Logitech G29 (in PS3
+mode), G27, G25 or Driving Force GT on USB gets it from SDL's own Logitech driver, which talks to
+the wheel directly: the first time, Android asks whether GT3 Revisited may use the wheel. Refused,
+and on other wheels, the wheel steers without force feedback.
 
 Effects stop by themselves ~0.25 s after the last update (pause, menus).
 The brake and throttle triggers are found from the race bindings: whichever of
