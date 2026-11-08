@@ -117,6 +117,19 @@ course billboards). A picture can be any size up to 4096 x 4096: draw it at 2x o
 original for sharper textures. A texture keeps its place and size on screen; only its pixels
 change.
 
+**Quick start.**
+
+1. On the Mods screen, **Save textures**. The pictures go to `texture-dump/<serial>/` in the
+   user data folder. The game never loads from there.
+2. In `mods/`, make a folder for your pack with a `textures/` folder in it:
+   `mods/my_textures/textures/`. That folder is a mod already: `mod.ini` is optional, and a new
+   mod is enabled.
+3. Copy in only the pictures you change, keeping the key at the end of each name. Every
+   picture in an enabled pack is read, changed or not, so don't copy the whole dump.
+4. Edit them, then restart the game, or come back to it from your editor with the Mods screen
+   open: the game reads the mods folder again then. What loads next (a race, a menu page)
+   shows your pictures.
+
 **Names.** Each texture has a key, 16 hex digits made from its pixels. A picture replaces the
 texture whose key its file name ends in, after `-`, `_`, `.` or a space:
 `0123456789abcdef.png`, `tread-0123456789abcdef.png`. The rest of the name, and any folders
