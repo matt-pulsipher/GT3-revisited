@@ -5,6 +5,7 @@
 #include "vfs/vfs.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <vector>
@@ -53,14 +54,18 @@ bool open_pair(SDL_AudioDeviceID phys, SDL_AudioDeviceID& music, SDL_AudioDevice
     return false;
 }
 
-// Moves `stream` onto the opened device `to`; returns the device it was on, still open. A paused
-// device (the race pause) leaves the new one paused.
-SDL_AudioDeviceID move_stream(SDL_AudioStream* stream, SDL_AudioDeviceID to) {
-    const SDL_AudioDeviceID from = SDL_GetAudioStreamDevice(stream);
+// Moves `stream` onto the opened device `to`, returning the device it was on (still open) in
+// `from`; false if the bind failed, with the stream left unbound. A paused device (the race
+// pause) leaves the new one paused.
+bool move_stream(SDL_AudioStream* stream, SDL_AudioDeviceID to, SDL_AudioDeviceID& from) {
+    from = SDL_GetAudioStreamDevice(stream);
     if (from && SDL_AudioDevicePaused(from)) SDL_PauseAudioDevice(to);
     SDL_UnbindAudioStream(stream);
-    if (!SDL_BindAudioStream(to, stream)) LOG_ERROR("Cannot move an audio stream: %s", SDL_GetError());
-    return from;
+    if (!SDL_BindAudioStream(to, stream)) {
+        LOG_ERROR("Cannot move an audio stream: %s", SDL_GetError());
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -78,8 +83,7 @@ AudioEngine::AudioEngine(const std::string& device) : device_name_(device) {
     music_stream_ = SDL_CreateAudioStream(&kMusicSpec, &kMusicSpec);
     sfx_stream_ = SDL_CreateAudioStream(&kVoiceSpec, &kVoiceSpec);
     if (!music_stream_ || !sfx_stream_ || !SDL_SetAudioStreamGetCallback(music_stream_, &AudioEngine::feed, this) ||
-        !SDL_SetAudioStreamGetCallback(sfx_stream_, &AudioEngine::feed_voices, this) ||
-        !use_device(find_playback_device(device_name_))) {
+        !SDL_SetAudioStreamGetCallback(sfx_stream_, &AudioEngine::feed_voices, this)) {
         LOG_ERROR("Audio unavailable: %s", SDL_GetError());
         if (sfx_stream_) SDL_DestroyAudioStream(sfx_stream_);
         if (music_stream_) SDL_DestroyAudioStream(music_stream_);
@@ -88,6 +92,12 @@ AudioEngine::AudioEngine(const std::string& device) : device_name_(device) {
     }
     SDL_SetAudioStreamGain(music_stream_, stream_output_gain(stream_level_, music_volume_) * stream_trim_);
     // The voices play at unity gain: the volumes are the mixer's bus gains.
+    // An early device open can be refused (seen on Android, where an open later in the app's
+    // life succeeds): keep the streams unbound and let the switcher thread retry the open.
+    if (!use_device(find_playback_device(device_name_))) {
+        LOG_ERROR("Audio unavailable: %s; retrying in the background", SDL_GetError());
+        request_switch();
+    }
 }
 
 AudioEngine::~AudioEngine() {
@@ -110,18 +120,38 @@ bool AudioEngine::use_device(SDL_AudioDeviceID phys) {
     // Both devices open before either stream moves, so a failure leaves the sound where it was.
     SDL_AudioDeviceID music = 0, voices = 0;
     if (!open_pair(phys, music, voices)) {
-        LOG_WARN("Cannot open audio device: %s", SDL_GetError());
+        // Failed opens are retried (the switcher polls while device_ is 0); only the first
+        // failure in a row is a warning.
+        if (open_failures_++ == 0) LOG_WARN("Cannot open audio device: %s", SDL_GetError());
+        else LOG_DEBUG("Cannot open audio device (retry): %s", SDL_GetError());
         if (phys == SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK) return false;
         phys = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
         if (phys == device_) return true; // already there
-        if (!open_pair(phys, music, voices)) return false;
+        if (!open_pair(phys, music, voices)) {
+            LOG_DEBUG("Cannot open the default audio device either: %s", SDL_GetError());
+            return false;
+        }
     }
+    open_failures_ = 0;
     SDL_AudioDeviceID old_music = 0, old_voices = 0;
+    bool bound;
     {
         std::lock_guard lock(device_mutex_);
-        old_music = move_stream(music_stream_, music);
-        old_voices = move_stream(sfx_stream_, voices);
-        device_ = phys;
+        bound = move_stream(music_stream_, music, old_music);
+        bound = move_stream(sfx_stream_, voices, old_voices) && bound;
+        if (bound) device_ = phys;
+    }
+    if (!bound) {
+        // A failed bind leaves a stream unbound or on the new pair: put each stream back on
+        // the device it had (if any), drop the new pair, and fail the open so it is retried
+        // like a failed open.
+        SDL_UnbindAudioStream(music_stream_);
+        SDL_UnbindAudioStream(sfx_stream_);
+        if (old_music) SDL_BindAudioStream(old_music, music_stream_);
+        if (old_voices) SDL_BindAudioStream(old_voices, sfx_stream_);
+        SDL_CloseAudioDevice(music);
+        SDL_CloseAudioDevice(voices);
+        return false;
     }
     if (old_music) SDL_CloseAudioDevice(old_music);
     if (old_voices) SDL_CloseAudioDevice(old_voices);
@@ -137,8 +167,13 @@ void AudioEngine::set_output_device(const std::string& name) {
 }
 
 void AudioEngine::device_event(const SDL_Event& e) {
-    if (device_name_.empty() || e.adevice.recording) return; // the default follows the system by itself
-    request_switch();
+    if (e.adevice.recording) return;
+    if (device_name_.empty() && device_ != 0) return; // the default follows the system by itself
+    request_switch(); // also an immediate retry while no device is open
+}
+
+void AudioEngine::retry() {
+    if (device_ == 0) request_switch();
 }
 
 void AudioEngine::request_switch() {
@@ -153,7 +188,14 @@ void AudioEngine::request_switch() {
 void AudioEngine::run_switcher() {
     std::unique_lock lock(switch_mutex_);
     for (;;) {
-        switch_cv_.wait(lock, [this] { return switch_requested_ || switch_quit_; });
+        // While no device is open, retry about once a second (an open refused early can be
+        // accepted later); with a device open, wait for the next request only.
+        if (device_ == 0) {
+            switch_cv_.wait_for(lock, std::chrono::seconds(1),
+                                [this] { return switch_requested_ || switch_quit_; });
+        } else {
+            switch_cv_.wait(lock, [this] { return switch_requested_ || switch_quit_; });
+        }
         if (switch_quit_) return;
         switch_requested_ = false; // requests made meanwhile collapse into the latest
         const std::string name = switch_name_;
