@@ -153,18 +153,18 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
     // The menus' brake discs and calipers: nodes 2 (front) and 3 (rear) of a menu car's
     // body, drawn with the wheels. Race car files leave both empty.
     const bool brakes = opt.wheels && opt.menu_tyres;
-    o.node = opt.effects || brakes ? -1 : 0;
+    o.node = opt.effects || brakes || opt.floor_shadow ? -1 : 0;
     o.paint = opt.paint;
     o.program_alpha_test = true;  // wheel-arch / grille cut-outs
     o.weighted_reflection = true; // reflection passes weighted by the body's texel alpha
     scene::Model m = gtm1::build_model(g, o, name);
     std::array<std::vector<scene::Mesh>, 2> brake_parts;
-    if (brakes) {
+    if (brakes || (opt.floor_shadow && !opt.effects)) {
         std::vector<scene::Mesh> kept;
         for (scene::Mesh& mesh : m.meshes) {
-            if (mesh.name == "node2" || mesh.name == "node3")
+            if (brakes && (mesh.name == "node2" || mesh.name == "node3"))
                 brake_parts[mesh.name == "node3"].push_back(std::move(mesh));
-            else if (opt.effects || mesh.name == "node0")
+            else if (opt.effects || mesh.name == "node0" || (opt.floor_shadow && mesh.name == "node6"))
                 kept.push_back(std::move(mesh));
         }
         m.meshes = std::move(kept);

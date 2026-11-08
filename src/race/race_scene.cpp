@@ -17,30 +17,6 @@ namespace {
 
 const char* const kWheelNames[4] = {"wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"};
 
-// Copies the meshes accepted by `keep` (and only the textures they use) into a new model.
-template <class Pred>
-scene::Model extract(const scene::Model& src, Pred keep) {
-    scene::Model out;
-    out.name = src.name;
-    std::vector<int> remap(src.textures.size(), -1);
-    for (const scene::Mesh& m : src.meshes) {
-        if (!keep(m)) continue;
-        scene::Mesh copy = m;
-        for (scene::Primitive& p : copy.primitives) {
-            if (p.texture < 0 || size_t(p.texture) >= src.textures.size()) continue;
-            int& r = remap[size_t(p.texture)];
-            if (r < 0) {
-                r = int(out.textures.size());
-                out.textures.push_back(src.textures[size_t(p.texture)]);
-            }
-            p.texture = r;
-        }
-        out.meshes.push_back(std::move(copy));
-    }
-    out.compute_bounds();
-    return out;
-}
-
 void log_bounds(const char* what, const scene::Model& m) {
     LOG_INFO("Race: %s bounds (%.0f %.0f %.0f) .. (%.0f %.0f %.0f), %zu meshes", what, m.bounds_min[0], m.bounds_min[1],
              m.bounds_min[2], m.bounds_max[0], m.bounds_max[1], m.bounds_max[2], m.meshes.size());
@@ -322,12 +298,12 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
     opt.morphs = &morphs_;
     scene::Model car = load_car_model(car_file, opt, model);
     for (const scene::Mesh& m : car.meshes) lods_ = std::max(lods_, m.lod + 1);
-    scene::Model body = extract(car, [](const scene::Mesh& m) {
+    scene::Model body = scene::extract(car, [](const scene::Mesh& m) {
         return m.name.rfind("wheel_", 0) != 0 && m.name.rfind("node", 0) != 0;
     });
     for (int k = 0; k < 3; ++k) {
         std::string n = k == 0 ? "node1" : k == 1 ? "node6" : "node5";
-        shadow_src_[size_t(k)] = extract(car, [&](const scene::Mesh& m) { return m.name == n; });
+        shadow_src_[size_t(k)] = scene::extract(car, [&](const scene::Mesh& m) { return m.name == n; });
         for (scene::Mesh& m : shadow_src_[size_t(k)].meshes)
             for (scene::Primitive& p : m.primitives) {
                 p.material = {};
@@ -375,7 +351,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         std::vector<gtm1::MorphDraws> lit_morphs; // (left out as in body_; drawn from morphs_)
         bo.morphs = &lit_morphs;
         scene::Model lit = load_car_model(car_file, bo, model);
-        scene::Model lit_body = extract(lit, [](const scene::Mesh& m) { return m.name.rfind("node", 0) != 0; });
+        scene::Model lit_body = scene::extract(lit, [](const scene::Mesh& m) { return m.name.rfind("node", 0) != 0; });
         if (!lit_body.meshes.empty()) body_brake_ = std::make_unique<render::GpuModel>(ctx, lit_body);
     }
     // The wheels' effects (race/wheel_fx.h): the tyre's GTTR fields, the brake records, and the
@@ -414,7 +390,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         wheel_bound_[size_t(axle)] =
             std::sqrt(ws.radius[axle] * ws.radius[axle] + 0.25f * ws.width[axle] * ws.width[axle]);
         auto hub_model = [&](const std::string& name) {
-            scene::Model w = extract(car, [&](const scene::Mesh& m) { return m.name == name; });
+            scene::Model w = scene::extract(car, [&](const scene::Mesh& m) { return m.name == name; });
             for (scene::Mesh& m : w.meshes)
                 for (scene::Vertex& v : m.vertices) v.pos[0] -= c.x, v.pos[1] -= c.y, v.pos[2] -= c.z;
             return w;

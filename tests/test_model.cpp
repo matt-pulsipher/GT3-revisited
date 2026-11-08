@@ -831,6 +831,36 @@ TEST(menu_brake_parts_disc) {
     CHECK(none);
 }
 
+// The showroom's floor shadow: node 6 of a menu car, a textured quad on the floor (y = 0)
+// blended over it without depth writes; only with CarModelOptions::floor_shadow.
+TEST(menu_floor_shadow_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Bytes data = disc->volume().read(*disc->volume().find("menu/cars/mb0007"));
+    CarModelOptions o;
+    o.lod = 0;
+    o.menu_tyres = true;
+    o.floor_shadow = true;
+    scene::Model m = load_car_model(data, o, "mb0007");
+    const scene::Mesh* shadow = nullptr;
+    bool brakes = false, body = false;
+    for (const scene::Mesh& mesh : m.meshes) {
+        if (mesh.name == "node6") shadow = &mesh;
+        brakes |= mesh.name.find("_brake") != std::string::npos;
+        body |= mesh.name == "body";
+        CHECK(mesh.name != "node2" && mesh.name != "node3" && mesh.name != "node5");
+    }
+    CHECK(shadow && brakes && body);
+    if (!shadow) return;
+    CHECK(shadow->vertices.size() == 4 && shadow->primitives.size() == 1);
+    for (const scene::Vertex& v : shadow->vertices) CHECK(std::fabs(v.pos[1]) < 1e-5f);
+    const scene::Primitive& p = shadow->primitives[0];
+    CHECK(p.texture >= 0);
+    CHECK((p.flags & scene::kAlphaBlend) && (p.flags & scene::kNoDepthWrite) && (p.flags & scene::kUnlit));
+    o.floor_shadow = false;
+    for (const scene::Mesh& mesh : load_car_model(data, o, "mb0007").meshes) CHECK(mesh.name != "node6");
+}
+
 TEST(showroom_wheels_in_race_disc) {
     Disc* disc = test::any_region_disc();
     if (!disc) SKIP("needs GT3R_DISC");

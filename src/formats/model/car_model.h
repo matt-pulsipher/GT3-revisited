@@ -78,6 +78,7 @@ struct CarBodyMod {
 struct CarModelOptions {
     int lod = 0;               // 0..2 body detail; -1 = every LOD (Mesh::lod set, textures per LOD)
     bool effects = false;      // include the extra nodes (ground shadow, glow shells)
+    bool floor_shadow = false; // include node 6 (mesh "node6"): in menu/cars files the showroom's floor shadow
     bool reflection = true;    // include the environment-map (reflection) passes
     int paint = 0;             // colour index into the car's list in database/carcolor.db
     bool wheels = true;        // add wheels + generated tyres

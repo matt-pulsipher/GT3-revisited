@@ -145,4 +145,28 @@ inline void Model::compute_bounds() {
             }
 }
 
+// Copies the meshes accepted by `keep` (and only the textures they use) into a new model.
+template <class Pred>
+Model extract(const Model& src, Pred keep) {
+    Model out;
+    out.name = src.name;
+    std::vector<int> remap(src.textures.size(), -1);
+    for (const Mesh& m : src.meshes) {
+        if (!keep(m)) continue;
+        Mesh copy = m;
+        for (Primitive& p : copy.primitives) {
+            if (p.texture < 0 || size_t(p.texture) >= src.textures.size()) continue;
+            int& r = remap[size_t(p.texture)];
+            if (r < 0) {
+                r = int(out.textures.size());
+                out.textures.push_back(src.textures[size_t(p.texture)]);
+            }
+            p.texture = r;
+        }
+        out.meshes.push_back(std::move(copy));
+    }
+    out.compute_bounds();
+    return out;
+}
+
 } // namespace gt3r::scene
