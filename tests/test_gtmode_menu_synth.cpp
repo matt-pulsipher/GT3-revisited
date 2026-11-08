@@ -2843,14 +2843,19 @@ TEST(gtmode_synth_hook_branches) {
     CHECK(first.race_code == "Gsynch_n_0501" && first.champ_round == 1);
     // The standings going into the round (the pre-race menu's qm_pt<n>): nobody has points yet.
     CHECK(first.champ_points.size() == first.opponents.size() + 1 && first.champ_points[0] == 0);
+    // The first round draws the field's paints (none fixed yet); the field keeps the ones its race had.
+    CHECK(first.opponent_paints.empty() && gt.state().championship.paints.empty());
     GameResult round = won;
     round.race_code = round.event = "Gsynch_n_0501";
+    for (size_t i = 0; i < first.opponents.size(); ++i) round.opponent_paints.push_back(int(i % 3) - 1);
     h.on_result(round);
     while (h.presentation()) {
     }
+    CHECK(gt.state().championship.paints == round.opponent_paints);
     std::optional<GameRequest> next = h.next_request();
     CHECK(next && next->race_code == "Gsynch_n_0502" && next->champ_last && !h.next_request());
     CHECK(next && next->champ_points == gt.state().championship.points && next->champ_points[0] == 10);
+    CHECK(next && next->opponents == first.opponents && next->opponent_paints == round.opponent_paints);
     std::optional<GameRequest> resume = h.resume_request();
     CHECK(resume && resume->page == "map" && resume->race_code == "Gsynch_n_0502");
     // Arcade helpers.

@@ -409,6 +409,8 @@ std::string save_to_text(const GameState& s) {
         o << " " << c.entrants.size();
         for (const std::string& e : c.entrants) o << " " << esc(e);
         for (int p : c.points) o << " " << p;
+        if (c.paints.size() == c.entrants.size()) // (appended: older versions read the line without them)
+            for (int p : c.paints) o << " " << p;
         o << "\n";
     }
     o << "end\n";
@@ -592,6 +594,11 @@ GameState load_from_text(const std::string& text) {
             }
             c.points.assign(m + 1, 0);
             for (int& p : c.points) need(bool(l >> p));
+            // The entrants' paints (none in a save from before they were kept: the next round draws them).
+            std::vector<int> paints(m);
+            bool all = m > 0;
+            for (int& p : paints) all = all && bool(l >> p);
+            if (all) c.paints = std::move(paints);
             s.championship = std::move(c);
         } else if (key == "end") {
             ended = true;
@@ -1022,7 +1029,7 @@ Bytes export_ps2_save(const GameState& s, const GtData& data) {
             p[o + i] = s.prizes_given.count(sec->entries[i].name) ? 1 : 0;
     o += kPrizeFlags;
     // Championship (inactive): a new game has 0xFF in 8 bytes of each of the 8 entrants
-    // (0x1D4 apart, M: an empty part slot).
+    // (0x1D4 apart): an empty car record's paint, colour id and index unset.
     for (size_t k = 0; k < 8; ++k) std::memset(&p[o + 0x94 + 0x1D4 * k], 0xFF, 8);
     o += kChamp;
     // Options: those of the save this one was imported from, else a new game's.

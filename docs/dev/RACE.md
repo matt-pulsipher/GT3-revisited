@@ -1469,7 +1469,9 @@ table):
 `database/carcolor.db`: per model (id_hash) a list of colour ids, plus colour
 definitions (id -> RGB). A car's paint index is the position of its colour id
 in its model's list. Variant records carry no colour; the event record has
-colour ids at +0x110 (u32 per slot, 0xFFFFFFFF = choose). Licence tests: slot 0
+colour ids at +0x110 (u32 per pool entry, 0xFFFFFFFF = choose): a car drawn from the
+pool takes its entry's id whatever slot it lands in (`race::pool_color_id`; only the
+licence tests and some attract demos set any). Licence tests: slot 0
 is the test car (entry 0) and gives its paint (e.g. B-2 Viper GTS 0x101, red
 with silver stripes; 31 of the 48 tests set one, all in the model's list; the
 rally tests and most race cars are 0xFFFFFFFF). Race reads it for `go_license` and
@@ -1485,6 +1487,12 @@ pool draw of the same race (GT mode, arcade Single Race). A replay stores the
 state the paint draw started from (`Replay::paint_seed`, format v6; older
 replays use 0x87654321, which is what they were recorded with) and re-runs the
 draw from it.
+
+The draw happens once per race (`RaceScreen::drawn_paints_`): GT3 draws it into the race's
+entries, which every run of that race uses, so the pre-race backdrop, free practice, retries
+and the race show the same paints. A championship keeps its field's paints from round 1
+for the later rounds and in saves (`Championship::paints`, handed to the race as fixed
+paints; GameResult::opponent_paints brings them back).
 
 ## Ghost
 

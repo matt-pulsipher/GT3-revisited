@@ -108,6 +108,9 @@ struct Championship {
     int next = 0;                 // index of the next race
     std::vector<int> points;      // player first, then the opponents (by entry)
     std::vector<std::string> entrants;
+    // The entrants' paints (index in the model's colour list, -1 none), drawn in the first round and kept with the
+    // field (GT3 keeps each entrant's car as built, paint included); empty until that round has run.
+    std::vector<int> paints;
     bool active() const { return !series.empty() && next < int(races.size()); }
 };
 

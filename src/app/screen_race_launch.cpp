@@ -144,7 +144,8 @@ void RaceScreen::resolve_launch() {
     // Arcade Single Race: the field is drawn from the event's pool with the race module's
     // generator (gt_mode §20.4), slots 1 .. cars-1.
     else if (rq.mode == "single_race" && ev && !online_)
-        race_opponents_ = race::draw_opponents(db_, *ev, std::max(int(ev->cars_in_race), 1) - 1, race_info_random());
+        race_opponents_ = race::draw_opponents(db_, *ev, std::max(int(ev->cars_in_race), 1) - 1, race_info_random(),
+                                               &race_opponent_color_ids_);
     // The arcade time trial: one timed lap, whatever the event's lap count (presentation §B7).
     if (rq.mode == "time_trial" && ev) race_laps_ = race::kTimeTrialLaps;
     // Time attack / licence tests: a flying start when the event gives one.
@@ -175,14 +176,18 @@ void RaceScreen::resolve_launch() {
         // race information has no player car (gcf section 12 word +8 is "", whose label
         // hash is 0), so every slot 0 .. cars-1 is drawn (gt_mode §15)
         // on the race module's state; slot 0 is the car the demo follows.
-        // (A demo with its own car keeps it in slot 0 and draws slots 1 .. cars-1.)
+        // (A demo with its own car keeps it in slot 0 and draws slots 1 .. cars-1.) Each drawn car has its pool entry's
+        // paint when the event gives one (the F1 and some course demos).
         const bool own = !rq.car.empty();
+        std::vector<u32> ids;
         std::vector<std::string> field =
-            race::draw_opponents(db_, *ev, std::max(int(ev->cars_in_race), 1) - (own ? 1 : 0), race_info_random());
-        if (own) field.insert(field.begin(), rq.car);
+            race::draw_opponents(db_, *ev, std::max(int(ev->cars_in_race), 1) - (own ? 1 : 0), race_info_random(), &ids);
+        if (own) field.insert(field.begin(), rq.car), ids.insert(ids.begin(), 0xFFFFFFFFu);
         if (!field.empty()) {
             attract_slot0 = field[0];
             race_opponents_.assign(field.begin() + 1, field.end());
+            race_opponent_color_ids_.assign(ids.begin() + 1, ids.end());
+            event_paint_id_ = ids[0];
             if (std::string c = base_car(field[0]); !c.empty()) preset_.car = car = c;
         }
     }
