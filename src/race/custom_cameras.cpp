@@ -1,6 +1,7 @@
 #include "race/custom_cameras.h"
 
 #include "base/config.h"
+#include "race/hood_camera.h"
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +64,12 @@ bool CustomCamera::operator==(const CustomCamera& o) const {
 }
 
 void CustomCamera::clamp() {
+    // A bonnet mount's offset is a nudge within the mounts' bounds, not a position (hood_camera_eye).
+    if (mount == Mount::Hood) {
+        offset.x = std::isfinite(offset.x) ? std::clamp(offset.x, -kHoodLateral, kHoodLateral) : 0.0f;
+        offset.y = std::isfinite(offset.y) ? std::clamp(offset.y, kHoodHeightMin, kHoodHeightMax) : 0.0f;
+        offset.z = std::isfinite(offset.z) ? std::clamp(offset.z, -kHoodForward, kHoodForward) : 0.0f;
+    }
     const float d = render::length(offset);
     if (!(d <= kMaxDistance)) offset = std::isfinite(d) ? offset * (kMaxDistance / d) : render::Vec3{0, 0.7f, 6.0f};
     yaw = wrap_degrees(std::isfinite(yaw) ? yaw : 0.0f);

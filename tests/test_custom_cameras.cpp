@@ -6,6 +6,7 @@
 #include "base/config.h"
 #include "race/camera_rig.h"
 #include "race/custom_cameras.h"
+#include "race/hood_camera.h"
 
 #include <cmath>
 
@@ -51,7 +52,7 @@ TEST(custom_cameras_config) {
     CustomCamera a = camera(4, "Hood");
     a.enabled = false;
     a.mount = CustomCamera::Mount::Hood;
-    a.offset = {0.1f, 0.25f, -1.5f};
+    a.offset = {0.1f, 0.25f, -0.3f}; // (a bonnet nudge: inside the mounts' bounds)
     a.yaw = 12, a.pitch = -4.5f, a.roll = 3, a.roll_lock = 0.5f;
     a.fov = 55;
     a.car = CustomCamera::OwnCar::Ahead, a.incar_hud = true;
@@ -88,11 +89,17 @@ TEST(custom_cameras_config) {
     const std::vector<CustomCamera> bn =
         load_custom_cameras(IniDocument::parse("[custom_camera1]\nid = 7\nname = Bonnet\nmount = bonnet\ncar = ahead\n"
                                                "roll_lock = 40\n"
-                                               "[custom_camera2]\nid = 8\nname = Hood\nmount = hood\nroll_lock = 300\n"));
-    CHECK(bn.size() == 2);
+                                               "[custom_camera2]\nid = 8\nname = Hood\nmount = hood\nroll_lock = 300\n"
+                                               "[custom_camera3]\nid = 9\nname = Far\nmount = bonnet\n"
+                                               "x = 9\ny = 9\nz = 9\n"
+                                               "[custom_camera4]\nid = 10\nname = Chase\nx = 9\ny = 9\nz = 9\n"));
+    CHECK(bn.size() == 4);
     CHECK(bn[0].mount == CustomCamera::Mount::Hood && bn[0].car == CustomCamera::OwnCar::Ahead &&
           near(bn[0].roll_lock, 0.4f));
     CHECK(bn[1].mount == CustomCamera::Mount::Hood && near(bn[1].roll_lock, 1.0f)); // (clamped)
+    // A bonnet offset is a nudge kept inside the mounts' bounds; any other mount's is a position.
+    CHECK(near(bn[2].offset.x, kHoodLateral) && near(bn[2].offset.y, kHoodHeightMax) && near(bn[2].offset.z, kHoodForward));
+    CHECK(near(bn[3].offset.x, 9.0f) && near(bn[3].offset.z, 9.0f));
 }
 
 // Camera files (Export / Import): the cameras round-trip; imported ones get new ids and, when a

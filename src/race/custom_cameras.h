@@ -66,7 +66,8 @@ struct CustomCamera {
     Mount mount = Mount::Follow;
     // The eye from the driver's eye (the car's in-car camera point), metres in the mount's frame:
     // x right, y up, z back (the car model's axes). A bonnet mount instead reads them as nudges
-    // from its own mounts: x sideways, y up, z fore/aft (hood_camera_eye).
+    // from its own mounts: x sideways, y up, z fore/aft (hood_camera_eye; the editor's Fore/aft,
+    // Sideways and Height sliders — clamp() keeps the nudge inside the mounts' bounds).
     render::Vec3 offset{0, 0.7f, 6.0f};
     float yaw = 0, pitch = 0, roll = 0; // degrees: turned right, up, rolled clockwise
     float roll_lock = 0;                // 0..1: the share of the body's roll the view levels out

@@ -13,9 +13,9 @@ namespace gt3r::race {
 
 namespace {
 
-constexpr float kForwardMin = -0.40f, kForwardMax = 0.40f, kForwardStep = 0.05f;
-constexpr float kHeightMin = -0.10f, kHeightMax = 0.35f;
-constexpr float kLateralMax = 0.40f;
+constexpr float kForwardMin = -kHoodForward, kForwardMax = kHoodForward, kForwardStep = 0.05f;
+constexpr float kHeightMin = kHoodHeightMin, kHeightMax = kHoodHeightMax;
+constexpr float kLateralMax = kHoodLateral;
 
 constexpr float kMountBack = 0.30f;
 constexpr float kBodyFront = 0.25f;

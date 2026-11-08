@@ -292,8 +292,10 @@ SDL's trigger rumble does nothing there.
   computer driving, warps 5 s past the start signal and freezes it: no more steps, no sound;
   its Start from rows are `CameraRig::preset` plus a Bonnet row (a `Mount::Hood` camera: 55
   degrees, in-car HUD, mirror, the car ahead only), the built-in views of that car as custom
-  cameras (tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`). VR stereo keeps
-  the built-in views (a
+  cameras (tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`). On a bonnet mount
+  the scene's drags only aim the view — the seat moves by the panel's Fore/aft, Sideways and
+  Height sliders (Reset seat centres it; `clamp()` keeps the nudge inside the mounts' bounds).
+  VR stereo keeps the built-in views (a
   custom camera shows flat).
 - Road shade (docs/formats/course.md): the four wheels' road attributes A/B scale the car's light
   colours (per draw item) and the light shadow's alpha F; `race/road_shade.*` interpolates them
