@@ -128,8 +128,8 @@ tap on their arrows, switch or track; Cross never changes a setting (it runs
 actions and starts a rebind).
 
 **Settings → Controls** starts with the settings for **all players** (Race
-views, Analog response, In-car camera shake, Controllers in the background,
-Xbox controllers on Windows),
+views, Analog response, In-car camera shake, Hood camera, Controllers in the
+background, Xbox controllers on Windows),
 then holds the controllers and their bindings, for player 1 and player 2
 (split screen) alike: under each player's **Controller**, **Race controls** and
 **Keyboard** rows come their bindings, inline:
@@ -343,9 +343,11 @@ the stick is on **Look left / right** and **Look ahead / behind** (`RX` and
 (`RX-` / `RX+`), and behind is Look back's. Replacing the stick on Look left /
 right keeps them.
 
-Change view cycles in-car (with mirror), in-car without mirror, chase and far
-chase; `[race] views = gt3` (Settings: Race views) keeps GT3's own two, in-car
-and chase. Races start in the view last used, in-car at first.
+Change view cycles in-car (with mirror), in-car without mirror, hood, chase
+and far chase; `[race] views = gt3` (Settings: Race views) keeps GT3's own two,
+in-car and chase. The hood view rides above each car's front bodywork (tuned
+under **Settings → Controls → Hood camera**; looking back hides the car). Races
+start in the view last used, in-car at first.
 
 With `gt3` the race reads the menu pad itself, so every button does what it
 did on a DualShock 2. Reverse is its own held input in both, as in GT3:

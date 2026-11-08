@@ -5,6 +5,7 @@
 // car for debugging (right stick / mouse orbit, L2/R2 zoom).
 
 #include "input/virtual_pad.h"
+#include "race/hood_camera.h"
 #include "race/procedural_cameras.h"
 #include "race/replay_cameras.h"
 #include "race/sound_view.h"
@@ -20,7 +21,7 @@
 
 namespace gt3r::race {
 
-enum class CameraMode : u8 { Chase, ChaseFar, Bumper, Roof, Orbit, Tv, Count };
+enum class CameraMode : u8 { Chase, ChaseFar, Bumper, Roof, Orbit, Tv, Hood, Count };
 
 // A trackside replay camera: fixed position, covers the car while it is near
 // track distance `s` (metres along the lap).
@@ -61,6 +62,8 @@ public:
     // the car model's frame (x right, y up, z back; origin at the wheelbase midpoint on the body's
     // lowest point). Defaults are GT3's fallbacks.
     void set_car_points(const render::Vec3& p0, const render::Vec3& p1) { point_[0] = p0, point_[1] = p1; }
+    void set_hood_settings(const HoodCameraSettings& s);
+    void set_hood_profile(const HoodCameraProfile& p);
     // L1 held: look back (heading + pi, pitch negated; ours, the far chase and roof, turned
     // round too); no mirror while held.
     void set_look_back(bool on) { look_back_ = on; }
@@ -73,10 +76,14 @@ public:
     // The look's turn as of the last update(): radians, + right (past pi on the side it turned to).
     float look_yaw() const { return look_; }
     // The onboard view shows the rear-view mirror now: not looking back or turned to the side.
-    bool shows_mirror() const { return onboard() && mirror() && !look_back_ && std::fabs(look_) <= kLookMirror; }
+    bool shows_mirror() const {
+        const bool allowed = mode_ == CameraMode::Hood ? hood_settings_.mirror : mirror();
+        return onboard() && allowed && !look_back_ && std::fabs(look_) <= kLookMirror;
+    }
     static constexpr float kLookStart = 0.2f, kLookFull = 0.5f; // the stick's reach: turn from, full turn at
     static constexpr float kLookRate = 14.0f;                   // the ease (1/s; 95 % in about 0.2 s)
     static constexpr float kLookMirror = 0.35f;                 // turned past this (radians): no mirror
+    static constexpr float kLookRear = 1.5707963f;
     // GT3's pre-race shot (starting camera, cameras/start.cam): while `on`, the camera follows the
     // file's record 0 in the car's frame as t goes 0 -> 1 (eye, target and zoom curves).
     void set_intro(bool on, float t) { intro_ = on, intro_t_ = t; }
@@ -135,7 +142,14 @@ public:
     int tv_index() const { return tv_active_; }
     // The eye is in the car: own car hidden, mirror, in-car HUD and sounds. Not during the
     // pre-race shot, which looks at the car from outside (GT3 draws it with the chase HUD).
-    bool onboard() const { return (mode_ == CameraMode::Bumper || mode_ == CameraMode::Roof) && !intro_; }
+    bool onboard() const {
+        return (mode_ == CameraMode::Bumper || mode_ == CameraMode::Roof || mode_ == CameraMode::Hood) && !intro_;
+    }
+    bool hides_car() const {
+        if (intro_) return false;
+        return mode_ == CameraMode::Bumper || mode_ == CameraMode::Roof ||
+               (mode_ == CameraMode::Hood && (look_back_ || std::fabs(look_) > kLookRear));
+    }
     // The replay camera is one of view mode 1's on-board car mounts (in-car, a bumper, the
     // driver's head): the followed car is not drawn.
     bool replay_on_board() const { return mode_ == CameraMode::Tv && replay_on_board_; }
@@ -187,6 +201,8 @@ private:
     float look_x_ = 0, look_y_ = 0; // the look's stick (set_look)
     float look_ = 0;                // its eased turn (radians, + right)
     bool mirror_ = true;
+    HoodCameraSettings hood_settings_;
+    HoodCameraProfile hood_profile_;
     // In-car vibration (GT3's on-board camera shakers): random kicks scaled by the tyres' slip,
     // through a lag, stepped at 60 Hz; see update().
     struct Shaker {

@@ -100,6 +100,10 @@ struct LastView {
     bool mirror = true;
 };
 extern LastView g_last_view[2];
+inline bool remembers_view(race::CameraMode m) {
+    return m == race::CameraMode::Bumper || m == race::CameraMode::Hood || m == race::CameraMode::Chase ||
+           m == race::CameraMode::ChaseFar;
+}
 
 // The menus' logical keys from a pad (menus §2): confirm = Circle or Cross,
 // cancel = Triangle or Square, the left stick doubles the D-pad.
@@ -674,6 +678,7 @@ private:
     bool build_exact_solo(App& app);
     void load_opponent_cars(App& app, const RaceField& f);
     void build_player_visual(App& app, const std::string& model, ByteSpan car_file);
+    void bind_hood(CameraRig& cam, std::optional<const CarVisual*>& bound, const CarVisual* v);
     void exact_solo_step();      // after each step: the run's end and result from the race flow
     bool exact_solo() const { return solo_field_ != nullptr; }
     RaceField* exact_field() const { return field_ ? field_.get() : solo_field_.get(); }
@@ -993,6 +998,8 @@ private:
 #endif
     std::vector<std::unique_ptr<render::View3D>> icon_views_; // 2P results panel car pictures
     std::unique_ptr<CarVisual> car2_visual_;
+    std::optional<const CarVisual*> hood_bound_;
+    std::optional<const CarVisual*> hood_bound2_;
     bool finished2_ = false;
     int finish_position2_ = 0;
     u16 pad2_prev_ = 0;

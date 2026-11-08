@@ -5,6 +5,10 @@ plugins {
 // -Pquest builds the Meta Quest APK instead (docs/dev/VR.md): the same game with OpenXR, on
 // SDL's development branch (fetch-sdl.sh --xr), arm64 only, with the headset's manifest.
 def quest = project.hasProperty('quest')
+def playtest = project.hasProperty('playtest')
+if (playtest && quest) {
+    throw new GradleException('-Pplaytest builds the phone app; it cannot be combined with -Pquest')
+}
 
 // SDL3's Java glue and native sources come from one SDL checkout so the two
 // always match. fetch-sdl.sh creates it.
@@ -32,6 +36,7 @@ android {
 
     defaultConfig {
         applicationId 'org.gt3revisited.gt3r'
+        manifestPlaceholders = [gt3rAppLabel: '@string/app_name']
         minSdk 24
         targetSdk 35
         versionCode gt3rVersion[0] * 10000 + gt3rVersion[1] * 100 + gt3rVersion[2]
@@ -92,6 +97,11 @@ android {
                 cmake {
                     arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo'
                 }
+            }
+            if (playtest) {
+                applicationIdSuffix '.playtest'
+                manifestPlaceholders = [gt3rAppLabel: '@string/playtest_app_name']
+                resValue 'string', 'playtest_app_name', 'GT3 Revisited Playtest'
             }
         }
         release {

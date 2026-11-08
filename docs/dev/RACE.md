@@ -14,7 +14,8 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/backend.h/.cpp` | `RaceTrack` (over `track::Track`) and `RaceVehicle` (the player's car of a race on the exact core) interfaces, `car_setup_from_database()` |
 | `race/controls.h/.cpp` | Pad → `sim::ControlInputs` mapping, rumble model |
 | `race/interp.h/.cpp` | Fixed-tick accumulator, quaternion helpers, `VehicleState` interpolation |
-| `race/camera_rig.h/.cpp` | Chase, far chase, bumper, roof and free-orbit cameras |
+| `race/camera_rig.h/.cpp` | Chase, far chase, bumper, hood, roof and free-orbit cameras |
+| `race/hood_camera.h/.cpp` | The hood view's settings ([race] hood_*) and its per-car mounts from the body geometry |
 | `race/race_scene.h/.cpp` | GPU scene: course (scenery, backdrop, sky domes) and the car (body LODs + four wheels) |
 | `race/hud.h/.cpp` | HUD (lap times, tachometer, gear, speed) using the game's own assets |
 | `race/hud_layout.h/.cpp` | The HUD layout per display mode (the original's layout table) and the mode a run uses |
@@ -251,7 +252,8 @@ SDL's trigger rumble does nothing there.
   only, never while looking back, and has no option. A new game starts in-car and each player's
   last view carries over to the next race (options +0x11C / +0x120). Look back (heading + pi,
   pitch negated, no mirror) is L1 on the race pad. Ours: change view also offers in-car without
-  the mirror and a far chase (bumper -> bumper, no mirror -> chase -> far chase); `[race] views =
+  the mirror, a hood view and a far chase (bumper -> bumper, no mirror -> hood -> chase -> far
+  chase); `[race] views =
   gt3` keeps GT3's two. The last view is remembered for the session only (GT3 keeps it in its
   options). Ours: the look around (`CameraRig::set_look`, the race pad's RX / RY: the right stick,
   the touch controls' drag on the open screen): the stick's direction turns the view
@@ -259,7 +261,13 @@ SDL's trigger rumble does nothing there.
   back it keeps to the side it is turned to. In-car it turns the view about the car's up axis (eye
   in place); the chase views turn their heading (round the car, the pitch scaled by its cosine).
   Look back takes over while held (the far chase now looks back too); no mirror past 0.35 rad; none
-  in the disc's demonstrations, replays or VR stereo. In-car vibration (GT3's in-car camera shakers, point 0 only, also
+  in the disc's demonstrations, replays or VR stereo. Ours: the hood view (`CameraMode::Hood`) sits
+  0.40 m over the final LOD-0 body's centre strip (`|x| <= 0.20` width, clipped at and ahead of the
+  eye across 17 fore/aft steps around `z = -0.30` wheelbases in `25%..55%` of body length), pitched
+  down by `clamp(alpha - 20 deg, 0, 22 deg)` from the nearest visible body edge (`depth >= 0.1 m`).
+  The body is drawn unless looking rearward (`CameraRig::hides_car`), pitch follows the car, and
+  `[race] hood_*` tunes FOV, offsets, roll levelling and mirror (Settings -> Controls -> Hood camera).
+  In-car vibration (GT3's in-car camera shakers, point 0 only, also
   while looking back): amplitude A = sum over the wheels of |slip ratio| 0.3 + |slip angle| /
   (pi/2), at most 3; speed factor S = speed clamped to 10..120 km/h over 120 km/h; on about half
   the 60 Hz updates each axis gets a target (r - 0.5) A 250 through v += ((u - u_prev) - 12 v)/60,
@@ -1587,7 +1595,7 @@ GT3R_RACE="course=trialmt,car=r34_gtr_v_99,cam=0,auto=1,warp=20" \
 | Key | Effect |
 |---|---|
 | `course`, `car` | course label / car label or model id; skips the selection |
-| `cam` | 0 chase, 1 far chase, 2 bumper, 3 roof, 4 free orbit (`oyaw`, `opitch`, `odist`), 5 replay (TV) |
+| `cam` | 0 chase, 1 far chase, 2 bumper, 3 roof, 4 free orbit (`oyaw`, `opitch`, `odist`), 5 replay (TV), 6 hood |
 | `auto=1` | autopilot: the race's own AI drives the player's car (the race's configuration 3: the same driver as the CPU cars, its line, pit stops and gearbox) |
 | `warp=N` | simulate N seconds before the first frame |
 | `mt=1` | manual gearbox |
@@ -1608,7 +1616,7 @@ GT3R_RACE="course=trialmt,car=r34_gtr_v_99,cam=0,auto=1,warp=20" \
 | `theater=<event>` | the Replay Theater's Demonstration of an event (AT010001 .. AT100001, L0B0001 ...) |
 | `script=thr:1@0;steer:-0.3@4` | scripted player input (steer / thr / brk set at times in seconds; `rev:1` / `rev:0` the reverse request, as the back input with the automatic's brake driving it: e.g. `brk:0.6@5;rev:1@5`) |
 | `hudmode=<n>`, `ritems=<bits>` | draw the HUD in layout n (`race::HudMode`: 1 endurance, 6 free run, 13 free practice, ...); replays: these ITEM bits (not stored) |
-| `rcam=<n>` | replays: watch from camera mode n (as `cam`; 2 the in-car view) instead of the replay cameras |
+| `rcam=<n>` | replays: watch from camera mode n (as `cam`; 2 the in-car view, 6 the hood view) instead of the replay cameras |
 | `rmode=<n>`, `rtarget=<n>` | replays: REPLAY OPTIONS view mode 0..3 and its TARGET 0..2 (not stored); with `watch=1` set before `rwarp` |
 | `tt_event=<label>` | time trial on the event's course with its start (flying starts of licence tests / time attack) |
 | `gpusync=1` | wait for the GPU after the 3D pass so "scene draw" includes GPU time |

@@ -15,6 +15,8 @@ cd android && ./gradlew assembleDebug
 The APK is written to `app/build/outputs/apk/debug/`. Install it with
 `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 
+For a side-by-side copy (`org.gt3revisited.gt3r.playtest`, separate data; not with `-Pquest`), build with `./gradlew assembleDebug -Pplaytest`.
+
 `fetch-sdl.sh` checks out SDL3 into `android/third_party/SDL`. That single
 checkout supplies both SDL's Java glue (`org.libsdl.app`) and the native
 library, so the two always match. The engine's root `CMakeLists.txt` builds

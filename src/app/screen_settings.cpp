@@ -22,6 +22,7 @@
 #include "platform/render_scale.h"
 #include "platform/user_files.h"
 #include "race/exact_setup.h"
+#include "race/hood_camera.h"
 #include "sim/exact/program_data.h"
 
 #include <algorithm>
@@ -1223,8 +1224,9 @@ private:
         heading("All players");
         {
             bool gt3_views = to_lower(app.config().get("race", "views").value_or("all")) == "gt3";
-            choice("Race views", "Change view cycles bumper, bumper without mirror, chase, far chase; GT3: bumper and chase.",
-                   {"All four", "GT3 original"}, gt3_views ? 1 : 0, [a](int i) {
+            choice("Race views",
+                   "Change view cycles bumper, bumper without mirror, hood, chase, far chase; GT3: bumper and chase.",
+                   {"All views", "GT3 original"}, gt3_views ? 1 : 0, [a](int i) {
                        a->config().set("race", "views", i == 1 ? "gt3" : "all");
                        a->save_config();
                    });
@@ -1241,6 +1243,54 @@ private:
                 a->config().set("race", "camera_shake", v ? "on" : "off");
                 a->save_config();
             });
+            auto set_hood_open = [this](bool open) {
+                if (open == hood_expanded_) return;
+                hood_expanded_ = open;
+                dragging_ = -1;
+                follow_sel_ = true;
+            };
+            Row& hood_row =
+                action("Hood camera", "The hood view's field of view, mount offsets, horizon stability, mirror and reset.",
+                       hood_expanded_ ? "Collapse" : "Expand", [set_hood_open, this] { set_hood_open(!hood_expanded_); });
+            hood_row.change = [set_hood_open](int d) { set_hood_open(d > 0); };
+            if (hood_expanded_) {
+                auto set_hood = [a](auto&& edit) {
+                    race::HoodCameraSettings s = race::HoodCameraSettings::load(a->config());
+                    edit(s);
+                    s.save(a->config());
+                    a->save_config();
+                };
+                const race::HoodCameraSettings hood = race::HoodCameraSettings::load(app.config());
+                const auto metres = [](float v) {
+                    char buf[32];
+                    std::snprintf(buf, sizeof buf, "%+.2f m", v == 0 ? 0.0f : v);
+                    return std::string(buf);
+                };
+                slider("Hood field of view",
+                       "The hood view's vertical field of view, in degrees. Applies on the next race.",
+                       hood.fov_degrees, 35, 75, 1, std::to_string(int(std::lround(hood.fov_degrees))),
+                       [set_hood](float v) { set_hood([v](race::HoodCameraSettings& s) { s.fov_degrees = v; }); });
+                slider("Hood height",
+                       "The hood view's mount, up or down from the one the car's body gets automatically. "
+                       "Safe bounds keep it clear of the bodywork. Applies on the next race.",
+                       hood.height_offset, -0.10f, 0.35f, 0.05f, metres(hood.height_offset),
+                       [set_hood](float v) { set_hood([v](race::HoodCameraSettings& s) { s.height_offset = v; }); });
+                slider("Hood forward", "The hood view's mount along the bonnet; positive moves it towards the nose. "
+                                       "Applies on the next race.",
+                       hood.forward_offset, -0.40f, 0.40f, 0.05f, metres(hood.forward_offset),
+                       [set_hood](float v) { set_hood([v](race::HoodCameraSettings& s) { s.forward_offset = v; }); });
+                slider("Hood horizon stability",
+                       "How much of the car's roll the hood view levels out: 0% follows the body into banks and kerbs, "
+                       "100% keeps the horizon level (the bonnet banks within the view). Pitch is always the body's, so "
+                       "road slopes still read. Applies on the next race.",
+                       hood.horizon_lock, 0, 1, 0.1f, percent(hood.horizon_lock),
+                       [set_hood](float v) { set_hood([v](race::HoodCameraSettings& s) { s.horizon_lock = v; }); });
+                toggle("Hood rear-view mirror", "The mirror strip in the hood view, as in the in-car view.",
+                       hood.mirror, [set_hood](bool v) { set_hood([v](race::HoodCameraSettings& s) { s.mirror = v; }); });
+                action("Reset hood camera", "The hood view's five settings above back to their defaults. "
+                                            "Nothing else changes.", "",
+                       [set_hood] { set_hood([](race::HoodCameraSettings& s) { s = race::HoodCameraSettings{}; }); });
+            }
             // [input] background: desktop only (phones and tablets run one app at a time; a
             // headset always reads its controllers).
             if (!platform::is_mobile())
@@ -2244,6 +2294,7 @@ private:
     int dragging_ = -1;      // slider row being dragged
     bool focus_tabs_ = false;
     bool preview_ = false;
+    bool hood_expanded_ = false;
     bool se_tried_ = false;
     SDL_AudioDeviceID heard_device_ = 0; // the output device as of the last frame
     Gesture gesture_;

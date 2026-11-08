@@ -469,9 +469,15 @@ void RaceScreen::change_option(App& app, int row, int dir) {
     switch (row) {
     case 0: controls_.config().automatic = !controls_.config().automatic; break;
     case 1: {
-        int n = int(CameraMode::Tv); // drive cameras: Chase .. Orbit
-        drive_camera_ = CameraMode((int(drive_camera_) + dir + n) % n);
+        static const CameraMode kModes[] = {CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Bumper,
+                                            CameraMode::Roof, CameraMode::Orbit, CameraMode::Hood};
+        constexpr int n = int(std::size(kModes));
+        int i = 0;
+        for (int k = 0; k < n; ++k)
+            if (kModes[k] == drive_camera_) i = k;
+        drive_camera_ = kModes[(i + dir + n) % n];
         if (!replaying_) camera_.set_mode(drive_camera_);
+        if (remembers_view(drive_camera_)) g_last_view[0] = {drive_camera_, camera_.mirror()};
         break;
     }
     case 2:

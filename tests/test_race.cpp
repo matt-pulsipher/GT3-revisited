@@ -150,6 +150,8 @@ TEST(race_camera_views) {
     c.next_mode();
     CHECK(c.mode() == CameraMode::Bumper && !c.mirror());
     c.next_mode();
+    CHECK(c.mode() == CameraMode::Hood && c.mirror());
+    c.next_mode();
     CHECK(c.mode() == CameraMode::Chase);
     c.next_mode();
     CHECK(c.mode() == CameraMode::ChaseFar);
@@ -179,6 +181,11 @@ TEST(race_camera_views) {
     g.set_view(CameraMode::ChaseFar, true); // a far chase remembered from "all" views
     g.next_mode();
     CHECK(g.mode() == CameraMode::Bumper);
+    g.set_view(CameraMode::Hood, true);
+    g.next_mode();
+    CHECK(g.mode() == CameraMode::Chase);
+    g.next_mode();
+    CHECK(g.mode() == CameraMode::Bumper && g.mirror());
 }
 
 // The race sounds' view of the camera (issue 222): the in-car views are car-mounted, the chase views
@@ -190,6 +197,8 @@ TEST(race_camera_sound_kind) {
     c.set_intro(true, 0.5f);
     CHECK(c.sound_kind() == CameraSound::Other);
     c.set_intro(false, 1.0f);
+    c.set_mode(CameraMode::Hood);
+    CHECK(c.sound_kind() == CameraSound::Cockpit);
     for (CameraMode m : {CameraMode::Chase, CameraMode::ChaseFar}) {
         c.set_mode(m);
         CHECK(c.sound_kind() == CameraSound::Chase);
@@ -240,7 +249,7 @@ TEST(race_camera_look_back) {
         const render::Mat4& v = c.view();
         return render::Vec3{-v.at(2, 0), -v.at(2, 1), -v.at(2, 2)};
     };
-    for (CameraMode m : {CameraMode::Bumper, CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Roof}) {
+    for (CameraMode m : {CameraMode::Bumper, CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Roof, CameraMode::Hood}) {
         CameraRig c;
         c.set_shake(false);
         c.set_mode(m);

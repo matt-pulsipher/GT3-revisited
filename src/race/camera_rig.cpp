@@ -41,8 +41,19 @@ const char* camera_mode_name(CameraMode m) {
     case CameraMode::Roof: return "roof";
     case CameraMode::Orbit: return "free orbit";
     case CameraMode::Tv: return "replay (TV)";
+    case CameraMode::Hood: return "hood";
     default: return "?";
     }
+}
+
+void CameraRig::set_hood_settings(const HoodCameraSettings& s) {
+    hood_settings_ = s;
+    hood_settings_.normalize();
+}
+
+void CameraRig::set_hood_profile(const HoodCameraProfile& p) {
+    hood_profile_ = p;
+    last_cut_.reset();
 }
 
 float CameraRig::shake_random() {
@@ -65,7 +76,8 @@ void CameraRig::next_mode() {
         return;
     }
     mirror_ = true;
-    if (mode_ == CameraMode::Bumper) set_mode(CameraMode::Chase);
+    if (mode_ == CameraMode::Bumper) set_mode(gt3_views_ ? CameraMode::Chase : CameraMode::Hood);
+    else if (mode_ == CameraMode::Hood) set_mode(CameraMode::Chase);
     else if (mode_ == CameraMode::Chase && !gt3_views_) set_mode(CameraMode::ChaseFar);
     else if (mode_ == CameraMode::Chase || mode_ == CameraMode::ChaseFar) set_mode(CameraMode::Bumper);
     else set_mode(CameraMode::Chase);
@@ -105,7 +117,8 @@ CameraSound CameraRig::sound_kind() const {
     if (intro_) return CameraSound::Other; // (GT3's starting camera)
     switch (mode_) {
     case CameraMode::Bumper:
-    case CameraMode::Roof: return CameraSound::Cockpit;
+    case CameraMode::Roof:
+    case CameraMode::Hood: return CameraSound::Cockpit;
     case CameraMode::Chase:
     case CameraMode::ChaseFar: return CameraSound::Chase;
     case CameraMode::Tv: return replay_car_mount_ ? CameraSound::Cockpit : CameraSound::Other;
@@ -258,6 +271,33 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
             float dyaw = 2.0f * shake_speed_ * std::clamp(shake_yaw_.x, -1.0f, 1.0f) * kDeg;
             view_ = render::rotate_x(pitch) * render::rotate_y(dyaw) * view_; // in eye space
         }
+        break;
+    }
+    case CameraMode::Hood: {
+        float q = setup.wheels[0].ride_height > 0 ? setup.wheels[0].ride_height : 0.13f;
+        render::Vec3 origin = rv(s.position + rotate(s.orientation, {0, q, 0}));
+        render::Vec3 e = hood_camera_eye(hood_profile_, setup, hood_settings_);
+        render::Vec3 r_body = render::normalize(render::cross(fwd, up));
+        eye_ = origin + r_body * e.x + up * e.y - fwd * e.z;
+        render::Vec3 f = fwd, u = up;
+        const float lock = hood_settings_.horizon_lock;
+        if (lock > 0 && std::fabs(fwd.y) < 0.999f) {
+            const render::Vec3 w{0, 1, 0};
+            const render::Vec3 u0 = render::normalize(w - f * render::dot(w, f));
+            const render::Vec3 axis = render::cross(f, u0);
+            const float roll = std::atan2(render::dot(render::cross(u0, u), f), render::dot(u0, u));
+            const float kept = roll * (1.0f - lock);
+            u = render::normalize(u0 * std::cos(kept) + axis * std::sin(kept));
+        }
+        if (look_back_) f = render::Vec3{0, 0, 0} - f;
+        render::Vec3 r = render::normalize(render::cross(f, u));
+        if (!look_back_ && look_ != 0) f = f * std::cos(look_) + r * std::sin(look_);
+        r = render::normalize(render::cross(f, u));
+        const float tilt = hood_camera_pitch(hood_profile_, hood_settings_);
+        if (tilt != 0) f = f * std::cos(tilt) - u * std::sin(tilt);
+        u = render::cross(r, f);
+        view_ = render::look_at(eye_, eye_ + f, u);
+        fovy_ = hood_settings_.fov_degrees * (kPi / 180.0f);
         break;
     }
     case CameraMode::ChaseFar: {

@@ -228,8 +228,9 @@ are only there:
 | `[music] show_song` | `on` / `off` | the race song on the pause screen, with L1 / R1 to skip (default on) |
 | `[music] next_race` | `next` / `same` | next (default): a new song every time, as GT3 does; same: a race, restart or replay starts with the song the last one ended on, from its start (Settings → Audio → Next race starts with) |
 | `[music] race_song` | text | the race song playing last (`disc:` or `yours:` and its id), for `next_race = same` |
-| `[race] views` | `all` / `gt3` | race views: GT3's plus bumper without mirror and far chase, or GT3's only |
+| `[race] views` | `all` / `gt3` | race views: GT3's plus bumper without mirror, hood and far chase, or GT3's only |
 | `[race] camera_shake` | `on` / `off` | GT3's in-car vibration |
+| `[race] hood_fov`, `hood_height`, `hood_forward`, `hood_horizon`, `hood_mirror` | `35`..`75`, `-0.10`..`0.35`, `-0.40`..`0.40`, `0`..`1`, `on` / `off` | hood view's field of view, mount offsets, roll levelling and mirror (Settings → Controls → Hood camera) |
 | `[race] units` | `kmh` / `mph` | speed unit in races and menus (absent: the disc's, mph on the North American disc, km/h on the European and Japanese ones) |
 | `[race] split` | `auto` / `horizontal` / `vertical` | *(file)* 2P split (default: as GT3) |
 | `[race] analog_response` | `linear` / `original` | sticks, triggers, wheels, touch and tilt: a linear response (default) or GT3's DualShock 2 curves (Settings → Controls) |

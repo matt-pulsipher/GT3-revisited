@@ -310,9 +310,14 @@ void RaceScreen::init(App& app) {
     if (preset_.laps > 0) race_laps_ = preset_.laps;
     camera_.set_orbit(preset_.oyaw, preset_.opitch, preset_.odist);
     show_perf_ = preset_.perf;
-    camera_.set_view(g_last_view[0].mode, g_last_view[0].mirror);
-    camera2_.set_view(g_last_view[1].mode, g_last_view[1].mirror);
-    drive_camera_ = g_last_view[0].mode;
+    const bool gt3_views = to_lower(app.config().get("race", "views").value_or("all")) == "gt3";
+    const CameraMode kept[2] = {gt3_views && g_last_view[0].mode == CameraMode::Hood ? CameraMode::Bumper
+                                                                                   : g_last_view[0].mode,
+                                gt3_views && g_last_view[1].mode == CameraMode::Hood ? CameraMode::Bumper
+                                                                                   : g_last_view[1].mode};
+    camera_.set_view(kept[0], g_last_view[0].mirror);
+    camera2_.set_view(kept[1], g_last_view[1].mirror);
+    drive_camera_ = kept[0];
     if (preset_.cam >= 0) camera_.set_mode(CameraMode(std::clamp(preset_.cam, 0, int(CameraMode::Count) - 1)));
     if (from_menu_ || online_) begin_pending_ = true; // the course and cars on the next frame
     else begin(app);
