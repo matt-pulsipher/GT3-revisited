@@ -11,9 +11,11 @@
 // the position of its colour id in its model's list.
 //
 // Opponent colours come from the event record (+0x110: u32 colour id per
-// opponent slot, 0xFFFFFFFF = choose at race start). Unset ones are drawn in
-// entry order with a weighted random pick that avoids colours close to those
-// already taken, using the game's RNG (base/game_random.h).
+// pool entry, 0xFFFFFFFF = choose at race start; race/pool_draw.h). Unset ones
+// are drawn in entry order with a weighted random pick that avoids colours
+// close to those already taken, using the game's RNG (base/game_random.h).
+// The cars keep them for the whole race (its practice, retries, replays), and
+// a championship's field keeps them for every round.
 
 #include "base/bytes.h"
 #include "base/game_random.h"
@@ -49,6 +51,7 @@ using PaintRng = GameRandom;
 struct PaintEntry {
     std::string model;
     u32 id = 0xFFFFFFFFu; // fixed colour id, or unset
+    bool operator==(const PaintEntry&) const = default;
 };
 
 // Assigns every unset entry a colour (in list order) and returns the paint

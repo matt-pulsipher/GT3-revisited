@@ -54,13 +54,22 @@ std::vector<int> draw_pool(GameRandom& rng, const std::vector<bool>& unavailable
     return out;
 }
 
+u32 pool_color_id(const data::Event& ev, int k) {
+    const size_t o = 0x110 + 4 * size_t(k);
+    return k >= 0 && k < 32 && ev.bytes.size() >= o + 4 ? rd32(ev.bytes, o) : 0xFFFFFFFFu;
+}
+
 std::vector<std::string> draw_opponents(const data::CarDatabase& db, const data::Event& ev, int draws,
-                                        GameRandom& rng) {
+                                        GameRandom& rng, std::vector<u32>* color_ids) {
     std::vector<std::string> pool = event_pool(db, ev), out;
+    if (color_ids) color_ids->clear();
     if (pool.empty()) return out;
     std::vector<bool> unavailable(pool.size());
     for (size_t i = 0; i < pool.size(); ++i) unavailable[i] = !pool_entry_available(db, pool[i]);
-    for (int k : draw_pool(rng, unavailable, draws)) out.push_back(pool[size_t(k)]);
+    for (int k : draw_pool(rng, unavailable, draws)) {
+        out.push_back(pool[size_t(k)]);
+        if (color_ids) color_ids->push_back(pool_color_id(ev, k));
+    }
     return out;
 }
 

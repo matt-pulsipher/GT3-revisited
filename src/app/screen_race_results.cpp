@@ -121,6 +121,8 @@ menu::flow::GameResult RaceScreen::build_result() const {
                     if (st.car >= -1) res.order.push_back(st.car);
         }
     }(r);
+    if (field_ && drawn_paints_.size() == size_t(field_->opponents()) + 1)
+        r.opponent_paints.assign(drawn_paints_.begin() + 1, drawn_paints_.end());
     r.abandoned = abandoned_;
     r.started = !prerace_; // left from the pre-race menu (a free session ends back in it): no race
     [&](auto& res) {

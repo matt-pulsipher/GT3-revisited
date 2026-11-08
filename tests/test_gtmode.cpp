@@ -303,6 +303,7 @@ TEST(gtmode_save_text_roundtrip) {
     s.championship.next = 1;
     s.championship.entrants = {"a", "b"};
     s.championship.points = {10, 6, 4};
+    s.championship.paints = {3, -1};
 
     s.machine.t400 = 12.345;
     s.machine.car400 = "r34_gtr_v_99";
@@ -349,8 +350,18 @@ TEST(gtmode_save_text_roundtrip) {
     CHECK(t.race_best == s.race_best && t.prizes_given == s.prizes_given);
     CHECK(t.championship.active() && t.championship.races == s.championship.races &&
           t.championship.points == s.championship.points && t.championship.entrants == s.championship.entrants);
+    CHECK(t.championship.paints == s.championship.paints);
     // Stable output.
     CHECK(save_to_text(t) == text);
+    {
+        // A championship saved before its paints were kept (or before its first round ran): none, drawn by the next round.
+        GameState u = s;
+        u.championship.paints.clear();
+        const std::string old = save_to_text(u);
+        CHECK(old.find("champ Galtezza_e_0500 1 2 Galtezza_e_0501 Galtezza_e_0502 2 a b 10 6 4\n") != std::string::npos);
+        GameState v = load_from_text(old);
+        CHECK(v.championship.active() && v.championship.entrants == s.championship.entrants && v.championship.paints.empty());
+    }
     // Damaged / foreign files are rejected.
     bool threw = false;
     try {

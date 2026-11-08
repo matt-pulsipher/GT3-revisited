@@ -702,19 +702,20 @@ bool RaceScreen::build_vehicle(App& app) {
     return build_exact_solo(app);
 }
 
-// The opponents' cars as drawn and heard (a race's field, a free practice's): their paints (the event's slot ids, else the
+// The opponents' cars as drawn and heard (a race's field, a free practice's): their paints (the event's entry ids, else the
 // game's draw), models and engine notes.
 void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     opp_visuals_.clear();
-    // Paint colours: player first, then the opponents (event slot ids or the game's draw).
+    // Paint colours: player first, then the opponents (event entry ids or the game's draw).
     std::vector<PaintEntry> entries;
     std::string player_model = launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_;
     entries.push_back({player_model, colors_.id_at(player_model, preset_.paint)});
     const data::Event* pev = db_.event(race_event_);
     for (int i = 0; i < f.opponents(); ++i) {
         PaintEntry e{f.opponent_model(i)};
-        if (pev && race_opponents_ == pev->entries && pev->bytes.size() >= 0x110 + 4 * size_t(i + 1))
-            e.id = rd32(pev->bytes, 0x110 + 4 * size_t(i));
+        if (pev && race_opponents_ == pev->entries) // the event's own field: slot i is pool entry i
+            e.id = race::pool_color_id(*pev, i);
+        if (size_t(i) < race_opponent_color_ids_.size()) e.id = race_opponent_color_ids_[size_t(i)];
         if (online_ && size_t(i) < net_.paint.size()) // the colour that player chose
             e.id = colors_.id_at(f.opponent_model(i), net_.paint[size_t(i)]);
         if (size_t(i) < race_opponent_paints_.size() && race_opponent_paints_[size_t(i)] >= 0) // the colour the grid gives it
@@ -722,12 +723,26 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         entries.push_back(e);
     }
     // The race module's generator, as left by the opponent draw; a replay re-runs
-    // the draw from the state its race had.
-    GameRandom replay_rng{paint_seed_override_.value_or(GameRandom::kBootSeed)};
-    GameRandom& rng = paint_seed_override_ ? replay_rng : race_info_random();
-    paint_seed_ = rng.x;
+    // the draw from the state its race had. The race's other runs keep the paints drawn for it.
+    std::vector<int> paints;
+    const bool kept = !paint_seed_override_ && entries == drawn_paint_entries_;
+    if (kept) {
+        paints = drawn_paints_;
+        paint_seed_ = drawn_paint_seed_;
+    } else {
+        GameRandom replay_rng{paint_seed_override_.value_or(GameRandom::kBootSeed)};
+        GameRandom& rng = paint_seed_override_ ? replay_rng : race_info_random();
+        paint_seed_ = rng.x;
+        paints = assign_paints(colors_, entries, rng);
+        if (!paint_seed_override_) drawn_paint_entries_ = entries, drawn_paints_ = paints, drawn_paint_seed_ = paint_seed_;
+    }
+    {
+        std::string list;
+        for (size_t i = 1; i < paints.size(); ++i) list += (i > 1 ? " " : "") + std::to_string(paints[i]);
+        LOG_INFO("Race: opponent paints %s (%s)", list.c_str(),
+                 kept ? "kept for this race" : paint_seed_override_ ? "the replay's draw" : "drawn");
+    }
     paint_seed_override_.reset();
-    std::vector<int> paints = assign_paints(colors_, entries, rng);
     std::map<std::pair<std::string, int>, std::shared_ptr<CarVisual>> by_model;
     for (int i = 0; i < f.opponents(); ++i) {
         const std::string& model = f.opponent_model(i);

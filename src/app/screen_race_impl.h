@@ -915,6 +915,11 @@ private:
     int last_shot_ = -2; // the director's cut the shot filter was rolled for
     u32 paint_seed_ = GameRandom::kBootSeed;   // race_info_random() before this race's paint draw
     std::optional<u32> paint_seed_override_;     // the next build re-runs a replay's paint draw
+    // The paint draw of this race (GT3 draws it once into the race's entries, which every run of the race uses: the
+    // pre-race backdrop, free practice, retries): the entries it was drawn for, their paints and the seed it started from.
+    std::vector<PaintEntry> drawn_paint_entries_;
+    std::vector<int> drawn_paints_;
+    u32 drawn_paint_seed_ = GameRandom::kBootSeed;
     SDL_FRect frame_rect_{0, 0, 0, 0}; // the 3D frame's rectangle last drawn (UI units)
 
     CarSetup car_;
@@ -991,8 +996,9 @@ private:
     std::string race_event_;
     std::vector<std::string> race_opponents_;
     // Quick race's custom race (GameRequest::opponent_paints / opponent_skills / no_rubber_band / laps / player_slot); a
-    // replay's paints.
+    // replay's paints; a championship's field after its first round (its paints).
     std::vector<int> race_opponent_paints_;
+    std::vector<u32> race_opponent_color_ids_; // opponents drawn here from a pool: each entry's paint (race::pool_color_id)
     std::vector<std::string> race_opponent_skills_;
     bool race_no_rubber_band_ = false;
     int race_chosen_laps_ = 0, race_player_slot_ = -1;

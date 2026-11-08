@@ -226,6 +226,19 @@ TEST(random_gtmode_disc) {
     std::vector<std::string> a = gt.pick_opponents("Gsunday_e_0001", r1), b = gt.pick_opponents("Gsunday_e_0001", r2);
     CHECK(a == b && a.size() == 5 && r1.x == r2.x);
     CHECK(std::set<std::string>(a.begin(), a.end()).size() == a.size());
+    // A drawn car has its pool entry's paint (+0x110 + 4 k) in whatever slot it lands: the Trial Mountain demo gives every
+    // entry one.
+    if (const data::Event* demo = data->db.event("demo_tm")) {
+        GameRandom r3{0x5555AAAAu};
+        std::vector<u32> ids;
+        const std::vector<std::string> field = race::draw_opponents(data->db, *demo, 6, r3, &ids);
+        const std::vector<std::string> pool = race::event_pool(data->db, *demo);
+        CHECK(field.size() == 6 && ids.size() == 6 && field != pool);
+        for (size_t i = 0; i < field.size() && i < ids.size(); ++i) {
+            const auto at = std::find(pool.begin(), pool.end(), field[i]);
+            CHECK(at != pool.end() && ids[i] == race::pool_color_id(*demo, int(at - pool.begin())) && ids[i] != 0xFFFFFFFFu);
+        }
+    }
     CHECK(steps_between(0x5555AAAAu, r1.x, 5) == 5);
 
     // Prize cars: with the same generator states (and the hardware source fixed) the

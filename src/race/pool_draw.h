@@ -33,9 +33,13 @@ bool pool_entry_available(const data::CarDatabase& db, const std::string& label)
 // draws are plain random indices (repeats). `unavailable` is per pool entry.
 std::vector<int> draw_pool(GameRandom& rng, const std::vector<bool>& unavailable, int draws);
 
+// The paint of pool entry `k` (+0x110 + 4 k: a carcolor id, 0xFFFFFFFF = drawn at the race start). The car
+// build gives it to the car drawn from that entry, so it follows the entry, not the grid slot.
+u32 pool_color_id(const data::Event& ev, int k);
+
 // The labels of `draws` opponents drawn from the event's pool (empty when
-// the pool is empty).
+// the pool is empty); `color_ids` (optional) gets each one's pool_color_id.
 std::vector<std::string> draw_opponents(const data::CarDatabase& db, const data::Event& ev, int draws,
-                                        GameRandom& rng);
+                                        GameRandom& rng, std::vector<u32>* color_ids = nullptr);
 
 } // namespace gt3r::race

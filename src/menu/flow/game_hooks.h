@@ -86,7 +86,7 @@ struct GameRequest {
     std::vector<std::string> opponents;
     // Quick race's custom race (`opponents` its cars, in grid order): each opponent's paint index (-1: the game's draw) and
     // skill (an event label, race::FieldConfig::opponent_skills), the race without its event's rubber band, its laps (0: the
-    // event's) and the player's grid slot (-1: behind the opponents).
+    // event's) and the player's grid slot (-1: behind the opponents). A championship's later rounds: its field's paints.
     std::vector<int> opponent_paints;
     std::vector<std::string> opponent_skills;
     bool no_rubber_band = false;
@@ -133,6 +133,9 @@ struct GameResult {
     // Every car in finishing order (finished cars by time, then by race
     // distance): an index into GameRequest::opponents, -1 = the player.
     std::vector<int> order;
+    // The opponents' paints as the race had them, in GameRequest::opponents order (-1: the model has no paint list);
+    // a championship keeps its first round's for the later rounds.
+    std::vector<int> opponent_paints;
     double car_dirt = -1;      // the car's dirt after the race (0..0.8), < 0 = not tracked
     double top_speed_kmh = -1; // machine test / any race: the player's top speed (< 0 = unknown)
     // The player quit a championship ("exit sure"): the championship ends (a round already

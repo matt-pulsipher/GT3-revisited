@@ -1414,6 +1414,14 @@ Who draws:
 - **Arcade Single Race** draws the same way (`screen_race_launch.cpp`).
 - **The attract demo** draws every slot (§15).
 
+**Paint.** Each drawn car takes its pool entry's color id (event +0x110 + 4 × entry; it
+goes with the entry, not the grid slot). Right after the draw, every car still without
+one gets a paint from the same state, in entry order with the player first, each pick
+steering away from colors close to the others' (docs/dev/RACE.md "Paint colours"). No
+GT-mode or arcade event on the US, PAL or Japanese disc gives an entry a color; the
+licence tests and some attract demos do. The cars keep their paints for the whole race:
+the pre-race screen, free practice, retries and replays.
+
 ## §21 Licenses
 
 There are six licenses, each with 8 tests: B, A, IB, IA, S and R (rally; menu id `d`).
@@ -1528,7 +1536,10 @@ A championship series has a `set_race_code_champ` item named after its own code
 
 1. **Start.** Choosing the championship starts round 1, the item's code + 1. It costs
    one day (§2). The field, cars − 1 opponents, is drawn once from round 1's pool, and
-   every entrant's points start at 0 (`start_championship`). Every round starts on the
+   every entrant's points start at 0 (`start_championship`). Round 1 draws their paints
+   (§20.4), and every later round keeps them: each opponent races the whole championship
+   in the same color, also after the game is saved and loaded between rounds (an older
+   save keeps the paints its next round draws). Every round starts on the
    grid of §22.1, so with the same cars the grid is the same each round.
 2. **Each round** pays its own place prize, sets cup bits and keeps best places like a
    single race, but gives no prize car (`record_round`). Points of 10, 6, 4, 3, 2 and 1

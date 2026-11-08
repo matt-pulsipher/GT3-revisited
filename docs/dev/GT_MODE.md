@@ -75,8 +75,11 @@ its sections); this page describes the code.
   it to the license / regulation popups. `record_race` pays the place prize
   (every time), keeps the best place, counts races/wins and awards prize
   cars. `start_championship` + `record_round` run a championship: field
-  drawn once, points 10-6-4-3-2-1, champion only with strictly more points,
-  bonus and prize car on every championship win. `enter()` = one day.
+  drawn once, its paints kept from round 1 (`Championship::paints`, from the
+  round's `GameResult::opponent_paints`, handed to later rounds as
+  `GameRequest::opponent_paints`), points 10-6-4-3-2-1, champion only with
+  strictly more points, bonus and prize car on every championship win.
+  `enter()` = one day.
 - **Prize cars**: `award_prizes(code)` scans the gcf prize sets (series all
   won, championship, endurance, license all gold, league complete,
   completion %); single-car sets once, multi-car sets on every win, picked
@@ -800,7 +803,7 @@ wheel <label>                       wheel inventory
 license <lic 0-5> <test 0-7> <medal -1..2> <best seconds>
 race <code> <best place 0-based>
 prize <prize key>                   prizes already given
-champ <series> <next> <n> <codes…> <m> <entrants…> <points (m+1)…>
+champ <series> <next> <n> <codes…> <m> <entrants…> <points (m+1)…> [<paints (m)…>]   paints: once round 1 ran
 setfile <car> <day> <ref_final>     a setting file, followed by
  sparts <27 hex u64> / ssettings <52 ints> / sinfo <write time> <power PS> <name>
 mtest 400|1000|max <value> <car>    best machine-test results

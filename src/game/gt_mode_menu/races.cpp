@@ -73,6 +73,7 @@ void prepare_request(GameRequest& r) {
         if (ch.active()) {
             r.race_code = ch.races[size_t(ch.next)];
             r.opponents = ch.entrants;
+            r.opponent_paints = ch.paints;
             r.champ_round = ch.next + 1;
             r.champ_rounds = int(ch.races.size());
             r.champ_last = r.champ_round == r.champ_rounds;
@@ -80,6 +81,7 @@ void prepare_request(GameRequest& r) {
         } else {
             r.race_code = s->race_code;
             r.opponents = gt.pick_opponents(r.race_code);
+            r.opponent_paints.clear();
         }
         r.event = r.race_code;
         fill_car(r, gt);
@@ -127,6 +129,10 @@ std::vector<std::string> on_result(const GameResult& r) {
         // from the championship (its prize page has been shown); retiring ends the championship,
         // and so does leaving a round's pre-race menu (its only way out is that EXIT).
         if (gt.state().championship.active()) {
+            // The field keeps the paints its first round drew (also a save from before they were kept: its next round's).
+            Championship& ch = gt.state().championship;
+            if (ch.paints.size() != ch.entrants.size() && r.opponent_paints.size() == ch.entrants.size())
+                ch.paints = r.opponent_paints;
             if (r.started) {
                 // Finishing order as entrant indices (0 = the player, i + 1 = opponent i).
                 std::vector<int> order;
