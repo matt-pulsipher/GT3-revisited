@@ -858,7 +858,7 @@ remembers the value it had then.
 | auto-level (computed gearboxes) | transmission +0x2A–0x2B | "Level n" |
 | gears 1–n | see below | three decimals |
 | downforce F / R | body +0x11–0x12 / +0x3A–0x3B | ×0.01 |
-| ASCC | 1 … stability control +0x11 | "Level n" |
+| ASCC | 1 … stability control +0x11 | "Level n − 1" (the lowest step is "Level 0") |
 | TCS | traction control +0x12 steps, reversed | "Level 0" = TCS off |
 | VCD | drivetrain +0x11–0x12 | "%" |
 

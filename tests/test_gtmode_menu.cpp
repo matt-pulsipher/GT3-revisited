@@ -8,6 +8,7 @@
 #include "formats/text/mltx.h"
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
+#include "game/gt_setting.h"
 #include "game/net_car.h"
 #include "menu/flow/game_flow.h"
 #include "menu/flow/gt_mode_hooks.h"
@@ -1461,6 +1462,14 @@ TEST(gtmode_menu_disc_settings_sliders) {
     CHECK(gt.state().ride_car()->settings.spring[0] == before + 1);
     auto spec = gt.car_spec(*gt.state().ride_car());
     CHECK(spec.has_value());
+    // ASM shows one below its setting, as GT3 does (public issue 236): stock 11 of 21 = "Level 10", step 1 = "Level 0".
+    CHECK(s->setting_work.has_value());
+    if (!s->setting_work) return;
+    const game::GarageCar& real = *gt.state().ride_car();
+    game::GarageCar& work = *s->setting_work;
+    CHECK(game::setting_text(gt, real, work, "elec_ascc") == "Level 10");
+    CHECK(game::slider_set(gt, real, work, "slider_elec_ascc", 1, ""));
+    CHECK(game::setting_text(gt, real, work, "elec_ascc") == "Level 0");
 }
 
 // Change Parts (public issue 86): each category's rows name the fitted parts; a part change

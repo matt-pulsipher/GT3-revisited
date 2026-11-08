@@ -296,9 +296,9 @@ std::optional<std::string> setting_text(const GtMode& gt, const GarageCar& real,
     if (starts(item, "slider_rate_")) return fixed_point(r->value, 1) + "kgf/mm";
     if (starts(item, "slider_height_")) return std::to_string(r->value) + "mm";
     if (starts(item, "slider_damper_") || starts(item, "slider_bound_") || starts(item, "slider_rebound_") ||
-        starts(item, "slider_stabilizer_") || starts(item, "slider_brake_") || item == "slider_elec_ascc")
+        starts(item, "slider_stabilizer_") || starts(item, "slider_brake_"))
         return level(r->value);
-    if (item == "slider_elec_tcsc") return level(r->value - 1);
+    if (item == "slider_elec_ascc" || item == "slider_elec_tcsc") return level(r->value - 1); // word 1 = "Level 0"
     if (starts(item, "slider_camber_")) return fixed_point(r->value, 1) + kDegree;
     if (starts(item, "slider_toe_")) return fixed_point(5 * (r->value - 128), 1) + kDegree;
     if (item == "slider_elec_vcdc") return std::to_string(r->value) + " %";
