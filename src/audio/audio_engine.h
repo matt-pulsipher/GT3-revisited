@@ -88,6 +88,10 @@ public:
     const std::vector<sound::MusicEntry>& music_index(Vfs& vfs);
     bool sequence_playing() const { return sequencer_.active(); }
     Sequencer& sequencer() { return sequencer_; }
+    // The disc or its mods changed: the stream index (bgm/ads.inf, bgm::Player::forget) and the
+    // sequenced music are read again when next used. What plays now plays on; a playing
+    // sequence keeps its banks until the next one starts.
+    void forget_disc_music();
     // The game's BGM layer (ids, restart rules). Shared
     // by menus, race and presentations so "play if different" sees one state.
     bgm::Player& bgm() { return bgm_; }
@@ -160,6 +164,7 @@ private:
     std::shared_ptr<const sound::SeqBank> seqs_;
     std::vector<double> seq_loop_seconds_;
     bool seq_load_tried_ = false;
+    bool seq_stale_ = false; // forget_disc_music(): read again once no sequence plays
     SDL_AudioStream* sfx_stream_ = nullptr;
     float sfx_volume_ = 0.8f;
     std::string device_name_;

@@ -28,6 +28,8 @@ float stream_gain(float level, float music_volume) { return std::max(level, 0.0f
 bool Player::load(Vfs& vfs) {
     if (loaded_) return !mads_.groups.empty();
     loaded_ = true;
+    track_ = nullptr; // a record of the index read before forget()
+    mads_ = {};
     try {
         if (auto inf = vfs.read("bgm/ads.inf")) mads_ = sound::MadsIndex::parse(*inf);
     } catch (const std::exception& e) {
