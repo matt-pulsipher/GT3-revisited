@@ -83,6 +83,10 @@ public:
     bool play_if_different(AudioEngine& audio, Vfs& vfs, int id, int index = -1, bool loop = true,
                            float volume = kJingleVolume);
     void stop(AudioEngine& audio);
+    // Ours: the disc or its mods changed, so bgm/ads.inf is read again at the next request (each
+    // release names its files its own way: the US disc's str10a.ads is PAL's str10e.ads). The
+    // current piece plays on.
+    void forget() { loaded_ = false; }
     // The files of stream group `id` in index order (empty if unknown); kRace lists the race songs.
     std::vector<std::string> files(Vfs& vfs, int id);
 

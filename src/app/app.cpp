@@ -369,6 +369,7 @@ void App::rescan_mods() {
     vfs_->scan_mods(mods_dir(), &config_);
     texture_pack::set_pack(vfs_->textures()); // for what loads from now on
     game::reload_gt_mode_data(); // loaded at the first title menu, with the mods of then
+    if (audio_) audio_->forget_disc_music(); // mods may replace the music index and files
     measure_disc_music();
 }
 
@@ -379,6 +380,7 @@ void App::set_mod_enabled(const std::string& id, bool enabled) {
     vfs_->set_mod_enabled(id, enabled);
     texture_pack::set_pack(vfs_->textures());
     game::reload_gt_mode_data();
+    if (audio_) audio_->forget_disc_music();
     measure_disc_music();
 }
 
@@ -669,7 +671,10 @@ void App::reset_dynamic_scale() {
 }
 
 void App::close_disc() {
-    if (audio_) audio_->stop_music();
+    if (audio_) {
+        audio_->stop_music();
+        audio_->forget_disc_music(); // the next disc names its music files its own way
+    }
     music_.set_disc_songs({}, {}); // its songs' measuring reads this disc
     game::close_gt_mode(); // its data, reader and save library belong to this disc
     texture_pack::set_pack(nullptr);
