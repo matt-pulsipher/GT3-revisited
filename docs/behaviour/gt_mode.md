@@ -926,8 +926,10 @@ cameras follow. A demo that names its own car keeps it in slot 0 and draws only 
 race in which the computer drives every car, slot 0 included; it records nothing and any
 button ends it.
 
-Known difference: the followed car keeps its default paint, because the engine builds
-its look before the paint draw.
+Paint: the followed car takes its pool entry's color when the event gives one (the course
+and F1 demos with fixed liveries), and is otherwise painted by the race's paint draw along
+with the others, first in entry order (§20.4). The same holds for GT Mode's Preview, the
+same kind of race on the event the player picked.
 
 ## §16 Arcade progression
 
@@ -1416,7 +1418,8 @@ Who draws:
 
 **Paint.** Each drawn car takes its pool entry's color id (event +0x110 + 4 × entry; it
 goes with the entry, not the grid slot). Right after the draw, every car still without
-one gets a paint from the same state, in entry order with the player first, each pick
+one gets a paint from the same state, in entry order with the player first (the attract
+demo's followed car too, when its entry gives none), each pick
 steering away from colors close to the others' (docs/dev/RACE.md "Paint colours"). No
 GT-mode or arcade event on the US, PAL or Japanese disc gives an entry a color; the
 licence tests and some attract demos do. The cars keep their paints for the whole race:

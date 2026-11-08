@@ -673,6 +673,7 @@ private:
     std::optional<sim::exact::Conductor> solo_conductor() const;
     bool build_exact_solo(App& app);
     void load_opponent_cars(App& app, const RaceField& f);
+    void build_player_visual(App& app, const std::string& model, ByteSpan car_file);
     void exact_solo_step();      // after each step: the run's end and result from the race flow
     bool exact_solo() const { return solo_field_ != nullptr; }
     RaceField* exact_field() const { return field_ ? field_.get() : solo_field_.get(); }
@@ -1029,7 +1030,8 @@ private:
     std::array<LapList, 2> lap_lists_{};
     long long session_best_ms_ = -1;
     std::string license_event_;   // licence test event ("" = not a licence test)
-    u32 event_paint_id_ = 0xFFFFFFFFu; // licence test: the event's slot-0 colour id (0xFFFFFFFF = none)
+    u32 event_paint_id_ = 0xFFFFFFFFu; // licence test, attract demo: the slot-0 car's colour id (0xFFFFFFFF = none)
+    bool draw_player_paint_ = false;   // attract demo: the slot-0 car has no colour id, so the paint draw gives it one
     // Machine tests (presentation §B7): the test (the event's test byte) and the run's timing
     // points; machine_time_ is the time to the goal (s since GO), -1 before it.
     std::optional<MachineTest> machine_;
