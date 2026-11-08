@@ -7,6 +7,7 @@
 
 #include "input/virtual_pad.h"
 #include "race/custom_cameras.h"
+#include "race/hood_camera.h"
 #include "race/procedural_cameras.h"
 #include "race/replay_cameras.h"
 #include "race/sound_view.h"
@@ -105,6 +106,7 @@ public:
     static constexpr float kLookStart = 0.2f, kLookFull = 0.5f; // the stick's reach: turn from, full turn at
     static constexpr float kLookRate = 14.0f;                   // the ease (1/s; 95 % in about 0.2 s)
     static constexpr float kLookMirror = 0.35f;                 // turned past this (radians): no mirror
+    static constexpr float kLookRear = 1.5707963f;              // past this: an "ahead" car is hidden
     // GT3's pre-race shot (starting camera, cameras/start.cam): while `on`, the camera follows the
     // file's record 0 in the car's frame as t goes 0 -> 1 (eye, target and zoom curves).
     void set_intro(bool on, float t) { intro_ = on, intro_t_ = t; }
@@ -169,7 +171,22 @@ public:
     // custom camera is when it hides the car.
     bool onboard() const {
         if (intro_) return false;
-        if (mode_ == CameraMode::Custom) return custom() && !custom()->show_car;
+        if (mode_ == CameraMode::Custom) return custom() && custom()->car == CustomCamera::OwnCar::Hidden;
+        return mode_ == CameraMode::Bumper || mode_ == CameraMode::Roof;
+    }
+    // The player's own car body is not drawn now: the in-car views, a custom camera whose car
+    // is hidden, and an "ahead" one while looking back or turned past a right angle (its
+    // bodywork shows ahead — a bonnet camera's own bonnet — without the cabin blocking the
+    // look back).
+    bool hides_car() const {
+        if (intro_) return false;
+        if (mode_ == CameraMode::Custom) {
+            const CustomCamera* c = custom();
+            if (!c) return false; // (none left: the chase fallback draws the car)
+            if (c->car == CustomCamera::OwnCar::Hidden) return true;
+            if (c->car == CustomCamera::OwnCar::Ahead) return look_back_ || std::fabs(look_) > kLookRear;
+            return false;
+        }
         return mode_ == CameraMode::Bumper || mode_ == CameraMode::Roof;
     }
     // The HUD's in-car layout (GT3's on-board cluster): the in-car views, and the custom cameras set to it.
@@ -183,6 +200,10 @@ public:
     // The driver's eye in the car model's frame (x right, y up, z back, from the body origin):
     // where a custom camera's offset is measured from.
     render::Vec3 driver_eye() const { return point_[0] * -1.0f; }
+    // The followed car's bonnet-camera mounts (race/hood_camera.h): a Mount::Hood custom
+    // camera's seat. Rebound by the screen when the camera's car changes.
+    void set_hood_profile(const HoodCameraProfile& p) { hood_profile_ = p, last_cut_.reset(); }
+    const HoodCameraProfile& hood_profile() const { return hood_profile_; }
     // The replay camera is one of view mode 1's on-board car mounts (in-car, a bumper, the
     // driver's head): the followed car is not drawn.
     bool replay_on_board() const { return mode_ == CameraMode::Tv && replay_on_board_; }
@@ -276,6 +297,7 @@ private:
     const std::vector<CarMount>* replay_mounts_ = nullptr;
     std::vector<CustomCamera> customs_;
     int custom_id_ = 0;
+    HoodCameraProfile hood_profile_;
     render::Vec3 mirror_eye_{};
     render::Mat4 mirror_view_;
     float mirror_fovy_ = 0.8f;

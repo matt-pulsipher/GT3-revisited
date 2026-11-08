@@ -32,7 +32,7 @@ Color alpha(Color c, u8 a) { return {c.r, c.g, c.b, a}; }
 CameraEditor::CameraEditor(race::CustomCamera cam, bool is_new, std::function<race::CustomCamera(int)> preset)
     : cam_(std::move(cam)), start_(cam_), is_new_(is_new), preset_(std::move(preset)) {
     // A camera that keeps the car on screen rotates round it; one on the car turns in place.
-    around_ = cam_.show_car;
+    around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
     build_rows();
 }
 
@@ -41,7 +41,7 @@ void CameraEditor::begin() {
     race::CustomCamera p = preset_(0);
     p.id = cam_.id, p.name = cam_.name, p.enabled = cam_.enabled;
     cam_ = start_ = p;
-    around_ = cam_.show_car;
+    around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
     build_rows();
 }
 
@@ -80,15 +80,29 @@ void CameraEditor::build_rows() {
     };
     if (page_ == Page::Camera) {
         choice("Rotate", {"Around the car", "In place"}, around_ ? 0 : 1, [this](int i) { around_ = i == 0; });
-        choice("Movement", {"Smooth follow", "Fixed to the car"}, c.mount == race::CustomCamera::Mount::Body ? 1 : 0,
-               [&c](int i) { c.mount = i == 1 ? race::CustomCamera::Mount::Body : race::CustomCamera::Mount::Follow; });
+        choice("Movement", {"Smooth follow", "On the bonnet", "Fixed to the car"},
+               c.mount == race::CustomCamera::Mount::Body ? 2 : c.mount == race::CustomCamera::Mount::Hood ? 1 : 0,
+               [&c](int i) {
+                   c.mount = i == 2 ? race::CustomCamera::Mount::Body
+                                  : i == 1 ? race::CustomCamera::Mount::Hood
+                                           : race::CustomCamera::Mount::Follow;
+               });
         slider("Field of view", c.fov, race::CustomCamera::kMinFov, race::CustomCamera::kMaxFov, 1, degrees(c.fov),
                [&c](float v) { c.fov = v; });
+        if (c.mount != race::CustomCamera::Mount::Follow)
+            slider("Horizon lock", c.roll_lock, 0, 1, 0.1f,
+                   std::to_string(int(std::lround(c.roll_lock * 100))) + "%", [&c](float v) { c.roll_lock = v; });
         slider("Roll", c.roll, -race::CustomCamera::kMaxRoll, race::CustomCamera::kMaxRoll, 1, degrees(c.roll),
                [&c](float v) { c.roll = v; });
         // The view straight along the car (no turn, tilt or roll), the camera where it is.
         action("Reset rotation", "", [&c] { c.yaw = c.pitch = c.roll = 0; });
-        choice("Your car", {"Shown", "Hidden"}, c.show_car ? 0 : 1, [&c](int i) { c.show_car = i == 0; });
+        choice("Your car", {"Shown", "Hidden", "Facing forward"},
+               c.car == race::CustomCamera::OwnCar::Hidden ? 1 : c.car == race::CustomCamera::OwnCar::Ahead ? 2 : 0,
+               [&c](int i) {
+                   c.car = i == 1 ? race::CustomCamera::OwnCar::Hidden
+                                : i == 2 ? race::CustomCamera::OwnCar::Ahead
+                                         : race::CustomCamera::OwnCar::Shown;
+               });
         choice("HUD layout", {"Chase", "In-car"}, c.incar_hud ? 1 : 0, [&c](int i) { c.incar_hud = i == 1; });
         {
             Row r;
@@ -104,7 +118,7 @@ void CameraEditor::build_rows() {
                 p.id = cam_.id, p.name = cam_.name, p.enabled = cam_.enabled;
                 p.mirror_x = cam_.mirror_x, p.mirror_y = cam_.mirror_y, p.mirror_size = cam_.mirror_size;
                 cam_ = p;
-                around_ = cam_.show_car;
+                around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
             };
             r.change = [this, take](int d) { take(preset_sel_ + d); };
             r.activate = [this, take] { take(preset_sel_); };

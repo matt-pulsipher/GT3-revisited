@@ -358,6 +358,11 @@ moves it, the right stick rotates it, L2 / R2 move it down / up, the D-pad
 works the panel, L1 / R1 switch between the Camera and Mirror pages, Select
 hides the panel, Start saves and Triangle leaves. On the Mirror page a drag or
 the left stick moves the rear-view mirror, the wheel, a pinch or L2 / R2 size it.
+A camera can sit on the bonnet (Movement: On the bonnet, or the Bonnet
+"Start from" row): the seat comes from the car body's own shape, so it lands
+on the bodywork of any car, and the moves nudge it sideways, up and fore/aft.
+Horizon lock levels out that much of the body's roll; Your car: Facing forward
+draws the bonnet ahead but hides the car while looking back.
 
 With `gt3` the race reads the menu pad itself, so every button does what it
 did on a DualShock 2. Reverse is its own held input in both, as in GT3:

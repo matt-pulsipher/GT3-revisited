@@ -32,9 +32,11 @@ class App;
 class CameraEditor {
 public:
     enum class Result : u8 { None, Save, Cancel };
-    // The built-in views a camera can start from (CameraRig::preset), in the panel's order.
-    static constexpr const char* kPresetNames[] = {"Chase", "Far chase", "Bumper", "Roof"};
-    static constexpr int kPresets = 4;
+    // The views a camera can start from (CameraRig::preset; kPresetBonnet is a Mount::Hood
+    // camera, built in screen_race_camera_editor.cpp), in the panel's order.
+    static constexpr const char* kPresetNames[] = {"Chase", "Far chase", "Bumper", "Roof", "Bonnet"};
+    static constexpr int kPresets = 5;
+    static constexpr int kPresetBonnet = 4;
 
     // What the race screen tells the editor every frame.
     struct Scene {

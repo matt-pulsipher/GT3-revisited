@@ -50,11 +50,11 @@ TEST(custom_cameras_config) {
     IniDocument cfg = IniDocument::parse("[race]\nviews = gt3\n[custom_camera7]\nid = 9\nname = Old\n");
     CustomCamera a = camera(4, "Hood");
     a.enabled = false;
-    a.mount = CustomCamera::Mount::Body;
+    a.mount = CustomCamera::Mount::Hood;
     a.offset = {0.1f, 0.25f, -1.5f};
-    a.yaw = 12, a.pitch = -4.5f, a.roll = 3;
+    a.yaw = 12, a.pitch = -4.5f, a.roll = 3, a.roll_lock = 0.5f;
     a.fov = 55;
-    a.show_car = true, a.incar_hud = true;
+    a.car = CustomCamera::OwnCar::Ahead, a.incar_hud = true;
     a.mirror = true, a.mirror_x = 0.25f, a.mirror_y = 0.8f, a.mirror_size = 1.5f;
     CustomCamera b = camera(2, "Blimp");
     save_custom_cameras(cfg, {a, b});
@@ -81,7 +81,18 @@ TEST(custom_cameras_config) {
     CHECK(h[0].fov == CustomCamera::kMaxFov && h[0].pitch == CustomCamera::kMaxPitch && near(h[0].yaw, -90));
     CHECK(near(render::length(h[0].offset), CustomCamera::kMaxDistance));
     CHECK(h[0].mirror_size == CustomCamera::kMaxMirror && h[0].mirror_x == 0);
-    CHECK(h[0].enabled && h[0].mount == CustomCamera::Mount::Follow && h[0].show_car && !h[0].mirror);
+    CHECK(h[0].enabled && h[0].mount == CustomCamera::Mount::Follow && h[0].car == CustomCamera::OwnCar::Shown &&
+          !h[0].mirror && h[0].roll_lock == 0);
+
+    // The bonnet mount, an ahead car and the roll lock, as hand-edited words and numbers.
+    const std::vector<CustomCamera> bn =
+        load_custom_cameras(IniDocument::parse("[custom_camera1]\nid = 7\nname = Bonnet\nmount = bonnet\ncar = ahead\n"
+                                               "roll_lock = 40\n"
+                                               "[custom_camera2]\nid = 8\nname = Hood\nmount = hood\nroll_lock = 300\n"));
+    CHECK(bn.size() == 2);
+    CHECK(bn[0].mount == CustomCamera::Mount::Hood && bn[0].car == CustomCamera::OwnCar::Ahead &&
+          near(bn[0].roll_lock, 0.4f));
+    CHECK(bn[1].mount == CustomCamera::Mount::Hood && near(bn[1].roll_lock, 1.0f)); // (clamped)
 }
 
 // Camera files (Export / Import): the cameras round-trip; imported ones get new ids and, when a
@@ -253,7 +264,7 @@ TEST(race_camera_custom_pose) {
     // (Pitched 15 degrees down both ways: -cos 30 degrees.)
     CHECK(near(render::dot(view_forward(c.view()), ahead), -0.8660254f) && !c.shows_mirror());
     // Hidden car, in-car HUD, fixed to the body: the in-car look, a car-mounted sound.
-    k.show_car = false, k.incar_hud = true, k.mount = CustomCamera::Mount::Body;
+    k.car = CustomCamera::OwnCar::Hidden, k.incar_hud = true, k.mount = CustomCamera::Mount::Body;
     c.set_custom_cameras({k});
     CHECK(c.onboard() && c.incar_hud() && c.sound_kind() == CameraSound::Cockpit);
     c.set_intro(true, 0.5f); // the pre-race shot is outside the car

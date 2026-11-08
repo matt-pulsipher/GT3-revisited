@@ -724,7 +724,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             const WheelView wv{camera_.view(), camera_.projection(box.w / box.h), eye, true, wheel_env_};
             wheel_view_ = &wv;
             spark_pass_ = true, spark_view_ = camera_.view();
-            collect_items(eye, cam_right(camera_), !camera_.onboard(), true, smoke_view(camera_, box.w / box.h * CameraRig::kPixelAspect, camera_.fovy()));
+            collect_items(eye, cam_right(camera_), !camera_.hides_car(), true, smoke_view(camera_, box.w / box.h * CameraRig::kPixelAspect, camera_.fovy()));
             spark_pass_ = false;
             wheel_view_ = nullptr;
             render::DrawOptions bo = draw_options();
@@ -789,9 +789,10 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     render::Vec3 eye = camera_.eye();
     // In-car view: own car not drawn; a replay's on-board car mount: the followed car not drawn.
     const bool mount_in = camera_.replay_on_board();
+    const bool hide_target = camera_.hides_car() || mount_in;
     const bool followed_player = !(field_ && replay_focus_ >= 0);
-    const bool own_car = !camera_.onboard() && !(mount_in && followed_player);
-    const int hidden = mount_in && !followed_player ? replay_focus_ : -1;
+    const bool own_car = !(hide_target && followed_player);
+    const int hidden = hide_target && !followed_player ? replay_focus_ : -1;
     hidden_opponent_ = hidden;
     // The wheels: GT3 blurs them in the 1P frame, not in the 2P halves (docs/formats/car_model.md
     // "Wheel spin blur").
@@ -833,7 +834,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         render::Vec3 eye2 = camera2_.eye();
         const WheelView wv2{camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, false, wheel_env_};
         wheel_view_ = &wv2;
-        collect_items(eye2, cam_right(camera2_), true, !camera2_.onboard(), // in-car: own car not drawn
+        collect_items(eye2, cam_right(camera2_), true, !camera2_.hides_car(), // in-car: own car not drawn
                       smoke_view(camera2_, rect2.w / rect2.h * CameraRig::kPixelAspect, camera2_.fovy()), ItemsView::Split);
         wheel_view_ = nullptr;
         render::DrawOptions o2 = o;

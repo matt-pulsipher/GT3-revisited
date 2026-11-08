@@ -9,11 +9,16 @@
 //   id = 3                  ; stable number (the view a race remembers)
 //   name = Hood
 //   enabled = yes           ; in the change-view rotation
-//   mount = body            ; body: fixed to the car; follow: trails its turns, level
-//   x = 0  y = 0.1  z = -1.2      ; the eye from the driver's eye, metres (x right, y up, z back)
+//   mount = bonnet          ; body: fixed to the car; follow: trails its turns, level;
+//                           ; bonnet: on the bonnet, seated by the car's own shape
+//   x = 0  y = 0.1  z = -1.2      ; the eye from the driver's eye, metres (x right, y up, z back);
+//                           ; a bonnet mount's nudge: sideways, up, fore/aft
 //   yaw = 0  pitch = -4  roll = 0 ; degrees: turned right, up, rolled clockwise
+//   roll_lock = 0           ; 0..100: how much of the body's roll the view levels out
+//                           ; (body and bonnet mounts; follow is always level)
 //   fov = 48                ; vertical field of view, degrees
-//   car = shown             ; shown / hidden: the player's car drawn
+//   car = shown             ; shown / hidden / ahead: the player's car drawn, not drawn,
+//                           ; drawn ahead only (hidden while looking back)
 //   hud = chase             ; chase / incar: the HUD layout
 //   mirror = off            ; on / off: the rear-view mirror
 //   mirror_x = 0.5  mirror_y = 0.116  mirror_size = 1 ; its centre (share of the picture) and size
@@ -37,8 +42,14 @@ namespace gt3r::race {
 
 struct CustomCamera {
     // How the camera holds on to the car: fixed to its body (it pitches and rolls with the car,
-    // as the in-car view does), or following its heading smoothly and level (as the chase view).
-    enum class Mount : u8 { Body, Follow };
+    // as the in-car view does), following its heading smoothly and level (as the chase view),
+    // or seated on the bonnet at the place the body's own shape gives (race/hood_camera.h).
+    enum class Mount : u8 { Body, Follow, Hood };
+
+    // Whether the player's car body is drawn: always, never (the in-car look), or only facing
+    // forward — hidden while looking back or turned past a right angle, so a bonnet camera's
+    // look-back is not the inside of the cabin.
+    enum class OwnCar : u8 { Shown, Hidden, Ahead };
 
     static constexpr float kMinFov = 15, kMaxFov = 100;      // degrees
     static constexpr float kMaxPitch = 89, kMaxRoll = 90;    // degrees
@@ -54,11 +65,13 @@ struct CustomCamera {
     bool enabled = true;
     Mount mount = Mount::Follow;
     // The eye from the driver's eye (the car's in-car camera point), metres in the mount's frame:
-    // x right, y up, z back (the car model's axes).
+    // x right, y up, z back (the car model's axes). A bonnet mount instead reads them as nudges
+    // from its own mounts: x sideways, y up, z fore/aft (hood_camera_eye).
     render::Vec3 offset{0, 0.7f, 6.0f};
     float yaw = 0, pitch = 0, roll = 0; // degrees: turned right, up, rolled clockwise
+    float roll_lock = 0;                // 0..1: the share of the body's roll the view levels out
     float fov = 47.9f;                  // vertical, degrees (GT3's player views: 47.9)
-    bool show_car = true;               // false: the player's car is not drawn (the in-car look)
+    OwnCar car = OwnCar::Shown;         // the player's car drawn: always, never, or facing forward only
     bool incar_hud = false;             // the in-car view's HUD layout, else the chase views'
     bool mirror = false;
     float mirror_x = kMirrorX, mirror_y = kMirrorY, mirror_size = 1.0f;
