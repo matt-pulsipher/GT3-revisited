@@ -38,8 +38,9 @@ sim::ControlInputs RaceScreen::scripted_inputs(double t, bool& reverse) const {
 void RaceScreen::next_view(CameraRig& cam, int player) {
     cam.next_mode();
     if (player == 0) drive_camera_ = cam.mode();
-    if (cam.mode() == CameraMode::Bumper || cam.mode() == CameraMode::Chase || cam.mode() == CameraMode::ChaseFar)
-        g_last_view[player] = {cam.mode(), cam.mirror()};
+    if (cam.mode() == CameraMode::Bumper || cam.mode() == CameraMode::Chase || cam.mode() == CameraMode::ChaseFar ||
+        cam.mode() == CameraMode::Custom)
+        g_last_view[player] = {cam.mode(), cam.mirror(), cam.custom_id()};
 }
 
 // The race pad's right stick (RX / RY as bound in Settings -> Controls; the touch controls' drag on
@@ -395,6 +396,10 @@ void RaceScreen::flying_start_signal(App& app) {
 }
 
 void RaceScreen::update_drive(App& app, double dt) {
+    if (editor_) {
+        update_camera_editor(app, dt);
+        return;
+    }
     const MenuInput& m = app.menu();
     if (online_ && !online_update(app, dt)) return;
     if (logger_mode_ && update_logger(app, dt)) return;

@@ -41,6 +41,7 @@ const char* camera_mode_name(CameraMode m) {
     case CameraMode::Roof: return "roof";
     case CameraMode::Orbit: return "free orbit";
     case CameraMode::Tv: return "replay (TV)";
+    case CameraMode::Custom: return "custom";
     default: return "?";
     }
 }
@@ -65,13 +66,48 @@ void CameraRig::next_mode() {
         return;
     }
     mirror_ = true;
-    if (mode_ == CameraMode::Bumper) set_mode(CameraMode::Chase);
-    else if (mode_ == CameraMode::Chase && !gt3_views_) set_mode(CameraMode::ChaseFar);
-    else if (mode_ == CameraMode::Chase || mode_ == CameraMode::ChaseFar) set_mode(CameraMode::Bumper);
-    else set_mode(CameraMode::Chase);
+    // The custom cameras after the last built-in view, then back to the bumper.
+    auto custom_from = [this](size_t i) {
+        if (i < customs_.size()) {
+            custom_id_ = customs_[i].id;
+            set_mode(CameraMode::Custom);
+        } else {
+            set_mode(CameraMode::Bumper);
+        }
+    };
+    if (mode_ == CameraMode::Custom) {
+        size_t i = 0;
+        while (i < customs_.size() && customs_[i].id != custom_id_) ++i;
+        custom_from(i < customs_.size() ? i + 1 : customs_.size());
+    } else if (mode_ == CameraMode::Bumper) {
+        set_mode(CameraMode::Chase);
+    } else if (mode_ == CameraMode::Chase && !gt3_views_) {
+        set_mode(CameraMode::ChaseFar);
+    } else if (mode_ == CameraMode::Chase || mode_ == CameraMode::ChaseFar) {
+        custom_from(0);
+    } else {
+        set_mode(CameraMode::Chase);
+    }
+}
+
+void CameraRig::set_view(CameraMode m, bool mirror, int custom_id) {
+    if (m == CameraMode::Custom) {
+        if (!find_custom_camera(customs_, custom_id)) m = CameraMode::Bumper, mirror = true;
+        else custom_id_ = custom_id;
+    }
+    set_mode(m);
+    mirror_ = mirror;
+}
+
+std::string CameraRig::view_name() const {
+    if (const CustomCamera* c = custom()) return c->name;
+    return camera_mode_name(mode_);
 }
 
 void CameraRig::set_mode(CameraMode m) {
+    // The custom view without a camera of its id: the first one.
+    if (m == CameraMode::Custom && !find_custom_camera(customs_, custom_id_) && !customs_.empty())
+        custom_id_ = customs_.front().id;
     mode_ = m;
     snapped_ = false;
 }
@@ -108,6 +144,9 @@ CameraSound CameraRig::sound_kind() const {
     case CameraMode::Roof: return CameraSound::Cockpit;
     case CameraMode::Chase:
     case CameraMode::ChaseFar: return CameraSound::Chase;
+    case CameraMode::Custom: // fixed to the car: a car mount; trailing it: a chase
+        if (const CustomCamera* c = custom()) return c->mount == CustomCamera::Mount::Body ? CameraSound::Cockpit : CameraSound::Chase;
+        return CameraSound::Chase;
     case CameraMode::Tv: return replay_car_mount_ ? CameraSound::Cockpit : CameraSound::Other;
     default: return CameraSound::Other;
     }
@@ -287,6 +326,39 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
         fovy_ = roof ? 0.85f : 0.9f;
         break;
     }
+    case CameraMode::Custom: {
+        const CustomCamera* c = custom();
+        if (!c) { // (none left: the chase)
+            gt3_view(1);
+            break;
+        }
+        // The mirror looks back from the in-car view, whatever the camera.
+        gt3_view(0);
+        mirror_eye_ = eye_, mirror_view_ = view_, mirror_fovy_ = fovy_;
+        // The mount's frame at the body origin: the body's attitude, or the chase's lagged heading
+        // and pitch with no roll (as gt3_view(1), between its 60 Hz steps too).
+        const float q = setup.wheels[0].ride_height > 0 ? setup.wheels[0].ride_height : 0.13f;
+        const render::Vec3 origin = rv(s.position + rotate(s.orientation, {0, q, 0}));
+        render::Vec3 f = fwd, u = up;
+        if (c->mount == CustomCamera::Mount::Follow) {
+            const float th = lag_yaw_ + lag_yaw_w_ * float(lag_time_), ph = lag_pitch_ + lag_pitch_w_ * float(lag_time_);
+            f = {-std::sin(th) * std::cos(ph), std::sin(ph), -std::cos(th) * std::cos(ph)};
+            u = render::cross(render::normalize(render::cross(f, {0, 1, 0})), f);
+        }
+        const render::Vec3 r = render::normalize(render::cross(f, u));
+        // Look back and the look around turn the camera round the car's up axis through the
+        // driver's eye: a chase-like camera goes round the car, a bonnet camera looks behind.
+        const render::Mat4 turn = render::rotate_y(-(look_back_ ? kPi : look_));
+        render::Vec3 d, du;
+        c->axes(d, du);
+        const render::Vec3 e = driver_eye() + turn.transform_point(c->offset);
+        d = turn.transform_point(d), du = turn.transform_point(du);
+        auto world = [&](const render::Vec3& v) { return r * v.x + u * v.y - f * v.z; }; // (local z is back)
+        eye_ = origin + world(e);
+        view_ = render::look_at(eye_, eye_ + world(d), world(du));
+        fovy_ = c->fovy();
+        break;
+    }
     case CameraMode::Orbit: {
         float ox = stick(pad, PadAxis::RX), oy = stick(pad, PadAxis::RY);
         orbit_yaw_ += ox * 2.0f * fdt;
@@ -406,6 +478,43 @@ void CameraRig::set_replay_aim(const render::Vec3& aim, const ReplayDirector::Pa
     replay_partner_.reset();
     if (partner) replay_partner_ = *partner;
     replay_partner_length_ = partner_length;
+}
+
+CustomCamera CameraRig::preset(CameraMode m, const sim::VehicleSetup& setup) const {
+    constexpr float kDeg = 180.0f / kPi;
+    CustomCamera c;
+    const render::Vec3 eye0 = driver_eye();
+    const float q = setup.wheels[0].ride_height > 0 ? setup.wheels[0].ride_height : 0.13f;
+    switch (m) {
+    case CameraMode::Bumper: // the driver's eye, the car's attitude, no car drawn, the in-car HUD and mirror
+        c.mount = CustomCamera::Mount::Body;
+        c.offset = {};
+        c.show_car = false, c.incar_hud = true, c.mirror = true;
+        c.fov = ReplayDirector::zoom_fovy(1.7320508f) * kDeg;
+        break;
+    case CameraMode::Roof: { // over the roof (from the sim's origin, below the body origin), 0.9 m down at 10 m
+        c.mount = CustomCamera::Mount::Body;
+        c.offset = render::Vec3{0, setup.height + 0.2f - q, 0.2f} - eye0;
+        c.pitch = -std::atan(0.9f / 10.0f) * kDeg;
+        c.fov = 0.85f * kDeg;
+        break;
+    }
+    case CameraMode::ChaseFar: { // 7.5 m behind the car's rear, 2.4 m up, aimed 2.5 m ahead 1 m up
+        c.mount = CustomCamera::Mount::Follow;
+        const float dist = 7.5f + setup.length * 0.5f;
+        c.offset = render::Vec3{0, 2.4f - q, dist} - eye0;
+        c.pitch = -std::atan2(2.4f - 1.0f, dist + 2.5f) * kDeg;
+        c.fov = 0.72f * kDeg;
+        break;
+    }
+    default: // the chase: the car's camera point 1, level
+        c.mount = CustomCamera::Mount::Follow;
+        c.offset = point_[1] * -1.0f - eye0;
+        c.fov = ReplayDirector::zoom_fovy(1.7320508f) * kDeg;
+        break;
+    }
+    c.clamp();
+    return c;
 }
 
 CameraCar CameraRig::camera_car(const sim::VehicleState& s, const sim::VehicleSetup& setup) {

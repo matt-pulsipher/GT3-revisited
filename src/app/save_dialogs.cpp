@@ -1,6 +1,7 @@
 // The platform file dialogs for the menus' save page (menu::flow::FileDialogs): pick a
 // save to import / load as a guest garage (native .sav or any PS2 save container), or
-// where to export a save for the PS2. The page chooses the export's format itself (.psu,
+// where to export a save for the PS2; for Settings -> Cameras, a camera file to import or where
+// to export one (race/custom_cameras.h). The page chooses the export's format itself (.psu,
 // .ps2 card image or raw save data) and names the file after it; the dialog only picks the
 // place. SDL's dialogs are asynchronous and may answer on another thread; the answer waits
 // in a mailbox the page polls. On macOS they are our own sheets on the game's window
@@ -51,6 +52,10 @@ const SDL_DialogFileFilter kOpenFilters[] = {
     {"Saves (GT3 Revisited, PS2)", "sav;psu;ps2;mcd;raw"},
     {"All files", "*"},
 };
+const SDL_DialogFileFilter kCameraFilters[] = {
+    {"Camera settings", "ini"},
+    {"All files", "*"},
+};
 
 void answer(std::uintptr_t ticket, std::string path) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -95,15 +100,18 @@ void install_save_dialogs(App& app) {
             std::lock_guard<std::mutex> lock(g_mutex);
             g_answer.reset();
             ticket = ++g_ticket;
-            g_export = kind == menu::flow::FileDialogs::Kind::ExportPs2;
+            g_export = kind == menu::flow::FileDialogs::Kind::ExportPs2 || kind == menu::flow::FileDialogs::Kind::ExportCameras;
         }
         if (const char* env = std::getenv("GT3R_FILE_DIALOG"); env && *env) {
             answer(ticket, std::string(env) == "-" ? std::string() : std::string(env));
             return;
         }
+        const bool cameras = kind == menu::flow::FileDialogs::Kind::OpenCameras;
+        const bool open = kind == menu::flow::FileDialogs::Kind::OpenSave || cameras;
         g_native = true;
         pad_during_dialog(*input, true);
-        const bool open = kind == menu::flow::FileDialogs::Kind::OpenSave;
+        const SDL_DialogFileFilter* filters = cameras ? kCameraFilters : kOpenFilters;
+        const int nfilters = cameras ? int(SDL_arraysize(kCameraFilters)) : int(SDL_arraysize(kOpenFilters));
 #if defined(SDL_PLATFORM_MACOS)
         // Our own sheet (platform/mac_dialog.h: SDL's left the game without keyboard focus).
         // An export starts in the last export's folder, else Documents (a bare name would
@@ -115,7 +123,7 @@ void install_save_dialogs(App& app) {
             return;
 #endif
 #if defined(SDL_PLATFORM_IOS)
-        if (open && platform::show_document_picker(window, kOpenFilters, SDL_arraysize(kOpenFilters),
+        if (open && platform::show_document_picker(window, filters, nfilters,
                                                    [ticket](std::string path) { answer(ticket, std::move(path)); }))
             return;
         if (!open) {
@@ -129,7 +137,7 @@ void install_save_dialogs(App& app) {
 #endif
         void* user = reinterpret_cast<void*>(ticket);
         if (open) // (no file types for an export: the page chose the format and the name's extension)
-            SDL_ShowOpenFileDialog(on_dialog, user, window, kOpenFilters, SDL_arraysize(kOpenFilters), nullptr, false);
+            SDL_ShowOpenFileDialog(on_dialog, user, window, filters, nfilters, nullptr, false);
         else
             SDL_ShowSaveFileDialog(on_dialog, user, window, nullptr, 0, name.c_str());
     };

@@ -815,7 +815,8 @@ replays the REPLAY OPTIONS ITEM parts (`HudData::items`, §D9).
 ### §D1 Meter cluster
 
 The camera picks the cluster. In-car views (the eye in the car) use the onboard
-cluster; the chase and TV cameras and the pre-race shot use the remote one.
+cluster; the chase and TV cameras and the pre-race shot use the remote one. Ours: the
+player's own cameras use the one their HUD layout setting names.
 
 **Round meters.** A face image stretched to its box, pivot = box center +
 offset, needle angle a0 + 90 + clamp(v, 0, F + 8) / F x (a1 - a0) degrees
@@ -2237,14 +2238,18 @@ the view does not judder.
   - Default cycle: in-car with mirror → in-car without mirror → chase →
     far chase → in-car.
   - `[race] views = gt3` keeps the game's two: in-car ↔ chase.
+  - Ours: the player's own cameras (Settings → Cameras, `[custom_camera<n>]`) that
+    are enabled follow the last view of either cycle, in their list's order, before
+    it starts again (test `race_camera_custom_views`).
   - A new session starts in-car with the mirror. Each player's last choice (in-car,
-    chase or far chase, with the mirror state) carries over to the next race;
-    ours keeps it for the session only.
+    chase, far chase or one of their own cameras, with the mirror state) carries
+    over to the next race; ours keeps it for the session only.
 - **L1 held looks back.**
   - Chase: heading + π, pitch negated.
   - In-car: the forward axis reversed and the eye's z mirrored.
   - Ours, far chase and roof (§H4): turned round the same way, the far chase's
-    eye ahead of the car looking back past it.
+    eye ahead of the car looking back past it. The player's own cameras turn
+    round the car's up axis through the driver's eye.
   - No mirror while looking back.
   - Ours: the right stick's click looks back too, on the GT3 original controls
     as in the modern ones.
@@ -2266,6 +2271,10 @@ the view does not judder.
     none.
   - **View.** The camera's view with z flipped (mirrored), 1.3 x zoom, far plane
     120 m, the player's own car left out.
+  - **Ours, the player's own cameras.** Each has its own mirror switch, place (its
+    center as a share of the frame) and size (a multiple of the usual), kept inside
+    the frame. It always looks back from the in-car view (point 0), whatever the
+    camera.
   - **Contents.** Its own fog (Env0 +0xA90 color, +0xAA0 distance A, +0xAA4
     minimum visibility b), the low-resolution sky (slot 24), the scenery, the
     billboards only when bit 0 of Env0 +0xF38 is set (§I7), the course line, the

@@ -127,9 +127,9 @@ In Settings, choices, switches and sliders change only with Left/Right or a
 tap on their arrows, switch or track; Cross never changes a setting (it runs
 actions and starts a rebind).
 
-**Settings → Controls** starts with the settings for **all players** (Race
-views, Analog response, In-car camera shake, Controllers in the background,
-Xbox controllers on Windows),
+**Settings → Controls** starts with the settings for **all players** (Analog
+response, Controllers in the background, Xbox controllers on Windows; Race views
+and In-car camera shake are on **Settings → Cameras**, with your own cameras),
 then holds the controllers and their bindings, for player 1 and player 2
 (split screen) alike: under each player's **Controller**, **Race controls** and
 **Keyboard** rows come their bindings, inline:
@@ -345,7 +345,19 @@ right keeps them.
 
 Change view cycles in-car (with mirror), in-car without mirror, chase and far
 chase; `[race] views = gt3` (Settings: Race views) keeps GT3's own two, in-car
-and chase. Races start in the view last used, in-car at first.
+and chase. Your own cameras (Settings > Cameras) that are enabled come next,
+in their list's order, before the cycle starts again. Races start in the view
+last used, in-car at first.
+
+The camera editor (Settings > Cameras > a camera's Edit view, or New camera):
+the left mouse button or one finger rotates the camera (round the car or in
+place, as the panel says), the right button the other way, the middle button,
+Shift + left button or two fingers move it, the wheel or a pinch moves it nearer
+or farther, Ctrl + wheel zooms (field of view). On a controller the left stick
+moves it, the right stick rotates it, L2 / R2 move it down / up, the D-pad
+works the panel, L1 / R1 switch between the Camera and Mirror pages, Select
+hides the panel, Start saves and Triangle leaves. On the Mirror page a drag or
+the left stick moves the rear-view mirror, the wheel, a pinch or L2 / R2 size it.
 
 With `gt3` the race reads the menu pad itself, so every button does what it
 did on a DualShock 2. Reverse is its own held input in both, as in GT3:

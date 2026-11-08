@@ -52,14 +52,12 @@ bool RaceScreen::update_env_cube() {
     return view_->render_env_cube(pos, env_items_, o, 128) != nullptr;
 }
 
-// Rear-view mirror (onboard cameras; GT3: frame rect (200, 20) 240x64 with a 1 px black
-// outline, the camera's view with z flipped (looking back, mirrored), 1.3x zoom, far 120 m).
-// `p2` / `half`: player 2's camera / a 4:3 2P half (the original: 240 x 55 at (200, 16) of the
-// 640 x 224 half, measured on the captures). On a screen wider than 4:3 the frame keeps its
-// shape and stays centred.
-void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const render::DrawOptions& main, bool p2,
-                             bool half) {
-    const CameraRig& cam = p2 ? camera2_ : camera_;
+// The rear-view mirror's place in `frame` (GT3: rect (200, 20) 240x64 of the 640 x 448 picture).
+// `half`: a 4:3 2P half (the original: 240 x 55 at (200, 16) of the 640 x 224 half, measured on the
+// captures). On a screen wider than 4:3 the frame keeps its shape and stays centred. Ours: a
+// custom camera's mirror where the player put it (its centre a share of the picture), at its size,
+// kept inside the picture.
+SDL_FRect RaceScreen::mirror_rect(const SDL_FRect& frame, bool half, const CustomCamera* custom) const {
     float fx = 200, fy = 20, fw = 240, fh = 64;
     SDL_FRect mr;
     if (half) { // as wide as on the 16:9 screen at most, like the half's HUD (Hud::draw_split)
@@ -72,16 +70,36 @@ void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const ren
         float k = frame.h / 360.0f * 0.75f, ky = frame.h / 448.0f;
         mr = {frame.x + frame.w / 2 + (fx - 320) * k, frame.y + fy * ky, fw * k, fh * ky};
     }
+    if (custom) {
+        mr.w = std::min(mr.w * custom->mirror_size, frame.w), mr.h = std::min(mr.h * custom->mirror_size, frame.h);
+        mr.x = std::clamp(frame.x + custom->mirror_x * frame.w - mr.w / 2, frame.x, frame.x + frame.w - mr.w);
+        mr.y = std::clamp(frame.y + custom->mirror_y * frame.h - mr.h / 2, frame.y, frame.y + frame.h - mr.h);
+    }
+    return mr;
+}
+
+// Rear-view mirror (onboard cameras, custom cameras with theirs on; GT3: a 1 px black outline,
+// the in-car view with z flipped (looking back, mirrored), 1.3x zoom, far 120 m). `p2` / `half`:
+// player 2's camera / a 4:3 2P half.
+void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const render::DrawOptions& main, bool p2,
+                             bool half) {
+    const CameraRig& cam = p2 ? camera2_ : camera_;
+    const CustomCamera* custom = cam.custom();
+    const float size = custom ? custom->mirror_size : 1.0f;
+    const SDL_FRect mr = mirror_rect(frame, half, custom);
     std::unique_ptr<render::View3D>& mv = p2 ? mirror_view2_ : mirror_view_;
     if (!mv) mv = std::make_unique<render::View3D>(*app.gpu());
-    render::Vec3 eye = cam.eye();
+    // From the in-car view (a custom camera's too: CameraRig::mirror_view), looking back.
+    const render::Mat4 cam_view = cam.mirror_view();
+    render::Vec3 eye = cam.mirror_eye();
     // Our 1.3x zoom of the view as it was before GT3's y scale (the mirror's own scales are
     // runtime values, presentation §M2), at the mirror's own aspect.
-    float t = std::tan(cam.fovy() * 0.5f) / (1.3f * ReplayDirector::kYScale);
+    float t = std::tan(cam.mirror_fovy() * 0.5f) / (1.3f * ReplayDirector::kYScale);
     TyreSmoke::View sv = smoke_view(cam, mr.w / mr.h, 2.0f * std::atan(t));
-    sv.forward = sv.forward * -1.0f; // the mirror looks back
+    sv.forward = {cam_view.at(2, 0), cam_view.at(2, 1), cam_view.at(2, 2)}; // the mirror looks back
     sv.far_m = 120;
-    collect_items(eye, cam_right(cam), p2, !p2, sv, ItemsView::Mirror); // the own car would fill the view
+    collect_items(eye, {cam_view.at(0, 0), cam_view.at(0, 1), cam_view.at(0, 2)}, p2, !p2, sv,
+                  ItemsView::Mirror); // the own car would fill the view
     render::DrawOptions o = main;
     o.mirrored = true;
     o.draw_distance = 120;
@@ -96,10 +114,10 @@ void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const ren
         o.fog_max = std::clamp(1.0f - env.mirror_fog_b, 0.0f, 1.0f);
         for (int i = 0; i < 3; ++i) o.fog_color[i] = std::clamp(env.mirror_fog_rgb[size_t(i)], 0.0f, 1.0f);
     }
-    if (original_res_) o.fixed_width = 240, o.fixed_height = 64;
+    if (original_res_) o.fixed_width = int(std::lround(240 * size)), o.fixed_height = int(std::lround(64 * size));
     if (half) o.fixed_width = o.fixed_height = 0;
     render::Mat4 proj = render::perspective(2.0f * std::atan(t), mr.w / mr.h, 0.1f, 120.0f);
-    render::Mat4 view = render::scale({1, 1, -1}) * cam.view();
+    render::Mat4 view = render::scale({1, 1, -1}) * cam_view;
     // An opaque backing: the course passes keep the target's alpha, which is transparent on a
     // VR HUD panel.
     SDL_SetRenderDrawColor(ui.renderer(), 0, 0, 0, 255);
@@ -360,7 +378,7 @@ HudData RaceScreen::hud_data(int player) {
     d.rpm = s.engine_rpm;
     d.rev_limit_rpm = su.rev_limit_rpm;
     d.shift_rpm = su.upshift_rpm > 0 ? su.upshift_rpm : su.rev_limit_rpm - 500;
-    d.onboard = cam.onboard();
+    d.onboard = cam.incar_hud();
     if (!car_.ratios.empty() && car_.final_drive > 0)
         d.top_speed_kmh = car_.limit_rpm / 60.0f * 2 * 3.14159f * car_.wheels.radius[1] /
                           (car_.ratios.back() * car_.final_drive) * 3.6f;
@@ -520,7 +538,7 @@ HudData RaceScreen::hud_data(int player) {
     }
     d.car_name = car_.name;
     d.course_name = course_name_;
-    d.camera = camera_mode_name(cam.mode());
+    d.camera = cam.view_name();
     d.split = two_player_;
     if (app_) {
         const TouchRect sa = app_->touch().safe_area(); // touch controls: keep the HUD clear of them
@@ -970,6 +988,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     }
     if (paused_) render_pause(ui);
     else if (song_shown_ > 0) draw_song(ui, false);
+    if (editor_) editor_->draw(ui, editor_scene());
 }
 
 // GT3's wet-road reflection (docs/dev/RACE.md) for the main view: the buffer (slot 9, mirrored cars, lamp

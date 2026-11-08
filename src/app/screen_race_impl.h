@@ -6,6 +6,7 @@
 // are in screen_race.h and screen_online.h.
 
 #include "app/app.h"
+#include "app/camera_editor.h"
 #include "app/screen_gtmode.h"
 #include "app/screen_touch_overlay.h"
 #include "app/screen_registry.h"
@@ -94,10 +95,12 @@ namespace gt3r::race_screen {
 using namespace race;
 
 // GT3 keeps each player's last change-view choice for the next race (the options object,
-// written every frame by the camera manager); a new game starts in the in-car view.
+// written every frame by the camera manager); a new game starts in the in-car view. Ours: a
+// custom camera by its id (race/custom_cameras.h).
 struct LastView {
     race::CameraMode mode = race::CameraMode::Bumper;
     bool mirror = true;
+    int custom = 0;
 };
 extern LastView g_last_view[2];
 
@@ -202,6 +205,8 @@ public:
     explicit RaceScreen(MenuLaunch l);
     // Online battle (docs/dev/ONLINE.md): the session's race; leaving returns to the lobby.
     explicit RaceScreen(const OnlineLaunch& l);
+    // Settings -> Cameras: the camera editor over the request's race (screen_race_camera_editor.cpp).
+    RaceScreen(MenuLaunch l, CustomCamera edit, bool is_new);
     ~RaceScreen() override;
 
     void update(App& app, double dt) override;
@@ -211,6 +216,7 @@ public:
     // The game area of Settings -> Display -> Aspect ratio, except the developer race list.
     bool follows_aspect() const override;
     void render(App& app, Ui& ui) override;
+    bool clickable(float x, float y) const override { return editor_ && editor_->clickable(x, y); }
 
 private:
     // ===== Types =====
@@ -359,6 +365,7 @@ private:
     bool update_env_cube();
     void draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const render::DrawOptions& main, bool p2 = false,
                      bool half = false);
+    SDL_FRect mirror_rect(const SDL_FRect& frame, bool half, const CustomCamera* custom) const;
     CarShadowParams shadow_params() const;
     void draw_car_icon(App& app, int car, const SDL_FRect& rc, size_t slot, bool on_bar = false);
     // `slot`: 0 the player, 1 player 2, 2 + i opponent i (as brake_lamps_).
@@ -437,9 +444,10 @@ private:
                                              const SoundCar& car, SoundView view);
     void silence(App& app);
     // The original's global SE gain: race SE in live play, replay SE in replays and demos. The race behind a quick
-    // menu (the backdrop, the licence preview box) is silent: the race drivers turn records off around their quick
-    // menus, which mutes the race's car and course sounds (presentation §C5).
-    bool se_on() const { return backdrop_ || preview_ ? false : replaying_ || demo_ || attract_ ? replay_se_ : race_se_; }
+    // menus, which mutes the race's car and course sounds (presentation §C5). The camera editor's frozen race is silent.
+    bool se_on() const {
+        return backdrop_ || preview_ || editor_ ? false : replaying_ || demo_ || attract_ ? replay_se_ : race_se_;
+    }
 
     // Selection (screen_race_select.cpp)
     void update_select(App& app);
@@ -612,6 +620,17 @@ private:
     void exact_analysis_jump(App& app, int k);
     void logger_seek(App& app, float d);
     bool update_logger(App& app, double dt);
+
+    // The camera editor (screen_race_camera_editor.cpp): the race a few seconds after its start (the
+    // computer drives), frozen, seen through the camera being edited; nothing of it is kept.
+    static constexpr double kEditorSceneTime = 5.0; // seconds after the start signal
+    std::unique_ptr<CameraEditor> editor_;
+    void start_camera_editor(App& app);
+    void update_camera_editor(App& app, double dt);
+    void apply_editor_camera();
+    CameraEditor::Scene editor_scene() const;
+    // A live race's car and course, for the editor's scene ([cameras] preview_*).
+    void remember_editor_scene(App& app) const;
 
     // Online (screen_race_online.cpp)
     void configure_online_field(FieldConfig& cfg);

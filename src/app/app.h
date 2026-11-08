@@ -336,11 +336,11 @@ std::unique_ptr<Screen> make_developer_screen(); // Developer options (tools)
 std::unique_ptr<Screen> make_browser_screen(const std::string& open_path = "");
 std::unique_ptr<Screen> make_jukebox_screen();
 std::unique_ptr<Screen> make_mods_screen();
-// Settings; `tab` picks the first page shown (SettingsTab order: 0 Display .. 5 Disc & saves).
+// Settings; `tab` picks the first page shown (SettingsTab order: 0 Display .. 6 Disc & saves).
 // `to_game`: opened from the game's menus, which it returns to ("Back to game").
 std::unique_ptr<Screen> make_settings_screen(int tab = 0, bool to_game = false);
 constexpr int kSettingsTabControls = 2;
-constexpr int kSettingsTabDisc = 5;
+constexpr int kSettingsTabDisc = 6;
 // Settings -> Touch -> Customize layout: move, resize and hide the on-screen controls. `to_game`:
 // Settings was opened from the game's menus (make_settings_screen's to_game); Triangle then closes
 // this and Settings at once, back to the game (the screen pops itself, then calls it).

@@ -150,6 +150,10 @@ void RaceScreen::update(App& app, double dt) {
 }
 
 void RaceScreen::on_event(App& app, const SDL_Event& e) {
+    if (editor_) { // the camera editor takes the pointer (and the race never pauses)
+        if (stage_ == Stage::Drive) editor_->event(e, editor_scene());
+        return;
+    }
     if (stage_ == Stage::Drive) camera_.handle_event(e);
     if (stage_ == Stage::Select) xr_list_.event(e);
     if (quick_ || paused_) menu_pointer_.event(e); // (none while driving)
@@ -161,6 +165,7 @@ void RaceScreen::on_event(App& app, const SDL_Event& e) {
 // Phones: driving touch controls while racing, menu controls otherwise (the quick menus
 // run over the race stage: a GT race's field behind them is not a replay).
 TouchLayout RaceScreen::touch_layout() const {
+    if (editor_) return TouchLayout::None; // (the editor is tapped and dragged directly)
     // (A demonstration plays like a replay, the Preview is the computer's: the menu buttons end them.)
     return stage_ == Stage::Drive && !paused_ && !replaying_ && !demo_ && !race_preview_ && !quick_ ? TouchLayout::Driving
                                                                                                      : TouchLayout::Menu;
@@ -310,9 +315,16 @@ void RaceScreen::init(App& app) {
     if (preset_.laps > 0) race_laps_ = preset_.laps;
     camera_.set_orbit(preset_.oyaw, preset_.opitch, preset_.odist);
     show_perf_ = preset_.perf;
-    camera_.set_view(g_last_view[0].mode, g_last_view[0].mirror);
-    camera2_.set_view(g_last_view[1].mode, g_last_view[1].mirror);
-    drive_camera_ = g_last_view[0].mode;
+    // The player's own cameras that are enabled join change view (Settings -> Cameras).
+    {
+        std::vector<CustomCamera> cams = load_custom_cameras(app.config());
+        std::erase_if(cams, [](const CustomCamera& c) { return !c.enabled; });
+        camera_.set_custom_cameras(cams);
+        camera2_.set_custom_cameras(std::move(cams));
+    }
+    camera_.set_view(g_last_view[0].mode, g_last_view[0].mirror, g_last_view[0].custom);
+    camera2_.set_view(g_last_view[1].mode, g_last_view[1].mirror, g_last_view[1].custom);
+    drive_camera_ = camera_.mode();
     if (preset_.cam >= 0) camera_.set_mode(CameraMode(std::clamp(preset_.cam, 0, int(CameraMode::Count) - 1)));
     if (from_menu_ || online_) begin_pending_ = true; // the course and cars on the next frame
     else begin(app);
@@ -331,6 +343,7 @@ void RaceScreen::begin(App& app) {
         return;
     }
     if (preset_.have && !courses_.empty() && !cars_.empty()) start(app);
+    if (editor_ && stage_ == Stage::Drive) start_camera_editor(app);
     if ((from_menu_ || online_) && stage_ != Stage::Drive) { // (it says why, then back to the menus)
         LOG_WARN("Race: could not start the menu's race: %s", error_.c_str());
         if (error_.empty()) error_ = "The race could not be set up.";
