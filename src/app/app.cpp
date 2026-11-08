@@ -966,7 +966,10 @@ SDL_AppResult App::event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED && limit_60fps()) apply_frame_limit(); // another refresh rate
     // Songs copied in while the game was away (the Files app on phones), and music access
     // allowed or taken back in Android's settings meanwhile.
-    if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) follow_music_folder(true);
+    if (e.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+        follow_music_folder(true);
+        if (audio_) audio_->retry(); // pick up an output device whose open failed earlier
+    }
     // Phones and tablets: no songs measured while the game is in the background.
     if (platform::is_mobile() && (e.type == SDL_EVENT_WILL_ENTER_BACKGROUND || e.type == SDL_EVENT_DID_ENTER_FOREGROUND))
         music_.set_away(e.type == SDL_EVENT_WILL_ENTER_BACKGROUND);

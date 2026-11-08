@@ -47,7 +47,12 @@ public:
     explicit AudioEngine(const std::string& device = {});
     ~AudioEngine();
 
-    bool ok() const { return music_stream_ != nullptr; }
+    bool ok() const { return device_ != 0; } // an output device is open
+
+    // Asks the switcher thread to open the output now when none is open (a failed open is
+    // retried anyway, 1 s after the first failure and backing off to every 30 s; this hurries
+    // it, e.g. on returning to the foreground). A stream creation failure is still fatal.
+    void retry();
 
     // The output device by name, empty for the system default (which follows the system's own
     // choice). Moves both streams at once; the music keeps playing (or stays paused).
@@ -158,7 +163,8 @@ private:
     SDL_AudioStream* sfx_stream_ = nullptr;
     float sfx_volume_ = 0.8f;
     std::string device_name_;
-    std::atomic<SDL_AudioDeviceID> device_{0}; // physical device in use, 0 before the first open
+    std::atomic<SDL_AudioDeviceID> device_{0}; // physical device in use, 0 until one opens
+    std::atomic<int> open_failures_{0};        // consecutive failed opens (retry logging)
     // Held while a switch moves the streams, and by the game thread's pause / resume, so a pause
     // is never made on a device that is about to close.
     std::mutex device_mutex_;
