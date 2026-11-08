@@ -671,9 +671,10 @@ void RaceScreen::add_screen_passes(render::DrawOptions& o, const SDL_FRect& rect
             LOG_INFO("Heat haze: %zu lenses on screen, zoom m %.2f, size %.1f px (view frame %d)", haze_lenses_.size(),
                      proj.at(0, 0), haze_lenses_[0].size, view_frame_);
     }
-    // The vignette: replays and demonstrations (race +0x9784) on Env0 flag 0x40 courses.
+    // The vignette: replays and demonstrations (race +0x9784) on Env0 flag 0x40 courses, unless
+    // the player turns it off ([video] replay_vignette).
     vignette_batch_.clear();
-    if (e.vignette && !live_view()) {
+    if (vignette_ && e.vignette && !live_view()) {
         add_vignette(vignette_batch_, e);
         o.vignette = &vignette_batch_;
     }
@@ -794,7 +795,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     ov.snapshot = dissolve_.snapshot;
     dissolve_.snapshot = false;
     ov.dissolve = dissolve_.weight();
-    ov.trail = std::floor(128.0f * director_.look().trail_weight()) / 128.0f;
+    ov.trail = trail_ ? std::floor(128.0f * director_.look().trail_weight()) / 128.0f : 0.0f;
     if (!split) apply_depth_of_field(ov);
     // The passes between the scene and the grade (the glare and lamp glows inside the picture, the
     // heat haze) and the vignette (presentation §L6).

@@ -213,6 +213,9 @@ are only there:
 | `[video] showroom_wheels` | `on` / `off` | close cars in races get the car menus' detailed rims and tires; `off`: GT3's race wheels. Default on, off for phones and tablets |
 | `[video] sharp_menu_models` | `on` / `off` | cars and prizes in the menus at the screen's resolution; `off`: at the game's own 640x448, like the menu art. Default on; phones and tablets keep license cards and trophies at 640x448 |
 | `[video] heat_haze` | `on` / `off` | GT3's heat shimmer over some trackside camera shots in replays, on some courses. Default off |
+| `[video] depth_of_field` | `off` / `standard` / `high` | GT3's soft focus in replays and demos, on some courses. `standard`: GT3's own blur; `high`: smoother on sharp screens, slower. Default off on phones and tablets, high elsewhere |
+| `[video] replay_vignette` | `on` / `off` | GT3's darker picture corners in replays and demos, on some courses. Default on |
+| `[video] replay_trail` | `on` / `off` | GT3's fading afterimage after some camera cuts in replays. Default on |
 | `[video] gpu` | `auto` / `gles` / `gles_driver` / `0` | the 3D renderer: `auto` = SDL_GPU (Vulkan, Metal), or OpenGL ES where the GPU has no Vulkan (Windows, Linux); `gles` = OpenGL ES first; `gles_driver` = the same on Windows with the graphics driver's OpenGL ES rather than ANGLE; `0` = 2D-only (restart required). Settings offers only the kinds of OpenGL ES that open on the computer |
 | `[video] original_res` | `on` / `off` | *(file)* races at the PS2's 640×448 in a 4:3 frame |
 | `[video] original_filter` | `nearest` / `bilinear` | *(file)* upscaling filter for `original_res` |

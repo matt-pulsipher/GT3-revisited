@@ -2117,7 +2117,10 @@ filling the options each frame:
   with `GT3R_RACE="auto=1,warp=30,watch=1"`, `--screen quickrace`), as the original's does.
 - **Vignette** (`DrawOptions::vignette`, `race::add_vignette`): replays and demonstrations
   (`!live_view()`) on Env0 0x40 courses, drawn after the graded picture in the post pass, under
-  the dissolve and the trail.
+  the dissolve and the trail. Off with `[video] replay_vignette = off` (Settings → Display →
+  Vignette in replays).
+- **Trail** (`DrawOptions::trail`, presentation §G16): replay view mode 1's afterimage. Off with
+  `[video] replay_trail = off` (Settings → Display → Motion trail in replays).
 - **2P halves**: no grade (and no haze or vignette).
 - Not reproduced: the original copies its 640 × 448 picture into 640 × 224 interlaced fields,
   with a vertical 2-tap filter on the fields of one parity; our original-resolution frame is
