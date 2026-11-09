@@ -415,8 +415,8 @@ same way. The time column (`result_time_text`, test `race_results_text`):
 | finished laps down | "+1 lap", "+N laps" |
 | still racing | "Running..." |
 
-The HUD's lap / time block is drawn over the panel and the rest of the HUD under
-it (`HudData::layer`).
+The panel is drawn over the whole HUD, the lap / time block included: where the
+two meet (a 4:3 screen), the panel covers "Lap", "Best" and "Last".
 
 The panel is fully shown at 7 + 0.12 n s: 7.72 s for six cars
 (`ResultsOverlay::fully_shown_time`). After that, Circle or Cross leaves. If every car has

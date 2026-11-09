@@ -860,8 +860,6 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             draw_event_icons(app, 1);
             if (horizontal) ui.fill(0, half1.h - 1, W, 2, Color{0, 0, 0, 255});
         } else {
-            // Under the results panel: all but the lap / time block, drawn over it below.
-            if (results_panel_up()) d.layer = 1;
             if (original_res_) { // the HUD in the 4:3 frame
                 d.four_three = true;
                 hud_.draw(ui.renderer(), d, &rect);
@@ -901,21 +899,11 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     } else if (finished_ && !replaying_) {
         if (field_) {
             // Car pictures in every row, as in 2P (the 1P capture of the Sunday Cup results).
+            // The panel covers the whole HUD, the lap / time block too (presentation §B6).
             std::vector<ResultRow> rows = result_rows(true);
             std::vector<SDL_FRect> icons;
             results_.draw(ui.renderer(), hud_.fonts(), rows, finish_wait_, menu_dst, &icons);
             for (size_t i = 0; i < rows.size() && i < icons.size(); ++i) draw_car_icon(app, rows[i].car, icons[i], i, true);
-            // The original draws the HUD's lap / time block over the panel (the capture).
-            if (preset_.hud && results_panel_up()) {
-                HudData d = hud_data(0);
-                d.layer = 2;
-                if (original_res_) {
-                    d.four_three = true;
-                    hud_.draw(ui.renderer(), d, &frame_rect_);
-                } else {
-                    hud_.draw(ui.renderer(), d);
-                }
-            }
         } else if (!license_event_.empty()) {
             // Over the live race (the car under the stop driver, the race camera, the HUD):
             // a 1/3 black dim, the medal model, the word and the time; or the bluish wash
