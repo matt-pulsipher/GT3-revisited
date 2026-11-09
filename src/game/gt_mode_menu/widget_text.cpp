@@ -102,11 +102,12 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         if (item == "wheel") return " " + cr_num(gt.data().wheel_price());
         if (item == "car_wash") return " " + cr_num(gt.data().car_wash_price());
         if (item == "oil_change") return " " + cr_num(gt.data().oil_change_price());
+        // A part's price: no space (the part pages inset their texts: extra_draws).
         int g = goods_of_item(item);
         if (g < 0 || !ride) return std::string("----");
         if (gt.owns(g)) return std::string("Purchased");
         auto o = gt.part_offer(g);
-        return o ? " " + cr_num(o->price) : std::string("----");
+        return o ? cr_num(o->price) : std::string("----");
     }
     if (c == "car_previous_torque" || c == "car_current_torque") {
         // The Installed page (ts_fit_end1 / 3): despite the class names, the power before the
@@ -115,12 +116,16 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         return gt.power_text(c == "car_previous_torque" ? s->part_power_before : gt.ride_power_ps(), " ");
     }
     if (c == "disp_ps_befor" || c == "disp_ps_after") {
+        // The part page's BEFORE / AFTER: "%d %s" ("457 HP"); AFTER is
+        // the power with the part fitted, "----" for a part the car cannot take.
         if (!ride) return std::string();
+        if (c == "disp_ps_befor") return gt.power_text(gt.ride_power_ps(), " ");
         int goods = s->focus_goods;
         const auto& pages = gt.data().catalog.shop_item_of_page;
         if (auto it = pages.find(page); it != pages.end()) goods = goods_of_item(it->second);
-        float ps = c == "disp_ps_befor" || goods < 0 ? gt.ride_power_ps() : gt.power_with(goods);
-        return gt.power_text(ps); // "%d%s"
+        GarageCar fitted = *ride;
+        if (goods < 0 || !gt.fit_goods(fitted, goods)) return std::string("----");
+        return gt.power_text(gt.power_ps(fitted), " ");
     }
     if (c == "focused_partsname") return std::string();
     if (c == "color_name_box" || c == "car_color_name") {

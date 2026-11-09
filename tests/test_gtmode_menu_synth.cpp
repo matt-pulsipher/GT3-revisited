@@ -1091,14 +1091,23 @@ TEST(gtmode_synth_tune_shop) {
     choose(f, "bg2");
     choose(f, "item1");
     CHECK(page(f) == "ts/ts_eg_muf_sp");
-    CHECK(text_of(f, "price_muf_sports") == " 1,500");
-    CHECK(text_of(f, "disp_ps_befor") == "0HP" && text_of(f, "disp_ps_after") == "0HP"); // (no engine data)
+    CHECK(text_of(f, "price_muf_sports") == "1,500");
+    CHECK(text_of(f, "disp_ps_befor") == "0 HP" && text_of(f, "disp_ps_after") == "0 HP"); // (no engine data)
     {
         auto logo = draws_named(f, "acmemotors"); // "ACME MOTORS"
         CHECK(logo.size() == 1 && box_is(logo[0], 40, 60, 80, 40));
     }
+    // The part page's texts sit half their font's size in from their boxes (menus §5.7),
+    // under the purchase question too.
+    auto inset = [&](const std::string& cls) {
+        for (const menu::ElementDraw& d : f.draw_list())
+            if (d.element && d.element->widget_class && *d.element->widget_class == cls) return d.font_inset;
+        return false;
+    };
+    CHECK(inset("price_muf_sports") && inset("disp_ps_befor") && inset("disp_ps_after"));
     choose(f, "muf_sports");
     CHECK(page(f) == "ts/ts_buy_sure1" && s->focus_goods == 37);
+    CHECK(inset("disp_ps_befor"));
     choose(f, "yes1");
     CHECK(gt.owns(37) && gt.state().credits == w::kStartCredits - 12000 - w::kMufflerPrice);
     CHECK(page(f) == "ts/ts_fit_sure1" && f.controller()->depth() == 1);
@@ -1111,6 +1120,13 @@ TEST(gtmode_synth_tune_shop) {
     CHECK(text_of(f, "price_muf_sports") == "Purchased");
     choose(f, "muf_sports");
     CHECK(page(f) == "ts/already_you_have");
+    // A part the ride car cannot take (the wagon has no muffler record): no price, and AFTER
+    // shows dashes.
+    const int wagon = gt.add_prize_car(w::kWagon, -1, "test");
+    CHECK(wagon >= 0);
+    gt.ride(wagon);
+    CHECK(text_of(f, "price_muf_sports") == "----" && text_of(f, "disp_ps_after") == "----");
+    CHECK(text_of(f, "disp_ps_befor") == "0 HP");
 }
 
 // The race pages' focus (menus §4.2): a race series or licence page opens on the item of the

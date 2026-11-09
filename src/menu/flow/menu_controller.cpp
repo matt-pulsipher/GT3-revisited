@@ -195,6 +195,13 @@ const std::string& MenuController::page_name() const {
     return levels_.empty() ? empty : top().name;
 }
 MenuSet::PageRef MenuController::page() const { return levels_.empty() ? MenuSet::PageRef{} : top().page; }
+const std::string& MenuController::page_name_at(int level) const {
+    static const std::string empty;
+    return level >= 0 && level < int(levels_.size()) ? levels_[size_t(level)].name : empty;
+}
+MenuSet::PageRef MenuController::page_at(int level) const {
+    return level >= 0 && level < int(levels_.size()) ? levels_[size_t(level)].page : MenuSet::PageRef{};
+}
 const std::vector<MenuController::ItemState>& MenuController::items() const {
     static const std::vector<ItemState> empty;
     return levels_.empty() ? empty : top().items;

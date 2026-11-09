@@ -629,9 +629,14 @@ research (captures of the original, `database/racedetail.db` rows,
   reaches it (N = 2 draws 160 km/h on the 180 face), band segments every 10 km/h or 5 mph.
   `race/meter_*.img` and `race/disp.imgs` are never loaded by the game.
 - **Digital speed**: font `speed`, "%3d", amber (GS 0x801880D0), unit in sw_12.
-  **Gear**: font `gearr`, unlit "8" under the digit, amber (R red), shift light
-  `:` blinking 3 frames on / 3 off above the shift-up rpm. AT/MT: `meter` font
-  glyphs `>` / `=`.
+  **Gear** (the original's race gear display; `Hud::gear_pens`, `draw_gear`): font `gearr`, every pen on
+  the baseline line_height >> 1 below the box centre; the digit at x - size (font byte
+  0x0C) over a ghost "8\r1\r", amber (R red; the packed colour >> 1 with the clutch
+  out), " > H" / " > " + ('@' + n) for the recommended gear from the centre, shift
+  light `:` at (dx, dy) blinking 3 frames on / 3 off above the shift-up rpm. AT/MT:
+  `meter` font glyphs `>` / `=` in GS 0x80A0A088, pen (left, baseline) at the
+  tachometer box centre + (-2, 28) outside, (-10, -15) in the car
+  (`Hud::transmission_pen`).
 - **Layouts** (`race/hud_layout.*`, presentation §D4): the original's layout table, one
   row list per display mode (which parts, where, per camera view; test
   `race_hud_layout_disc` checks it against the disc). `RaceScreen::hud_data` picks the mode

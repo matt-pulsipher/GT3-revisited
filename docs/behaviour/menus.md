@@ -561,11 +561,18 @@ as center). Two align flags animate text (`apply_text_effects`):
 
 ### §5.7 Text inset
 
-Text that is left- or right-aligned in its box is drawn 12 menu units in from
-the box's edge (`menu::kTextInset`, `menu::apply_text_inset`): +12 for the
-left column of anchors and −12 for the right column. Centered text is
-unchanged. The engine applies the inset where its screens were checked
-against the game's:
+GT3 draws text that is left- or right-aligned in its box half its font's size
+in from the box's edge: the font's own size (19 for sw_12, 22 for sw_16, 28 for
+sw_20, 23 for sq_9), whatever scale the element gives the font, so sw_12 text
+sits 9.5 menu units in and sw_20 text 14. Centered text is unchanged. The engine
+draws that exact inset (`ElementDraw::font_inset`, test
+`menu_text_item_inset_disc`) on the Tune Shop pages `ts/*`, their pop-ups
+included, for the pages' own texts and not the status bar: the parts' BEFORE /
+AFTER power, the price (without a leading space) and the Installed page's power.
+
+Elsewhere it uses a fixed 12 menu units (`menu::kTextInset`,
+`menu::apply_text_inset`: +12 for the left column of anchors and −12 for the
+right column), measured where its screens were checked against the game's:
 
 - the record and save name entry pages (`GameFlow::draw_list`);
 - the race quick menus (`src/race/results.cpp`);
