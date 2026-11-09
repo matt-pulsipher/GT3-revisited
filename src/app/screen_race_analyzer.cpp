@@ -249,6 +249,7 @@ bool RaceScreen::update_logger(App& app, double dt) {
     render_state_ = interpolate(prev_, vehicle_->state(), step_.alpha());
     camera_.set_track_distance(track_->distance_of(render_state_.position));
     camera_.set_lap(lap_count());
+    bind_hood(camera_, hood_bound_, car_visual_.get());
     camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
     const AnalyzerTrack& a = analyzer_.track(0);
     if (a.valid())

@@ -258,7 +258,7 @@ void RaceScreen::render_pause(Ui& ui) {
     for (int i = 0; i < n; ++i) {
         if (i == pause_sel_) ui.fill(x - 4, y + float(i) * kMoreStep - 3, 208, 14, colors::kHighlight);
         std::string s = items[size_t(i)];
-        if (s == "Camera") s += std::string(": ") + camera_mode_name(camera_.mode());
+        if (s == "Camera") s += ": " + camera_.view_name();
         if (s == "Gearbox") s += controls_.config().automatic ? ": AT" : ": MT";
         ui.text(x, y + float(i) * kMoreStep, s, colors::kText);
     }

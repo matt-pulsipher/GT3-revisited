@@ -15,6 +15,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/controls.h/.cpp` | Pad → `sim::ControlInputs` mapping, rumble model |
 | `race/interp.h/.cpp` | Fixed-tick accumulator, quaternion helpers, `VehicleState` interpolation |
 | `race/camera_rig.h/.cpp` | Chase, far chase, bumper, roof and free-orbit cameras |
+| `race/hood_camera.h/.cpp` | The hood mount's profile: 17 fore/aft eyes above the body's surface, from its mesh |
 | `race/race_scene.h/.cpp` | GPU scene: course (scenery, backdrop, sky domes) and the car (body LODs + four wheels) |
 | `race/hud.h/.cpp` | HUD (lap times, tachometer, gear, speed) using the game's own assets |
 | `race/hud_layout.h/.cpp` | The HUD layout per display mode (the original's layout table) and the mode a run uses |
@@ -81,6 +82,7 @@ them, then the state.
 | `screen_race_online.cpp` | Online battle glue (field from the grid, events, synchronised start, prediction, ghosting); its state is `RaceScreen::net_` |
 | `screen_race_license.cpp` | Licence tests (the race's judging, medals) and the disc's demonstration runs (DEMO, preview box) |
 | `screen_race_events.cpp` | The pop-ups in the middle of the screen: lap times, split times, gaps, "+N Laps", "Pitting in..." (`lap_events`, `reset_lap_events`) |
+| `screen_race_camera_editor.cpp` | The camera editor (Settings → Cameras, `app/camera_editor.h`): a race frozen 5 s past its start, drawn through the camera being edited; saving it (`make_camera_editor_screen`); the car and course of the last race for it (`remember_editor_scene`) |
 | `screen_race_vr.cpp` | VR builds only: the stereo race (`vr_stereo`, `vr_base`, `render_vr_eyes`); see [VR](VR.md) |
 
 ## Loop
@@ -267,6 +269,39 @@ SDL's trigger rumble does nothing there.
   yaw (no roll, no eye movement). GT3's RNG (s = 17 s + 17, out s ^ rotl16(s), seed 0x87654321,
   two steps per draw, including the replay shakers' draws) is reproduced. `[race] camera_shake =
   off` (ours) disables it. Roof and orbit stay as extras (presets).
+- Ours: the player's own cameras (`race/custom_cameras.h`, `CameraMode::Custom`; Settings →
+  Cameras). Each hangs off an anchor (`Mount`, the editor's first row): the body's frame
+  ("fixed to the car"), the chase's lagged heading-and-pitch frame ("follows the car"), the hood
+  (`Mount::Hood`: `CarVisual::hood_profile` gives 17 fore/aft eyes 0.4 m above the body's top
+  surface and a downward pitch bounded at 22 degrees, all from the decoded LOD-0 body mesh, no
+  per-car table; `race/hood_camera.h`; the x/y/z offset nudges the seat sideways, up and
+  fore/aft along the mounts) or the driver's seat (`Mount::Incar`: the fixed mount's frame at
+  the driver's eye; the offset is a seat nudge from it, bounded to the cabin's reach). Follow and
+  fixed take an eye offset from the driver's eye (point 0); every anchor a yaw / pitch / roll
+  (the editor's Tilt). `body_roll` is the share of the body's roll the view rolls with, the rest
+  levelled out (the car anchors; follow is already level). A vertical field of view, whether
+  the car is drawn (hidden: `onboard()`, `hides_car()`; shown fades it out over 0.25 s, as the
+  ghost car is drawn translucent, while the eye is over the body's footprint, near it and with
+  body behind it, looking back across it: `body_blocks_view()`, the box from the hood profile or
+  the setup, `RaceScreen::own_car_fade`; fully faded it is not drawn), the HUD layout (`incar_hud()`) and a rear-view
+  mirror with its own place and size (`mirror_rect`). The mirror always looks back from the
+  in-car view (`mirror_view`). Sounds: fixed is car-mounted, follow a chase. Look back and the
+  look around turn the camera round the car's up axis through the driver's eye; a hood
+  camera's eye swings with it, ending up behind the seats on a look back, which is why its car
+  fades out then. Change view comes to the enabled cameras after the last built-in view, in
+  order; the last one is remembered by id (`LastView::custom`). The camera editor
+  (`app/camera_editor.h`, `screen_race_camera_editor.cpp`) runs the arcade's Normal race (S
+  class, the dirt race on dirt) on the course of the player's last race with its car, the
+  computer driving, warps 5 s past the start signal and freezes it: no more steps, no sound.
+  Its Reset puts the camera where its anchor starts (follow: the chase, `CameraRig::preset`;
+  fixed: the roof; hood: the centred seat at 55 degrees, half body roll; driver's seat: the
+  in-car view's eye); choosing a seat anchor starts there too. While Body roll is selected the
+  frozen car rocks 4 degrees each way every 2 s (`CameraEditor::rocking`). The anchor row is
+  first and the rows that change with it sit below, so it never moves; on a phone the panel
+  scrolls. On a seat anchor the scene's drags only aim the view: the seat moves by the panel's
+  Fore/aft, Sideways and Height sliders (`clamp()` keeps the nudge inside the mounts' bounds).
+  Tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`. VR stereo keeps the
+  built-in views (a custom camera shows flat).
 - Road shade (docs/formats/course.md): the four wheels' road attributes A/B scale the car's light
   colours (per draw item) and the light shadow's alpha F; `race/road_shade.*` interpolates them
   from the road mesh (test `race_road_shade_disc`).

@@ -127,9 +127,9 @@ In Settings, choices, switches and sliders change only with Left/Right or a
 tap on their arrows, switch or track; Cross never changes a setting (it runs
 actions and starts a rebind).
 
-**Settings → Controls** starts with the settings for **all players** (Race
-views, Analog response, In-car camera shake, Controllers in the background,
-Xbox controllers on Windows),
+**Settings → Controls** starts with the settings for **all players** (Analog
+response, Controllers in the background, Xbox controllers on Windows; Race views
+and In-car camera shake are on **Settings → Cameras**, with your own cameras),
 then holds the controllers and their bindings, for player 1 and player 2
 (split screen) alike: under each player's **Controller**, **Race controls** and
 **Keyboard** rows come their bindings, inline:
@@ -345,7 +345,39 @@ right keeps them.
 
 Change view cycles in-car (with mirror), in-car without mirror, chase and far
 chase; `[race] views = gt3` (Settings: Race views) keeps GT3's own two, in-car
-and chase. Races start in the view last used, in-car at first.
+and chase. Your own cameras (Settings > Cameras) that are enabled come next,
+in their list's order, before the cycle starts again. Races start in the view
+last used, in-car at first.
+
+The camera editor (Settings > Cameras > a camera's Edit view, or New camera):
+the left mouse button or one finger rotates the camera (round the car or in
+place, as the panel says), the right button the other way, the middle button,
+Shift + left button or two fingers move it, the wheel or a pinch moves it nearer
+or farther, Ctrl + wheel zooms (field of view). On a controller the left stick
+moves it, the right stick rotates it, L2 / R2 move it down / up, the D-pad
+works the panel (up from its first row, the Camera / Mirror pages and Hide,
+Cancel and Save; Cross presses them), L1 / R1 switch between the Camera and
+Mirror pages, Select hides the panel, Start saves and Triangle leaves. The
+legend at the bottom shows the controls of whatever was used last: the
+controller, the keyboard and mouse, or touch. On the Mirror page a drag or the
+left stick moves the rear-view mirror, the wheel, a pinch or L2 / R2 size it.
+
+The panel's first row is the Anchor, what the camera hangs off: **Follows the
+car** (trails its turns, level, like the chase view), **Fixed to the car**
+(pitches and rolls with it), **Hood** (a seat on the hood that comes from the
+car body's own shape, so it lands on the bodywork of any car) or **Driver's
+seat** (at the driver's eye). On the Hood and the Driver's seat, the Fore/aft,
+Sideways and Height sliders nudge the seat (Sideways at 0 is dead center) and
+drags on the picture only aim the view. **Body roll** is how much the view
+rolls with the car's body roll in corners, 0% keeping the horizon level; while
+it is selected the frozen car rocks so its effect shows (following the car is
+always level). **Tilt** is a fixed tilt of the view. **Your car: Shown** draws
+the car but fades it out while a camera on or in the car looks back across it,
+and back in after; Hidden gives GT3's floating in-car look. **Reset** puts the
+camera back where its anchor starts (the chase view, over the roof, the hood's
+center seat, the driver's eye); Reset rotation turns it straight along the car
+and takes out its tilt, keeping how far it looks up or down; Undo changes goes
+back to how it was when the editor opened.
 
 With `gt3` the race reads the menu pad itself, so every button does what it
 did on a DualShock 2. Reverse is its own held input in both, as in GT3:

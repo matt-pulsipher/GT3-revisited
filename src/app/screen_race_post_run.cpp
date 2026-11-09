@@ -249,6 +249,7 @@ void RaceScreen::update_backdrop(App& app, double dt) {
     director_.set_view_mode(view_settings().mode);
     update_camera_manager(dt);
     if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
+    bind_hood(camera_, hood_bound_, car_visual_.get());
     camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
     update_shot_filter();
 }

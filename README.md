@@ -228,8 +228,10 @@ are only there:
 | `[music] show_song` | `on` / `off` | the race song on the pause screen, with L1 / R1 to skip (default on) |
 | `[music] next_race` | `next` / `same` | next (default): a new song every time, as GT3 does; same: a race, restart or replay starts with the song the last one ended on, from its start (Settings → Audio → Next race starts with) |
 | `[music] race_song` | text | the race song playing last (`disc:` or `yours:` and its id), for `next_race = same` |
-| `[race] views` | `all` / `gt3` | race views: GT3's plus bumper without mirror and far chase, or GT3's only |
-| `[race] camera_shake` | `on` / `off` | GT3's in-car vibration |
+| `[race] views` | `all` / `gt3` | race views: GT3's plus bumper without mirror and far chase, or GT3's only (Settings → Cameras); your own cameras follow either |
+| `[race] camera_shake` | `on` / `off` | GT3's in-car vibration (Settings → Cameras) |
+| `[custom_camera<n>]` | `id`, `name`, `enabled`, `mount`, `x` `y` `z`, `yaw` `pitch` `roll`, `body_roll`, `fov`, `car`, `hud`, `mirror`, `mirror_x` `mirror_y` `mirror_size` | your own race cameras, one section each in the camera button's order (Settings → Cameras; made in its camera editor). `mount` (the editor's Anchor): `follow` / `body` / `hood` (seated by the car's own shape) / `incar` (the driver's seat); `body_roll` 0..100: how much the view rolls with the car's body roll (0 level); `car`: `shown` / `hidden` (shown fades the car out while a camera on or in it looks back across it). Keys: [race/custom_cameras.h](src/race/custom_cameras.h). Export all cameras / Export this camera write the same sections to a camera file (`.ini`) that Import cameras adds from, on any device |
+| `[cameras] preview_course`, `preview_car`, `preview_paint` | labels, paint index | the camera editor's race: the course and car of your last race |
 | `[race] units` | `kmh` / `mph` | speed unit in races and menus (absent: the disc's, mph on the North American disc, km/h on the European and Japanese ones) |
 | `[race] split` | `auto` / `horizontal` / `vertical` | *(file)* 2P split (default: as GT3) |
 | `[race] analog_response` | `linear` / `original` | sticks, triggers, wheels, touch and tilt: a linear response (default) or GT3's DualShock 2 curves (Settings → Controls) |

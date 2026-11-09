@@ -457,7 +457,10 @@ std::vector<OptionRow> RaceScreen::option_rows() const {
     std::vector<OptionRow> rows;
     rows.push_back({"Transmission", controls_.config().automatic ? "AT" : "MT"});
     if (panel_ == Panel::Settings) return rows;
-    rows.push_back({"Camera", camera_mode_name(drive_camera_)});
+    const CustomCamera* custom = drive_camera_ == CameraMode::Custom
+                                     ? find_custom_camera(camera_.custom_cameras(), camera_.custom_id())
+                                     : nullptr;
+    rows.push_back({"Camera", custom ? custom->name : camera_mode_name(drive_camera_)});
     rows.push_back({"Music", music_on_ ? "ON" : "OFF"});
     rows.push_back({"Vibration", rumble_on_ ? "ON" : "OFF"});
     rows.push_back({"Display", preset_.hud ? "ON" : "OFF"});
@@ -468,9 +471,16 @@ std::vector<OptionRow> RaceScreen::option_rows() const {
 void RaceScreen::change_option(App& app, int row, int dir) {
     switch (row) {
     case 0: controls_.config().automatic = !controls_.config().automatic; break;
-    case 1: {
-        int n = int(CameraMode::Tv); // drive cameras: Chase .. Orbit
-        drive_camera_ = CameraMode((int(drive_camera_) + dir + n) % n);
+    case 1: { // drive cameras: Chase .. Orbit, then the player's own
+        std::vector<std::pair<CameraMode, int>> views;
+        for (int m = 0; m < int(CameraMode::Tv); ++m) views.emplace_back(CameraMode(m), 0);
+        for (const CustomCamera& c : camera_.custom_cameras()) views.emplace_back(CameraMode::Custom, c.id);
+        const std::pair<CameraMode, int> now{drive_camera_, drive_camera_ == CameraMode::Custom ? camera_.custom_id() : 0};
+        const int n = int(views.size());
+        int i = int(std::find(views.begin(), views.end(), now) - views.begin());
+        i = i < n ? (i + dir + n) % n : 0;
+        drive_camera_ = views[size_t(i)].first;
+        if (drive_camera_ == CameraMode::Custom) camera_.set_custom_id(views[size_t(i)].second);
         if (!replaying_) camera_.set_mode(drive_camera_);
         break;
     }

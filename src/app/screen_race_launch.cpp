@@ -99,6 +99,15 @@ void RaceScreen::resolve_online() {
 // course = course label (or taken from the race code's event), car = car
 // label or an arcade/opponent variant label (-> its base car).
 void RaceScreen::resolve_launch() {
+    // The camera editor's race: the arcade's Normal race on the course's surface (S class, the
+    // dirt race on dirt), with its field, as Quick race's custom race runs.
+    if (editor_ && launch_.request.event.empty()) {
+        bool dirt = false;
+        for (const data::Course& c : db_.courses())
+            if (c.label == launch_.request.course) dirt = c.surface == 2;
+        const std::string code = dirt ? "ANAD0001" : "ANST0001";
+        if (db_.event(code)) launch_.request.event = launch_.request.race_code = code;
+    }
     // Arcade time trial ("compulsory"): course ids tt01..tt10 are the
     // time-attack events AT010001..AT100001 (course + a fixed car variant).
     const menu::flow::GameRequest& rq = launch_.request;
@@ -284,6 +293,7 @@ void RaceScreen::resolve_launch() {
     }
     LOG_INFO("Race: menu request %s (code %s, course '%s', car '%s') -> %s / %s", launch_.request.mode.c_str(),
              launch_.request.race_code.c_str(), launch_.request.course.c_str(), launch_.request.car.c_str(), course.c_str(), car.c_str());
+    if (!editor_ && !attract_ && !theater_) remember_editor_scene(*app_);
 }
 
 } // namespace gt3r::race_screen

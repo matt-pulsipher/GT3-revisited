@@ -38,8 +38,9 @@ sim::ControlInputs RaceScreen::scripted_inputs(double t, bool& reverse) const {
 void RaceScreen::next_view(CameraRig& cam, int player) {
     cam.next_mode();
     if (player == 0) drive_camera_ = cam.mode();
-    if (cam.mode() == CameraMode::Bumper || cam.mode() == CameraMode::Chase || cam.mode() == CameraMode::ChaseFar)
-        g_last_view[player] = {cam.mode(), cam.mirror()};
+    if (cam.mode() == CameraMode::Bumper || cam.mode() == CameraMode::Chase || cam.mode() == CameraMode::ChaseFar ||
+        cam.mode() == CameraMode::Custom)
+        g_last_view[player] = {cam.mode(), cam.mirror(), cam.custom_id()};
 }
 
 // The race pad's right stick (RX / RY as bound in Settings -> Controls; the touch controls' drag on
@@ -395,6 +396,10 @@ void RaceScreen::flying_start_signal(App& app) {
 }
 
 void RaceScreen::update_drive(App& app, double dt) {
+    if (editor_) {
+        update_camera_editor(app, dt);
+        return;
+    }
     const MenuInput& m = app.menu();
     if (online_ && !online_update(app, dt)) return;
     if (logger_mode_ && update_logger(app, dt)) return;
@@ -470,6 +475,7 @@ void RaceScreen::update_drive(App& app, double dt) {
             director_.set_view_mode(view_settings().mode);
             update_camera_manager(dt);
             if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
+            bind_hood(camera_, hood_bound_, car_visual_.get());
             camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
             if (run_preview_) {
                 if (player_.done() && pre_demo_run_) { // loop the run
@@ -526,6 +532,7 @@ void RaceScreen::update_drive(App& app, double dt) {
             camera_.set_look(0, 0);
             camera_.set_track_distance(track_->distance_of(render_state_.position));
             camera_.set_lap(lap_count());
+            bind_hood(camera_, hood_bound_, car_visual_.get());
             camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
         }
         update_pause(app, dt);
@@ -616,6 +623,7 @@ void RaceScreen::update_drive(App& app, double dt) {
         camera2_.set_intro(live_view() && race::start_shot_on(frames_to_signal()), race::start_shot_t(frames_to_signal()));
         camera2_.set_track_distance(track_->distance_of(render_state2_.position));
         camera2_.set_lap(field_->second_laps().laps);
+        bind_hood(camera2_, hood_bound2_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
         camera2_.update(render_state2_, field_->second_setup(), pad2, dt);
         app.input().set_rumble(1, rumble2_on_ && !replaying_
                                       ? rumble2_.rumble(app.input().gt3_rumble(1), app.input().dualsense(1))
@@ -640,13 +648,16 @@ void RaceScreen::update_drive(App& app, double dt) {
             camera_.set_lap(field_->opponent_lap_count(replay_focus_));
             const CarVisual* v = size_t(replay_focus_) < opp_visuals_.size() ? opp_visuals_[size_t(replay_focus_)].get() : nullptr;
             if (v) camera_.set_replay_mounts(&v->mounts());
+            bind_hood(camera_, hood_bound_, v);
             camera_.update(fs, field_->opponent_setup(replay_focus_), pad, dt);
         } else {
             if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
+            bind_hood(camera_, hood_bound_, car_visual_.get());
             camera_.update(render_state_, vehicle_->setup(), pad, dt);
         }
     } else {
         if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
+        bind_hood(camera_, hood_bound_, car_visual_.get());
         camera_.update(render_state_, vehicle_->setup(), pad, dt);
     }
     update_shot_filter();

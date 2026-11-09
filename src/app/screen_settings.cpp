@@ -1,5 +1,5 @@
 // Settings: every user-facing config.ini option on tabbed pages (Display,
-// Audio, Controls, Rumble & feedback, Touch, Disc & saves, Online). Changes apply at once
+// Audio, Controls, Cameras, Rumble & feedback, Touch, Disc & saves, Online). Changes apply at once
 // where the engine can (volume, gamma, vsync, speed units, MSAA, anisotropic filtering, 3D
 // resolution, bindings, force feedback, touch layout) and are saved to config.ini
 // immediately. Only keys the engine reads are offered; see README "Settings" for
@@ -7,14 +7,18 @@
 
 #include "app/app.h"
 #include "app/gles_probe.h"
+#include "app/save_dialogs.h"
 #include "app/screen_online.h"
+#include "app/screen_race.h"
 #include "app/screen_registry.h"
+#include "app/text_keyboard.h"
 #include "app/updates.h"
 
 #include "base/file.h"
 #include "disc/region.h"
 #include "game/save_folder.h"
 #include "menu/flow/menu_sound.h"
+#include "menu/flow/save_page.h"
 #include "net/session.h"
 #include "platform/document_tree.h"
 #include "platform/music_folder.h"
@@ -39,12 +43,15 @@ namespace gt3r {
 namespace {
 
 #if GT3R_XR
-enum Tab { kDisplay, kAudio, kControls, kFfb, kTouch, kDisc, kOnline, kVr, kTabCount };
-const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Disc & saves", "Online", "VR"};
+enum Tab { kDisplay, kAudio, kControls, kCameras, kFfb, kTouch, kDisc, kOnline, kVr, kTabCount };
+const char* const kTabNames[kTabCount] = {"Display", "Audio",        "Controls", "Cameras", "Rumble & feedback",
+                                          "Touch",   "Disc & saves", "Online",   "VR"};
 #else
-enum Tab { kDisplay, kAudio, kControls, kFfb, kTouch, kDisc, kOnline, kTabCount };
-const char* const kTabNames[kTabCount] = {"Display", "Audio", "Controls", "Rumble & feedback", "Touch", "Disc & saves", "Online"};
+enum Tab { kDisplay, kAudio, kControls, kCameras, kFfb, kTouch, kDisc, kOnline, kTabCount };
+const char* const kTabNames[kTabCount] = {"Display", "Audio",        "Controls", "Cameras", "Rumble & feedback",
+                                          "Touch",   "Disc & saves", "Online"};
 #endif
+static_assert(kControls == kSettingsTabControls && kDisc == kSettingsTabDisc);
 
 struct Row {
     enum class Kind { Toggle, Choice, Slider, Action, Info, Heading, Preview, Binding };
@@ -56,6 +63,7 @@ struct Row {
     bool dim = false;      // greyed but still adjustable (touch settings on desktop)
     bool restart = false;  // takes effect after a restart (and differs from the running state)
     bool columns = false;  // Heading over binding rows: their column titles
+    bool field = false;    // Action: a text field (its value drawn in a box; Cross / a tap types into it)
     std::function<void(int)> change;     // Left/Right
     std::function<void(float)> set_frac; // slider pointer position 0..1
     std::function<void()> activate;      // Cross / tap
@@ -87,11 +95,17 @@ bool disc_available(const std::string& path) {
 class SettingsScreen : public Screen {
 public:
     SettingsScreen(int tab, bool to_game) : tab_(std::clamp(tab, 0, kTabCount - 1)), to_game_(to_game) {
-        // Screenshots / testing: GT3R_SETTINGS_TAB=<0..6> opens that page.
+        // Screenshots / testing: GT3R_SETTINGS_TAB=<0..7> opens that page; GT3R_CAMERA_EDITOR=new (or a
+        // camera's id) opens the camera editor on the Cameras page.
         if (const char* t = SDL_getenv("GT3R_SETTINGS_TAB"); t && *t) tab_ = std::clamp(std::atoi(t), 0, kTabCount - 1);
+        if (const char* c = SDL_getenv("GT3R_CAMERA_EDITOR"); c && *c) tab_ = kCameras, script_editor_ = c;
     }
 
     bool clickable(float x, float y) const override {
+        if (naming_.active)
+            return naming_.keyboard.is_open() ? naming_.keyboard.clickable(x, y)
+                                              : naming_.ok.contains(x, y) || naming_.cancel.contains(x, y) ||
+                                                    (!naming_.text.empty() && naming_.clear.contains(x, y));
         if (confirm_.active) return confirm_.cancel_rect.contains(x, y) || confirm_.replace_rect.contains(x, y);
         if (capture_.state != Capture::State::Idle) return false; // A is what the binding takes
         if (lay_.back.contains(x, y) || tab_at(x, y) >= 0) return true;
@@ -107,6 +121,10 @@ public:
             access_refused_ = false;
             saves_view_.folder.clear(); // the save folder looked at again
             disc_view_.stale = true;    // and the library's images
+        }
+        if (naming_.active) {
+            name_event(app, e);
+            return;
         }
         build(app);
         float hx = 0, hy = 0;
@@ -188,6 +206,10 @@ public:
             bool was_slider = dragging_ >= 0;
             dragging_ = -1;
             if (p.back && lay_.back.contains(gesture_.x(), gesture_.y())) {
+                if (camera_page_) { // a camera's page: back to the list
+                    close_camera_page();
+                    return;
+                }
                 leave(app);
                 app.pop();
                 return;
@@ -236,6 +258,29 @@ public:
 
     void update(App& app, double dt) override {
         poll_folder_pick(app);
+        poll_camera_file(app);
+        if (!script_editor_.empty() && app.vfs()) { // (GT3R_CAMERA_EDITOR)
+            std::vector<race::CustomCamera> cams = race::load_custom_cameras(app.config());
+            const std::string which = std::exchange(script_editor_, std::string());
+            if (which == "new") {
+                race::CustomCamera c;
+                c.id = new_camera_ = race::new_custom_camera_id(cams);
+                c.name = race::new_custom_camera_name(cams);
+                app.push(make_camera_editor_screen(app, std::move(c), true));
+            } else if (const race::CustomCamera* c = race::find_custom_camera(cams, std::atoi(which.c_str()))) {
+                camera_page_ = c->id;
+                app.push(make_camera_editor_screen(app, *c, false));
+            }
+            return;
+        }
+        if (naming_.active) {
+            naming_.blink += dt;
+            if (naming_.keyboard.is_open())
+                if (TextKeyboard::Result r = naming_.keyboard.update(app.menu(), naming_.pointer.take(), naming_.text);
+                    r != TextKeyboard::Result::None)
+                    end_naming(app, r == TextKeyboard::Result::Done);
+            return;
+        }
         build(app);
         // A test sound on the new output device once a switch has landed (sound §1.1).
         if (const SDL_AudioDeviceID d = app.audio().output_device_id(); d != heard_device_) {
@@ -257,6 +302,10 @@ public:
             return;
         }
         if (m.pressed(PadButton::Triangle)) {
+            if (camera_page_) { // a camera's page: back to the list
+                close_camera_page();
+                return;
+            }
             leave(app);
             app.pop();
             return;
@@ -346,6 +395,7 @@ public:
         if (!touch) ui.footer(footer_hint());
         if (capture_.state != Capture::State::Idle) draw_capture(app.input(), ui);
         if (confirm_.active) draw_confirm(ui);
+        if (naming_.active) draw_naming(ui);
     }
 
     TouchLayout touch_layout() const override { return TouchLayout::None; } // tap and drag work directly
@@ -511,6 +561,7 @@ private:
         case kDisplay: build_display(app); break;
         case kAudio: build_audio(app); break;
         case kControls: build_controls(app); break;
+        case kCameras: build_cameras(app); break;
         case kFfb: build_ffb(app); break;
         case kTouch: build_touch(app); break;
         case kDisc: build_disc(app); break;
@@ -1222,12 +1273,6 @@ private:
         // Settings for every player first, above the players' long binding lists.
         heading("All players");
         {
-            bool gt3_views = to_lower(app.config().get("race", "views").value_or("all")) == "gt3";
-            choice("Race views", "Change view cycles bumper, bumper without mirror, chase, far chase; GT3: bumper and chase.",
-                   {"All four", "GT3 original"}, gt3_views ? 1 : 0, [a](int i) {
-                       a->config().set("race", "views", i == 1 ? "gt3" : "all");
-                       a->save_config();
-                   });
             bool original = to_lower(app.config().get("race", "analog_response").value_or("linear")) == "original";
             choice("Analog response",
                    "Linear: sticks, triggers, wheels, touch and tilt steer and press exactly as far as you do. "
@@ -1236,11 +1281,6 @@ private:
                        a->config().set("race", "analog_response", i == 1 ? "original" : "linear");
                        a->save_config();
                    });
-            bool shake = to_lower(app.config().get("race", "camera_shake").value_or("on")) != "off";
-            toggle("In-car camera shake", "GT3's in-car vibration: grows with tyre slip and speed.", shake, [a](bool v) {
-                a->config().set("race", "camera_shake", v ? "on" : "off");
-                a->save_config();
-            });
             // [input] background: desktop only (phones and tablets run one app at a time; a
             // headset always reads its controllers).
             if (!platform::is_mobile())
@@ -1556,6 +1596,7 @@ private:
                              : std::string("Replace your custom menu buttons with ") + kKinds[size_t(in.kind(p))] +
                                    " plus this change?";
         confirm_.yes = std::move(edit);
+        confirm_.yes_label = "Replace";
         confirm_.replace = false; // Cancel focused
         confirm_.active = true;
     }
@@ -1574,15 +1615,17 @@ private:
     }
 
     void draw_confirm(Ui& ui) {
-        const float w = 440, h = 78, x = std::floor((ui.width() - w) / 2), y = std::floor((ui.height() - h) / 2);
+        const bool touch = ui.touch(); // (finger-sized buttons)
+        const float w = std::min(440.0f, ui.width() - 24), h = touch ? 92.0f : 78.0f;
+        const float x = std::floor((ui.width() - w) / 2), y = std::floor((ui.height() - h) / 2);
         ui.fill(x, y, w, h, colors::kPanel);
         ui.frame(x, y, w, h, colors::kAccent);
         ui.text_center_in(x, w, y + 14, Ui::elide(confirm_.text, w - 16), colors::kText);
-        const float bw = 120, bh = 22, by = y + h - bh - 12;
+        const float bw = touch ? 140.0f : 120.0f, bh = touch ? 34.0f : 22.0f, by = y + h - bh - 12;
         confirm_.cancel_rect = {x + w / 2 - bw - 8, by, bw, bh};
         confirm_.replace_rect = {x + w / 2 + 8, by, bw, bh};
         ui.button(confirm_.cancel_rect, "Cancel", !confirm_.replace, false);
-        ui.button(confirm_.replace_rect, "Replace", confirm_.replace, false);
+        ui.button(confirm_.replace_rect, confirm_.yes_label, confirm_.replace, false);
     }
 
     // --- binding capture ---------------------------------------------------------------------
@@ -1693,6 +1736,289 @@ private:
     float key_column_x() const { return lay_.val_x + std::floor(lay_.val_w * 0.58f); }
 
     // Each player's rumble, then the trigger and wheel effects (all players).
+    // Cameras: change view's built-in views, then the player's own cameras (race/custom_cameras.h)
+    // in rotation order; a camera's row opens its page (camera_page_) to rename, switch, edit,
+    // reorder, copy or delete it. The camera editor is a race (make_camera_editor_screen): it needs
+    // a disc, and saves the camera itself.
+    void build_cameras(App& app) {
+        App* a = &app;
+        const std::vector<race::CustomCamera> cams = race::load_custom_cameras(app.config());
+        if (new_camera_ && race::find_custom_camera(cams, new_camera_)) // a new camera saved: its page
+            camera_page_ = std::exchange(new_camera_, 0), select_first_ = true;
+        if (camera_page_ && race::find_custom_camera(cams, camera_page_)) {
+            build_camera_page(app, cams);
+            return;
+        }
+        camera_page_ = 0;
+        heading("Camera button");
+        bool gt3_views = to_lower(app.config().get("race", "views").value_or("all")) == "gt3";
+        choice("Race views",
+               "The camera button cycles bumper, bumper without mirror, chase, far chase, then your enabled cameras "
+               "below; GT3: bumper and chase, then yours.",
+               {"All four", "GT3 original"}, gt3_views ? 1 : 0, [a](int i) {
+                   a->config().set("race", "views", i == 1 ? "gt3" : "all");
+                   a->save_config();
+               });
+        bool shake = to_lower(app.config().get("race", "camera_shake").value_or("on")) != "off";
+        toggle("In-car camera shake", "GT3's in-car vibration: grows with tyre slip and speed.", shake, [a](bool v) {
+            a->config().set("race", "camera_shake", v ? "on" : "off");
+            a->save_config();
+        });
+        heading("Your cameras");
+        for (const race::CustomCamera& c : cams) {
+            const int id = c.id;
+            if (select_camera_ == id) sel_ = int(rows_.size()), select_camera_ = 0, follow_sel_ = true;
+            action(c.name, "Rename it, enable or disable it, place it, change its order, or delete it.",
+                   c.enabled ? "Enabled" : "Disabled", [this, id] { open_camera_page(id); });
+        }
+        const bool disc = app.vfs() != nullptr, room = int(cams.size()) < race::CustomCamera::kMaxCameras;
+        Row& add = action("New camera...",
+                          !disc   ? "Needs a disc: you place the camera around your car in a moment of a race."
+                          : room ? "Place a camera of your own around your car in a moment of a race. Saved, the camera "
+                                   "button comes to it after the views above."
+                                 : "That's as many cameras as there can be.",
+                          "", [a, this, cams] {
+                              race::CustomCamera c;
+                              c.id = race::new_custom_camera_id(cams);
+                              c.name = race::new_custom_camera_name(cams);
+                              new_camera_ = c.id; // its page once saved
+                              a->push(make_camera_editor_screen(*a, std::move(c), true));
+                          });
+        add.enabled = disc && room;
+        Row& in = action("Import cameras...",
+                         room ? "Add the cameras in a camera file: one exported here, on another device or by a friend. "
+                                "Yours stay as they are."
+                              : "That's as many cameras as there can be.",
+                         "", [a, this] { open_camera_file(*a, true, {}, {}); });
+        in.enabled = room && !camera_file_.waiting;
+        Row& out = action("Export all cameras...",
+                          "Save all your cameras in a file, to keep or to share; Import cameras adds them anywhere.", "",
+                          [a, this, cams] { open_camera_file(*a, false, cams, "GT3R cameras.ini"); });
+        out.enabled = !cams.empty() && !camera_file_.waiting;
+    }
+
+    // Export / Import (race/custom_cameras.h camera files) through the platform's file dialogs, as the
+    // save page's exports (app/save_dialogs.h): the dialog picks the place; the answer comes back
+    // in update() (poll_camera_file) and is said in the description line.
+    void open_camera_file(App& app, bool import, std::vector<race::CustomCamera> cams, const std::string& name) {
+        if (camera_file_.waiting) return;
+        install_save_dialogs(app); // (Settings may open before the game's menus have)
+        const menu::flow::FileDialogs& d = menu::flow::file_dialogs();
+        if (!d.show || !d.poll) return;
+        d.poll(); // (an answer still there from a dialog given up on)
+        camera_file_ = {true, import, std::move(cams)};
+        d.show(import ? menu::flow::FileDialogs::Kind::OpenCameras : menu::flow::FileDialogs::Kind::ExportCameras, name);
+    }
+
+    void poll_camera_file(App& app) {
+        if (!camera_file_.waiting) return;
+        const menu::flow::FileDialogs& d = menu::flow::file_dialogs();
+        std::optional<std::string> path = d.poll ? d.poll() : std::optional<std::string>(std::string());
+        if (!path) return;
+        camera_file_.waiting = false;
+        if (path->empty()) return; // (cancelled)
+        const std::string file = d.name ? d.name(*path) : platform::picked_file_name(*path);
+        auto count = [](size_t n) { return std::to_string(n) + (n == 1 ? " camera" : " cameras"); };
+        note_left_ = 6;
+        if (!camera_file_.import) {
+            const std::string text = race::export_custom_cameras(camera_file_.cams);
+            const bool ok = write_host_file(*path, ByteSpan(reinterpret_cast<const u8*>(text.data()), text.size()));
+            note_ = ok ? "Exported " + count(camera_file_.cams.size()) + " to " + file : "Could not save " + file;
+            return;
+        }
+        const std::optional<Bytes> b = read_host_file(*path);
+        const std::vector<race::CustomCamera> in =
+            b ? race::import_custom_cameras(std::string_view(reinterpret_cast<const char*>(b->data()), b->size()))
+              : std::vector<race::CustomCamera>{};
+        if (in.empty()) {
+            note_ = b ? "No cameras in " + file : "Could not read " + file;
+            return;
+        }
+        std::vector<race::CustomCamera> cams = race::load_custom_cameras(app.config());
+        const int added = race::add_custom_cameras(cams, in);
+        race::save_custom_cameras(app.config(), cams);
+        app.save_config();
+        note_ = "Imported " + count(size_t(added)) + " from " + file;
+        if (size_t(added) < in.size())
+            note_ += " (" + std::to_string(race::CustomCamera::kMaxCameras) + " cameras at most)";
+        if (added > 0) select_camera_ = cams[cams.size() - size_t(added)].id, camera_page_ = 0;
+    }
+
+    void build_camera_page(App& app, const std::vector<race::CustomCamera>& cams) {
+        App* a = &app;
+        const size_t i = size_t(std::find_if(cams.begin(), cams.end(), [&](const race::CustomCamera& c) { return c.id == camera_page_; }) -
+                                cams.begin());
+        const race::CustomCamera c = cams[i];
+        auto store = [a](const std::vector<race::CustomCamera>& v) {
+            race::save_custom_cameras(a->config(), v);
+            a->save_config();
+        };
+        heading("Your cameras  >  " + c.name); // (where Back goes: the list)
+        if (select_first_) sel_ = int(rows_.size()), select_first_ = false, follow_sel_ = true;
+        action("Name", "Its name on the pause screen and in the race's options. Type a new one here.", c.name,
+               [a, this, c] { begin_naming(*a, c.id, c.name); })
+            .field = true;
+        choice("Status", "Enabled: the camera button comes to it after the built-in views, in the list's order.",
+               {"Disabled", "Enabled"}, c.enabled ? 1 : 0, [cams, i, store](int v) {
+                   std::vector<race::CustomCamera> n = cams;
+                   n[i].enabled = v == 1;
+                   store(n);
+               });
+        const bool disc = app.vfs() != nullptr;
+        Row& edit = action("Edit view...",
+                           disc ? "Place the camera around your car in a moment of a race: rotate, move, zoom, field of "
+                                  "view, roll, and its rear-view mirror."
+                                : "Needs a disc: you place the camera in a moment of a race.",
+                           "", [a, c] { a->push(make_camera_editor_screen(*a, c, false)); });
+        edit.enabled = disc;
+        info("Order", std::to_string(i + 1) + " of " + std::to_string(cams.size()) + ", after the built-in views");
+        Row& up = action("Move earlier", "The camera button comes to it sooner.", "", [cams, i, store] {
+                             std::vector<race::CustomCamera> n = cams;
+                             std::swap(n[i], n[i - 1]);
+                             store(n);
+                         });
+        up.enabled = i > 0;
+        Row& down = action("Move later", "The camera button comes to it later.", "", [cams, i, store] {
+            std::vector<race::CustomCamera> n = cams;
+            std::swap(n[i], n[i + 1]);
+            store(n);
+        });
+        down.enabled = i + 1 < cams.size();
+        Row& copy = action("Duplicate", "A copy of it after it, to make a variation.", "", [this, cams, i, store] {
+            std::vector<race::CustomCamera> n = cams;
+            race::CustomCamera k = n[i];
+            k.id = race::new_custom_camera_id(n);
+            k.name = (k.name + " copy").substr(0, race::CustomCamera::kMaxName);
+            n.insert(n.begin() + std::ptrdiff_t(i) + 1, k);
+            store(n);
+            camera_page_ = k.id, select_first_ = true;
+        });
+        copy.enabled = int(cams.size()) < race::CustomCamera::kMaxCameras;
+        Row& out = action("Export this camera...", "Save this camera in a file, to keep or to share; Import cameras adds it anywhere.",
+                          "", [a, this, c] { open_camera_file(*a, false, {c}, race::camera_file_name(c.name)); });
+        out.enabled = !camera_file_.waiting;
+        action("Delete", "Removes the camera.", "", [this, cams, i, store] {
+            confirm_.text = "Delete the camera \"" + cams[i].name + "\"?";
+            confirm_.yes_label = "Delete";
+            confirm_.yes = [this, cams, i, store] {
+                std::vector<race::CustomCamera> n = cams;
+                n.erase(n.begin() + std::ptrdiff_t(i));
+                store(n);
+                camera_page_ = 0;
+                if (!n.empty()) select_camera_ = n[std::min(i, n.size() - 1)].id;
+            };
+            confirm_.replace = false; // Cancel focused
+            confirm_.active = true;
+        });
+    }
+
+    void open_camera_page(int id) {
+        camera_page_ = id, select_first_ = true;
+        scroll_ = 0;
+        press_ = Press{};
+    }
+
+    void close_camera_page() {
+        select_camera_ = camera_page_;
+        camera_page_ = 0;
+        scroll_ = 0;
+        press_ = Press{};
+    }
+
+    // A camera's name: a real keyboard, the system's screen keyboard or a pad's letter-by-letter
+    // typing (text_field_event), our keyboard in a headset.
+    void begin_naming(App& app, int id, const std::string& name) {
+        naming_.active = true;
+        naming_.id = id;
+        naming_.text = name;
+        naming_.blink = 0;
+        if (SDL_Window* w = app.window()) SDL_StartTextInput(w);
+#if GT3R_XR
+        if (app.xr()) naming_.keyboard.open("Camera name", "OK", false); // (no system keyboard in a headset)
+#endif
+    }
+
+    void end_naming(App& app, bool keep) {
+        naming_.active = false;
+        naming_.keyboard.close();
+        if (SDL_Window* w = app.window()) SDL_StopTextInput(w);
+        app.menu().suppress(); // the keys typed are no menu input
+        std::string name(trim(naming_.text));
+        if (name.size() > race::CustomCamera::kMaxName) name.resize(race::CustomCamera::kMaxName);
+        if (!keep || name.empty()) return;
+        std::vector<race::CustomCamera> cams = race::load_custom_cameras(app.config());
+        for (race::CustomCamera& c : cams)
+            if (c.id == naming_.id) c.name = name;
+        race::save_custom_cameras(app.config(), cams);
+        app.save_config();
+    }
+
+    void name_event(App& app, const SDL_Event& e) {
+        const bool keyboard = naming_.keyboard.is_open();
+        const std::string before = naming_.text;
+        float x = 0, y = 0;
+        if (keyboard) {
+            naming_.pointer.event(e);
+            // A real keyboard's letters only type (W is also Cross, Space Circle, ...); the arrows move between the keys.
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key != SDLK_UP && e.key.key != SDLK_DOWN && e.key.key != SDLK_LEFT &&
+                e.key.key != SDLK_RIGHT)
+                app.menu().suppress();
+        } else if (pointer_down(e, x, y)) { // the box's buttons; a tap on the field brings a phone's keyboard back
+            if (naming_.ok.contains(x, y)) end_naming(app, true);
+            else if (naming_.cancel.contains(x, y)) end_naming(app, false);
+            else if (!naming_.text.empty() && naming_.clear.contains(x, y)) naming_.text.clear(), naming_.blink = 0;
+            else if (naming_.field.contains(x, y))
+                if (SDL_Window* w = app.window()) SDL_StartTextInput(w);
+            return;
+        }
+        if (const TextKeyboard::Result r = text_field_event(e, naming_.text, !keyboard); r != TextKeyboard::Result::None)
+            end_naming(app, r == TextKeyboard::Result::Done);
+        if (naming_.text.size() > race::CustomCamera::kMaxName) naming_.text.resize(race::CustomCamera::kMaxName);
+        if (naming_.text != before) naming_.blink = 0; // (the caret stays on while typing)
+    }
+
+    // The name's box: a text field with its caret from the start, Clear, Cancel and OK. On a touch
+    // screen at the top, clear of the screen keyboard.
+    void draw_naming(Ui& ui) {
+        Naming& n = naming_;
+        if (n.keyboard.is_open()) {
+            n.keyboard.draw(ui, n.text);
+            return;
+        }
+        const bool touch = ui.touch();
+        const UiRect& S = ui.safe();
+        const float fh = touch ? 34.0f : 22.0f, bh = touch ? 32.0f : 20.0f;
+        const float w = std::min(touch ? 480.0f : 420.0f, S.w - 24), h = 28 + fh + 10 + bh + 12 + (touch ? 0.0f : 14.0f);
+        const float x = std::floor(S.x + (S.w - w) / 2), y = touch ? S.y + 12 : std::floor((ui.height() - h) / 2 - 16);
+        ui.fill(0, 0, ui.width(), ui.height(), Color{0, 0, 0, 120});
+        ui.fill_round(x, y, w, h, 6, colors::kPanel);
+        ui.frame_round(x, y, w, h, 6, 1, colors::kAccent);
+        ui.text(x + 12, y + 10, "Camera name", colors::kAccent);
+        n.field = {x + 12, y + 26, w - 24, fh};
+        ui.fill_round(n.field.x, n.field.y, n.field.w, n.field.h, 4, colors::kBackground);
+        ui.frame_round(n.field.x, n.field.y, n.field.w, n.field.h, 4, 1.5f, colors::kAccent);
+        // Clear, inside the field's end.
+        const float cw = std::ceil(Ui::text_width("Clear")) + (touch ? 20 : 14);
+        n.clear = {n.field.right() - cw - 3, n.field.y + 3, cw, n.field.h - 6};
+        if (!n.text.empty()) ui.button(n.clear, "Clear", false, false);
+        // The text with its end in view, and the caret after it (blinking once a second).
+        const float room = n.field.w - 16 - (n.text.empty() ? 0 : cw + 6);
+        std::string shown = n.text;
+        for (size_t from = 0; Ui::text_width(shown) > room - 4 && from < n.text.size();) shown = "..." + n.text.substr(++from);
+        const float tx = n.field.x + 8, ty = std::floor(n.field.y + (n.field.h - Ui::kChar) / 2);
+        ui.text(tx, ty, shown, colors::kText);
+        if (std::fmod(n.blink, 1.0) < 0.6) ui.fill(tx + std::ceil(Ui::text_width(shown)) + 1, n.field.y + 4, 1.5f, n.field.h - 8, colors::kAccent);
+        // Cancel and OK under it, on the right.
+        const float bw = touch ? 110.0f : 90.0f, by = n.field.bottom() + 10;
+        n.ok = {x + w - 12 - bw, by, bw, bh};
+        n.cancel = {n.ok.x - 8 - bw, by, bw, bh};
+        ui.button(n.cancel, "Cancel", false, false);
+        ui.button(n.ok, "OK", false, false, true);
+        if (!touch)
+            ui.text(x + 12, by + bh + 6,
+                    Ui::clip("Enter: OK    Esc: cancel    Pad: Up/Down letter, Right add, Left delete, A: OK", w - 24), colors::kDim);
+    }
+
     void build_ffb(App& app) {
         App* a = &app;
         InputManager& in = app.input();
@@ -2077,6 +2403,7 @@ private:
     void switch_tab(App& app, int d) {
         if (tab_ == kAudio) stop_preview(app);
         tab_ = (tab_ + d + kTabCount) % kTabCount;
+        camera_page_ = select_camera_ = 0;
         sel_ = -1;
         scroll_ = 0;
         follow_sel_ = true;
@@ -2114,7 +2441,7 @@ private:
 
     // Opened from the game's menus (make_settings_screen's to_game), back goes to the game, from
     // the screens opened here too: they pop themselves, then this closes Settings.
-    const char* back_label() const { return to_game_ ? "< Back to game" : "< Back"; }
+    const char* back_label() const { return camera_page_ ? "< All cameras" : to_game_ ? "< Back to game" : "< Back"; }
     std::function<void(App&)> exit_to_game() {
         if (!to_game_) return {};
         return [this](App& app) {
@@ -2132,7 +2459,9 @@ private:
         case Row::Kind::Slider: return "Left/Right: adjust (or drag)" + back;
         case Row::Kind::Binding:
             return r.enabled ? "Cross: rebind  Square: add  Select/Del: clear  Left/Right: column" + back : back.substr(4);
-        default: return (r.remove ? "Cross: open    Square: remove" : "Cross: open") + back;
+        default:
+            if (r.field) return "Cross: rename" + back;
+            return (r.remove ? "Cross: open    Square: remove" : "Cross: open") + back;
         }
     }
 
@@ -2201,6 +2530,16 @@ private:
             ui.text_right(vx + vw, ty, r.value, val);
             break;
         case Row::Kind::Action:
+            if (r.field) { // a text box with its text, and what a tap does
+                const float bh = h - (touch ? 8 : 4), by = std::floor(cy - bh / 2), rad = touch ? 5.0f : 3.0f;
+                ui.fill_round(vx, by, vw, bh, rad, colors::kBackground);
+                ui.frame_round(vx, by, vw, bh, rad, 1, selected ? colors::kAccent : colors::kOutline);
+                const char* edit = touch ? "Tap to rename" : "Rename";
+                const float ew = Ui::text_width(edit);
+                ui.text(vx + 8, ty, Ui::elide(r.value, vw - ew - 28), colors::kText);
+                ui.text_right(vx + vw - 8, ty, edit, selected ? colors::kAccent : colors::kDim);
+                break;
+            }
             ui.text(vx, ty, Ui::elide(r.value, vw - 16), r.enabled ? colors::kDim : colors::kBad);
             if (r.enabled && !r.dim) ui.text_right(vx + vw, ty, ">", selected ? colors::kAccent : colors::kOutline);
             break;
@@ -2259,11 +2598,29 @@ private:
     bool access_refused_ = false; // Android: music access refused at the last pick
     struct Confirm {
         bool active = false, replace = false; // replace: the focused answer (Cancel first)
-        std::string text;
+        std::string text, yes_label;
         std::function<void()> yes;
         UiRect cancel_rect, replace_rect;
     } confirm_;
     int column_ = 0;     // binding rows: 0 the controller's column, 1 the keyboard's
+    int camera_page_ = 0;   // Cameras: the camera whose page is shown (its id; 0 the list)
+    int select_camera_ = 0; // Cameras: the list's row to highlight when it is built next (a camera's id)
+    bool select_first_ = false; // a camera's page: its first row highlighted when it is built next
+    int new_camera_ = 0;        // Cameras: the camera being made in the editor (its page once saved)
+    std::string script_editor_; // GT3R_CAMERA_EDITOR, until it is opened
+    struct CameraFile {         // a camera file's dialog open (Export / Import)
+        bool waiting = false, import = false;
+        std::vector<race::CustomCamera> cams; // Export: what goes in the file
+    } camera_file_;
+    struct Naming {             // typing a camera's name
+        bool active = false;
+        int id = 0;
+        std::string text;
+        double blink = 0;                  // the caret's clock (s)
+        UiRect field, clear, ok, cancel; // drawn last frame
+        TextKeyboard keyboard; // in VR
+        PointerInput pointer;
+    } naming_;
     int rumble_player_ = 0;
     double rumble_left_ = 0; // Test rumble
     std::string note_;       // shown in the description area for note_left_ seconds
