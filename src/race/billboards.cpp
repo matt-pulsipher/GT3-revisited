@@ -59,7 +59,7 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
         LOG_WARN("Billboards %s: %s", name.c_str(), e.what());
         return false;
     }
-    // One mesh per visibility-cell list, one primitive per texture.
+    // One mesh per list (one per slot 1 node), one primitive per texture.
     for (u16 l = 0; l < lists; ++l) {
         u32 lp = rd32(b, list_ptrs + 4u * l);
         if (!lp || lp + 4 > b.size()) continue;
@@ -68,6 +68,7 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
         std::map<int, std::vector<u32>> by_tex;
         scene::Mesh mesh;
         mesh.name = "billboards" + std::to_string(l);
+        mesh.node = l; // list l: slot 1 node l's billboards
         for (u32 k = 0; k < n; ++k) {
             size_t o = lp + 4 + 16ull * k;
             u16 type = rd16(b, o), param = rd16(b, o + 2);
@@ -129,7 +130,8 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
     return true;
 }
 
-void Billboards::add_items(std::vector<render::DrawItem>& items, const render::Vec3& right) {
+void Billboards::add_items(std::vector<render::DrawItem>& items, const render::Vec3& right,
+                           const std::vector<u16>* nodes, float fade) {
     if (!gpu_) return;
     render::Vec3 r{right.x, 0, right.z};
     float n = std::sqrt(r.x * r.x + r.z * r.z);
@@ -150,7 +152,10 @@ void Billboards::add_items(std::vector<render::DrawItem>& items, const render::V
         }
         gpu_->update_vertices(verts_);
     }
-    items.push_back({gpu_.get(), {}, 0});
+    render::DrawItem it{gpu_.get(), {}, 0};
+    it.nodes = nodes;
+    it.fade = fade;
+    items.push_back(it);
 }
 
 } // namespace gt3r::race

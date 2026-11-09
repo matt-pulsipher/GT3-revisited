@@ -131,6 +131,119 @@ TEST(course_visibility_synthetic) {
     CHECK(!Visibility::parse(bad).visible(1, 0, 5));
 }
 
+// The race views' lists for the scenery (presentation §I7): the main view slot 2, the 2P halves
+// slot 4, the rear-view mirror slot 3, a 2P half's mirror slot 7 (slot 3 when the file has none);
+// a view whose slot is absent draws every node (0).
+TEST(course_scenery_list_slots) {
+    auto file = [](std::initializer_list<int> slots) {
+        Bytes b(kSlotCount * 4, 0);
+        for (int slot : slots) {
+            put32(b, size_t(slot) * 4, u32(b.size()));
+            b.resize(b.size() + 16, 0);
+        }
+        return CourseFile::parse(b);
+    };
+    using V = SceneryView;
+    const CourseFile all = file({1, 2, 3, 4, 7});
+    CHECK(scenery_list_slot(all, V::Main) == 2);
+    CHECK(scenery_list_slot(all, V::Split) == 4);
+    CHECK(scenery_list_slot(all, V::Mirror) == 3);
+    CHECK(scenery_list_slot(all, V::SplitMirror) == 7);
+    const CourseFile no7 = file({1, 2, 3, 4});
+    CHECK(scenery_list_slot(no7, V::SplitMirror) == 3);
+    CHECK(scenery_list_slot(no7, V::Mirror) == 3);
+    const CourseFile no3 = file({1, 2, 4});
+    CHECK(scenery_list_slot(no3, V::Mirror) == 0 && scenery_list_slot(no3, V::SplitMirror) == 0);
+    CHECK(scenery_list_slot(no3, V::Split) == 4);
+    const CourseFile none = file({1});
+    for (V v : {V::Main, V::Split, V::Mirror, V::SplitMirror}) CHECK(scenery_list_slot(none, v) == 0);
+}
+
+// The visibility lists on the disc: slots 2-4 and 7 name slot 1's nodes (slot 7 is a 2P half
+// mirror's list, not slot 5's), slot 6 slot 5's, slots 10 and 14 those of slots 9 and 13; GT3 draws
+// a list in its own order, which is not the file's. Slot 6 of the Seattle and Tahiti layouts names
+// slot 1's nodes, most past slot 5's count: the game's node draw skips a node past the model's
+// count, and so does ours (no mesh). Grand Valley's hairpin before the lake (public
+// issue 254): the main view's list leaves out the hillside about 450 m ahead (nodes 265 and 289, up
+// to 46 m high, with the tunnel and the bridge) that we drew over the backdrop, whose hills belong
+// there; every listed node is a mesh of the scenery model with its node number (DrawItem::nodes).
+TEST(course_visibility_lists_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    auto nodes_of = [](ByteSpan data, const CourseFile& f, int slot) -> size_t {
+        ByteSpan g = f.section(data, slot);
+        return gtm1::Gtm1::is_gtm1(g) ? gtm1::Gtm1::parse(g).nodes.size() : 0;
+    };
+    // Every list of every view point: the largest node index and whether one is unsorted.
+    auto survey = [](ByteSpan vls, int& top, bool& unsorted) {
+        top = -1, unsorted = false;
+        u32 nx = rd16(vls, 0x10), nz = rd16(vls, 0x12), grid = rd32(vls, 0x14);
+        for (u32 c = 0; c < nx * nz; ++c)
+            for (u32 at = rd32(vls, grid + 4 * c); u32 point = rd32(vls, at); at += 4) {
+                u32 list = rd32(vls, point), n = rd16(vls, list);
+                for (u32 i = 0; i < n; ++i) {
+                    int node = rd16(vls, list + 2 + 2 * i);
+                    top = std::max(top, node);
+                    unsorted = unsorted || (i > 0 && node < int(rd16(vls, list + 2 * i)));
+                }
+            }
+    };
+    int files = 0, slot7 = 0, slot6_past = 0;
+    bool any_unsorted = false;
+    for (const Volume::Entry& e : disc->volume().entries()) {
+        if (e.path.rfind("courses/US/", 0) != 0) continue;
+        Bytes data = disc->volume().read(e);
+        if (!CourseFile::looks_like_course(data)) continue;
+        const CourseFile f = CourseFile::parse(data);
+        ++files;
+        const std::pair<int, int> lists[] = {{2, 1}, {3, 1}, {4, 1}, {7, 1}, {6, 5}, {10, 9}, {14, 13}};
+        for (auto [vls, model] : lists) {
+            ByteSpan v = f.section(data, vls);
+            if (v.size() < 0x30 || std::memcmp(v.data(), "Vls0", 4) != 0) continue;
+            slot7 += vls == 7;
+            int top = -1;
+            bool unsorted = false;
+            survey(v, top, unsorted);
+            any_unsorted = any_unsorted || unsorted;
+            if (vls == 6 && top >= int(nodes_of(data, f, model))) {
+                ++slot6_past;
+                CHECK(top < int(nodes_of(data, f, 1)));
+                CHECK(e.path.find("seattle") != std::string::npos || e.path.find("tahiti") != std::string::npos);
+            } else if (top >= int(nodes_of(data, f, model))) {
+                std::printf("  %s slot %d names node %d of slot %d's %zu\n", e.path.c_str(), vls, top, model,
+                            nodes_of(data, f, model));
+                CHECK(false);
+            }
+        }
+    }
+    CHECK(files == 80);
+    CHECK(slot7 == 28); // (112 of the 320 files over the four regions)
+    CHECK(any_unsorted);
+    CHECK(slot6_past == 13);
+
+    Bytes gv = disc->volume().read(*disc->volume().find("courses/US/grandvalley"));
+    const CourseFile f = CourseFile::parse(gv);
+    const Visibility vis = Visibility::parse(f.section(gv, scenery_list_slot(f, SceneryView::Main)));
+    const std::vector<u16>* main = vis.visible(111.2f, 7.7f, -17.8f); // (the chase camera there)
+    const std::vector<u16> listed = main ? *main : std::vector<u16>{};
+    CHECK(listed.size() == 127);
+    for (u16 hidden : {265, 289}) CHECK(std::find(listed.begin(), listed.end(), hidden) == listed.end());
+    CHECK(scenery_list_slot(f, SceneryView::SplitMirror) == 7);
+    CourseModelOptions opt;
+    opt.textures = false;
+    opt.backdrop = opt.course_line = false;
+    scene::Model m = build_course_model(gv, opt, "grandvalley");
+    std::vector<bool> has_mesh(1300, false);
+    for (const scene::Mesh& mesh : m.meshes) {
+        CHECK(mesh.name == "scenery/node" + std::to_string(mesh.node));
+        if (mesh.node >= 0 && mesh.node < 1300) has_mesh[size_t(mesh.node)] = true;
+    }
+    CHECK(has_mesh[265] && has_mesh[289]);
+    size_t drawn = 0;
+    for (u16 n : listed) drawn += has_mesh[n];
+    CHECK(drawn * 10 >= listed.size() * 9); // (a few nodes draw nothing)
+}
+
 TEST(course_trialmt) {
     Disc* disc = test::test_disc();
     if (!disc) SKIP("needs GT3R_DISC");

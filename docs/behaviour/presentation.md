@@ -2651,10 +2651,21 @@ k = 0, so no glare is drawn.
 
 ### §I7 Draw order of the scenery and the cars
 
-- **Scenery.** The course scenery (slot 1, the visible nodes) is drawn in one
-  pass in file order, its opaque and blended packets interleaved, after the sky,
-  the sun and the backdrop, then the billboards. The wet-road pass (§K) follows,
-  then the cars.
+- **Scenery.** The course scenery (slot 1) is drawn in one pass after the sky,
+  the sun and the backdrop: the nodes of the view's visibility list, in the
+  list's order, their opaque and blended packets interleaved; then the
+  billboards of the same nodes in the same order. The wet-road pass (§K)
+  follows, then the cars.
+- **Visibility lists.** Each view takes the list of the course's view point
+  nearest its camera (docs/formats/course.md "Vls0"): slot 2 in the 1P view and
+  the licence menu's preview, slot 4 in the 2P halves, slot 3 in the rear-view
+  mirror, slot 7 in a 2P half's mirror (slot 3 on courses without it). A node
+  the list leaves out is not drawn, even where nothing in front would hide it:
+  the backdrop, whose depth is cleared before the scenery, shows there instead.
+  From Grand Valley's hairpin before the lake, the hill across the water with
+  the tunnel and the bridge is left out and the backdrop's hills fill that part
+  of the view. The cars' reflection map draws slot 5's nodes from slot 6's list
+  (its camera), the wet road slots 9 and 13 from slots 10 and 14.
 - **Billboards per view.** Bit 0 of a per-view word in Env0 turns the billboards
   on: +0xF30 in the 1P view, +0xF34 in the 2P halves, +0xF38 in the mirror (§H2).
   Akasaka, Midfield, Seattle, Smokey Mountain South and the Tahiti courses (and
@@ -2688,6 +2699,13 @@ k = 0, so no glare is drawn.
   meshes, then its blended ones in model order) before later items' opaque
   meshes: the course scenery, the wet-road frame passes and each car shadow.
   Billboards and tire smoke stay in the depth-sorted blended pass.
+  `DrawItem::nodes` limits an item to the meshes of a visibility list's nodes,
+  in the list's order (the scenery, its billboards, the reflection map's
+  scenery, the wet road's models). Where GT3 switches a view's list at once,
+  ours fades a scenery node and its billboards in over 0.6 s when it joins the
+  list and out when it leaves (dithered): at our resolution and in a 16:9
+  picture the instant switch pops whole buildings in. Camera cuts switch at
+  once, and a settled view shows the list exactly.
 
 ---
 

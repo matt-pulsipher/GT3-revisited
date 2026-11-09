@@ -3,7 +3,7 @@
 // pick, the race exit wash, the time trial's finish, the pause window's EXIT question, the
 // quick menus' cancel and disabled items, what follows a run (the automatic replay, the menu's backdrop, pause
 // EXIT as a finish), the start title's and the replay mark's clocks, the HUD's corner blocks
-// beside touch controls. All values are invented.
+// beside touch controls, the scenery's fades between visibility lists. All values are invented.
 
 #include "test_framework.h"
 
@@ -25,6 +25,7 @@
 #include "race/replay_focus.h"
 #include "race/replay_options.h"
 #include "race/results.h"
+#include "race/scenery_fade.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1504,4 +1505,41 @@ TEST(hud_top_blocks_beside_touch_controls) {
     CHECK(lit(d, 0, 320, false) >= 54 && lit(d, 0, 320, false) <= 56);
     SDL_DestroyRenderer(r);
     SDL_DestroySurface(surface);
+}
+
+// The scenery's fades between visibility lists (race::SceneryFade): the first frame, a camera cut
+// and the first list after none switch at once; a node that joins fades in over kSeconds and one
+// that leaves fades out, in groups of 1/16 steps; the list's order is kept; no list = every node.
+TEST(race_scenery_fade) {
+    using race::SceneryFade;
+    auto weight = [](const SceneryFade& f, u16 n) {
+        for (const SceneryFade::Group& g : f.faded())
+            if (std::find(g.nodes.begin(), g.nodes.end(), n) != g.nodes.end()) return g.weight;
+        return 0.0f;
+    };
+    auto settled = [](const SceneryFade& f) {
+        for (const SceneryFade::Group& g : f.faded())
+            if (!g.nodes.empty()) return false;
+        return true;
+    };
+    const std::vector<u16> a{5, 2, 9}, b{2, 7, 5};
+    const float step = SceneryFade::kSeconds / 6.0f;
+    SceneryFade f;
+    f.update(&a, {0, 0, 0}, step);
+    CHECK(f.solid() && *f.solid() == a && settled(f)); // the first frame: at once
+    f.update(&b, {1, 0, 0}, step); // 7 joins, 9 leaves
+    CHECK((*f.solid() == std::vector<u16>{2, 5}));
+    CHECK(weight(f, 7) == 3.0f / SceneryFade::kLevels);  // 1/6 of the way in
+    CHECK(weight(f, 9) == 13.0f / SceneryFade::kLevels); // 1/6 of the way out
+    f.update(&a, {2, 0, 0}, step); // back: 9 rejoins at its weight, 7 leaves again
+    CHECK(*f.solid() == a && settled(f));
+    f.update(&b, {3, 0, 0}, step);
+    for (int i = 0; i < 6; ++i) f.update(&b, {3, 0, 0}, step);
+    CHECK(*f.solid() == b && settled(f)); // in b's order once settled
+    f.update(&a, {3 + SceneryFade::kCut, 0, 0}, step); // a camera cut
+    CHECK(*f.solid() == a && settled(f));
+    f.update(nullptr, {3 + SceneryFade::kCut, 0, 0}, step); // no list: every node
+    CHECK(f.solid() == nullptr && settled(f));
+    f.update(&b, {3 + SceneryFade::kCut, 0, 0}, step);
+    CHECK(*f.solid() == b && settled(f));
 }

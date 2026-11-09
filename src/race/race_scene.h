@@ -4,11 +4,13 @@
 // distant backdrop, camera-centred sky domes) and the player's car (body LODs plus
 // four separately transformed wheels).
 
+#include "formats/course/visibility.h"
 #include "formats/model/brake_model.h"
 #include "formats/model/car_model.h"
 #include "race/clut_animations.h"
 #include "race/occluder.h"
 #include "race/procedural_cameras.h"
+#include "race/scenery_fade.h"
 #include "scene/model.h"
 #include "render/gpu_model.h"
 #include "race/lamp_glows.h"
@@ -40,9 +42,18 @@ public:
     // Appends draw items for a camera at `eye`: sky, backdrop, scenery and, on courses that
     // have one, the licence course line right after the scenery. The game draws that line in
     // every view of the course: live runs, demonstrations and replays in any replay mode
-    // (course.md "Course line"). `mirror`: the rear-view mirror's pass (GT3 draws the
-    // low-resolution sky, slot 24, then slot 1: no backdrop).
-    void add_items(std::vector<render::DrawItem>& items, const render::Vec3& eye, bool mirror = false) const;
+    // (course.md "Course line"). The scenery: the nodes of `view`'s visibility list for `eye`
+    // (visible_nodes), or with `fade` its nodes drawn whole and, translucent, those fading in
+    // or out (SceneryFade, updated with that list). Mirror and SplitMirror: the rear-view
+    // mirror's pass (GT3 draws the low-resolution sky, slot 24, then slot 1: no backdrop).
+    void add_items(std::vector<render::DrawItem>& items, const render::Vec3& eye,
+                   course::SceneryView view = course::SceneryView::Main, const SceneryFade* fade = nullptr) const;
+    // The scenery nodes `view` draws from `eye`, in GT3's order (its slot 1 nodes and their
+    // billboards): the visibility list of the view point nearest `eye`. Null: every node (no
+    // list). Valid while the scene lives.
+    const std::vector<u16>* visible_nodes(const render::Vec3& eye, course::SceneryView view) const {
+        return vis_[size_t(view)].visible(eye.x, eye.y, eye.z);
+    }
     const CourseStats& stats() const { return stats_; }
     // Fog/clear colour picked from the sky (average horizon colour).
     const float* horizon_color() const { return horizon_; }
@@ -51,7 +62,8 @@ public:
     const float* ground_color() const { return ground_; }
     // The car reflection map's scene (GT3): the slot 23 sky dome centred on `eye`, rotated by
     // `sky_rotation` (RotY(Env0 +0x28) RotX(Env0 +0x48)), then the slot 5 scenery, which is
-    // much darker than the drawn scenery and made for reflections. False when the course has none.
+    // much darker than the drawn scenery and made for reflections: the nodes of slot 6's list
+    // for `eye` (the map's camera). False when the course has none.
     bool add_env_items(std::vector<render::DrawItem>& items, const render::Vec3& eye,
                        const render::Mat4& sky_rotation) const;
     // Opaque scenery and backdrop triangles for ray tests (sun visibility).
@@ -90,6 +102,8 @@ private:
     float horizon_[3] = {0.62f, 0.70f, 0.80f};
     float sky_rgb_[3] = {0.35f, 0.55f, 0.85f};
     std::unique_ptr<render::GpuModel> env_scenery_, env_sky_; // slots 5 and 23
+    std::array<course::Visibility, 4> vis_; // slot 1's lists per course::SceneryView
+    course::Visibility env_vis_;            // slot 5's (slot 6)
     render::ItemLights lights_;
     bool has_lights_ = false;
     float ground_[3] = {0.18f, 0.17f, 0.16f};

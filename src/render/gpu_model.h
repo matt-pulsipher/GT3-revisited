@@ -61,6 +61,7 @@ public:
     struct MeshInfo {
         Mat4 transform;
         int lod = 0;
+        int node = -1;         // scene::Mesh::node
         s32 vertex_offset = 0; // added to every index
         u32 index_offset = 0;  // first triangle index in the shared buffer
         u32 line_first = 0, line_count = 0;
@@ -85,6 +86,18 @@ public:
     };
 
     const std::vector<MeshInfo>& meshes() const { return meshes_; }
+    // The meshes of GTM1 node `node` (MeshInfo::node) as indices into meshes(), in model order
+    // (DrawItem::nodes); empty when it has none.
+    struct MeshRange {
+        const u32* first = nullptr;
+        const u32* last = nullptr;
+        const u32* begin() const { return first; }
+        const u32* end() const { return last; }
+    };
+    MeshRange node_meshes(u32 node) const {
+        if (size_t(node) + 1 >= node_start_.size()) return {};
+        return {node_meshes_.data() + node_start_[node], node_meshes_.data() + node_start_[size_t(node) + 1]};
+    }
     const std::vector<TextureInfo>& textures() const { return texture_source_ ? texture_source_->textures_ : textures_; }
     SDL_GPUBuffer* vertex_buffer() const { return vertices_; }
     SDL_GPUBuffer* index_buffer() const { return indices_; }
@@ -98,12 +111,16 @@ private:
     };
     // Copies the uploads into their buffers through staging_ in one command buffer.
     bool stage(const Upload* uploads, int count);
+    // Fills node_start_ / node_meshes_ from meshes_.
+    void index_nodes();
 
     GpuContext* ctx_;
     SDL_GPUDevice* device_;
     SDL_GPUBuffer* vertices_ = nullptr;
     SDL_GPUBuffer* indices_ = nullptr;
     std::vector<MeshInfo> meshes_;
+    // node_meshes(n) = node_meshes_[node_start_[n], node_start_[n + 1]).
+    std::vector<u32> node_start_, node_meshes_;
     std::vector<TextureInfo> textures_;
     const GpuModel* texture_source_ = nullptr; // the model whose textures this one draws with
     u32 vertex_capacity_ = 0, index_capacity_ = 0; // update_geometry's buffers (bytes)

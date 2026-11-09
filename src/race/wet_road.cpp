@@ -61,6 +61,7 @@ WetRoad::~WetRoad() = default;
 bool WetRoad::load(render::GpuContext& ctx, const Vfs& vfs, ByteSpan course, ByteSpan env) {
     ctx_ = &ctx;
     reflection_.reset(), mask_.reset(), streaks_.reset();
+    reflection_vis_ = mask_vis_ = {};
     for (FrameQuads& q : quads_) q = FrameQuads{};
     for (auto& q : blur_quad_) q.reset();
     p_ = {};
@@ -81,6 +82,10 @@ bool WetRoad::load(render::GpuContext& ctx, const Vfs& vfs, ByteSpan course, Byt
         scene::Model mask = course::build_course_model(course, o, "reflection_mask");
         // (Its vertex alpha is the weight: GT3 clips it at the guard band, DrawItem::guard_band.)
         if (!mask.meshes.empty()) mask_ = std::make_unique<render::GpuModel>(ctx, mask, true);
+        // Each drawn node by node from its visibility list, as the scenery (presentation §I7).
+        const course::CourseFile file = course::CourseFile::parse(course);
+        reflection_vis_ = course::Visibility::parse(file.section(course, course::kSlotWetReflectionVis));
+        mask_vis_ = course::Visibility::parse(file.section(course, course::kSlotWetMaskVis));
     } catch (const std::exception& e) {
         LOG_WARN("Wet road: %s", e.what());
         reflection_.reset();
@@ -150,7 +155,9 @@ bool WetRoad::load(render::GpuContext& ctx, const Vfs& vfs, ByteSpan course, Byt
 void WetRoad::add_buffer_items(std::vector<render::DrawItem>& items, const render::Mat4& view, const render::Vec3& eye,
                                const std::vector<Car>& cars) {
     if (!reflection_) return;
-    items.push_back({reflection_.get(), {}, 0});
+    render::DrawItem refl{reflection_.get(), {}, 0};
+    refl.nodes = reflection_vis_.visible(eye.x, eye.y, eye.z);
+    items.push_back(refl);
     if (!streaks_) return;
     // Eye-space basis (view rows: right, up, back).
     render::Vec3 right{view.at(0, 0), view.at(0, 1), view.at(0, 2)}, up{view.at(1, 0), view.at(1, 1), view.at(1, 2)},
@@ -283,6 +290,7 @@ void WetRoad::add_frame_items(std::vector<render::DrawItem>& items, const render
         items.push_back(clr);
         render::DrawItem mk{mask_.get(), {}, 0};
         mk.in_order = mk.frame_alpha = mk.guard_band = true;
+        mk.nodes = mask_vis_.visible(cam.at(0, 3), cam.at(1, 3), cam.at(2, 3)); // (the camera's position)
         items.push_back(mk);
     }
     render::DrawItem comp{q.frame.get(), cam, 0};

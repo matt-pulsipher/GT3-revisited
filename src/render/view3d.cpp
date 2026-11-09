@@ -88,7 +88,7 @@ struct FragmentUniforms {
                      // y = 1: the vertex colour is linear in screen space (DrawItem::guard_band);
                      // z = 1: the bound texture filtered as the GS does (DrawItem::gs_bilinear);
                      // w = 1: a car reflection drawn only below full reflectivity (kDestAlphaTest)
-    float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level; w spin copies' cells
+    float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level; z DrawItem::fade (0 = none); w spin copies' cells
     float wheel_steps[4]; // DrawItem::wheel_steps
 };
 
@@ -174,17 +174,31 @@ bool culled(const DrawItem& item, const Placed& m, const DrawOptions& opt, const
     return false;
 }
 
+// Calls f(i) for the item's meshes (indices into its model's meshes()) in draw order: the meshes
+// of DrawItem::nodes in the list's order, or every mesh in model order.
+template <class F>
+void for_each_mesh(const DrawItem& item, F&& f) {
+    if (!item.nodes) {
+        for (size_t i = 0; i < item.model->meshes().size(); ++i) f(i);
+        return;
+    }
+    for (u16 n : *item.nodes)
+        for (u32 i : item.model->node_meshes(n)) f(size_t(i));
+}
+
 // DrawItem::far_whole: whether any of the item's meshes reaches past GT3's far plane.
 bool reaches_past_far(const DrawItem& item, const DrawOptions& opt, const Mat4& view, const Vec3& eye) {
     const float far = item_far(item, opt);
     if (!item.far_whole || far <= 0) return false;
     const int lod = item_lod(item, opt);
-    for (const GpuModel::MeshInfo& mesh : item.model->meshes()) {
-        if (lod >= 0 && mesh.lod != lod) continue;
+    bool past = false;
+    for_each_mesh(item, [&](size_t i) {
+        const GpuModel::MeshInfo& mesh = item.model->meshes()[i];
+        if (past || (lod >= 0 && mesh.lod != lod)) return;
         const Placed m = place(item, mesh, eye);
-        if (eye_depth(view, m.center) + m.radius > far) return true;
-    }
-    return false;
+        past = eye_depth(view, m.center) + m.radius > far;
+    });
+    return past;
 }
 
 // Whether a sphere is past the near plane, before the far plane (far_w > 0) and inside the guard
@@ -873,18 +887,18 @@ bool View3D::upload_clipped(SDL_GPUCommandBuffer* cmd, const Mat4& view, const M
         const float far_w = item_far(item, opt);
         const int lod = item_lod(item, opt);
         const std::vector<GpuModel::MeshInfo>& meshes = model->meshes();
-        for (size_t mi = 0; mi < meshes.size(); ++mi) {
+        for_each_mesh(item, [&](size_t mi) {
             const GpuModel::MeshInfo& mesh = meshes[mi];
-            if (lod >= 0 && mesh.lod != lod) continue;
+            if (lod >= 0 && mesh.lod != lod) return;
             const Placed m = place(item, mesh, eye);
             if (culled(item, m, opt, planes, view) || inside_guard_band(view_proj, m.center, m.radius, near_w, far_w))
-                continue;
+                return;
             // The mesh's vertices in clip space, and whether GT3's VU clips them: with a margin, so
             // every vertex model.vert finds outside is (a triangle the static draw leaves out is
             // always here; the clipped draw drops what the GPU keeps itself).
             const size_t first = size_t(mesh.vertex_offset);
             const size_t end = mi + 1 < meshes.size() ? size_t(meshes[mi + 1].vertex_offset) : g->vertices.size();
-            if (end < first || end > g->vertices.size()) continue;
+            if (end < first || end > g->vertices.size()) return;
             const Mat4 mvp = view_proj * m.world;
             clip.resize(end - first);
             outside.assign(end - first, 2); // 2: not transformed yet
@@ -949,7 +963,7 @@ bool View3D::upload_clipped(SDL_GPUCommandBuffer* cmd, const Mat4& view, const M
                 }
                 if (tris.size() > tri_first) clipped_[{&item, &mesh, pi}] = {tri_first, u32(tris.size()) - tri_first};
             }
-        }
+        });
     }
     return tris.empty() || clip_.upload(ctx_.device(), cmd, corners.data(), u32(corners.size() * sizeof(ClipVertex)),
                                         tris.data(), u32(tris.size() * sizeof(u32)));
@@ -1465,17 +1479,18 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             continue;
         }
         const int lod = item_lod(item, opt);
-        for (const GpuModel::MeshInfo& mesh : model->meshes()) {
-            if (lod >= 0 && mesh.lod != lod) continue;
+        for_each_mesh(item, [&](size_t mi) {
+            const GpuModel::MeshInfo& mesh = model->meshes()[mi];
+            if (lod >= 0 && mesh.lod != lod) return;
             const Placed m = place(item, mesh, eye);
             if (culled(item, m, opt, planes, view)) {
                 ++stats_.meshes_culled;
-                continue;
+                return;
             }
             ++stats_.meshes_drawn;
             if (item.spin_turn == 0 || !ctx_.spin_copies()) {
                 vis.push_back({&item, &mesh, m.world, m.dist});
-                continue;
+                return;
             }
             // A spinning modelled rim: copies turned about the item's x axis, as many as its size on
             // screen asks (the mesh's bounding sphere, widened by its nearest depth). Views without
@@ -1506,7 +1521,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                     spin_rects_.push_back(s);
                 }
             }
-        }
+        });
     }
 
     // A draw waits until the next one: while nothing changes in between (pipeline, buffers,
@@ -1750,6 +1765,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         fu.wheel_blur[1] = v.item->wheel_blur_lod;
         for (int i = 0; i < 4; ++i) fu.wheel_steps[i] = v.item->wheel_steps[size_t(i)];
         fu.wheel_blur[3] = key.spin_copy ? float(v.cells) : 0.0f;
+        fu.wheel_blur[2] = v.item->fade < 1.0f ? std::max(v.item->fade, 1e-3f) : 0.0f; // (DrawItem::fade)
         fu.tint[3] = std::max(v.item->alpha, 0.0f); // > 1 (blended items): the blend clamps
         fu.tint[0] = fu.tint[1] = fu.tint[2] = v.item->tint;
         const bool guard = guard_on_ && v.item->guard_band;
@@ -1938,6 +1954,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             bind_samplers(sbs);
             fu.params[0] = -1, fu.params[1] = 1, fu.params[2] = 0, fu.params[3] = 1;
             fu.fog_color[3] = 0;
+            fu.wheel_blur[2] = 0; // (no fade)
             push_fragment(fu);
             SDL_DrawGPUIndexedPrimitives(pass, v.mesh->line_count, 1, v.mesh->index_offset + v.mesh->line_first,
                                          v.mesh->vertex_offset, 0);

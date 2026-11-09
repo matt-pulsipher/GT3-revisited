@@ -104,6 +104,7 @@ RaceScreen::~RaceScreen() {
 }
 
 void RaceScreen::update(App& app, double dt) {
+    frame_dt_ = dt, ++frame_serial_; // (the scenery's fades, collect_items)
     // Launched from the menus or online: the loading picture is drawn before each blocking
     // part of the load, the set-up and then the course and cars (menus §6).
     if (!init_) {

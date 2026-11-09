@@ -73,4 +73,17 @@ const std::vector<u16>* Visibility::visible(float x, float y, float z) const {
     return &lists_[best->list];
 }
 
+int scenery_list_slot(const CourseFile& file, SceneryView view) {
+    int slot = kSlotSceneryVisMain;
+    switch (view) {
+    case SceneryView::Main: slot = kSlotSceneryVisMain; break;
+    case SceneryView::Split: slot = kSlotSceneryVisSplit; break;
+    case SceneryView::Mirror: slot = kSlotSceneryVisMirror; break;
+    case SceneryView::SplitMirror:
+        slot = file.find(kSlotSceneryVisSplitMirror) ? kSlotSceneryVisSplitMirror : kSlotSceneryVisMirror;
+        break;
+    }
+    return file.find(slot) ? slot : 0;
+}
+
 } // namespace gt3r::course

@@ -110,6 +110,9 @@ struct Primitive {
 struct Mesh {
     std::string name;
     int lod = 0;  // 0 = highest detail
+    // The GTM1 node it draws (courses: the visibility lists pick nodes, render::DrawItem::nodes),
+    // -1 = none.
+    int node = -1;
     std::array<float, 16> transform{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}; // column-major
     std::vector<Vertex> vertices;
     std::vector<u32> indices;

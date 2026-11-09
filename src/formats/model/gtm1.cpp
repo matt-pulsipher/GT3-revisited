@@ -1167,6 +1167,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         if (draws.empty()) continue;
         scene::Mesh mesh;
         mesh.name = "node" + std::to_string(node);
+        mesh.node = int(node);
         mesh.lod = opt.run.lod;
         emit(draws, mesh, nullptr, nullptr);
         if (!mesh.primitives.empty()) model.meshes.push_back(std::move(mesh));
@@ -1364,6 +1365,7 @@ std::vector<scene::Mesh> AnimatedNodes::meshes() const {
     for (u32 n : nodes_) {
         scene::Mesh mesh;
         mesh.name = "node" + std::to_string(n);
+        mesh.node = int(n);
         mesh.lod = run_.lod;
         std::vector<Draw> draws;
         try {
