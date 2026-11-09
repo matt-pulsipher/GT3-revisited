@@ -87,6 +87,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -693,6 +694,10 @@ private:
     bool build_exact_solo(App& app);
     void load_opponent_cars(App& app, const RaceField& f);
     void build_player_visual(App& app, const std::string& model, ByteSpan car_file);
+    // The rig's bonnet-camera mounts (race/hood_camera.h) from the car it looks at: bound when
+    // the car visual behind camera_ / camera2_ changes (player 2, a replay's followed opponent).
+    void bind_hood(CameraRig& cam, std::optional<const CarVisual*>& bound, const CarVisual* v);
+    std::optional<const CarVisual*> hood_bound_, hood_bound2_;
     void exact_solo_step();      // after each step: the run's end and result from the race flow
     bool exact_solo() const { return solo_field_ != nullptr; }
     RaceField* exact_field() const { return field_ ? field_.get() : solo_field_.get(); }

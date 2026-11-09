@@ -297,8 +297,14 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (preset_.quick && (finished_ || finished2_)) open_quick_menu(app);
     render_state_ = vehicle_->state();
     // Place the camera now: a paused start (screenshots) never runs a drive update.
+    bind_hood(camera_, hood_bound_, car_visual_.get());
     camera_.snap(render_state_);
     camera_.update(render_state_, vehicle_->setup(), PadState{}, 1.0 / 60.0);
+    if (field_ && field_->has_second()) {
+        bind_hood(camera2_, hood_bound2_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
+        camera2_.snap(render_state2_);
+        camera2_.update(render_state2_, field_->second_setup(), PadState{}, 1.0 / 60.0);
+    }
     if (preset_.pause) open_pause(app);
     else paused_ = false;
     if (preset_.pause && preset_.pause_sel > 0) pause_menu_.set_cursor(preset_.pause_sel);
@@ -306,6 +312,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (preset_.ritems >= 0 && (replaying_ || demo_)) replay_settings_.items = u8(preset_.ritems); // (not stored)
     if (preset_.rcam >= 0 && replaying_) { // screenshots: a player view in the replay (2: the in-car view)
         camera_.set_mode(CameraMode(std::clamp(preset_.rcam, 0, int(CameraMode::Count) - 1)));
+        bind_hood(camera_, hood_bound_, car_visual_.get());
         camera_.snap(render_state_);
         camera_.update(render_state_, vehicle_->setup(), PadState{}, 1.0 / 60.0);
     }
@@ -652,6 +659,7 @@ bool RaceScreen::build_vehicle(App& app) {
             track_->set_lap_source(exact_lap_source(*field_)); // the exact core times the player's laps itself
             if (1.0 / step_.step() != field_->tick_hz()) step_ = FixedStep(field_->tick_hz()); // (PAL: 50 a second)
             car2_visual_.reset();
+            hood_bound2_.reset();
             // Player 2's car as the battle has it (a garage car: its own model and bought wheels).
             const int paint2 = battle_.paint2;
             std::string car2 = preset_.car2.empty() ? car_.label : preset_.car2;
@@ -708,12 +716,21 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
                                               showroom.car_span(), showroom.wheel_span(), showroom.stand_in);
     car_visual_->set_full_detail(full_car_detail_);
     if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
+    hood_bound_.reset();
+    hood_bound2_.reset();
+}
+
+void RaceScreen::bind_hood(CameraRig& cam, std::optional<const CarVisual*>& bound, const CarVisual* v) {
+    if (bound && *bound == v) return;
+    bound = v;
+    cam.set_hood_profile(v ? v->hood_profile() : HoodCameraProfile{});
 }
 
 // The opponents' cars as drawn and heard (a race's field, a free practice's): their paints (the event's entry ids, else the
 // game's draw), models and engine notes.
 void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     opp_visuals_.clear();
+    hood_bound_.reset();
     // Paint colours: player first, then the opponents (event entry ids or the game's draw). The attract demo's race has no
     // player car: its slot-0 car is drawn like the others when its entry gives no paint.
     std::vector<PaintEntry> entries;

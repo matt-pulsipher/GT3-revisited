@@ -144,8 +144,8 @@ CameraSound CameraRig::sound_kind() const {
     case CameraMode::Roof: return CameraSound::Cockpit;
     case CameraMode::Chase:
     case CameraMode::ChaseFar: return CameraSound::Chase;
-    case CameraMode::Custom: // fixed to the car: a car mount; trailing it: a chase
-        if (const CustomCamera* c = custom()) return c->mount == CustomCamera::Mount::Body ? CameraSound::Cockpit : CameraSound::Chase;
+    case CameraMode::Custom: // fixed to the car (body, bonnet): a car mount; trailing it: a chase
+        if (const CustomCamera* c = custom()) return c->mount == CustomCamera::Mount::Follow ? CameraSound::Chase : CameraSound::Cockpit;
         return CameraSound::Chase;
     case CameraMode::Tv: return replay_car_mount_ ? CameraSound::Cockpit : CameraSound::Other;
     default: return CameraSound::Other;
@@ -347,15 +347,39 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
         }
         const render::Vec3 r = render::normalize(render::cross(f, u));
         // Look back and the look around turn the camera round the car's up axis through the
-        // driver's eye: a chase-like camera goes round the car, a bonnet camera looks behind.
+        // driver's eye: a chase-like camera goes round the car, a bonnet camera looks behind
+        // (its "ahead" car is hidden then: CameraRig::hides_car).
         const render::Mat4 turn = render::rotate_y(-(look_back_ ? kPi : look_));
         render::Vec3 d, du;
         c->axes(d, du);
-        const render::Vec3 e = driver_eye() + turn.transform_point(c->offset);
+        if (c->mount == CustomCamera::Mount::Hood) { // the bonnet's tilt onto its edge
+            const float tilt = hood_camera_pitch(hood_profile_, *c);
+            if (tilt != 0) {
+                const render::Vec3 rd = render::normalize(render::cross(d, du));
+                d = d * std::cos(tilt) - du * std::sin(tilt);
+                du = render::cross(rd, d);
+            }
+        }
+        // The eye in the mount's frame: the offset, or the bonnet mount the car's shape gives.
+        const render::Vec3 e = driver_eye() + turn.transform_point(
+            c->mount == CustomCamera::Mount::Hood ? hood_camera_eye(hood_profile_, setup, *c) - driver_eye()
+                                                : c->offset);
         d = turn.transform_point(d), du = turn.transform_point(du);
         auto world = [&](const render::Vec3& v) { return r * v.x + u * v.y - f * v.z; }; // (local z is back)
         eye_ = origin + world(e);
-        view_ = render::look_at(eye_, eye_ + world(d), world(du));
+        // Horizon roll lock (body and bonnet mounts): the eye stays on the car while the view
+        // levels a share of the body's roll out — 0 the in-car look, 1 the horizon.
+        const float lock = c->mount == CustomCamera::Mount::Follow ? 0.0f : c->roll_lock;
+        if (lock > 0 && std::fabs(f.y) < 0.999f) {
+            const render::Vec3 w{0, 1, 0};
+            const render::Vec3 u0 = render::normalize(w - f * render::dot(w, f));
+            const render::Vec3 axis = render::cross(f, u0);
+            const float roll = std::atan2(render::dot(render::cross(u0, u), f), render::dot(u0, u));
+            u = render::normalize(u0 * std::cos(roll * (1.0f - lock)) + axis * std::sin(roll * (1.0f - lock)));
+        }
+        const render::Vec3 rv2 = render::normalize(render::cross(f, u));
+        auto vworld = [&](const render::Vec3& v) { return rv2 * v.x + u * v.y - f * v.z; };
+        view_ = render::look_at(eye_, eye_ + vworld(d), vworld(du));
         fovy_ = c->fovy();
         break;
     }
@@ -489,7 +513,7 @@ CustomCamera CameraRig::preset(CameraMode m, const sim::VehicleSetup& setup) con
     case CameraMode::Bumper: // the driver's eye, the car's attitude, no car drawn, the in-car HUD and mirror
         c.mount = CustomCamera::Mount::Body;
         c.offset = {};
-        c.show_car = false, c.incar_hud = true, c.mirror = true;
+        c.car = CustomCamera::OwnCar::Hidden, c.incar_hud = true, c.mirror = true;
         c.fov = ReplayDirector::zoom_fovy(1.7320508f) * kDeg;
         break;
     case CameraMode::Roof: { // over the roof (from the sim's origin, below the body origin), 0.9 m down at 10 m

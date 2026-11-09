@@ -6,6 +6,7 @@
 #include "base/config.h"
 #include "race/camera_rig.h"
 #include "race/custom_cameras.h"
+#include "race/hood_camera.h"
 
 #include <cmath>
 
@@ -50,23 +51,27 @@ TEST(custom_cameras_config) {
     IniDocument cfg = IniDocument::parse("[race]\nviews = gt3\n[custom_camera7]\nid = 9\nname = Old\n");
     CustomCamera a = camera(4, "Hood");
     a.enabled = false;
-    a.mount = CustomCamera::Mount::Body;
-    a.offset = {0.1f, 0.25f, -1.5f};
-    a.yaw = 12, a.pitch = -4.5f, a.roll = 3;
+    a.mount = CustomCamera::Mount::Hood;
+    a.offset = {0.1f, 0.25f, -0.3f}; // (a bonnet nudge: inside the mounts' bounds)
+    a.yaw = 12, a.pitch = -4.5f, a.roll = 3, a.roll_lock = 0.5f;
     a.fov = 55;
-    a.show_car = true, a.incar_hud = true;
+    a.car = CustomCamera::OwnCar::Ahead, a.incar_hud = true;
     a.mirror = true, a.mirror_x = 0.25f, a.mirror_y = 0.8f, a.mirror_size = 1.5f;
     CustomCamera b = camera(2, "Blimp");
-    save_custom_cameras(cfg, {a, b});
+    CustomCamera c = camera(6, "Seat");
+    c.mount = CustomCamera::Mount::Incar;
+    c.offset = {0.1f, 0.05f, -0.2f}; // (a seat nudge: inside the seat's bounds)
+    save_custom_cameras(cfg, {a, b, c});
     CHECK(cfg.get("race", "views") == "gt3");
     CHECK(!cfg.find("custom_camera7")); // (the old sections are gone)
     CHECK(cfg.get("custom_camera1", "name") == "Hood" && cfg.get("custom_camera2", "name") == "Blimp");
     CHECK(cfg.get("custom_camera2", "mirror_y") == "0.116" && cfg.get("custom_camera2", "z") == "6");
+    CHECK(cfg.get("custom_camera3", "mount") == "incar");
     const std::vector<CustomCamera> back = load_custom_cameras(cfg);
-    CHECK(back.size() == 2 && same(back[0], a) && same(back[1], b)); // (3 decimals)
+    CHECK(back.size() == 3 && same(back[0], a) && same(back[1], b) && same(back[2], c)); // (3 decimals)
     CHECK(find_custom_camera(back, 2) == &back[1] && !find_custom_camera(back, 3));
-    CHECK(new_custom_camera_id(back) == 5);
-    CHECK(new_custom_camera_name(back) == "Camera 3");
+    CHECK(new_custom_camera_id(back) == 7);
+    CHECK(new_custom_camera_name(back) == "Camera 4");
     CHECK(new_custom_camera_name({camera(1, "Camera 1"), camera(2, "Camera 3")}) == "Camera 4");
 
     // Hand-edited: no name, no id or a repeated id are skipped; numbers out of range clamped.
@@ -81,7 +86,36 @@ TEST(custom_cameras_config) {
     CHECK(h[0].fov == CustomCamera::kMaxFov && h[0].pitch == CustomCamera::kMaxPitch && near(h[0].yaw, -90));
     CHECK(near(render::length(h[0].offset), CustomCamera::kMaxDistance));
     CHECK(h[0].mirror_size == CustomCamera::kMaxMirror && h[0].mirror_x == 0);
-    CHECK(h[0].enabled && h[0].mount == CustomCamera::Mount::Follow && h[0].show_car && !h[0].mirror);
+    CHECK(h[0].enabled && h[0].mount == CustomCamera::Mount::Follow && h[0].car == CustomCamera::OwnCar::Shown &&
+          !h[0].mirror && h[0].roll_lock == 0);
+
+    // The bonnet mount, an ahead car and the roll lock, as hand-edited words and numbers.
+    const std::vector<CustomCamera> bn =
+        load_custom_cameras(IniDocument::parse("[custom_camera1]\nid = 7\nname = Bonnet\nmount = bonnet\ncar = ahead\n"
+                                               "roll_lock = 40\n"
+                                               "[custom_camera2]\nid = 8\nname = Hood\nmount = hood\nroll_lock = 300\n"
+                                               "[custom_camera3]\nid = 9\nname = Far\nmount = bonnet\n"
+                                               "x = 9\ny = 9\nz = 9\n"
+                                               "[custom_camera4]\nid = 10\nname = Chase\nx = 9\ny = 9\nz = 9\n"));
+    CHECK(bn.size() == 4);
+    CHECK(bn[0].mount == CustomCamera::Mount::Hood && bn[0].car == CustomCamera::OwnCar::Ahead &&
+          near(bn[0].roll_lock, 0.4f));
+    CHECK(bn[1].mount == CustomCamera::Mount::Hood && near(bn[1].roll_lock, 1.0f)); // (clamped)
+    // A bonnet offset is a nudge kept inside the mounts' bounds; any other mount's is a position.
+    CHECK(near(bn[2].offset.x, kHoodLateral) && near(bn[2].offset.y, kHoodHeightMax) && near(bn[2].offset.z, kHoodForward));
+    CHECK(near(bn[3].offset.x, 9.0f) && near(bn[3].offset.z, 9.0f));
+
+    // The in-car mount (and its "cockpit" alias): a seat nudge bounded like the bonnet's — the
+    // default position offset clamps into the seat's box rather than the mounts'.
+    const std::vector<CustomCamera> ic =
+        load_custom_cameras(IniDocument::parse("[custom_camera1]\nid = 11\nname = Seat\nmount = incar\n"
+                                               "x = 9\ny = -9\nz = 9\n"
+                                               "[custom_camera2]\nid = 12\nname = Cockpit\nmount = cockpit\n"));
+    CHECK(ic.size() == 2);
+    CHECK(ic[0].mount == CustomCamera::Mount::Incar && near(ic[0].offset.x, kSeatLateral) &&
+          near(ic[0].offset.y, kSeatHeightMin) && near(ic[0].offset.z, kSeatForward));
+    CHECK(ic[1].mount == CustomCamera::Mount::Incar && near(ic[1].offset.y, kSeatHeightMax) &&
+          near(ic[1].offset.z, kSeatForward));
 }
 
 // Camera files (Export / Import): the cameras round-trip; imported ones get new ids and, when a
@@ -253,7 +287,7 @@ TEST(race_camera_custom_pose) {
     // (Pitched 15 degrees down both ways: -cos 30 degrees.)
     CHECK(near(render::dot(view_forward(c.view()), ahead), -0.8660254f) && !c.shows_mirror());
     // Hidden car, in-car HUD, fixed to the body: the in-car look, a car-mounted sound.
-    k.show_car = false, k.incar_hud = true, k.mount = CustomCamera::Mount::Body;
+    k.car = CustomCamera::OwnCar::Hidden, k.incar_hud = true, k.mount = CustomCamera::Mount::Body;
     c.set_custom_cameras({k});
     CHECK(c.onboard() && c.incar_hud() && c.sound_kind() == CameraSound::Cockpit);
     c.set_intro(true, 0.5f); // the pre-race shot is outside the car

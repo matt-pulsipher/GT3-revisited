@@ -358,6 +358,20 @@ moves it, the right stick rotates it, L2 / R2 move it down / up, the D-pad
 works the panel, L1 / R1 switch between the Camera and Mirror pages, Select
 hides the panel, Start saves and Triangle leaves. On the Mirror page a drag or
 the left stick moves the rear-view mirror, the wheel, a pinch or L2 / R2 size it.
+A camera can sit on the bonnet (Movement: On the bonnet, or the Bonnet
+"Start from" row): the seat comes from the car body's own shape, so it lands
+on the bodywork of any car. The Fore/aft, Sideways and Height sliders nudge it
+along the mounts in centimetre steps — Sideways at 0 is dead centre — and
+Reset seat centres it; drags on the picture only aim the view, they can't
+move the seat. Horizon lock levels out that much of the body's roll; Your
+car: Facing forward draws the bonnet ahead but hides the car while looking
+back.
+
+Movement: In the car (or the In-car "Start from" row) is the cockpit seat at
+the driver's eye, the car drawn around you with the in-car HUD and the
+mirror — the same seat sliders move within the cabin, and drags only aim the
+view. Your car: Hidden gives GT3's floating in-car look instead (the Bumper
+"Start from" row has it set already).
 
 With `gt3` the race reads the menu pad itself, so every button does what it
 did on a DualShock 2. Reverse is its own held input in both, as in GT3:

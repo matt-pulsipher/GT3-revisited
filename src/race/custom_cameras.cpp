@@ -1,6 +1,7 @@
 #include "race/custom_cameras.h"
 
 #include "base/config.h"
+#include "race/hood_camera.h"
 
 #include <algorithm>
 #include <cmath>
@@ -58,16 +59,28 @@ float wrap_degrees(float a) {
 bool CustomCamera::operator==(const CustomCamera& o) const {
     return id == o.id && name == o.name && enabled == o.enabled && mount == o.mount && offset.x == o.offset.x &&
            offset.y == o.offset.y && offset.z == o.offset.z && yaw == o.yaw && pitch == o.pitch && roll == o.roll &&
-           fov == o.fov && show_car == o.show_car && incar_hud == o.incar_hud && mirror == o.mirror &&
-           mirror_x == o.mirror_x && mirror_y == o.mirror_y && mirror_size == o.mirror_size;
+           roll_lock == o.roll_lock && fov == o.fov && car == o.car && incar_hud == o.incar_hud &&
+           mirror == o.mirror && mirror_x == o.mirror_x && mirror_y == o.mirror_y && mirror_size == o.mirror_size;
 }
 
 void CustomCamera::clamp() {
+    // A bonnet mount's offset is a nudge within the mounts' bounds, an in-car mount's a seat
+    // nudge from the driver's eye — not positions (hood_camera_eye).
+    if (mount == Mount::Hood) {
+        offset.x = std::isfinite(offset.x) ? std::clamp(offset.x, -kHoodLateral, kHoodLateral) : 0.0f;
+        offset.y = std::isfinite(offset.y) ? std::clamp(offset.y, kHoodHeightMin, kHoodHeightMax) : 0.0f;
+        offset.z = std::isfinite(offset.z) ? std::clamp(offset.z, -kHoodForward, kHoodForward) : 0.0f;
+    } else if (mount == Mount::Incar) {
+        offset.x = std::isfinite(offset.x) ? std::clamp(offset.x, -kSeatLateral, kSeatLateral) : 0.0f;
+        offset.y = std::isfinite(offset.y) ? std::clamp(offset.y, kSeatHeightMin, kSeatHeightMax) : 0.0f;
+        offset.z = std::isfinite(offset.z) ? std::clamp(offset.z, -kSeatForward, kSeatForward) : 0.0f;
+    }
     const float d = render::length(offset);
     if (!(d <= kMaxDistance)) offset = std::isfinite(d) ? offset * (kMaxDistance / d) : render::Vec3{0, 0.7f, 6.0f};
     yaw = wrap_degrees(std::isfinite(yaw) ? yaw : 0.0f);
     pitch = std::clamp(std::isfinite(pitch) ? pitch : 0.0f, -kMaxPitch, kMaxPitch);
     roll = std::clamp(std::isfinite(roll) ? roll : 0.0f, -kMaxRoll, kMaxRoll);
+    roll_lock = std::clamp(std::isfinite(roll_lock) ? roll_lock : 0.0f, 0.0f, 1.0f);
     fov = std::clamp(std::isfinite(fov) ? fov : 47.9f, kMinFov, kMaxFov);
     mirror_x = std::clamp(std::isfinite(mirror_x) ? mirror_x : kMirrorX, 0.0f, 1.0f);
     mirror_y = std::clamp(std::isfinite(mirror_y) ? mirror_y : kMirrorY, 0.0f, 1.0f);
@@ -91,13 +104,25 @@ std::vector<CustomCamera> load_custom_cameras(const IniDocument& cfg) {
         c.name = std::string(trim(text(s, "name")));
         if (c.id <= 0 || c.name.empty() || find_custom_camera(cams, c.id)) continue;
         c.enabled = to_lower(text(s, "enabled")) != "no";
-        c.mount = to_lower(text(s, "mount")) == "body" ? CustomCamera::Mount::Body : CustomCamera::Mount::Follow;
+        {
+            const std::string m = to_lower(text(s, "mount"));
+            c.mount = m == "body" ? CustomCamera::Mount::Body
+                                : (m == "bonnet" || m == "hood") ? CustomCamera::Mount::Hood
+                                : (m == "incar" || m == "cockpit") ? CustomCamera::Mount::Incar
+                                                                   : CustomCamera::Mount::Follow;
+        }
         c.offset = {number(s, "x", c.offset.x), number(s, "y", c.offset.y), number(s, "z", c.offset.z)};
         c.yaw = number(s, "yaw", c.yaw);
         c.pitch = number(s, "pitch", c.pitch);
         c.roll = number(s, "roll", c.roll);
+        c.roll_lock = number(s, "roll_lock", c.roll_lock * 100.0f) / 100.0f;
         c.fov = number(s, "fov", c.fov);
-        c.show_car = to_lower(text(s, "car")) != "hidden";
+        {
+            const std::string car = to_lower(text(s, "car"));
+            c.car = car == "hidden" ? CustomCamera::OwnCar::Hidden
+                                  : car == "ahead" ? CustomCamera::OwnCar::Ahead
+                                                   : CustomCamera::OwnCar::Shown;
+        }
         c.incar_hud = to_lower(text(s, "hud")) == "incar";
         c.mirror = to_lower(text(s, "mirror")) == "on";
         c.mirror_x = number(s, "mirror_x", c.mirror_x);
@@ -118,15 +143,21 @@ void save_custom_cameras(IniDocument& cfg, const std::vector<CustomCamera>& cams
         cfg.set(sec, "id", std::to_string(c.id));
         cfg.set(sec, "name", c.name);
         cfg.set(sec, "enabled", c.enabled ? "yes" : "no");
-        cfg.set(sec, "mount", c.mount == CustomCamera::Mount::Body ? "body" : "follow");
+        cfg.set(sec, "mount", c.mount == CustomCamera::Mount::Body ? "body"
+                            : c.mount == CustomCamera::Mount::Hood ? "bonnet"
+                            : c.mount == CustomCamera::Mount::Incar ? "incar"
+                                                                    : "follow");
         cfg.set(sec, "x", format(c.offset.x));
         cfg.set(sec, "y", format(c.offset.y));
         cfg.set(sec, "z", format(c.offset.z));
         cfg.set(sec, "yaw", format(c.yaw));
         cfg.set(sec, "pitch", format(c.pitch));
         cfg.set(sec, "roll", format(c.roll));
+        cfg.set(sec, "roll_lock", format(c.roll_lock * 100.0f));
         cfg.set(sec, "fov", format(c.fov));
-        cfg.set(sec, "car", c.show_car ? "shown" : "hidden");
+        cfg.set(sec, "car", c.car == CustomCamera::OwnCar::Hidden ? "hidden"
+                          : c.car == CustomCamera::OwnCar::Ahead ? "ahead"
+                                                                 : "shown");
         cfg.set(sec, "hud", c.incar_hud ? "incar" : "chase");
         cfg.set(sec, "mirror", c.mirror ? "on" : "off");
         cfg.set(sec, "mirror_x", format(c.mirror_x));

@@ -12,16 +12,33 @@ namespace gt3r::race_screen {
 
 namespace {
 
-// The editor's presets (CameraEditor::kPresetNames), as built-in views.
-constexpr CameraMode kPresetModes[CameraEditor::kPresets] = {CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Bumper,
-                                                             CameraMode::Roof};
+// The editor's presets (CameraEditor::kPresetNames), as built-in views — all but the bonnet,
+// which is a mount of its own seated by the car's shape (race/hood_camera.h).
+constexpr CameraMode kPresetModes[] = {CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Bumper, CameraMode::Roof};
 
 } // namespace
 
 RaceScreen::RaceScreen(MenuLaunch l, CustomCamera edit, bool is_new) : RaceScreen(std::move(l)) {
     editor_ = std::make_unique<CameraEditor>(std::move(edit), is_new, [this](int i) {
+        i = std::clamp(i, 0, CameraEditor::kPresets - 1);
         const sim::VehicleSetup setup = vehicle_ ? vehicle_->setup() : sim::VehicleSetup{};
-        return camera_.preset(kPresetModes[std::clamp(i, 0, CameraEditor::kPresets - 1)], setup);
+        if (i == CameraEditor::kPresetIncar) { // the cockpit seat: the in-car view, the body drawn
+            CustomCamera c = camera_.preset(CameraMode::Bumper, setup);
+            c.mount = CustomCamera::Mount::Incar;
+            c.car = CustomCamera::OwnCar::Shown;
+            return c;
+        }
+        if (i == CameraEditor::kPresetBonnet) { // on the bonnet, the in-car look over the bodywork
+            CustomCamera c;
+            c.mount = CustomCamera::Mount::Hood;
+            c.offset = {};
+            c.fov = 55;
+            c.roll_lock = 0.5f;
+            c.car = CustomCamera::OwnCar::Ahead;
+            c.incar_hud = c.mirror = true;
+            return c;
+        }
+        return camera_.preset(kPresetModes[i], setup);
     });
     preset_.autodrive = true; // (the computer drives to the moment shown)
     preset_.music = preset_.ghost = false;
@@ -39,6 +56,7 @@ void RaceScreen::start_camera_editor(App& app) {
     camera_.set_look(0, 0);
     editor_->begin();
     apply_editor_camera();
+    bind_hood(camera_, hood_bound_, car_visual_.get());
     camera_.snap(render_state_);
     camera_.update(render_state_, vehicle_->setup(), PadState{}, 1.0 / 60.0);
     silence(app);
@@ -73,6 +91,7 @@ void RaceScreen::update_camera_editor(App& app, double dt) {
     apply_editor_camera();
     camera_.set_track_distance(track_->distance_of(render_state_.position));
     camera_.set_lap(lap_count());
+    bind_hood(camera_, hood_bound_, car_visual_.get());
     camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
 }
 

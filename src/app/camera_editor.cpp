@@ -2,8 +2,11 @@
 
 #include "app/app.h"
 
+#include "race/hood_camera.h"
+
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <utility>
 
 namespace gt3r {
@@ -23,6 +26,12 @@ float stick(const PadState& p, PadAxis a) {
 
 std::string degrees(float v) { return std::to_string(int(std::lround(v))) + " deg"; }
 
+std::string metres(float v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%+.2f m", v);
+    return buf;
+}
+
 float snap(float v, float lo, float hi, float step) { return std::clamp(lo + std::round((v - lo) / step) * step, lo, hi); }
 
 Color alpha(Color c, u8 a) { return {c.r, c.g, c.b, a}; }
@@ -32,7 +41,8 @@ Color alpha(Color c, u8 a) { return {c.r, c.g, c.b, a}; }
 CameraEditor::CameraEditor(race::CustomCamera cam, bool is_new, std::function<race::CustomCamera(int)> preset)
     : cam_(std::move(cam)), start_(cam_), is_new_(is_new), preset_(std::move(preset)) {
     // A camera that keeps the car on screen rotates round it; one on the car turns in place.
-    around_ = cam_.show_car;
+    around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
+    keep_mount_offset();
     build_rows();
 }
 
@@ -41,7 +51,8 @@ void CameraEditor::begin() {
     race::CustomCamera p = preset_(0);
     p.id = cam_.id, p.name = cam_.name, p.enabled = cam_.enabled;
     cam_ = start_ = p;
-    around_ = cam_.show_car;
+    around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
+    keep_mount_offset();
     build_rows();
 }
 
@@ -79,16 +90,68 @@ void CameraEditor::build_rows() {
         rows_.push_back(std::move(r));
     };
     if (page_ == Page::Camera) {
-        choice("Rotate", {"Around the car", "In place"}, around_ ? 0 : 1, [this](int i) { around_ = i == 0; });
-        choice("Movement", {"Smooth follow", "Fixed to the car"}, c.mount == race::CustomCamera::Mount::Body ? 1 : 0,
-               [&c](int i) { c.mount = i == 1 ? race::CustomCamera::Mount::Body : race::CustomCamera::Mount::Follow; });
+        // Movement stays the first row on every mount: the rows below it change with the mount.
+        choice("Movement", {"Smooth follow", "In the car", "On the bonnet", "Fixed to the car"},
+               c.mount == race::CustomCamera::Mount::Body   ? 3
+               : c.mount == race::CustomCamera::Mount::Hood ? 2
+               : c.mount == race::CustomCamera::Mount::Incar ? 1
+                                                           : 0,
+               [this, &c](int i) {
+                   const race::CustomCamera::Mount m = i == 3 ? race::CustomCamera::Mount::Body
+                                                            : i == 2 ? race::CustomCamera::Mount::Hood
+                                                            : i == 1 ? race::CustomCamera::Mount::Incar
+                                                                     : race::CustomCamera::Mount::Follow;
+                   if (m == c.mount) return;
+                   // Position mounts keep the eye and aim they last had (switching between them
+                   // changes only the mount); a seat mount starts at its default centred seat,
+                   // aimed ahead — a position mount's aim is usually turned back at the car,
+                   // which in a seat is the inside of the cabin.
+                   keep_mount_offset();
+                   c.mount = m;
+                   if (seat_mount()) {
+                       c.offset = {};
+                       c.yaw = c.pitch = c.roll = 0;
+                   } else {
+                       c.offset = pos_offset_;
+                       c.yaw = pos_yaw_, c.pitch = pos_pitch_, c.roll = pos_roll_;
+                   }
+               });
+        // On a seat mount drags only aim the view (rotate in place): no orbit to hide behind.
+        if (!seat_mount())
+            choice("Rotate", {"Around the car", "In place"}, around_ ? 0 : 1, [this](int i) { around_ = i == 0; });
+        // On a seat mount the offset nudges a seat (the bonnet's from the car's own shape,
+        // race/hood_camera.h; the cockpit's from the driver's eye) — drags can't move it:
+        // these rows are the precise moves.
+        if (seat_mount()) {
+            const bool hood = c.mount == race::CustomCamera::Mount::Hood;
+            const float fwd = hood ? race::kHoodForward : race::kSeatForward;
+            const float lat = hood ? race::kHoodLateral : race::kSeatLateral;
+            const float lo = hood ? race::kHoodHeightMin : race::kSeatHeightMin;
+            const float hi = hood ? race::kHoodHeightMax : race::kSeatHeightMax;
+            slider("Fore/aft", c.offset.z, -fwd, fwd, 0.05f, metres(c.offset.z),
+                   [&c](float v) { c.offset.z = v; });
+            slider("Sideways", c.offset.x, -lat, lat, 0.05f, metres(c.offset.x),
+                   [&c](float v) { c.offset.x = v; });
+            slider("Height", c.offset.y, lo, hi, 0.05f, metres(c.offset.y),
+                   [&c](float v) { c.offset.y = v; });
+            action("Reset seat", "", [&c] { c.offset = {}; });
+        }
         slider("Field of view", c.fov, race::CustomCamera::kMinFov, race::CustomCamera::kMaxFov, 1, degrees(c.fov),
                [&c](float v) { c.fov = v; });
+        if (c.mount != race::CustomCamera::Mount::Follow)
+            slider("Horizon lock", c.roll_lock, 0, 1, 0.1f,
+                   std::to_string(int(std::lround(c.roll_lock * 100))) + "%", [&c](float v) { c.roll_lock = v; });
         slider("Roll", c.roll, -race::CustomCamera::kMaxRoll, race::CustomCamera::kMaxRoll, 1, degrees(c.roll),
                [&c](float v) { c.roll = v; });
         // The view straight along the car (no turn, tilt or roll), the camera where it is.
         action("Reset rotation", "", [&c] { c.yaw = c.pitch = c.roll = 0; });
-        choice("Your car", {"Shown", "Hidden"}, c.show_car ? 0 : 1, [&c](int i) { c.show_car = i == 0; });
+        choice("Your car", {"Shown", "Hidden", "Facing forward"},
+               c.car == race::CustomCamera::OwnCar::Hidden ? 1 : c.car == race::CustomCamera::OwnCar::Ahead ? 2 : 0,
+               [&c](int i) {
+                   c.car = i == 1 ? race::CustomCamera::OwnCar::Hidden
+                                : i == 2 ? race::CustomCamera::OwnCar::Ahead
+                                         : race::CustomCamera::OwnCar::Shown;
+               });
         choice("HUD layout", {"Chase", "In-car"}, c.incar_hud ? 1 : 0, [&c](int i) { c.incar_hud = i == 1; });
         {
             Row r;
@@ -104,7 +167,8 @@ void CameraEditor::build_rows() {
                 p.id = cam_.id, p.name = cam_.name, p.enabled = cam_.enabled;
                 p.mirror_x = cam_.mirror_x, p.mirror_y = cam_.mirror_y, p.mirror_size = cam_.mirror_size;
                 cam_ = p;
-                around_ = cam_.show_car;
+                around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
+                keep_mount_offset();
             };
             r.change = [this, take](int d) { take(preset_sel_ + d); };
             r.activate = [this, take] { take(preset_sel_); };
@@ -115,6 +179,7 @@ void CameraEditor::build_rows() {
             cam_ = start_;
             cam_.mirror = keep.mirror, cam_.mirror_x = keep.mirror_x, cam_.mirror_y = keep.mirror_y,
             cam_.mirror_size = keep.mirror_size; // (the Mirror page has its own)
+            keep_mount_offset();
         });
     } else {
         choice("Mirror", {"Hidden", "Shown"}, c.mirror ? 1 : 0, [&c](int i) { c.mirror = i == 1; });
@@ -235,6 +300,8 @@ void CameraEditor::leave_request() {
 float CameraEditor::pivot_distance(const Scene& s) const { return render::length(cam_.offset - s.pivot); }
 
 void CameraEditor::rotate(const Scene& s, float dx, float dy, bool around) {
+    // On a seat mount the seat nudges are panel rows only: drags aim the view in place.
+    if (seat_mount()) around = false;
     if (around) {
         // Round the car, down to the road at most.
         float el = dy * kOrbitPerUnit;
@@ -254,6 +321,7 @@ void CameraEditor::rotate(const Scene& s, float dx, float dy, bool around) {
 }
 
 void CameraEditor::pan(const Scene& s, float dx, float dy) {
+    if (seat_mount()) return; // (the seat's sliders)
     // The picture at the car's distance follows the pointer.
     const float d = std::max(pivot_distance(s), 1.0f);
     const float k = 2 * d * std::tan(cam_.fovy() / 2) / std::max(s.frame.h, 1.0f);
@@ -262,6 +330,7 @@ void CameraEditor::pan(const Scene& s, float dx, float dy) {
 }
 
 void CameraEditor::dolly(const Scene& s, float amount) {
+    if (seat_mount()) return; // (the seat's sliders)
     race::pan_camera(cam_, 0, 0, amount * std::max(pivot_distance(s), 1.0f));
     keep_above_road(s);
 }
@@ -404,10 +473,13 @@ void CameraEditor::pad_input(App& app, const Scene& s, double dt) {
         cam_.mirror_size = std::clamp(cam_.mirror_size * std::exp(grow * 0.8f * t), race::CustomCamera::kMinMirror,
                                       race::CustomCamera::kMaxMirror);
     } else {
-        // Faster the farther from the car: 0.8 of the distance a second (0.6 .. 12 m/s).
-        const float v = std::clamp(pivot_distance(s) * 0.8f, 0.6f, 12.0f) * t;
-        race::pan_camera(cam_, lx * v, ud * v, -ly * v);
-        keep_above_road(s);
+        // On a seat mount the seat is panel rows only: the left stick and the triggers can't move it.
+        if (!seat_mount()) {
+            // Faster the farther from the car: 0.8 of the distance a second (0.6 .. 12 m/s).
+            const float v = std::clamp(pivot_distance(s) * 0.8f, 0.6f, 12.0f) * t;
+            race::pan_camera(cam_, lx * v, ud * v, -ly * v);
+            keep_above_road(s);
+        }
         if (rx != 0 || ry != 0) {
             if (around_) rotate(s, rx * kStickTurn * t / kOrbitPerUnit, -ry * kStickTurn * t / kOrbitPerUnit, true);
             else race::look_camera(cam_, rx * kStickTurn * t, -ry * kStickTurn * t);

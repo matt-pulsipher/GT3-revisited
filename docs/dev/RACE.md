@@ -15,6 +15,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/controls.h/.cpp` | Pad → `sim::ControlInputs` mapping, rumble model |
 | `race/interp.h/.cpp` | Fixed-tick accumulator, quaternion helpers, `VehicleState` interpolation |
 | `race/camera_rig.h/.cpp` | Chase, far chase, bumper, roof and free-orbit cameras |
+| `race/hood_camera.h/.cpp` | The bonnet mount's profile: 17 fore/aft eyes above the body's surface, from its mesh |
 | `race/race_scene.h/.cpp` | GPU scene: course (scenery, backdrop, sky domes) and the car (body LODs + four wheels) |
 | `race/hud.h/.cpp` | HUD (lap times, tachometer, gear, speed) using the game's own assets |
 | `race/hud_layout.h/.cpp` | The HUD layout per display mode (the original's layout table) and the mode a run uses |
@@ -270,18 +271,36 @@ SDL's trigger rumble does nothing there.
   off` (ours) disables it. Roof and orbit stay as extras (presets).
 - Ours: the player's own cameras (`race/custom_cameras.h`, `CameraMode::Custom`; Settings →
   Cameras). Each is an eye offset from the driver's eye (point 0) and a yaw / pitch / roll, in the
-  body's frame ("fixed to the car") or the chase's lagged heading-and-pitch frame ("smooth
-  follow"), a vertical field of view, whether the car is drawn (hidden: `onboard()`), the HUD
-  layout (`incar_hud()`) and a rear-view mirror with its own place and size (`mirror_rect`). The
+  body's frame ("fixed to the car"), the chase's lagged heading-and-pitch frame ("smooth
+  follow"), on the bonnet (`Mount::Hood`, a third frame: `CarVisual::hood_profile` gives 17
+  fore/aft eyes 0.4 m above the body's top surface and a downward pitch bounded at 22
+  degrees, all from the decoded LOD-0 body mesh — no per-car table; `race/hood_camera.h`; the
+  x/y/z offset nudges the seat sideways, up and fore/aft along the mounts), or in the car
+  (`Mount::Incar`: the fixed mount's frame at the driver's eye; the offset is a seat nudge from
+  it, bounded to the cabin's reach). `roll_lock` levels
+  that much of the body's roll back to the horizon (the car mounts; follow is already
+  level). A vertical field of view, whether the car is drawn (hidden: `onboard()`; `car = ahead`
+  draws it facing forward and hides it while looking back or turned past a right angle:
+  `hides_car()`), the HUD layout (`incar_hud()`) and a rear-view mirror with its own place and
+  size (`mirror_rect`). The
   mirror always looks back from the in-car view (`mirror_view`). Sounds: fixed is car-mounted,
   follow a chase. Look back and the look around turn the camera round the car's up axis through
-  the driver's eye. Change view comes to the enabled cameras after the last built-in view,
+  the driver's eye; a bonnet camera's eye swings with it, ending up behind the seats on a look
+  back — why `car = ahead` hides the body then. Change view comes to the enabled
+  cameras after the last built-in view,
   in order; the last one is remembered by id (`LastView::custom`). The camera editor
   (`app/camera_editor.h`, `screen_race_camera_editor.cpp`) runs the arcade's Normal race (S
   class, the dirt race on dirt) on the course of the player's last race with its car, the
   computer driving, warps 5 s past the start signal and freezes it: no more steps, no sound;
-  its Start from rows are `CameraRig::preset`, the built-in views of that car as custom cameras
-  (tests `race_camera_custom_*`, `custom_cameras_*`). VR stereo keeps the built-in views (a
+  its Start from rows are `CameraRig::preset` plus an In-car row (a `Mount::Incar` camera: the
+  in-car view's eye, FOV, HUD and mirror, the car drawn around it) and a Bonnet row (a
+  `Mount::Hood` camera: 55 degrees, in-car HUD, mirror, the car ahead only), the built-in views
+  of that car as custom
+  cameras (tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`). On a seat mount
+  (bonnet or in-car)
+  the scene's drags only aim the view — the seat moves by the panel's Fore/aft, Sideways and
+  Height sliders (Reset seat centres it; `clamp()` keeps the nudge inside the mounts' bounds).
+  VR stereo keeps the built-in views (a
   custom camera shows flat).
 - Road shade (docs/formats/course.md): the four wheels' road attributes A/B scale the car's light
   colours (per draw item) and the light shadow's alpha F; `race/road_shade.*` interpolates them
