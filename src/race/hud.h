@@ -112,7 +112,6 @@ struct HudData {
     // Tyre gauge (races with tyre wear): per-wheel level -63..127 (FL, FR, RL, RR).
     bool show_tires = false;
     std::array<int, 4> tire_levels{};
-    int layer = 0;            // 0 all, 1 all but the lap / time block, 2 that block only
     bool four_three = false;  // drawn into a 4:3 viewport (original resolution): no 16:9 widening
                               // (a 4:3 screen has none to give anyway)
     bool auto_drive = false;  // "AUTO DRIVE" (the computer drives: pit lane, flying start run-up)

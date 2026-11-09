@@ -803,15 +803,12 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
     // narrower without them).
     g_dx = right, g_dy = bottom;
     g_s = std::clamp(sa.w / std::min(560.0f, g_screen.w - 80.0f), 0.7f, 1.0f), g_px = sr, g_py = sb;
-    // d.layer: 0 everything, 1 all but the lap / time block, 2 only that block (the results
-    // panel goes between them: the original draws the times over it, the rest under it).
-    const bool body = d.layer != 2, times = d.layer != 1 && (d.items & kItemTimes);
     // The mode's rows for this camera view (0 in-car, 1 outside; presentation §D4).
     const int view = d.onboard ? 0 : 1;
     auto row = [&](HudPart p, int sub = -1) { return hud_row(d.mode, p, sub, view); };
     char name[16];
     char buf[64];
-    if (body && (d.items & kItemMeters)) {
+    if (d.items & kItemMeters) {
         if (row(HudPart::Meters, view)) {
             draw_meters(r, d);
         } else if (const HudRow* panel = row(HudPart::Meters, 64)) {
@@ -830,7 +827,7 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
                           (g->sub & 1) ? -4.0f : -35.0f, (g->sub & 1) ? -12.0f : 0.0f);
         }
     }
-    if (times) {
+    if (d.items & kItemTimes) {
         // --- laps and times (right) --------------------------------------------------------
         // In the corner. Where a touch control would cover it, moved left just clear of the
         // controls, or inside the safe area when that is further than the area's right edge.
@@ -842,7 +839,6 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
         }
         draw_times(r, d, view);
     }
-    if (!body) return;
     // --- mini-map and position (left; presentation §D5) ----------------------------------------
     // Each in its corner; the same rule as the times, mirrored (moved right). The rank's
     // fallback takes the map along (it would come down onto it).

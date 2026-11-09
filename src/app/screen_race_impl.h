@@ -482,7 +482,6 @@ private:
     void update_panel(App& app);
     void open_records(App& app);
     void draw_panel(App& app, const SDL_FRect& dst);
-    bool results_panel_up() const { return field_ && finished_ && !replaying_ && !two_player_ && finish_wait_ >= 5.0; }
     bool championship() const { return from_menu_ && launch_.request.champ_round > 0; }
     // Which result list rule applies (race::result_menu_list): a championship round, a GT race
     // (its qm_gt_result menu), or any other run.
