@@ -42,6 +42,7 @@ CameraEditor::CameraEditor(race::CustomCamera cam, bool is_new, std::function<ra
     : cam_(std::move(cam)), start_(cam_), is_new_(is_new), preset_(std::move(preset)) {
     // A camera that keeps the car on screen rotates round it; one on the car turns in place.
     around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
+    keep_mount_offset();
     build_rows();
 }
 
@@ -51,6 +52,7 @@ void CameraEditor::begin() {
     p.id = cam_.id, p.name = cam_.name, p.enabled = cam_.enabled;
     cam_ = start_ = p;
     around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
+    keep_mount_offset();
     build_rows();
 }
 
@@ -88,16 +90,31 @@ void CameraEditor::build_rows() {
         rows_.push_back(std::move(r));
     };
     if (page_ == Page::Camera) {
+        // Movement stays the first row on every mount: the rows below it change with the mount.
+        choice("Movement", {"Smooth follow", "On the bonnet", "Fixed to the car"},
+               c.mount == race::CustomCamera::Mount::Body ? 2 : c.mount == race::CustomCamera::Mount::Hood ? 1 : 0,
+               [this, &c](int i) {
+                   const race::CustomCamera::Mount m = i == 2 ? race::CustomCamera::Mount::Body
+                                                            : i == 1 ? race::CustomCamera::Mount::Hood
+                                                                     : race::CustomCamera::Mount::Follow;
+                   if (m == c.mount) return;
+                   // Position mounts keep the eye and aim they last had (switching between them
+                   // changes only the mount); the bonnet starts at its default centred seat,
+                   // aimed ahead — a position mount's aim is usually turned back at the car,
+                   // which on the bonnet is the inside of the cabin.
+                   keep_mount_offset();
+                   c.mount = m;
+                   if (m == race::CustomCamera::Mount::Hood) {
+                       c.offset = {};
+                       c.yaw = c.pitch = c.roll = 0;
+                   } else {
+                       c.offset = pos_offset_;
+                       c.yaw = pos_yaw_, c.pitch = pos_pitch_, c.roll = pos_roll_;
+                   }
+               });
         // On the bonnet drags only aim the view (rotate in place): no orbit to hide behind.
         if (c.mount != race::CustomCamera::Mount::Hood)
             choice("Rotate", {"Around the car", "In place"}, around_ ? 0 : 1, [this](int i) { around_ = i == 0; });
-        choice("Movement", {"Smooth follow", "On the bonnet", "Fixed to the car"},
-               c.mount == race::CustomCamera::Mount::Body ? 2 : c.mount == race::CustomCamera::Mount::Hood ? 1 : 0,
-               [&c](int i) {
-                   c.mount = i == 2 ? race::CustomCamera::Mount::Body
-                                  : i == 1 ? race::CustomCamera::Mount::Hood
-                                           : race::CustomCamera::Mount::Follow;
-               });
         // On the bonnet the offset nudges the seat the car's shape gives (race/hood_camera.h);
         // drags can't move it — these rows are the precise moves.
         if (c.mount == race::CustomCamera::Mount::Hood) {
@@ -141,6 +158,7 @@ void CameraEditor::build_rows() {
                 p.mirror_x = cam_.mirror_x, p.mirror_y = cam_.mirror_y, p.mirror_size = cam_.mirror_size;
                 cam_ = p;
                 around_ = cam_.car != race::CustomCamera::OwnCar::Hidden;
+                keep_mount_offset();
             };
             r.change = [this, take](int d) { take(preset_sel_ + d); };
             r.activate = [this, take] { take(preset_sel_); };
@@ -151,6 +169,7 @@ void CameraEditor::build_rows() {
             cam_ = start_;
             cam_.mirror = keep.mirror, cam_.mirror_x = keep.mirror_x, cam_.mirror_y = keep.mirror_y,
             cam_.mirror_size = keep.mirror_size; // (the Mirror page has its own)
+            keep_mount_offset();
         });
     } else {
         choice("Mirror", {"Hidden", "Shown"}, c.mirror ? 1 : 0, [&c](int i) { c.mirror = i == 1; });

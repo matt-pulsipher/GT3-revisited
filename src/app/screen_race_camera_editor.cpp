@@ -26,6 +26,7 @@ RaceScreen::RaceScreen(MenuLaunch l, CustomCamera edit, bool is_new) : RaceScree
             c.mount = CustomCamera::Mount::Hood;
             c.offset = {};
             c.fov = 55;
+            c.roll_lock = 0.5f;
             c.car = CustomCamera::OwnCar::Ahead;
             c.incar_hud = c.mirror = true;
             return c;

@@ -92,6 +92,15 @@ private:
     void pad_input(App& app, const Scene& s, double dt);
 
     race::CustomCamera cam_, start_;
+    // The eye and aim kept for the position mounts (body/follow: metres from the driver's eye,
+    // degrees of turn) while the camera sits on the bonnet — a position and a bonnet nudge don't
+    // translate, and the bonnet always starts at its default centred seat aimed ahead.
+    render::Vec3 pos_offset_{0, 0.7f, 6.0f};
+    float pos_yaw_ = 0, pos_pitch_ = 0, pos_roll_ = 0;
+    void keep_mount_offset() {
+        if (cam_.mount == race::CustomCamera::Mount::Hood) return;
+        pos_offset_ = cam_.offset, pos_yaw_ = cam_.yaw, pos_pitch_ = cam_.pitch, pos_roll_ = cam_.roll;
+    }
     bool is_new_ = false;
     std::function<race::CustomCamera(int)> preset_;
     Page page_ = Page::Camera;
