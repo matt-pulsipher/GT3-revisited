@@ -32,6 +32,33 @@ private:
     double accum_ = 0;
 };
 
+// Frame times for a display that shows frames at a steady rate. The clock read at the start of
+// a frame wanders by a millisecond or more against the refresh the frame is shown on (the
+// driver queues frames; a compositor paces them), and stepping by it moves the world unevenly
+// from one shown frame to the next: a vibration while the view turns (cornering), however the
+// ticks are blended. Steps by the frame period instead (a slow average of the frames that took
+// about one), a whole number of periods a frame (a missed refresh steps two), and pays the
+// clock's lead or lag back a little each frame, so the total follows the clock. Where frames
+// keep to no period (variable refresh with the frame rate changing, a new refresh rate for its
+// first frames, readings that wander too far to tell) it steps by the clock.
+class FramePacer {
+public:
+    double step(double frame_dt);
+    double period() const { return period_; }
+    bool locked() const { return locked_; } // stepping by the period
+
+private:
+    double period_ = 0;   // the frame period in use (s), 0 until the first frame
+    double owed_ = 0;     // the clock's time not yet in the period's steps (s; negative: ahead)
+    double behind_ = 0;   // the clock's time not yet stepped (s; negative: stepped ahead)
+    double spread_ = 0;   // how often the clock is far from whole periods (an average of 0 / 1)
+    int off_ = 0;         // frames in a row far from the period (the rate changed)
+    double off_time_ = 0; // and their time (s)
+    int frames_ = 0;      // frames in the period's mean (up to 64)
+    int short_ = 0;       // frames in a row well under a period
+    bool locked_ = false;
+};
+
 sim::Quat normalize(const sim::Quat& q);
 // Shortest-arc spherical interpolation.
 sim::Quat slerp(const sim::Quat& a, const sim::Quat& b, float t);

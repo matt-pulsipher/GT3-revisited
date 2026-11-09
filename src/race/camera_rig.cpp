@@ -293,8 +293,9 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
         gt3_view(0);
         if (shaking) {
             constexpr float kDeg = kPi / 180.0f;
-            float pitch = 8.0f * shake_speed_ * std::clamp(shake_pitch_.x, -1.0f, 1.0f) * kDeg;
-            float dyaw = 2.0f * shake_speed_ * std::clamp(shake_yaw_.x, -1.0f, 1.0f) * kDeg;
+            // Held between 60 Hz steps, the view would jump on every Nth frame only.
+            float pitch = 8.0f * shake_speed_ * std::clamp(shake_pitch_.at(shake_time_), -1.0f, 1.0f) * kDeg;
+            float dyaw = 2.0f * shake_speed_ * std::clamp(shake_yaw_.at(shake_time_), -1.0f, 1.0f) * kDeg;
             view_ = render::rotate_x(pitch) * render::rotate_y(dyaw) * view_; // in eye space
         }
         break;

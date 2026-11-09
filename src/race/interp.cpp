@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace gt3r::race {
 
@@ -24,6 +25,51 @@ int FixedStep::follow(double clock_ticks, long long& done, int max_ticks) {
     // Behind (a stall past max_ticks): the newest state; ahead (the clock was set back): the last.
     accum_ = std::clamp(clock_ticks - double(done), 0.0, 1.0) * step_;
     return n;
+}
+
+double FramePacer::step(double frame_dt) {
+    if (frame_dt <= 0) return 0;
+    if (frame_dt > 0.25) { // a stall (a load, the window hidden): as it is, then start over
+        period_ = 0;
+        return frame_dt;
+    }
+    if (period_ <= 0) { // the first frame: the period starts from it
+        period_ = frame_dt, owed_ = 0, behind_ = 0, spread_ = 0, off_ = 0, off_time_ = 0, frames_ = 1, short_ = 0, locked_ = false;
+        return frame_dt;
+    }
+    // The period: the mean of the frames that took about one, for the first 64 (then the rest's
+    // own lean trims it, below: an average of single frames moves with the readings' wander).
+    const bool about_one = frame_dt > period_ * 0.6 && frame_dt < period_ * 1.5;
+    if (about_one) {
+        off_ = 0, off_time_ = 0;
+        if (frames_ < 64) period_ += (frame_dt - period_) / ++frames_;
+    } else if (off_time_ += frame_dt; ++off_ >= 8) { // another refresh rate or frame cap
+        period_ = off_time_ / off_, owed_ = 0, off_ = 0, off_time_ = 0, frames_ = 1;
+    }
+    // The period's steps: whole periods, two once the clock is three quarters of a period over
+    // one (a late reading is not yet a missed refresh); the rest (the clock's wander, and the
+    // average's own error) goes in by a tenth a frame.
+    const double owed_before = owed_;
+    owed_ += frame_dt;
+    const double whole = std::max(1.0, std::floor(owed_ / period_ + 0.25)) * period_;
+    const double rest = owed_ - whole, paced = whole + rest * 0.1;
+    owed_ = std::clamp(owed_ - paced, -period_, period_);
+    if (about_one && frames_ >= 64) period_ += std::clamp(rest, -0.3 * period_, 0.3 * period_) * 0.002;
+    // On a steady refresh the rest stays a small part of a period (the readings wander about
+    // the refreshes, now and then by a third of one); where frames keep to no refresh (variable
+    // refresh at a changing frame rate, a new rate not yet learned) it is large most frames.
+    // The clock is the better step then, as it is where the readings wander too far to tell.
+    spread_ += ((std::fabs(rest) > 0.2 * period_ ? 1.0 : 0.0) - spread_) / 32.0;
+    // Two frames in a row well under a period: a faster rate (a reading that wanders early is
+    // followed by a late one).
+    short_ = frame_dt < period_ * 0.6 ? short_ + 1 : 0;
+    if (short_ >= 2) spread_ = 1;
+    if (locked_ ? spread_ > 0.4 : spread_ < 0.15) locked_ = !locked_;
+    // Either way back to the clock (or locked, to the period's steps) by a tenth a frame.
+    const double out = locked_ ? paced + (behind_ - owed_before) * 0.1 : frame_dt + behind_ * 0.1;
+    behind_ += frame_dt - out;
+    if (std::fabs(behind_) > 0.25) return out + std::exchange(behind_, 0.0);
+    return out;
 }
 
 sim::Quat normalize(const sim::Quat& q) {
