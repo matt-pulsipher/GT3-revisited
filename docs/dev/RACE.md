@@ -2187,9 +2187,28 @@ filling the options each frame:
   few course packets use them (e.g. Laguna's pavilion roof reflections, raw 0xFF).
 - The cars' reflection map draws slots 23 and 5 with the course's scene lights; the original
   leaves whatever the last car left in the light slots (in that pass's eye space).
-- The visibility lists (Vls0) are used only for the lamp glows' lamp lists: for the scenery
-  they only spare the PS2 drawing hidden nodes, and frustum / distance culling per node keeps
-  us at the vsync (see "Performance"). Course node programs have no LOD switches: run
+- The visibility lists (Vls0) pick what each view draws, as in GT3 (presentation §I7,
+  docs/formats/course.md "Vls0"): `CourseScene::add_items` gives the scenery items the node
+  list of the view point nearest the camera (`course::SceneryView`: slot 2 for the main view,
+  VR's eyes and the licence preview, slot 4 for the 2P halves, slot 3 for the mirror, slot 7 or
+  3 for a 2P half's mirror; `course::scenery_list_slot`), the billboards the same list
+  (`CourseScene::visible_nodes`), the reflection map slot 6 at the cube's centre and the wet
+  road slots 10 and 14 at the camera. `DrawItem::nodes` draws only those nodes' meshes
+  (`scene::Mesh::node`, `GpuModel::node_meshes`), in the list's order. They are not only a
+  saving: since the depth reset after the backdrop (RENDERING.md), a node the list leaves out
+  would cover the backdrop wherever it lies, such as the hill with the tunnel and the bridge
+  seen across the lake from Grand Valley's hairpin, or Tahiti Maze's bridge over the jungle
+  (public issue 254; test `course_visibility_lists_disc`). GT3 switches a view's list at once,
+  which at our resolution and in our 16:9 picture pops whole nodes in (Route 11: a lit tower
+  at the right edge right after the start, the elevated highway beyond the right-hand wall):
+  the scenery and its billboards fade a node in over 0.6 s when it joins the view's list and out
+  when it leaves (`race::SceneryFade`, one per view in `RaceScreen::scenery_fades_`; drawn
+  dithered, `DrawItem::fade`), so a settled view shows exactly the list. The first frame and a
+  camera cut (the eye moving 20 m in a frame) switch at once; the reflection map and the wet
+  road switch at once too. Measured on Route 11's first 50 s (every frame against every node
+  drawn): frame-to-frame jumps over 0.1 of a level in the mean difference, 5 with instant
+  switches, none with the fade; Grand Valley and Tahiti Maze unchanged once settled (test
+  `race_scenery_fade`). Course node programs have no LOD switches: run
   on Trial Mountain, Seattle, Route 5 and Rome, the only op 0x07 switches
   executed are the car models' (n = 4).
 - Kerb / off-road classification for rumble comes from `track::surface_type`

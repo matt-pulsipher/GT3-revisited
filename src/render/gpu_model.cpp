@@ -32,6 +32,7 @@ void assemble(const std::vector<scene::Mesh>& meshes, size_t texture_count, bool
         GpuModel::MeshInfo info;
         info.transform = Mat4::from(m.transform);
         info.lod = m.lod;
+        info.node = m.node;
         info.vertex_offset = s32(vertices.size());
         info.index_offset = u32(indices.size());
         vertices.insert(vertices.end(), m.vertices.begin(), m.vertices.end());
@@ -122,6 +123,7 @@ GpuModel::GpuModel(GpuContext& ctx, const scene::Model& model, bool keep_geometr
     std::vector<scene::Vertex> vertices;
     std::vector<u32> indices;
     assemble(model.meshes, model.textures.size(), true, vertices, indices, meshes_);
+    index_nodes();
     vertex_count_ = vertices.size();
     Uploader up(device_);
     if (!vertices.empty() && !indices.empty()) {
@@ -216,6 +218,7 @@ bool GpuModel::update_geometry(const std::vector<scene::Mesh>& meshes) {
     std::vector<u32> indices;
     meshes_.clear();
     assemble(meshes, textures().size(), false, vertices, indices, meshes_);
+    index_nodes();
     vertex_count_ = vertices.size();
     const u32 vsize = u32(vertices.size() * sizeof(scene::Vertex)), isize = u32(indices.size() * sizeof(u32));
     if (vsize == 0 || isize == 0) return true; // nothing drawn (meshes_ is empty too)
@@ -229,8 +232,24 @@ bool GpuModel::update_geometry(const std::vector<scene::Mesh>& meshes) {
     bool ok = vok && iok && stage(uploads, same_indices ? 1 : 2);
     if (ok && keep_) geometry_ = {std::move(vertices), indices};
     if (ok && !same_indices) uploaded_indices_ = std::move(indices);
-    if (!ok) meshes_.clear(), uploaded_indices_.clear(), geometry_ = {};
+    if (!ok) meshes_.clear(), node_start_.clear(), node_meshes_.clear(), uploaded_indices_.clear(), geometry_ = {};
     return ok;
+}
+
+void GpuModel::index_nodes() {
+    node_start_.clear(), node_meshes_.clear();
+    int top = -1;
+    for (const MeshInfo& m : meshes_) top = std::max(top, m.node);
+    if (top < 0) return;
+    // A counting sort: the meshes of each node, in model order.
+    node_start_.assign(size_t(top) + 2, 0);
+    for (const MeshInfo& m : meshes_)
+        if (m.node >= 0) ++node_start_[size_t(m.node) + 1];
+    for (size_t n = 1; n < node_start_.size(); ++n) node_start_[n] += node_start_[n - 1];
+    node_meshes_.resize(node_start_.back());
+    std::vector<u32> next(node_start_.begin(), node_start_.end() - 1);
+    for (size_t i = 0; i < meshes_.size(); ++i)
+        if (meshes_[i].node >= 0) node_meshes_[next[size_t(meshes_[i].node)]++] = u32(i);
 }
 
 GpuModel::~GpuModel() {

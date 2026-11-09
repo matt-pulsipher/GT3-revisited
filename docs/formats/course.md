@@ -49,9 +49,10 @@ present offset. Slot 0 is always 0, and slot 1 always starts at 0xC0.
 | Slot | Tag | Present | Contents |
 |---|---|---|---|
 | 1 | `GTM1` | 320 | Main scenery model |
-| 2–4 | `Vls0` | 320 | Visibility lists for slot 1, see "Vls0" below. The race's main view uses slot 2 (also for the GTFX lamp lists); slot 3 holds smaller lists, slot 4 omits some nodes (e.g. Route 11's stand lights, nodes 1213–1220) |
+| 2–4 | `Vls0` | 320 | Visibility lists for slot 1, see "Vls0" below: slot 2 the one-player view (also the GTFX lamp lists), slot 3 the rear-view mirror (smaller lists), slot 4 the two-player halves (it omits some nodes, e.g. Route 11's stand lights, nodes 1213–1220) |
 | 5 | `GTM1` | 320 | Second scenery model: ~100 nodes covering the same area, drawn into the cars' reflection map (with slot 23), not in the main view |
-| 6, 7 | `Vls0` | 320, 112 | Visibility for slot 5 |
+| 6 | `Vls0` | 320 | Visibility for slot 5 (the reflection map). Seattle's and the Tahiti courses' (13 US files with their reverse and licence layouts) name slot 1's nodes instead, mostly past slot 5's count: those draw nothing |
+| 7 | `Vls0` | 112 | Visibility for slot 1 in a two-player half's rear-view mirror (slot 3 where absent) |
 | 9, 13 | `GTM1` | 36, 40 | Wet-road reflection: slot 9 the scenery pre-mirrored below the road (drawn into a small buffer), slot 13 its alpha-only mask (`Vls0` in 10 and 14). US: route5 / route11 families, the L_circle tests; see docs/dev/RACE.md "Wet-road reflection" |
 | 21 | `GTM1` | 320 | Sky dome (centred on the camera, view rotation only, no fog). The only sky the race's main view draws |
 | 22 | `GTM1` | 304 | Distant backdrop (mountains, skyline) |
@@ -395,6 +396,22 @@ grid; the same for z), then that cell's point nearest the camera (squared 3D
 distance; the first point on ties), and uses its node list. Route 11 slot 2:
 16 × 16 cells over x −600..650, z −250..350, 66 points; from the start grid
 111 of the 1344 nodes are visible.
+
+The race draws the model node by node from the list of its view's camera, in
+the list's order, and nothing else of it: slot 1 from slot 2 (one-player view,
+the licence menu's preview), slot 4 (two-player halves), slot 3 (rear-view
+mirror) or slot 7 (a two-player half's mirror; slot 3 without it), then the
+BLBd billboard lists of the same nodes in the same order; slot 5 from slot 6
+(the reflection map's camera); the wet road's slots 9 and 13 from slots 10 and
+14. Without the list's slot the whole model is drawn. A node index at or past
+the model's node count draws nothing. The lists are not sorted: a list runs
+through the nodes in blocks of 100 (0–99, 100–199, ...), each block in the same
+order of its own (Grand Valley: 47, 46, 45, 6, 5, 44, ..., then 147, 146, 145,
+...). A node a list leaves out is not drawn even where nothing in front of it
+would hide it: the backdrop (slot 22), whose depth is cleared before slot 1,
+shows there. From Grand Valley's hairpin before the lake, 127 of the 1300
+nodes are listed; the hill about 450 m ahead with the tunnel and the bridge
+(nodes 265, 289 and others) is not, and the backdrop's hills fill the view.
 
 ### Lighting
 

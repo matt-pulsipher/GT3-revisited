@@ -81,7 +81,8 @@ void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const ren
     TyreSmoke::View sv = smoke_view(cam, mr.w / mr.h, 2.0f * std::atan(t));
     sv.forward = sv.forward * -1.0f; // the mirror looks back
     sv.far_m = 120;
-    collect_items(eye, cam_right(cam), p2, !p2, sv, ItemsView::Mirror); // the own car would fill the view
+    // (Not the own car: it would fill the view.)
+    collect_items(eye, cam_right(cam), p2, !p2, sv, half ? ItemsView::SplitMirror : ItemsView::Mirror, p2 ? 1 : 0);
     render::DrawOptions o = main;
     o.mirrored = true;
     o.draw_distance = 120;
@@ -248,8 +249,13 @@ TyreSmoke::View RaceScreen::smoke_view(const CameraRig& c, float aspect, float f
 
 // Draw items seen from `eye`: course, every car, the ghost.
 void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, bool player,
-                               bool second, const TyreSmoke::View& smoke_v, ItemsView view) {
-    const bool mirror = view == ItemsView::Mirror;
+                               bool second, const TyreSmoke::View& smoke_v, ItemsView view, int seat) {
+    const bool mirror = view == ItemsView::Mirror || view == ItemsView::SplitMirror;
+    using course::SceneryView;
+    const SceneryView scenery = view == ItemsView::Split         ? SceneryView::Split
+                                : view == ItemsView::Mirror      ? SceneryView::Mirror
+                                : view == ItemsView::SplitMirror ? SceneryView::SplitMirror
+                                                                 : SceneryView::Main;
     item_lights_.clear();
     if (shadows_on_) {
         auto apply = [this](CarVisual* v) {
@@ -260,15 +266,25 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
         for (const auto& v : opp_visuals_) apply(v.get());
     }
     items_.clear();
-    course_scene_->add_items(items_, eye, mirror);
+    // The view's scenery nodes, faded in and out as its list changes (race::SceneryFade).
+    const size_t f = size_t((mirror ? 2 : 0) + std::clamp(seat, 0, 1));
+    race::SceneryFade& fade = scenery_fades_[f];
+    fade.update(course_scene_->visible_nodes(eye, scenery), eye, fade_frames_[f] == frame_serial_ ? 0.0f : float(frame_dt_));
+    fade_frames_[f] = frame_serial_;
+    course_scene_->add_items(items_, eye, scenery, &fade);
     // The sun disc after the sky dome, before the backdrop and the scenery (presentation §I6): the
     // main view and the 2P halves only, in the camera's screen plane.
     const render::Vec3 cam_r{right.x, right.y, right.z};
     if (!mirror && sun_disc_.active() && render::length(smoke_v.forward) > 0)
         sun_disc_.add_items(items_, eye, cam_r, render::normalize(render::cross(cam_r, smoke_v.forward)));
     scenery_items_ = items_.size();
-    // Billboards with the scenery on bit 0 of the view's course draw flags (presentation §I7).
-    if (sun_.params().view_flags[size_t(view)] & 1) billboards_.add_items(items_, cam_r);
+    // Billboards with the scenery on bit 0 of the view's course draw flags (presentation §I7): the
+    // lists of the scenery nodes the view draws.
+    if (sun_.params().view_flags[size_t(mirror ? ItemsView::Mirror : view)] & 1) {
+        billboards_.add_items(items_, cam_r, fade.solid());
+        for (const race::SceneryFade::Group& g : fade.faded())
+            if (!g.nodes.empty()) billboards_.add_items(items_, cam_r, &g.nodes, g.weight);
+    }
     if (!mirror) { // the mirror draws no pylons (presentation §H2)
         const std::array<float, 3>& l = sun_.params().scene_light0_dir;
         pylons_.add_items(items_, eye, {l[0], l[1], l[2]});
@@ -816,7 +832,8 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         const WheelView wv2{camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, false, wheel_env_};
         wheel_view_ = &wv2;
         collect_items(eye2, cam_right(camera2_), true, !camera2_.onboard(), // in-car: own car not drawn
-                      smoke_view(camera2_, rect2.w / rect2.h * CameraRig::kPixelAspect, camera2_.fovy()), ItemsView::Split);
+                      smoke_view(camera2_, rect2.w / rect2.h * CameraRig::kPixelAspect, camera2_.fovy()), ItemsView::Split,
+                      1);
         wheel_view_ = nullptr;
         render::DrawOptions o2 = o;
         add_screen_passes(o2, rect2, camera2_, sun_visibility(eye2, camera2_.fovy(), rect2.h), true, true, nullptr);

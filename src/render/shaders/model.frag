@@ -73,7 +73,7 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
                          // z = 1: the texture filtered as the GS does (gs_bilinear below);
                          // w = 1: a car reflection pass with GS TEST.DATE (drawn where Ad < 0x80)
     // GT3's wheel spin blurs (DrawItem::wheel_blur; wheel_texture below): x 1 = the tyre's tread,
-    // 2 = the rim; y the rim's mip level. wheel_steps: the tread's three S shifts / the rim's
+    // 2 = the rim; y the rim's mip level; z > 0: DrawItem::fade, the share of pixels drawn. wheel_steps: the tread's three S shifts / the rim's
     // four angles. The SPIN_COPIES variant: w the copies' cells (DrawItem::spin_turn).
     vec4 wheel_blur;
     vec4 wheel_steps; // DrawItem::gs_bilinear: xy the texture's size
@@ -394,6 +394,14 @@ void spin_copy_samples() {
 }
 #endif
 
+// DrawItem::fade: a pixel is drawn when its 4 x 4 ordered-dither threshold lies below the share.
+const float kDither[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+bool faded_out() {
+    if (u.wheel_blur.z <= 0.0) return false;
+    ivec2 p = ivec2(gl_FragCoord.xy) & 3;
+    return (kDither[p.y * 4 + p.x] + 0.5) / 16.0 >= u.wheel_blur.z;
+}
+
 void main() {
 #ifdef RESAMPLE
     o_color = dof_sample();
@@ -401,7 +409,7 @@ void main() {
 #ifdef SPIN_COPIES
     spin_copy_samples();
 #endif
-    if (v_fog_w.y > 0.0) discard;
+    if (v_fog_w.y > 0.0 || faded_out()) discard;
     v_color = u.output_mode.y > 0.5 ? v_color_in * gl_FragCoord.w : v_color_in;
     v_lit = v_lit_w * gl_FragCoord.w;
     v_fog = v_fog_w.x * gl_FragCoord.w;

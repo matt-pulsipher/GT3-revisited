@@ -343,6 +343,14 @@ struct DrawItem {
     // geometry: GpuModel's keep_geometry), the vertex colour linear in screen space as the GS
     // interpolates it. The triangles are taken in strip order: their indices ascending (gtm1).
     bool guard_band = false;
+    // A course visibility list (presentation §I7): only the meshes of these GTM1 nodes
+    // (MeshInfo::node), in the list's order, as GT3 runs the listed nodes' programs; the others
+    // are not drawn. Null = every mesh, in model order. Must outlive the draw call.
+    const std::vector<u16>* nodes = nullptr;
+    // < 1: only this share of the item's pixels is drawn, by a 4 x 4 ordered dither (opaque
+    // passes keep their depth, blended ones their blend): course nodes fading in or out as a
+    // view's visibility list changes (race::SceneryFade).
+    float fade = 1.0f;
 };
 
 class View3D {

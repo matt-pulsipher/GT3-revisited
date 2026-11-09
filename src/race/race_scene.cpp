@@ -170,6 +170,14 @@ CourseScene::CourseScene(render::GpuContext& ctx, ByteSpan data, const std::stri
     eo.sky_object = true;
     scene::Model env_sky = course::build_course_model(data, eo, name + "/env_sky");
     if (!env_sky.meshes.empty()) env_sky_ = std::make_unique<render::GpuModel>(ctx, env_sky);
+
+    // The visibility lists: GT3 draws only the nodes listed for the view point nearest the camera,
+    // so parts of the scenery a hill hides are not drawn over the backdrop.
+    const course::CourseFile file = course::CourseFile::parse(data);
+    for (size_t v = 0; v < vis_.size(); ++v)
+        if (int slot = course::scenery_list_slot(file, course::SceneryView(v)))
+            vis_[v] = course::Visibility::parse(file.section(data, slot));
+    env_vis_ = course::Visibility::parse(file.section(data, course::kSlotScenery2Vis));
 }
 
 void CourseScene::set_moving(Moving& m, render::GpuContext& ctx, const render::GpuModel* textures,
@@ -226,13 +234,16 @@ bool CourseScene::add_env_items(std::vector<render::DrawItem>& items, const rend
         render::DrawItem it{env_scenery_.get(), {}, 0};
         it.lights = lights;
         it.sphere_map = true;
+        it.nodes = env_vis_.visible(eye.x, eye.y, eye.z);
         items.push_back(it);
     }
     return true;
 }
 
-void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::Vec3& eye, bool mirror) const {
+void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::Vec3& eye,
+                            course::SceneryView view, const SceneryFade* fade) const {
     const render::ItemLights* lights = has_lights_ ? &lights_ : nullptr;
+    const bool mirror = view == course::SceneryView::Mirror || view == course::SceneryView::SplitMirror;
     // The mirror draws the low-resolution sky (slot 24) and no backdrop.
     const render::GpuModel* sky = mirror && sky_low_ ? sky_low_.get() : sky_.get();
     if (sky) {
@@ -256,10 +267,12 @@ void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::
         it.depth_reset = true;
         items.push_back(it);
     }
+    const std::vector<u16>* nodes = fade ? fade->solid() : visible_nodes(eye, view);
     for (const render::GpuModel* m : {scenery_.get(), scenery_moving_.gpu.get()}) {
         if (!m) continue;
         render::DrawItem it{m, {}, 0};
-        it.in_order = true; // file order, as the PS2 draws it
+        it.nodes = nodes;   // the list's nodes in its order, as the PS2 draws them
+        it.in_order = true; // (in file order without a list)
         // The moving nodes with the scenery: their opaque passes before its blended ones.
         it.in_order_join = m == scenery_moving_.gpu.get();
         it.frame_alpha = frame_alpha_;
@@ -268,6 +281,23 @@ void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::
         it.guard_band = true;
         items.push_back(it);
     }
+    // Nodes fading in or out: dithered, drawn with the scenery (joined to its in-order run).
+    if (fade)
+        for (const SceneryFade::Group& g : fade->faded()) {
+            if (g.nodes.empty()) continue;
+            for (const render::GpuModel* m : {scenery_.get(), scenery_moving_.gpu.get()}) {
+                if (!m) continue;
+                render::DrawItem it{m, {}, 0};
+                it.nodes = &g.nodes;
+                it.fade = g.weight;
+                it.in_order = it.in_order_join = true;
+                it.frame_alpha = frame_alpha_;
+                it.lights = lights;
+                it.sphere_map = true;
+                it.guard_band = true;
+                items.push_back(it);
+            }
+        }
     if (line_) {
         render::DrawItem it{line_.get(), {}, 0};
         it.in_order = true;           // after the scenery's in-order blended passes

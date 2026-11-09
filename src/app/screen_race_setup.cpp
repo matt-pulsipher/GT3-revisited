@@ -94,6 +94,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
             return h.height;
         });
         course_scene_ = std::make_unique<CourseScene>(*app.gpu(), *course, ce.label, preset_.sheen);
+        for (race::SceneryFade& f : scenery_fades_) f.reset();
         // The brake parts inside the race cars' wheels (loaded before every race).
         brake_parts_.reset();
         if (std::optional<Bytes> bb = app.vfs()->read("race/brake.bin")) try {
