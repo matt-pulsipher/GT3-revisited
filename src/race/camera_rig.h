@@ -272,6 +272,8 @@ private:
     struct Shaker {
         float v = 0, x = 0, u_prev = 0;
         void step(float u) { v += ((u - u_prev) - 12.0f * v) / 60.0f, x += v / 60.0f, u_prev = u; }
+        // `since` s after the last step (frame rates above 60): carried on at its rate.
+        float at(double since) const { return x + v * float(since); }
     };
     float shake_random(); // GT3's uniform [0, 1) draw (two RNG steps)
     bool shake_on_ = true;

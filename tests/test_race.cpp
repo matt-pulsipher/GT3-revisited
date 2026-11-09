@@ -553,6 +553,95 @@ TEST(race_interpolation_120hz) {
     CHECK(near(spin_change(a, b), 0.2f, 1e-4f));
 }
 
+// Frames shown on a steady refresh while the clock read at each frame's start wanders by a
+// millisecond or two (sometimes half a frame late): the paced steps move the world by the
+// refresh period every shown frame (raw clock steps were uneven by the wander: a vibration in
+// turns), step two periods over a missed refresh, follow a new rate within a few frames, and
+// keep to the clock in total. Where frames keep to no refresh (variable refresh at a changing
+// frame rate) or the readings wander too far to tell, the clock steps as before.
+TEST(race_frame_pacer) {
+    struct Run {
+        double worst = 0, raw_worst = 0, lead = 0; // largest step error, paced and raw (of the step); paced minus clock (s)
+        int bad = 0;                               // paced steps off by more than 10%
+    };
+    // Frame i is shown at shown(i) s (from frame 120 on, steps are compared with the time
+    // between showings); its clock reading is late(i) s after that.
+    auto run = [](int frames, auto shown, auto late) {
+        Run r;
+        FramePacer pacer;
+        double last = 0, clock = 0, paced = 0;
+        for (int i = 1; i <= frames; ++i) {
+            const double t = shown(i) + late(i);
+            const double raw = t - last, out = pacer.step(raw);
+            last = t, clock += raw, paced += out;
+            if (i > 120) {
+                const double want = shown(i) - shown(i - 1);
+                r.worst = std::max(r.worst, std::fabs(out - want) / want);
+                r.raw_worst = std::max(r.raw_worst, std::fabs(raw - want) / want);
+                r.bad += std::fabs(out - want) > want * 0.1;
+            }
+            r.lead = paced - clock;
+        }
+        return r;
+    };
+    u32 rng = 12345;
+    auto rnd = [&] { return double((rng = rng * 1664525u + 1013904223u) >> 8) / double(1 << 24); }; // [0, 1)
+    auto wander = [&] { return (rnd() + rnd() + rnd() - 1.5) * 0.14; }; // about 7% of a period
+    for (double hz : {60.0, 40.0, 59.94, 144.0, 300.0}) {
+        // As measured on Windows (Vulkan, 120 Hz), with every 37th reading half a period late.
+        const Run r = run(3000, [&](int i) { return i / hz; }, [&](int i) { return (wander() + (i % 37 == 0 ? 0.5 : 0.0)) / hz; });
+        CHECK(r.raw_worst > 0.5);
+        CHECK(r.worst < 0.2);
+        CHECK(r.bad <= 10); // (of 2880; the clock: about 1000)
+        CHECK(std::fabs(r.lead) < 0.5 / hz);
+        // Now and then (3%) a reading up to 40% of a period early or late.
+        const Run t = run(3000, [&](int i) { return i / hz; },
+                          [&](int) { return (wander() + (rnd() < 0.03 ? (rnd() * 2 - 1) * 0.4 : 0.0)) / hz; });
+        CHECK(t.worst < 0.1);
+        CHECK(std::fabs(t.lead) < 0.5 / hz);
+        // Readings anywhere within 30% of a period: no worse than the clock.
+        const Run h = run(3000, [&](int i) { return i / hz; }, [&](int) { return (rnd() * 2 - 1) * 0.3 / hz; });
+        CHECK(h.worst <= h.raw_worst * 1.05);
+        CHECK(std::fabs(h.lead) < 0.5 / hz);
+    }
+    // Every 50th frame misses a refresh: that frame steps two periods.
+    {
+        const Run r = run(3000, [](int i) { return (i + i / 50) / 60.0; }, [&](int) { return wander() / 60.0; });
+        CHECK(r.worst < 0.05);
+        CHECK(std::fabs(r.lead) < 0.01);
+    }
+    // Variable refresh: each frame shown when it is done, 9 to 14 ms apart and changing (the
+    // readings right on time): the clock's own steps, past a frame or two.
+    for (double change : {0.002, 0.0004}) {
+        std::vector<double> at{0};
+        double gap = 0.011;
+        for (int i = 0; i < 3000; ++i) {
+            gap = std::clamp(gap + (rnd() - 0.5) * change, 0.009, 0.014);
+            at.push_back(at.back() + gap * (change > 0.001 ? 0.9 + 0.2 * rnd() : 1.0));
+        }
+        const Run r = run(3000, [&](int i) { return at[size_t(i)]; }, [](int) { return 0.0; });
+        CHECK(r.bad <= 5);
+        CHECK(std::fabs(r.lead) < 0.01);
+    }
+    // Another refresh rate (another display, the frame cap turned on or off): the first faster
+    // frame steps the old period (it could be an early reading), then the clock with the
+    // overstep paid back, then the new period.
+    for (const auto& [a, b] : {std::pair{60.0, 144.0}, std::pair{144.0, 60.0}, std::pair{60.0, 120.0}, std::pair{120.0, 60.0}}) {
+        const Run r = run(1600, [&](int i) { return i <= 800 ? i / a : 800 / a + (i - 800) / b; },
+                          [&](int i) { return wander() / (i <= 800 ? a : b); });
+        CHECK(r.bad <= 30); // (of 1480; the clock: about 480)
+        CHECK(r.worst < (b > a ? b / a - 1 : r.raw_worst)); // (b > a: within the old period)
+        CHECK(std::fabs(r.lead) < 0.5 / b);
+    }
+    // A long stall (a load, the window hidden) passes as it is; the next frames start over.
+    {
+        FramePacer pacer;
+        for (int i = 0; i < 100; ++i) pacer.step(1.0 / 60.0);
+        CHECK(pacer.step(2.0) == 2.0);
+        CHECK(std::fabs(pacer.step(1.0 / 60.0) - 1.0 / 60.0) < 1e-6);
+    }
+}
+
 TEST(race_rumble) {
     RumbleModel rm;
     sim::VehicleState s;

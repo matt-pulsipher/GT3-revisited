@@ -748,6 +748,16 @@ SDL_AppResult App::iterate() {
     }
 #endif
     double dt = frame_s;
+    // With vsync every frame is shown a whole number of refreshes after the last: step by
+    // those (the clock at a frame's start wanders against them, an unevenness that shows as a
+    // vibration while the view turns). A headset's display times above are already even.
+    int vsync = 0;
+    if (renderer_ && SDL_GetRenderVSync(renderer_, &vsync) && vsync != 0) {
+#if GT3R_XR
+        if (!xr_)
+#endif
+            dt = pacer_.step(frame_s);
+    }
     last_ticks_ = now;
     idle_cursor(now);
     ++fps_frames_, fps_time_ += frame_s;

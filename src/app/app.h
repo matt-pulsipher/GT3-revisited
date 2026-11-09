@@ -11,6 +11,7 @@
 #include "platform/display_insets.h"
 #include "platform/recent_discs.h"
 #include "race/custom_music.h"
+#include "race/interp.h"
 #include "render/dynamic_scale.h"
 #include "render/gamma_pass.h"
 #include "render/gpu_context.h"
@@ -287,6 +288,7 @@ private:
     int pops_ = 0;
     bool quit_ = false;
     Uint64 last_ticks_ = 0;
+    race::FramePacer pacer_; // with vsync: steps by the display's frame period (App::iterate)
     // Desktop: the mouse cursor hides over the window after a moment without mouse use and
     // comes back with the next move, click or wheel turn (App::idle_cursor).
     Uint64 mouse_used_ns_ = 0;
