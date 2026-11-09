@@ -71,15 +71,16 @@ void settle(CameraRig& c, const sim::VehicleState& s, const sim::VehicleSetup& s
     for (int i = 0; i < frames; ++i) c.update(s, setup, PadState{}, 1.0 / 60.0);
 }
 
-// A Mount::Hood custom camera: on the bonnet, the car drawn ahead only, the in-car look.
-CustomCamera bonnet(float roll_lock = 0) {
+// A Mount::Hood custom camera: on the hood, the car shown (left out on its own looking back), the
+// in-car look; `lock`: the share of the body's roll levelled out (body roll 1 - lock).
+CustomCamera bonnet(float lock = 0) {
     CustomCamera c;
     c.id = 1, c.name = "Bonnet";
     c.mount = CustomCamera::Mount::Hood;
     c.offset = {};
-    c.car = CustomCamera::OwnCar::Ahead;
+    c.car = CustomCamera::OwnCar::Shown;
     c.incar_hud = c.mirror = true;
-    c.roll_lock = roll_lock;
+    c.body_roll = 1.0f - lock;
     c.fov = 55;
     return c;
 }
@@ -335,33 +336,37 @@ TEST(hood_camera_rig_pose) {
     c.update(s, setup, PadState{}, dt);
     CHECK(near(c.eye().x, 10 + p.eyes[8].z, 1e-3f) && near(c.eye().z, 20.0f) && near(view_fwd(c).x, -1.0f, 1e-2f));
     s.orientation = {1, 0, 0, 0};
+    // Shown: the body blocks the view (the screen fades the car out) only looking back across it;
+    // it is never hidden outright.
     for (int i = 0; i < 30; ++i) c.set_look(1, 0), c.update(s, setup, PadState{}, dt);
-    CHECK(!c.hides_car());
+    CHECK(!c.body_blocks_view() && !c.hides_car());
     for (int i = 0; i < 60; ++i) c.set_look(0, 1), c.update(s, setup, PadState{}, dt);
-    CHECK(c.hides_car() && !c.shows_mirror() && view_fwd(c).z > 0.9f);
+    CHECK(c.body_blocks_view() && !c.hides_car() && !c.shows_mirror() && view_fwd(c).z > 0.9f);
     c.set_look(0, 0);
     c.set_look_back(true);
     c.update(s, setup, PadState{}, dt);
-    CHECK(c.hides_car() && view_fwd(c).z > 0.9f);
+    CHECK(c.body_blocks_view() && view_fwd(c).z > 0.9f);
     c.set_look_back(false);
     settle(c, s, setup);
-    CHECK(!c.hides_car() && c.shows_mirror());
+    CHECK(!c.body_blocks_view() && c.shows_mirror());
     CustomCamera no_mirror = bonnet();
     no_mirror.mirror = false;
     c.set_custom_cameras({no_mirror});
     CHECK(!c.shows_mirror());
-    // "Ahead" vs the other choices: hidden never draws, shown draws looking back too.
-    CustomCamera shown = bonnet();
-    shown.car = CustomCamera::OwnCar::Shown;
-    c.set_custom_cameras({shown});
+    // Shown: the car is left out only on or in the body looking back across it; a camera clear of
+    // the body (a chase 6 m back, 2 m up) draws it looking back too. Hidden never draws it.
+    CustomCamera chase = bonnet();
+    chase.mount = CustomCamera::Mount::Follow;
+    chase.offset = {0, 2, 6};
+    c.set_custom_cameras({chase});
     c.set_look_back(true);
     c.update(s, setup, PadState{}, dt);
-    CHECK(!c.hides_car());
+    CHECK(!c.body_blocks_view() && !c.hides_car());
     CustomCamera hidden = bonnet();
     hidden.car = CustomCamera::OwnCar::Hidden;
     c.set_custom_cameras({hidden});
     c.update(s, setup, PadState{}, dt);
-    CHECK(c.hides_car() && c.onboard());
+    CHECK(c.hides_car() && c.onboard() && !c.body_blocks_view()); // (hidden: no fade, never drawn)
     c.set_look_back(false);
     c.set_custom_cameras({bonnet()});
     c.set_intro(true, 0.5f);
@@ -432,8 +437,9 @@ TEST(hood_camera_rig_look_around) {
                 const render::Mat4 v = c.view();
                 CHECK(orthonormal(v));
                 CHECK(view_up(c).y > 0.0f);
-                if (angle <= 90.0f) CHECK(!c.hides_car());
-                else CHECK(c.hides_car());
+                CHECK(!c.hides_car()); // (shown: faded by the screen when it blocks, never hidden)
+                if (angle <= 90.0f) CHECK(!c.body_blocks_view());
+                else CHECK(c.body_blocks_view());
             }
     }
 }

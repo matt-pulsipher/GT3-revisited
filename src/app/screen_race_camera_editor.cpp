@@ -12,33 +12,37 @@ namespace gt3r::race_screen {
 
 namespace {
 
-// The editor's presets (CameraEditor::kPresetNames), as built-in views — all but the bonnet,
-// which is a mount of its own seated by the car's shape (race/hood_camera.h).
-constexpr CameraMode kPresetModes[] = {CameraMode::Chase, CameraMode::ChaseFar, CameraMode::Bumper, CameraMode::Roof};
+// Body roll's preview (CameraEditor::rocking): the frozen car rolls this far each way, this often.
+constexpr float kRockAngle = 4.0f * 3.14159265f / 180.0f;
+constexpr double kRockPeriod = 2.0; // seconds
+
+// q, then turned `a` about its own forward axis (local z).
+sim::Quat rolled(const sim::Quat& q, float a) {
+    const float c = std::cos(a * 0.5f), s = std::sin(a * 0.5f); // r = (c, 0, 0, s)
+    return {q.w * c - q.z * s, q.x * c + q.y * s, q.y * c - q.x * s, q.z * c + q.w * s};
+}
 
 } // namespace
 
 RaceScreen::RaceScreen(MenuLaunch l, CustomCamera edit, bool is_new) : RaceScreen(std::move(l)) {
-    editor_ = std::make_unique<CameraEditor>(std::move(edit), is_new, [this](int i) {
-        i = std::clamp(i, 0, CameraEditor::kPresets - 1);
+    // Reset's places, by anchor: following the car, the chase view; fixed to it, over the roof;
+    // the hood's centred seat at 55 degrees, half its body roll; the driver's seat, the in-car view.
+    editor_ = std::make_unique<CameraEditor>(std::move(edit), is_new, [this](CustomCamera::Mount m) {
         const sim::VehicleSetup setup = vehicle_ ? vehicle_->setup() : sim::VehicleSetup{};
-        if (i == CameraEditor::kPresetIncar) { // the cockpit seat: the in-car view, the body drawn
-            CustomCamera c = camera_.preset(CameraMode::Bumper, setup);
-            c.mount = CustomCamera::Mount::Incar;
-            c.car = CustomCamera::OwnCar::Shown;
-            return c;
-        }
-        if (i == CameraEditor::kPresetBonnet) { // on the bonnet, the in-car look over the bodywork
-            CustomCamera c;
-            c.mount = CustomCamera::Mount::Hood;
+        CustomCamera c;
+        switch (m) {
+        case CustomCamera::Mount::Body: c = camera_.preset(CameraMode::Roof, setup); break;
+        case CustomCamera::Mount::Hood:
             c.offset = {};
             c.fov = 55;
-            c.roll_lock = 0.5f;
-            c.car = CustomCamera::OwnCar::Ahead;
-            c.incar_hud = c.mirror = true;
-            return c;
+            c.body_roll = 0.5f;
+            break;
+        case CustomCamera::Mount::Incar: c = camera_.preset(CameraMode::Bumper, setup); break;
+        case CustomCamera::Mount::Follow:
+        default: c = camera_.preset(CameraMode::Chase, setup); break;
         }
-        return camera_.preset(kPresetModes[i], setup);
+        c.mount = m;
+        return c;
     });
     preset_.autodrive = true; // (the computer drives to the moment shown)
     preset_.music = preset_.ghost = false;
@@ -50,7 +54,7 @@ void RaceScreen::start_camera_editor(App& app) {
     // The moment: kEditorSceneTime past the start signal (after a standing start's hold).
     const double hold = field_ ? std::max(0.0, -field_->race_time()) : std::max(0.0, tt_hold_);
     warp(app, hold + kEditorSceneTime);
-    render_state_ = prev_ = vehicle_->state();
+    render_state_ = prev_ = editor_still_ = vehicle_->state();
     camera_.set_intro(false, 1.0f);
     camera_.set_look_back(false);
     camera_.set_look(0, 0);
@@ -87,7 +91,13 @@ void RaceScreen::update_camera_editor(App& app, double dt) {
     case CameraEditor::Result::Cancel: app.pop(); return;
     case CameraEditor::Result::None: break;
     }
-    // The frozen race through the camera as it is now.
+    // The frozen race through the camera as it is now; while Body roll is being set, the car rocks
+    // gently side to side so the setting's effect shows (the editor's picture only).
+    rock_time_ = editor_->rocking() ? rock_time_ + dt : 0.0;
+    render_state_ = editor_still_;
+    if (rock_time_ > 0)
+        render_state_.orientation =
+            rolled(editor_still_.orientation, kRockAngle * float(std::sin(rock_time_ * 2 * 3.14159265 / kRockPeriod)));
     apply_editor_camera();
     camera_.set_track_distance(track_->distance_of(render_state_.position));
     camera_.set_lap(lap_count());

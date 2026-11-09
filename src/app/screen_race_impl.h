@@ -367,6 +367,12 @@ private:
     void draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const render::DrawOptions& main, bool p2 = false,
                      bool half = false);
     SDL_FRect mirror_rect(const SDL_FRect& frame, bool half, const CustomCamera* custom) const;
+    // The main view's own-car opacity (CameraRig::body_blocks_view): eased to 0 while `blocks`, back
+    // to 1 after, over kCarFade seconds of wall time; 0 = not drawn.
+    float own_car_fade(bool blocks);
+    static constexpr double kCarFade = 0.25;
+    float car_fade_ = 1;
+    Uint64 car_fade_ns_ = 0;
     CarShadowParams shadow_params() const;
     void draw_car_icon(App& app, int car, const SDL_FRect& rc, size_t slot, bool on_bar = false);
     // `slot`: 0 the player, 1 player 2, 2 + i opponent i (as brake_lamps_).
@@ -626,6 +632,8 @@ private:
     // computer drives), frozen, seen through the camera being edited; nothing of it is kept.
     static constexpr double kEditorSceneTime = 5.0; // seconds after the start signal
     std::unique_ptr<CameraEditor> editor_;
+    sim::VehicleState editor_still_; // the frozen moment (render_state_ rocks round it: CameraEditor::rocking)
+    double rock_time_ = 0;
     void start_camera_editor(App& app);
     void update_camera_editor(App& app, double dt);
     void apply_editor_camera();

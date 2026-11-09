@@ -127,6 +127,15 @@ void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const ren
     SDL_RenderRect(ui.renderer(), &mr);
 }
 
+float RaceScreen::own_car_fade(bool blocks) {
+    const Uint64 now = SDL_GetTicksNS();
+    const double dt = car_fade_ns_ ? std::min(double(now - car_fade_ns_) * 1e-9, 0.1) : 0.0;
+    car_fade_ns_ = now;
+    const float step = float(dt / kCarFade);
+    car_fade_ = blocks ? std::max(0.0f, car_fade_ - step) : std::min(1.0f, car_fade_ + step);
+    return car_fade_;
+}
+
 // Car shadow parameters from the course (Env0): colour, alpha, the light shadow's direction.
 CarShadowParams RaceScreen::shadow_params() const {
     CarShadowParams p;
@@ -724,7 +733,8 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             const WheelView wv{camera_.view(), camera_.projection(box.w / box.h), eye, true, wheel_env_};
             wheel_view_ = &wv;
             spark_pass_ = true, spark_view_ = camera_.view();
-            collect_items(eye, cam_right(camera_), !camera_.hides_car(), true, smoke_view(camera_, box.w / box.h * CameraRig::kPixelAspect, camera_.fovy()));
+            collect_items(eye, cam_right(camera_), !camera_.hides_car() && !camera_.body_blocks_view(), true,
+                          smoke_view(camera_, box.w / box.h * CameraRig::kPixelAspect, camera_.fovy()));
             spark_pass_ = false;
             wheel_view_ = nullptr;
             render::DrawOptions bo = draw_options();
@@ -788,8 +798,11 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     hitch::env_ms = double(h_e1 - h_e0) / 1e6;
     render::Vec3 eye = camera_.eye();
     // In-car view: own car not drawn; a replay's on-board car mount: the followed car not drawn.
+    // Ours: a custom camera whose car would block its view fades it out (and back in after);
+    // fully faded, it is not drawn.
     const bool mount_in = camera_.replay_on_board();
-    const bool hide_target = camera_.hides_car() || mount_in;
+    const float car_fade = own_car_fade(camera_.body_blocks_view());
+    const bool hide_target = camera_.hides_car() || mount_in || car_fade <= 0;
     const bool followed_player = !(field_ && replay_focus_ >= 0);
     const bool own_car = !(hide_target && followed_player);
     const int hidden = hide_target && !followed_player ? replay_focus_ : -1;
@@ -801,6 +814,8 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     spark_pass_ = !split, spark_view_ = camera_.view(); // (the split-screen halves draw none)
     collect_items(eye, cam_right(camera_), own_car, true,
                   smoke_view(camera_, rect.w / rect.h * CameraRig::kPixelAspect, camera_.fovy()), split ? ItemsView::Split : ItemsView::Main);
+    if (own_car && followed_player && car_fade < 1) // (drawn translucent, as the ghost car is)
+        for (size_t i = player_items_[0]; i < player_items_[1]; ++i) items_[i].alpha = std::min(items_[i].alpha, car_fade);
     spark_pass_ = false;
     wheel_view_ = nullptr;
     hidden_opponent_ = -1;
@@ -834,7 +849,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         render::Vec3 eye2 = camera2_.eye();
         const WheelView wv2{camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, false, wheel_env_};
         wheel_view_ = &wv2;
-        collect_items(eye2, cam_right(camera2_), true, !camera2_.hides_car(), // in-car: own car not drawn
+        collect_items(eye2, cam_right(camera2_), true, !camera2_.hides_car() && !camera2_.body_blocks_view(), // in-car: own car not drawn
                       smoke_view(camera2_, rect2.w / rect2.h * CameraRig::kPixelAspect, camera2_.fovy()), ItemsView::Split);
         wheel_view_ = nullptr;
         render::DrawOptions o2 = o;

@@ -9,18 +9,18 @@
 //   id = 3                  ; stable number (the view a race remembers)
 //   name = Hood
 //   enabled = yes           ; in the change-view rotation
-//   mount = bonnet          ; body: fixed to the car; follow: trails its turns, level;
-//                           ; bonnet: on the bonnet, seated by the car's own shape;
-//                           ; incar: the cockpit seat at the driver's eye
+//   mount = hood            ; follow: follows the car (trails its turns, level); body: fixed to
+//                           ; the car; hood: on the hood, seated by the car's own shape;
+//                           ; incar: the driver's seat, at the driver's eye
 //   x = 0  y = 0.1  z = -1.2      ; the eye from the driver's eye, metres (x right, y up, z back);
 //                           ; a bonnet mount's nudge: sideways, up, fore/aft; an in-car
 //                           ; mount's: a seat nudge from the driver's eye, same axes
-//   yaw = 0  pitch = -4  roll = 0 ; degrees: turned right, up, rolled clockwise
-//   roll_lock = 0           ; 0..100: how much of the body's roll the view levels out
+//   yaw = 0  pitch = -4  roll = 0 ; degrees: turned right, up, tilted clockwise (the editor's Tilt)
+//   body_roll = 100         ; 0..100: how much of the car's body roll the view rolls with, 0 level
 //                           ; (the car mounts; follow is always level)
 //   fov = 48                ; vertical field of view, degrees
-//   car = shown             ; shown / hidden / ahead: the player's car drawn, not drawn,
-//                           ; drawn ahead only (hidden while looking back)
+//   car = shown             ; shown / hidden: the player's car drawn (shown: faded out while the
+//                           ; camera is on or in the body looking back across it, body_blocks_view)
 //   hud = chase             ; chase / incar: the HUD layout
 //   mirror = off            ; on / off: the rear-view mirror
 //   mirror_x = 0.5  mirror_y = 0.116  mirror_size = 1 ; its centre (share of the picture) and size
@@ -43,16 +43,16 @@ class IniDocument;
 namespace gt3r::race {
 
 struct CustomCamera {
-    // How the camera holds on to the car: fixed to its body (it pitches and rolls with the car,
-    // as the in-car view does), following its heading smoothly and level (as the chase view),
-    // seated on the bonnet at the place the body's own shape gives (race/hood_camera.h), or in
-    // the cockpit at the driver's eye (the seat's place is the eye's; a fixed mount's frame).
+    // What the camera hangs off (the editor's Anchor): fixed to the car's body (it pitches and
+    // rolls with the car, as the in-car view does), following its heading smoothly and level (as
+    // the chase view), seated on the hood at the place the body's own shape gives
+    // (race/hood_camera.h), or in the driver's seat at the driver's eye (a fixed mount's frame).
     enum class Mount : u8 { Body, Follow, Hood, Incar };
 
-    // Whether the player's car body is drawn: always, never (the in-car look), or only facing
-    // forward — hidden while looking back or turned past a right angle, so a bonnet camera's
-    // look-back is not the inside of the cabin.
-    enum class OwnCar : u8 { Shown, Hidden, Ahead };
+    // Whether the player's car body is drawn. Shown fades it out by itself while the camera is on
+    // or in the body and looks back across it (a hood camera's look back is not the inside of the
+    // cabin; CameraRig::body_blocks_view); Hidden never draws it (the in-car look).
+    enum class OwnCar : u8 { Shown, Hidden };
 
     static constexpr float kMinFov = 15, kMaxFov = 100;      // degrees
     static constexpr float kMaxPitch = 89, kMaxRoll = 90;    // degrees
@@ -74,9 +74,9 @@ struct CustomCamera {
     // sliders).
     render::Vec3 offset{0, 0.7f, 6.0f};
     float yaw = 0, pitch = 0, roll = 0; // degrees: turned right, up, rolled clockwise
-    float roll_lock = 0;                // 0..1: the share of the body's roll the view levels out
+    float body_roll = 1;                // 0..1: the share of the car's body roll the view rolls with (0 level)
     float fov = 47.9f;                  // vertical, degrees (GT3's player views: 47.9)
-    OwnCar car = OwnCar::Shown;         // the player's car drawn: always, never, or facing forward only
+    OwnCar car = OwnCar::Shown;         // the player's car drawn (where it doesn't block the view), or not
     bool incar_hud = false;             // the in-car view's HUD layout, else the chase views'
     bool mirror = false;
     float mirror_x = kMirrorX, mirror_y = kMirrorY, mirror_size = 1.0f;

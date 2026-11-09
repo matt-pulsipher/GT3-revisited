@@ -29,9 +29,10 @@ render::Vec3 view_forward(const render::Mat4& v) { return {-v.at(2, 0), -v.at(2,
 // The same camera as written and read back (numbers are written to 3 decimals, for hand editing).
 bool same(const CustomCamera& x, const CustomCamera& y) {
     CustomCamera r = y;
-    r.offset = x.offset, r.yaw = x.yaw, r.pitch = x.pitch, r.roll = x.roll, r.fov = x.fov;
+    r.offset = x.offset, r.yaw = x.yaw, r.pitch = x.pitch, r.roll = x.roll, r.fov = x.fov, r.body_roll = x.body_roll;
     r.mirror_x = x.mirror_x, r.mirror_y = x.mirror_y, r.mirror_size = x.mirror_size;
     return r == x && near(x.offset, y.offset) && near(x.yaw, y.yaw) && near(x.pitch, y.pitch) && near(x.roll, y.roll) &&
+           near(x.body_roll, y.body_roll) &&
            near(x.fov, y.fov) && near(x.mirror_x, y.mirror_x) && near(x.mirror_y, y.mirror_y) &&
            near(x.mirror_size, y.mirror_size);
 }
@@ -53,9 +54,9 @@ TEST(custom_cameras_config) {
     a.enabled = false;
     a.mount = CustomCamera::Mount::Hood;
     a.offset = {0.1f, 0.25f, -0.3f}; // (a bonnet nudge: inside the mounts' bounds)
-    a.yaw = 12, a.pitch = -4.5f, a.roll = 3, a.roll_lock = 0.5f;
+    a.yaw = 12, a.pitch = -4.5f, a.roll = 3, a.body_roll = 0.5f;
     a.fov = 55;
-    a.car = CustomCamera::OwnCar::Ahead, a.incar_hud = true;
+    a.car = CustomCamera::OwnCar::Hidden, a.incar_hud = true;
     a.mirror = true, a.mirror_x = 0.25f, a.mirror_y = 0.8f, a.mirror_size = 1.5f;
     CustomCamera b = camera(2, "Blimp");
     CustomCamera c = camera(6, "Seat");
@@ -66,7 +67,8 @@ TEST(custom_cameras_config) {
     CHECK(!cfg.find("custom_camera7")); // (the old sections are gone)
     CHECK(cfg.get("custom_camera1", "name") == "Hood" && cfg.get("custom_camera2", "name") == "Blimp");
     CHECK(cfg.get("custom_camera2", "mirror_y") == "0.116" && cfg.get("custom_camera2", "z") == "6");
-    CHECK(cfg.get("custom_camera3", "mount") == "incar");
+    CHECK(cfg.get("custom_camera3", "mount") == "incar" && cfg.get("custom_camera1", "mount") == "hood");
+    CHECK(cfg.get("custom_camera1", "body_roll") == "50" && cfg.get("custom_camera1", "car") == "hidden");
     const std::vector<CustomCamera> back = load_custom_cameras(cfg);
     CHECK(back.size() == 3 && same(back[0], a) && same(back[1], b) && same(back[2], c)); // (3 decimals)
     CHECK(find_custom_camera(back, 2) == &back[1] && !find_custom_camera(back, 3));
@@ -87,20 +89,22 @@ TEST(custom_cameras_config) {
     CHECK(near(render::length(h[0].offset), CustomCamera::kMaxDistance));
     CHECK(h[0].mirror_size == CustomCamera::kMaxMirror && h[0].mirror_x == 0);
     CHECK(h[0].enabled && h[0].mount == CustomCamera::Mount::Follow && h[0].car == CustomCamera::OwnCar::Shown &&
-          !h[0].mirror && h[0].roll_lock == 0);
+          !h[0].mirror && h[0].body_roll == 1);
 
-    // The bonnet mount, an ahead car and the roll lock, as hand-edited words and numbers.
+    // The hood mount (and "bonnet"), body roll (and an early build's roll_lock, its inverse), and
+    // the early "ahead" car (now shown, left out on its own), as hand-edited words and numbers.
     const std::vector<CustomCamera> bn =
         load_custom_cameras(IniDocument::parse("[custom_camera1]\nid = 7\nname = Bonnet\nmount = bonnet\ncar = ahead\n"
                                                "roll_lock = 40\n"
-                                               "[custom_camera2]\nid = 8\nname = Hood\nmount = hood\nroll_lock = 300\n"
+                                               "[custom_camera2]\nid = 8\nname = Hood\nmount = hood\nbody_roll = 300\n"
                                                "[custom_camera3]\nid = 9\nname = Far\nmount = bonnet\n"
                                                "x = 9\ny = 9\nz = 9\n"
                                                "[custom_camera4]\nid = 10\nname = Chase\nx = 9\ny = 9\nz = 9\n"));
     CHECK(bn.size() == 4);
-    CHECK(bn[0].mount == CustomCamera::Mount::Hood && bn[0].car == CustomCamera::OwnCar::Ahead &&
-          near(bn[0].roll_lock, 0.4f));
-    CHECK(bn[1].mount == CustomCamera::Mount::Hood && near(bn[1].roll_lock, 1.0f)); // (clamped)
+    CHECK(bn[0].mount == CustomCamera::Mount::Hood && bn[0].car == CustomCamera::OwnCar::Shown &&
+          near(bn[0].body_roll, 0.6f));
+    CHECK(bn[1].mount == CustomCamera::Mount::Hood && near(bn[1].body_roll, 1.0f)); // (clamped)
+    CHECK(bn[3].body_roll == 1); // (the default: rolls with the car)
     // A bonnet offset is a nudge kept inside the mounts' bounds; any other mount's is a position.
     CHECK(near(bn[2].offset.x, kHoodLateral) && near(bn[2].offset.y, kHoodHeightMax) && near(bn[2].offset.z, kHoodForward));
     CHECK(near(bn[3].offset.x, 9.0f) && near(bn[3].offset.z, 9.0f));

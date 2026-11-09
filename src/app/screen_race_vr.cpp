@@ -57,7 +57,7 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
     sv.forward = render::normalize(render::Vec3{-head.at(0, 2), -head.at(1, 2), -head.at(2, 2)});
     sv.proj_x = 2.0f / std::max(e0.tan_right - e0.tan_left, 1e-3f);
     sv.near_m = camera_.near_plane, sv.far_m = camera_.gt3_far > 0 ? camera_.gt3_far : camera_.far_plane;
-    const bool own_car = !camera_.hides_car() || st.show_car;
+    const bool own_car = !(camera_.hides_car() || camera_.body_blocks_view()) || st.show_car;
     spark_pass_ = true, spark_view_ = render::inverse(head); // (the sparks' streaks from the head)
     collect_items(head_pos, right, own_car, true, sv);
     spark_pass_ = false;

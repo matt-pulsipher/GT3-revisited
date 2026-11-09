@@ -347,8 +347,8 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
         }
         const render::Vec3 r = render::normalize(render::cross(f, u));
         // Look back and the look around turn the camera round the car's up axis through the
-        // driver's eye: a chase-like camera goes round the car, a bonnet camera looks behind
-        // (its "ahead" car is hidden then: CameraRig::hides_car).
+        // driver's eye: a chase-like camera goes round the car, a hood camera looks behind (its
+        // car is left out then: CameraRig::hides_car).
         const render::Mat4 turn = render::rotate_y(-(look_back_ ? kPi : look_));
         render::Vec3 d, du;
         c->axes(d, du);
@@ -365,11 +365,25 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
             c->mount == CustomCamera::Mount::Hood ? hood_camera_eye(hood_profile_, setup, *c) - driver_eye()
                                                 : c->offset);
         d = turn.transform_point(d), du = turn.transform_point(du);
+        // Would the body block the view? The eye over the body's footprint and near it, body
+        // behind it, looking back across it (the body's box from the hood profile, else the setup).
+        {
+            render::Vec3 lo, hi;
+            if (hood_profile_.valid) {
+                lo = hood_profile_.bounds_min, hi = hood_profile_.bounds_max;
+            } else {
+                const float hw = setup.width > 0 ? setup.width * 0.5f : 0.9f, hl = setup.length > 0 ? setup.length * 0.5f : 2.2f;
+                lo = {-hw, -q, -hl}, hi = {hw, (setup.height > 0 ? setup.height : 1.3f) - q, hl};
+            }
+            const bool over = e.x > lo.x - 0.1f && e.x < hi.x + 0.1f && e.z > lo.z - 0.1f && e.z < hi.z + 0.1f &&
+                              e.y > lo.y - 0.5f && e.y < hi.y + kNearBody;
+            body_blocks_ = over && e.z < hi.z - 0.3f && d.z > kLookBack; // (local z is back)
+        }
         auto world = [&](const render::Vec3& v) { return r * v.x + u * v.y - f * v.z; }; // (local z is back)
         eye_ = origin + world(e);
-        // Horizon roll lock (body and bonnet mounts): the eye stays on the car while the view
-        // levels a share of the body's roll out — 0 the in-car look, 1 the horizon.
-        const float lock = c->mount == CustomCamera::Mount::Follow ? 0.0f : c->roll_lock;
+        // Body roll (the car mounts): the eye stays on the car while the view rolls with that
+        // share of the body's roll and levels the rest out (1: the in-car look, 0: the horizon).
+        const float lock = c->mount == CustomCamera::Mount::Follow ? 0.0f : 1.0f - c->body_roll;
         if (lock > 0 && std::fabs(f.y) < 0.999f) {
             const render::Vec3 w{0, 1, 0};
             const render::Vec3 u0 = render::normalize(w - f * render::dot(w, f));

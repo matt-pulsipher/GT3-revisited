@@ -2240,7 +2240,12 @@ the view does not judder.
   - `[race] views = gt3` keeps the game's two: in-car ↔ chase.
   - Ours: the player's own cameras (Settings → Cameras, `[custom_camera<n>]`) that
     are enabled follow the last view of either cycle, in their list's order, before
-    it starts again (test `race_camera_custom_views`).
+    it starts again (test `race_camera_custom_views`). Each hangs off an anchor:
+    following the car (level, the chase view's lag), fixed to it, a seat on the hood
+    taken from the car body's own shape (tests `hood_camera_*`), or the driver's
+    seat. Body roll sets how much of the car's roll the view rolls with (following
+    the car: none). Shown, the player's car fades out (0.25 s) while the camera is on
+    or in the body looking back across it, and back in after.
   - A new session starts in-car with the mirror. Each player's last choice (in-car,
     chase, far chase or one of their own cameras, with the mirror state) carries
     over to the next race; ours keeps it for the session only.

@@ -96,7 +96,7 @@ CustomCamera bonnet() {
     c.id = 1, c.name = "Bonnet";
     c.mount = CustomCamera::Mount::Hood;
     c.offset = {};
-    c.car = CustomCamera::OwnCar::Ahead;
+    c.car = CustomCamera::OwnCar::Shown;
     c.incar_hud = c.mirror = true;
     c.fov = 55;
     return c;
