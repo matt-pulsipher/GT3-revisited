@@ -196,6 +196,30 @@ TEST(race_hud_needle_passes) {
     CHECK(p[0].angle == 48 && p[7].angle == 34);
 }
 
+TEST(race_hud_gear_and_transmission) {
+    // presentation §D2: the outside cluster's gear box centred on (545, 325) with the disc's
+    // gearr font (size 24, line 26): every pen on the baseline 13 below the centre, the digit
+    // 24 left of it, the shift light (-4, -12) from the centre's pen.
+    const Hud::GearPens g = Hud::gear_pens(545, 325, 24, 26, -4, -12);
+    CHECK(g.digit.x == 521 && g.digit.y == 338);
+    CHECK(g.hint.x == 545 && g.hint.y == 338);
+    CHECK(g.shift.x == 541 && g.shift.y == 326);
+    // In-car: the gear panel's centre (320, 360), the light 35 left.
+    const Hud::GearPens in = Hud::gear_pens(320, 360, 24, 26, -35, 0);
+    CHECK(in.digit.x == 296 && in.digit.y == 373 && in.shift.x == 285 && in.shift.y == 373);
+    // Amber, red in reverse; the clutch out halves the packed colour (alpha 0x40).
+    auto is = [](SDL_Color c, int r, int gr, int b, int a) { return c.r == r && c.g == gr && c.b == b && c.a == a; };
+    CHECK(is(Hud::gear_colour(false, true), 208, 128, 24, 255));
+    CHECK(is(Hud::gear_colour(true, true), 240, 0, 0, 255));
+    CHECK(is(Hud::gear_colour(false, false), 104, 64, 12, 128));
+    CHECK(is(Hud::gear_colour(true, false), 120, 0, 0, 128));
+    // §D1: the AT / MT label's pen from the tachometer box's centre, inside the outside
+    // tachometer's dial (centre (540, 320): pen (538, 348)).
+    const SDL_FPoint out = Hud::transmission_pen(540, 320, false), car = Hud::transmission_pen(435, 381, true);
+    CHECK(out.x == 538 && out.y == 348);
+    CHECK(car.x == 425 && car.y == 366);
+}
+
 TEST(race_hud_mode_select) {
     // presentation §D4: each run's layout, the endurance one for 10 laps or more or a time
     // limit (not in a free practice or 2P), the replay / demonstration layouts.

@@ -156,22 +156,38 @@ void place_status_day(const MenuController& ctl, DrawList& out) {
 // Garage car page: its left / right aligned texts sit 12 units in from their boxes, as
 // the original draws them (menus §5.7 "Text inset"; the reference: VALUE, FR, power,
 // mileage, colour name all within 2 units). Only the page's own texts (not the status bar).
+// Whether `e` is one of the page's own layer elements or widgets.
+bool page_owns(const menu::Page& lay, const Element* e) {
+    for (const menu::Layer& l : lay.layers) {
+        if (!l.elements.empty() && e >= &l.elements.front() && e <= &l.elements.back()) return true;
+        if (!l.widgets.empty() && e >= &l.widgets.front() && e <= &l.widgets.back()) return true;
+    }
+    return false;
+}
+
 void inset_garage_car_texts(const PageRef& ref, const std::string& page, DrawList& out) {
     if (starts(page, "hm/hm_car")) {
         const menu::Page& lay = ref.layout();
-        auto own = [&](const Element* e) {
-            for (const menu::Layer& l : lay.layers) {
-                if (!l.elements.empty() && e >= &l.elements.front() && e <= &l.elements.back()) return true;
-                if (!l.widgets.empty() && e >= &l.widgets.front() && e <= &l.widgets.back()) return true;
-            }
-            return false;
-        };
         for (menu::ElementDraw& d : out)
-            if (d.element && own(d.element)) {
+            if (d.element && page_owns(lay, d.element)) {
                 std::vector<menu::ElementDraw> one{d};
                 menu::apply_text_inset(one);
                 d.text_dx = one[0].text_dx;
             }
+    }
+}
+
+// Tune shop pages (ts/, under a popup too): their left / right aligned texts sit half their
+// font's size in from their boxes, as the original's menu items draw them (menus §5.7; the
+// reference part page: BEFORE / AFTER power 9.5 units in, the price 14).
+void inset_tune_shop_texts(const MenuController& ctl, DrawList& out) {
+    for (int level = 0; level <= ctl.depth(); ++level) {
+        if (!starts(ctl.page_name_at(level), "ts/")) continue;
+        const PageRef ref = ctl.page_at(level);
+        if (!ref) continue;
+        const menu::Page& lay = ref.layout();
+        for (menu::ElementDraw& d : out)
+            if (d.element && page_owns(lay, d.element)) d.font_inset = true;
     }
 }
 
@@ -622,6 +638,7 @@ void extra_draws(const MenuController& ctl, std::vector<menu::ElementDraw>& out)
     draw_map_pointer(ctl, page, out);
     raise_prize_model(ctl, page, out);
     place_status_day(ctl, out);
+    inset_tune_shop_texts(ctl, out);
     menu::flow::MenuSet::PageRef ref = ctl.page();
     if (!ref) return;
     inset_garage_car_texts(ref, page, out);

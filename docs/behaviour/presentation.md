@@ -856,21 +856,33 @@ frame's movement ahead of it. Each pass is also moved by a sub-pixel step of the
   "0 kg/cm2"), clamped to 0 .. 2.
 - **Digital speed.** Speed font, "%3d", amber, with "km/h" or "mph" in sw_12.
   Onboard: right edge (350, 410). Remote: right edge x 580 (pushed), baseline 385.
-- **AT / MT.** The meter font's `>` (automatic) or `=` (manual), amber.
+- **AT / MT.** The meter font's `>` (automatic) or `=` (manual) in gray (136, 160, 160),
+  its pen (the left end of the baseline) at (-2, +28) from the outside tachometer's box
+  center, inside the dial below the gear, and at (-10, -15) in the in-car one
+  (`Hud::transmission_pen`, test `race_hud_gear_and_transmission`). The 2P bar
+  tachometer's is in the same gray, its pen 5 below the bar's top left corner.
 - **Speed unit.** The game data's rule: mph for the NTSC-U data, and mph when no
   GT-mode session exists. `[race] units = kmh | mph` overrides it.
 
 ### §D2 Gear, shift light, recommended gear
 
-- **Gear.** The digit is in the `gearr` font in amber, "R" in HUD red, "N" in
-  sw_20, over an unlit "8" (black, alpha 96). While the clutch is not engaged
-  the digit is drawn at half brightness. The onboard cluster has it in the gear
-  panel centered on (320, 360); the remote cluster inside the tachometer.
-- **Shift light.** A `:` above the digit, lit HUD red above the shift-up rpm,
-  blinking with a counter that adds 42 per frame (3 frames on, 3 off).
-- **Recommended gear.** "> n" after the digit, half size. A ghost "> 8" is always
-  there; the recommended gear is lit red over it when the player's car is not
-  slower than the coming target speed T, blinking red / black in braking zones.
+Every pen below is the left end of the text's baseline, measured from the center
+of the gear's box (in-car: the gear panel's center (320, 360); outside: (545, 325)
+in the tachometer, pushed) with the `gearr` font's size (24) and line height (26)
+(`Hud::gear_pens`, test `race_hud_gear_and_transmission`).
+
+- **Gear.** The digit's pen is 24 left of the center and 13 (half the line, rounded
+  down) below it, so the digit ends at the center. It is drawn over an unlit "8"
+  and "1" (black, alpha 96), in amber, "R" in HUD red. While the clutch is not
+  engaged every channel of that color and its alpha are at half. ("N" in sw_20 at
+  130 % is ours, for gear 0, which GT3's cars never report.)
+- **Shift light.** A `:` at (-4, -12) from the center's pen outside, (-35, 0) in
+  the car; lit red (255, 0, 0) above the shift-up rpm, blinking with a counter that
+  adds 42 per frame (3 frames on, 3 off), black otherwise.
+- **Recommended gear.** "> n" from the center's pen, in the font's small digits.
+  A ghost "> 8" is always there; the recommended gear is lit red over it when the
+  player's car is not slower than the coming target speed T, blinking red / black
+  in braking zones (its own counter adding 42 per frame).
   The race's AI keeps planning for the player's car while the pad drives it, and
   the hint is its gear (`ai.md` §16; `RaceScreen::update_gear_hint`). T is the
   next point's speed, or in a braking zone entered in a corner the lower of the

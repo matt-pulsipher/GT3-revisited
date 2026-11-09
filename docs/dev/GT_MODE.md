@@ -183,7 +183,8 @@ hooks, `intercept` / `enabled`, and the widget hooks on `ar/goodies`
   (`user_money`, `user_day`, `user_day_unit`, `user_carname`), dealer
   (`goods_car_price`, `car_buy_price`, `focused_carname`), garage
   (`car_sell_price`, `car_max_power`, `car_kilometrage`, `car_drive_type`),
-  tune shop (`price_<item>`, `disp_ps_befor/after`; on the engine parts'
+  tune shop (`price_<item>`; `disp_ps_befor/after`, "%d %s", AFTER "----" for a
+  part the car cannot take; the `ts/` pages' texts get `font_inset`, menus §5.7; on the engine parts'
   "Installed successfully" pages `car_previous_torque` / `car_current_torque`,
   which despite their names show the power before the part, kept by
   `fit_parts` / `buy_fit_parts`, and now, "%d %s"), wheel shop / wash / oil

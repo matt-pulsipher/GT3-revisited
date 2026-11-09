@@ -23,12 +23,14 @@ struct TextDrawRequest {
     SDL_FRect box{};
     float scale_x = 1, scale_y = 1;
     SDL_FColor color{};
+    bool font_inset = false; // ElementDraw::font_inset
 };
 using TextDrawer = std::function<void(SDL_Renderer*, const TextDrawRequest&)>;
 
-// The original draws left / right aligned pmb text this many menu units in from the
-// box edge (references). apply_text_inset() adds it to a draw
-// list (text_dx); used by the race quick menus and the name entry so far.
+// The original draws left / right aligned pmb text half its font's size in from the box
+// edge (ElementDraw::font_inset, the exact rule); this fixed inset, measured on references,
+// stands in for it where it was applied first. apply_text_inset() adds it to a draw list
+// (text_dx); used by the race quick menus and the name entry so far.
 constexpr float kTextInset = 12.0f;
 struct ElementDraw;
 void apply_text_inset(std::vector<ElementDraw>& list);
@@ -84,6 +86,9 @@ struct ElementDraw {
     float text_dx = 0;
     bool text_clip = false;
     int text_bytes = -1;
+    // Left / right aligned text sits half its font's size in from the box's side, as the
+    // original's menu items anchor their text (menus §5.7).
+    bool font_inset = false;
     // Replaces the element's text (game text encoding), e.g. a widget filled
     // by game code (credits, car names). Empty = the element's own text.
     std::shared_ptr<const std::string> text;

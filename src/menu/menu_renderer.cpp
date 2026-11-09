@@ -74,9 +74,11 @@ void draw_text_debug_font(SDL_Renderer* r, const TextDrawRequest& req) {
     SDL_GetRenderScale(r, &osx, &osy);
     SDL_SetRenderScale(r, gx * osx, gy * osy);
     SDL_SetRenderDrawColorFloat(r, req.color.r, req.color.g, req.color.b, req.color.a);
+    // (font_inset: the name's pixel size stands in for the game font's size byte.)
+    const float inset = req.font_inset && col != 1 ? fs.size * 0.5f * req.scale_x : 0.0f;
     for (size_t i = 0; i < lines.size(); ++i) {
         float w = lines[i].size() * 8 * gx;
-        float left = col == 0 ? b.x : col == 1 ? b.x + (b.w - w) / 2 : b.x + b.w - w;
+        float left = col == 0 ? b.x + inset : col == 1 ? b.x + (b.w - w) / 2 : b.x + b.w - w - inset;
         float y = top + i * line_h;
         SDL_RenderDebugText(r, left / gx, y / gy, lines[i].c_str());
     }
@@ -259,6 +261,7 @@ void MenuRenderer::draw_element(const Element& e, const std::vector<SDL_Texture*
         req.box = {left + t.text_dx * sx, top, right - left, bottom - top};
         req.scale_x = sx * t.scale;
         req.scale_y = sy * t.scale;
+        req.font_inset = t.font_inset;
         SDL_FColor tc = text_fcolor(e.text->color);
         if (t.has_text_color) tc = {t.text_color.r, t.text_color.g, t.text_color.b, tc.a};
         req.color = modulate(tc);

@@ -8,11 +8,16 @@
 #include "menu/menu_canvas.h"
 #include "menu/menu_renderer.h"
 #include "menu/menu_scene.h"
+#include "menu/menu_text.h"
+#include "text/game_font.h"
+#include "vfs/vfs.h"
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 using namespace gt3r;
 using namespace gt3r::menu;
@@ -270,6 +275,58 @@ TEST(menu_canvas_art_matches_a_flat_page) {
     }
     SDL_DestroyTexture(flat);
     SDL_DestroyTexture(page);
+    SDL_DestroyRenderer(r);
+    SDL_DestroySurface(surface);
+}
+
+// menus §5.7: a menu item's left / right aligned text sits half its font's size (the font's
+// byte 0x0C) in from its box: 9.5 units for sw_12 (size 19), 14 for sw_20 (size 28); centred
+// text does not move. Drawn at 2 pixels a unit.
+TEST(menu_text_item_inset_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    SDL_Surface* surface = SDL_CreateSurface(400, 80, SDL_PIXELFORMAT_RGBA32);
+    SDL_Renderer* r = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+    CHECK(r != nullptr);
+    if (!r) {
+        SDL_DestroySurface(surface);
+        return;
+    }
+    {
+        text::GameFonts fonts;
+        CHECK(fonts.load(vfs, r));
+        const TextDrawer draw = make_game_font_drawer(fonts);
+        // The lit columns of "457 HP" in a box 20 .. 180 units across.
+        auto columns = [&](const char* font, u16 align, bool inset) {
+            TextStyle st;
+            st.align = align;
+            st.font = font;
+            st.text = "457 HP";
+            TextDrawRequest req;
+            req.style = &st;
+            req.box = {40, 20, 320, 40};
+            req.scale_x = req.scale_y = 2;
+            req.color = {1, 1, 1, 1};
+            req.font_inset = inset;
+            SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
+            SDL_RenderClear(r);
+            draw(r, req);
+            SDL_FlushRenderer(r);
+            int lo = surface->w, hi = -1;
+            for (int y = 0; y < surface->h; ++y)
+                for (int x = 0; x < surface->w; ++x) {
+                    const auto* p = static_cast<const u8*>(surface->pixels) + y * surface->pitch + x * 4;
+                    if (p[0] | p[1] | p[2]) lo = std::min(lo, x), hi = std::max(hi, x);
+                }
+            return std::pair<int, int>{lo, hi};
+        };
+        std::pair<int, int> a = columns("sw_12#1", 3, false), b = columns("sw_12#1", 3, true);
+        CHECK(a.second > a.first && b.first - a.first == 19 && b.second - a.second == 19);
+        a = columns("sw_20#1", 5, false), b = columns("sw_20#1", 5, true);
+        CHECK(a.second > a.first && a.first - b.first == 28 && a.second - b.second == 28);
+        CHECK(columns("sw_12#1", 4, false) == columns("sw_12#1", 4, true));
+    }
     SDL_DestroyRenderer(r);
     SDL_DestroySurface(surface);
 }
