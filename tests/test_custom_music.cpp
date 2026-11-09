@@ -1100,12 +1100,6 @@ TEST(input_chord_capture_and_fire) {
 // controller names them.
 TEST(input_chord_gamepad) {
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
-    int connected = 0;
-    SDL_free(SDL_GetGamepads(&connected));
-    if (connected > 0) { // a real controller would be player 1, not the test's
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SKIP("a controller is connected");
-    }
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
@@ -1119,6 +1113,7 @@ TEST(input_chord_gamepad) {
     CHECK(pad != nullptr);
     if (pad) {
         InputManager in;
+        in.set_device_filter(0, desc.name); // player 1 on it, whatever else is connected or connects
         in.set_background(true); // no window has the focus here
         auto frame = [&] {
             SDL_UpdateJoysticks();

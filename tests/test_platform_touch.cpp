@@ -562,12 +562,6 @@ TEST(input_keyboard_only) {
 // the named wheel stands in for one found by its forces, which a virtual device doesn't have.
 TEST(input_keyboard_stays_on_unlisted_wheel) {
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
-    int connected = 0;
-    SDL_free(SDL_GetJoysticks(&connected));
-    if (connected > 0) { // a real device would be player 1, not the test's
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SKIP("a controller is connected");
-    }
     PadTarget cross;
     CHECK(PadTarget::parse("Cross", cross));
     InputSource button;
@@ -1105,12 +1099,6 @@ TEST(input_wheel_adopts_joystick_sets) {
 // bindings' own on Steer and its halves in races and nowhere else, and a wheel keeps its own.
 TEST(input_steering_deadzone) {
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
-    int connected = 0;
-    SDL_free(SDL_GetJoysticks(&connected));
-    if (connected > 0) { // a real device would be player 1, not the test's
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SKIP("a controller is connected");
-    }
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_UNKNOWN;
@@ -1122,6 +1110,7 @@ TEST(input_steering_deadzone) {
     CHECK(joy != nullptr);
     if (joy) {
         InputManager in;
+        in.set_device_filter(0, desc.name); // player 1 on it, whatever else is connected or connects
         in.set_background(true); // no window has the focus here
         auto axis = [&](Sint16 v) {
             SDL_SetJoystickVirtualAxis(joy, 0, v);
@@ -1191,12 +1180,6 @@ TEST(input_steering_deadzone) {
 // axis like any other (some pedals report the middle until first pressed).
 TEST(input_pedal_on_idle_centred_axis) {
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
-    int connected = 0;
-    SDL_free(SDL_GetJoysticks(&connected));
-    if (connected > 0) { // a real device would be player 1, not the test's
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SKIP("a controller is connected");
-    }
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_WHEEL;
@@ -1208,6 +1191,7 @@ TEST(input_pedal_on_idle_centred_axis) {
     CHECK(wheel != nullptr);
     if (wheel) {
         InputManager in;
+        in.set_device_filter(0, desc.name); // player 1 on it, whatever else is connected or connects
         in.set_background(true); // no window has the focus here
         auto frame = [&] {
             SDL_UpdateJoysticks();
@@ -1238,12 +1222,6 @@ TEST(input_pedal_on_idle_centred_axis) {
 
 TEST(input_virtual_wheel_pedals_and_steering_curve) {
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
-    int connected = 0;
-    SDL_free(SDL_GetJoysticks(&connected));
-    if (connected > 0) { // a real device would be player 1, not the test's
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SKIP("a controller is connected");
-    }
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_WHEEL;
@@ -1255,6 +1233,7 @@ TEST(input_virtual_wheel_pedals_and_steering_curve) {
     CHECK(wheel != nullptr);
     if (wheel) {
         InputManager in;
+        in.set_device_filter(0, desc.name); // player 1 on it, whatever else is connected or connects
         in.set_background(true); // no window has the focus here
         auto axis = [&](int a, Sint16 v) { SDL_SetJoystickVirtualAxis(wheel, a, v); };
         auto frame = [&] {
