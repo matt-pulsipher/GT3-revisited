@@ -10,12 +10,14 @@
 //   name = Hood
 //   enabled = yes           ; in the change-view rotation
 //   mount = bonnet          ; body: fixed to the car; follow: trails its turns, level;
-//                           ; bonnet: on the bonnet, seated by the car's own shape
+//                           ; bonnet: on the bonnet, seated by the car's own shape;
+//                           ; incar: the cockpit seat at the driver's eye
 //   x = 0  y = 0.1  z = -1.2      ; the eye from the driver's eye, metres (x right, y up, z back);
-//                           ; a bonnet mount's nudge: sideways, up, fore/aft
+//                           ; a bonnet mount's nudge: sideways, up, fore/aft; an in-car
+//                           ; mount's: a seat nudge from the driver's eye, same axes
 //   yaw = 0  pitch = -4  roll = 0 ; degrees: turned right, up, rolled clockwise
 //   roll_lock = 0           ; 0..100: how much of the body's roll the view levels out
-//                           ; (body and bonnet mounts; follow is always level)
+//                           ; (the car mounts; follow is always level)
 //   fov = 48                ; vertical field of view, degrees
 //   car = shown             ; shown / hidden / ahead: the player's car drawn, not drawn,
 //                           ; drawn ahead only (hidden while looking back)
@@ -43,8 +45,9 @@ namespace gt3r::race {
 struct CustomCamera {
     // How the camera holds on to the car: fixed to its body (it pitches and rolls with the car,
     // as the in-car view does), following its heading smoothly and level (as the chase view),
-    // or seated on the bonnet at the place the body's own shape gives (race/hood_camera.h).
-    enum class Mount : u8 { Body, Follow, Hood };
+    // seated on the bonnet at the place the body's own shape gives (race/hood_camera.h), or in
+    // the cockpit at the driver's eye (the seat's place is the eye's; a fixed mount's frame).
+    enum class Mount : u8 { Body, Follow, Hood, Incar };
 
     // Whether the player's car body is drawn: always, never (the in-car look), or only facing
     // forward — hidden while looking back or turned past a right angle, so a bonnet camera's
@@ -66,8 +69,9 @@ struct CustomCamera {
     Mount mount = Mount::Follow;
     // The eye from the driver's eye (the car's in-car camera point), metres in the mount's frame:
     // x right, y up, z back (the car model's axes). A bonnet mount instead reads them as nudges
-    // from its own mounts: x sideways, y up, z fore/aft (hood_camera_eye; the editor's Fore/aft,
-    // Sideways and Height sliders — clamp() keeps the nudge inside the mounts' bounds).
+    // from its own mounts (hood_camera_eye), an in-car mount as a seat nudge from the driver's
+    // eye — both within the bounds clamp() keeps (the editor's Fore/aft, Sideways and Height
+    // sliders).
     render::Vec3 offset{0, 0.7f, 6.0f};
     float yaw = 0, pitch = 0, roll = 0; // degrees: turned right, up, rolled clockwise
     float roll_lock = 0;                // 0..1: the share of the body's roll the view levels out
@@ -84,6 +88,12 @@ struct CustomCamera {
     float fovy() const { return fov * 3.14159265f / 180.0f; }
     bool operator==(const CustomCamera& o) const;
 };
+
+// An in-car mount's offset nudges the seat from the driver's eye within these bounds (the
+// camera editor's sliders too) — sideways, fore/aft and up/down in the car model's axes.
+inline constexpr float kSeatLateral = 0.30f;                              // ± metres sideways
+inline constexpr float kSeatForward = 0.40f;                              // ± metres fore/aft
+inline constexpr float kSeatHeightMin = -0.15f, kSeatHeightMax = 0.35f;   // metres down/up
 
 // The cameras in rotation order ([custom_camera<n>] sections; nameless or broken ones are skipped).
 std::vector<CustomCamera> load_custom_cameras(const IniDocument& cfg);

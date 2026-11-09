@@ -272,11 +272,13 @@ SDL's trigger rumble does nothing there.
 - Ours: the player's own cameras (`race/custom_cameras.h`, `CameraMode::Custom`; Settings →
   Cameras). Each is an eye offset from the driver's eye (point 0) and a yaw / pitch / roll, in the
   body's frame ("fixed to the car"), the chase's lagged heading-and-pitch frame ("smooth
-  follow"), or on the bonnet (`Mount::Hood`, a third frame: `CarVisual::hood_profile` gives 17
+  follow"), on the bonnet (`Mount::Hood`, a third frame: `CarVisual::hood_profile` gives 17
   fore/aft eyes 0.4 m above the body's top surface and a downward pitch bounded at 22
   degrees, all from the decoded LOD-0 body mesh — no per-car table; `race/hood_camera.h`; the
-  x/y/z offset nudges the seat sideways, up and fore/aft along the mounts). `roll_lock` levels
-  that much of the body's roll back to the horizon (fixed and bonnet mounts; follow is already
+  x/y/z offset nudges the seat sideways, up and fore/aft along the mounts), or in the car
+  (`Mount::Incar`: the fixed mount's frame at the driver's eye; the offset is a seat nudge from
+  it, bounded to the cabin's reach). `roll_lock` levels
+  that much of the body's roll back to the horizon (the car mounts; follow is already
   level). A vertical field of view, whether the car is drawn (hidden: `onboard()`; `car = ahead`
   draws it facing forward and hides it while looking back or turned past a right angle:
   `hides_car()`), the HUD layout (`incar_hud()`) and a rear-view mirror with its own place and
@@ -290,9 +292,12 @@ SDL's trigger rumble does nothing there.
   (`app/camera_editor.h`, `screen_race_camera_editor.cpp`) runs the arcade's Normal race (S
   class, the dirt race on dirt) on the course of the player's last race with its car, the
   computer driving, warps 5 s past the start signal and freezes it: no more steps, no sound;
-  its Start from rows are `CameraRig::preset` plus a Bonnet row (a `Mount::Hood` camera: 55
-  degrees, in-car HUD, mirror, the car ahead only), the built-in views of that car as custom
-  cameras (tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`). On a bonnet mount
+  its Start from rows are `CameraRig::preset` plus an In-car row (a `Mount::Incar` camera: the
+  in-car view's eye, FOV, HUD and mirror, the car drawn around it) and a Bonnet row (a
+  `Mount::Hood` camera: 55 degrees, in-car HUD, mirror, the car ahead only), the built-in views
+  of that car as custom
+  cameras (tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`). On a seat mount
+  (bonnet or in-car)
   the scene's drags only aim the view — the seat moves by the panel's Fore/aft, Sideways and
   Height sliders (Reset seat centres it; `clamp()` keeps the nudge inside the mounts' bounds).
   VR stereo keeps the built-in views (a

@@ -189,6 +189,12 @@ public:
         }
         return mode_ == CameraMode::Bumper || mode_ == CameraMode::Roof;
     }
+    // The camera rides the car's body, not a smoothed heading: the in-car views, and a custom
+    // camera on a car mount (fixed, bonnet or in-car — the headset's frame).
+    bool car_mounted() const {
+        if (mode_ == CameraMode::Custom) return custom() && custom()->mount != CustomCamera::Mount::Follow;
+        return onboard();
+    }
     // The HUD's in-car layout (GT3's on-board cluster): the in-car views, and the custom cameras set to it.
     bool incar_hud() const {
         if (mode_ == CameraMode::Custom && !intro_) return custom() && custom()->incar_hud;

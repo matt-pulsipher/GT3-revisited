@@ -32,11 +32,12 @@ class App;
 class CameraEditor {
 public:
     enum class Result : u8 { None, Save, Cancel };
-    // The views a camera can start from (CameraRig::preset; kPresetBonnet is a Mount::Hood
-    // camera, built in screen_race_camera_editor.cpp), in the panel's order.
-    static constexpr const char* kPresetNames[] = {"Chase", "Far chase", "Bumper", "Roof", "Bonnet"};
-    static constexpr int kPresets = 5;
-    static constexpr int kPresetBonnet = 4;
+    // The views a camera can start from (CameraRig::preset; the seat mounts are built in
+    // screen_race_camera_editor.cpp — a Mount::Hood camera for Bonnet, a Mount::Incar one for
+    // In-car), in the panel's order.
+    static constexpr const char* kPresetNames[] = {"Chase", "Far chase", "Bumper", "Roof", "In-car", "Bonnet"};
+    static constexpr int kPresets = 6;
+    static constexpr int kPresetIncar = 4, kPresetBonnet = 5;
 
     // What the race screen tells the editor every frame.
     struct Scene {
@@ -93,12 +94,17 @@ private:
 
     race::CustomCamera cam_, start_;
     // The eye and aim kept for the position mounts (body/follow: metres from the driver's eye,
-    // degrees of turn) while the camera sits on the bonnet — a position and a bonnet nudge don't
-    // translate, and the bonnet always starts at its default centred seat aimed ahead.
+    // degrees of turn) while the camera sits on a seat mount — a position and a seat nudge don't
+    // translate, and a seat mount always starts at its default centred seat aimed ahead.
     render::Vec3 pos_offset_{0, 0.7f, 6.0f};
     float pos_yaw_ = 0, pos_pitch_ = 0, pos_roll_ = 0;
+    // A seat mount (bonnet or in-car): the offset is a bounded nudge from a seat, and the seat's
+    // rows are its only moves — drags aim the view in place.
+    bool seat_mount() const {
+        return cam_.mount == race::CustomCamera::Mount::Hood || cam_.mount == race::CustomCamera::Mount::Incar;
+    }
     void keep_mount_offset() {
-        if (cam_.mount == race::CustomCamera::Mount::Hood) return;
+        if (seat_mount()) return;
         pos_offset_ = cam_.offset, pos_yaw_ = cam_.yaw, pos_pitch_ = cam_.pitch, pos_roll_ = cam_.roll;
     }
     bool is_new_ = false;

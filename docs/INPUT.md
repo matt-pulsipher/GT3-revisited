@@ -367,6 +367,12 @@ move the seat. Horizon lock levels out that much of the body's roll; Your
 car: Facing forward draws the bonnet ahead but hides the car while looking
 back.
 
+Movement: In the car (or the In-car "Start from" row) is the cockpit seat at
+the driver's eye, the car drawn around you with the in-car HUD and the
+mirror — the same seat sliders move within the cabin, and drags only aim the
+view. Your car: Hidden gives GT3's floating in-car look instead (the Bumper
+"Start from" row has it set already).
+
 With `gt3` the race reads the menu pad itself, so every button does what it
 did on a DualShock 2. Reverse is its own held input in both, as in GT3:
 shifting down never selects it. Wheels keep their pedals and buttons in both

@@ -21,6 +21,13 @@ constexpr CameraMode kPresetModes[] = {CameraMode::Chase, CameraMode::ChaseFar, 
 RaceScreen::RaceScreen(MenuLaunch l, CustomCamera edit, bool is_new) : RaceScreen(std::move(l)) {
     editor_ = std::make_unique<CameraEditor>(std::move(edit), is_new, [this](int i) {
         i = std::clamp(i, 0, CameraEditor::kPresets - 1);
+        const sim::VehicleSetup setup = vehicle_ ? vehicle_->setup() : sim::VehicleSetup{};
+        if (i == CameraEditor::kPresetIncar) { // the cockpit seat: the in-car view, the body drawn
+            CustomCamera c = camera_.preset(CameraMode::Bumper, setup);
+            c.mount = CustomCamera::Mount::Incar;
+            c.car = CustomCamera::OwnCar::Shown;
+            return c;
+        }
         if (i == CameraEditor::kPresetBonnet) { // on the bonnet, the in-car look over the bodywork
             CustomCamera c;
             c.mount = CustomCamera::Mount::Hood;
@@ -31,7 +38,6 @@ RaceScreen::RaceScreen(MenuLaunch l, CustomCamera edit, bool is_new) : RaceScree
             c.incar_hud = c.mirror = true;
             return c;
         }
-        const sim::VehicleSetup setup = vehicle_ ? vehicle_->setup() : sim::VehicleSetup{};
         return camera_.preset(kPresetModes[i], setup);
     });
     preset_.autodrive = true; // (the computer drives to the moment shown)

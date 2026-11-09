@@ -64,11 +64,16 @@ bool CustomCamera::operator==(const CustomCamera& o) const {
 }
 
 void CustomCamera::clamp() {
-    // A bonnet mount's offset is a nudge within the mounts' bounds, not a position (hood_camera_eye).
+    // A bonnet mount's offset is a nudge within the mounts' bounds, an in-car mount's a seat
+    // nudge from the driver's eye — not positions (hood_camera_eye).
     if (mount == Mount::Hood) {
         offset.x = std::isfinite(offset.x) ? std::clamp(offset.x, -kHoodLateral, kHoodLateral) : 0.0f;
         offset.y = std::isfinite(offset.y) ? std::clamp(offset.y, kHoodHeightMin, kHoodHeightMax) : 0.0f;
         offset.z = std::isfinite(offset.z) ? std::clamp(offset.z, -kHoodForward, kHoodForward) : 0.0f;
+    } else if (mount == Mount::Incar) {
+        offset.x = std::isfinite(offset.x) ? std::clamp(offset.x, -kSeatLateral, kSeatLateral) : 0.0f;
+        offset.y = std::isfinite(offset.y) ? std::clamp(offset.y, kSeatHeightMin, kSeatHeightMax) : 0.0f;
+        offset.z = std::isfinite(offset.z) ? std::clamp(offset.z, -kSeatForward, kSeatForward) : 0.0f;
     }
     const float d = render::length(offset);
     if (!(d <= kMaxDistance)) offset = std::isfinite(d) ? offset * (kMaxDistance / d) : render::Vec3{0, 0.7f, 6.0f};
@@ -103,7 +108,8 @@ std::vector<CustomCamera> load_custom_cameras(const IniDocument& cfg) {
             const std::string m = to_lower(text(s, "mount"));
             c.mount = m == "body" ? CustomCamera::Mount::Body
                                 : (m == "bonnet" || m == "hood") ? CustomCamera::Mount::Hood
-                                                                 : CustomCamera::Mount::Follow;
+                                : (m == "incar" || m == "cockpit") ? CustomCamera::Mount::Incar
+                                                                   : CustomCamera::Mount::Follow;
         }
         c.offset = {number(s, "x", c.offset.x), number(s, "y", c.offset.y), number(s, "z", c.offset.z)};
         c.yaw = number(s, "yaw", c.yaw);
@@ -139,7 +145,8 @@ void save_custom_cameras(IniDocument& cfg, const std::vector<CustomCamera>& cams
         cfg.set(sec, "enabled", c.enabled ? "yes" : "no");
         cfg.set(sec, "mount", c.mount == CustomCamera::Mount::Body ? "body"
                             : c.mount == CustomCamera::Mount::Hood ? "bonnet"
-                                                                   : "follow");
+                            : c.mount == CustomCamera::Mount::Incar ? "incar"
+                                                                    : "follow");
         cfg.set(sec, "x", format(c.offset.x));
         cfg.set(sec, "y", format(c.offset.y));
         cfg.set(sec, "z", format(c.offset.z));

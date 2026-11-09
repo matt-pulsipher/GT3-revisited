@@ -58,16 +58,20 @@ TEST(custom_cameras_config) {
     a.car = CustomCamera::OwnCar::Ahead, a.incar_hud = true;
     a.mirror = true, a.mirror_x = 0.25f, a.mirror_y = 0.8f, a.mirror_size = 1.5f;
     CustomCamera b = camera(2, "Blimp");
-    save_custom_cameras(cfg, {a, b});
+    CustomCamera c = camera(6, "Seat");
+    c.mount = CustomCamera::Mount::Incar;
+    c.offset = {0.1f, 0.05f, -0.2f}; // (a seat nudge: inside the seat's bounds)
+    save_custom_cameras(cfg, {a, b, c});
     CHECK(cfg.get("race", "views") == "gt3");
     CHECK(!cfg.find("custom_camera7")); // (the old sections are gone)
     CHECK(cfg.get("custom_camera1", "name") == "Hood" && cfg.get("custom_camera2", "name") == "Blimp");
     CHECK(cfg.get("custom_camera2", "mirror_y") == "0.116" && cfg.get("custom_camera2", "z") == "6");
+    CHECK(cfg.get("custom_camera3", "mount") == "incar");
     const std::vector<CustomCamera> back = load_custom_cameras(cfg);
-    CHECK(back.size() == 2 && same(back[0], a) && same(back[1], b)); // (3 decimals)
+    CHECK(back.size() == 3 && same(back[0], a) && same(back[1], b) && same(back[2], c)); // (3 decimals)
     CHECK(find_custom_camera(back, 2) == &back[1] && !find_custom_camera(back, 3));
-    CHECK(new_custom_camera_id(back) == 5);
-    CHECK(new_custom_camera_name(back) == "Camera 3");
+    CHECK(new_custom_camera_id(back) == 7);
+    CHECK(new_custom_camera_name(back) == "Camera 4");
     CHECK(new_custom_camera_name({camera(1, "Camera 1"), camera(2, "Camera 3")}) == "Camera 4");
 
     // Hand-edited: no name, no id or a repeated id are skipped; numbers out of range clamped.
@@ -100,6 +104,18 @@ TEST(custom_cameras_config) {
     // A bonnet offset is a nudge kept inside the mounts' bounds; any other mount's is a position.
     CHECK(near(bn[2].offset.x, kHoodLateral) && near(bn[2].offset.y, kHoodHeightMax) && near(bn[2].offset.z, kHoodForward));
     CHECK(near(bn[3].offset.x, 9.0f) && near(bn[3].offset.z, 9.0f));
+
+    // The in-car mount (and its "cockpit" alias): a seat nudge bounded like the bonnet's — the
+    // default position offset clamps into the seat's box rather than the mounts'.
+    const std::vector<CustomCamera> ic =
+        load_custom_cameras(IniDocument::parse("[custom_camera1]\nid = 11\nname = Seat\nmount = incar\n"
+                                               "x = 9\ny = -9\nz = 9\n"
+                                               "[custom_camera2]\nid = 12\nname = Cockpit\nmount = cockpit\n"));
+    CHECK(ic.size() == 2);
+    CHECK(ic[0].mount == CustomCamera::Mount::Incar && near(ic[0].offset.x, kSeatLateral) &&
+          near(ic[0].offset.y, kSeatHeightMin) && near(ic[0].offset.z, kSeatForward));
+    CHECK(ic[1].mount == CustomCamera::Mount::Incar && near(ic[1].offset.y, kSeatHeightMax) &&
+          near(ic[1].offset.z, kSeatForward));
 }
 
 // Camera files (Export / Import): the cameras round-trip; imported ones get new ids and, when a

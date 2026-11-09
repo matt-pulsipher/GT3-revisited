@@ -28,7 +28,7 @@ bool RaceScreen::vr_stereo(App& app, bool split) const {
 render::Mat4 RaceScreen::vr_base(const xr::Settings& st) const {
     const sim::Quat& q = render_state_.orientation;
     const render::Vec3 eye = camera_.eye();
-    if (camera_.onboard()) { // the car's full attitude or its heading, the seat moved within the car
+    if (camera_.car_mounted()) { // the car's full attitude or its heading, the seat moved within the car
         const sim::Vec3 f = rotate(q, {0, 0, -1});
         const render::Mat4 car = st.level_horizon ? render::rotate_y(std::atan2(-f.x, -f.z))
                                                   : render::rotate_quat(q.w, q.x, q.y, q.z);
@@ -61,7 +61,7 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
     spark_pass_ = true, spark_view_ = render::inverse(head); // (the sparks' streaks from the head)
     collect_items(head_pos, right, own_car, true, sv);
     spark_pass_ = false;
-    if (camera_.onboard()) // from inside the body: its bonnet, not its roof and windows
+    if (camera_.car_mounted()) // from inside the body: its bonnet, not its roof and windows
         for (size_t i = player_items_[0]; i < player_items_[1]; ++i) items_[i].single_sided = true;
     const float fovy = std::atan(e0.tan_up) - std::atan(e0.tan_down);
     const float sun_v = sun_visibility(head_pos, fovy, float(e0.height));
