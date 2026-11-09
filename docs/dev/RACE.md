@@ -664,9 +664,14 @@ research (captures of the original, `database/racedetail.db` rows,
   reaches it (N = 2 draws 160 km/h on the 180 face), band segments every 10 km/h or 5 mph.
   `race/meter_*.img` and `race/disp.imgs` are never loaded by the game.
 - **Digital speed**: font `speed`, "%3d", amber (GS 0x801880D0), unit in sw_12.
-  **Gear**: font `gearr`, unlit "8" under the digit, amber (R red), shift light
-  `:` blinking 3 frames on / 3 off above the shift-up rpm. AT/MT: `meter` font
-  glyphs `>` / `=`.
+  **Gear** (the original's race gear display; `Hud::gear_pens`, `draw_gear`): font `gearr`, every pen on
+  the baseline line_height >> 1 below the box centre; the digit at x - size (font byte
+  0x0C) over a ghost "8\r1\r", amber (R red; the packed colour >> 1 with the clutch
+  out), " > H" / " > " + ('@' + n) for the recommended gear from the centre, shift
+  light `:` at (dx, dy) blinking 3 frames on / 3 off above the shift-up rpm. AT/MT:
+  `meter` font glyphs `>` / `=` in GS 0x80A0A088, pen (left, baseline) at the
+  tachometer box centre + (-2, 28) outside, (-10, -15) in the car
+  (`Hud::transmission_pen`).
 - **Layouts** (`race/hud_layout.*`, presentation §D4): the original's layout table, one
   row list per display mode (which parts, where, per camera view; test
   `race_hud_layout_disc` checks it against the disc). `RaceScreen::hud_data` picks the mode
@@ -2217,9 +2222,28 @@ filling the options each frame:
   few course packets use them (e.g. Laguna's pavilion roof reflections, raw 0xFF).
 - The cars' reflection map draws slots 23 and 5 with the course's scene lights; the original
   leaves whatever the last car left in the light slots (in that pass's eye space).
-- The visibility lists (Vls0) are used only for the lamp glows' lamp lists: for the scenery
-  they only spare the PS2 drawing hidden nodes, and frustum / distance culling per node keeps
-  us at the vsync (see "Performance"). Course node programs have no LOD switches: run
+- The visibility lists (Vls0) pick what each view draws, as in GT3 (presentation §I7,
+  docs/formats/course.md "Vls0"): `CourseScene::add_items` gives the scenery items the node
+  list of the view point nearest the camera (`course::SceneryView`: slot 2 for the main view,
+  VR's eyes and the licence preview, slot 4 for the 2P halves, slot 3 for the mirror, slot 7 or
+  3 for a 2P half's mirror; `course::scenery_list_slot`), the billboards the same list
+  (`CourseScene::visible_nodes`), the reflection map slot 6 at the cube's centre and the wet
+  road slots 10 and 14 at the camera. `DrawItem::nodes` draws only those nodes' meshes
+  (`scene::Mesh::node`, `GpuModel::node_meshes`), in the list's order. They are not only a
+  saving: since the depth reset after the backdrop (RENDERING.md), a node the list leaves out
+  would cover the backdrop wherever it lies, such as the hill with the tunnel and the bridge
+  seen across the lake from Grand Valley's hairpin, or Tahiti Maze's bridge over the jungle
+  (public issue 254; test `course_visibility_lists_disc`). GT3 switches a view's list at once,
+  which at our resolution and in our 16:9 picture pops whole nodes in (Route 11: a lit tower
+  at the right edge right after the start, the elevated highway beyond the right-hand wall):
+  the scenery and its billboards fade a node in over 0.6 s when it joins the view's list and out
+  when it leaves (`race::SceneryFade`, one per view in `RaceScreen::scenery_fades_`; drawn
+  dithered, `DrawItem::fade`), so a settled view shows exactly the list. The first frame and a
+  camera cut (the eye moving 20 m in a frame) switch at once; the reflection map and the wet
+  road switch at once too. Measured on Route 11's first 50 s (every frame against every node
+  drawn): frame-to-frame jumps over 0.1 of a level in the mean difference, 5 with instant
+  switches, none with the fade; Grand Valley and Tahiti Maze unchanged once settled (test
+  `race_scenery_fade`). Course node programs have no LOD switches: run
   on Trial Mountain, Seattle, Route 5 and Rome, the only op 0x07 switches
   executed are the car models' (n = 4).
 - Kerb / off-road classification for rumble comes from `track::surface_type`

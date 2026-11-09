@@ -30,6 +30,7 @@
 #include "race/camera_rig.h"
 #include "race/controls.h"
 #include "race/field.h"
+#include "race/scenery_fade.h"
 #include "race/exact_field.h"
 #include "race/exact_setup.h"
 #include "race/car_sfx.h"
@@ -380,13 +381,23 @@ private:
     int car_lamp_index(const sim::VehicleState& s, size_t slot) const;
     static TyreSmoke::View smoke_view(const CameraRig& c, float aspect, float fovy);
     // The view items are collected for: the main view, a 2P half, the rear-view mirror (its own
-    // sky; CourseScene::add_items). They differ in the course draw's flags (Env0 +0xF30 / +0xF34 /
-    // +0xF38: the billboards), the sun disc (not in the mirror) and the mirror's passes (presentation
-    // §H2, §I6, §I7).
-    enum class ItemsView { Main = 0, Split = 1, Mirror = 2 };
+    // sky; CourseScene::add_items) and a 2P half's mirror. They differ in the course draw's flags
+    // (Env0 +0xF30 / +0xF34 / +0xF38: the billboards; both mirrors +0xF38), the scenery's
+    // visibility lists (course::SceneryView), the sun disc (not in the mirror) and the mirror's
+    // passes (presentation §H2, §I6, §I7).
+    enum class ItemsView { Main = 0, Split = 1, Mirror = 2, SplitMirror = 3 };
     // `smoke_v.forward` is also the camera's view direction for the sun disc (none when zero).
+    // `seat`: 0 player 1's views (the 1P view, VR, the licence preview), 1 player 2's (the
+    // scenery's fades, scenery_fades_).
     void collect_items(const render::Vec3& eye, const sim::Vec3& right = {1, 0, 0}, bool player = true,
-                       bool second = true, const TyreSmoke::View& smoke_v = {}, ItemsView view = ItemsView::Main);
+                       bool second = true, const TyreSmoke::View& smoke_v = {}, ItemsView view = ItemsView::Main,
+                       int seat = 0);
+    // The scenery's fades between visibility lists (race::SceneryFade): [seat] the main views,
+    // [2 + seat] the mirrors; each stepped once a frame by frame_dt_ (fade_frames_: the frame it was).
+    std::array<race::SceneryFade, 4> scenery_fades_;
+    std::array<u64, 4> fade_frames_{};
+    u64 frame_serial_ = 0;
+    double frame_dt_ = 0;
     size_t player_items_[2] = {0, 0}; // collect_items: the player's car is items_[first, end)
     size_t scenery_items_ = 0;          // collect_items: the course's items are items_[0, end)
     HudData hud_data(int player);
@@ -497,7 +508,6 @@ private:
     void update_panel(App& app);
     void open_records(App& app);
     void draw_panel(App& app, const SDL_FRect& dst);
-    bool results_panel_up() const { return field_ && finished_ && !replaying_ && !two_player_ && finish_wait_ >= 5.0; }
     bool championship() const { return from_menu_ && launch_.request.champ_round > 0; }
     // Which result list rule applies (race::result_menu_list): a championship round, a GT race
     // (its qm_gt_result menu), or any other run.

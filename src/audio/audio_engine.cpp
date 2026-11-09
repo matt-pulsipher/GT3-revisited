@@ -221,8 +221,14 @@ std::vector<std::string> AudioEngine::playback_devices() {
 }
 
 bool AudioEngine::load_sequences(Vfs& vfs) {
+    // Read again after forget_disc_music(), never under a playing sequence: its notes read the
+    // banks (play_sequence stops it first).
+    if (seq_stale_ && !sequencer_.active()) seq_load_tried_ = seq_stale_ = false;
     if (seq_load_tried_) return seqs_ != nullptr;
     seq_load_tried_ = true;
+    seqs_.reset();
+    music_index_.clear();
+    seq_loop_seconds_.clear();
     try {
         auto inf = vfs.read("music/music.inf");
         auto seq = vfs.read("music/music.seq");
@@ -255,7 +261,13 @@ const std::vector<sound::MusicEntry>& AudioEngine::music_index(Vfs& vfs) {
     return music_index_;
 }
 
+void AudioEngine::forget_disc_music() {
+    bgm_.forget();
+    seq_stale_ = true;
+}
+
 bool AudioEngine::play_sequence(Vfs& vfs, int index, float volume) {
+    if (seq_stale_) sequencer_.stop(voices_); // the new piece comes from the files read again
     if (!load_sequences(vfs)) return false;
     stop_stream();
     // The request's level is the sequencer's music volume (music §6).
@@ -273,6 +285,7 @@ bool AudioEngine::play_sequence(Vfs& vfs, const std::string& name, float volume)
         bool loop = name.find(":once") == std::string::npos;
         return bgm_.play_if_different(*this, vfs, id, 0, loop, volume);
     }
+    if (seq_stale_) sequencer_.stop(voices_); // its name is looked up in the files read again
     if (!load_sequences(vfs)) return false;
     for (const sound::MusicEntry& e : music_index_)
         if (e.name == name) return play_sequence(vfs, int(e.sequence), volume);

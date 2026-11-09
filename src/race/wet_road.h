@@ -23,6 +23,7 @@
 // E60..E68 x E6C, added (Cs + Cd), depth-tested against the buffer, no depth write.
 
 #include "base/bytes.h"
+#include "formats/course/visibility.h"
 #include "race/clut_animations.h"
 #include "race/lamp_glows.h"
 #include "render/view3d.h"
@@ -73,7 +74,8 @@ public:
         float k = 0;
         bool brake_now = false;
     };
-    // The buffer's scene (the caller adds the mirrored cars): slot 9 and the streaks for `view`.
+    // The buffer's scene (the caller adds the mirrored cars): slot 9 (the nodes of slot 10's list
+    // for `eye`) and the streaks for `view`.
     void add_buffer_items(std::vector<render::DrawItem>& items, const render::Mat4& view, const render::Vec3& eye,
                           const std::vector<Car>& cars);
     // The buffer's draw options from the main view's.
@@ -82,8 +84,9 @@ public:
     SDL_GPUTexture* render(render::View3D& view3d, const render::Mat4& view, const render::Mat4& proj,
                            const render::Vec3& eye, const std::vector<render::DrawItem>& items,
                            const render::DrawOptions& main);
-    // The frame's items, after the scenery: the alpha clear, the slot 13 mask and the composite of
-    // `buffer` (a camera-space quad just past the near plane; `fovy` vertical, `aspect` w / h).
+    // The frame's items, after the scenery: the alpha clear, the slot 13 mask (the nodes of slot
+    // 14's list for the camera) and the composite of `buffer` (a camera-space quad just past the
+    // near plane; `fovy` vertical, `aspect` w / h).
     void add_frame_items(std::vector<render::DrawItem>& items, const render::Mat4& view, float fovy, float aspect,
                          SDL_GPUTexture* buffer) {
         add_frame_items(items, view, render::Frustum::symmetric(fovy, aspect), buffer);
@@ -103,6 +106,7 @@ private:
     WetRoadParams p_;
     ClutAnimations cluts_;
     std::unique_ptr<render::GpuModel> reflection_, mask_;
+    course::Visibility reflection_vis_, mask_vis_; // slots 10 and 14
     FrameQuads quads_[2];                       // the frame's alpha clear and composite, per view frustum
     u64 quad_uses_ = 0;
     std::unique_ptr<render::GpuModel> blur_quad_[2]; // blur: -0.5 / +0.5 texel

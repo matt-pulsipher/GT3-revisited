@@ -3,7 +3,7 @@
 // pick, the race exit wash, the time trial's finish, the pause window's EXIT question, the
 // quick menus' cancel and disabled items, what follows a run (the automatic replay, the menu's backdrop, pause
 // EXIT as a finish), the start title's and the replay mark's clocks, the HUD's corner blocks
-// beside touch controls. All values are invented.
+// beside touch controls, the scenery's fades between visibility lists. All values are invented.
 
 #include "test_framework.h"
 
@@ -25,6 +25,7 @@
 #include "race/replay_focus.h"
 #include "race/replay_options.h"
 #include "race/results.h"
+#include "race/scenery_fade.h"
 
 #include <algorithm>
 #include <cmath>
@@ -194,6 +195,30 @@ TEST(race_hud_needle_passes) {
     for (int k = 0; k < 8; ++k) CHECK(p[size_t(k)].angle == 100 + float(k + 1));
     p = Hud::needle_passes(50, 66); // falling: the passes run below the new angle
     CHECK(p[0].angle == 48 && p[7].angle == 34);
+}
+
+TEST(race_hud_gear_and_transmission) {
+    // presentation §D2: the outside cluster's gear box centred on (545, 325) with the disc's
+    // gearr font (size 24, line 26): every pen on the baseline 13 below the centre, the digit
+    // 24 left of it, the shift light (-4, -12) from the centre's pen.
+    const Hud::GearPens g = Hud::gear_pens(545, 325, 24, 26, -4, -12);
+    CHECK(g.digit.x == 521 && g.digit.y == 338);
+    CHECK(g.hint.x == 545 && g.hint.y == 338);
+    CHECK(g.shift.x == 541 && g.shift.y == 326);
+    // In-car: the gear panel's centre (320, 360), the light 35 left.
+    const Hud::GearPens in = Hud::gear_pens(320, 360, 24, 26, -35, 0);
+    CHECK(in.digit.x == 296 && in.digit.y == 373 && in.shift.x == 285 && in.shift.y == 373);
+    // Amber, red in reverse; the clutch out halves the packed colour (alpha 0x40).
+    auto is = [](SDL_Color c, int r, int gr, int b, int a) { return c.r == r && c.g == gr && c.b == b && c.a == a; };
+    CHECK(is(Hud::gear_colour(false, true), 208, 128, 24, 255));
+    CHECK(is(Hud::gear_colour(true, true), 240, 0, 0, 255));
+    CHECK(is(Hud::gear_colour(false, false), 104, 64, 12, 128));
+    CHECK(is(Hud::gear_colour(true, false), 120, 0, 0, 128));
+    // §D1: the AT / MT label's pen from the tachometer box's centre, inside the outside
+    // tachometer's dial (centre (540, 320): pen (538, 348)).
+    const SDL_FPoint out = Hud::transmission_pen(540, 320, false), car = Hud::transmission_pen(435, 381, true);
+    CHECK(out.x == 538 && out.y == 348);
+    CHECK(car.x == 425 && car.y == 366);
 }
 
 TEST(race_hud_mode_select) {
@@ -1504,4 +1529,41 @@ TEST(hud_top_blocks_beside_touch_controls) {
     CHECK(lit(d, 0, 320, false) >= 54 && lit(d, 0, 320, false) <= 56);
     SDL_DestroyRenderer(r);
     SDL_DestroySurface(surface);
+}
+
+// The scenery's fades between visibility lists (race::SceneryFade): the first frame, a camera cut
+// and the first list after none switch at once; a node that joins fades in over kSeconds and one
+// that leaves fades out, in groups of 1/16 steps; the list's order is kept; no list = every node.
+TEST(race_scenery_fade) {
+    using race::SceneryFade;
+    auto weight = [](const SceneryFade& f, u16 n) {
+        for (const SceneryFade::Group& g : f.faded())
+            if (std::find(g.nodes.begin(), g.nodes.end(), n) != g.nodes.end()) return g.weight;
+        return 0.0f;
+    };
+    auto settled = [](const SceneryFade& f) {
+        for (const SceneryFade::Group& g : f.faded())
+            if (!g.nodes.empty()) return false;
+        return true;
+    };
+    const std::vector<u16> a{5, 2, 9}, b{2, 7, 5};
+    const float step = SceneryFade::kSeconds / 6.0f;
+    SceneryFade f;
+    f.update(&a, {0, 0, 0}, step);
+    CHECK(f.solid() && *f.solid() == a && settled(f)); // the first frame: at once
+    f.update(&b, {1, 0, 0}, step); // 7 joins, 9 leaves
+    CHECK((*f.solid() == std::vector<u16>{2, 5}));
+    CHECK(weight(f, 7) == 3.0f / SceneryFade::kLevels);  // 1/6 of the way in
+    CHECK(weight(f, 9) == 13.0f / SceneryFade::kLevels); // 1/6 of the way out
+    f.update(&a, {2, 0, 0}, step); // back: 9 rejoins at its weight, 7 leaves again
+    CHECK(*f.solid() == a && settled(f));
+    f.update(&b, {3, 0, 0}, step);
+    for (int i = 0; i < 6; ++i) f.update(&b, {3, 0, 0}, step);
+    CHECK(*f.solid() == b && settled(f)); // in b's order once settled
+    f.update(&a, {3 + SceneryFade::kCut, 0, 0}, step); // a camera cut
+    CHECK(*f.solid() == a && settled(f));
+    f.update(nullptr, {3 + SceneryFade::kCut, 0, 0}, step); // no list: every node
+    CHECK(f.solid() == nullptr && settled(f));
+    f.update(&b, {3 + SceneryFade::kCut, 0, 0}, step);
+    CHECK(*f.solid() == b && settled(f));
 }

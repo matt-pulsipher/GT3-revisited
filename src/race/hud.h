@@ -112,7 +112,6 @@ struct HudData {
     // Tyre gauge (races with tyre wear): per-wheel level -63..127 (FL, FR, RL, RR).
     bool show_tires = false;
     std::array<int, 4> tire_levels{};
-    int layer = 0;            // 0 all, 1 all but the lap / time block, 2 that block only
     bool four_three = false;  // drawn into a 4:3 viewport (original resolution): no 16:9 widening
                               // (a 4:3 screen has none to give anyway)
     bool auto_drive = false;  // "AUTO DRIVE" (the computer drives: pit lane, flying start run-up)
@@ -212,6 +211,20 @@ public:
     };
     static constexpr float kNoNeedleAngle = 3.40282347e38f; // FLT_MAX: no last angle
     static std::array<NeedlePass, 8> needle_passes(float angle, float last);
+    // The gear display's pens (presentation §D2), 640 x 448 frame units, each the left end of
+    // its text's baseline: from the box's centre (cx, cy) and the gearr font's size and line
+    // height, the digit `size` left of the centre, "> n" from the centre, both half a line
+    // (rounded down) below it; the shift light (dx, dy) from the centre's pen.
+    struct GearPens {
+        SDL_FPoint digit, hint, shift;
+    };
+    static GearPens gear_pens(float cx, float cy, int size, int line_height, float dx, float dy);
+    // The gear digit's colour: amber, HUD red in reverse; with the clutch out every channel
+    // and the alpha at half (the packed GS colour shifted right once).
+    static SDL_Color gear_colour(bool reverse, bool clutch_engaged);
+    // The AT / MT label's pen (presentation §D1; left end of the baseline) from the tachometer
+    // box's centre: (-10, -15) in the in-car cluster, (-2, 28) in the outside one.
+    static SDL_FPoint transmission_pen(float cx, float cy, bool onboard);
 
 private:
 public:
@@ -271,7 +284,7 @@ private:
     std::array<Image, 4> tire_body_{};
     Image tire_outline_;
     float map_ox_ = 0, map_oz_ = 0, map_scale_ = 1, map_rot_ = 0;
-    int blink_ = 0, shift_counter_ = 0, lamp_counter_ = 0;
+    int blink_ = 0, shift_counter_ = 0, lamp_counter_ = 0, hint_counter_ = 0;
     // The angle each meter's needle was last drawn at (in-car tachometer, speedometer, outside
     // tachometer, boost meter): kNoNeedleAngle until then.
     std::array<float, 4> needle_prev_{kNoNeedleAngle, kNoNeedleAngle, kNoNeedleAngle, kNoNeedleAngle};

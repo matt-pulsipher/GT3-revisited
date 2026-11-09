@@ -27,6 +27,12 @@ constexpr float kSy = 360.0f / 448.0f;
 constexpr SDL_Color kAmber{208, 128, 24, 255};   // 0x801880D0
 constexpr SDL_Color kRed{240, 0, 0, 255};        // 0x800000F0
 constexpr SDL_Color kGrey{200, 205, 215, 255};
+constexpr SDL_Color kTransmission{136, 160, 160, 255}; // 0x80A0A088: the AT / MT label (tachometers)
+
+// A packed GS colour (R in the low byte) as drawn: the RGB as is, the alpha x 2 (0x80 opaque).
+SDL_Color gs_colour(u32 c) {
+    return {u8(c), u8(c >> 8), u8(c >> 16), u8(std::min<u32>(255, (c >> 24) * 2))};
+}
 
 // The game area (UI units, Hud::set_screen) and the HUD's target rectangle in it (the whole
 // area, or the 4:3 frame of the original-resolution picture); set by Hud::draw.
@@ -414,6 +420,27 @@ std::array<Hud::NeedlePass, 8> Hud::needle_passes(float angle, float last) {
     return out;
 }
 
+Hud::GearPens Hud::gear_pens(float cx, float cy, int size, int line_height, float dx, float dy) {
+    // The race gear display: the pen's baseline line_height >> 1 below the centre;
+    // the digit at x - size (font byte 0x0C), "> n" at x, the shift light at its (dx, dy).
+    const float base = cy + float(line_height >> 1);
+    return {{cx - float(size), base}, {cx, base}, {cx + dx, base + dy}};
+}
+
+SDL_Color Hud::gear_colour(bool reverse, bool clutch_engaged) {
+    // The race gear display: 0x801880D0, 0x800000F0 below first gear; the word shifted right
+    // once while the clutch is out.
+    u32 c = reverse ? 0x800000F0u : 0x801880D0u;
+    if (!clutch_engaged) c >>= 1;
+    return gs_colour(c);
+}
+
+SDL_FPoint Hud::transmission_pen(float cx, float cy, bool onboard) {
+    // The in-car and outside tachometers' constructors set the offsets
+    // the race round tachometer base adds to the box centre.
+    return onboard ? SDL_FPoint{cx - 10, cy - 15} : SDL_FPoint{cx - 2, cy + 28};
+}
+
 void Hud::draw_replay_mark(SDL_Renderer* r, float alpha, const SDL_FRect* viewport, bool four_three) {
     g_screen = screen_;
     g_vp = viewport ? *viewport : screen_;
@@ -518,8 +545,8 @@ void Hud::draw_meters(SDL_Renderer* r, const HudData& d) {
         Meter spd{image(ss.face), anchor(290, 170, 1), anchor(436, 110, 1), 170, 110, 0, 23, 75, 72.5f, 287.5f,
                   -0.1f, 0.95f, ss.full, 0, ss.step, 1};
         draw_meter(r, spd, speed);
-        text(r, ux(tach.x + 85 - 10), uy(tach.y + 55 - 15), d.automatic ? ">" : "=", "meter#1", 1, kAmber,
-             text::HAlign::Left);
+        const SDL_FPoint tp = transmission_pen(tach.x + tach.w / 2, tach.y + tach.h / 2, true);
+        text(r, ux(tp.x), uy(tp.y), d.automatic ? ">" : "=", "meter#1", 1, kTransmission, text::HAlign::Left, true);
         std::snprintf(buf, sizeof(buf), "%3d", int(speed));
         text(r, ux(350), uy(410), buf, "speed", 1, kAmber, text::HAlign::Right, true);
         text(r, ux(350 - 44), uy(430), unit, "sw_12", 1, kAmber, text::HAlign::Left, true);
@@ -529,8 +556,8 @@ void Hud::draw_meters(SDL_Renderer* r, const HudData& d) {
         Meter tach{image(name), anchor(620, 160, 5), anchor(320, 140, 2), 160, 140, 3, 4, 73, 29.85f, 238.34f,
                    0.38f, 0.9f, float(scale), d.shift_rpm, step, 2};
         draw_meter(r, tach, d.rpm);
-        text(r, ux(tach.x + 80 - 2), uy(tach.y + 70 + 28), d.automatic ? ">" : "=", "meter#1", 1, kAmber,
-             text::HAlign::Center);
+        const SDL_FPoint tp = transmission_pen(tach.x + tach.w / 2, tach.y + tach.h / 2, false);
+        text(r, ux(tp.x), uy(tp.y), d.automatic ? ">" : "=", "meter#1", 1, kTransmission, text::HAlign::Left, true);
         std::snprintf(buf, sizeof(buf), "%3d", int(speed));
         float sx = anchor(580, 0, 5);
         text(r, ux(sx), uy(385), buf, "speed", 1, kAmber, text::HAlign::Right, true);
@@ -600,35 +627,37 @@ void Hud::draw_panel(SDL_Renderer* r, float X, float Y, float w, float h) {
                   SDL_Color{0, 0, 0, 128});
 }
 
-// The gear in its box (gx, gy, gw, gh; frame units, already aligned): the digit centred,
-// pen at the top of its cell, the unlit "8" behind it, "> n" after it and the shift light at
-// (dx, dy) from the cell's centre.
+// The gear in its box (gx, gy, gw, gh; frame units, already aligned), as the original's race gear display
+// draws it (presentation §D2; gear_pens): the digit over an unlit "8" and "1", "> n" after it
+// in the font's small digits ('@' .. 'I'), the shift light at (dx, dy). The strings are the
+// game's own: the font has no space, which ends kerning and moves nothing.
 void Hud::draw_gear(SDL_Renderer* r, const HudData& d, float gx, float gy, float gw, float gh, float dx, float dy) {
-    float cell_w = 26, cell_h = 26;
+    int size = 24, line = 26; // the disc's gearr font
     if (fonts_ok_)
-        if (text::GameFont* f = fonts_.get("gearr")) cell_w = f->data().line_height * 0.6f, cell_h = f->line_height();
-    float cx = gx + gw / 2, cy = gy + gh / 2 + cell_h / 2;
-    float penx = cx - cell_w, peny = cy - cell_h; // pen at the top of the cell
-    text(r, ux(penx), uy(peny), "8", "gearr#1", 1, SDL_Color{0, 0, 0, 96}, text::HAlign::Left);
-    std::string g = d.gear >= 1 ? std::to_string(std::min(d.gear, 9)) : (d.gear < 0 ? "R" : "N");
-    SDL_Color gc = d.gear < 0 ? kRed : kAmber;
-    if (!d.clutch_engaged) gc.a = 128; // clutch not engaged: half brightness
-    if (g == "N") text(r, ux(penx), uy(peny), "N", "sw_20", 1.3f, gc, text::HAlign::Left);
-    else text(r, ux(penx), uy(peny), g, "gearr#1", 1, gc, text::HAlign::Left);
-    // "> n" after the digit: a ghost "> 8" always, the recommended gear in red over it
-    // (blinking red / black in braking zones).
-    text(r, ux(penx + cell_w + 2), uy(peny + cell_h * 0.45f), ">8", "gearr#1", 0.5f, SDL_Color{0, 0, 0, 96},
-         text::HAlign::Left);
+        if (text::GameFont* f = fonts_.get("gearr")) size = f->data().size, line = f->data().line_height;
+    const GearPens p = gear_pens(gx + gw / 2, gy + gh / 2, size, line, dx, dy);
+    const SDL_Color ghost = gs_colour(0x30000000u);
+    auto put = [&](SDL_FPoint pen, const std::string& s, SDL_Color c) {
+        game_text(r, ux(pen.x), uy(pen.y), s, "gearr#1", 1, c, text::HAlign::Left, true);
+    };
+    put(p.digit, "8\r1\r", ghost);
+    const SDL_Color gc = gear_colour(d.gear < 0, d.clutch_engaged);
+    // (GT3's cars are never in neutral: our other physics' gear 0 shows an "N".)
+    if (d.gear == 0) text(r, ux(p.digit.x), uy(p.digit.y), "N", "sw_20", 1.3f, gc, text::HAlign::Left, true);
+    else put(p.digit, std::string(1, d.gear >= 1 ? char('0' + std::min(d.gear, 9)) : 'R'), gc);
+    // The recommended gear over a ghost "> 8": red, or blinking red / black in braking zones
+    // (a counter adding 42 a frame: 3 frames each).
+    put(p.hint, " > H\r", ghost);
+    hint_counter_ = (hint_counter_ + 42) & 0xFF;
     if (d.hint_gear > 0) {
-        bool red = !d.hint_blink || s8(u8(lamp_counter_)) > 0;
-        text(r, ux(penx + cell_w + 2), uy(peny + cell_h * 0.45f), ">" + std::to_string(std::min(d.hint_gear, 9)),
-             "gearr#1", 0.5f, red ? kRed : SDL_Color{0, 0, 0, 255}, text::HAlign::Left);
+        const bool red = !d.hint_blink || s8(u8(hint_counter_)) > 0;
+        put(p.hint, std::string(" > ") + char('@' + std::min(d.hint_gear, 9)),
+            gs_colour(red ? 0x800000F0u : 0x80000000u));
     }
     bool shift = d.rpm > d.shift_rpm;
     shift_counter_ = shift ? (shift_counter_ + 42) & 0xFF : 0;
     bool lit = shift && s8(u8(shift_counter_)) >= 1;
-    text(r, ux(cx + dx), uy(cy + dy - cell_h), ":", "gearr#1", 1, lit ? kRed : SDL_Color{0, 0, 0, 200},
-         text::HAlign::Left);
+    put(p.shift, ":", gs_colour(lit ? 0x800000FFu : 0x80000000u));
 }
 
 // The lap count and the time lines of the mode (presentation §D4), right-aligned at their
@@ -803,15 +832,12 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
     // narrower without them).
     g_dx = right, g_dy = bottom;
     g_s = std::clamp(sa.w / std::min(560.0f, g_screen.w - 80.0f), 0.7f, 1.0f), g_px = sr, g_py = sb;
-    // d.layer: 0 everything, 1 all but the lap / time block, 2 only that block (the results
-    // panel goes between them: the original draws the times over it, the rest under it).
-    const bool body = d.layer != 2, times = d.layer != 1 && (d.items & kItemTimes);
     // The mode's rows for this camera view (0 in-car, 1 outside; presentation §D4).
     const int view = d.onboard ? 0 : 1;
     auto row = [&](HudPart p, int sub = -1) { return hud_row(d.mode, p, sub, view); };
     char name[16];
     char buf[64];
-    if (body && (d.items & kItemMeters)) {
+    if (d.items & kItemMeters) {
         if (row(HudPart::Meters, view)) {
             draw_meters(r, d);
         } else if (const HudRow* panel = row(HudPart::Meters, 64)) {
@@ -830,7 +856,7 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
                           (g->sub & 1) ? -4.0f : -35.0f, (g->sub & 1) ? -12.0f : 0.0f);
         }
     }
-    if (times) {
+    if (d.items & kItemTimes) {
         // --- laps and times (right) --------------------------------------------------------
         // In the corner. Where a touch control would cover it, moved left just clear of the
         // controls, or inside the safe area when that is further than the area's right edge.
@@ -842,7 +868,6 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
         }
         draw_times(r, d, view);
     }
-    if (!body) return;
     // --- mini-map and position (left; presentation §D5) ----------------------------------------
     // Each in its corner; the same rule as the times, mirrored (moved right). The rank's
     // fallback takes the map along (it would come down onto it).
@@ -1038,7 +1063,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
     };
     auto Y = [&](float y) { return half.y + y * kh; };
     auto txt = [&](float x, float y, const std::string& s, const char* font, float sc, SDL_Color c, text::HAlign a,
-                   Side side) {
+                   Side side, bool baseline = false) {
         if (!fonts_ok_) return;
         text::TextStyle st;
         text::GameFont* f = fonts_.resolve(font, st);
@@ -1049,6 +1074,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         st.scale_y *= kh;
         st.color = c;
         st.align = a;
+        if (baseline) st.valign = text::VAlign::Baseline;
         f->draw(X(x, side), Y(y), s, st);
     };
     char buf[64];
@@ -1158,12 +1184,14 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         SDL_FRect lit{dst.x, dst.y, dst.w * frac, dst.h};
         SDL_RenderTexture(r, im->tex, &src, &lit);
         if (horizontal) {
-            txt(x + w / 2, y - 3, d.automatic ? ">" : "=", "meter#1", 1, kAmber, text::HAlign::Center, Right);
+            txt(x + w / 2, y - 3, d.automatic ? ">" : "=", "meter#1", 1, kTransmission, text::HAlign::Center, Right);
             // Shift light: a red dot at the panel's top right, lit above the shift-up rpm.
             bool shift_lit = d.rpm > d.shift_rpm && (blink_ / 3) % 2 == 0;
             fill(r, X(x + w + 3, Right), Y(y - 4), 3 * kw, 3 * kh, shift_lit ? kRed : SDL_Color{60, 0, 0, 200});
         } else {
-            txt(x, y + 5, d.automatic ? ">" : "=", "meter#1", 1, kAmber, text::HAlign::Left, Right);
+            // The race battle tachometer: the pen (left, baseline) 5 below the bar's
+            // top left corner.
+            txt(x, y + 5, d.automatic ? ">" : "=", "meter#1", 1, kTransmission, text::HAlign::Left, Right, true);
         }
     }
     std::snprintf(buf, sizeof(buf), "%3d", int(d.imperial ? d.speed_kmh / 1.609344f : d.speed_kmh));

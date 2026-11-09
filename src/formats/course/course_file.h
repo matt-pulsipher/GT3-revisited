@@ -8,9 +8,10 @@
 //
 //   slot  tag    contents
 //   1     GTM1   main scenery model (nodes x chunks, 1-24 texture sets)
-//   2-4   Vls0   visibility lists for slot 1 (see visibility.h; slot 2 in the main view)
-//   5     GTM1   secondary scenery model (road reflections / far detail)
-//   6-7   Vls0   visibility lists for slot 5
+//   2-4   Vls0   visibility lists for slot 1 (see visibility.h): the main view, the mirror, the 2P halves
+//   5     GTM1   secondary scenery model (the cars' reflection map)
+//   6     Vls0   visibility lists for slot 5
+//   7     Vls0   visibility lists for slot 1 in a 2P half's mirror (112 of 320 files)
 //   9,13  GTM1   optional extra models (+ Vls0 in 10, 14)
 //   21    GTM1   sky dome (centred on the camera)
 //   22    GTM1   distant backdrop
@@ -43,7 +44,14 @@ namespace gt3r::course {
 
 enum Slot : int {
     kSlotScenery = 1,
+    kSlotSceneryVisMain = 2,   // Vls0 lists for slot 1 (scenery_list_slot)
+    kSlotSceneryVisMirror = 3,
+    kSlotSceneryVisSplit = 4,
     kSlotScenery2 = 5,
+    kSlotScenery2Vis = 6,      // Vls0 lists for slot 5
+    kSlotSceneryVisSplitMirror = 7,
+    kSlotWetReflectionVis = 10, // Vls0 lists for slot 9, the wet road's reflection
+    kSlotWetMaskVis = 14,       // Vls0 lists for slot 13, its mask
     kSlotSky = 21,
     kSlotBackdrop = 22,
     kSlotSkyObject = 23,

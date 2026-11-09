@@ -415,8 +415,8 @@ same way. The time column (`result_time_text`, test `race_results_text`):
 | finished laps down | "+1 lap", "+N laps" |
 | still racing | "Running..." |
 
-The HUD's lap / time block is drawn over the panel and the rest of the HUD under
-it (`HudData::layer`).
+The panel is drawn over the whole HUD, the lap / time block included: where the
+two meet (a 4:3 screen), the panel covers "Lap", "Best" and "Last".
 
 The panel is fully shown at 7 + 0.12 n s: 7.72 s for six cars
 (`ResultsOverlay::fully_shown_time`). After that, Circle or Cross leaves. If every car has
@@ -857,21 +857,33 @@ frame's movement ahead of it. Each pass is also moved by a sub-pixel step of the
   "0 kg/cm2"), clamped to 0 .. 2.
 - **Digital speed.** Speed font, "%3d", amber, with "km/h" or "mph" in sw_12.
   Onboard: right edge (350, 410). Remote: right edge x 580 (pushed), baseline 385.
-- **AT / MT.** The meter font's `>` (automatic) or `=` (manual), amber.
+- **AT / MT.** The meter font's `>` (automatic) or `=` (manual) in gray (136, 160, 160),
+  its pen (the left end of the baseline) at (-2, +28) from the outside tachometer's box
+  center, inside the dial below the gear, and at (-10, -15) in the in-car one
+  (`Hud::transmission_pen`, test `race_hud_gear_and_transmission`). The 2P bar
+  tachometer's is in the same gray, its pen 5 below the bar's top left corner.
 - **Speed unit.** The game data's rule: mph for the NTSC-U data, and mph when no
   GT-mode session exists. `[race] units = kmh | mph` overrides it.
 
 ### §D2 Gear, shift light, recommended gear
 
-- **Gear.** The digit is in the `gearr` font in amber, "R" in HUD red, "N" in
-  sw_20, over an unlit "8" (black, alpha 96). While the clutch is not engaged
-  the digit is drawn at half brightness. The onboard cluster has it in the gear
-  panel centered on (320, 360); the remote cluster inside the tachometer.
-- **Shift light.** A `:` above the digit, lit HUD red above the shift-up rpm,
-  blinking with a counter that adds 42 per frame (3 frames on, 3 off).
-- **Recommended gear.** "> n" after the digit, half size. A ghost "> 8" is always
-  there; the recommended gear is lit red over it when the player's car is not
-  slower than the coming target speed T, blinking red / black in braking zones.
+Every pen below is the left end of the text's baseline, measured from the center
+of the gear's box (in-car: the gear panel's center (320, 360); outside: (545, 325)
+in the tachometer, pushed) with the `gearr` font's size (24) and line height (26)
+(`Hud::gear_pens`, test `race_hud_gear_and_transmission`).
+
+- **Gear.** The digit's pen is 24 left of the center and 13 (half the line, rounded
+  down) below it, so the digit ends at the center. It is drawn over an unlit "8"
+  and "1" (black, alpha 96), in amber, "R" in HUD red. While the clutch is not
+  engaged every channel of that color and its alpha are at half. ("N" in sw_20 at
+  130 % is ours, for gear 0, which GT3's cars never report.)
+- **Shift light.** A `:` at (-4, -12) from the center's pen outside, (-35, 0) in
+  the car; lit red (255, 0, 0) above the shift-up rpm, blinking with a counter that
+  adds 42 per frame (3 frames on, 3 off), black otherwise.
+- **Recommended gear.** "> n" from the center's pen, in the font's small digits.
+  A ghost "> 8" is always there; the recommended gear is lit red over it when the
+  player's car is not slower than the coming target speed T, blinking red / black
+  in braking zones (its own counter adding 42 per frame).
   The race's AI keeps planning for the player's car while the pad drives it, and
   the hint is its gear (`ai.md` §16; `RaceScreen::update_gear_hint`). T is the
   next point's speed, or in a braking zone entered in a corner the lower of the
@@ -2665,10 +2677,21 @@ k = 0, so no glare is drawn.
 
 ### §I7 Draw order of the scenery and the cars
 
-- **Scenery.** The course scenery (slot 1, the visible nodes) is drawn in one
-  pass in file order, its opaque and blended packets interleaved, after the sky,
-  the sun and the backdrop, then the billboards. The wet-road pass (§K) follows,
-  then the cars.
+- **Scenery.** The course scenery (slot 1) is drawn in one pass after the sky,
+  the sun and the backdrop: the nodes of the view's visibility list, in the
+  list's order, their opaque and blended packets interleaved; then the
+  billboards of the same nodes in the same order. The wet-road pass (§K)
+  follows, then the cars.
+- **Visibility lists.** Each view takes the list of the course's view point
+  nearest its camera (docs/formats/course.md "Vls0"): slot 2 in the 1P view and
+  the licence menu's preview, slot 4 in the 2P halves, slot 3 in the rear-view
+  mirror, slot 7 in a 2P half's mirror (slot 3 on courses without it). A node
+  the list leaves out is not drawn, even where nothing in front would hide it:
+  the backdrop, whose depth is cleared before the scenery, shows there instead.
+  From Grand Valley's hairpin before the lake, the hill across the water with
+  the tunnel and the bridge is left out and the backdrop's hills fill that part
+  of the view. The cars' reflection map draws slot 5's nodes from slot 6's list
+  (its camera), the wet road slots 9 and 13 from slots 10 and 14.
 - **Billboards per view.** Bit 0 of a per-view word in Env0 turns the billboards
   on: +0xF30 in the 1P view, +0xF34 in the 2P halves, +0xF38 in the mirror (§H2).
   Akasaka, Midfield, Seattle, Smokey Mountain South and the Tahiti courses (and
@@ -2702,6 +2725,13 @@ k = 0, so no glare is drawn.
   meshes, then its blended ones in model order) before later items' opaque
   meshes: the course scenery, the wet-road frame passes and each car shadow.
   Billboards and tire smoke stay in the depth-sorted blended pass.
+  `DrawItem::nodes` limits an item to the meshes of a visibility list's nodes,
+  in the list's order (the scenery, its billboards, the reflection map's
+  scenery, the wet road's models). Where GT3 switches a view's list at once,
+  ours fades a scenery node and its billboards in over 0.6 s when it joins the
+  list and out when it leaves (dithered): at our resolution and in a 16:9
+  picture the instant switch pops whole buildings in. Camera cuts switch at
+  once, and a settled view shows the list exactly.
 
 ---
 

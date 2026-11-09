@@ -384,7 +384,12 @@ The backdrop is drawn whole (`in_order`, its moving nodes joined) right after th
 the depth is reset to the far value (`DrawItem::depth_reset`: a viewport quad through the
 `PipelineKey::depth_reset` pipeline, compare always, no colour, `no_color.frag`: through
 `model.frag`, it cost phones over a millisecond), as GT3 resets its Z before the
-course (presentation §M2): the course covers the backdrop wherever its planes lie.
+course (presentation §M2): the course covers the backdrop wherever its planes lie. So the
+scenery draws, as GT3's does, only the nodes of the view's visibility list
+(`DrawItem::nodes`, docs/dev/RACE.md): the parts a hill hides from that stretch of the track
+are not drawn over the backdrop. A node changing lists fades with `DrawItem::fade`: `model.frag`
+discards the pixels whose 4 x 4 ordered-dither threshold lies at or above the share
+(`wheel_blur.z`), so the node keeps its depth, blend and draw order and needs no other pipeline.
 `DrawItem::light_scale` (road shade) scales every light, fills included.
 Light sources per scene:
 

@@ -131,6 +131,9 @@ public:
     bool has_page() const { return !levels_.empty(); }
     const std::string& page_name() const;
     MenuSet::PageRef page() const;
+    // The page of a level (0 = the base page .. depth(): the top popup).
+    const std::string& page_name_at(int level) const;
+    MenuSet::PageRef page_at(int level) const;
     const std::vector<ItemState>& items() const;
     int focus() const;
     const ItemState* focused() const;

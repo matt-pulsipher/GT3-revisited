@@ -20,7 +20,8 @@ Code: `src/audio/bgm.*` (the BGM layer), `src/audio/audio_engine.*` (output),
 `sound_race_music_replay_start`, `sound_race_music_level`,
 `sound_mads_markers_synthetic`, `sound_mads_markers_disc`,
 `sound_music_request_levels`, `sound_music_and_effects_trim`, `sound_race_playlist`,
-`sound_race_playlist_from_another_disc`,
+`sound_race_playlist_from_another_disc`, `sound_bgm_index_after_disc_change`,
+`sound_disc_music_after_disc_change`,
 `sound_replay_theater_music` (`tests/test_sound_race.cpp`), `race_music_markers`
 (`tests/test_race_presentation.cpp`), `sound_seq_music_bus_and_level`
 (`tests/test_sound_seq.cpp`), `tests/test_music_list.cpp`.
@@ -102,6 +103,14 @@ For a stream id the index picks the track within the group:
 If the chosen file does not exist, the music stops and nothing plays
 (`bgm::Player::play` logs a warning). Mods can replace any `.ads` file
 through the VFS; the replacement plays wherever the disc's file would.
+
+**Another disc (ours).** Each release names its streams its own way (the
+quick menus' music is `str10a.ads` on the US disc and `str10e.ads` on PAL;
+the race songs are `race_a..`, `race_e..`, `race_j..`). So when the disc
+changes, or a mod is switched on or off, `bgm/ads.inf` and the sequenced
+music are read again at their next use (`AudioEngine::forget_disc_music`).
+The piece playing then plays on, and a sequence keeps its banks until the
+next one starts.
 
 ### §1.3 Play and play-if-different
 

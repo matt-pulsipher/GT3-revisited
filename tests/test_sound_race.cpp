@@ -2,7 +2,7 @@
 // upshift), the looping effect voice and its priority, every wheel's tyre loops and
 // their placement, the music / effects trim, the rn_01.es wind unit, CRSS course ambience
 // (with GT3R_DISC: every course's CRSS section), the race music cues and request
-// levels, and the race playlist.
+// levels, the race playlist, and the music read again from another disc.
 
 #include "test_framework.h"
 #include "exact_drive.h"
@@ -14,6 +14,7 @@
 #include "audio/engine_sound.h"
 #include "audio/loop_effect.h"
 #include "audio/surround_cue.h"
+#include "base/file.h"
 #include "base/game_random.h"
 #include "base/ps2_float.h"
 #include "formats/course/course_file.h"
@@ -35,6 +36,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <optional>
 #include <string>
 
@@ -465,6 +467,43 @@ TEST(sound_bgm_ids) {
             ++seen[size_t(track)];
         }
     CHECK(std::all_of(seen.begin(), seen.end(), [](int v) { return v == 1; }));
+}
+
+// A stream index (bgm/ads.inf) whose group 0x12 (the long start jingle) holds `file` alone.
+static Bytes one_jingle_index(const char* file) {
+    Bytes d(0x240, 0);
+    auto w32 = [&d](size_t o, u32 v) { std::memcpy(&d[o], &v, 4); };
+    std::memcpy(d.data(), "MADS", 4);
+    w32(0x10, 0x100);
+    w32(0x14, 1);
+    const char* names[4] = {"str01", file, "jg11", "artist"};
+    for (size_t k = 0; k < 4; ++k) {
+        w32(0x100 + 4 * k, u32(0x180 + 0x20 * k));
+        std::memcpy(&d[0x180 + 0x20 * k], names[k], std::strlen(names[k]));
+    }
+    return d;
+}
+
+// Another disc, or a mod change (App::close_disc, App::rescan_mods): each release names its
+// streams its own way (US str10a.ads, PAL str10e.ads), so the index is read again. The first
+// disc's index used to stay, and the next disc's jingles and quick-menu music were silent
+// (public issue 260).
+TEST(sound_bgm_index_after_disc_change) {
+    Vfs us(nullptr), eu(nullptr);
+    for (auto [vfs, file] : {std::pair{&us, "str01a.ads"}, std::pair{&eu, "str01e.ads"}}) {
+        const std::filesystem::path mods = test::temp_dir(std::string("bgm-index-") + file);
+        const std::filesystem::path inf = mods / "index" / "files" / "bgm" / "ads.inf";
+        std::filesystem::create_directories(inf.parent_path());
+        CHECK(write_host_file(inf.string(), one_jingle_index(file)));
+        vfs->scan_mods(mods.string(), nullptr);
+    }
+    bgm::Player player;
+    CHECK((player.files(us, bgm::kStartLong) == std::vector<std::string>{"str01a.ads"}));
+    player.forget();
+    CHECK((player.files(eu, bgm::kStartLong) == std::vector<std::string>{"str01e.ads"}));
+    eu.set_mod_enabled("index", false); // the mod with the index goes: no streams
+    player.forget();
+    CHECK(player.files(eu, bgm::kStartLong).empty());
 }
 
 // A licence run's end, as GT3 plays it (music §3.1): its judging posts the failed event for a course-out and for a time
@@ -1011,6 +1050,35 @@ TEST(sound_race_playlist_from_another_disc) {
         for (const race::RacePlaylist::Song& s : music.playlist().songs()) listed.push_back(s.id);
         std::sort(listed.begin(), listed.end());
         CHECK(listed == ids);
+    }
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+}
+
+// The same through the audio engine with the disc's music (any region; App::close_disc): the
+// next disc's stream index and sequenced music are read, and a sequence that plays on keeps its
+// banks until the next one starts.
+TEST(sound_disc_music_after_disc_change) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) SKIP("no audio");
+    {
+        AudioEngine audio;
+        if (!audio.ok()) SKIP("no audio device");
+        Vfs vfs(&disc->volume());
+        Vfs none(nullptr); // a disc with no music
+        CHECK(audio.bgm().play(audio, vfs, bgm::kQuickMenu, -1, true, bgm::kMenuVolume));
+        CHECK(!audio.music_index(vfs).empty());
+        audio.stop_music();
+        audio.forget_disc_music();
+        CHECK(audio.bgm().files(none, bgm::kQuickMenu).empty() && audio.music_index(none).empty());
+        audio.forget_disc_music(); // back to the disc
+        CHECK(audio.bgm().play(audio, vfs, bgm::kQuickMenu, -1, true, bgm::kMenuVolume));
+        CHECK(audio.play_sequence(vfs, "gtmenu01", bgm::kMenuVolume));
+        audio.forget_disc_music();
+        CHECK(!audio.music_index(none).empty() && audio.sequence_playing());
+        CHECK(!audio.play_sequence(none, "gtmenu01") && !audio.sequence_playing());
+        CHECK(audio.music_index(none).empty());
     }
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
