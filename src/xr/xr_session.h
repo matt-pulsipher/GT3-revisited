@@ -71,7 +71,7 @@ struct Settings {
     float screen_distance = 2.4f, screen_width = 2.6f; // menus' virtual screen (metres)
     float hud_distance = 1.3f, hud_width = 1.5f;       // the race HUD panel in front of the car
     float hud_drop = 0.12f;                            // HUD panel centre below eye level
-    float seat_forward = 0, seat_height = 0;           // in-car views: from the car's camera (metres)
+    float seat_forward = 0, seat_height = 0;           // in-car views, in-car custom cameras: from the car's camera (metres)
     int refresh_hz = 90;      // refresh = 72 | 80 | 90 | 120 (what the headset offers)
     float eye_scale = 1.0f;   // resolution = 0.7 .. 1.3 of the headset's recommended size
     static Settings load(const IniDocument& cfg);

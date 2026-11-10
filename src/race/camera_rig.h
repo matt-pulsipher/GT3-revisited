@@ -206,6 +206,12 @@ public:
         if (mode_ == CameraMode::Custom && !intro_) return custom() && custom()->incar_hud;
         return onboard();
     }
+    // Where a headset's seated space sits for the custom camera in view (seat -> world, as of the
+    // last update(); docs/dev/VR.md): at the camera's eye, facing its heading (its yaw, the look
+    // back), the camera's pitch and tilt left to the head. On a car mount it turns with the car's
+    // body, with the camera's share of its roll (`level`: with its heading only), and `nudge`
+    // moves it in that frame (x right, y up, z back); following the car it is level.
+    render::Mat4 custom_seat(bool level, const render::Vec3& nudge) const;
     // A custom camera matching a built-in player view (Bumper, Roof, Chase, ChaseFar) of this
     // car (set_car_points): the editor's starting points.
     CustomCamera preset(CameraMode m, const sim::VehicleSetup& setup) const;
@@ -313,6 +319,7 @@ private:
     int custom_id_ = 0;
     HoodCameraProfile hood_profile_;
     bool body_blocks_ = false; // the custom camera's view across its own car's body (hides_car)
+    render::Mat4 mount_frame_; // the custom camera's mount frame (rotation, frame -> world; custom_seat)
     render::Vec3 mirror_eye_{};
     render::Mat4 mirror_view_;
     float mirror_fovy_ = 0.8f;

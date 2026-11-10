@@ -7,6 +7,7 @@
 #include "race/camera_rig.h"
 #include "race/custom_cameras.h"
 #include "race/hood_camera.h"
+#include "race/interp.h"
 
 #include <cmath>
 
@@ -296,4 +297,70 @@ TEST(race_camera_custom_pose) {
     CHECK(c.onboard() && c.incar_hud() && c.sound_kind() == CameraSound::Cockpit);
     c.set_intro(true, 0.5f); // the pre-race shot is outside the car
     CHECK(!c.onboard() && !c.incar_hud() && !c.shows_mirror());
+}
+
+// A headset's seat for a custom camera (CameraRig::custom_seat; docs/dev/VR.md): the camera's eye
+// and heading, its pitch and tilt left to the head.
+TEST(race_camera_custom_seat) {
+    sim::VehicleSetup setup;
+    sim::VehicleState s;
+    s.position = {10, 2, -30};
+    const float n = std::sqrt(0.9f * 0.9f + 0.1f * 0.1f + 0.4f * 0.4f + 0.15f * 0.15f);
+    s.orientation = {0.9f / n, 0.1f / n, 0.4f / n, 0.15f / n}; // turned, pitched and rolled
+    const double dt = 1.0 / 60.0;
+    auto vec = [](const sim::Vec3& v) { return render::Vec3{float(v.x), float(v.y), float(v.z)}; };
+    const render::Vec3 car_up = vec(rotate(s.orientation, {0, 1, 0})), car_fwd = vec(rotate(s.orientation, {0, 0, -1}));
+
+    CameraRig c;
+    c.set_shake(false);
+    CustomCamera k = camera(1, "Left seat");
+    k.mount = CustomCamera::Mount::Body;
+    k.offset = {-0.35f, 0.1f, 0.2f};
+    k.yaw = 30;
+    auto place = [&] {
+        c.set_custom_cameras({k});
+        c.set_mode(CameraMode::Custom);
+        c.update(s, setup, PadState{}, dt);
+    };
+    // A camera with no pitch or tilt, fixed to the car: the seat is its view.
+    place();
+    const render::Mat4 seat = c.custom_seat(false, {});
+    CHECK(near(render::inverse(seat), c.view()));
+    CHECK(near(seat.transform_point({0, 0, 0}), c.eye()));
+    // Pitched and tilted: the same seat.
+    k.pitch = -20, k.roll = 10;
+    place();
+    CHECK(near(c.custom_seat(false, {}), seat) && !near(render::inverse(seat), c.view()));
+    // The nudge moves it in the car's frame (z back), whichever way the camera is turned.
+    CHECK(near(c.custom_seat(false, {0, 0.1f, -0.2f}).transform_point({0, 0, 0}), c.eye() + car_up * 0.1f + car_fwd * 0.2f));
+    // Level: the same eye and heading, upright.
+    {
+        const render::Mat4 level = c.custom_seat(true, {});
+        const render::Vec3 up = level.transform_point({0, 1, 0}) - c.eye();
+        const render::Vec3 a = level.transform_point({0, 0, -1}) - c.eye(), b = seat.transform_point({0, 0, -1}) - c.eye();
+        CHECK(near(level.transform_point({0, 0, 0}), c.eye()) && near(up, {0, 1, 0}));
+        CHECK(a.x * b.x + a.z * b.z > 0.9f * std::hypot(b.x, b.z));
+    }
+    // None of the body's roll (body_roll 0): facing ahead, the seat's side axis is level.
+    k.body_roll = 0, k.yaw = 0;
+    place();
+    CHECK(near((c.custom_seat(false, {}).transform_point({1, 0, 0}) - c.eye()).y, 0.0f));
+    CHECK(!near((seat.transform_point({1, 0, 0}) - seat.transform_point({0, 0, 0})).y, 0.0f, 0.05f)); // (the car is rolled)
+    // Look back: the seat turns round with the camera.
+    k.pitch = k.roll = 0, k.body_roll = 1, k.yaw = 30;
+    c.set_look_back(true);
+    place();
+    CHECK(near(render::inverse(c.custom_seat(false, {})), c.view()));
+    c.set_look_back(false);
+    // Following the car: level, along the camera's heading.
+    k.mount = CustomCamera::Mount::Follow;
+    k.offset = {0, 3, 8};
+    k.pitch = -15;
+    place();
+    {
+        const render::Mat4 follow = c.custom_seat(false, {});
+        const render::Vec3 f = follow.transform_point({0, 0, -1}) - c.eye(), v = view_forward(c.view());
+        CHECK(near(follow.transform_point({0, 0, 0}), c.eye()) && near(follow.transform_point({0, 1, 0}) - c.eye(), {0, 1, 0}));
+        CHECK(near(f.y, 0.0f) && f.x * v.x + f.z * v.z > 0.99f * std::hypot(v.x, v.z));
+    }
 }

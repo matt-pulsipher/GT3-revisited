@@ -2,8 +2,9 @@
 
 The game runs in a VR headset through OpenXR. Menus, movies and replays show on a
 large virtual screen in front of the player; while driving, the race is drawn in
-stereo from the player's tracked head, seated in the car (in-car views) or floating
-behind it (chase views), with the HUD on a panel in front. The VR controllers
+stereo from the player's tracked head, seated in the car (in-car views), floating
+behind it (chase views) or wherever one of the player's own cameras is, with the HUD on a
+panel in front. The VR controllers
 drive the same virtual DualShock 2 as any pad; on a PC a wheel or a pad does too.
 
 Builds with `GT3R_XR` (the Quest APK, `-Pquest`; the Windows package
@@ -111,7 +112,14 @@ render pass have neither cost.
 **Eyes.** `RaceScreen::render_vr_eyes` (`screen_race_vr.cpp`) places the seated
 space in the world (`vr_base`): at the car's camera point 0 with the car's
 attitude (in-car; `[vr] level_horizon` keeps only its heading), or at the chase
-camera, level, along its lagged heading. Each eye's view is that placement times
+camera, level, along its lagged heading. One of the player's own cameras (Settings >
+Cameras) places it at the camera's eye, facing the camera's heading
+(`CameraRig::custom_seat`): the camera's yaw turns the seat, its pitch and tilt are left
+to the head and its field of view is the headset's. Fixed to the car, on the hood or in
+the driver's seat it turns with the car's attitude, with the camera's share of the body
+roll (`level_horizon`: with its heading only); following the car it is level. Its car,
+HUD layout and mirror are the camera's, as on a screen (in the driver's seat the body is
+drawn from inside, as `car_body` draws it). Each eye's view is that placement times
 the eye's tracked pose; its projection is the eye's own off-centre frustum
 (`render::frustum`). The draw items are collected once for both eyes from the
 head; each eye renders straight into its canvas (`View3D::draw_to`, the MSAA
@@ -121,8 +129,8 @@ the HUD, mirror (`draw_mirror`, its usual place at the top of the panel), pause
 menu and results are drawn on it as usual.
 
 Not in stereo (they stay on the virtual screen): replays, the attract demo, the
-licence demonstrations, the pre-race shot, 2P split screen, the Analyzer and the
-debug orbit / TV cameras.
+licence demonstrations, the pre-race shot, 2P split screen, the Analyzer, the camera
+editor and the debug orbit / TV cameras.
 
 **Layers.** Screen frames: one opaque quad layer, `[vr] screen_width` wide,
 `screen_distance` ahead of the seated origin. Stereo frames: the projection layer
@@ -136,7 +144,9 @@ inputs the player gives it in Settings > Controls (`PadAction::RecenterView`; a 
 button, for a player with no controllers in hand). The system's own re-centring (hold
 the Meta button) resets it to LOCAL's new origin. In the in-car views `[vr]
 seat_forward` and `seat_height` move the eye point from the car's camera, within the
-car, to line it up with a real seat and wheel.
+car, to line it up with a real seat and wheel. They move a custom camera in the driver's
+seat (`mount = incar`) too, whose own Sideways, Fore/aft and Height put the seat on the
+car's left or right; the other custom cameras sit exactly where they were placed.
 
 **The desktop's window.** `xr::Session::mirror_to` claims the window for the GPU
 device, separately from the offscreen 2D renderer, and `end_frame` draws into it in
@@ -239,13 +249,13 @@ the rates the headset offers (`XR_FB_display_refresh_rate`, 90 Hz default).
 | `enabled` | `on` | `off` (or `--no-vr`): the window, as on a phone |
 | `runtime` | `auto` | desktops: `steamvr` or `meta` (Settings > VR > Headset software, when the PC has them); `auto`: the system's OpenXR runtime, then SteamVR while it runs. Restart |
 | `stereo` | `on` | races in 3D; `off`: on the virtual screen |
-| `level_horizon` | `off` | in-car view follows the car's heading only |
-| `car_body` | `off` | the own car's body around the in-car view (see Status) |
+| `level_horizon` | `off` | in-car view (and a custom camera on the car) follows the car's heading only |
+| `car_body` | `off` | the own car's body around the in-car view, and a custom camera on the car that hides it (see Status) |
 | `steering` | `stick` | `wheel`: grips grab a steering wheel |
 | `wheel_degrees` | `180` | wheel rotation lock to lock |
 | `screen_width`, `screen_distance` | `2.6`, `2.4` | metres |
 | `hud_width`, `hud_distance`, `hud_drop` | `1.5`, `1.3`, `0.12` | metres |
-| `seat_forward`, `seat_height` | `0`, `0` | metres from the car's camera, in-car views (-0.6..0.6) |
+| `seat_forward`, `seat_height` | `0`, `0` | metres from the car's camera, in-car views and custom cameras in the driver's seat (-0.6..0.6) |
 | `refresh` | `90` | Hz (nearest offered; where the headset offers a choice to games: PC runtimes set it themselves) |
 | `resolution` | `1.0` | eye size x the recommended size (0.5..1.5); restart |
 
