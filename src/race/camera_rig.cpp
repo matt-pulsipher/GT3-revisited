@@ -393,6 +393,7 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
             u = render::normalize(u0 * std::cos(roll * (1.0f - lock)) + axis * std::sin(roll * (1.0f - lock)));
         }
         const render::Vec3 rv2 = render::normalize(render::cross(f, u));
+        mount_frame_ = render::Mat4::from({rv2.x, rv2.y, rv2.z, 0, u.x, u.y, u.z, 0, -f.x, -f.y, -f.z, 0, 0, 0, 0, 1});
         auto vworld = [&](const render::Vec3& v) { return rv2 * v.x + u * v.y - f * v.z; };
         view_ = render::look_at(eye_, eye_ + vworld(d), vworld(du));
         fovy_ = c->fovy();
@@ -554,6 +555,15 @@ CustomCamera CameraRig::preset(CameraMode m, const sim::VehicleSetup& setup) con
     }
     c.clamp();
     return c;
+}
+
+render::Mat4 CameraRig::custom_seat(bool level, const render::Vec3& nudge) const {
+    const CustomCamera* c = custom();
+    const float turn = (c ? c->yaw * kPi / 180.0f : 0.0f) + (look_back_ ? kPi : look_);
+    render::Mat4 frame = mount_frame_;
+    if (level || !car_mounted()) // its heading only (the frame's z axis is back)
+        frame = render::rotate_y(std::atan2(frame.at(0, 2), frame.at(2, 2)));
+    return render::translate(eye_) * frame * render::translate(nudge) * render::rotate_y(-turn);
 }
 
 CameraCar CameraRig::camera_car(const sim::VehicleState& s, const sim::VehicleSetup& setup) {

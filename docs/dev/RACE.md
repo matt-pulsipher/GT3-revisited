@@ -300,8 +300,8 @@ SDL's trigger rumble does nothing there.
   first and the rows that change with it sit below, so it never moves; on a phone the panel
   scrolls. On a seat anchor the scene's drags only aim the view: the seat moves by the panel's
   Fore/aft, Sideways and Height sliders (`clamp()` keeps the nudge inside the mounts' bounds).
-  Tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`. VR stereo keeps the
-  built-in views (a custom camera shows flat).
+  Tests `race_camera_custom_*`, `custom_cameras_*`, `hood_camera_*`. In VR stereo a
+  custom camera places the seat (`CameraRig::custom_seat`, [VR](VR.md); the editor shows flat).
 - Road shade (docs/formats/course.md): the four wheels' road attributes A/B scale the car's light
   colours (per draw item) and the light shadow's alpha F; `race/road_shade.*` interpolates them
   from the road mesh (test `race_road_shade_disc`).
