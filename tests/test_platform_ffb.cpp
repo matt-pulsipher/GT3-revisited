@@ -7,8 +7,15 @@
 #include "input/force_feedback.h"
 #include "input/input_manager.h"
 
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_joystick.h>
+#include <SDL3/SDL_timer.h>
+
 #include <algorithm>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 using namespace gt3r;
 
@@ -279,4 +286,82 @@ TEST(race_rumble_mode) {
     IniDocument out;
     input.save(out);
     CHECK(out.get("player1", "rumble") == "gt3" && out.get("player2", "rumble") == "auto");
+}
+
+namespace {
+// What a virtual device's motors were sent (SDL_VirtualJoystickDesc's callbacks).
+struct MotorLog {
+    std::vector<std::pair<Uint16, Uint16>> rumble, triggers;
+};
+bool log_rumble(void* log, Uint16 low, Uint16 high) {
+    static_cast<MotorLog*>(log)->rumble.emplace_back(low, high);
+    return true;
+}
+bool log_triggers(void* log, Uint16 left, Uint16 right) {
+    static_cast<MotorLog*>(log)->triggers.emplace_back(left, right);
+    return true;
+}
+} // namespace
+
+// Issue 200: back from another window, each pad's motors get their level written for real, however
+// SDL's record of them reads, twice (0.1 s apart); a wheel gets nothing (rumble resets its force feedback).
+TEST(rumble_resent_on_focus_gained) {
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
+    MotorLog pad_log, wheel_log;
+    SDL_VirtualJoystickDesc pad_desc;
+    SDL_INIT_INTERFACE(&pad_desc);
+    pad_desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    pad_desc.name = "Test Rumble Pad";
+    pad_desc.naxes = 6;
+    pad_desc.nbuttons = 15;
+    pad_desc.userdata = &pad_log;
+    pad_desc.Rumble = log_rumble;
+    pad_desc.RumbleTriggers = log_triggers;
+    SDL_VirtualJoystickDesc wheel_desc = pad_desc;
+    wheel_desc.type = SDL_JOYSTICK_TYPE_WHEEL;
+    wheel_desc.name = "Test Rumble Wheel";
+    wheel_desc.naxes = 3;
+    wheel_desc.nbuttons = 10;
+    wheel_desc.userdata = &wheel_log;
+    const SDL_JoystickID pad = SDL_AttachVirtualJoystick(&pad_desc);
+    const SDL_JoystickID wheel = SDL_AttachVirtualJoystick(&wheel_desc);
+    CHECK(pad && wheel);
+    if (pad && wheel) {
+        InputManager in;
+        in.set_device_filter(0, pad_desc.name); // player 1 on the pad, whatever else is connected
+        in.set_background(true);                // no window has the focus here
+        SDL_UpdateJoysticks();
+        for (SDL_Event e; SDL_PollEvent(&e);) in.handle_event(e);
+        in.update(1.0 / 60);
+        in.set_rumble(0, PadRumble{100, 50});
+        CHECK(!pad_log.rumble.empty() && pad_log.rumble.back() == std::make_pair(Uint16(50 * 257), Uint16(100 * 257)));
+        in.set_rumble(0, PadRumble{}); // the stop the window's absence lost
+        CHECK(pad_log.rumble.back() == std::make_pair(Uint16(0), Uint16(0)));
+        pad_log = {};
+        in.set_rumble(0, PadRumble{}); // SDL's record says stopped: nothing written
+        CHECK(pad_log.rumble.empty());
+
+        in.window_focus_gained();
+        CHECK(pad_log.rumble.size() == 2 && pad_log.rumble.back() == std::make_pair(Uint16(0), Uint16(0)));
+        CHECK(pad_log.triggers.size() == 2 && pad_log.triggers.back() == std::make_pair(Uint16(0), Uint16(0)));
+        in.update(1.0 / 60); // the second round waits 0.1 s
+        CHECK(pad_log.rumble.size() == 2);
+        SDL_Delay(120);
+        in.update(1.0 / 60);
+        CHECK(pad_log.rumble.size() == 4 && pad_log.rumble.back() == std::make_pair(Uint16(0), Uint16(0)));
+        CHECK(pad_log.triggers.size() == 4);
+        in.update(1.0 / 60); // once
+        CHECK(pad_log.rumble.size() == 4);
+
+        in.set_rumble(0, PadRumble{100, 50}); // rumbling: the same level, written again
+        pad_log = {};
+        in.window_focus_gained();
+        CHECK(pad_log.rumble.size() == 2 && pad_log.rumble.back() == std::make_pair(Uint16(50 * 257), Uint16(100 * 257)));
+        in.set_rumble(0, PadRumble{});
+        CHECK(wheel_log.rumble.empty() && wheel_log.triggers.empty());
+        in.set_background(false);
+    }
+    if (wheel) SDL_DetachVirtualJoystick(wheel);
+    if (pad) SDL_DetachVirtualJoystick(pad);
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
 }

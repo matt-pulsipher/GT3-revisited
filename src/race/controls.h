@@ -42,6 +42,18 @@ inline bool look_back_held(const PadState& pad, bool menu_pad) {
     return pad.down(PadButton::L1) || (menu_pad && pad.down(PadButton::R3));
 }
 
+// What a race the player drives does when the game's window loses the focus on a computer (ours; phones
+// and tablets pause when the game goes to the background, as the console's pause). With controllers read in
+// the background ([input] background) the player may be driving from another window: the race goes on.
+// Otherwise their input stops reaching the game, so the race pauses, which stops the motors too; an online
+// race can't pause (the others race on), so it only keeps the motors and force feedback still until the
+// window has the focus again.
+enum class FocusLoss { None, Pause, Quiet };
+inline FocusLoss focus_loss(bool desktop, bool background_input, bool online) {
+    if (!desktop || background_input) return FocusLoss::None;
+    return online ? FocusLoss::Quiet : FocusLoss::Pause;
+}
+
 // Stick axis byte (0..255, 128 = centre) -> -1..1 with deadzone and response curve.
 float stick_to_steer(u8 axis, const ControlConfig& cfg = {});
 // Pressure byte -> 0..1 with a bottom deadzone, rescaled to full range.

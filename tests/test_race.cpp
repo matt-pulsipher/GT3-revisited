@@ -402,6 +402,18 @@ TEST(race_camera_look) {
     CHECK(look_back_held(r3, true) && !look_back_held(r3, false) && !look_back_held(PadState{}, true));
 }
 
+// Another window in front on a computer (issue 200): the race pauses unless the controllers are read in
+// the background; online it can't, so only the motors go still. Phones and tablets: their own pause.
+TEST(race_focus_loss) {
+    using race::FocusLoss;
+    CHECK(race::focus_loss(true, false, false) == FocusLoss::Pause);
+    CHECK(race::focus_loss(true, true, false) == FocusLoss::None);  // driving from another window
+    CHECK(race::focus_loss(true, false, true) == FocusLoss::Quiet); // online: never paused
+    CHECK(race::focus_loss(true, true, true) == FocusLoss::None);
+    CHECK(race::focus_loss(false, false, false) == FocusLoss::None); // phones: the background pause
+    CHECK(race::focus_loss(false, false, true) == FocusLoss::None);
+}
+
 // The car LOD by camera distance (< 30 m, < 80 m, beyond; at most the model's levels), and
 // [video] full_car_detail = on: full detail at every distance.
 TEST(race_car_lod) {

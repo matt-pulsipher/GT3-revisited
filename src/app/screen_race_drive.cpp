@@ -628,7 +628,7 @@ void RaceScreen::update_drive(App& app, double dt) {
         camera2_.set_lap(field_->second_laps().laps);
         bind_hood(camera2_, hood_bound2_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
         camera2_.update(render_state2_, field_->second_setup(), pad2, dt);
-        app.input().set_rumble(1, rumble2_on_ && !replaying_
+        app.input().set_rumble(1, rumble2_on_ && !replaying_ && !focus_quiet_
                                       ? rumble2_.rumble(app.input().gt3_rumble(1), app.input().dualsense(1))
                                       : PadRumble{});
     }
@@ -666,12 +666,13 @@ void RaceScreen::update_drive(App& app, double dt) {
     update_shot_filter();
     if (const float d = director_.take_dissolve(); d > 0) start_dissolve(d); // a course record's own
 
-    bool feel = rumble_on_ && !replaying_ && !demo_ && !race_preview_; // (a car the computer drives sends nothing, physics §1.2)
+    // (A car the computer drives sends nothing, physics §1.2; nor an online race while its window is away, focus_quiet_.)
+    bool feel = rumble_on_ && !replaying_ && !demo_ && !race_preview_ && !focus_quiet_;
     app.input().set_rumble(0, feel ? rumble_.rumble(app.input().gt3_rumble(0), app.input().dualsense(0)) : PadRumble{});
     update_car_sounds(app, dt);
     update_course_ambience(app);
     // Controller force feedback (triggers, wheels) while someone is driving.
-    if (!replaying_ && !demo_ && !race_preview_) {
+    if (!replaying_ && !demo_ && !race_preview_ && !focus_quiet_) {
         if (!finished_ && (rumble_on_ || wheel_force_on_))
             if (const sim::VehicleTelemetry* t = vehicle_->telemetry()) {
                 ForceFeedbackState f = feedback(vehicle_->state(), *t, last_in_, ffb_wall_, ffb_car_);

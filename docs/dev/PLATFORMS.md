@@ -277,6 +277,7 @@ Steps are separated by `;`:
 | `wheel:<steps> <x> <y>` | the wheel (+ = up / away) at the point |
 | `tap:<x> <y>` | a finger's tap (no hover) |
 | `pinch:<x> <y> <from> <to>` | two fingers centred on the point, moving from `from` to `to` units apart in 8 steps |
+| `blur`, `focus` | the window loses / gets back the focus (queued as SDL's window events, so the whole app sees them: a race pauses, rumble is sent again) |
 
 The log names each step with its frame. Example (the online lobby's car page, then the
 classes, then Class B):

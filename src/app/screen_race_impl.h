@@ -984,6 +984,7 @@ private:
     bool race_mode_ = false;
     // --- online battle (docs/dev/ONLINE.md) ---
     bool online_ = false;
+    bool focus_quiet_ = false; // ours: the window lost the focus in an online race (race::FocusLoss::Quiet): motors still
     // The online race's state (screen_race_online.cpp; only read in online races).
     struct Online {
         NetWait wait = NetWait::None;
