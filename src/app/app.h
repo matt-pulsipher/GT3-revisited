@@ -29,6 +29,7 @@
 namespace gt3r {
 
 class App;
+struct PresenceText; // app/presence.h
 
 class Screen {
 public:
@@ -67,6 +68,9 @@ public:
     // headset, A pressed there clicks it as the trigger does; elsewhere A is the pad's Cross
     // (App::xr_pointer). Screens without pointer input keep the default.
     virtual bool clickable(float, float) const { return false; }
+    // The Discord status while this screen is on top (app/presence.h): fills `t` and returns
+    // true, or returns false to let the screen below say.
+    virtual bool presence(App&, PresenceText&) { return false; }
 };
 
 class App {
@@ -75,6 +79,9 @@ public:
     SDL_AppResult iterate();
     SDL_AppResult event(const SDL_Event& e);
     void shutdown();
+
+    // The Discord status from the screens (Screen::presence), top first: false when none says.
+    bool screen_presence(PresenceText& t);
 
     // Opens a disc image and remembers it in the config. Returns an error
     // message on failure, empty on success.

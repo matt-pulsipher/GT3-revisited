@@ -359,6 +359,19 @@ players, each on their own machine:
 
 How it works, and how to run your own relay: [ONLINE](docs/dev/ONLINE.md).
 
+### Discord
+
+Your Discord profile can show that you're playing GT3 Revisited, with what
+you're doing: "Arcade race · Tsukuba Circuit", then your car, lap and place.
+It's off until you turn on **Show what you're playing** under Settings → Online
+(`[discord] status = on`).
+
+- The game talks only to the Discord app on the same computer. It sends
+  nothing when Discord is closed, and nothing over the internet itself.
+- Windows, macOS and Linux (including Discord's Flatpak and Snap packages).
+  Phones and Meta Quest headsets don't have it.
+- `[discord] app_id` shows the status as another Discord application.
+
 ### Mods
 
 The **Mods** screen installs mods from a .zip (**Install from .zip**, or drop
