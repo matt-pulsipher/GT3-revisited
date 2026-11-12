@@ -25,6 +25,7 @@
 #include "app/screen_online.h"
 
 #include "app/app.h"
+#include "app/presence.h"
 #include "app/online_pickers.h"
 #include "app/screen_registry.h"
 #include "app/text_keyboard.h"
@@ -241,6 +242,21 @@ public:
         else if (page_ == Page::Courses) update_course_picker(app);
         else if (page_ == Page::Rules) update_rules(app);
         else update_lobby(app);
+    }
+
+    // The Discord status (app/presence.h): the lobby and its players.
+    bool presence(App&, PresenceText& t) override {
+        net::Session& s = net::online();
+        if (page_ == Page::Start || !s.joined()) {
+            t.details = "Online battle";
+            t.state = "Finding a race";
+            return true;
+        }
+        t.details = "Online battle lobby";
+        t.state = s.is_host() ? "Hosting" : "Waiting for the race";
+        t.party_size = int(s.players().size());
+        t.party_max = net::kMaxPlayers;
+        return true;
     }
 
     bool clickable(float x, float y) const override {

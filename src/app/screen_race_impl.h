@@ -219,6 +219,7 @@ public:
     bool follows_aspect() const override;
     void render(App& app, Ui& ui) override;
     bool clickable(float x, float y) const override { return editor_ && editor_->clickable(x, y); }
+    bool presence(App& app, PresenceText& t) override; // screen_race_presence.cpp
 
 private:
     // ===== Types =====

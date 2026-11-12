@@ -12,6 +12,7 @@
 #include "app/screen_race.h"
 #include "app/screen_registry.h"
 #include "app/text_keyboard.h"
+#include "app/presence.h"
 #include "app/updates.h"
 
 #include "base/file.h"
@@ -2364,6 +2365,14 @@ private:
         Row& notes = action("Release notes", links.notes.empty() ? "The relay server has not named a release page yet." : links.notes,
                             links.notes.empty() ? "Unknown" : "", [] { updates().open_notes(); });
         notes.enabled = !links.notes.empty();
+        if (Presence::supported()) { // app/presence.h
+            heading("Discord");
+            toggle("Show what you're playing",
+                   "Your Discord profile shows GT3 Revisited with the mode, course, car and lap, through the Discord "
+                   "app on this computer. Nothing is sent when Discord is closed.",
+                   discord_status().enabled(app), [a](bool v) { discord_status().set_enabled(*a, v); });
+            info("Discord", discord_status().status_text());
+        }
         heading("Online battle");
         std::string server = app.config().get("online", "server").value_or(kDefaultServer);
         info("Relay server", server.empty() ? kDefaultServer : server,

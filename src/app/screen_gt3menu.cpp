@@ -22,8 +22,10 @@
 //   GT3R_LANG=FR            menu language folder
 //   GT3R_GT3MENU_OPEN=gt_mode:cd/cd_usa_ford   open a page directly
 
+#include "game/gt_mode_menu.h"
 #include "game/replay_theater.h"
 #include "app/app.h"
+#include "app/presence.h"
 #include "app/save_dialogs.h"
 #include "base/config.h"
 #include "app/screen_movies.h"
@@ -312,6 +314,26 @@ private:
 
     // The title's GT3R menu button (the game's own items take A as Cross after a hover).
     bool clickable(float x, float y) const override { return on_title() && gt3r_button_.contains(x, y); }
+
+    // The Discord status (app/presence.h): which part of the game's menus is open.
+    bool presence(App&, PresenceText& t) override {
+        if (language_page_ || !flow_ || !flow_->controller()) return false;
+        if (flow_->attract()) {
+            t.details = "Watching the demo";
+            return true;
+        }
+        const std::string& c = flow_->control();
+        if (c == "gt_mode" && flow_->controller()->page_name() == "root") t.details = "Title menu";
+        else if (c == "gt_mode") {
+            t.details = "GT Mode";
+            if (game::GtModeSession* s = game::gt_mode_session()) t.state = "Day " + std::to_string(s->gt().state().day);
+        } else if (c == "arcade") t.details = "Arcade";
+        else if (c == "option") t.details = "Options";
+        else if (c == "memorycard") t.details = flow_->theater() ? "Replay Theater" : "Saving and loading";
+        else if (c == "logger") t.details = "Analyzer";
+        else t.details = "In the menus";
+        return true;
+    }
 
     std::string menu_music_; // the menu's current BGM sequence ("" = none)
     struct Message {

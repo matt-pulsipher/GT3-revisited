@@ -1,6 +1,7 @@
 #include "app/app.h"
 #include "base/hitch.h"
 #include "app/screen_registry.h"
+#include "app/presence.h"
 #include "app/updates.h"
 
 #include "base/log.h"
@@ -274,6 +275,9 @@ bool App::init(int argc, char** argv) {
     if (!screen.empty())
         for (const ScreenEntry& entry : screen_registry())
             if (screen == entry.id && (disc_ || !entry.needs_disc)) push(entry.factory());
+    // The Discord status (app/presence.h; [discord] status): --shot runs leave Discord alone unless GT3R_DISCORD=1.
+    const char* dc = SDL_getenv("GT3R_DISCORD");
+    discord_status().startup(*this, auto_shot_path_.empty() || (dc && *dc == '1'));
     // The update check (README "Online"; [online] update_check): in the background, never waited for.
     // --shot runs use only the cached answer (no traffic to a live server) unless GT3R_UPDATE_CHECK=1.
     const char* uc = SDL_getenv("GT3R_UPDATE_CHECK");
@@ -785,6 +789,7 @@ SDL_AppResult App::iterate() {
     updates().poll(*this);
     music_.poll();
     apply_screen_changes();
+    discord_status().frame(*this);
     Screen* top = screens_.empty() ? nullptr : screens_.back().get();
     updates().frame(*this, top && top->update_prompts());
     const bool modal = updates().modal(); // the update dialog takes the input
@@ -1419,8 +1424,15 @@ bool App::save_folder_reachable() const {
 
 bool App::show_song() const { return to_lower(config_.get("music", "show_song").value_or("on")) != "off"; }
 
+bool App::screen_presence(PresenceText& t) {
+    for (auto it = screens_.rbegin(); it != screens_.rend(); ++it)
+        if ((*it)->presence(*this, t)) return true;
+    return false;
+}
+
 void App::shutdown() {
     music_.cancel(); // a folder scan's thread reads files through SDL
+    discord_status().shutdown(); // clears the Discord status
     remember_race_scale();
     if (input_) save_config();
     screens_.clear();

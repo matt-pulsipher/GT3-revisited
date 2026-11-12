@@ -75,5 +75,5 @@ thread, and the update check runs on a detached one.
 | `menu/` | the game's menu system (pages, items, transitions) and game flow |
 | `game/` | GT Mode rules and state, saves, replay theater, mod cars ([dev/GT_MODE.md](dev/GT_MODE.md)) |
 | `net/` | online sessions and the relay server ([dev/ONLINE.md](dev/ONLINE.md)) |
-| `platform/` | platform specifics (tilt, display insets, render scale, recent discs) |
+| `platform/` | platform specifics (tilt, display insets, render scale, recent discs, the Discord status client) |
 | `app/` | the screens and the main menu |
