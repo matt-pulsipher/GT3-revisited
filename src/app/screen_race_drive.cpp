@@ -583,8 +583,11 @@ void RaceScreen::update_drive(App& app, double dt) {
         const bool confirm = app.menu().pressed(PadButton::Cross) || app.menu().pressed(PadButton::Circle);
         // Races: once the panel is fully shown; time trials, machine tests and free runs: the
         // record overlay's 5 s (0.1 s after the top-speed test's EXIT), then 10 s more.
-        bool leave = field_ ? finish_wait_ > shown && (confirm || (all_done && finish_wait_ - all_done_at_ > 15.0))
-                            : TimeTrialOverlay::ends_race(finish_wait_ + TimeTrialOverlay::kShowDelay - overlay_delay_, confirm);
+        // 1P races: the panel's pages (race::ResultPanelFlow; a championship round's POINTS and TOTAL POINT).
+        bool leave = field_ && !two_player_
+                         ? result_panel_.update(finish_wait_, size_t(field_->opponents() + 1), all_done, confirm)
+                     : field_ ? finish_wait_ > shown && (confirm || (all_done && finish_wait_ - all_done_at_ > 15.0))
+                              : TimeTrialOverlay::ends_race(finish_wait_ + TimeTrialOverlay::kShowDelay - overlay_delay_, confirm);
         // Licence results and the time-trial FAIL: GT3's presenter timeline (frames from
         // the result); confirm only in its last hold. Leaving takes 2 more frames (event 1).
         if (!field_ && (!license_event_.empty() || tt_failed_)) {

@@ -904,6 +904,7 @@ void RaceScreen::reset_run_state() {
     finish_wait_ = 0;
     finish_menu_shown_ = false;
     all_done_at_ = -1;
+    result_panel_.reset(championship() && !replaying_);
     exit_finished_ = false, overlay_delay_ = race::kRecordOverlayDelay;
     p1_won_ = p2_won_ = false;
     finish_record_rank_ = -1;

@@ -8,6 +8,7 @@
 #include "base/log.h"
 #include "base/ps2_float.h"
 #include "race/pool_draw.h"
+#include "race/results.h"
 #include "race/time_text.h"
 #include "disc/core_image.h"
 #include "vfs/vfs.h"
@@ -52,11 +53,6 @@ float completion_key_ratio(const std::string& key) {
     if (key == "achieve_complete") return 1.0f;
     return 0;
 }
-
-// Championship points per finishing place: program constant, the signed bytes read by
-// place (after them the program's data holds zeros, so places 7 and 8 score none).
-// The same table.
-constexpr int kChampPoints[6] = {10, 6, 4, 3, 2, 1};
 
 // Event record (table 32) offsets (docs/formats/database.md).
 constexpr size_t kEvRegulation = 0x190, kEvLaps = 0x199, kEvLicKind = 0x19A, kEvLicense = 0x19B, kEvCars = 0x1B5,
@@ -1386,7 +1382,7 @@ Award GtMode::record_round(int place, const std::vector<int>& order) {
         int& best = state_.race_best.try_emplace(code, kNoPosition).first->second;
         best = std::min(best, place);
     }
-    // Points by place (kChampPoints).
+    // Points by place (race::championship_points).
     const int n = int(ch.points.size());
     std::vector<int> finish = order;
     if (finish.empty()) {
@@ -1400,7 +1396,7 @@ Award GtMode::record_round(int place, const std::vector<int>& order) {
     const bool player_scores = place >= 0;
     for (size_t p = 0; p < finish.size() && p < 6; ++p)
         if (finish[p] >= 0 && finish[p] < n && (player_scores || finish[p] != 0))
-            ch.points[size_t(finish[p])] += kChampPoints[p];
+            ch.points[size_t(finish[p])] += race::championship_points(int(p));
     ++ch.next;
     if (ch.next >= int(ch.races.size())) {
         a.championship_over = true;

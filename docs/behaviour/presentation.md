@@ -419,9 +419,29 @@ The panel is drawn over the whole HUD, the lap / time block included: where the
 two meet (a 4:3 screen), the panel covers "Lap", "Best" and "Last".
 
 The panel is fully shown at 7 + 0.12 n s: 7.72 s for six cars
-(`ResultsOverlay::fully_shown_time`). After that, Circle or Cross leaves. If every car has
-finished, the race also leaves on its own 15 s after the last one did. Leaving
-goes through §C1.
+(`ResultsOverlay::fully_shown_time`). After that, Circle or Cross leaves. A 15 s
+timer also runs while the panel is fully shown and every car has finished; the
+race leaves when it runs out. Leaving goes through §C1 (`race::ResultPanelFlow`,
+test `race_result_panel_pages`).
+
+**Championship rounds** show two more pages on the same panel. The RACE RESULTS
+timer is 10 s there, and Circle / Cross or the timer turns the page instead of
+leaving: the whole panel fades out over 0.5 s, then the next page builds up
+again at once, title bar first (t = 0 instead of 5, rank bars at 1 + 0.12 i):
+
+The title bars are the layout's own (on the US disc "POINT" and "TOTAL POINTS"):
+
+| Page | Title bar | Rows | Timer |
+|---|---|---|---|
+| POINTS | `b_title_point` | finishing order, each place's points for the round ("+10pts", "+1pt") | 10 s, while every car has finished |
+| TOTAL POINT | `b_title_total_point` | each car's points before the round plus this round's, highest first, a tie in finishing order ("10pts") | 15 s, always running |
+
+Points by place are 10, 6, 4, 3, 2, 1, and none from 7th on
+(`race::championship_points`). A car still racing scores its current place. The
+points text is the number and "pt" (under 2) or "pts", with "+" on POINTS; the
+Japanese game writes "+10 pt" (`race::result_points_text`). The player's row is
+highlighted on every page. TOTAL POINT ends the race as the RACE RESULTS page
+does in other races (test `race_championship_points_pages`).
 
 ### §B7 Time trials and machine tests
 

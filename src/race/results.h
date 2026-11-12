@@ -71,15 +71,77 @@ std::string result_car_name(const data::CarDatabase& db, const std::string& labe
 // "+N lap(s)" when lapped, "Running..." when not finished. Times in seconds.
 std::string result_time_text(bool winner, bool finished, double time, double winner_time, int laps_behind);
 
+// The pages of the results panel (result1.pmb's title bars): RACE RESULTS after every race, then
+// in a championship round POINTS and TOTAL POINT.
+enum class ResultPage { Results, Points, TotalPoints };
+
+// What the panel shows of a page: its window's clock (`t`, seconds since it started: the race
+// results' since the player finished, the points pages' since they opened), when its bars start
+// (`delay`: the race results' title bar 5 s after the finish, the points pages' at once) and the
+// fade-out of a page being closed (`alpha`).
+struct ResultPanelView {
+    ResultPage page = ResultPage::Results;
+    double t = 0;
+    double delay = 5.0;
+    float alpha = 1;
+};
+
+// Championship points for a finishing place (0-based): the program's signed bytes read by
+// place (after them the program's data holds zeros, so places 7 and 8 score none).
+// The same table.
+int championship_points(int place);
+// A points cell of the panel ("%c%d" + "pt" under 2, else "pts"; NTSC-J "%c%d pt"):
+// `sign` '+' on the POINTS page, ' ' on TOTAL POINT. `lang` the game's language (JP: the NTSC-J text).
+std::string result_points_text(char sign, int points, std::string_view lang = "US");
+// TOTAL POINT's order: the rows in finishing order, each with its points before the
+// round (`before`, same order) plus its place's; sorted by that total, highest first, a tie in
+// finishing order. Returns the row indices in panel order and fills `totals` by row.
+std::vector<size_t> total_points_order(std::span<const int> before, std::vector<int>& totals);
+
+// When the results panel turns its pages and when the race ends (the result arcade,
+// the result championship). Each page waits until its window is fully shown
+// (ResultsOverlay::fully_shown_time); from then a timer runs while every car has finished (10 s on a
+// championship round's RACE RESULTS and POINTS, 15 s otherwise and on TOTAL POINT, which always runs
+// it), and confirm (Circle / Cross) or the timer's end moves on: in a championship round the page
+// fades out over 0.5 s and the next one opens at once; after the last page the race ends.
+class ResultPanelFlow {
+public:
+    static constexpr double kResultsDelay = 5.0, kFadeOut = 0.5;
+    void reset(bool championship);
+    // `now`: seconds since the player finished (60 Hz steps); `rows`: the panel's rows. True when
+    // the race ends.
+    bool update(double now, size_t rows, bool all_done, bool confirm);
+    ResultPage page() const { return page_; }
+    ResultPanelView view(double now) const;
+
+private:
+    bool championship_ = false;
+    ResultPage page_ = ResultPage::Results;
+    double page_start_ = 0;   // the page's window start (the race results': the finish)
+    double close_start_ = -1; // the page's fade-out started (-1: not closing)
+    double timer_ = 15.0;
+    double last_ = 0;
+    bool all_done_ = false; // every car has finished (kept once seen; TOTAL POINT sets it)
+};
+
 class ResultsOverlay {
 public:
     bool load(const Vfs& vfs, SDL_Renderer* r, const std::string& lang = "US");
-    // t = seconds since the player finished.
+    // `view`: the page, its clock and fade (ResultPanelView); the rows' time column holds the
+    // page's text (times, "+10pts", "10pts").
     // `icons`: when set, filled with each row's car-icon rectangle (UI units; empty while the row
     // is not shown) and the names move right to make room (the 2P panel's car pictures).
+    void draw(SDL_Renderer* r, text::GameFonts& fonts, const std::vector<ResultRow>& rows, const ResultPanelView& view,
+              const SDL_FRect& dst, std::vector<SDL_FRect>* icons = nullptr);
+    // The race results at `t` seconds since the player finished.
     void draw(SDL_Renderer* r, text::GameFonts& fonts, const std::vector<ResultRow>& rows, double t, const SDL_FRect& dst,
-              std::vector<SDL_FRect>* icons = nullptr);
-    static double fully_shown_time(size_t rows) { return 7.0 + 0.12 * double(rows); }
+              std::vector<SDL_FRect>* icons = nullptr) {
+        draw(r, fonts, rows, ResultPanelView{ResultPage::Results, t}, dst, icons);
+    }
+    // The window is fully shown (its last bar's fade done; the ready time) at this clock.
+    static double fully_shown_time(size_t rows, double delay = ResultPanelFlow::kResultsDelay) {
+        return delay + 2.0 + 0.12 * double(rows);
+    }
 
 private:
     std::optional<menu::MenuScene> scene_;

@@ -951,9 +951,10 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         if (field_) {
             // Car pictures in every row, as in 2P (the 1P capture of the Sunday Cup results).
             // The panel covers the whole HUD, the lap / time block too (presentation §B6).
-            std::vector<ResultRow> rows = result_rows(true);
+            // A championship round's POINTS and TOTAL POINT pages follow (race::ResultPanelFlow).
+            std::vector<ResultRow> rows = result_panel_rows(result_panel_.page());
             std::vector<SDL_FRect> icons;
-            results_.draw(ui.renderer(), hud_.fonts(), rows, finish_wait_, menu_dst, &icons);
+            results_.draw(ui.renderer(), hud_.fonts(), rows, result_panel_.view(finish_wait_), menu_dst, &icons);
             for (size_t i = 0; i < rows.size() && i < icons.size(); ++i) draw_car_icon(app, rows[i].car, icons[i], i, true);
         } else if (!license_event_.empty()) {
             // Over the live race (the car under the stop driver, the race camera, the HUD):
