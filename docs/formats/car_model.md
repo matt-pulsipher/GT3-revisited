@@ -547,6 +547,25 @@ modelled rim with turned copies of it instead (docs/dev/RACE.md). The menus' and
 flags and shininess are the same on every car, so the tread blur reads the
 menus' tyre as it does the race's.
 
+The menus' rims carry their light in the image: they are drawn with ambient 1,
+diffuse 1 and no specular on nearly flat faces, and most stock rims have one side
+of the spokes painted brighter. The menus never turn a rim, so that light stays
+put; in races the rim turns and the painted light would turn with it. Races
+(ours, `CarModelOptions::even_menu_rim_light`, `formats/model/rim_light.h`) take a
+menus' rim with its images evened out round the axis: each texel's place on the
+rim comes from the triangles drawing it (its position in their UVs carried to
+their corners, so the axis's place in the image is wherever the layout puts it,
+usually the image's centre), and on each ring of texels one texel wide the first
+angular harmonic of each channel (one bright side) is divided out, fitted with
+the rings two either side and alpha-weighted, keeping the ring's mean, the spokes
+and the alpha. Texels a triangle samples as a single spot (a spoke's side or the
+barrel in one flat colour), texels two triangles put at different places, rings
+within 2 texels of the axis and rings covered on one side only are left as they
+are. Measured as the first harmonic of luminance against each ring's mean, over
+the mean luminance, NTSC-U 1.10's 287 stock rims go from 0.044 to 0.003 on
+average (277 at or under 0.015) and the wheel shop's 181 from 0.015 to 0.002. A
+rim standing still in a race looks a little flatter than in the menus.
+
 ## Brake parts (menus)
 
 A menu car shows its own brake disc and caliper through the spokes: body

@@ -2743,7 +2743,10 @@ k = 0, so no glare is drawn.
   except on phones and tablets). A wheel that has only one kind of model (a
   modified game's) draws that one in both places, whatever the setting. Ours blurs their spinning modelled rims over
   the same turn GT3 blurs its rims over, by copies of the rim itself, so the
-  blur grows smoothly from a standstill.
+  blur grows smoothly from a standstill. The menus' rims have their light painted
+  in (one side of the spokes brighter) and never turn there; ours evens that light
+  out round the axis for races, so a rolling rim's bright side does not turn with
+  it (a standing rim looks a little flatter than in the menus).
 - Ours: `DrawItem::in_order` draws an item whole at its place (its opaque
   meshes, then its blended ones in model order) before later items' opaque
   meshes: the course scenery, the wet-road frame passes and each car shadow.
