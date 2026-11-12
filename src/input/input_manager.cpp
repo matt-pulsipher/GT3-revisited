@@ -10,6 +10,7 @@
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_sensor.h>
+#include <SDL3/SDL_timer.h>
 
 #include <algorithm>
 #include <cmath>
@@ -910,6 +911,10 @@ void InputManager::update(double dt) {
     std::fill(key_latch_.begin(), key_latch_.end(), false);
 
     time_ += dt;
+    if (rumble_resend_at_ && SDL_GetTicks() >= rumble_resend_at_) {
+        rumble_resend_at_ = 0;
+        resend_rumble(); // window_focus_gained's second round
+    }
     for (Player& p : players_) {
         // The Controller, and a wheel Steer is bound to on another device (its forces).
         const Device* steer = tagged_steering(p);
@@ -1084,6 +1089,43 @@ void InputManager::apply_background() const {
     if (background_ || background_held_) SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     else SDL_ResetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS);
 #endif
+}
+
+bool InputManager::reads_background() const {
+#if GT3R_XR
+    return true;
+#else
+    return background_ || background_held_;
+#endif
+}
+
+void InputManager::window_focus_gained() {
+    resend_rumble();
+    // Windows may hand the pads' output back to the game a moment after the focus.
+    rumble_resend_at_ = SDL_GetTicks() + 100;
+    if (rumble_resend_at_ == 0) rumble_resend_at_ = 1;
+}
+
+void InputManager::resend_rumble() {
+    for (const Device& d : devices_) {
+        if (d.wheel || d.vr_pad || ffb_.drives_wheel(d.id)) continue;
+        const SDL_PropertiesID props = SDL_GetJoystickProperties(d.joystick);
+        // SDL skips a level the device already has (by its own record): a level one step up first, which
+        // set_rumble never sends (its levels are whole multiples of 257), so the real one is written.
+        if (SDL_GetBooleanProperty(props, SDL_PROP_JOYSTICK_CAP_RUMBLE_BOOLEAN, false)) {
+            SDL_RumbleJoystick(d.joystick, 1, 0, 100);
+            int player = -1;
+            for (size_t i = 0; i < players_.size() && player < 0; ++i)
+                if (players_[i].device == d.id) player = int(i);
+            if (player >= 0) set_rumble(player, players_[size_t(player)].rumble);
+            else SDL_RumbleJoystick(d.joystick, 0, 0, 0);
+        }
+        // The impulse triggers the same way, stopped: a race playing them sends its level on the next frame.
+        if (SDL_GetBooleanProperty(props, SDL_PROP_JOYSTICK_CAP_TRIGGER_RUMBLE_BOOLEAN, false)) {
+            SDL_RumbleJoystickTriggers(d.joystick, 1, 0, 100);
+            SDL_RumbleJoystickTriggers(d.joystick, 0, 0, 0);
+        }
+    }
 }
 
 void InputManager::vibrate_phone(float strength) {

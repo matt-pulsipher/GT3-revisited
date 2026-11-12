@@ -958,6 +958,8 @@ SDL_AppResult App::event(const SDL_Event& e) {
     // Android may end a backgrounded app without a quit.
     if (e.type == SDL_EVENT_WILL_ENTER_BACKGROUND || e.type == SDL_EVENT_TERMINATING) remember_race_scale();
     input_->handle_event(e);
+    // Back in front on a computer: the controllers' motors as they should be now (a stop sent while away can be lost).
+    if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED && !platform::is_mobile()) input_->window_focus_gained();
     // The real mouse (not SDL's mouse made from a touch) brings the cursor back.
     const bool mouse_used = (e.type == SDL_EVENT_MOUSE_MOTION && e.motion.which != SDL_TOUCH_MOUSEID) ||
                             ((e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
@@ -1255,6 +1257,11 @@ void App::pointer_script() {
             finger(SDL_EVENT_FINGER_UP, 1, a[3]);
             finger(SDL_EVENT_FINGER_UP, 2, a[3]);
             pointer_shown_ = false;
+        } else if (verb == "blur" || verb == "focus") { // the window losing / regaining the focus, through App::event
+            SDL_Event e{};
+            e.type = verb == "blur" ? SDL_EVENT_WINDOW_FOCUS_LOST : SDL_EVENT_WINDOW_FOCUS_GAINED;
+            e.window.windowID = SDL_GetWindowID(window_);
+            SDL_PushEvent(&e);
         } else {
             LOG_WARN("GT3R_POINTER_SCRIPT: unknown step '%s'", step.c_str());
         }

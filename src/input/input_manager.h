@@ -174,6 +174,15 @@ public:
     // On: controllers are read in the background whatever the setting, until held off again
     // (macOS: a file dialog's sheet takes the window's focus while the page waits for it).
     void hold_background(bool on);
+    // Whether controllers drive the game while its window lacks the focus now: the setting, the hold, or a
+    // VR build (always).
+    bool reads_background() const;
+    // Desktop: the game's window has the focus again (App::event). Each controller's motors get the
+    // level they should play now, sent so that it really reaches the device, and again 0.1 s later
+    // (ours): SDL writes a rumble level to a device only when it changes, and a stop sent while the
+    // window was away can be lost (Windows), which left a pad rumbling after the player came back.
+    // Not wheels (rumble resets a wheel's force feedback) nor the VR controllers.
+    void window_focus_gained();
 
     // The kind of device driving the player now; it picks the controller's bindings.
     DeviceKind kind(int player) const { return players_[player].kind; }
@@ -376,6 +385,7 @@ private:
     int pedal_trigger(const Player& p, PadButton pedal) const;
     void vibrate_phone(float strength);       // 0 stops it
     void apply_background() const;            // SDL's background hint: background_ or background_held_
+    void resend_rumble();                     // window_focus_gained's writes
 
     std::vector<Device> devices_;
     std::array<Player, kMaxPlayers> players_;
@@ -389,6 +399,7 @@ private:
     bool background_ = false;      // [input] background
     bool xbox_rawinput_ = true;    // [input] xbox_driver
     bool background_held_ = false; // hold_background()
+    Uint64 rumble_resend_at_ = 0;  // SDL_GetTicks() of window_focus_gained's second round (0: none)
     SDL_Haptic* vibrator_ = nullptr; // the device's own motor, opened on first use
     bool vibrator_tried_ = false;
     float vibrator_level_ = 0;      // strength last sent (0 = stopped)

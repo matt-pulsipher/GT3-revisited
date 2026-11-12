@@ -1326,6 +1326,14 @@ past the 4:3 frame on wide screens) and darkens its band (`bg`).
   frames and starts again (a 0.5 s sawtooth). A disabled button is drawn at half
   alpha.
 - **Ours.** Start also closes the window.
+- **Ours: away from the game.** A phone or tablet sending the game to the
+  background opens the window. On a computer, another window taking the focus
+  opens it while the player drives (not in replays or demonstrations, nor over
+  the menus after a run), unless Controllers in the background is on: then the
+  player may be driving from the other window and the race goes on. An online
+  race never pauses for it; its controllers' rumble and force feedback stay
+  still until the game's window has the focus again. The window stays open when
+  the game is back in front (`race::focus_loss`).
 
 ### §E3 EXIT and RETRY
 
