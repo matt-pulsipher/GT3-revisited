@@ -83,7 +83,7 @@ struct FragmentUniforms {
     float light4_specular[4];
     float grade2[4]; // x black, y white, z 1 = saturation before the curve, w 1 = alpha = coverage
     float env_c0[4]; // reflection weight rows (scene::Primitive::env_c0/c1); c0.w = 1: valid
-    float env_c1[4];
+    float env_c1[4]; // car reflection passes: w = scene::Primitive::under_alpha (params x: under_ref)
     float output[4]; // x = 1: quantise the colour to 5 bits per channel (DrawOptions::quantize_rgb5);
                      // y = 1: the vertex colour is linear in screen space (DrawItem::guard_band);
                      // z = 1: the bound texture filtered as the GS does (DrawItem::gs_bilinear);
@@ -1744,6 +1744,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         if (reflection && !vertex_env) fu.params[2] *= v.item->reflection_scale;
         fu.env_c0[3] = p.env_rows ? 1.0f : 0.0f;
         for (int i = 0; i < 3; ++i) fu.env_c0[i] = p.env_c0[i], fu.env_c1[i] = p.env_c1[i];
+        // Car reflections over an alpha-tested pass: its failing texels keep the alpha under it.
+        fu.env_c1[3] = 0;
+        if (reflection) fu.params[0] = p.under_ref, fu.env_c1[3] = p.under_alpha;
         const scene::Material& mt = p.material;
         fu.mat_ambient[3] = mt.valid ? 1.0f : 0.0f;
         if (mt.valid) {

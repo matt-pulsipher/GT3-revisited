@@ -105,6 +105,12 @@ struct Primitive {
     bool env_point = false;              // kind 3: an op 0x31 point was set before the draw
     float env_point_pos[3] = {0, 0, 0}; // that point (model space)
     float env_alpha[2] = {1, 0};         // the weight rows' alpha lanes (C0.w, C1.w), env_kind passes
+    // Car reflection passes textured with the pass under them (gtm1::Options::weighted_reflection):
+    // texels with alpha <= under_ref (0..1) failed that pass's GS alpha test and wrote nothing, so the
+    // reflection there is weighted by under_alpha (0..1, the frame alpha before that pass), not by
+    // the texel. under_ref < 0: every texel is the weight.
+    float under_ref = -1;
+    float under_alpha = 0;
 };
 
 struct Mesh {
