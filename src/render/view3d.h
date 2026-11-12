@@ -80,6 +80,11 @@ struct DrawOptions {
     // up with the reflection kernel s = 0.5 + 0.5 Rx / m, t = 0.5 - 0.5 Ry / m,
     // m = |R + (0, 0, 1)|, R the reflected view vector in view space.
     SDL_GPUTexture* env_sphere = nullptr;
+    // The view whose rotation orients the view-dependent lookups (the sphere maps, the course's
+    // environment programs, the specular viewer); unset = the draw's own view. A VR eye sets the
+    // race camera's view: GT3's reflections follow the camera, and the head turning within the
+    // seat should not turn them.
+    std::optional<Mat4> reflection_view;
     // Store every fragment at 5 bits per channel (c8 >> 3 << 3): GT3's reflection map is a
     // PSMCT16 frame buffer. Set when rendering that map into the cube, so lookups filter
     // between quantised texels as the GS does, instead of quantising the filtered colour
