@@ -89,6 +89,9 @@ Settings Settings::load(const IniDocument& cfg) {
     if (auto v = number(cfg, "hud_drop")) s.hud_drop = clampf(*v, -1.0f, 1.0f);
     if (auto v = number(cfg, "seat_forward")) s.seat_forward = clampf(*v, -0.6f, 0.6f);
     if (auto v = number(cfg, "seat_height")) s.seat_height = clampf(*v, -0.6f, 0.6f);
+    const std::string side = to_lower(cfg.get("vr", "seat_side").value_or("center"));
+    s.seat_side = side == "left" ? SeatSide::Left : side == "right" ? SeatSide::Right : side == "car" ? SeatSide::Car : SeatSide::Center;
+    if (auto v = number(cfg, "seat_offset")) s.seat_offset = clampf(*v, 0.1f, 0.6f);
     if (auto v = number(cfg, "refresh")) s.refresh_hz = int(clampf(*v, 60, 144));
     if (auto v = number(cfg, "resolution")) s.eye_scale = clampf(*v, 0.5f, 1.5f);
     return s;
@@ -107,6 +110,9 @@ void Settings::save(IniDocument& cfg) const {
     cfg.set("vr", "hud_drop", fmt(hud_drop));
     cfg.set("vr", "seat_forward", fmt(seat_forward));
     cfg.set("vr", "seat_height", fmt(seat_height));
+    static const char* const kSides[] = {"center", "left", "right", "car"};
+    cfg.set("vr", "seat_side", kSides[size_t(seat_side)]);
+    cfg.set("vr", "seat_offset", fmt(seat_offset));
     cfg.set("vr", "refresh", std::to_string(refresh_hz));
     cfg.set("vr", "resolution", fmt(eye_scale));
 }

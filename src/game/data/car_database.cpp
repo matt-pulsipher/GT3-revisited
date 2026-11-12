@@ -87,6 +87,15 @@ CarNameFields car_name_fields(Language lang) {
     return {0xE4, 0xE6};
 }
 
+bool country_drives_on_left(std::string_view country) {
+    return country == "jp" || country == "uk" || country == "aus";
+}
+
+DriverSide country_driver_side(std::string_view maker_country) {
+    if (maker_country.empty()) return DriverSide::Unknown;
+    return country_drives_on_left(maker_country) ? DriverSide::Right : DriverSide::Left;
+}
+
 bool CarDatabase::load(const Vfs& vfs, std::optional<std::string> suffix) {
     // The reader serves mods/.cars and the region file.
     return load([&](const std::string& p) { return vfs.read(p); }, std::move(suffix));
@@ -375,6 +384,16 @@ const Car* CarDatabase::car_by_model(const std::string& m) const {
 std::string CarDatabase::model_of(const Car& c) const {
     auto b = body(c.parts[5]);
     return b ? b->model : std::string();
+}
+
+DriverSide CarDatabase::driver_side(const Car& c, DriverSide body) const {
+    if (const ModCar* m = mod_car(c.label); m && m->driver_side) return *m->driver_side;
+    return body != DriverSide::Unknown ? body : country_driver_side(maker_country(c));
+}
+
+std::string_view CarDatabase::maker_country(const Car& c) const {
+    const auto it = maker_countries_.find(c.maker_id);
+    return it == maker_countries_.end() ? std::string_view{} : std::string_view(it->second);
 }
 
 const CarVariant* CarDatabase::variant(const std::string& l) const {

@@ -719,6 +719,17 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
     if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
     hood_bound_.reset();
     hood_bound2_.reset();
+    // The driver's side ([vr] seat_side = car): the seat the body's own driver sits in, else the
+    // side of the maker's country; a mod car's own word first (CarDatabase::driver_side).
+    const DriverSeat& seat = car_visual_->driver_seat();
+    const data::DriverSide body = seat.side < 0 ? data::DriverSide::Left : seat.side > 0 ? data::DriverSide::Right
+                                                                                          : data::DriverSide::Unknown;
+    const data::Car* driven = db_.car(car_.label);
+    const data::DriverSide side = driven ? db_.driver_side(*driven, body) : body;
+    driver_side_ = side == data::DriverSide::Left ? -1 : side == data::DriverSide::Right ? 1 : 0;
+    LOG_INFO("Race: %s, its driver %s (the body: left %.2f, right %.2f m2%s)", car_.label.c_str(),
+             driver_side_ < 0 ? "on the left" : driver_side_ > 0 ? "on the right" : "in the middle (nothing says)", double(seat.left),
+             double(seat.right), seat.side ? "" : ", no side");
 }
 
 void RaceScreen::bind_hood(CameraRig& cam, std::optional<const CarVisual*>& bound, const CarVisual* v) {

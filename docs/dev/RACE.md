@@ -16,6 +16,7 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/interp.h/.cpp` | Fixed-tick accumulator, quaternion helpers, `VehicleState` interpolation |
 | `race/camera_rig.h/.cpp` | Chase, far chase, bumper, roof and free-orbit cameras |
 | `race/hood_camera.h/.cpp` | The hood mount's profile: 17 fore/aft eyes above the body's surface, from its mesh |
+| `race/driver_seat.h/.cpp` | The seat the car's own driver sits in, from its body's mesh (`CarVisual::driver_seat`; VR's Match the car, [VR](VR.md)). Tests `driver_seat_*` |
 | `race/race_scene.h/.cpp` | GPU scene: course (scenery, backdrop, sky domes) and the car (body LODs + four wheels) |
 | `race/hud.h/.cpp` | HUD (lap times, tachometer, gear, speed) using the game's own assets |
 | `race/hud_layout.h/.cpp` | The HUD layout per display mode (the original's layout table) and the mode a run uses |

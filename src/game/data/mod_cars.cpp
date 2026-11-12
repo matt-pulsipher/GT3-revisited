@@ -269,6 +269,11 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
                     std::string c = to_lower(v);
                     d.category = u8(c == "race" ? 1 : c == "rally" ? 2 : 0);
                 } else if (key == "fit_body") d.fit_body = to_lower(v) != "no" && v != "0" && to_lower(v) != "off";
+                else if (key == "driver_side") {
+                    const std::string side = to_lower(v);
+                    if (side != "left" && side != "right") return fail("[car] driver_side is left or right, not '" + v + "'");
+                    d.driver_side = side == "right" ? DriverSide::Right : DriverSide::Left;
+                }
                 else known = false;
             } else if (sn == "body") {
                 if (key == "weight_kg") set_u16(d.weight_kg);
@@ -809,6 +814,7 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, cons
         m.arcade_level = def.arcade_level;
     }
     m.wheel = def.wheel;
+    m.driver_side = def.driver_side;
     m.model_lower = def.model_lower_mm * 0.001f;
     m.model_file = mod_path(def.file, def.model_file);
     m.picture = mod_path(def.file, def.picture);

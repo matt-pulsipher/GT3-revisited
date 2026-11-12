@@ -244,6 +244,7 @@ category = production          ; production | race | rally
 donor = legacy_gtb_96          ; required: a car on the disc (gt3tool car <iso> <label>)
 model = sb0074                 ; optional: another body shell; default = the donor's
 fit_body = yes                 ; stretch the borrowed shell to the dimensions below
+driver_side = left             ; optional: left | right, the seat for VR's "Match the car" (default: read from the body)
 
 [body]
 weight_kg = 2033               ; curb weight (the game adds 120 kg for the driver)

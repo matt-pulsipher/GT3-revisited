@@ -1,6 +1,6 @@
 // VR headsets (docs/dev/VR.md): the race in stereo while driving. The headset's seated space
 // (origin at the player's head, -z ahead) is placed in the world at the view's eye point: in
-// the in-car views at the car's camera point 0 ([vr] seat_forward, seat_height from there),
+// the in-car views at the car's camera point 0 ([vr] seat_side, seat_forward, seat_height from there),
 // turning with the car (or with its heading only, [vr] level_horizon); in the chase views at
 // the chase camera, level, turning with its lagged heading; in the player's own cameras at
 // the camera's eye, facing its heading (CameraRig::custom_seat). Each eye is that placement
@@ -31,8 +31,8 @@ render::Mat4 RaceScreen::vr_base(const xr::Settings& st) const {
     const sim::Quat& q = render_state_.orientation;
     const render::Vec3 eye = camera_.eye();
     // One of the player's own cameras: its eye and heading, the head doing its pitch and tilt. The
-    // seat settings move an in-car mount's eye as they do the in-car views'; the other mounts are
-    // where the camera puts them.
+    // seat's height and reach move an in-car mount's eye as they do the in-car views' (its side is
+    // the camera's own Sideways); the other mounts are where the camera puts them.
     if (const CustomCamera* c = camera_.custom()) {
         const bool seat = c->mount == CustomCamera::Mount::Incar;
         return camera_.custom_seat(st.level_horizon, seat ? render::Vec3{0, st.seat_height, -st.seat_forward} : render::Vec3{});
@@ -41,7 +41,7 @@ render::Mat4 RaceScreen::vr_base(const xr::Settings& st) const {
         const sim::Vec3 f = rotate(q, {0, 0, -1});
         const render::Mat4 car = st.level_horizon ? render::rotate_y(std::atan2(-f.x, -f.z))
                                                   : render::rotate_quat(q.w, q.x, q.y, q.z);
-        const render::Mat4 seat = render::translate(eye) * car * render::translate({0, st.seat_height, -st.seat_forward});
+        const render::Mat4 seat = render::translate(eye) * car * render::translate(st.seat(driver_side_));
         return camera_.look_back() ? seat * render::rotate_y(kPi) : seat;
     }
     // Chase: the rig's lagged heading (look-back included), level.

@@ -8,6 +8,7 @@
 #include "formats/model/brake_model.h"
 #include "formats/model/car_model.h"
 #include "race/clut_animations.h"
+#include "race/driver_seat.h"
 #include "race/hood_camera.h"
 #include "race/occluder.h"
 #include "race/procedural_cameras.h"
@@ -200,6 +201,8 @@ public:
     const Occluder& occluder() const { return occluder_; }
     // The bonnet camera's mounts on the body (race/hood_camera.h), from its LOD-0 mesh.
     const HoodCameraProfile& hood_profile() const { return hood_profile_; }
+    // The seat its driver sits in (race/driver_seat.h), from the same mesh.
+    const DriverSeat& driver_seat() const { return driver_seat_; }
     void set_shadow(const CarShadowParams& p);
     bool shadow_set() const { return shadow_set_; }
     // The brake parts inside the wheels (race/brake.bin; the car file's GTCI records which).
@@ -236,6 +239,7 @@ private:
     CarLampSet lamps_;
     Occluder occluder_;
     HoodCameraProfile hood_profile_;
+    DriverSeat driver_seat_;
     std::vector<CarMount> mounts_;
     // Each wheel: the tyre (with its black faces) and the rim, drawn spinning; the band, the tyres'
     // arch shade, turned by the camber only; the brake parts (rotor and caliper, steered, not

@@ -133,6 +133,38 @@ TEST(language_car_names) {
     }
 }
 
+// The driver's side without a body to read it from (race/driver_seat.h): the side of the country
+// GT Mode's dealer map puts the car's maker in, the same in every language; unknown without one.
+TEST(language_driver_side) {
+    using data::DriverSide;
+    for (const char* c : {"jp", "uk", "aus"}) CHECK(data::country_drives_on_left(c) && data::country_driver_side(c) == DriverSide::Right);
+    for (const char* c : {"us", "gr", "fr", "it", "bel"})
+        CHECK(!data::country_drives_on_left(c) && data::country_driver_side(c) == DriverSide::Left);
+    CHECK(data::country_driver_side("") == DriverSide::Unknown);
+    for (Language l : kAll) {
+        data::CarDatabase db;
+        CHECK(db.load(world_in(l)));
+        const data::Car* coupe = db.car(synth::world::kCoupe);
+        const data::Car* vauxhall = db.car(synth::world::kTwinVauxhall);
+        if (!coupe || !vauxhall) {
+            CHECK(false);
+            continue;
+        }
+        // Before the makers' countries are read: nothing to go by but the body.
+        CHECK(db.maker_country(*coupe).empty() && db.driver_side(*coupe) == DriverSide::Unknown);
+        CHECK(db.driver_side(*coupe, DriverSide::Left) == DriverSide::Left);
+        // From the dealer map: the coupe's maker sells it on the "jp" page (every car of this
+        // world has that maker). The body's own driver comes first.
+        CHECK(load_maker_countries(world_in(l), db));
+        CHECK(db.maker_country(*coupe) == "jp" && db.driver_side(*coupe) == DriverSide::Right);
+        CHECK(db.driver_side(*vauxhall) == DriverSide::Right);
+        CHECK(db.driver_side(*coupe, DriverSide::Left) == DriverSide::Left);
+        CHECK(db.driver_side(*coupe, DriverSide::Right) == DriverSide::Right);
+    }
+    data::CarDatabase none;
+    CHECK(!load_maker_countries([](const std::string&) { return std::optional<Bytes>(); }, none));
+}
+
 // Paint names: the second name (+8) in Japanese, the first (+4) in the other languages.
 TEST(language_color_names) {
     CHECK(color_name_field(Language::JP) == 8);
@@ -238,6 +270,25 @@ TEST(language_rules_disc) {
         int unnamed = 0;
         for (const data::Car& c : d.db.cars()) unnamed += c.name.empty() || c.latin_name.empty();
         CHECK(unnamed == 0);
+        // The makers' countries on the dealer map, and the side they give a car whose body shows
+        // no driver: the same in every language and on every release.
+        CHECK(load_maker_countries([&](const std::string& p) { return vfs.read(p); }, d.db));
+        using data::DriverSide;
+        const auto side = [&](const char* label, const char* country, DriverSide want) {
+            if (const data::Car* c = d.db.car(label)) CHECK(d.db.maker_country(*c) == country && d.db.driver_side(*c) == want);
+        };
+        side("r34_gtr_v_99", "jp", DriverSide::Right);
+        side("roadster_rs_00", "jp", DriverSide::Right);
+        side("griffith_500_00", "uk", DriverSide::Right);
+        side("falcon_xr8_race_00", "aus", DriverSide::Right);
+        side("acura_nsx_93", "us", DriverSide::Left);
+        side("corvette_z06_00", "us", DriverSide::Left);
+        side("opel_speedster_00", "gr", DriverSide::Left);
+        side("_206_s16_00", "fr", DriverSide::Left);
+        side("zonda_c12_00", "it", DriverSide::Left);
+        side("vertigo_97", "bel", DriverSide::Left);
+        side("mini_cooper_13i_00", "", DriverSide::Unknown); // no dealer on the map
+        side("mclaren_mp4_4", "", DriverSide::Unknown);      // no maker
         // The dealer region pages' buttons.
         menu::flow::MenuSet set(menu::flow::vfs_reader(vfs), "gt_mode", text::language_code(l));
         menu::flow::MenuController ctl(set);

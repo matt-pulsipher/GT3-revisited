@@ -20,6 +20,7 @@
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
+#include "game/gt_catalog.h"
 #include "game/language_rules.h"
 
 namespace gt3r::race_screen {
@@ -238,6 +239,8 @@ void RaceScreen::init(App& app) {
         return;
     }
     db_ok_ = db_.load(*app.vfs());
+    // The makers' countries, for the driver's side of a car ([vr] seat_side = car).
+    if (db_ok_) game::load_maker_countries([&](const std::string& p) { return app.vfs()->read(p); }, db_);
     if (!colors_.load(*app.vfs())) LOG_WARN("Race: database/carcolor.db not loaded (opponents in default paint)");
     if (!db_ok_) error_ = db_.player_error();
     for (const data::Course& c : db_.courses()) {

@@ -39,6 +39,7 @@ struct ModCarDef {
     std::optional<u32> price;
     std::optional<u8> category; // 0 production, 1 race, 2 rally
     bool fit_body = true;       // stretch a borrowed shell to the car's dimensions
+    std::optional<DriverSide> driver_side; // left | right: the side its driver sits on (unset: its body's, CarDatabase::driver_side)
 
     // [body]
     std::optional<u16> weight_kg, length_mm, width_mm, height_mm, wheelbase_mm, front_track_mm, rear_track_mm;
