@@ -1981,7 +1981,7 @@ by the course area):
   for every style). Visibility: the original depth-tests an N x N pixel box
   around the sun; we cast a 3 x 3 grid of rays through the same angular box
   against the course's opaque scenery and backdrop triangles
-  (`race::Occluder`, an XZ grid; about 0.1 ms) and use the open fraction.
+  (`race::Occluder`, a bounding volume tree; a few microseconds) and use the open fraction.
 - `race::SunDisc` draws the sun disc: `Flare::disc_mesh` as a `scene::Model` with the
   vertex program's colours baked in at load (sun RGB x gain / 2), one additive unlit primitive
   without depth writes, added to the items by `RaceScreen::collect_items` as two `background`

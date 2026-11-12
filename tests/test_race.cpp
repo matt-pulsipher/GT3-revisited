@@ -2504,8 +2504,8 @@ TEST(race_flare_disc_mesh) {
     for (size_t i = 0; i < b.verts.size(); ++i) CHECK(b.verts[i].depth == (i < 28 ? 0.25f : 1.0f));
 }
 
-// The glows' ray test against a car body (in its own frame): rays from far outside its grid
-// still meet it; glass (no depth writes) and rays past, over or short of it do not.
+// The glows' ray test against a car body (in its own frame): rays from far outside it still
+// meet it; glass (no depth writes) and rays past, over or short of it do not.
 TEST(race_occluder_car_body) {
     scene::Model car;
     scene::Mesh& mesh = car.meshes.emplace_back();
@@ -2526,7 +2526,7 @@ TEST(race_occluder_car_body) {
     quad(2, scene::kAlphaBlend | scene::kNoDepthWrite);
     race::Occluder o;
     o.add(car);
-    o.build(0.25f);
+    o.build();
     CHECK(o.triangles() == 2);
     CHECK(o.segment_blocked({0, 0.5f, -100}, {0, 0.5f, 100}));
     CHECK(o.segment_blocked({0.5f, 1, 80}, {-0.5f, 0.2f, -60}));
@@ -2534,6 +2534,72 @@ TEST(race_occluder_car_body) {
     CHECK(!o.segment_blocked({5, 0.5f, -100}, {5, 0.5f, 100}));  // past its side
     CHECK(!o.segment_blocked({0, 2, -100}, {0, 2, 100}));        // over it
     CHECK(!o.segment_blocked({0, 0.5f, 1}, {0, 0.5f, 10}));      // through the glass only
+}
+
+// The course occluder's tree answers as a test of every triangle: random rays and segments
+// through a dense heap of triangles, segments ending just past one included.
+TEST(race_occluder_matches_every_triangle) {
+    scene::Model m;
+    scene::Mesh& mesh = m.meshes.emplace_back();
+    u32 seed = 12345;
+    auto rnd = [&] { return float((seed = seed * 1664525u + 1013904223u) >> 8) / float(1u << 24); };
+    std::vector<render::Vec3> tri;
+    for (int i = 0; i < 3000; ++i) {
+        const render::Vec3 c{rnd() * 400 - 200, rnd() * 60, rnd() * 400 - 200};
+        const float s = i % 50 == 0 ? 80.0f : 3.0f; // a few large ones over many small ones
+        for (int k = 0; k < 3; ++k) {
+            scene::Vertex v{};
+            v.pos[0] = c.x + (rnd() - 0.5f) * s, v.pos[1] = c.y + (rnd() - 0.5f) * s, v.pos[2] = c.z + (rnd() - 0.5f) * s;
+            if (i % 7 == 0) v.pos[1] = c.y; // flat ones: boxes with no height
+            mesh.vertices.push_back(v);
+            mesh.indices.push_back(u32(mesh.indices.size()));
+            tri.push_back({v.pos[0], v.pos[1], v.pos[2]});
+        }
+    }
+    scene::Primitive pr;
+    pr.first_index = 0, pr.index_count = u32(mesh.indices.size());
+    mesh.primitives.push_back(pr);
+    race::Occluder o;
+    o.add(m);
+    o.build();
+    CHECK(o.triangles() == 3000);
+    auto brute = [&](const render::Vec3& a, const render::Vec3& b) {
+        render::Vec3 d = b - a;
+        const float len = std::sqrt(dot(d, d));
+        d = d * (1.0f / len);
+        for (size_t i = 0; i < tri.size(); i += 3) {
+            const render::Vec3 e1 = tri[i + 1] - tri[i], e2 = tri[i + 2] - tri[i];
+            const render::Vec3 pv = cross(d, e2);
+            const float det = dot(e1, pv);
+            if (std::fabs(det) < 1e-8f) continue;
+            const float inv = 1.0f / det;
+            const render::Vec3 tv = a - tri[i];
+            const float u = dot(tv, pv) * inv;
+            if (u < 0 || u > 1) continue;
+            const render::Vec3 qv = cross(tv, e1);
+            const float v = dot(d, qv) * inv;
+            if (v < 0 || u + v > 1) continue;
+            const float dist = dot(e2, qv) * inv;
+            if (dist > 0.05f && dist < len) return true;
+        }
+        return false;
+    };
+    int mismatches = 0, hits = 0;
+    for (int i = 0; i < 4000; ++i) {
+        const render::Vec3 a{rnd() * 500 - 250, rnd() * 80 - 10, rnd() * 500 - 250};
+        render::Vec3 b{rnd() * 500 - 250, rnd() * 80 - 10, rnd() * 500 - 250};
+        if (i % 2) { // to just past a triangle's centre: hits in the segment's last metre
+            const size_t t = size_t(rnd() * 2999) * 3;
+            const render::Vec3 c = (tri[t] + tri[t + 1] + tri[t + 2]) * (1.0f / 3.0f), d = c - a;
+            b = c + d * (0.5f / std::sqrt(dot(d, d)));
+        }
+        const bool want = brute(a, b);
+        hits += want;
+        mismatches += o.segment_blocked(a, b) != want;
+    }
+    CHECK(mismatches == 0);
+    CHECK(hits > 1000);
+    CHECK(!o.blocked({0, 500, 0}, {0, 1, 0}, 6000)); // straight up from over the heap
 }
 
 // The sun disc (presentation §I6): its colours from Env0, 10 m out along the sun in the
