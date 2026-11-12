@@ -779,6 +779,23 @@ TEST(custom_music_menu_ascii) {
     CHECK(race::menu_ascii("\xe6\x9d\xb1\xe4\xba\xac") == "??" && race::menu_ascii("bad \xc3") == "bad ?");
 }
 
+// Issue 185: a song control held down skips at once, then every 0.3 s while the same direction is held;
+// a release or a turn to the other direction starts over, and a hold with no press skips nothing.
+TEST(race_music_skip_hold) {
+    race::SongSkipHold h;
+    const double f = 1.0 / 60.0;
+    CHECK(h.update(0, 1, f) == 0); // held into the race: no press seen
+    CHECK(h.update(1, 1, f) == 1); // the press
+    int skips = 0;
+    for (int i = 0; i < 60; ++i) skips += h.update(0, 1, f); // one second held: 3 more
+    CHECK(skips == 3);
+    CHECK(h.update(0, 0, f) == 0 && h.update(0, 1, 1.0) == 0); // released: holding again needs a press
+    CHECK(h.update(-1, -1, f) == -1);
+    CHECK(h.update(0, -1, 0.29) == 0 && h.update(0, -1, 0.02) == -1);
+    CHECK(h.update(0, 1, 1.0) == 0 && h.update(0, -1, 1.0) == 0); // the other direction: stops
+    CHECK(h.update(1, 1, f) == 1 && h.update(0, 1, 5.0) == 1 && h.update(0, 1, f) == 0); // a stall: one skip
+}
+
 // Race songs from the player's music: Custom plays them, Next / Previous move through them (back
 // through the ones played, then forward again), a skip while paused waits for the resume.
 TEST(race_music_custom_skip) {

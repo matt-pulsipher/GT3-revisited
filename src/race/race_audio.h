@@ -89,6 +89,21 @@ private:
 // L1 / R1, the Next / Previous song controls). The songs played are remembered in order, so
 // Previous goes back through them and Next, and a song's end, then forward again before new
 // songs are taken from the playlists.
+// Ours (issue 185): a song control held down keeps skipping, one song every kRepeat seconds after
+// the press's own skip, so a long list can be run through without a press per song.
+class SongSkipHold {
+public:
+    static constexpr double kRepeat = 0.3;
+    // `pressed`: the direction pressed this frame (1 next, -1 previous, 0 none); `held`: the one
+    // held down. Returns the direction to skip now (0 none): the press at once, then every kRepeat
+    // while that direction stays held. A hold with no press seen (held into the race) skips nothing.
+    int update(int pressed, int held, double dt);
+
+private:
+    int dir_ = 0;
+    double timer_ = 0;
+};
+
 class RaceMusic {
 public:
     // Race: every one-player race and solo run; TwoPlayer: 2P battle (the

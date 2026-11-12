@@ -204,6 +204,8 @@ public:
     const PadState& pad() const { return pad_; }
     // An action control pressed down in the last update() (one frame per press).
     bool action_pressed(TouchAction a) const { return a != TouchAction::None && (pressed_actions_ & (1u << unsigned(a))); }
+    // An action control held down (a finger on it).
+    bool action_held(TouchAction a) const { return a != TouchAction::None && (held_actions_ & (1u << unsigned(a))); }
     const std::vector<Widget>& widgets() const { return widgets_; }
 
 private:

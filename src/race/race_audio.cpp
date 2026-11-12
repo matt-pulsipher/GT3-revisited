@@ -302,6 +302,21 @@ std::optional<RaceMusic::SongInfo> RaceMusic::now_playing(const AudioEngine& aud
     return info;
 }
 
+int SongSkipHold::update(int pressed, int held, double dt) {
+    if (pressed) {
+        dir_ = pressed, timer_ = 0;
+        return pressed;
+    }
+    if (dir_ == 0 || held != dir_) {
+        dir_ = 0, timer_ = 0;
+        return 0;
+    }
+    timer_ += dt;
+    if (timer_ < kRepeat) return 0;
+    timer_ = timer_ - kRepeat < kRepeat ? timer_ - kRepeat : 0; // one skip a frame: a stall doesn't queue more
+    return dir_;
+}
+
 bool RaceMusic::skip(AudioEngine& audio, Vfs& vfs, int dir) {
     if (!now_playing(audio) || dir == 0) return false;
     const float v = level_.request(last_.music_on, last_.replay ? bgm::kReplaySongVolume : bgm::kRaceSongVolume);

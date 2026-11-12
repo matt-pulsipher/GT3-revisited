@@ -85,6 +85,8 @@ the title screen's demo):
 - **Touch**: the Previous / Next song buttons are hidden at first; show them in
   Settings → Touch → **Customize layout**.
 
+Hold any of these to keep skipping, one song every 0.3 seconds.
+
 Previous goes back through the songs already played; Next then goes forward
 through them again before new ones come from the list. The skips work with the
 disc's songs too.
