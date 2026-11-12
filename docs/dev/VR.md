@@ -124,7 +124,10 @@ the eye's tracked pose; its projection is the eye's own off-centre frustum
 (`render::frustum`). The draw items are collected once for both eyes from the
 head; each eye renders straight into its canvas (`View3D::draw_to`, the MSAA
 picture resolved into it), then the sun glare, lamp glows and wet-road composite
-use the eye's frustum (`render::Frustum`). The canvas is cleared transparent and
+use the eye's frustum (`render::Frustum`). GT3's reflections are looked up in the
+camera's frame (the cars' sphere maps, the course's environment programs, the specular
+viewer), so the eyes draw them oriented by the race camera's view
+(`DrawOptions::reflection_view`): turning the head does not turn them. The canvas is cleared transparent and
 the HUD, mirror (`draw_mirror`, its usual place at the top of the panel), pause
 menu and results are drawn on it as usual.
 

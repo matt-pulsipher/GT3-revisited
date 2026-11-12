@@ -1458,7 +1458,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                                            ctx_.sampler(true, true)};
     fu.output[0] = opt.quantize_rgb5 ? 1.0f : 0.0f;
     for (float& t : fu.tint) t = 1.0f;
-    for (int i = 0; i < 4; ++i) fu.view_row0[i] = view.at(0, i), fu.view_row1[i] = view.at(1, i);
+    // The view-dependent lookups' orientation (DrawOptions::reflection_view).
+    const Mat4& rview = opt.reflection_view ? *opt.reflection_view : view;
+    for (int i = 0; i < 4; ++i) fu.view_row0[i] = rview.at(0, i), fu.view_row1[i] = rview.at(1, i);
 
     // Visibility: one entry per mesh that passes LOD selection and culling.
     struct Visible {
@@ -1790,14 +1792,14 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                 vl.env_c0[3] = p.env_alpha[0], vl.env_c1[3] = p.env_alpha[1];
                 if (p.env_kind == 2) {
                     for (int r = 0; r < 3; ++r)
-                        for (int i = 0; i < 3; ++i) vl.env_rows[r][i] = s * view.at(r, i);
+                        for (int i = 0; i < 3; ++i) vl.env_rows[r][i] = s * rview.at(r, i);
                 } else {
                     // Kind 3: yawed by 45 (g + 1) degrees about y, g from the sign of the summed
                     // components of the op 0x31 point minus the camera, or of the camera's forward
                     // (GT3 sums them instead of rotating them; 0 when the sum is positive, else 4).
                     Vec3 d = p.env_point ? Vec3{p.env_point_pos[0] - fu.camera_pos[0], p.env_point_pos[1] - fu.camera_pos[1],
                                                 p.env_point_pos[2] - fu.camera_pos[2]}
-                                         : Vec3{-view.at(2, 0), -view.at(2, 1), -view.at(2, 2)};
+                                         : Vec3{-rview.at(2, 0), -rview.at(2, 1), -rview.at(2, 2)};
                     const float g = d.x + d.y + d.z > 0 ? 0.0f : 4.0f;
                     const float phi = 0.78539816f * (g + 1.0f), c = std::cos(phi), sn = std::sin(phi);
                     const float rows[3][3] = {{c, 0, -sn}, {0, 1, 0}, {sn, 0, c}};
@@ -1808,12 +1810,12 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                     vl.env_pano[2] = 0.5f + opt.panorama[1];
                 }
             } else if (vertex_lit) {
-                for (int i = 0; i < 3; ++i) vl.eye_dir[i] = view.at(2, i);
+                for (int i = 0; i < 3; ++i) vl.eye_dir[i] = rview.at(2, i);
                 vl.eye_dir[3] = 1;
                 if (sheen) {
                     constexpr float kViewerUp = 2.0f; // GT3's light model viewer (0, 2, 0) in eye space
                     const float s = v.item->modelview_scale;
-                    for (int i = 0; i < 3; ++i) vl.eye_dir[i] = s * s * fu.camera_pos[i] + kViewerUp * s * view.at(1, i);
+                    for (int i = 0; i < 3; ++i) vl.eye_dir[i] = s * s * fu.camera_pos[i] + kViewerUp * s * rview.at(1, i);
                     vl.eye_dir[3] = 2;
                 }
                 const float* dirs[4] = {fu.light_dir, fu.light2_dir, fu.light3_dir, fu.light4_dir};

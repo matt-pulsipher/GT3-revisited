@@ -92,6 +92,10 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
     std::vector<std::pair<size_t, render::Mat4>> sky;
     for (size_t k = 0; k < items_.size(); ++k)
         if (items_[k].background) sky.emplace_back(k, items_[k].transform);
+    // GT3's reflections are looked up in the camera's frame (sphere maps, the course's environment
+    // programs): oriented by the race camera, as on a flat screen, not by the head turning in it.
+    render::DrawOptions eo = o;
+    eo.reflection_view = camera_.view();
 
     for (int i = 0; i < 2; ++i) {
         const xr::Eye& e = x.eye(i);
@@ -108,12 +112,12 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
         // renderer, whose work runs after this.
         auto* tex = static_cast<SDL_GPUTexture*>(
             SDL_GetPointerProperty(SDL_GetTextureProperties(e.canvas), SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, nullptr));
-        const bool direct = tex && vr_views_[i]->draw_to(tex, e.width, e.height, view, proj, eye, items_, o);
+        const bool direct = tex && vr_views_[i]->draw_to(tex, e.width, e.height, view, proj, eye, items_, eo);
         SDL_SetRenderTarget(r, e.canvas);
         if (!direct) {
             SDL_SetRenderDrawColor(r, 0, 0, 0, 255); // opaque: the course passes keep the target's alpha
             SDL_RenderClear(r);
-            vr_views_[i]->draw(r, full, view, proj, eye, items_, o);
+            vr_views_[i]->draw(r, full, view, proj, eye, items_, eo);
         }
         remove_wet_road(wet_items); // (the wet road's frame items belong to this eye only)
         sun_.draw(r, full, view, fr, sun_v);
