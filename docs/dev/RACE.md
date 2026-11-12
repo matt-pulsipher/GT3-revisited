@@ -937,8 +937,8 @@ menus §11.1; `race/post_run.h`, `screen_race_post_run.cpp`; tests `race_post_ru
   end or its pause's EXIT the same transition over its last frame and the quick menu
   (`return_to_menu`). `GameResult::prize_shown` keeps the menus from showing the page again.
   - Arcade race: cup (a win) -> replay -> result menu. 2P: replay (always) -> result menu. GT race,
-    championship round: prize (finished) -> replay -> result menu (the championship's points page
-    is not reproduced). Time trial, free run, machine test: name entry (ranked) -> replay -> menu.
+    championship round: prize (finished) -> replay -> result menu (the round's POINTS and TOTAL
+    POINT pages come before, on the results panel over the live race). Time trial, free run, machine test: name entry (ranked) -> replay -> menu.
     Licence: the menu, with the name entry (ranked) over it, no replay (the preview box). Free
     practice before a GT race: the transition -> the pre-race menu.
   - A replay plays once, the whole recorded run (the auto-drive after the finish included), with
@@ -1335,7 +1335,10 @@ From the race workstream's research (presentation §B, `result1.pmb`,
   then the "OFFICIAL TIMER SEIKO" bar. Names/times sw_16 at 87 %, the
   player's row 0xFFC800, others 0xCCCCCC. Time column: winner "m'ss.mmm",
   "+gap", "+N lap(s)", "Running...". Leaves on Circle / Cross after it is fully shown,
-  or 15 s after every car finished (2P: 15 s).
+  or when a 15 s timer runs out (it runs while the panel is fully shown and every car has
+  finished; 2P: 15 s after it is shown). A championship round turns to POINTS and TOTAL POINT
+  instead (10 s / 10 s / 15 s, a 0.5 s fade-out between pages; `race::ResultPanelFlow`,
+  `RaceScreen::result_panel_rows`).
 - **Time trial finish**: the arcade time trial is one timed lap (`race::kTimeTrialLaps`,
   whatever the event's laps byte says; presentation §B7): the car finishes at its first
   completed lap (`race::solo_run_finished`), the laps freeze. Debug runs with `laps=N` finish

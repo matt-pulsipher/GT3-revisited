@@ -58,6 +58,30 @@ std::vector<ResultRow> RaceScreen::result_menu_rows() const {
     return rows;
 }
 
+std::vector<ResultRow> RaceScreen::result_panel_rows(race::ResultPage page) const {
+    std::vector<ResultRow> rows = result_rows(true);
+    if (page == race::ResultPage::Points) { // the round's points by place
+        for (size_t i = 0; i < rows.size(); ++i)
+            rows[i].time = race::result_points_text('+', race::championship_points(int(i)), lang_);
+    } else if (page == race::ResultPage::TotalPoints) { // the totals, highest first
+        const std::vector<int>& before_round = launch_.request.champ_points; // the player first, then the opponents
+        std::vector<int> before;
+        for (const ResultRow& r : rows) {
+            const size_t e = size_t(r.car + 1);
+            before.push_back(r.car >= -1 && e < before_round.size() ? before_round[e] : 0);
+        }
+        std::vector<int> totals;
+        const std::vector<size_t> order = race::total_points_order(before, totals);
+        std::vector<ResultRow> sorted;
+        for (size_t i : order) {
+            sorted.push_back(rows[i]);
+            sorted.back().time = race::result_points_text(' ', totals[i], lang_);
+        }
+        rows = std::move(sorted);
+    }
+    return rows;
+}
+
 // The live run ended (results shown / left): latch its result (RaceResultLatch) and, in a
 // race, the result menu's rows; every run, as its replay and the quick menu's backdrop re-run
 // it (a licence's result still merges the visit's best run, build_result). GT single races

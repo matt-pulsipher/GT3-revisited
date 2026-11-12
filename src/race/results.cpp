@@ -104,12 +104,80 @@ bool ResultsOverlay::load(const Vfs& vfs, SDL_Renderer* r, const std::string& la
     return true;
 }
 
-void ResultsOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::vector<ResultRow>& rows, double t,
-                          const SDL_FRect& dst, std::vector<SDL_FRect>* icons) {
+// --- Championship pages ----------------------------------------------------------------
+
+int championship_points(int place) {
+    static constexpr int kPoints[6] = {10, 6, 4, 3, 2, 1};
+    return place >= 0 && place < 6 ? kPoints[place] : 0;
+}
+
+std::string result_points_text(char sign, int points, std::string_view lang) {
+    std::string s = std::string(1, sign) + std::to_string(points);
+    if (lang == "JP") return s + " pt";
+    return s + (points < 2 ? "pt" : "pts");
+}
+
+std::vector<size_t> total_points_order(std::span<const int> before, std::vector<int>& totals) {
+    totals.assign(before.size(), 0);
+    std::vector<size_t> order;
+    for (size_t i = 0; i < before.size(); ++i) {
+        totals[i] = before[i] + championship_points(int(i));
+        // After every row with at least as many points: a tie stays in finishing order.
+        size_t at = 0;
+        while (at < order.size() && totals[order[at]] >= totals[i]) ++at;
+        order.insert(order.begin() + std::ptrdiff_t(at), i);
+    }
+    return order;
+}
+
+void ResultPanelFlow::reset(bool championship) {
+    *this = ResultPanelFlow{};
+    championship_ = championship;
+    timer_ = championship ? 10.0 : 15.0;
+}
+
+bool ResultPanelFlow::update(double now, size_t rows, bool all_done, bool confirm) {
+    const double dt = std::max(0.0, now - last_);
+    last_ = now;
+    all_done_ = all_done_ || all_done;
+    if (close_start_ >= 0) {
+        if (now - close_start_ < kFadeOut) return false;
+        // The fade-out is done: the next page opens at once, its window's clock from 0.
+        page_ = page_ == ResultPage::Results ? ResultPage::Points : ResultPage::TotalPoints;
+        page_start_ = now;
+        close_start_ = -1;
+        timer_ = page_ == ResultPage::Points ? 10.0 : 15.0;
+        if (page_ == ResultPage::TotalPoints) all_done_ = true;
+        return false;
+    }
+    const double delay = page_ == ResultPage::Results ? kResultsDelay : 0.0;
+    if (now - page_start_ <= ResultsOverlay::fully_shown_time(rows, delay)) return false;
+    if (all_done_) timer_ -= dt;
+    if (!confirm && timer_ >= 0) return false;
+    if (!championship_ || page_ == ResultPage::TotalPoints) return true;
+    close_start_ = now;
+    return false;
+}
+
+ResultPanelView ResultPanelFlow::view(double now) const {
+    ResultPanelView v;
+    v.page = page_;
+    v.t = now - page_start_;
+    v.delay = page_ == ResultPage::Results ? kResultsDelay : 0.0;
+    if (close_start_ >= 0) v.alpha = float(std::clamp(1.0 - (now - close_start_) / kFadeOut, 0.0, 1.0));
+    return v;
+}
+
+void ResultsOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::vector<ResultRow>& rows,
+                          const ResultPanelView& view, const SDL_FRect& dst, std::vector<SDL_FRect>* icons) {
     if (icons) icons->assign(rows.size(), SDL_FRect{0, 0, 0, 0});
-    if (!scene_ || t < 5.0 || scene_->file().pages.empty()) return;
+    const double t = view.t - view.delay; // seconds since the title bar's start
+    if (!scene_ || t < 0 || view.alpha <= 0 || scene_->file().pages.empty()) return;
     const menu::Page& page = scene_->file().pages[0];
-    const menu::Element* title = find(page, "b_title_result");
+    const char* title_name = view.page == ResultPage::Points        ? "b_title_point"
+                             : view.page == ResultPage::TotalPoints ? "b_title_total_point"
+                                                                    : "b_title_result";
+    const menu::Element* title = find(page, title_name);
     const menu::Element* bar = find(page, "b_bar");
     const menu::Element* strip = find(page, "z_8_black1");
     const menu::Element* term = find(page, "b_term");
@@ -135,18 +203,18 @@ void ResultsOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::ve
         d.element = e;
         d.has_box = true;
         d.box = box_at_top(*e, y_top);
-        d.alpha = alpha;
+        d.alpha = alpha * view.alpha;
         d.has_clip = true;
         d.clip = {0, 0, kMenuW, kMenuH - clip_top}; // nothing above the previous bar's centre line
         list.push_back(d);
     };
-    float title_alpha = fade(t - 5.0, 2.0);
+    float title_alpha = fade(t, 2.0);
     add(title, title_top, title_alpha, 0);
     float prev_centre = title_top + title->h / 2, prev_h = title->h;
     std::vector<float> row_top(n), row_alpha(n);
     for (size_t i = 0; i <= n; ++i) {
         bool is_term = i == n;
-        double start = 6.0 + 0.12 * double(i);
+        double start = 1.0 + 0.12 * double(i);
         if (t < start) break;
         const menu::Element* e = is_term ? term : bar;
         if (!e) break;
@@ -167,8 +235,8 @@ void ResultsOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::ve
     // Row texts (game fonts): rank, car name (t_car_name x 132 + the 12-unit text inset),
     // time (t_time right edge 612 - 12; the reference capture).
     for (size_t i = 0; i < n; ++i) {
-        if (row_alpha[i] <= 0) continue;
-        u8 a = u8(255 * row_alpha[i]);
+        if (row_alpha[i] * view.alpha <= 0) continue;
+        u8 a = u8(255 * row_alpha[i] * view.alpha);
         SDL_Color others{0xCC, 0xCC, 0xCC, a}, mine{0xFF, 0xC8, 0x00, a};
         SDL_Color c = rows[i].player ? mine : others;
         float y = row_top[i] + 18;

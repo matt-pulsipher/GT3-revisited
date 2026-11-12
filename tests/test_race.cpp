@@ -1106,6 +1106,107 @@ TEST(race_results_text) {
     CHECK(result_time_text(false, false, 0, 344, 0) == "Running...");
 }
 
+// presentation §B2 (the result arcade, the result championship): when the results panel turns its
+// pages and when the race ends. Driven in 60 Hz steps like the race screen.
+TEST(race_result_panel_pages) {
+    constexpr double kStep = 1.0 / 60.0;
+    const size_t rows = 6;
+    const double shown = race::ResultsOverlay::fully_shown_time(rows); // 7.72 s after the finish
+    CHECK(std::abs(shown - 7.72) < 1e-9);
+    CHECK(std::abs(race::ResultsOverlay::fully_shown_time(rows, 0.0) - 2.72) < 1e-9);
+    // Frames (60 Hz) from `from` until update() reports the end (its time), else -1 at `limit`. Every car has
+    // finished from frame `all_done_at`; confirm is pressed on frame `confirm_at` (-1 none).
+    auto run = [&](race::ResultPanelFlow& f, int from, int all_done_at, int confirm_at, int limit) {
+        for (int i = from; i < limit; ++i)
+            if (f.update(i * kStep, rows, i >= all_done_at, i == confirm_at)) return i * kStep;
+        return -1.0;
+    };
+    auto near_time = [&](double t, double want) { return std::abs(t - want) < 4 * kStep; }; // (frame rounding of each wait)
+    constexpr int kNever = 1 << 30;
+    // Arcade / GT race: confirm counts only once the panel is fully shown.
+    race::ResultPanelFlow f;
+    f.reset(false);
+    CHECK(run(f, 0, kNever, 420, 1800) < 0); // 7 s: too early, ignored; and no timer while cars run
+    f.reset(false);
+    CHECK(near_time(run(f, 0, kNever, 480, 1800), 8.0));
+    // Every car finished before the panel was shown: 15 s from the panel being shown, not from the last finish.
+    f.reset(false);
+    CHECK(near_time(run(f, 0, 180, -1, 2400), shown + 15.0));
+    // The last car finishes after it: 15 s from then.
+    f.reset(false);
+    CHECK(near_time(run(f, 0, 720, -1, 2400), 27.0));
+    CHECK(f.page() == race::ResultPage::Results);
+
+    // Championship round: RACE RESULTS (10 s) -> 0.5 s fade -> POINTS (10 s) -> fade -> TOTAL POINT (15 s) -> end.
+    f.reset(true);
+    int i = 0;
+    for (; i < 6000 && f.page() == race::ResultPage::Results; ++i) CHECK(!f.update(i * kStep, rows, true, false));
+    const double points_open = (i - 1) * kStep;
+    CHECK(near_time(points_open, shown + 10.5));
+    race::ResultPanelView v = f.view(points_open);
+    CHECK(v.page == race::ResultPage::Points && v.t == 0 && v.delay == 0 && v.alpha == 1);
+    for (; i < 6000 && f.page() == race::ResultPage::Points; ++i) CHECK(!f.update(i * kStep, rows, true, false));
+    const double total_open = (i - 1) * kStep;
+    CHECK(near_time(total_open - points_open, 2.72 + 10.5));
+    CHECK(near_time(run(f, i, 0, -1, 6000) - total_open, 2.72 + 15.0));
+
+    // Confirm turns each page as soon as it is shown, with the fade-out between; POINTS runs no timer while cars are
+    // racing, TOTAL POINT always does.
+    f.reset(true);
+    CHECK(run(f, 0, kNever, 480, 481) < 0);
+    CHECK(f.page() == race::ResultPage::Results);
+    CHECK(std::abs(f.view(8.25).alpha - 0.5f) < 1e-3);
+    CHECK(run(f, 481, kNever, -1, 1800) < 0);
+    CHECK(f.page() == race::ResultPage::Points);
+    CHECK(run(f, 1800, kNever, 1980, 1981) < 0); // confirm on POINTS at 33 s
+    CHECK(near_time(run(f, 1981, kNever, -1, 6000), 33.0 + 0.5 + 2.72 + 15.0));
+    CHECK(f.page() == race::ResultPage::TotalPoints);
+}
+
+// presentation §B2: the championship's points pages (points by place, texts, totals).
+TEST(race_championship_points_pages) {
+    const int expect[8] = {10, 6, 4, 3, 2, 1, 0, 0};
+    for (int p = 0; p < 8; ++p) CHECK(race::championship_points(p) == expect[p]);
+    CHECK(race::championship_points(-1) == 0);
+    CHECK(race::result_points_text('+', 10) == "+10pts");
+    CHECK(race::result_points_text('+', 1) == "+1pt");
+    CHECK(race::result_points_text('+', 0) == "+0pt");
+    CHECK(race::result_points_text(' ', 26) == " 26pts");
+    CHECK(race::result_points_text('+', 10, "BR") == "+10pts");
+    CHECK(race::result_points_text('+', 10, "JP") == "+10 pt");
+    CHECK(race::result_points_text(' ', 1, "JP") == " 1 pt");
+    // Round 1: the totals are the round's points, in finishing order.
+    std::vector<int> totals;
+    std::vector<size_t> order = race::total_points_order(std::vector<int>(6, 0), totals);
+    CHECK((order == std::vector<size_t>{0, 1, 2, 3, 4, 5}));
+    CHECK((totals == std::vector<int>{10, 6, 4, 3, 2, 1}));
+    // A later round: each row's points before it (finishing order). The 4th (10 + 3 = 13) leads; the winner (1 + 10)
+    // and the 6th (10 + 1) tie on 11 and stay in finishing order.
+    order = race::total_points_order(std::vector<int>{1, 2, 3, 10, 0, 10}, totals);
+    CHECK((totals == std::vector<int>{11, 8, 7, 13, 2, 11}));
+    CHECK((order == std::vector<size_t>{3, 0, 5, 1, 2, 4}));
+}
+
+// result1.pmb's page has the three title bars a championship round's results switch between.
+TEST(race_result_panel_titles_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    std::optional<Bytes> b = vfs.read("menu/US/result1.pmb");
+    CHECK(b.has_value());
+    if (!b) return;
+    menu::PmbFile f = menu::PmbFile::parse(*b);
+    CHECK(!f.pages.empty());
+    if (f.pages.empty()) return;
+    std::set<std::string> names;
+    for (const menu::Layer& l : f.pages[0].layers) {
+        for (const menu::Element& e : l.elements) names.insert(e.name);
+        for (const menu::Element& e : l.widgets) names.insert(e.name);
+    }
+    for (const menu::Element& e : f.pages[0].items) names.insert(e.name);
+    for (const char* t : {"b_title_result", "b_title_point", "b_title_total_point"}) CHECK(names.count(t) == 1);
+}
+
 // The race screens' car names keep the database's game text (escapes and JIS pairs) for the game
 // font. INVENTED database (car_db_synth.h).
 TEST(race_result_car_name_game_text) {

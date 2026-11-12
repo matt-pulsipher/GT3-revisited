@@ -536,6 +536,9 @@ private:
     std::string car_display_name(const std::string& label, bool full = false) const;
     std::vector<ResultRow> result_rows(bool full_names = false) const;
     std::vector<ResultRow> result_menu_rows() const;
+    // The results panel's rows for a page (race::ResultPage): the race results; a championship
+    // round's points of the round in finishing order; its totals, highest first.
+    std::vector<ResultRow> result_panel_rows(race::ResultPage page) const;
     void latch_result();
     menu::flow::GameResult build_result() const;
     void leave(App& app);
@@ -923,6 +926,7 @@ private:
     menu::flow::MenuSounds quick_sounds_; // the menus' sound effects (quick / pause menus)
     bool quick_sounds_tried_ = false;
     ResultsOverlay results_;
+    race::ResultPanelFlow result_panel_; // the panel's pages after the finish (1P races)
     TimeTrialOverlay tt_overlay_;
     LicenseResultOverlay license_overlay_;
     std::unique_ptr<render::PrizeView> prize_; // licence medal model
