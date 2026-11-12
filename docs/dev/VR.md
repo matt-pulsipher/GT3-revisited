@@ -148,6 +148,31 @@ car, to line it up with a real seat and wheel. They move a custom camera in the 
 seat (`mount = incar`) too, whose own Sideways, Fore/aft and Height put the seat on the
 car's left or right; the other custom cameras sit exactly where they were placed.
 
+**Seat side.** GT3's in-car camera is on the car's centre line in every car. `[vr]
+seat_side` moves the in-car views' eye point `seat_offset` metres to the car's left or
+right (`xr::Settings::seat`); a custom camera keeps its own Sideways. `car` (Match the
+car) sits the player where the car's own driver sits (`RaceScreen::build_player_visual`).
+GT3's tables hold no steering side, but most car bodies hold their driver, a small figure
+in one seat that shows through the glass. In order:
+
+| Source | Seat |
+|---|---|
+| A mod car whose file says (`driver_side`, [MODDING](../MODDING.md)) | as it says |
+| The body shows its driver (`race::find_driver_seat`, [driver_seat.h](../../src/race/driver_seat.h): 212 of the US release's 244 cars, 210 of the Japanese one's 242, 207 of the European one's 227 with a model) | the driver's |
+| Else the country GT Mode's dealer map puts the car's maker in (`data::country_driver_side`, read from `menu/gt_mode.mbl` by `game::load_maker_countries`) | right for Japan, the UK and Australia; left for the US, Germany, France, Italy and Belgium |
+| Else (a body with no driver and a maker with no dealer: the F1 cars) | center |
+
+`find_driver_seat` mirrors the body's LOD-0 mesh in its centre plane and adds up, by
+area, the triangles with no mirror image in each seat's lane (between the middle and the
+doors, the cabin's part of the length, above the waist). Bodywork is symmetric, so what
+is left is the driver; a lane with at least 0.2 m2 and three times the other's has it.
+Single-seaters and the bodies with a figure in each seat (several rally cars and their
+co-drivers) give no side. The models are the same on every release, so the seat does not
+depend on the disc or the game's language: the MX-5 the US release calls a Miata has its
+driver on the right. The makers' countries agree with the bodies that show a driver on 92%
+of them (190 of 207 on the US release), which is why they are the fallback; the names'
+Japan-only marks (`(J)`) add nothing to them.
+
 **The desktop's window.** `xr::Session::mirror_to` claims the window for the GPU
 device, separately from the offscreen 2D renderer, and `end_frame` draws into it in
 the same command buffer: the screen letterboxed, or in a stereo frame the left eye
@@ -256,6 +281,8 @@ the rates the headset offers (`XR_FB_display_refresh_rate`, 90 Hz default).
 | `screen_width`, `screen_distance` | `2.6`, `2.4` | metres |
 | `hud_width`, `hud_distance`, `hud_drop` | `1.5`, `1.3`, `0.12` | metres |
 | `seat_forward`, `seat_height` | `0`, `0` | metres from the car's camera, in-car views and custom cameras in the driver's seat (-0.6..0.6) |
+| `seat_side` | `center` | in-car views: `left`, `right`, or `car` (the seat the car's own driver sits in: see Seat side) |
+| `seat_offset` | `0.36` | metres from the car's centre line to a left or right seat (0.1..0.6) |
 | `refresh` | `90` | Hz (nearest offered; where the headset offers a choice to games: PC runtimes set it themselves) |
 | `resolution` | `1.0` | eye size x the recommended size (0.5..1.5); restart |
 

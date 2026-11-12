@@ -120,6 +120,12 @@ TEST(modcar_parse) {
     CHECK(!data::parse_mod_car("[car]\nlabel = x\nname = X\n", &err) && err.find("donor") != std::string::npos);
     CHECK(!data::parse_mod_car("[car]\nlabel = Bad Label\nname = X\ndonor = y\n", &err));
     CHECK(!data::parse_mod_car("[car]\nlabel = x\nname = X\ndonor = y\n[powertrain]\ntype = electric\n", &err));
+    // The driver's side: left or right, unset without the key.
+    CHECK(!d->driver_side);
+    auto side = data::parse_mod_car("[car]\nlabel = x\nname = X\ndonor = y\ndriver_side = Right\n", &err);
+    CHECK(side && side->driver_side && *side->driver_side == data::DriverSide::Right);
+    CHECK(!data::parse_mod_car("[car]\nlabel = x\nname = X\ndonor = y\ndriver_side = middle\n", &err) &&
+          err.find("driver_side") != std::string::npos);
     // Unknown keys are warnings, not errors.
     warns.clear();
     CHECK(data::parse_mod_car("[car]\nlabel = x\nname = X\ndonor = y\nspoiler = big\n", &err, &warns).has_value());
@@ -239,9 +245,15 @@ TEST(modcar_texts_game_text) {
     // Bytes that are not UTF-8 (a file saved in Latin-1) draw as '?', not as stray kanji.
     def->label = "syn_mod2";
     def->name = "Citro\xEBn";
+    def->driver_side = data::DriverSide::Right;
     CHECK(data::add_mod_car(*db, *def, &err));
     db->rebuild();
     CHECK(db->car("syn_mod2") && db->car("syn_mod2")->name == "Citro?n");
+    // The driver's side: the file's own, whatever the body shows; without it the body's (and
+    // unknown here with no body: no makers' countries were read).
+    CHECK(db->driver_side(*db->car("syn_mod")) == data::DriverSide::Unknown);
+    CHECK(db->driver_side(*db->car("syn_mod"), data::DriverSide::Left) == data::DriverSide::Left);
+    CHECK(db->car("syn_mod2") && db->driver_side(*db->car("syn_mod2"), data::DriverSide::Left) == data::DriverSide::Right);
     // A maker file: its name and description as game text too (matched with the cars' makers).
     // (Joined with '/', as the mod scan joins its paths: the maker's id is the file name after the last '/'.)
     const std::string maker_file = temp_dir("modcar_texts").generic_string() + "/citroen.ini";

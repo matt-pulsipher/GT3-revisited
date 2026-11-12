@@ -9,7 +9,9 @@
 
 #include "formats/menu/mbl.h"
 
+#include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -55,5 +57,14 @@ struct Catalog {
     const LicenseCourse* license(const std::string& id) const;
     const DealerCar* dealer_car(const std::string& item_or_label) const;
 };
+
+// The dealer map's country of each car maker: Car::maker_id -> the region page its dealer is on
+// ("jp", "us", "gr", "fr", "it", "uk", "bel", "aus"), from the cars the dealers sell. Makers
+// with no dealer on the map (tuners without one, the cars with no maker) have none.
+std::map<u16, std::string> maker_countries(const Catalog& c, const data::CarDatabase& db);
+// Reads them from menu/gt_mode.mbl as the menus see it (mod makers included) into `db`
+// (CarDatabase::set_maker_countries: the driver's side of a car whose body shows none). False
+// when the disc has no such file.
+bool load_maker_countries(const std::function<std::optional<Bytes>(const std::string&)>& read, data::CarDatabase& db);
 
 } // namespace gt3r::game

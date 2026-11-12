@@ -975,6 +975,25 @@ private:
             std::snprintf(b, sizeof(b), "%+.2f m", double(v));
             return std::string(b);
         };
+        auto metres2 = [](float v) {
+            char b[16];
+            std::snprintf(b, sizeof(b), "%.2f m", double(v));
+            return std::string(b);
+        };
+        choice("Seat side",
+               "In-car views: the seat you sit in. Match the car: the seat the car's own driver sits in, as its model "
+               "shows; without one, the side of its maker's country, or the center.",
+               {"Center", "Left", "Right", "Match the car"}, int(s.seat_side), [apply, s](int i) {
+                   xr::Settings n = s;
+                   n.seat_side = xr::SeatSide(i);
+                   apply(n);
+               });
+        slider("Seat side distance", "How far a left or right seat is from the middle of the car.", s.seat_offset, 0.1f, 0.6f,
+               0.02f, metres2(s.seat_offset), [apply, s](float v) {
+                   xr::Settings n = s;
+                   n.seat_offset = v;
+                   apply(n);
+               }).enabled = s.seat_side != xr::SeatSide::Center;
         slider("Seat height", "In-car views: your eyes above or below the car's camera.", s.seat_height, -0.6f, 0.6f, 0.02f,
                seat(s.seat_height), [apply, s](float v) {
                    xr::Settings n = s;

@@ -85,6 +85,23 @@ struct CarNameFields {
 };
 CarNameFields car_name_fields(Language lang);
 
+// The side of a car its driver sits on. GT3's tables keep no steering side, and every car's
+// camera points are on its centre line; the car's body shows it (most hold a driver in one
+// seat: race::find_driver_seat). For a body that doesn't, the tables' best word is the country
+// GT Mode's dealer map puts the car's maker in ("jp", "us", "gr", "fr", "it", "uk", "bel",
+// "aus"; game::maker_countries): the right for a country whose traffic keeps left, else the
+// left. That matches the bodies that do show their driver on about nine cars in ten, and is
+// the same in every language and on every release. (The names' marks say less: the US and
+// European releases end the names of models sold only in Japan with a J, but every such car
+// is a Japanese maker's, and the unmarked Japanese cars have their drivers on the right too:
+// the MX-5 the US release calls a Miata is one model on every disc.) A maker with no dealer on
+// the map (the cars with no maker, a few prize cars) has no country: Unknown.
+enum class DriverSide : u8 { Left, Right, Unknown };
+// A dealer map country whose traffic keeps left: "jp", "uk", "aus".
+bool country_drives_on_left(std::string_view country);
+// The side for a maker's country; Unknown for none.
+DriverSide country_driver_side(std::string_view maker_country);
+
 // One record of any table, plus the ids resolved for convenience.
 struct RawRecord {
     u64 id = 0;
@@ -262,6 +279,7 @@ struct ModCar {
     // shell), and its paint colours (name, RGB 0..1) in menu order.
     std::string model_file;
     std::string wheel; // rim (wheel/<label> on the disc); empty = the donor's
+    std::optional<DriverSide> driver_side; // the side its file gives (CarDatabase::driver_side)
     float model_lower = 0; // metres to move a glTF body down from its own ground line
     std::vector<std::pair<std::string, std::array<float, 3>>> paints;
     // GT Mode dealer: sold at its maker's dealer (a disc dealer, or a mod maker's) for its
@@ -327,6 +345,14 @@ public:
     const Car* car(const std::string& label) const;
     const Car* car_by_model(const std::string& model) const; // e.g. "ho0030"
     std::string model_of(const Car& c) const;
+    // The driver's side: a mod car's own when its file gives one; else the one its body shows
+    // (`body`: race::find_driver_seat, Unknown when it shows none or none was read); else its
+    // maker's country's.
+    DriverSide driver_side(const Car& c, DriverSide body = DriverSide::Unknown) const;
+    // The dealer map's country of each maker, by Car::maker_id (game::load_maker_countries;
+    // none until set), and a car's ("" for a maker with no dealer on the map).
+    void set_maker_countries(std::map<u16, std::string> countries) { maker_countries_ = std::move(countries); }
+    std::string_view maker_country(const Car& c) const;
     std::optional<Engine> engine(u64 id) const;
     std::optional<Chassis> chassis(u64 id) const;
     std::optional<Body> body(u64 id) const;
@@ -395,6 +421,7 @@ public:
 
 private:
     Language language_ = Language::US;
+    std::map<u16, std::string> maker_countries_;
     void decode();
     void us_medal_times(const Reader& read); // a PAL disc: the US database's medal times
     PartInfo part_info(ByteSpan r, bool tire = false) const;

@@ -1,6 +1,8 @@
 #include "game/gt_catalog.h"
 
+#include "base/log.h"
 #include "game/data/car_database.h"
+#include "menu/flow/menu_set.h"
 
 namespace gt3r::game {
 
@@ -98,6 +100,29 @@ const DealerCar* Catalog::dealer_car(const std::string& s) const {
     for (const DealerCar& d : dealers)
         if (d.item == s || d.car == s) return &d;
     return nullptr;
+}
+
+std::map<u16, std::string> maker_countries(const Catalog& c, const data::CarDatabase& db) {
+    std::map<u16, std::string> out;
+    for (const DealerCar& d : c.dealers) {
+        if (d.region.empty()) continue; // (a dealer page no region page lists)
+        if (const data::Car* car = db.car(d.car)) out.emplace(car->maker_id, d.region);
+    }
+    return out;
+}
+
+bool load_maker_countries(const std::function<std::optional<Bytes>(const std::string&)>& read, data::CarDatabase& db) {
+    const std::optional<Bytes> mbl = read("menu/gt_mode.mbl");
+    if (!mbl) return false;
+    try {
+        menu::MblFile flow = menu::MblFile::parse(*mbl);
+        if (const auto& patch = menu::flow::menu_patches().flow) patch("gt_mode", read, flow);
+        db.set_maker_countries(maker_countries(Catalog::from_mbl(flow, &db), db));
+    } catch (const std::exception& e) {
+        LOG_INFO("gt mode: menu/gt_mode.mbl: %s", e.what());
+        return false;
+    }
+    return true;
 }
 
 } // namespace gt3r::game

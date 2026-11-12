@@ -61,6 +61,10 @@ inline SDL_FRect fit_picture(int w, int h, float tw, float th, bool cover) {
     return {(tw - float(w) * k) / 2, (th - float(h) * k) / 2, float(w) * k, float(h) * k};
 }
 
+// [vr] seat_side: where the player sits across the car in the in-car views. Car: the seat the car
+// driven has its own driver in (race::find_driver_seat, data::CarDatabase::driver_side).
+enum class SeatSide : u8 { Center, Left, Right, Car };
+
 // [vr] in config.ini (Settings > VR).
 struct Settings {
     bool stereo = true;          // stereo = on: races in 3D; off: on the virtual screen
@@ -72,6 +76,15 @@ struct Settings {
     float hud_distance = 1.3f, hud_width = 1.5f;       // the race HUD panel in front of the car
     float hud_drop = 0.12f;                            // HUD panel centre below eye level
     float seat_forward = 0, seat_height = 0;           // in-car views, in-car custom cameras: from the car's camera (metres)
+    SeatSide seat_side = SeatSide::Center;             // seat_side = center | left | right | car: in-car views
+    float seat_offset = 0.36f;                         // seat_offset: a side seat's distance from the centre line (metres)
+    // The seat from the car's camera in the car's frame (x right, y up, z back), in the in-car
+    // views. `car_side`: the seat the driven car has its driver in, for seat_side = car: -1 left,
+    // 1 right, 0 when nothing says (the middle).
+    render::Vec3 seat(int car_side) const {
+        const int side = seat_side == SeatSide::Left ? -1 : seat_side == SeatSide::Right ? 1 : seat_side == SeatSide::Car ? car_side : 0;
+        return {float(side) * seat_offset, seat_height, -seat_forward};
+    }
     int refresh_hz = 90;      // refresh = 72 | 80 | 90 | 120 (what the headset offers)
     float eye_scale = 1.0f;   // resolution = 0.7 .. 1.3 of the headset's recommended size
     static Settings load(const IniDocument& cfg);

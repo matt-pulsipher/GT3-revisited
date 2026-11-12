@@ -1033,6 +1033,7 @@ private:
 #if GT3R_XR
     std::unique_ptr<render::View3D> vr_views_[2]; // the eyes (screen_race_vr.cpp)
 #endif
+    int driver_side_ = 0; // the seat the player's car has its driver in: -1 left, 1 right, 0 unknown (build_player_visual; [vr] seat_side = car)
     std::vector<std::unique_ptr<render::View3D>> icon_views_; // 2P results panel car pictures
     std::unique_ptr<CarVisual> car2_visual_;
     bool finished2_ = false;
