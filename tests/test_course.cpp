@@ -451,6 +451,41 @@ TEST(course_clut_animations_billboards_disc) {
     CHECK(animated > 0);
 }
 
+TEST(course_billboard_uvs_address_the_full_texture_disc) {
+    // Issue 278. Super Speedway's poplars (sprite types 4..9, 12..17, 3.5 x 15 m) use billboard
+    // texture 1, 96 x 256 texels of a 128 x 256 texture (REGION_CLAMP), the tree on its side: their
+    // UVs run u 0.010 (foot) .. 0.736 (top) of the 128 texels. Decoded to the 96-texel picture, the
+    // top maps to 0.736 x 128 / 96 = 0.98 of it (read as 0.736 of the picture, the tops were cut).
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const Volume::Entry* e = disc->volume().find("courses/US/super");
+    if (!e) SKIP("no courses/US/super on this disc");
+    Bytes data = disc->volume().read(*e);
+    CourseFile f = CourseFile::parse(data);
+    ByteSpan b = f.section(data, 30);
+    CHECK(b.size() > 0x28 && std::memcmp(b.data(), "BLBd", 4) == 0);
+    if (b.size() <= 0x28) return;
+    Tex1 t = Tex1::parse(b.subspan(rd32(b, 0x1C)));
+    CHECK(t.textures.size() > 1);
+    if (t.textures.size() <= 1) return;
+    Tex1::Region r = t.region(1);
+    CHECK(r.width == 96 && r.height == 256 && t.textures[1].tex0.width() == 128);
+    // Type 4's top-left UV.
+    u32 uvp = rd32(b, rd32(b, 0x24) + 16 * 4 + 8);
+    float u, v;
+    u32 bits = rd32(b, uvp + 16);
+    std::memcpy(&u, &bits, 4);
+    bits = rd32(b, uvp + 20);
+    std::memcpy(&v, &bits, 4);
+    CHECK(std::fabs(u - 0.736f) < 0.002f);
+    std::array<float, 2> uv = t.region_uv(1, u, v);
+    CHECK(std::fabs(uv[0] - u * 128.0f / 96.0f) < 1e-5f && uv[0] > 0.97f && uv[0] < 1.0f);
+    CHECK(std::fabs(uv[1] - v) < 1e-6f); // full height: unchanged
+    // Textures without a region keep their coordinates.
+    std::array<float, 2> same = t.region_uv(0, 0.25f, 0.75f);
+    CHECK(same[0] == 0.25f && same[1] == 0.75f);
+}
+
 TEST(course_animated_nodes_disc) {
     // The +0x3C animators' nodes (gtm1::AnimatedNodes): Route 11's flags (node 366, morphing
     // chunk ranges) and its backdrop Ferris wheel (slot 22, turning 1 degree per second), Apricot

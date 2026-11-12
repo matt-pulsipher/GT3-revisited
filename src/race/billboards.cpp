@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <optional>
 
 namespace gt3r::race {
 
@@ -21,6 +22,15 @@ float rdf(ByteSpan d, size_t o) {
     return f;
 }
 } // namespace
+
+void sprite_corners(const float (&s)[4], const float (&t)[4], float (&cx)[4], float (&cy)[4]) {
+    const float smin = *std::min_element(s, s + 4), smax = *std::max_element(s, s + 4);
+    const float tmin = *std::min_element(t, t + 4), tmax = *std::max_element(t, t + 4);
+    for (int c = 0; c < 4; ++c) {
+        cx[c] = std::fabs(s[c] - s[0]) <= 0.5f * (smax - smin) ? -1.0f : 1.0f;
+        cy[c] = t[c] < 0.5f * (tmin + tmax) ? 1.0f : 0.0f;
+    }
+}
 
 bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& name) {
     sprites_.clear();
@@ -34,10 +44,15 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
     if (!lists || !types || list_ptrs + 4u * lists > b.size() || type_off + 16u * types > b.size()) return false;
     scene::Model model;
     model.name = name + "/billboards";
+    // The sprites' UVs address the full power-of-two size of their texture (TEX0 TW / TH) while
+    // the pictures are decoded to the REGION_CLAMP rectangle (Tex1::region_uv): Super Speedway's
+    // poplars (96 of 128 texels, stored on their side) lost their tops.
+    std::optional<Tex1> set;
     try {
         if (tex_off < b.size() && Tex1::is_tex1(b.subspan(tex_off))) {
             ByteSpan td = b.subspan(tex_off);
             Tex1 tex = Tex1::parse(td);
+            set = tex;
             GsMemory gs;
             tex.upload(td, gs);
             // (Textures fed by CLUT animations: in the animations' state.)
@@ -77,11 +92,27 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
             float w = rdf(b, to), h = rdf(b, to + 4);
             u32 uvp = rd32(b, to + 8), colp = rd32(b, to + 12);
             if (uvp + 32 > b.size() || colp + 16 > b.size()) continue;
-            Sprite s{rdf(b, o + 4), rdf(b, o + 8), rdf(b, o + 12), w, h};
+            Sprite s{rdf(b, o + 4), rdf(b, o + 8), rdf(b, o + 12), w, h, {}, {}};
+            // The corners' places follow their UVs, so the picture stands upright whichever order
+            // a type lists them in (by column: Super Speedway's poplars, Smokey Mountain's
+            // spectators; by row: most of Tahiti's): the corners on corner 0's side of the UV
+            // rectangle are on the left (a type that lists the right side first is mirrored), the
+            // smaller t on top.
+            {
+                float su[4], tv[4];
+                for (int c = 0; c < 4; ++c) su[c] = rdf(b, uvp + 8 * c), tv[c] = rdf(b, uvp + 8 * c + 4);
+                sprite_corners(su, tv, s.cx, s.cy);
+            }
+            int tex = int(param) - 1;
+            if (tex < 0 || tex >= int(model.textures.size())) tex = model.textures.empty() ? -1 : 0;
             u32 base = u32(mesh.vertices.size());
-            for (int c = 0; c < 4; ++c) { // corners: bottom-left, bottom-right, top-left, top-right
+            for (int c = 0; c < 4; ++c) {
                 scene::Vertex v;
                 v.uv[0] = rdf(b, uvp + 8 * c), v.uv[1] = rdf(b, uvp + 8 * c + 4);
+                if (set && tex >= 0 && size_t(tex) < set->textures.size()) {
+                    const std::array<float, 2> uv = set->region_uv(size_t(tex), v.uv[0], v.uv[1]);
+                    v.uv[0] = uv[0], v.uv[1] = uv[1];
+                }
                 u32 rgba = rd32(b, colp + 4 * c);
                 auto ch = [&](int sh) { return std::min<u32>(255, ((rgba >> sh) & 0xFF) * 2); }; // 0x80 = 1.0
                 v.color = ch(0) | (ch(8) << 8) | (ch(16) << 16) | (ch(24) << 24);
@@ -89,8 +120,6 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
                 mesh.vertices.push_back(v);
             }
             sprites_.push_back(s);
-            int tex = int(param) - 1;
-            if (tex < 0 || tex >= int(model.textures.size())) tex = model.textures.empty() ? -1 : 0;
             by_tex[tex].insert(by_tex[tex].end(), {base, base + 1, base + 2, base + 2, base + 1, base + 3});
         }
         if (mesh.vertices.empty()) continue;
@@ -99,7 +128,8 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
             p.first_index = u32(mesh.indices.size());
             p.index_count = u32(idx.size());
             p.texture = tex;
-            p.flags = scene::kAlphaTest | scene::kUnlit;
+            // (Double-sided: the types' corner orders wind both ways.)
+            p.flags = scene::kAlphaTest | scene::kUnlit | scene::kDoubleSided;
             mesh.indices.insert(mesh.indices.end(), idx.begin(), idx.end());
             mesh.primitives.push_back(p);
         }
@@ -112,10 +142,9 @@ bool Billboards::load(render::GpuContext& ctx, ByteSpan b, const std::string& na
     for (scene::Mesh& m : model.meshes)
         for (size_t k = 0; k < m.vertices.size(); k += 4) {
             const Sprite& s = sprites_[vi / 4];
-            float xs[4] = {-0.5f, 0.5f, -0.5f, 0.5f}, ys[4] = {0, 0, 1, 1};
             for (int c = 0; c < 4; ++c) {
-                m.vertices[k + c].pos[0] = s.x + xs[c] * s.w;
-                m.vertices[k + c].pos[1] = s.y + ys[c] * s.h;
+                m.vertices[k + c].pos[0] = s.x + s.cx[c] * s.w;
+                m.vertices[k + c].pos[1] = s.y + s.cy[c] * s.h;
                 m.vertices[k + c].pos[2] = s.z;
             }
             vi += 4;
@@ -139,14 +168,13 @@ void Billboards::add_items(std::vector<render::DrawItem>& items, const render::V
     else r = {r.x / n, 0, r.z / n};
     if (std::fabs(r.x - last_right_.x) + std::fabs(r.z - last_right_.z) > 1e-3f) { // re-face only when the camera turned
         last_right_ = r;
-        float xs[4] = {-0.5f, 0.5f, -0.5f, 0.5f}, ys[4] = {0, 0, 1, 1};
         for (size_t i = 0; i < sprites_.size(); ++i) {
             const Sprite& s = sprites_[i];
             for (int c = 0; c < 4; ++c) {
                 scene::Vertex& v = verts_[i * 4 + size_t(c)];
-                v.pos[0] = s.x + r.x * xs[c] * s.w;
-                v.pos[1] = s.y + ys[c] * s.h;
-                v.pos[2] = s.z + r.z * xs[c] * s.w;
+                v.pos[0] = s.x + r.x * s.cx[c] * s.w;
+                v.pos[1] = s.y + s.cy[c] * s.h;
+                v.pos[2] = s.z + r.z * s.cx[c] * s.w;
                 v.normal[0] = -r.z, v.normal[1] = 0, v.normal[2] = r.x;
             }
         }

@@ -14,6 +14,7 @@
 #include "formats/db/gt_db.h"
 #include "game/gt_save.h"
 #include "race/backend.h"
+#include "race/billboards.h"
 #include "race/camera_rig.h"
 #include "race/controls.h"
 #include "race/demo_replay.h"
@@ -93,6 +94,26 @@ PadState pad_with(PadButton b, u8 pressure) {
 }
 
 } // namespace
+
+TEST(race_billboard_corners_stand_upright) {
+    // Issue 278. BLBd sprite types list their corners' UVs in either order; the corners stand where
+    // their UVs put them in the picture. Corner 0 is on the left, the smaller t on top.
+    auto check = [](const float (&s)[4], const float (&t)[4], const float (&wx)[4], const float (&wy)[4]) {
+        float cx[4], cy[4];
+        race::sprite_corners(s, t, cx, cy);
+        for (int c = 0; c < 4; ++c) CHECK(cx[c] == wx[c] && cy[c] == wy[c]);
+    };
+    // Super Speedway's poplars (types 4..9): by column, top-left, bottom-left, top-right, bottom-right.
+    check({0.010f, 0.010f, 0.736f, 0.736f}, {0.008f, 0.992f, 0.008f, 0.992f}, {-1, -1, 1, 1}, {1, 0, 1, 0});
+    // Tahiti Maze type 0: by row, bottom-left, bottom-right, top-left, top-right.
+    check({0.012f, 0.988f, 0.012f, 0.988f}, {0.988f, 0.988f, 0.012f, 0.012f}, {-1, 1, -1, 1}, {0, 0, 1, 1});
+    // Tahiti Maze type 1: by column from the foot, bottom-left, top-left, bottom-right, top-right.
+    check({0.012f, 0.012f, 0.988f, 0.988f}, {0.988f, 0.012f, 0.988f, 0.012f}, {-1, -1, 1, 1}, {0, 1, 0, 1});
+    // Tahiti Maze type 379: by row from the right: mirrored.
+    check({0.988f, 0.012f, 0.988f, 0.012f}, {0.988f, 0.988f, 0.012f, 0.012f}, {-1, 1, -1, 1}, {0, 0, 1, 1});
+    // Smokey Mountain South: slightly turned UVs, by column from the right (mirrored).
+    check({1.002f, 0.998f, 0.002f, -0.002f}, {0.002f, 1.002f, -0.002f, 0.998f}, {-1, -1, 1, 1}, {1, 0, 1, 0});
+}
 
 TEST(race_stick_mapping) {
     ControlConfig cfg;
