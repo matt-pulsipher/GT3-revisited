@@ -326,17 +326,50 @@ TEST(race_camera_look) {
     CHECK(near(std::fabs(back.look_yaw()), kPi, 0.02f) && forward(back).z > 0.99f);
     CHECK(up.look_yaw() == 0 && nudge.look_yaw() == 0);
     CHECK(near(diagonal.look_yaw(), kPi / 4, 0.01f));
-    // Straight back with the stick wobbling either side: the view keeps to one side (never swings
+    // Straight back with the stick wobbling either side: the view stays behind (never swings
     // round through ahead).
+    auto turned = [&](float from, float to) { return std::fabs(std::remainder(to - from, 2 * kPi)); };
     CameraRig wobble;
-    float last = 0;
-    int flips = 0;
+    float last = 0, most_step = 0;
     for (int i = 0; i < 120; ++i) {
         run(wobble, i % 2 ? 0.02f : -0.02f, 1, 1);
-        if (wobble.look_yaw() * last < 0) ++flips;
+        if (i >= 30) most_step = std::max(most_step, turned(last, wobble.look_yaw())); // once it is behind
         last = wobble.look_yaw();
     }
-    CHECK(flips == 0 && near(std::fabs(last), kPi, 0.05f));
+    CHECK(most_step < 0.05f && near(std::fabs(last), kPi, 0.05f) && forward(wobble).z > 0.99f);
+    // Rolling the stick round (issue 200): the view turns round with it, twice either way, never
+    // more than a small step a frame, and ends where the stick points. Past 225 degrees it once
+    // swung a whole turn back the other way.
+    for (float dir : {1.0f, -1.0f}) {
+        CameraRig circle;
+        float prev = 0, biggest = 0;
+        constexpr int kFrames = 480; // two turns in 8 s
+        float a = 0;
+        for (int i = 1; i <= kFrames; ++i) {
+            a = dir * 4 * kPi * float(i) / kFrames;
+            run(circle, std::sin(a), -std::cos(a), 1);
+            biggest = std::max(biggest, turned(prev, circle.look_yaw()));
+            prev = circle.look_yaw();
+        }
+        run(circle, std::sin(a), -std::cos(a), 30);
+        CHECK(biggest < 0.2f && turned(a, circle.look_yaw()) < 0.02f);
+    }
+    // Let go turned 225 degrees round: back to the front the short way (135 degrees), never through behind.
+    CameraRig past;
+    for (int i = 1; i <= 75; ++i) {
+        const float a = 1.25f * kPi * float(i) / 75;
+        run(past, std::sin(a), -std::cos(a), 1);
+    }
+    run(past, std::sin(1.25f * kPi), -std::cos(1.25f * kPi), 30);
+    CHECK(near(past.look_yaw(), -0.75f * kPi, 0.02f));
+    float was = past.look_yaw();
+    bool short_way = true;
+    for (int i = 0; i < 90; ++i) {
+        run(past, 0, 0, 1);
+        short_way &= past.look_yaw() >= was && past.look_yaw() <= 0;
+        was = past.look_yaw();
+    }
+    CHECK(short_way && past.look_yaw() == 0);
     // The chase views go round the car: looking right, the eye is on its left.
     CameraRig chase, far;
     chase.set_mode(CameraMode::Chase);
