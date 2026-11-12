@@ -248,11 +248,23 @@ passes also write the texel alpha to the frame buffer, and the
 reflection passes (normal in the UV slot, env map from a runtime slot) are
 blended Cs·Ad + Cd: reflection weighted by that alpha.
 `Options::weighted_reflection` turns these into `kAdditive | kEnvironmentMap |
-kUnlit | kNoDepthWrite` primitives. Reflection triangles whose three corners
-come from the same textured pass get that pass's texture and UVs, and the renderer
-weights the reflection per pixel by the texel alpha (0 in the cut-outs, so the
-reflection doesn't haze over the wheels in the arches). The remaining triangles
-are untextured with a per-vertex weight. Glass is a nearly uniform dark texture
+kUnlit | kNoDepthWrite` primitives. A reflection triangle that an earlier pass drew
+exactly (the same three corners) gets the texture and UVs of the last such pass, and
+the renderer weights the reflection per pixel by its texel alpha. Where that pass
+is alpha-tested, its failing texels write nothing on the GS, so the alpha that lay
+there before stays: the primitive carries the test's reference and that earlier
+alpha (`scene::Primitive::under_ref` / `under_alpha`; the triangle's own under it,
+else the mean of its corners', in five steps), and the renderer weights texels at or
+below the reference with it. In the wheel arches that is
+usually 0, so the reflection doesn't haze over the wheels; in the windows the roof
+and pillar passes cut out, it is the alpha-only shell's 0x80 (the Alto Works,
+`sz0004`: issue 278). Otherwise, triangles whose three corners come from the same
+textured pass get that pass's texture and UVs; the remaining triangles are
+untextured with a per-vertex weight. Matching corners alone took a triangle that
+spans two overlapping packets (the MR2 G-Limited's hood, `ty0076`) or a window cut
+into a pass as that pass's own, which left flat patches and unreflecting glass.
+Checked in a GS dump of the original's garage (Alto Works): the reflection over
+its windows draws on the frame alpha the shell wrote. Glass is a nearly uniform dark texture
 with GS alpha ≈ 0x73, drawn with normal blending and the alpha channel
 write-masked, so it is ~90 % dark plus the reflection on top. The glass's own
 texture is used as its reflectivity because the real Ad (whatever lies

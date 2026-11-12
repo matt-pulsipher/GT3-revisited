@@ -595,8 +595,8 @@ TEST(car_alpha_test_and_reflection_disc) {
     CHECK(!m.meshes.empty());
     if (m.meshes.empty()) return;
     // The body's side panels are alpha-tested (wheel-arch cut-outs) and the reflection passes
-    // become additive environment layers weighted by vertex alpha.
-    size_t cut = 0, refl = 0, weighted = 0, per_pixel = 0;
+    // become additive environment layers weighted by the alpha the passes under them left.
+    size_t cut = 0, per_pixel = 0;
     const scene::Mesh& body = m.meshes[0];
     for (const scene::Primitive& p : body.primitives) {
         if (p.flags & scene::kAlphaTest) {
@@ -608,16 +608,74 @@ TEST(car_alpha_test_and_reflection_disc) {
         u32 want = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit | scene::kNoDepthWrite;
         // Reflection triangles over one textured pass carry that texture: its alpha is the reflectivity.
         if ((p.flags & want) == want && p.texture >= 0) ++per_pixel;
-        if ((p.flags & want) == want && p.texture < 0) {
-            ++refl;
-            for (u32 i = 0; i < p.index_count; ++i)
-                if ((body.vertices[body.indices[p.first_index + i]].color >> 24) > 0) { ++weighted; break; }
-        }
     }
     CHECK(cut > 0);
-    CHECK(refl > 0);
-    CHECK(weighted > 0);
     CHECK(per_pixel > 0);
+}
+
+namespace {
+
+// The reflection primitives (kAdditive | kEnvironmentMap | kUnlit | kNoDepthWrite) of a model's body.
+std::vector<const scene::Primitive*> reflection_prims(const scene::Model& m) {
+    std::vector<const scene::Primitive*> out;
+    const u32 want = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit | scene::kNoDepthWrite;
+    if (!m.meshes.empty())
+        for (const scene::Primitive& p : m.meshes[0].primitives)
+            if ((p.flags & want) == want) out.push_back(&p);
+    return out;
+}
+
+} // namespace
+
+// Issue 278. The Alto Works' windows: an alpha-only shell writes full reflectivity (0x80) over the
+// whole car, the roof and pillar passes are alpha-tested with the windows cut out, and the glass
+// reflection is drawn on those passes' own triangles. On the GS the cut-out texels write nothing,
+// so the window keeps the shell's alpha and reflects; the frame's texels write their own.
+TEST(car_reflection_keeps_alpha_under_cut_outs_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const auto* e = disc->volume().find("menu/cars/sz0004"); // ALTO WORKS SUZUKI SPORTS LIMITED
+    if (!e) SKIP("no menu/cars/sz0004 on this disc");
+    Bytes data = disc->volume().read(*e);
+    CarModelOptions o;
+    o.wheels = false;
+    scene::Model m = load_car_model(data, o, "sz0004");
+    size_t under = 0;
+    for (const scene::Primitive* p : reflection_prims(m)) {
+        if (p->texture < 0 || p->under_ref < 0 || p->under_alpha < 1.0f) continue;
+        ++under;
+        // Its pass's texture has cut-out texels (alpha at or below the test's reference): the
+        // window, where the shell's full reflectivity stays.
+        size_t cut = 0;
+        for (u32 c : m.textures[size_t(p->texture)].rgba) cut += float(c >> 24) / 255.0f <= p->under_ref;
+        CHECK(cut > 0);
+    }
+    CHECK(under > 0);
+}
+
+// Issue 278. The MR2 G-Limited's hood is two overlapping packets of one texture: the reflection
+// triangles there are each one base pass's own, so all of them read that pass's texel alpha (a
+// per-vertex weight left flat patches beside the headlamp lids).
+TEST(car_reflection_hood_reads_its_pass_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const auto* e = disc->volume().find("menu/cars/ty0076"); // MR2 G-Limited
+    if (!e) SKIP("no menu/cars/ty0076 on this disc");
+    Bytes data = disc->volume().read(*e);
+    CarModelOptions o;
+    o.wheels = false;
+    scene::Model m = load_car_model(data, o, "ty0076");
+    const scene::Mesh& body = m.meshes.empty() ? scene::Mesh{} : m.meshes[0];
+    size_t hood = 0, flat = 0;
+    for (const scene::Primitive* p : reflection_prims(m))
+        for (u32 i = p->first_index; i < p->first_index + p->index_count; ++i) {
+            const float* q = body.vertices[body.indices[i]].pos;
+            if (q[1] < 0.55f || q[1] > 0.69f || q[2] < -1.58f || q[2] > -0.63f) continue; // the front hood
+            ++hood;
+            flat += p->texture < 0;
+        }
+    CHECK(hood > 0);
+    CHECK(flat == 0);
 }
 
 namespace {

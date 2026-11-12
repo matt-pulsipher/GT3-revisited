@@ -67,7 +67,8 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
     vec4 grade2;         // the post pass: x black, y white (levels), z 1 = grade on;
                          // w 1 = write alpha 1 (coverage) for this opaque primitive
     vec4 env_c0;         // GT3 reflection weight rows: c0 + c1 min(V.N, 0) per channel;
-    vec4 env_c1;         // env_c0.w = 1: valid (else the scalar env_sky.w term)
+    vec4 env_c1;         // env_c0.w = 1: valid (else the scalar env_sky.w term); w: a car reflection's
+                         // weight where the pass under it failed its alpha test (params.x: its ref)
     vec4 output_mode;    // x = 1: store 5 bits per channel (GT3's PSMCT16 reflection map);
                          // y = 1: the vertex colour is linear in screen space (GT3's guard band);
                          // z = 1: the texture filtered as the GS does (gs_bilinear below);
@@ -290,7 +291,11 @@ void shade() {
         // Car reflection pass (PS2 ALPHA Cs*Ad + Cd): environment colour times the
         // pass colour, weighted through SRC_ALPHA blending by the reflectivity Ad = the
         // base pass's texel alpha (bound texture; white when none) x vertex alpha.
-        float ad = v_color.a * wheel_texture(v_uv).a;
+        // Texels at or below params.x (scene::Primitive::under_ref) failed that pass's alpha test
+        // and wrote nothing: the alpha under it (env_c1.w) stays there.
+        float ta = wheel_texture(v_uv).a;
+        if (u.params.x >= 0.0 && ta <= u.params.x) ta = u.env_c1.w;
+        float ad = v_color.a * ta;
         // GS TEST.DATE with DATM 0: only where Ad < 0x80 (0x80 = 1.0 here), not on texels at full
         // reflectivity. (The 0x80 an earlier reflection pass leaves: the decoder drops the
         // triangles such a pass repeats.)

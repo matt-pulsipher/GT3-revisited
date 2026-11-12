@@ -11,6 +11,7 @@
 #include <iterator>
 #include <map>
 #include <set>
+#include <tuple>
 
 namespace gt3r::gtm1 {
 
@@ -630,6 +631,10 @@ struct Written {
     int texture = -1; // the pass's texture (its alpha is the per-pixel reflectivity)
     float uv[2] = {0, 0};
     u32 vertex_alpha = 255;
+    // An alpha-tested pass: texels with alpha <= under_ref (0..1) wrote nothing, so `under` (0..255,
+    // what lay there before) stays in them (scene::Primitive::under_ref). < 0: none.
+    float under_ref = -1;
+    u32 under = 0;
 };
 
 // v' = v M (row vectors) for the position, M's rotation part for the (renormalised) normal.
@@ -724,9 +729,17 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     // weight in the vertex alpha. All are kAdditive | kEnvironmentMap | kUnlit | kNoDepthWrite.
     // `reflected` holds the triangles earlier reflection passes drew (their corners, sorted):
     // each leaves the frame alpha at 0x80, so a kDestAlphaTest pass draws none of them again.
+    // `written_tris`: the frame alpha by whole triangle (its sorted corners), each corner's Written in
+    // that order: what the last pass that drew exactly this triangle left. A reflection triangle
+    // found there is weighted with that pass's texture and UVs. The corner lookup alone would also
+    // match a triangle spanning a hole the pass never drew (glass reflected on the alpha-only shell,
+    // whose corners the window frame's body pass shares: the frame's UVs stretched over the window
+    // read its cut-out texels, so the glass lost its reflection).
     using Corners = std::array<std::array<float, 3>, 3>;
+    using TriWritten = std::array<Written, 3>;
     auto emit_weighted_reflection = [](scene::Mesh& mesh, const scene::Primitive& prim,
                                        const std::map<std::array<float, 3>, Written>& written,
+                                       const std::map<Corners, TriWritten>& written_tris,
                                        std::set<Corners>& reflected) {
         constexpr u32 kFlags = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit | scene::kNoDepthWrite;
         std::vector<u32> tris(mesh.indices.begin() + prim.first_index,
@@ -737,16 +750,23 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             auto it = written.find({p[0], p[1], p[2]});
             return it == written.end() ? nullptr : &it->second;
         };
-        std::map<int, std::vector<u32>> groups; // texture -> indices
+        // (texture, under_ref, under) -> indices
+        std::map<std::tuple<int, float, u32>, std::vector<u32>> groups;
         for (size_t t = 0; t + 2 < tris.size(); t += 3) {
             Corners c;
             for (int k = 0; k < 3; ++k) std::copy_n(mesh.vertices[tris[t + size_t(k)]].pos, 3, c[size_t(k)].begin());
             std::sort(c.begin(), c.end());
             if (!reflected.insert(c).second && (prim.flags & scene::kDestAlphaTest)) continue;
             const Written* w[3] = {info(tris[t]), info(tris[t + 1]), info(tris[t + 2])};
+            if (auto it = written_tris.find(c); it != written_tris.end())
+                for (int k = 0; k < 3; ++k)
+                    for (int j = 0; j < 3; ++j)
+                        if (std::equal(c[size_t(j)].begin(), c[size_t(j)].end(), mesh.vertices[tris[t + size_t(k)]].pos))
+                            w[k] = &it->second[size_t(j)];
             bool same = w[0] && w[1] && w[2] && w[0]->texture >= 0 && w[1]->texture == w[0]->texture &&
                         w[2]->texture == w[0]->texture;
-            std::vector<u32>& out = groups[same ? w[0]->texture : -1];
+            std::vector<u32>& out = groups[same ? std::tuple<int, float, u32>{w[0]->texture, w[0]->under_ref, w[0]->under}
+                                               : std::tuple<int, float, u32>{-1, -1.0f, 0u}];
             for (int k = 0; k < 3; ++k) {
                 u32 vi = tris[t + k];
                 if (!same) { // per-vertex weight on the shared vertex
@@ -762,11 +782,13 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 mesh.vertices.push_back(v);
             }
         }
-        for (auto& [tex, idx] : groups) {
+        for (auto& [key, idx] : groups) {
             scene::Primitive p;
             p.first_index = u32(mesh.indices.size());
             p.index_count = u32(idx.size());
-            p.texture = tex;
+            p.texture = std::get<0>(key);
+            p.under_ref = std::get<1>(key);
+            p.under_alpha = float(std::get<2>(key)) / 255.0f;
             p.flags = kFlags | (prim.flags & (scene::kVertexColor2x | scene::kDestAlphaTest));
             p.env_rows = prim.env_rows;
             std::copy(std::begin(prim.env_c0), std::end(prim.env_c0), p.env_c0);
@@ -788,6 +810,38 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         // What earlier passes left in the frame buffer's alpha, by vertex position: the
         // reflectivity that later Cs*Ad+Cd reflection passes are weighted with.
         std::map<std::array<float, 3>, Written> written_alpha;
+        std::map<Corners, TriWritten> written_tris;
+        // Records triangle (p, w) x 3 in written_tris; `keep`: a pass with the alpha write-masked
+        // only fills a triangle nothing wrote before. `tested`: the pass's GS alpha test (an opaque
+        // textured pass), whose failing texels keep the alpha this triangle held before.
+        auto write_tri = [&](const std::array<const float*, 3>& p, const std::array<Written, 3>& w, bool keep,
+                             const Draw* tested, const std::array<u32, 3>& before = {}) {
+            std::array<int, 3> o{0, 1, 2};
+            std::sort(o.begin(), o.end(), [&](int a, int b) {
+                return std::lexicographical_compare(p[size_t(a)], p[size_t(a)] + 3, p[size_t(b)], p[size_t(b)] + 3);
+            });
+            Corners c;
+            TriWritten tw;
+            for (size_t k = 0; k < 3; ++k) {
+                std::copy_n(p[size_t(o[k])], 3, c[k].begin());
+                tw[k] = w[size_t(o[k])];
+            }
+            // GS ATST 5 GEQUAL / 6 GREATER AREF (0x80 = 1.0): the texels failing it have alpha <= ref.
+            const u8 method = tested ? tested->alpha_test_method : 0;
+            const float ref = tested ? (float(tested->alpha_test_ref) + (method == 6 ? 0.5f : -0.5f)) / 128.0f : -1.0f;
+            // (cutout_for keeps the texture itself when no texel fails: then there is nothing under it)
+            if (tested && tw[0].texture >= 0 && (method == 5 || method == 6) && ref >= 0 &&
+                cutout_for(tw[0].texture, method, tested->alpha_test_ref) != tw[0].texture) {
+                // No pass drew exactly this triangle: the corners' alpha before this pass (`before`).
+                u32 under = (before[0] + before[1] + before[2]) / 3;
+                if (auto it = written_tris.find(c); it != written_tris.end())
+                    under = (it->second[0].weight + it->second[1].weight + it->second[2].weight) / 3;
+                under = std::min<u32>(255, (under + 32) / 64 * 64); // five values: few extra primitives
+                for (Written& x : tw) x.under_ref = ref, x.under = under;
+            }
+            if (keep) written_tris.emplace(c, tw);
+            else written_tris[c] = tw;
+        };
         std::set<Corners> reflected; // the triangles reflection passes drew (frame alpha 0x80)
         // Base-pass vertex alpha by position, for the road sheen mask.
         std::map<std::array<float, 3>, u32> base_alpha;
@@ -844,6 +898,8 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     u32 tex = pk.mat & 0x1FF;
                     DecodedPacket dp = g.decode_packet(pk);
                     int t = dp.prim.tme && dp.has_uv && tex != 0 && tex != 0x1FF ? texture_for(d.texset, tex - 1) : -1;
+                    std::vector<scene::Vertex> placed;
+                    std::vector<Written> ws;
                     for (scene::Vertex v : dp.vertices) {
                         if (d.has_matrix) place_vertex(d.matrix, v);
                         Written w;
@@ -853,6 +909,16 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                         w.uv[0] = v.uv[0], w.uv[1] = v.uv[1];
                         if (t >= 0) w.weight = w.weight * texel_alpha(model.textures[size_t(t)], v.uv[0], v.uv[1]) / 255;
                         written_alpha[{v.pos[0], v.pos[1], v.pos[2]}] = w;
+                        placed.push_back(v);
+                        ws.push_back(w);
+                    }
+                    size_t s0 = 0;
+                    for (u32 len : dp.strips) {
+                        for (size_t i = 0; i + 2 < len && s0 + i + 2 < placed.size(); ++i) {
+                            size_t a = s0 + i, b = a + 1, c = a + 2;
+                            write_tri({placed[a].pos, placed[b].pos, placed[c].pos}, {ws[a], ws[b], ws[c]}, false, nullptr);
+                        }
+                        s0 += len;
                     }
                 }
                 continue;
@@ -1032,6 +1098,11 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 // cannot know; their own alpha is used as the estimate unless a real write exists.
                 if (opt.weighted_reflection && !env && !depth_only) {
                     bool masked = (d.fb_mask & 0xFF000000u) != 0;
+                    std::vector<Written> ws;
+                    std::vector<u32> before; // the frame alpha at each vertex before this pass
+                    // An opaque pass the GS alpha-tests (as cut out below).
+                    const Draw* tested =
+                        opt.program_alpha_test && d.alpha_test && prim.texture >= 0 && !dp.prim.abe ? &d : nullptr;
                     for (u32 vi = base; vi < mesh.vertices.size(); ++vi) {
                         const scene::Vertex& v = mesh.vertices[vi];
                         Written w;
@@ -1042,8 +1113,17 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                         if (prim.texture >= 0)
                             w.weight = w.weight * texel_alpha(model.textures[size_t(prim.texture)], v.uv[0], v.uv[1]) / 255;
                         std::array<float, 3> key{v.pos[0], v.pos[1], v.pos[2]};
+                        auto prev = written_alpha.find(key);
+                        before.push_back(prev != written_alpha.end() ? std::min<u32>(255, prev->second.weight) : 0u);
                         if (masked) written_alpha.emplace(key, w);
                         else written_alpha[key] = w;
+                        ws.push_back(w);
+                    }
+                    for (u32 k = prim.first_index; k + 2 < prim.first_index + prim.index_count; k += 3) {
+                        u32 a = mesh.indices[k], b = mesh.indices[k + 1], c = mesh.indices[k + 2];
+                        write_tri({mesh.vertices[a].pos, mesh.vertices[b].pos, mesh.vertices[c].pos},
+                                  {ws[a - base], ws[b - base], ws[c - base]}, masked, tested,
+                                  {before[a - base], before[b - base], before[c - base]});
                     }
                 }
                 if (opt.program_alpha_test && d.alpha_test && prim.texture >= 0 && !dp.prim.abe) {
@@ -1120,7 +1200,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 if (weighted) {
                     // TEST.DATE (op 0x1D): GT3 draws these passes with DATM 0, where the frame alpha < 0x80.
                     if (d.dest_alpha_test) prim.flags |= scene::kDestAlphaTest;
-                    emit_weighted_reflection(mesh, prim, written_alpha, reflected);
+                    emit_weighted_reflection(mesh, prim, written_alpha, written_tris, reflected);
                     continue;
                 }
                 if (prim.index_count) mesh.primitives.push_back(prim);
