@@ -96,6 +96,10 @@ struct CarModelOptions {
     // at its full detail (a modified game's wheel that only its other kind of model has), read
     // only then: in races the menus' (menu_rim), in the menus the race's (race_rim).
     std::function<std::optional<Bytes>()> stand_in_rim;
+    // Races (ours, issue 272): the rims turn with the wheels, so a menus' rim (showroom wheels, or
+    // one standing in) has the light painted into its images evened out round its axis
+    // (formats/model/rim_light.h). The menus never turn their rims and leave them as they are.
+    bool even_menu_rim_light = false;
     std::optional<WheelSpec> wheel_spec; // placement; estimated from the body when absent
     bool brake = false;        // the brake-lamp branch of the node programs (lit lenses)
     CarBodyMod body_mod;       // mod cars: stretched or replaced body

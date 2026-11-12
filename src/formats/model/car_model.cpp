@@ -1,6 +1,7 @@
 #include "formats/model/car_model.h"
 #include "formats/model/gltf.h"
 
+#include "formats/model/rim_light.h"
 #include "formats/model/tyre_model.h"
 #include "formats/model/wheel_model.h"
 
@@ -186,6 +187,8 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
         const ByteSpan rim = showroom && !opt.showroom_wheel.empty() ? opt.showroom_wheel
                              : !opt.wheel_override.empty()           ? opt.wheel_override
                                                                      : src.wheel;
+        // Whether the rim is a menus' one (menu/cars, menu/wheel): the showroom's, or below, one standing in.
+        bool from_menus = showroom && (!opt.showroom_wheel.empty() || opt.wheel_override.empty());
         scene::Model wheel;
         std::string rim_error;
         try {
@@ -215,6 +218,7 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
                 gtm1::Options mo = wo;
                 mo.run.lod = 0;
                 wheel = load_wheel_model(menu_rim, mo, "wheel");
+                from_menus = true;
             }
         }
         if (no_rim && wheel.meshes.empty() && opt.stand_in_rim)
@@ -222,8 +226,10 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
                 gtm1::Options so = wo;
                 so.run.lod = 0;
                 wheel = load_wheel_model(*other, so, "wheel");
+                from_menus = opt.even_menu_rim_light; // (races stand the menus' rim in, the menus the race's)
             }
         if (wheel.meshes.empty() && !rim_error.empty()) throw FormatError(rim_error);
+        if (opt.even_menu_rim_light && from_menus) even_rim_light(wheel);
         int tyre_tex = -1;
         TyreShape tyre;
         if (src.tire.size() > 0x20 && rd32(src.tire, 0x1C) < src.tire.size()) {

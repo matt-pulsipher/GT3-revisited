@@ -180,7 +180,9 @@ SDL's trigger rumble does nothing there.
   detail; the default except on phones and tablets). LOD 0's wheels are the menus' with
   `[video] showroom_wheels = on` (Settings → Display → Showroom wheels in races; the
   default except on phones and tablets): the `menu/cars/<model>` rim and tyre, a fitted
-  wheel's `menu/wheel/<label>` (docs/formats/car_model.md "Tyres"). The wheels are split into models re-centred on their hubs
+  wheel's `menu/wheel/<label>` (docs/formats/car_model.md "Tyres"), its images' painted light evened out round the
+  axis since the rim turns here (`CarModelOptions::even_menu_rim_light`, `formats/model/rim_light.h`; ours, issue
+  272). The wheels are split into models re-centred on their hubs
   (`CarVisual::tyres_`, `rims_`) and drawn with `car * translate(hub) * rotY(-steer) * rotZ(camber) * rotX(-spin)`
   (the camber negated on right wheels, whose models are built turned half a turn).
 - Wheels (`race/wheel_fx.h`, docs/formats/car_model.md "Brake parts" and "Wheel spin blur"):
