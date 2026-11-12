@@ -76,15 +76,20 @@ void RaceScreen::music_cues(App& app) {
     if (music_.take_custom_change()) app.music_library().save_playlist();
 }
 
-void RaceScreen::song_controls(App& app) {
+void RaceScreen::song_controls(App& app, double dt) {
     InputManager& in = app.input();
-    int dir = 0;
-    for (int p = 0; p < InputManager::kMaxPlayers && !dir; ++p)
-        dir = in.action_pressed(p, PadAction::NextSong) ? 1 : in.action_pressed(p, PadAction::PreviousSong) ? -1 : 0;
+    int pressed = 0, held = 0;
+    for (int p = 0; p < InputManager::kMaxPlayers; ++p) {
+        if (!pressed) pressed = in.action_pressed(p, PadAction::NextSong) ? 1 : in.action_pressed(p, PadAction::PreviousSong) ? -1 : 0;
+        if (!held) held = in.action_held(p, PadAction::NextSong) ? 1 : in.action_held(p, PadAction::PreviousSong) ? -1 : 0;
+    }
     const TouchControls& touch = app.touch().controls();
-    if (touch.action_pressed(TouchAction::NextSong)) dir = 1;
-    else if (touch.action_pressed(TouchAction::PreviousSong)) dir = -1;
-    if (dir) skip_song(app, dir);
+    if (touch.action_pressed(TouchAction::NextSong)) pressed = 1;
+    else if (touch.action_pressed(TouchAction::PreviousSong)) pressed = -1;
+    if (touch.action_held(TouchAction::NextSong)) held = held ? held : 1;
+    else if (touch.action_held(TouchAction::PreviousSong)) held = held ? held : -1;
+    if (pressed) held = pressed; // the press's own direction is the one that repeats
+    if (int dir = song_hold_.update(pressed, held, dt)) skip_song(app, dir);
 }
 
 void RaceScreen::skip_song(App& app, int dir) {

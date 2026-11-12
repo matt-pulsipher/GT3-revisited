@@ -338,7 +338,9 @@ Options music list's tabs (menus §10.1, `[options] music_source`):
   songs played are remembered: Previous goes back through them (the first
   one starts over), and Next or a song's end goes forward through them
   before the playlists give new ones. A skip on the pause screen starts the
-  new song paused: it plays when the race goes on (§2.4).
+  new song paused: it plays when the race goes on (§2.4). A control held
+  down skips again every 0.3 s after its press's skip, while the same
+  direction stays held (`race::SongSkipHold`).
 
 ### §2.4 Pause
 

@@ -34,6 +34,7 @@ void RaceScreen::open_pause(App& app) {
     paused_ = true;
     pause_sel_ = 0;
     pause_more_ = false;
+    pause_song_hold_ = {}; // L1 / R1 repeat only after a press on this pause screen
     if (!pause_loaded_) pause_loaded_ = true, pause_menu_.load(*app.vfs(), app.renderer(), hud_.fonts(), lang_);
     // A run that set a record keeps RETRY greyed out until the next run (presentation §E3).
     pause_menu_.set_retry_enabled(!retry_locked_);
@@ -46,9 +47,13 @@ void RaceScreen::update_pause(App& app, double dt) {
     const MenuInput& m = app.menu();
     // Ours: L1 / R1 skip the race song shown at the bottom (draw_song); the paused music stays
     // silent until the race goes on.
+    // Held, they keep skipping (SongSkipHold).
     if (!replay_opts_open_ && app.show_song()) {
-        if (m.pressed(PadButton::R1)) skip_song(app, 1);
-        else if (m.pressed(PadButton::L1)) skip_song(app, -1);
+        const int pressed = m.pressed(PadButton::R1) ? 1 : m.pressed(PadButton::L1) ? -1 : 0;
+        const int held = pressed ? pressed : m.held(PadButton::R1) ? 1 : m.held(PadButton::L1) ? -1 : 0;
+        if (int dir = pause_song_hold_.update(pressed, held, dt)) skip_song(app, dir);
+    } else {
+        pause_song_hold_ = {};
     }
     if (replay_opts_open_) {
         // REPLAY OPTIONS: 60 Hz ticks; each applied change takes effect (and is stored) at once.

@@ -435,7 +435,8 @@ private:
     void music_cues(App& app);
     // Ours: the race song controls (the Next / Previous song chords, the driving layout's song
     // buttons; the pause screen's L1 / R1 in update_pause) and the song shown after a skip.
-    void song_controls(App& app);
+    // Held, each keeps skipping (race::SongSkipHold).
+    void song_controls(App& app, double dt);
     void skip_song(App& app, int dir);
     static constexpr double kSongShown = 4.0; // seconds a skip while driving shows the new song
     // The race song (RaceMusic::now_playing) at the bottom of the screen: on the pause screen with
@@ -1157,6 +1158,7 @@ private:
     std::string toast_;
     double toast_time_ = 0;
     double song_shown_ = 0; // draw_song after a skip while driving: seconds left
+    race::SongSkipHold song_hold_, pause_song_hold_; // the song controls / the pause screen's L1 / R1 held
     bool show_replays_ = false;
     XrList xr_list_; // the selection page's lists for the VR pointer
     std::vector<ReplayFile> replay_files_;
