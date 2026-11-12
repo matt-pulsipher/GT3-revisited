@@ -106,6 +106,12 @@ Tex1::Region Tex1::region(size_t i) const {
     return r;
 }
 
+std::array<float, 2> Tex1::region_uv(size_t i, float s, float t) const {
+    const Region r = region(i);
+    const Tex0& t0 = textures.at(i).tex0;
+    return {(s * float(t0.width()) - float(r.x)) / float(r.width), (t * float(t0.height()) - float(r.y)) / float(r.height)};
+}
+
 Tex1::Image Tex1::decode(const GsMemory& gs, size_t i) const {
     const Region r = region(i);
     Image img;

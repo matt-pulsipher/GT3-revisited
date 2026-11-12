@@ -4,9 +4,10 @@
 // spectators and the like, drawn with the scenery as quads that turn about the vertical
 // axis to face the camera. Header: +0x10 u16 list count, +0x14 u16 type count, +0x18
 // rel-ptr to the list pointers (one list per slot 1 node), +0x1C rel-ptr to an
-// embedded Tex1, +0x24 rel-ptr to the sprite types {f32 width, f32 height, rel-ptr to
+// embedded Tex1, +0x24 rel-ptr to the sprite types {f32 half-width, f32 height, rel-ptr to
 // 4 UVs, rel-ptr to 4 RGBA colours}. A list: u32 count, then 16-byte instances
-// {u16 type, u16 texture + 1, f32 x, y, z} (bottom centre).
+// {u16 type, u16 texture + 1, f32 x, y, z} (bottom centre). The corners stand where their
+// UVs put them in the picture (upright: smaller t on top), corner 0 on the left.
 
 #include "base/bytes.h"
 #include "race/clut_animations.h"
@@ -18,6 +19,12 @@
 #include <vector>
 
 namespace gt3r::race {
+
+// Where a sprite's corners stand, from their UVs (s, t as the type lists them): cx in half-widths
+// (-1 left, +1 right), cy in heights (0 foot, 1 top). The picture stands upright whichever order the
+// type lists the corners in: the corners on corner 0's side of the UV rectangle are on the left (a
+// type listing the right side first is mirrored), the smaller t on top.
+void sprite_corners(const float (&s)[4], const float (&t)[4], float (&cx)[4], float (&cy)[4]);
 
 class Billboards {
 public:
@@ -36,6 +43,9 @@ public:
 private:
     struct Sprite {
         float x, y, z, w, h;
+        // Each corner's place, from its UV (Billboards::load): x in half-widths (-1 left, +1
+        // right), y in heights (0 foot, 1 top).
+        float cx[4], cy[4];
     };
     std::vector<Sprite> sprites_; // in vertex order (4 vertices each)
     std::vector<scene::Vertex> verts_;

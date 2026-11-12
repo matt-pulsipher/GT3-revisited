@@ -546,11 +546,24 @@ list.
 Header: +0x10 u16 list count, +0x12 u16 count of 0x50-byte records (+0x20,
 always 0), +0x14 u16 sprite-type count, +0x16 u16 mesh count (always 0),
 +0x18 offset of the list offsets, +0x1C offset of an embedded Tex1, +0x24
-offset of the sprite types {f32 width, f32 height, offset of 4 UVs, offset of
-4 RGBA colours (0x80 = 1.0)}. A list (one per visibility cell): u32 count,
-then 16-byte instances {u16 type, u16 texture + 1, f32 x, y, z} (bottom
-centre). Corner order bottom-left, bottom-right, top-left, top-right; some
-types store the image rotated in the texture. Tahiti dirt 596 sprites
+offset of the sprite types {f32 half-width, f32 height, offset of 4 UVs,
+offset of 4 RGBA colours (0x80 = 1.0)}. A list (one per visibility cell): u32
+count, then 16-byte instances {u16 type, u16 texture + 1, f32 x, y, z} (bottom
+centre). The sprite spans x ± half-width (Super Speedway's poplars, 3.5: 7 m
+by 15 m, as wide as in the original's frame). Types list their 4 corners in
+either order (by column, e.g. top-left, bottom-left, top-right, bottom-right:
+14,206 US types; by row, bottom-left, bottom-right, top-left, top-right: 3,198,
+most of them Tahiti's; 534 with slightly turned UVs on Smokey Mountain South);
+the pictures are all upright in their textures, so each corner stands where its
+UV lies in the picture: on the left when on corner 0's side (a type listing the
+right side first is mirrored), on top when its t is the smaller
+(`race::sprite_corners`). The UVs are fractions of the
+texture's full power-of-two size (TEX0 TW / TH), also where `REGION_CLAMP` keeps
+only part of it: Super Speedway's poplars (types 4..9, 12..17) use 96 of 128
+texels, the tree on its side, u 0.010 .. 0.736 (`Tex1::region_uv` maps them to
+the cropped picture; read as fractions of the 96 texels, the tree tops were cut
+off, issue 278). 22 US course files crop a billboard texture so (Midfield,
+Rome, Seattle, the Tahiti courses, Apricot Hill, Monte Carlo). Tahiti dirt 596 sprites
 (trees), Seattle 307, Rome 1073 (spectators), Laguna 12.
 
 ## Rigid bodies: pylons, cones, small boards (GTRW +0x50, slot 36; from the race workstream)

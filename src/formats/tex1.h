@@ -3,6 +3,7 @@
 #include "formats/gs_memory.h"
 
 #include <string>
+#include <array>
 #include <vector>
 
 namespace gt3r {
@@ -77,6 +78,9 @@ struct Tex1 {
     Region region(size_t i) const;
     // Decodes texture `i`, cropped to region(i).
     Image decode(const GsMemory& gs, size_t i) const;
+    // A texture coordinate of texture `i` (s, t: fractions of its full power-of-two size, TEX0
+    // TW / TH, as the GS samples it) as a fraction of the decoded picture, region(i).
+    std::array<float, 2> region_uv(size_t i, float s, float t) const;
 };
 
 // Finds every embedded Tex1 set inside an arbitrary container (car models,
