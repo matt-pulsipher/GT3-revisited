@@ -82,6 +82,12 @@ int wheel_constant_level(const ForceFeedbackState& s, const ForceFeedbackConfig&
 // GT3's steering indicators as the wheel plays them, a step of `dt` seconds on from `felt`: they jump
 // tick to tick (0 to 0.65 and back at a turn-in, where the yaw rate lags the steering).
 float eased_indicator(float felt, float indicator, float dt);
+// Whether the wheel's effects, started at `started` seconds, play them again at `now`. SDL's DirectInput
+// (Windows) and macOS backends turn an infinite length into 4294966296 microseconds, not the API's
+// INFINITE; each wheel's driver then fits that into its own duration field, where it can come out
+// ~30 s (issue 276). Linux and SDL's Logitech driver play it as infinite: never due there.
+constexpr double kWheelRerunSeconds = 5.0;
+bool wheel_rerun_due(double started, double now);
 
 // Xbox impulse trigger strengths 0..1, from a level the motors can play: the brake's at time `t` seconds (the ABS
 // level, throbbing at 10 Hz), the throttle's (the traction level).
@@ -129,13 +135,14 @@ private:
         bool haptic_tried = false;
         float understeer = 0, oversteer = 0; // ffb::eased_indicator
         double eased_at = 0;                 // their time
+        double effects_at = 0;               // when the wheel's effects last (re)started (ffb::wheel_rerun_due)
         int spring_id = -1, constant_id = -1;
         int spring_coef = -1, constant_level = 0x7fffffff;
     };
     Dev& dev(SDL_JoystickID id);
     void stop(Dev& d);
     void send_triggers(Dev& d, const ffb::TriggerEffect& left, const ffb::TriggerEffect& right);
-    void apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, bool restart = false);
+    void apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, double time, bool restart = false);
 
     ForceFeedbackConfig cfg_;
     std::vector<Dev> devs_;

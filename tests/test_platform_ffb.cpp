@@ -190,6 +190,17 @@ TEST(ffb_indicators_eased) {
     CHECK(std::fabs(felt - 0.5f) < 0.01f);
 }
 
+TEST(ffb_wheel_rerun_before_driver_length_ends) {
+    // Issue 276: on Windows and macOS an "infinite" wheel effect ends after ~30 s on some wheels.
+#if defined(_WIN32) || defined(__APPLE__)
+    CHECK(!ffb::wheel_rerun_due(10.0, 10.0 + ffb::kWheelRerunSeconds - 0.01));
+    CHECK(ffb::wheel_rerun_due(10.0, 10.0 + ffb::kWheelRerunSeconds));
+    CHECK(ffb::kWheelRerunSeconds < 30.0);
+#else
+    CHECK(!ffb::wheel_rerun_due(0.0, 3600.0)); // infinite on Linux and SDL's Logitech driver
+#endif
+}
+
 TEST(ffb_config_roundtrip) {
     IniDocument ini = IniDocument::parse("[ffb]\nenabled = off\nwheel = off\nstrength = 5\nspring = 0.3\ninvert = on\n"
                                          "wheel_mode = GT3\nsteering = 0.25\nundersteer = 7\n");

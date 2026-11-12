@@ -172,6 +172,15 @@ float eased_indicator(float felt, float indicator, float dt) {
     return felt + (std::clamp(indicator, 0.0f, 1.0f) - felt) * std::clamp(dt / kSeconds, 0.0f, 1.0f);
 }
 
+bool wheel_rerun_due(double started, double now) {
+#if defined(_WIN32) || defined(__APPLE__)
+    return now - started >= kWheelRerunSeconds;
+#else
+    (void)started, (void)now;
+    return false;
+#endif
+}
+
 Ds5Packet ds5_trigger_packet(const TriggerEffect& left, const TriggerEffect& right, u8 low, u8 high, bool improved) {
     Ds5Effects pkt{};
     pkt.enable_bits1 = 0x04 | 0x08; // both triggers
@@ -274,7 +283,7 @@ void ForceFeedback::apply(SDL_JoystickID id, SDL_Gamepad* gamepad, SDL_Joystick*
         felt.understeer = d.understeer = ffb::eased_indicator(d.understeer, s.understeer, dt);
         felt.oversteer = d.oversteer = ffb::eased_indicator(d.oversteer, s.oversteer, dt);
         d.eased_at = time;
-        apply_wheel(d, joystick, felt, resumed);
+        apply_wheel(d, joystick, felt, time, resumed);
     }
 }
 
@@ -282,7 +291,8 @@ namespace {
 
 // Both wheel effects act on the steering axis alone (DirectInput's single-axis form: one axis,
 // Cartesian, direction 0) and play once for an infinite length. (Not SDL_HAPTIC_INFINITY plays:
-// SDL's Logitech HIDAPI driver takes that count as -1 and stops the effect.)
+// SDL's Logitech HIDAPI driver takes that count as -1 and stops the effect.) On Windows and macOS
+// that length isn't infinite on the wheel: ffb::wheel_rerun_due.
 SDL_HapticEffect wheel_spring(int coef) {
     SDL_HapticEffect e{};
     e.type = SDL_HAPTIC_SPRING;
@@ -331,7 +341,7 @@ bool ForceFeedback::has_wheel_forces(SDL_Joystick* joystick) {
     return forces;
 }
 
-void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, bool restart) {
+void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, double time, bool restart) {
     if (!d.haptic && !d.haptic_tried) {
         d.haptic_tried = true;
         if (!SDL_InitSubSystem(SDL_INIT_HAPTIC)) return;
@@ -348,11 +358,15 @@ void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedb
         if (features & SDL_HAPTIC_AUTOCENTER) SDL_SetHapticAutocenter(d.haptic, 0);
         if (features & SDL_HAPTIC_SPRING) d.spring_id = start_effect(d.haptic, wheel_spring(0), "spring");
         if (features & SDL_HAPTIC_CONSTANT) d.constant_id = start_effect(d.haptic, wheel_constant(0), "constant force");
-    } else if (restart && d.haptic) {
+        d.effects_at = time;
+    } else if (d.haptic && (restart || ffb::wheel_rerun_due(d.effects_at, time))) {
         // Each time feedback resumes (a race, after a pause): anything that reset the device's
-        // force feedback meanwhile (its driver, another program) stopped the effects.
+        // force feedback meanwhile (its driver, another program) stopped the effects. And every few
+        // seconds where the wheel's driver ends an "infinite" effect: playing it again starts it
+        // over with the same force (no envelope), before it runs out.
         for (int id : {d.spring_id, d.constant_id})
             if (id >= 0) SDL_RunHapticEffect(d.haptic, id, 1);
+        d.effects_at = time;
     }
     if (!d.haptic) return;
     // Only talk to the device when a value moved (USB bandwidth): the spring, which follows the
@@ -393,7 +407,7 @@ void ForceFeedback::stop(Dev& d) {
         if (d.spring_id >= 0 || d.constant_id >= 0) {
             ForceFeedbackConfig saved = cfg_;
             cfg_ = off;
-            apply_wheel(d, nullptr, idle);
+            apply_wheel(d, nullptr, idle, d.effects_at);
             cfg_ = saved;
         }
     }
