@@ -536,7 +536,9 @@ int TouchControls::widget_at(float x, float y, bool hidden) const {
     return -1;
 }
 
-bool TouchControls::hit(float x, float y) const { return visible() && (widget_at(x, y) >= 0 || opens_look(x, y)); }
+bool TouchControls::hit(float x, float y) const {
+    return faded_out() || (visible() && (widget_at(x, y) >= 0 || opens_look(x, y)));
+}
 
 bool TouchControls::opens_look(float x, float y) const {
     if (layout_ != TouchLayout::Driving || !cfg_.look) return false;
@@ -589,6 +591,9 @@ TouchControls::Finger* TouchControls::find(u64 id) {
 bool TouchControls::finger_down(u64 id, float x, float y, float pressure) {
     note_touch();
     if (!visible()) return false;
+    const bool wake = faded_out();
+    idle_ = 0; // (fading) shown again, or kept shown
+    if (wake) return true; // only brings them back
     std::erase_if(fingers_, [&](const Finger& f) { return f.id == id; });
     int w = widget_at(x, y);
     // On the open screen it looks around (with tilt steering the steering zone is open screen).
@@ -642,6 +647,13 @@ void TouchControls::note_other_input() {
     release_all();
 }
 
+void TouchControls::set_fade(bool on) {
+    if (on == fade_) return;
+    fade_ = on;
+    idle_ = 0;
+    alpha_ = 1.0f; // shown when the fading starts (the replay after the race) and once it stops
+}
+
 bool TouchControls::visible() const {
     if (layout_ == TouchLayout::None || cfg_.mode == TouchConfig::Mode::Off) return false;
     return cfg_.mode == TouchConfig::Mode::On || touch_active_;
@@ -651,7 +663,13 @@ bool TouchControls::visible() const {
 // Pad output
 // ---------------------------------------------------------------------------
 
-void TouchControls::update(double, float roll) {
+void TouchControls::update(double dt, float roll) {
+    if (fade_) {
+        // A finger held down keeps them shown; kFadeDelay after the last one they fade out.
+        idle_ = fingers_.empty() ? idle_ + dt : 0.0;
+        const float step = idle_ < kFadeDelay ? float(dt / kFadeIn) : -float(dt / kFadeOut);
+        alpha_ = std::clamp(alpha_ + step, 0.0f, 1.0f);
+    }
     pad_ = PadState{};
     for (Widget& w : widgets_) {
         w.active = false;

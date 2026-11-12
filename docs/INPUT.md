@@ -552,6 +552,11 @@ The overlay appears on the first touch (on Android and iOS it is shown at
 start unless a gamepad is connected) and hides as soon as a gamepad or the
 keyboard is used. The Android back and volume keys do not hide it.
 
+While a replay or demonstration plays, the controls fade out 3 seconds after the
+last touch. A tap anywhere brings them back; it only shows them and presses
+nothing. They stay up while a finger is on them, and are always shown in the
+replay's pause menu.
+
 Each screen picks a layout:
 
 | Layout | Controls |
@@ -644,7 +649,9 @@ On desktop the mouse cursor hides over the game's window after 2 seconds without
 bring it back.
 
 Screens choose their layout by overriding `Screen::touch_layout()`
-(`TouchLayout::Menu`, `Driving` or `None`). On desktop, `GT3R_PHONE=1`
+(`TouchLayout::Menu`, `Driving` or `None`), and have them fade out while
+untouched by overriding `Screen::touch_fades()` (the race screen's replays and
+demonstrations; `TouchControls::set_fade`). On desktop, `GT3R_PHONE=1`
 opens a window shaped like a 20:9 phone (cutout, rounded corners, phone UI
 sizing, whole-window `--shot`s) and `GT3R_TOUCH_SHOW=1` shows the controls
 without a touch, for screenshots. The logic is in

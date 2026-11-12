@@ -105,7 +105,8 @@ void body(Ui& ui, const Widget& w, float a, float radius) {
 void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
     SDL_Renderer* r = ui.renderer();
     const TouchConfig& cfg = controls.config();
-    const float a = cfg.opacity, ink = std::min(1.0f, a * 1.7f);
+    const float fade = controls.alpha(); // (fading out while a replay plays)
+    const float a = cfg.opacity * fade, ink = std::min(1.0f, cfg.opacity * 1.7f) * fade;
 
     for (Widget w : controls.widgets()) {
         if (w.hidden) continue;
@@ -378,8 +379,9 @@ bool TouchOverlay::event(const SDL_Event& e) {
     }
 }
 
-void TouchOverlay::update(double dt, TouchLayout layout, InputManager& input) {
+void TouchOverlay::update(double dt, TouchLayout layout, bool fade, InputManager& input) {
     controls_.set_layout(layout);
+    controls_.set_fade(fade);
     controls_.update(dt, input.tilt_roll(0));
     input.set_overlay(0, controls_.pad());
 }
@@ -392,7 +394,7 @@ void TouchOverlay::render(Ui& ui) {
     // presentation (which clips to the game area) switched off.
     const WindowSpace w = window_space(ui.renderer(), safe_window_);
     lay_out(controls_, w);
-    if (!controls_.visible()) return;
+    if (!controls_.visible() || controls_.alpha() <= 0.0f) return;
     with_whole_window(ui.renderer(), w, [&](float ox, float oy) { draw_controls(ui, controls_, ox, oy); });
 }
 

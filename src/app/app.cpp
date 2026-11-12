@@ -800,7 +800,7 @@ SDL_AppResult App::iterate() {
     }
 #endif
     pointer_script();
-    touch_.update(dt, touch_layout, *input_);
+    touch_.update(dt, touch_layout, !modal && top && top->touch_fades(), *input_);
     input_->update(dt);
 #if GT3R_XR
     if (xr_)

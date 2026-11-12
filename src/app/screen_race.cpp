@@ -172,6 +172,11 @@ TouchLayout RaceScreen::touch_layout() const {
                                                                                                      : TouchLayout::Menu;
 }
 
+bool RaceScreen::touch_fades() const {
+    // (Not the pause menu over a replay, nor the quick menus: they are used, not watched.)
+    return touch_layout() == TouchLayout::Menu && stage_ == Stage::Drive && !paused_ && !quick_;
+}
+
 bool RaceScreen::follows_aspect() const {
     return launch_failed_ || stage_ == Stage::Drive || ((from_menu_ || online_) && error_.empty());
 }

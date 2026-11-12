@@ -28,8 +28,9 @@ public:
     // the screen (touches on a control and the mouse events SDL synthesizes
     // from them).
     bool event(const SDL_Event& e);
-    // Call once per frame before InputManager::update().
-    void update(double dt, TouchLayout layout, InputManager& input);
+    // Call once per frame before InputManager::update(). `fade`: the screen only shows a race
+    // being watched (Screen::touch_fades, TouchControls::set_fade).
+    void update(double dt, TouchLayout layout, bool fade, InputManager& input);
     void render(Ui& ui);
     // Window area (window coordinates) clear of display cutouts and rounded
     // corners; the controls keep out of the rest. App sets it every frame.

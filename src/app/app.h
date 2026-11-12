@@ -45,6 +45,9 @@ public:
     // On-screen touch controls for this screen (phones/tablets): menu
     // navigation by default; screens that drive a car return Driving.
     virtual TouchLayout touch_layout() const { return TouchLayout::Menu; }
+    // Ours: the controls fade out while nobody touches them (TouchControls::set_fade): a race
+    // that is only watched (replays, demonstrations).
+    virtual bool touch_fades() const { return false; }
     // Our own frontend screens (setup, hub, settings) lay out to the whole
     // window instead of the letterboxed 640x360 space: Ui::width()/height()
     // vary, Ui::safe() is the area clear of display cutouts and rounded

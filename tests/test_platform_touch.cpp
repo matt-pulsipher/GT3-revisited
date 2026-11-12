@@ -83,6 +83,49 @@ TEST(touch_hidden_until_touched) {
     CHECK(!t.pad().connected);
 }
 
+// Issue 283: while a replay plays the menu controls fade out after kFadeDelay without a touch;
+// a touch then only brings them back, and a finger held on them keeps them shown.
+TEST(touch_fade_while_watching) {
+    TouchControls t;
+    t.configure({});
+    t.set_layout(TouchLayout::Menu);
+    t.note_touch();
+    const Widget* start = find_widget(t, Widget::Kind::Button, PadButton::Start);
+    CHECK(start != nullptr);
+    const float sx = start->x + (start->shape == Widget::Shape::Rect ? start->w / 2 : 0);
+    const float sy = start->y + (start->shape == Widget::Shape::Rect ? start->h / 2 : 0);
+    t.set_fade(true);
+    auto run = [&](double s) {
+        for (double e = 0; e < s; e += 0.05) t.update(0.05, 0);
+    };
+    run(TouchControls::kFadeDelay - 0.2);
+    CHECK(t.alpha() == 1.0f && !t.faded_out()); // shown for a while first
+    run(0.2 + TouchControls::kFadeOut + 0.1);
+    CHECK(t.alpha() == 0.0f && t.faded_out());
+    CHECK(t.visible()); // (still laid out: the HUD keeps its place)
+    // Faded out: a tap anywhere is the overlay's and presses nothing.
+    CHECK(t.hit(320, 100));
+    CHECK(t.finger_down(1, sx, sy, 1.0f));
+    t.finger_up(1);
+    t.update(0.05, 0);
+    CHECK(!t.pad().down(PadButton::Start));
+    CHECK(t.alpha() > 0.0f && !t.faded_out());
+    run(TouchControls::kFadeIn);
+    CHECK(t.alpha() == 1.0f);
+    // Shown again: the controls work, and a held finger keeps them from fading.
+    CHECK(!t.hit(320, 100));
+    CHECK(t.finger_down(2, sx, sy, 1.0f));
+    run(TouchControls::kFadeDelay + TouchControls::kFadeOut + 1);
+    CHECK(t.pad().down(PadButton::Start));
+    CHECK(t.alpha() == 1.0f);
+    t.finger_up(2);
+    run(TouchControls::kFadeDelay + TouchControls::kFadeOut + 0.1);
+    CHECK(t.faded_out());
+    // Leaving the replay (its pause menu, the race's results) shows them at once.
+    t.set_fade(false);
+    CHECK(t.alpha() == 1.0f && !t.faded_out());
+}
+
 TEST(touch_modes) {
     TouchConfig cfg;
     cfg.mode = TouchConfig::Mode::On;

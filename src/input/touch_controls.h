@@ -197,6 +197,18 @@ public:
     void note_other_input();
     bool visible() const;
 
+    // Ours: while a race is only watched (replays, demonstrations; set every frame) the
+    // controls fade out kFadeDelay seconds after the last touch and fade back in on the next
+    // one. Once faded out a touch anywhere only brings them back: it presses nothing it
+    // can't see, and the screen underneath never gets it. The controls keep their place in
+    // safe_area() / control_bounds() meanwhile, so the HUD doesn't jump as they come and go.
+    void set_fade(bool on);
+    // How much of the controls is drawn, 0..1 (multiplies TouchConfig::opacity): 1 unless fading.
+    float alpha() const { return alpha_; }
+    bool faded_out() const { return fade_ && alpha_ <= 0.0f && visible(); }
+    static constexpr double kFadeDelay = 3.0; // seconds after the last touch
+    static constexpr double kFadeOut = 0.6, kFadeIn = 0.15; // seconds for a whole fade
+
     // `roll` is the device roll in radians (InputManager::tilt_roll): tilt_range
     // degrees of it is full lock with tilt steering.
     void update(double dt, float roll);
@@ -239,6 +251,9 @@ private:
     float inset_l_ = 0, inset_t_ = 0, inset_r_ = 0, inset_b_ = 0;
     TouchLayout layout_ = TouchLayout::None;
     bool touch_active_ = false;
+    bool fade_ = false;
+    float alpha_ = 1.0f;
+    double idle_ = 0; // seconds since the last touch (fading)
     std::vector<Widget> widgets_;
     std::vector<Finger> fingers_;
     PadState pad_;

@@ -215,6 +215,8 @@ public:
     void on_event(App& app, const SDL_Event& e) override;
     // Phones: driving touch controls while racing, menu controls otherwise.
     TouchLayout touch_layout() const override;
+    // Replays and demonstrations: the menu controls fade out until touched (issue 283).
+    bool touch_fades() const override;
     // The game area of Settings -> Display -> Aspect ratio, except the developer race list.
     bool follows_aspect() const override;
     void render(App& app, Ui& ui) override;
