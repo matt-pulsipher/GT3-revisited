@@ -257,8 +257,10 @@ SDL's trigger rumble does nothing there.
   gt3` keeps GT3's two. The last view is remembered for the session only (GT3 keeps it in its
   options). Ours: the look around (`CameraRig::set_look`, the race pad's RX / RY: the right stick,
   the touch controls' drag on the open screen): the stick's direction turns the view
-  (atan2(x, -y), full from half way out), eased at 14/s and back ahead when let go; near straight
-  back it keeps to the side it is turned to. In-car it turns the view about the car's up axis (eye
+  (atan2(x, -y), full from half way out), eased at 14/s and back ahead when let go, always the
+  short way: the aim is taken nearest the current turn and the turn is kept within +-pi, so
+  rolling the stick round turns the view round with it and a let-go returns the short way (issue
+  200: past 225 degrees it once swung a whole turn back). In-car it turns the view about the car's up axis (eye
   in place); the chase views turn their heading (round the car, the pitch scaled by its cosine).
   Look back takes over while held (the far chase now looks back too); no mirror past 0.35 rad; none
   in the disc's demonstrations, replays or VR stereo. In-car vibration (GT3's in-car camera shakers, point 0 only, also

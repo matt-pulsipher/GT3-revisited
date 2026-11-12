@@ -2275,6 +2275,9 @@ the view does not judder.
   - The stick's direction is where the view turns: right 90° right, pulled back
     behind, pushed up ahead. The view eases there and back ahead when the stick
     is let go.
+  - The view always turns the short way to where the stick points. Rolling
+    the stick round turns the view round with it, any number of times in
+    either direction. Let go, it comes back to the front the short way.
   - In-car the view turns about the car's up axis with the eye in place; the
     chase views go round the car.
   - Look back takes over while held. No mirror while the view is turned more
