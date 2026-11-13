@@ -1053,21 +1053,31 @@ TEST(race_replay_demo_openings_disc) {
 // A race replay's first shot at Grand Valley (issue 306): the grid, 50 m before the line, is in
 // the start record 0 (from 397 m back), a telephoto of the grid from 125 m (its zoom fixed at
 // 22.904 by min = max), not a wide view.
-TEST(race_replay_grandvalley_start_disc) {
+// Issue 306: a replay's opening shot on courses whose first record fixes the zoom (min = max):
+// Grand Valley's telephoto of the grid (zoom(0) = 0 there), Deep Forest's in both directions
+// (zoom(0) = 1 at ~105 m, which had zoomed far past the record's limit).
+TEST(race_replay_start_shot_disc) {
     Disc* disc = test_disc();
     if (!disc) SKIP("needs GT3R_DISC");
-    Bytes data = disc->volume().read(*disc->volume().find("courses/US/grandvalley"));
-    course::CourseFile f = course::CourseFile::parse(data);
-    GtrcScript g = GtrcScript::parse(f.section(data, course::kSlotReplayCameras));
-    std::unique_ptr<track::Track> t = track::Track::from_course_file(data, "grandvalley");
-    const float s = g.lap_length - 50;
-    const sim::Vec3 p = t->point_at(s);
-    ReplayDirector d(&g);
-    ReplayDirector::Shot shot = d.update(s, 0, {p.x, p.y, p.z}, 1.0 / 60, 16.0f / 9.0f);
-    std::printf("grandvalley start: record %d, %.0f m, fovy %.3f\n", shot.record, render::length(shot.eye - render::Vec3{p.x, p.y, p.z}),
-                shot.fovy);
-    CHECK(shot.valid && !d.on_board() && shot.record == 0);
-    CHECK(near(shot.fovy, ReplayDirector::zoom_fovy(22.904f)));
+    struct Case {
+        const char* course;
+        float zoom;
+    };
+    for (const Case& c : {Case{"grandvalley", 22.904f}, Case{"deepforest", 9.514f}, Case{"r_deepforest", 7.596f}}) {
+        Bytes data = disc->volume().read(*disc->volume().find(std::string("courses/US/") + c.course));
+        course::CourseFile f = course::CourseFile::parse(data);
+        GtrcScript g = GtrcScript::parse(f.section(data, course::kSlotReplayCameras));
+        std::unique_ptr<track::Track> t = track::Track::from_course_file(data, c.course);
+        const float s = g.lap_length - 50;
+        const sim::Vec3 p = t->point_at(s);
+        ReplayDirector d(&g);
+        ReplayDirector::Shot shot = d.update(s, 0, {p.x, p.y, p.z}, 1.0 / 60, 16.0f / 9.0f);
+        std::printf("%s start: record %d, %.0f m, fovy %.3f\n", c.course, shot.record,
+                    render::length(shot.eye - render::Vec3{p.x, p.y, p.z}), shot.fovy);
+        CHECK(shot.valid && !d.on_board() && shot.record == 0);
+        CHECK(near(g.records[0].zoom_min, c.zoom, 0.01f) && g.records[0].zoom_max == g.records[0].zoom_min);
+        CHECK(near(shot.fovy, ReplayDirector::zoom_fovy(g.records[0].zoom_min)));
+    }
 }
 
 TEST(race_audio_models) {
@@ -2822,3 +2832,4 @@ TEST(race_course_scene_lights) {
     CHECK(std::fabs(il.specular[0][0] - 0.83f) < 1e-6f && std::fabs(il.diffuse[1][0] - 0.5f) < 1e-6f);
     CHECK(std::fabs(il.ambient[0] - 0.55f) < 1e-5f); // the enabled lights' ambients, global ambient 0
 }
+
