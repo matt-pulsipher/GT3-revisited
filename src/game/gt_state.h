@@ -56,7 +56,11 @@ struct GarageCar {
     std::bitset<88> owned;   // owned goods (gt_parts.h)
     sim::CarSettings settings; // user settings (physics §6.6), kept in step with `parts`
     int ref_final = 0;         // car setup record +0x1AC: final drive the gear-auto-level ranges are built from (gt_mode §14)
-    std::string wheel;       // fitted wheel label (table 24), "" = stock
+    // The settings menu's working copy only (not saved): the reference final its gear sliders' ranges stand on now. GT3
+    // builds them when a slider page opens and again at each auto-level change, from +0x1AC as it then was (gt_mode §14);
+    // 0 = ref_final.
+    int range_ref_final = 0;
+    std::string wheel;      // fitted wheel label (table 24), "" = stock
     CarCondition cond;
 };
 

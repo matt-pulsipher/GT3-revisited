@@ -57,6 +57,8 @@ struct ElementDraw {
         Arc,     // ring segment in `fill`: ellipse = the box (outer radii w/2, h/2), angles
                  // `level`..`level2` degrees (counter-clockwise from +x, screen up), inner
                  // radii = outer x (1 - `arc_thickness`) (the CircleGauge primitive)
+        Quad,    // flat colour `fill` (alpha x `alpha`) over the quadrilateral `points` (menu units, y up, in
+                 // order round the edge; the gear chart's lines)
     };
     const MenuScene* scene = nullptr; // owner of the element's images; nullptr = set_scene()'s
     const Element* element = nullptr; // may be nullptr for AddQuad/Glow/Fill with has_box
@@ -76,6 +78,7 @@ struct ElementDraw {
     float level = 0, level2 = 0;
     float arc_thickness = 0.3f;
     SDL_FColor fill{0, 0, 0, 1};
+    SDL_FPoint points[4]{}; // Quad
     bool has_box = false; // replaces the element's box (menu units, x/y = bottom-left, y up)
     SDL_FRect box{};
     bool has_clip = false; // clip rectangle (menu units, same convention)

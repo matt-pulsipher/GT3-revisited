@@ -874,10 +874,21 @@ only move inside [lo_i, hi_i]:
 
   hi₁ = 9/8 · v₁,  lo_i = (2 v_i + v_{i+1}) / 3,  hi_{i+1} = (v_i + 2 v_{i+1}) / 3,  lo_n = 7/8 · v_n
 
-So each gear can never pass the gear next to it. The auto-level slider regenerates the
-ratios at the current final drive and clamps each into its range. Then the reference
-final drive becomes the current one, and the next ranges are built from it. Fitting a
+So each gear can never pass the gear next to it. The ranges are set when the page opens.
+The auto-level slider regenerates the ratios at the current final drive, rebuilds the
+ranges from the reference final drive as it is at that moment and clamps each ratio into
+its range. Then the reference final drive becomes the current one, so the next auto-level
+step (and the next time the page opens) builds the ranges from it. Fitting a
 transmission resets the reference to its stock final (§6.3).
+
+**Gear chart.** The transmission page's chart draws one straight line per forward
+gear: engine speed up, road speed to the right. 1st starts at 1000 rpm and every
+other gear at the rpm it lands on after the upshift into it; each line runs up to
+the upshift rpm, and the top gear's up to the rev limit. The road-speed scale is
+fixed at 0–350 km/h, so a taller or shorter gear or final drive moves the lines
+across the chart; the rpm scale runs up to the rev limit. Lines are light green, 4
+units wide and clipped to the chart; a gear whose ratio × final drive changed since
+the last frame is drawn dark orange for that frame.
 
 **Event guard.** When the menu is opened from a race's pre-race setup, a non-gear
 slider move that would make the car fail the event's entry rules (§8) is refused and

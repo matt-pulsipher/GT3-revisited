@@ -113,11 +113,14 @@ GearRanges ranges_around(int n, const V& v) {
     return r;
 }
 
+// The ranges of the working copy's gear sliders: at its auto level and the reference final they
+// were built from (GarageCar::range_ref_final; the car copy's +0x1AC when the page opened).
 GearRanges gear_ranges(const GtMode& gt, const GarageCar& real, const GarageCar& work) {
     const ByteSpan* g = part_rec(gt, real, 17);
     sim::CarSettings ref = work.settings;
-    ref.final_drive = real.ref_final > 0 ? real.ref_final : real.settings.final_drive;
-    if (!sim::apply_gear_slider(gt.db(), real.parts, ref)) ref = real.settings;
+    const int r = work.range_ref_final > 0 ? work.range_ref_final : work.ref_final;
+    ref.final_drive = r > 0 ? r : work.settings.final_drive;
+    if (!sim::apply_gear_slider(gt.db(), work.parts, ref)) ref = work.settings;
     return ranges_around(std::clamp(b8(g, 0x11), 0, 7), ref.gears);
 }
 
@@ -232,9 +235,10 @@ bool slider_set(const GtMode& gt, const GarageCar& real, GarageCar& work, const 
     } else if (item == "slider_elec_vcdc") s.front_torque = v;
     else if (item == "slider_gear_ratio_final") s.final_drive = v;
     else if (item == "slider_gear_auto_level") {
-        // Regenerate the ratios at the current final drive, clamp them into the ranges
-        // built from the old reference final, then the reference follows the final.
+        // Regenerate the ratios at the current final drive, rebuild the gear sliders' ranges from the
+        // reference final as it is now and clamp the ratios into them, then the reference follows the final.
         s.gear_slider = v;
+        work.range_ref_final = work.ref_final;
         sim::CarSettings regen = s;
         if (sim::apply_gear_slider(gt.db(), work.parts, regen)) {
             GearRanges r = gear_ranges(gt, real, work);

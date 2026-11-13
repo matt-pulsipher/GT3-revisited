@@ -44,6 +44,8 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
             // Slider markers: the value each slider had when the page opened.
             s->setting_entry.clear();
             s->setting_committed = false;
+            // The gear sliders' ranges are built as the page opens (gt_mode §14).
+            if (GarageCar* work = setting_work()) work->range_ref_final = 0;
             if (GarageCar* work = setting_work())
                 for (const char* item : {"slider_rate_f", "slider_rate_r", "slider_height_f", "slider_height_r",
                                          "slider_damper_f", "slider_damper_r", "slider_bound_f", "slider_bound_r",
@@ -82,6 +84,7 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
     if (e.kind == K::Action && e.action == "commit_slider") {
         if (GarageCar* real = setting_real(); real && s->setting_work) {
             *real = *s->setting_work;
+            real->range_ref_final = 0;
             s->setting_committed = true;
             autosave(&log);
         }
