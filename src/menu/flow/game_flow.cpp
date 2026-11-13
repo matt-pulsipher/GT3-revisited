@@ -70,7 +70,11 @@ std::string page_music(const std::string& set, const std::string& p) {
     // The option pages match none of the prefixes: no BGM (menus §10; the music list's
     // previews are the only music there).
     if (set == "option") return "";
-    std::string m = "\x01"; // keep current
+    // A GT-mode page that matches none of the tests stops the BGM (the rule's default, music
+    // §5): the dealer's "purchased" page (00cmn/cd_bought, reached by a go-to from "Purchase?")
+    // silences the dealer music until the next dealer page starts it again. Other sets keep
+    // the current music.
+    std::string m = set == "gt_mode" ? "" : "\x01";
     if (starts(p, "cd/") || p == "00cmn/cd_ride_sure") m = "dealer01";
     else if (starts(p, "at/") || p == "00cmn/ws_fit_sure") m = "wash01";
     if (starts(p, "hm/")) m = "home01";
@@ -708,6 +712,17 @@ void GameFlow::tick(MenuKeys held) {
     }
 }
 
+bool GameFlow::gt_hook_event(const MenuEvent& e) {
+    const GtModeHooks& h = gt_mode_hooks();
+    if (!h.on_event) return false;
+    std::vector<std::string> lines;
+    const bool consumed = h.on_event(e, lines);
+    for (std::string& m : lines) log(std::move(m));
+    if (h.take_event_sounds)
+        for (std::string& se : h.take_event_sounds()) sounds_.push_back(std::move(se));
+    return consumed;
+}
+
 void GameFlow::handle(const MenuEvent& e) {
     if (e.kind == MenuEvent::Kind::PageChanged && ctl_ && ctl_->depth() == 0) {
         std::string m = page_music(control_, e.page);
@@ -728,20 +743,11 @@ void GameFlow::handle(const MenuEvent& e) {
         }
     }
     if (control_ == "gt_mode") {
-        bool consumed = false;
-        if (const GtModeHooks& h = gt_mode_hooks(); h.on_event) {
-            std::vector<std::string> lines;
-            consumed = h.on_event(e, lines);
-            for (std::string& m : lines) log(std::move(m));
-        }
+        const bool consumed = gt_hook_event(e);
         if (consumed && e.kind == MenuEvent::Kind::Finish) open_control("gt_mode", e.page, e.child);
         else handle_gt(e);
     } else if (presenting_) {
-        if (const GtModeHooks& h = gt_mode_hooks(); h.on_event) {
-            std::vector<std::string> lines;
-            h.on_event(e, lines);
-            for (std::string& m : lines) log(std::move(m));
-        }
+        gt_hook_event(e);
         // A presentation page ends with its OK button (kind 3, no back page).
         if (e.kind == MenuEvent::Kind::Exit || e.kind == MenuEvent::Kind::Finish) after_game();
     } else if (control_ == "setting" || control_ == "records") {
@@ -753,12 +759,7 @@ void GameFlow::handle(const MenuEvent& e) {
                                false);
                 return;
             }
-        bool consumed = false;
-        if (const GtModeHooks& h = gt_mode_hooks(); h.on_event) {
-            std::vector<std::string> lines;
-            consumed = h.on_event(e, lines);
-            for (std::string& m : lines) log(std::move(m));
-        }
+        const bool consumed = gt_hook_event(e);
         if (e.kind == MenuEvent::Kind::Exit) exited_ = true;
         else if (e.kind == MenuEvent::Kind::Finish && !consumed) {
             log("not implemented: " + e.action + " (page " + e.page + ")");

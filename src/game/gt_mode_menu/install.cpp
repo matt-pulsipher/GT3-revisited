@@ -66,6 +66,7 @@ void install_gt_mode_menu() {
         to_log_file(lines);
         return consumed;
     };
+    h.take_event_sounds = [] { return std::exchange(menu_state().event_sounds, {}); };
     h.intercept = intercept;
     h.enabled = enabled;
     h.listed = listed;

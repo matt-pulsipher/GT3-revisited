@@ -32,6 +32,9 @@ struct GtModeHooks {
     // Returning true for a Finish event (e.g. "go_save_in_home") consumes
     // it: the flow just rebuilds the page instead of its default handling.
     std::function<bool(const MenuEvent& e, std::vector<std::string>& log)> on_event;
+    // The sound effects the last on_event started, played at once on that frame (an action's
+    // own sound, e.g. a settings part change's "ok" / "disable"); taking them clears them.
+    std::function<std::vector<std::string>()> take_event_sounds;
     // Confirm intercept: a popup page to open instead of running the item.
     std::function<std::string(const std::string& page, const MblItem& item)> intercept;
     // Enable predicate for items (disabled items refuse confirm).

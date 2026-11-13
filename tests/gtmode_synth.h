@@ -763,9 +763,11 @@ inline void add_gt_mode_menus(std::map<std::string, Bytes>& files) {
             .widget("car_logo", "car_logo", "-", 40, 60, 80, 40)
             .hidden(world::kCoupe, {}, 0, 0, 80, 40)
             .hidden(world::kWagon, {}, 0, 0, 80, 40);
-    m.page("00cmn/cd_buy_sure", kCancel).item("yes1", "buy_car", "00cmn/cd_bought", 1).item("no1", {}, {}, 3);
-    m.page("00cmn/cd_bought", kCancel).item("yes1", "check_ride_car", {}, 3);
-    m.page("00cmn/cd_ride_sure", kCancel).item("yes1", "ride_car", {}, 3).item("no1", "ride_car", {}, 3);
+    // As on the disc: "Purchase?" goes to "purchased" (a page of its own), whose OK and "Get in
+    // now?" go to the dealer's region page.
+    m.page("00cmn/cd_buy_sure", kCancel).item("yes1", "buy_car", "00cmn/cd_bought", 0).item("no1", {}, {}, 3);
+    m.page("00cmn/cd_bought", kCancel).item("yes1", "check_ride_car", "cd/cd", 0);
+    m.page("00cmn/cd_ride_sure", kCancel).item("yes1", "ride_car", "cd/cd", 0).item("no1", {}, "cd/cd", 0);
     for (const char* p : {"00cmn/no_money", "00cmn/not_for_buy", "00cmn/max_car", "00cmn/ride_car",
                           "00cmn/not_for_sell", "00cmn/regulation_violation", "00cmn/license_violation",
                           "ts/already_you_have", "lc/no_license_a", "lc/no_last_exam"})

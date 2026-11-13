@@ -88,13 +88,20 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
         return false;
     }
     if (e.kind == K::Action && setting_goods(e.action) >= 0 && is_setting_page(e.page)) {
-        // Part change: fit the owned part at once (no OK needed).
+        // Part change: fit the owned part at once (no OK needed). GT3's part-change action plays
+        // "ok" when the car owns the part and "disable" when it does not; with no car, nothing.
+        // It runs for every set_* item but set_brk_racing, which has an action of its own that
+        // plays none.
         GarageCar* real = setting_real();
         int goods = setting_goods(e.action);
+        const bool sound = e.action != "set_brk_racing";
         if (real && real->owned.test(size_t(setting_owned_goods(e.action)))) {
             gt.fit_goods(*real, goods);
             s->setting_work = *real;
             autosave(&log);
+            if (sound) ms.event_sounds.push_back("ok");
+        } else if (real && sound) {
+            ms.event_sounds.push_back("disable");
         }
         return false;
     }

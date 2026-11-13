@@ -472,6 +472,7 @@ later one wins:
 | `mt/...` (machine test) | `machtest01` |
 | `ar/...` (arcade) | `arcade01` |
 | `root` (title) | silence |
+| any other GT Mode page (the dealer's "purchased" page, `00cmn/cd_bought`) | silence |
 | any other page | keep the current music |
 
 The menu only asks for music when the page's music differs from the

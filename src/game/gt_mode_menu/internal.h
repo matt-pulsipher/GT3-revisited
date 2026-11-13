@@ -158,6 +158,8 @@ struct MenuState {
     // after a consumed Finish (load_warning), the ending movies to play after the result screens
     // (in turn: the short one, then the long one).
     std::vector<std::string> sounds;
+    // Effects an action plays at once, on its own frame (take_event_sounds).
+    std::vector<std::string> event_sounds;
     std::string popup;
     std::vector<std::string> movies;
     // Code-drawn lists (lists.cpp).

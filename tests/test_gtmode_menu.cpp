@@ -136,13 +136,24 @@ TEST(gtmode_menu_disc_buy_and_race) {
     CHECK(!(s->gt().car_flags(car) & 1)); // the first Japanese dealer car is for sale
     choose(f, "buy");
     CHECK(f.controller()->page_name() == "00cmn/cd_buy_sure");
+    f.take_music();
     choose(f, "yes1");
     CHECK(s->gt().state().garage.size() == 1 && s->gt().state().ride == 0);
     CHECK(s->gt().state().credits == 1000000 - s->gt().car_price(car));
-    CHECK(f.controller()->page_name() == "00cmn/cd_bought");
+    // "Purchased" is a page of its own (a go-to, not a popup): the dealer music stops there
+    // and the dealer page starts it again.
+    CHECK(f.controller()->page_name() == "00cmn/cd_bought" && f.controller()->depth() == 0);
+    {
+        std::optional<std::string> m = f.take_music();
+        CHECK(m && m->empty());
+    }
     choose(f, "yes1");
     settle(f);
     CHECK(f.controller()->page_name() == "cd/cd");
+    {
+        std::optional<std::string> m = f.take_music();
+        CHECK(m && *m == "dealer01");
+    }
 
     // Race: beginner -> Sunday Cup -> race 1 -> go race.
     press(f, MenuKey::Cancel);
@@ -1507,7 +1518,24 @@ TEST(gtmode_menu_disc_change_parts_rows) {
     CHECK(f.controller()->page_name() == "chg/change_eng");
     choose(f, "status_box_eng1");
     CHECK(f.controller()->page_name() == "chg/change_eng_muffler");
-    choose(f, "parts3"); // the owned semi-racing muffler, fitted at once
+    // A part the car does not own (the sports muffler): SE "disable" on the confirm's frame,
+    // nothing fitted.
+    CHECK(f.controller()->set_focus("parts2"));
+    f.take_sounds();
+    f.tick(key_bit(MenuKey::Confirm));
+    {
+        const std::vector<std::string> se = f.take_sounds();
+        CHECK(std::count(se.begin(), se.end(), "disable") == 1 && std::count(se.begin(), se.end(), "ok") == 0);
+    }
+    settle(f);
+    // The owned semi-racing muffler, fitted at once with SE "ok" on the confirm's frame.
+    CHECK(f.controller()->set_focus("parts3"));
+    f.tick(key_bit(MenuKey::Confirm));
+    {
+        const std::vector<std::string> se = f.take_sounds();
+        CHECK(std::count(se.begin(), se.end(), "ok") == 1 && std::count(se.begin(), se.end(), "disable") == 0);
+    }
+    settle(f);
     press(f, MenuKey::Cancel);
     CHECK(f.controller()->page_name() == "chg/change_eng");
     CHECK(widget_text(f, "parts_eng_muffler") == "Muffler/Semi-racing");

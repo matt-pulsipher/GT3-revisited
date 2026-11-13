@@ -101,7 +101,10 @@ std::string intercept(const std::string& page, const MblItem& it) {
     }
     if (act == "oil_change") return popup_for(gt.can_change_oil());
     if (act == "wash_car") return popup_for(gt.can_wash());
-    if (act == "check_ride_car" && gt.state().garage.size() > 1 && page == "00cmn/cd_bought")
+    // "Get in now?" only when the player had a ride car before this purchase (GT3's check);
+    // otherwise the new car simply becomes the ride car. Ours makes it the ride car at
+    // the purchase, so here: the new car (the head of the garage, index 0) is not the ride car.
+    if (act == "check_ride_car" && gt.state().ride > 0 && page == "00cmn/cd_bought")
         return "00cmn/cd_ride_sure";
     (void)page;
     return {};

@@ -158,8 +158,8 @@ Then, in order:
 1. **Intercept.** Game code may answer with a popup page to open instead of
    running the item (`MenuController::intercept`, filled from
    `GtModeHooks::intercept`). There are two kinds of answer:
-   - A **question** (`00cmn/cd_ride_sure`, "ride this car now?") opens with
-     the normal confirm feedback (step 3) and then appears as a popup.
+   - A **question** (`00cmn/cd_ride_sure`, "ride this car now?"): SE `ok`,
+     and the popup opens at once with no feedback.
    - Any other answer is a **refusal**: SE `disable`, and the popup opens at
      once with no feedback.
 
