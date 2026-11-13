@@ -226,6 +226,9 @@ private:
     void open_control(const std::string& set, const std::string& page, int focus);
     void handle(const MenuEvent& e);
     void handle_gt(const MenuEvent& e);
+    // The GT-mode hooks' on_event (when set): its log lines are logged and the sound effects
+    // it started are played on this frame. Returns whether it consumed the event.
+    bool gt_hook_event(const MenuEvent& e);
     void handle_arcade(const MenuEvent& e);
     void handle_option(const MenuEvent& e);
     void handle_language(const MenuEvent& e);

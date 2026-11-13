@@ -119,6 +119,17 @@ struct CarWash {
     int pushes = 0;
 };
 
+// A delayed effect (GT3's menu Timer): the actions buy_car, change_wheel
+// and fit_wheel each start one that plays their effect ("buy", "wheel")
+// once its counter, counted down by one a frame (the timer), drops below 0: the
+// counter starts at 30, so the effect plays on the 31st frame after the action's (NTSC-J the
+// same; the PAL program's 25 is the same time at its 50 Hz).
+struct SoundTimer {
+    int counter = 0;
+    std::string se;
+};
+constexpr int kSoundTimerFrames = 30; // the actions' Timer counter (program constant, see above)
+
 // Everything the module keeps between hook calls, in one place. The menu runtime calls the
 // hooks as plain functions, so it lives for the whole run; reset_gt_mode_menu_for_tests()
 // replaces it with a fresh one (whatever is added here is reset with it).
@@ -147,6 +158,8 @@ struct MenuState {
     // after a consumed Finish (load_warning), the ending movies to play after the result screens
     // (in turn: the short one, then the long one).
     std::vector<std::string> sounds;
+    // Effects an action plays at once, on its own frame (take_event_sounds).
+    std::vector<std::string> event_sounds;
     std::string popup;
     std::vector<std::string> movies;
     // Code-drawn lists (lists.cpp).
@@ -160,6 +173,8 @@ struct MenuState {
     u32 frame = 0;
     OilChange oil_change;
     CarWash wash;
+    // The delayed effects started by the purchase and wheel actions (on_tick steps them).
+    std::vector<SoundTimer> sound_timers;
     // Saves (session.cpp): the save library and the GT3R_GTMODE_SAVE it was made for (made again
     // when that changes), and the state the next save page saves instead of the running game
     // (begin_snapshot_save).

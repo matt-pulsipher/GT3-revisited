@@ -1092,6 +1092,17 @@ TEST(sound_replay_theater_music) {
     CHECK(menu::flow::page_music("gt_mode", "lc/lc_b") == "license01");
 }
 
+// A GT-mode page that matches none of the page tests stops the BGM: the dealer's "purchased"
+// page silences the dealer music; "Get in now?" and the dealer pages ask for it again. Other
+// sets keep the current music on such a page.
+TEST(sound_purchase_page_music) {
+    CHECK(menu::flow::page_music("gt_mode", "00cmn/cd_bought").empty());
+    CHECK(menu::flow::page_music("gt_mode", "00cmn/cd_ride_sure") == "dealer01");
+    CHECK(menu::flow::page_music("gt_mode", "cd/cd") == "dealer01");
+    CHECK(menu::flow::page_music("gt_mode", "00cmn/ws_fit_sure") == "wash01");
+    CHECK(menu::flow::page_music("memorycard", "file_operation") == "\x01");
+}
+
 // Full throttle through the gears in a turbo car (the R34 on the machine tests' straight, the game's own physics): the
 // processed throttle drops to 0 in every upshift, so every upshift with the load above 0.8 fires the blow-off (sound §7.5).
 // The pad's throttle, held at 1, never would. Needs the disc.

@@ -562,13 +562,11 @@ void MenuController::confirm() {
         std::string popup = intercept(lv.name, *s.flow);
         if (!popup.empty()) {
             feedback_item_ = index;
-            if (popup == "00cmn/cd_ride_sure") {
-                start_feedback(Op::Popup, std::move(popup)); // a question: normal confirm feedback
-            } else {
-                // A refusal ("no money", "not for sale", ...): SE "disable", the popup at once.
-                sound("disable");
-                build(popup, {}, true);
-            }
+            // The popup opens at once, with no confirm feedback: a refusal ("no money", "not
+            // for sale", ...) with SE "disable", the dealer's "Get in now?" with SE "ok". GT3's
+            // checks play their own sound.
+            sound(popup == "00cmn/cd_ride_sure" ? "ok" : "disable");
+            build(popup, {}, true);
             return;
         }
     }

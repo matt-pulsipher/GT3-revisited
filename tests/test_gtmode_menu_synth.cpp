@@ -573,16 +573,39 @@ TEST(gtmode_synth_dealer) {
     gt.state().credits = w::kStartCredits;
     choose(f, "buy");
     CHECK(page(f) == "00cmn/cd_buy_sure");
-    choose(f, "yes1");
+    // The purchase's "buy" effect plays once, 31 frames after the action's frame (GT3's Timer).
+    CHECK(f.controller()->set_focus("yes1"));
+    f.take_sounds();
+    f.take_music();
+    f.tick(key_bit(MenuKey::Confirm)); // the action's frame
+    int buy_at = -1, buys = 0;
+    for (int t = 1; t <= 60; ++t) {
+        f.tick(0);
+        for (const std::string& x : f.take_sounds())
+            if (x == "buy") buy_at = t, ++buys;
+    }
+    CHECK(buy_at == 31 && buys == 1);
     CHECK(gt.state().garage.size() == 1 && gt.state().ride == 0 && gt.state().garage[0].color == 1);
     CHECK(gt.state().credits == w::kStartCredits - 12000);
-    CHECK(page(f) == "00cmn/cd_bought" && f.controller()->depth() == 1);
-    choose(f, "yes1"); // one car: no "ride it?"
-    CHECK(page(f) == "cd/acme_coupe_car" && f.controller()->depth() == 0);
+    // "Purchased" is a page of its own: the dealer music stops there.
+    CHECK(page(f) == "00cmn/cd_bought" && f.controller()->depth() == 0);
+    {
+        std::optional<std::string> m = f.take_music();
+        CHECK(m && m->empty());
+    }
+    choose(f, "yes1"); // one car: no "ride it?"; the dealer's region page starts the music again
+    CHECK(page(f) == "cd/cd" && f.controller()->depth() == 0);
+    {
+        std::optional<std::string> m = f.take_music();
+        CHECK(m && *m == "dealer01");
+    }
+    choose(f, "jp");
+    choose(f, "acme");
+    choose(f, w::kCoupe);
     CHECK(text_of(f, "user_carname") == "Synthetic Coupe" && text_of(f, "user_money") == " 13,000");
     // A second car: "ride the new car?" (yes: the new car, at the head of the garage).
     press(f, MenuKey::Cancel);
-    CHECK(page(f) == "cd/cd_jp_acme" && f.controller()->focus() == 0);
+    CHECK(page(f) == "cd/cd_jp_acme");
     choose(f, w::kWagon);
     CHECK(text_of(f, "car_buy_price") == " 30,000" && text_of(f, "color_name_box") == " Moss Green");
     choose(f, "buy");
@@ -591,13 +614,26 @@ TEST(gtmode_synth_dealer) {
     gt.state().credits = 100000;
     choose(f, "buy");
     choose(f, "yes1");
-    choose(f, "yes1"); // check_ride_car
+    // check_ride_car with a ride car already: "Get in now?" opens on the confirm's frame (no
+    // confirm feedback) with SE "ok".
+    CHECK(f.controller()->set_focus("yes1"));
+    f.take_sounds();
+    f.tick(key_bit(MenuKey::Confirm));
+    CHECK(page(f) == "00cmn/cd_ride_sure" && f.controller()->depth() == 1);
+    {
+        const std::vector<std::string> se = f.take_sounds();
+        CHECK(has_sound(se, "ok") && !has_sound(se, "next"));
+    }
+    settle(f);
     CHECK(page(f) == "00cmn/cd_ride_sure");
     CHECK(gt.state().garage.size() == 2 && gt.state().garage[0].car == w::kWagon && gt.state().ride == 1);
     choose(f, "yes1");
-    CHECK(gt.state().ride == 0 && page(f) == "cd/acme_wagon_car" && f.controller()->depth() == 0);
-    CHECK(text_of(f, "user_carname") == "Synthetic Wagon");
+    CHECK(gt.state().ride == 0 && page(f) == "cd/cd" && f.controller()->depth() == 0);
     // A prize-only car ("_label" item at its dealer): not for sale.
+    choose(f, "jp");
+    choose(f, "acme");
+    choose(f, w::kWagon);
+    CHECK(text_of(f, "user_carname") == "Synthetic Wagon");
     press(f, MenuKey::Cancel);
     press(f, MenuKey::Cancel);
     choose(f, "beta");
@@ -792,8 +828,18 @@ TEST(gtmode_synth_garage_wheel_list) {
     // Equip it.
     press(f, MenuKey::Confirm);
     CHECK(page(f) == "hm/hm_change_wheel_sure");
+    f.take_sounds();
     choose(f, "yes1");
     CHECK(car.wheel == w::kRimA && page(f) == "hm/hm_wheel_changed");
+    // The change's "wheel" effect, a moment later (as the purchase's "buy").
+    {
+        int wheels = 0;
+        for (int t = 0; t < 40; ++t) {
+            f.tick(0);
+            for (const std::string& x : f.take_sounds()) wheels += x == "wheel";
+        }
+        CHECK(wheels == 1);
+    }
     choose(f, "buy3");
     CHECK(page(f) == "hm/hm_car");
     choose(f, "wheel");
@@ -2714,6 +2760,18 @@ TEST(gtmode_synth_hook_branches) {
     CHECK(h.intercept("ts/ts_tir", item("all", "", "ts/ts_buy_sure_all")) == "ts/already_you_have_all_tires");
     CHECK(h.intercept("ts/ts_x", item("unknown", "", "ts/ts_buy_sure2")) == "ts/not_exist");
     CHECK(h.intercept("at/ws/ws_x", item("bbw_syn_link", "", "00cmn/ws_buy_sure")).empty());
+    // "Get in now?" only when the player had a ride car before the purchase: the one car, now
+    // the ride car, gets none; with a ride car already, the next purchase asks; a purchase with
+    // no ride car (the new car, the head of the garage, became it) asks nothing.
+    const menu::MblItem ride_check = item("yes1", "check_ride_car", "cd/cd");
+    CHECK(h.intercept("00cmn/cd_bought", ride_check).empty());
+    const game::GameState one_car = gt.state(); // (put back after these checks)
+    gt.state().credits += 30000;
+    CHECK(gt.buy_car(w::kWagon) == 0 && gt.state().ride == 1);
+    CHECK(h.intercept("00cmn/cd_bought", ride_check) == "00cmn/cd_ride_sure");
+    gt.state().ride = 0;
+    CHECK(h.intercept("00cmn/cd_bought", ride_check).empty());
+    gt.state() = one_car;
     CHECK(h.intercept("map", item("syn_dirt", "go_free_run", "")) == "hm/need_dirt_tire");
     CHECK(h.intercept("map", item("syn_ring", "go_free_run", "")).empty());
     CHECK(h.intercept("r/x", item("L0A0002", "go_license", "")) == "lc/no_license");
