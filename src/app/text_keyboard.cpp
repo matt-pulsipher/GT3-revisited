@@ -12,7 +12,6 @@ namespace gt3r {
 
 namespace {
 
-constexpr int kRows = 6;
 // The character rows (letters lower case; Shift shows them in upper case).
 const char* const kCharRows[] = {"1234567890", "qwertyuiop", "asdfghjkl-", "zxcvbnm.:_"};
 
@@ -24,16 +23,28 @@ void add(std::string& text, std::string_view s) {
 
 } // namespace
 
-void TextKeyboard::open(std::string title, std::string done, bool upper) {
+void TextKeyboard::open(std::string title, std::string done, bool upper, Layout layout) {
     open_ = true, upper_ = upper;
     title_ = std::move(title);
     done_ = std::move(done);
+    if (layout != layout_) caps_.clear(), layout_ = layout;
+    auto cap = [&](Key key, char c, int row, float x, float w) {
+        Cap k;
+        k.key = key, k.c = c, k.row = row, k.x = x, k.w = w;
+        caps_.push_back(k);
+    };
+    if (caps_.empty() && layout_ == Layout::Number) {
+        // A keypad: 1 2 3 / 4 5 6 / 7 8 9 / Delete 0 Paste / Cancel Done, three columns wide.
+        for (int d = 1; d <= 9; ++d) cap(kChar, char('0' + d), (d - 1) / 3, float((d - 1) % 3), 1);
+        cap(kDelete, 0, 3, 0, 1);
+        cap(kChar, '0', 3, 1, 1);
+        cap(kPaste, 0, 3, 2, 1);
+        cap(kCancel, 0, 4, 0, 1);
+        cap(kDone, 0, 4, 1, 2);
+        rows_ = 5, cols_ = 3;
+    }
     if (caps_.empty()) {
-        auto cap = [&](Key key, char c, int row, float x, float w) {
-            Cap k;
-            k.key = key, k.c = c, k.row = row, k.x = x, k.w = w;
-            caps_.push_back(k);
-        };
+        rows_ = 6, cols_ = 10;
         for (int row = 0; row < 4; ++row)
             for (int i = 0; kCharRows[row][i]; ++i) cap(kChar, kCharRows[row][i], row, float(i), 1);
         // Ten columns wide, as the character rows.
@@ -110,7 +121,7 @@ TextKeyboard::Result TextKeyboard::update(const MenuInput& m, const std::vector<
     // Up/Down to the nearest key of the next row, Left/Right along the row; both wrap around.
     const Cap& f = caps_[size_t(focus_)];
     if (int v = m.vertical()) {
-        focus_ = nearest((f.row + v + kRows) % kRows, f.x + f.w / 2);
+        focus_ = nearest((f.row + v + rows_) % rows_, f.x + f.w / 2);
     } else if (int h = m.horizontal()) {
         std::vector<int> row;
         for (size_t i = 0; i < caps_.size(); ++i)
@@ -129,8 +140,10 @@ void TextKeyboard::draw(Ui& ui, const std::string& text) {
     if (!open_) return;
     const bool touch = ui.touch();
     const float gap = 4, kh = touch ? 30 : 22;
-    const float kw = std::min(touch ? 54.0f : 40.0f, std::floor((ui.width() - 40 - 9 * gap) / 10));
-    const float gw = 10 * kw + 9 * gap, w = gw + 24, h = 52 + kRows * kh + (kRows - 1) * gap + 12;
+    const float most = layout_ == Layout::Number ? (touch ? 80.0f : 64.0f) : (touch ? 54.0f : 40.0f); // (a keypad's keys bigger)
+    const float kw = std::min(most, std::floor((ui.width() - 40 - float(cols_ - 1) * gap) / float(cols_)));
+    const float gw = std::max(float(cols_) * kw + float(cols_ - 1) * gap, 200.0f), w = gw + 24;
+    const float h = 52 + float(rows_) * kh + float(rows_ - 1) * gap + 12;
     const float x = std::floor((ui.width() - w) / 2), y = std::floor((ui.height() - 16 - h) / 2); // above the footer
     ui.fill(0, 0, ui.width(), ui.height(), Color{0, 0, 0, 120});
     ui.fill_round(x, y, w, h, 6, colors::kPanel);
@@ -144,7 +157,7 @@ void TextKeyboard::draw(Ui& ui, const std::string& text) {
     for (size_t from = 0; Ui::text_width(shown) > box.w - 16 && from < text.size();)
         shown = "..." + text.substr(++from) + "_";
     ui.text(box.x + 8, std::floor(box.y + (box.h - Ui::kChar) / 2), shown, colors::kText);
-    const float gx = box.x, gy = box.bottom() + 8;
+    const float gx = box.x + std::floor((gw - (float(cols_) * kw + float(cols_ - 1) * gap)) / 2), gy = box.bottom() + 8;
     for (size_t i = 0; i < caps_.size(); ++i) {
         Cap& k = caps_[i];
         k.r = {gx + k.x * (kw + gap), gy + float(k.row) * (kh + gap), k.w * kw + (k.w - 1) * gap, kh};
@@ -160,7 +173,8 @@ void TextKeyboard::draw(Ui& ui, const std::string& text) {
         }
         ui.button(k.r, label, int(i) == focus_, k.key == kShift && upper_, k.key == kDone);
     }
-    ui.footer("Cross: type   Square: delete   Start: " + done_ + "   Triangle: cancel");
+    ui.footer(std::string(layout_ == Layout::Number ? "Cross: type a digit" : "Cross: type") + "   Square: delete   Start: " + done_ +
+              "   Triangle: cancel");
 }
 
 TextKeyboard::Result text_field_event(const SDL_Event& e, std::string& s, bool pad_typing) {

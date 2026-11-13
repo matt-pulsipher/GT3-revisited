@@ -26,9 +26,6 @@ std::string normalize_vfs_path(std::string_view path) {
 
 Vfs::Vfs(Volume* base) : base_(base) {}
 
-namespace {
-
-// Immediate children of a host directory (SDL_GlobDirectory would recurse).
 std::vector<std::string> list_host_dir(const std::string& dir) {
     std::vector<std::string> out;
     SDL_EnumerateDirectory(
@@ -41,6 +38,8 @@ std::vector<std::string> list_host_dir(const std::string& dir) {
     std::sort(out.begin(), out.end());
     return out;
 }
+
+namespace {
 
 void collect_files(const std::string& root, const std::string& rel, std::vector<std::string>& out, int depth) {
     if (depth > 16) return;
@@ -98,9 +97,11 @@ void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {
             if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.cars.push_back(root + "/cars/" + name);
         for (const std::string& name : list_host_dir(root + "/makers"))
             if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.makers.push_back(root + "/makers/" + name);
+        for (const std::string& name : list_host_dir(root + "/events"))
+            if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.events.push_back(root + "/events/" + name);
         mod.textures = texture_pack::pictures_in(root + "/textures");
-        LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, %zu textures, priority %d, %s", mod.name.c_str(), mod.id.c_str(),
-                 mod.files.size(), mod.cars.size(), mod.textures.size(), mod.priority,
+        LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, %zu events, %zu textures, priority %d, %s", mod.name.c_str(),
+                 mod.id.c_str(), mod.files.size(), mod.cars.size(), mod.events.size(), mod.textures.size(), mod.priority,
                  !mod.for_disc ? "for other discs" : mod.enabled ? "enabled" : "disabled");
         mods_.push_back(std::move(mod));
     }
@@ -147,6 +148,7 @@ std::optional<Bytes> Vfs::read(const std::string& path) const {
             if (m.active()) {
                 for (const std::string& f : m.makers) text += m.id + "\t" + f + "\n"; // makers first
                 for (const std::string& f : m.cars) text += m.id + "\t" + f + "\n";
+                for (const std::string& f : m.events) text += m.id + "\t" + f + "\n";
             }
         return Bytes(text.begin(), text.end());
     }

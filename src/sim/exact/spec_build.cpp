@@ -355,6 +355,31 @@ Equipment variant_equipment(const data::CarDatabase& db, const data::CarVariant&
     return eq;
 }
 
+Bytes variant_record(const data::CarDatabase& db, const std::string& label, const std::string& car,
+                     const std::array<u64, 27>& parts) {
+    constexpr size_t kSize = 272;
+    Bytes b(kSize, 0);
+    auto put = [&](size_t o, u64 v, size_t n) {
+        for (size_t i = 0; i < n && o + i < kSize; ++i) b[o + i] = u8(v >> (8 * i));
+    };
+    put(0, db::id_hash(label), 8);
+    put(8, db::id_hash(car), 8);
+    for (size_t i = 0; i < parts.size(); ++i) put(0x10 + 8 * i, parts[i], 8);
+    // The settings bytes variant_equipment reads (the same table, the other way).
+    const Equipment eq = stock_equipment(db, car, parts);
+    auto w = [&](u32 off) { return u64(u32(eq.word(off))); };
+    put(0x10C, w(0x110), 2), put(0xEE, w(0x114), 1);
+    put(0xE8, w(0x194), 1), put(0xE9, w(0x19C), 1), put(0xEA, w(0x1A4), 1), put(0xEB, w(0x198), 1), put(0xEC, w(0x1A0), 1),
+        put(0xED, w(0x1A8), 1);
+    put(0xF8, w(0x124), 1), put(0xF9, w(0x128), 1);
+    for (u32 i = 0; i < 8; ++i) put(0xF0 + i, w(0x16C + 4 * i), 1);
+    put(0xFA, w(0x144), 1), put(0xFB, w(0x148), 1), put(0xFC, w(0x154), 1), put(0xFD, w(0x158), 1), put(0xFE, w(0x18C), 1),
+        put(0xFF, w(0x190), 1);
+    put(0x100, w(0x14C), 2), put(0x102, w(0x150), 2), put(0x104, w(0x15C), 2), put(0x106, w(0x160), 2);
+    put(0x108, w(0x1B0), 1), put(0x10A, w(0x1B8), 2), put(0x109, w(0x1BC), 1);
+    return b;
+}
+
 bool course_tires(const data::CarDatabase& db, Equipment& eq, u8 category) {
     auto stage = [&](TableId t) { return s32(Rec{db.record(t, eq.part[size_t(t)])}.b(0x10)); };
     const s32 front = stage(TableId::FrontTire), rear = stage(TableId::RearTire);

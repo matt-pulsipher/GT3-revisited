@@ -1,5 +1,7 @@
 #include "app/gt_mode_titles.h"
 
+#include "game/data/car_database.h"
+
 #include "base/log.h"
 #include "formats/menu/mbl.h"
 #include "formats/menu/pmb.h"
@@ -7,6 +9,7 @@
 #include "vfs/vfs.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <optional>
 
@@ -81,6 +84,22 @@ std::vector<const game::RaceSeries*> ordered_series(const Vfs& vfs, const game::
     for (const game::RaceSeries& s : cat.series) // any the league pages do not name
         if (std::find(ordered.begin(), ordered.end(), &s) == ordered.end()) ordered.push_back(&s);
     return ordered;
+}
+
+std::string league_title(const std::string& page) {
+    const size_t a = page.find('/') + 1, b = page.find('/', a);
+    const std::string tier = page.substr(a, b == std::string::npos ? std::string::npos : b - a);
+    for (const League& l : kLeagues)
+        if (tier == l.tier) return l.title;
+    std::string t = tier;
+    if (!t.empty()) t[0] = char(std::toupper(static_cast<unsigned char>(t[0])));
+    return t;
+}
+
+void add_mod_event_titles(std::map<std::string, std::string>& titles, const game::Catalog& cat, const data::CarDatabase& db) {
+    for (const game::RaceSeries& s : cat.series)
+        if (!s.races.empty())
+            if (const data::ModEvent* m = db.mod_event(s.races.front())) titles[s.page] = ascii(m->def.title);
 }
 
 std::string license_test_label(const std::string& code) {

@@ -35,6 +35,9 @@ bool ends(const std::string& s, const char* p) {
     return s.size() >= v.size() && s.compare(s.size() - v.size(), v.size(), v) == 0;
 }
 
+// A series of a mod event (its codes start with data::kModEventPrefix): on a league page, not part of the league.
+bool mod_series(const RaceSeries& s) { return !s.races.empty() && !s.races.front().empty() && s.races.front()[0] == data::kModEventPrefix; }
+
 // The league of a league prize key (GtMode::league_complete's tier), null for another key.
 const char* league_key_tier(const std::string& key) {
     if (key == "gtmode_beginner_complete") return "beginner";
@@ -523,11 +526,31 @@ bool GtData::load(const Reader& read) {
                 race_codes.push_back(e.name);
                 unlock_level[e.name] = int(e.u32_at(4));
             }
+        // Mod events (game/data/mod_events.h): their result codes and their prize cars, a set named
+        // as the disc's are (a championship's own code, else the series' "_0000": every race won).
+        mod_race_codes.clear();
+        for (const data::ModEvent& m : db.mod_events()) {
+            mod_race_codes.insert(m.races.begin(), m.races.end());
+            if (!m.champ.empty()) mod_race_codes.insert(m.champ);
+            if (m.def.prize_car.empty()) continue;
+            PrizeSet p;
+            p.name = m.champ.empty() ? m.series + "_0000" : m.champ;
+            PrizeCar c;
+            c.id = -1;
+            c.car = m.def.prize_car;
+            c.color_id = m.def.prize_paint;
+            p.cars.push_back(std::move(c));
+            prizes.push_back(std::move(p));
+        }
     } catch (const std::exception& e) {
         error_ = e.what();
         return false;
     }
     return true;
+}
+
+bool GtData::result_code(const std::string& code) const {
+    return mod_race_codes.count(code) || std::find(race_codes.begin(), race_codes.end(), code) != race_codes.end();
 }
 
 const PrizeSet* GtData::prize_set(const std::string& name) const {
@@ -1310,12 +1333,49 @@ bool GtMode::series_unlocked(const std::string& code) const {
     return (license_held(4) ? 1 : 0) >= level;
 }
 
-std::vector<std::string> GtMode::pick_opponents(const std::string& code, GameRandom& rng) {
+std::vector<std::string> GtMode::pick_opponents(const std::string& code, GameRandom& rng, std::vector<int>* paints) {
     std::optional<EventRules> r = rules(code);
     const data::Event* ev = db().event(code);
+    if (paints) paints->clear();
     if (!r || !ev) return {};
     // Slots 1 .. cars-1 (slot 0 is the player), gt_mode §20.4.
-    return race::draw_opponents(db(), *ev, std::max(r->cars, 1) - 1, rng);
+    std::vector<u32> ids;
+    std::vector<std::string> out = race::draw_opponents(db(), *ev, std::max(r->cars, 1) - 1, rng, &ids);
+    if (paints) {
+        for (size_t i = 0; i < out.size(); ++i) paints->push_back(pool_paint(out[i], i < ids.size() ? ids[i] : 0xFFFFFFFFu));
+        if (std::none_of(paints->begin(), paints->end(), [](int p) { return p >= 0; })) paints->clear(); // (none fixed)
+    }
+    return out;
+}
+
+std::vector<int> GtMode::pool_paints(const std::string& code, const std::vector<std::string>& labels) const {
+    const data::Event* ev = db().event(code);
+    if (!ev) return {};
+    const std::vector<std::string> pool = race::event_pool(db(), *ev);
+    std::vector<bool> used(pool.size());
+    std::vector<int> out;
+    bool any = false;
+    for (const std::string& l : labels) {
+        u32 id = 0xFFFFFFFFu;
+        for (size_t k = 0; k < pool.size(); ++k)
+            if (!used[k] && pool[k] == l) {
+                used[k] = true, id = race::pool_color_id(*ev, int(k));
+                break;
+            }
+        out.push_back(pool_paint(l, id));
+        any = any || out.back() >= 0;
+    }
+    return any ? out : std::vector<int>{};
+}
+
+// A pool entry's carcolor id as an index into its car's colours (-1: none, or not one of its colours: drawn at the start).
+int GtMode::pool_paint(const std::string& label, u32 id) const {
+    if (id == 0xFFFFFFFFu) return -1;
+    std::string car = label;
+    if (const data::CarVariant* v = db().variant(label)) car = v->car;
+    for (int i = 0, n = data_->color_count(car); i < n; ++i)
+        if (data_->color_id(car, i) == id) return i;
+    return -1;
 }
 
 // The race prize page's bookkeeping (gt_mode §3.2, presentation §F): a GT-mode cup (prize money, places
@@ -1427,7 +1487,7 @@ Award GtMode::record_round(int place, const std::vector<int>& order) {
 bool GtMode::league_complete(const std::string& tier) const {
     bool any = false;
     for (const RaceSeries& s : data_->catalog.series) {
-        if (s.tier != tier) continue;
+        if (s.tier != tier || mod_series(s)) continue; // (mod events on a league page are not the league's)
         any = true;
         if (s.championship()) {
             std::string champ = s.races.front().substr(0, s.races.front().size() - 2) + "00";
@@ -1539,9 +1599,12 @@ bool GtMode::prize_earned(const PrizeSet& set) const {
 std::pair<int, int> GtMode::series_results(const std::string& set) const {
     const size_t prefix = set.size() - 4; // (the set's name less its "0000")
     int races = 0, won = 0;
-    for (const std::string& rc : data_->race_codes)
+    auto count = [&](const std::string& rc) {
         if (rc.size() == set.size() && rc.compare(0, prefix, set, 0, prefix) == 0 && !ends(rc, "_0000"))
             ++races, won += state_.best_position(rc) == 0;
+    };
+    for (const std::string& rc : data_->race_codes) count(rc);
+    for (const std::string& rc : data_->mod_race_codes) count(rc); // (a mod event's own prize car)
     return {races, won};
 }
 

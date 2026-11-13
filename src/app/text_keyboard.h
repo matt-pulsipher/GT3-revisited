@@ -23,10 +23,12 @@ namespace gt3r {
 class TextKeyboard {
 public:
     enum class Result : u8 { None, Done, Cancel };
+    // Text: letters, digits and a few signs. Number: a keypad of the digits alone (sums, counts).
+    enum class Layout : u8 { Text, Number };
     static constexpr size_t kMaxLength = 63;
 
     // `done` names the finishing key ("OK", "Join"); `upper` starts the letters in upper case.
-    void open(std::string title, std::string done, bool upper);
+    void open(std::string title, std::string done, bool upper, Layout layout = Layout::Text);
     void close() { open_ = false; }
     bool is_open() const { return open_; }
 
@@ -51,6 +53,8 @@ private:
     int nearest(int row, float x) const; // the key of `row` closest to column `x`
 
     bool open_ = false, upper_ = false;
+    Layout layout_ = Layout::Text;
+    int rows_ = 0, cols_ = 0; // the layout's rows, and its width in key columns
     std::string title_, done_;
     std::vector<Cap> caps_;
     int focus_ = 0;

@@ -47,6 +47,11 @@ Equipment stock_equipment(const data::CarDatabase& db, const std::string& car_la
 // and the part setters, the base car's id from the record's +0x08, then the record's own settings bytes +0xE8 ..
 // +0x10D over the setters' (+0x10A the engine output factor, EQ +0x1B8).
 Equipment variant_equipment(const data::CarDatabase& db, const data::CarVariant& v);
+// A variant record (table 31, 272 bytes) of car `car` with these parts whose settings bytes are the ones stock_equipment
+// gives it: variant_equipment reads it back as stock_equipment(db, car, parts) (mod events' tuned opponents,
+// game/data/mod_events.h). Label and car ids by their hashes.
+Bytes variant_record(const data::CarDatabase& db, const std::string& label, const std::string& car,
+                     const std::array<u64, 27>& parts);
 // The course's tyres, as every race mode fits them to each entry before the race: on a wet course
 // (category 1) the tyres of the front tyre's stage + 13 unless both are wet ones (stages 13 .. 24) already, on a dirt course
 // (category 2) the stage 12 (dirt) tyres unless both are; the car's front and rear records of that stage, both or neither. True

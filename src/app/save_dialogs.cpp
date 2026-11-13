@@ -52,6 +52,9 @@ const SDL_DialogFileFilter kOpenFilters[] = {
     {"Saves (GT3 Revisited, PS2)", "sav;psu;ps2;mcd;raw"},
     {"All files", "*"},
 };
+const SDL_DialogFileFilter kPictureFilters[] = {
+    {"Pictures (PNG)", "png"},
+};
 const SDL_DialogFileFilter kCameraFilters[] = {
     {"Camera settings", "ini"},
     {"All files", "*"},
@@ -100,18 +103,22 @@ void install_save_dialogs(App& app) {
             std::lock_guard<std::mutex> lock(g_mutex);
             g_answer.reset();
             ticket = ++g_ticket;
-            g_export = kind == menu::flow::FileDialogs::Kind::ExportPs2 || kind == menu::flow::FileDialogs::Kind::ExportCameras;
+            g_export = kind == menu::flow::FileDialogs::Kind::ExportPs2 || kind == menu::flow::FileDialogs::Kind::ExportCameras ||
+                       kind == menu::flow::FileDialogs::Kind::ExportEvent;
         }
         if (const char* env = std::getenv("GT3R_FILE_DIALOG"); env && *env) {
             answer(ticket, std::string(env) == "-" ? std::string() : std::string(env));
             return;
         }
         const bool cameras = kind == menu::flow::FileDialogs::Kind::OpenCameras;
-        const bool open = kind == menu::flow::FileDialogs::Kind::OpenSave || cameras;
+        const bool picture = kind == menu::flow::FileDialogs::Kind::OpenPicture;
+        const bool open = kind == menu::flow::FileDialogs::Kind::OpenSave || cameras || picture;
         g_native = true;
         pad_during_dialog(*input, true);
-        const SDL_DialogFileFilter* filters = cameras ? kCameraFilters : kOpenFilters;
-        const int nfilters = cameras ? int(SDL_arraysize(kCameraFilters)) : int(SDL_arraysize(kOpenFilters));
+        const SDL_DialogFileFilter* filters = cameras ? kCameraFilters : picture ? kPictureFilters : kOpenFilters;
+        const int nfilters = cameras   ? int(SDL_arraysize(kCameraFilters))
+                             : picture ? int(SDL_arraysize(kPictureFilters))
+                                       : int(SDL_arraysize(kOpenFilters));
 #if defined(SDL_PLATFORM_MACOS)
         // Our own sheet (platform/mac_dialog.h: SDL's left the game without keyboard focus).
         // An export starts in the last export's folder, else Documents (a bare name would

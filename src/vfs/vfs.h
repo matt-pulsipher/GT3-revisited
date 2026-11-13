@@ -17,6 +17,7 @@ class IniDocument;
 //   mod.ini   [mod] name, version, author, description, priority, discs
 //   files/    files mirroring GT3.VOL paths; each overrides or adds a file
 //   cars/     new car definitions (*.ini, see game/data/mod_cars.h)
+//   events/   GT Mode events (*.ini, see game/data/mod_events.h)
 //   textures/ replacement textures (PNGs named by key, formats/texture_pack.h)
 // See docs/MODDING.md.
 struct ModInfo {
@@ -35,6 +36,7 @@ struct ModInfo {
     std::vector<std::string> files; // VOL-relative paths provided
     std::vector<std::string> cars;  // host paths of cars/*.ini (game/data/mod_cars.h)
     std::vector<std::string> makers; // host paths of makers/*.ini
+    std::vector<std::string> events; // host paths of events/*.ini (game/data/mod_events.h)
     std::vector<std::pair<u64, std::string>> textures; // textures/: key and host path of each picture
 };
 
@@ -81,9 +83,9 @@ public:
     Language language() const { return language_ ? *language_ : region().default_language(); }
     void set_language(Language l) { language_ = l; }
 
-    // Virtual file listing the enabled mods' car definitions, one "<mod id>\t<host
-    // path>" line each (ascending priority), so loaders that only get a reader
-    // (game/data/mod_cars.h) still see mod cars.
+    // Virtual file listing the enabled mods' definitions (makers, cars, then events), one
+    // "<mod id>\t<host path>" line each (ascending priority), so loaders that only get a reader
+    // (game/data/mod_cars.h, mod_events.h) still see them.
     static constexpr const char* kModCarsList = "mods/.cars";
     // Virtual file: the disc's packed program (CORE.GT3, Volume::read_program), for loaders
     // that read a reference table from it. Not moddable.
@@ -120,5 +122,7 @@ bool mod_for_disc(const std::vector<std::string>& discs, std::string_view key, s
 // A course file's path: the one the game reads (RegionData::course_path in the language),
 // else another folder's that has it; "" when none does.
 std::string course_file_path(const Vfs& vfs, std::string_view label);
+// The names of a host folder's immediate children, sorted (none when it is missing).
+std::vector<std::string> list_host_dir(const std::string& dir);
 
 } // namespace gt3r

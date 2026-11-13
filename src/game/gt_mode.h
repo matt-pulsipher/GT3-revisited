@@ -28,6 +28,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -61,6 +62,11 @@ public:
     std::vector<PrizeSet> prizes;     // gcf section 15
     std::vector<std::string> race_codes; // gcf section 4: every GT-mode result slot (364), sorted
     std::map<std::string, int> unlock_level; // gcf section 4 value: 1 = needs the S license (F1)
+    // Mod events' result codes (game/data/mod_events.h: their races and championships). They keep
+    // results like the disc's slots but count for no league, ending or completion.
+    std::set<std::string> mod_race_codes;
+    // A code with a result: one of race_codes or mod_race_codes.
+    bool result_code(const std::string& code) const;
     struct Demo {
         std::string event, course; // demo race (table 32 "demo_*") and its course
         std::string car;           // word +8: the demo's own car for slot 0 ("" on the disc: all slots drawn)
@@ -384,8 +390,16 @@ public:
     Award record_round(int place, const std::vector<int>& order = {});
     // Opponents of the current championship (car variant labels).
     const std::vector<std::string>& championship_field() const { return state_.championship.entrants; }
-    // Random opponents for a race (the original's pool draw, gt_mode §20.4), cars - 1 of them.
-    std::vector<std::string> pick_opponents(const std::string& code, GameRandom& rng = race_info_random());
+    // Random opponents for a race (the original's pool draw, gt_mode §20.4), cars - 1 of them. `paints`
+    // (optional) gets each one's paint as its pool entry gives it (+0x110: the car build gives the car
+    // drawn from an entry that entry's colour), an index into the car's colours, -1 = drawn at the race
+    // start; left empty when no entry gives one of its car's colours.
+    std::vector<std::string> pick_opponents(const std::string& code, GameRandom& rng = race_info_random(),
+                                            std::vector<int>* paints = nullptr);
+    // The pool paints of opponents drawn earlier (a championship's field in its first round): each
+    // label's first entry not yet matched. Empty when no entry gives a paint.
+    std::vector<int> pool_paints(const std::string& code, const std::vector<std::string>& labels) const;
+    int pool_paint(const std::string& label, u32 color_id) const;
 
     // Records (the records menu): best results per key, best first (gt_mode §17). The new
     // entry goes to the first place that is empty or whose value is not better, so it ranks

@@ -2,6 +2,7 @@
 // the file of its concern (internal.h lists them), and attach() opens the game when the GT-mode
 // control opens.
 
+#include "game/gt_mode_mods.h"
 #include "game/gt_mode_menu/internal.h"
 
 #include "base/log.h"
@@ -11,7 +12,6 @@
 
 namespace gt3r::game {
 
-void install_mod_menu_patches(); // gt_mode_mods.cpp
 
 using namespace gt_menu;
 

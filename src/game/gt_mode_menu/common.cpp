@@ -1,6 +1,7 @@
 // GT-mode menu bindings: the module's state (MenuState, internal.h) and the helpers its files
 // share.
 
+#include "game/gt_mode_mods.h"
 #include "game/gt_mode_menu/internal.h"
 
 #include "base/log.h"
@@ -9,7 +10,6 @@
 
 namespace gt3r::game {
 
-void forget_mod_menu_plan(); // gt_mode_mods.cpp
 
 namespace gt_menu {
 
