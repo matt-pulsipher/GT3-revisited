@@ -457,6 +457,12 @@ makers"); those with their own paints number those paints themselves.
 A prize car gets its prize set's fixed color when the model's list has it, or a random
 paint otherwise (§20.3).
 
+**Purchase and wheel sounds.** Buying a car plays the `buy` sound 31 frames (about half a
+second) after the purchase is confirmed, over the dealer music, which keeps playing.
+Fitting a wheel, from the wheel shop's "fit it?" or from the garage's wheel list, plays
+the `wheel` sound the same 31 frames later (`gtmode_synth_dealer`,
+`gtmode_synth_garage_wheel_list`).
+
 **Wheels.** Every wheel costs the gcf `wheel` price (500 Cr on this disc, §2). A bought
 wheel goes into a player-wide inventory and is never used up. The inventory has 200
 slots and the stock-wheel placeholder takes one, so 199 wheels can be bought. A wheel

@@ -573,7 +573,17 @@ TEST(gtmode_synth_dealer) {
     gt.state().credits = w::kStartCredits;
     choose(f, "buy");
     CHECK(page(f) == "00cmn/cd_buy_sure");
-    choose(f, "yes1");
+    // The purchase's "buy" effect plays once, 31 frames after the action's frame (GT3's Timer).
+    CHECK(f.controller()->set_focus("yes1"));
+    f.take_sounds();
+    f.tick(key_bit(MenuKey::Confirm)); // the action's frame
+    int buy_at = -1, buys = 0;
+    for (int t = 1; t <= 60; ++t) {
+        f.tick(0);
+        for (const std::string& x : f.take_sounds())
+            if (x == "buy") buy_at = t, ++buys;
+    }
+    CHECK(buy_at == 31 && buys == 1);
     CHECK(gt.state().garage.size() == 1 && gt.state().ride == 0 && gt.state().garage[0].color == 1);
     CHECK(gt.state().credits == w::kStartCredits - 12000);
     CHECK(page(f) == "00cmn/cd_bought" && f.controller()->depth() == 1);
@@ -792,8 +802,18 @@ TEST(gtmode_synth_garage_wheel_list) {
     // Equip it.
     press(f, MenuKey::Confirm);
     CHECK(page(f) == "hm/hm_change_wheel_sure");
+    f.take_sounds();
     choose(f, "yes1");
     CHECK(car.wheel == w::kRimA && page(f) == "hm/hm_wheel_changed");
+    // The change's "wheel" effect, a moment later (as the purchase's "buy").
+    {
+        int wheels = 0;
+        for (int t = 0; t < 40; ++t) {
+            f.tick(0);
+            for (const std::string& x : f.take_sounds()) wheels += x == "wheel";
+        }
+        CHECK(wheels == 1);
+    }
     choose(f, "buy3");
     CHECK(page(f) == "hm/hm_car");
     choose(f, "wheel");

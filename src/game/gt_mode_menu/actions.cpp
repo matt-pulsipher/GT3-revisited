@@ -107,6 +107,8 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
         } else if (a == "clear_focus_car") {
             s->focus_car.clear();
         } else if (a == "buy_car") {
+            // The purchase's "buy" effect comes a moment later (SoundTimer), whatever the result.
+            ms.sound_timers.push_back({kSoundTimerFrames, "buy"});
             int i = gt.buy_car(s->focus_car, s->color_cursor);
             if (i >= 0) {
                 log.push_back("bought " + car_name(gt, s->focus_car) + " for " + cr(gt.car_price(s->focus_car)));
@@ -156,12 +158,14 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
         } else if (a == "buy_wheel") {
             gt.buy_wheel(s->focus_wheel);
         } else if (a == "fit_wheel") {
+            ms.sound_timers.push_back({kSoundTimerFrames, "wheel"}); // (as change_wheel's)
             gt.fit_shop_wheel(s->focus_wheel);
         } else if (a == "set_focus_wheel") {
             // The chosen list entry (wheel_cursor) for the focused garage car.
         } else if (a == "change_wheel") {
             // GT3's change_wheel: the car takes the chosen entry's wheel, the
-            // placeholder putting it back on its own wheels.
+            // placeholder putting it back on its own wheels; its "wheel" effect comes a moment later.
+            ms.sound_timers.push_back({kSoundTimerFrames, "wheel"});
             gt.fit_wheel(s->garage_focus, wheel_list_entry(gt.state(), s->wheel_cursor));
         } else if (a == "wash_car") {
             // The car is then washed spinning, its effect coming with the spin (widget_art.cpp).

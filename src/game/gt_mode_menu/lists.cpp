@@ -331,6 +331,17 @@ std::string on_tick(MenuController& ctl) {
     ms.frame = ctl.frame();
     std::string se = step_car_wash(ctl);
     if (std::string oil = step_oil_change(ctl); se.empty()) se = std::move(oil);
+    // The delayed effects (SoundTimer); one that comes due with another effect plays on the
+    // next frame the page plays none.
+    for (auto t = ms.sound_timers.begin(); t != ms.sound_timers.end();) {
+        if (--t->counter >= 0) {
+            ++t;
+            continue;
+        }
+        if (se.empty()) se = std::move(t->se);
+        else ms.sounds.push_back(std::move(t->se));
+        t = ms.sound_timers.erase(t);
+    }
     return se;
 }
 
