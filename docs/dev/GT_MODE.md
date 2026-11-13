@@ -325,8 +325,10 @@ Phase 5:
   (one car's saved settings, gt_mode §19) is read / written by
   `import_ps2_setting` / `export_ps2_setting`. The files are picked on the
   save page (Load / Save Settings: the current game's files, no card slots).
-- **Gear chart** (`gear_chart`): rpm against road speed for every gear (the
-  shift sawtooth up to the rev limit) from the working copy's car spec.
+- **Gear chart** (`gear_chart`): GT3's GearChart (gt_mode §14): a line per
+  forward gear from `sim::exact::gear_chart` (the program's chart data from the
+  working copy's spec, engine and driveline blocks) on a fixed 350 km/h speed
+  scale, drawn as `menu::ElementDraw::Kind::Quad` strips.
 - **Widgets**: status-page license marks, the license-violation popup's
   license letter, the tune shop's maker logo, the oil gauge (a full
   cylinder in the page's hidden `clean` colouring blended into its `dirty`

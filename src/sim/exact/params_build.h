@@ -116,6 +116,20 @@ struct EnginePeak {
 };
 EnginePeak engine_peak(const ParamImage& p, const ConvertInputs& in);
 
+// The settings menu's gear chart (gt_mode §14): its data routine builds the spec from the
+// equipment (the builder), the engine block (no power cap) and the driveline block from it,
+// then the program gives each gear 0 .. n a line: from rpm_lo (1000 rpm for reverse and 1st, else the driveline's rpm after
+// the shift into that gear, D+0x30) to rpm_hi (the upshift rpm D+0x2E, the rev limit E+0x8C for reverse and the top gear),
+// each at its road speed in m/s (rpm x 2 pi / 60 over the gear's speed factor D+0x5C: ratio x final / driven tyre radius).
+struct GearChart {
+    s32 n = 0; // forward gears (D+2)
+    std::array<u16, 8> rpm_lo{}, rpm_hi{};
+    std::array<F, 8> speed_lo{}, speed_hi{};
+};
+// The program tables the builders read (the default curves, the surface classes, the differential letters, the static
+// block) feed nothing the chart reads, so this needs none.
+GearChart gear_chart(const data::CarDatabase& db, Equipment eq);
+
 // The showroom build (the menus' car, and GT Mode's grid: race/field.h): the spec (with flag, mode and
 // tyre override 0), P from it (control source 0, the program's showroom rule record (no power cap), the
 // condition words `condition`; zeros: a fresh engine) and the peak. The spec's mass (+0x2A, s16 kg) is the

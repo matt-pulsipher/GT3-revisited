@@ -8,6 +8,7 @@
 #include "game/data/car_database.h"
 #include "sim/car_spec.h"
 #include "sim/engine_condition.h"
+#include "sim/exact/params_build.h"
 
 #include <cmath>
 #include <cstdio>
@@ -125,6 +126,54 @@ TEST(car_gear_generator_values) {
     CHECK(b[6] < a[6]);
     CHECK(a[0] == s16((3 * int(a[1]) + int(a[2])) / 4));
     CHECK(a[6] > 0 && a[1] > 2000);
+}
+
+TEST(car_gear_chart) {
+    // The settings menu's gear chart (sim::exact::gear_chart, gt_mode §14): a line per forward gear from 1000 rpm (1st) or
+    // the rpm after the shift into it up to the upshift rpm, the top gear's up to the rev limit, at road speeds from the
+    // gear's ratio x final. A taller final moves every line; a gear's ratio moves its own line alone (its start rpm
+    // follows the gear below).
+    data::CarDatabase* db = database();
+    if (!db) SKIP("needs GT3R_DISC");
+    const data::Car* car = db->car("r34_gtr_v_99");
+    CHECK(car != nullptr);
+    if (!car) return;
+    const CarSettings st = stock_settings(*db, car->label, car->parts);
+    auto spec = build_car_spec(*db, car->label, car->parts, st);
+    CHECK(spec.has_value());
+    if (!spec) return;
+    auto chart = [&](const CarSettings& s) {
+        return exact::gear_chart(*db, exact::make_equipment(*db, car->label, car->parts, s));
+    };
+    const exact::GearChart a = chart(st);
+    CHECK(a.n == 6);
+    CHECK(a.rpm_lo[1] == 1000);
+    CHECK(float(a.rpm_hi[6]) == spec->engine.rev_limit_rpm);
+    for (int i = 1; i < 6; ++i) CHECK(float(a.rpm_hi[size_t(i)]) == spec->engine.upshift_rpm);
+    for (int i = 2; i <= 6; ++i) CHECK(a.rpm_lo[size_t(i)] > 1000 && a.rpm_lo[size_t(i)] < a.rpm_hi[size_t(i)]);
+    // Top gear at the rev limit: rpm x 2 pi / 60 x driven tyre radius / (ratio x final), m/s.
+    const float top = spec->engine.rev_limit_rpm * 0.10471976f * spec->axle[0].tire_radius /
+                      (spec->gearbox.ratios.back() * spec->gearbox.final_drive);
+    std::printf("  r34 chart: 6th %.1f .. %.1f km/h, %u .. %u rpm (check %.1f km/h)\n", a.speed_lo[6].host() * 3.6f,
+                a.speed_hi[6].host() * 3.6f, unsigned(a.rpm_lo[6]), unsigned(a.rpm_hi[6]), top * 3.6f);
+    CHECK(std::fabs(a.speed_hi[6].host() - top) < top * 0.01f);
+    for (int i = 1; i <= 6; ++i) CHECK(a.speed_lo[size_t(i)].host() < a.speed_hi[size_t(i)].host());
+
+    CarSettings f = st;
+    f.final_drive = st.final_drive * 5 / 4;
+    const exact::GearChart b = chart(f);
+    for (int i = 1; i <= 6; ++i) {
+        const float k = b.speed_hi[size_t(i)].host() / a.speed_hi[size_t(i)].host();
+        CHECK(std::fabs(k - float(st.final_drive) / float(f.final_drive)) < 1e-3f);
+    }
+
+    CarSettings g = st;
+    g.gears[6] = st.gears[6] * 9 / 10;
+    const exact::GearChart c = chart(g);
+    for (int i = 1; i <= 5; ++i)
+        CHECK(c.rpm_lo[size_t(i)] == a.rpm_lo[size_t(i)] && c.speed_lo[size_t(i)].bits == a.speed_lo[size_t(i)].bits &&
+              c.speed_hi[size_t(i)].bits == a.speed_hi[size_t(i)].bits);
+    CHECK(c.speed_hi[6].host() > a.speed_hi[6].host() && c.rpm_lo[6] < a.rpm_lo[6]);
 }
 
 TEST(car_spec_showroom_top_speed) {

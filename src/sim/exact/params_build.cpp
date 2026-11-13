@@ -931,6 +931,36 @@ EnginePeak engine_peak(const ParamImage& image, const ConvertInputs& in) {
     return out;
 }
 
+GearChart gear_chart(const data::CarDatabase& db, Equipment eq) {
+    static const ProgramData none = ProgramData::synthetic();
+    Spec spec{};
+    build_spec(db, none, eq, 0, 0, false, spec); // (the fix-ups after the builder touch no byte read here)
+    ConvertInputs in;
+    in.data = &none;
+    ParamImage image{};
+    Ctx c{Img{spec.data()}, Img{image.data()}, in, condition(none)};
+    const u32 E = 0x138, Dv = 0x1F8; // (the program builds both blocks on the stack; the offsets do not matter)
+    engine(c, E, 0);
+    driveline(c, Dv, E);
+    const Img& p = c.p;
+    GearChart g;
+    g.n = p.b(Dv + 2);
+    for (s32 i = 0; i <= g.n && i < 8; ++i) {
+        const u32 k = u32(i);
+        const F factor = p.f(Dv + 0x5C + 4 * k);
+        auto speed = [&](u16 rpm) {
+            F w = cvt(rpm) * kRpm; // 2 pi / 60
+            if (i == 0) w = -w;
+            return w / factor;
+        };
+        g.rpm_lo[k] = i < 2 ? 1000 : p.h(Dv + 0x30 + 2 * (k - 2));
+        g.speed_lo[k] = speed(g.rpm_lo[k]);
+        g.rpm_hi[k] = i == 0 || i == g.n ? p.h(E + 0x8C) : p.h(Dv + 0x2E);
+        g.speed_hi[k] = speed(g.rpm_hi[k]);
+    }
+    return g;
+}
+
 Showroom showroom_build(const data::CarDatabase& db, const ProgramData& d, Equipment eq, const std::array<u32, 8>& condition) {
     // The showroom's rule record, the same bytes on every disc: no power cap (byte
     // 3), the CPU grip percentages (read only for control source 2).

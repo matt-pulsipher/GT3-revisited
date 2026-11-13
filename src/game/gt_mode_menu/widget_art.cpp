@@ -8,6 +8,7 @@
 
 #include "game/gt_setting.h"
 #include "menu/menu_renderer.h"
+#include "sim/exact/params_build.h"
 
 #include <algorithm>
 #include <cctype>
@@ -240,38 +241,52 @@ void widget_draws(const MenuController& ctl, const Element& w, std::vector<menu:
         return;
     }
     if (cls == "gear_chart") {
-        // Gear chart: engine speed (up) against road speed (right) for each gear, a
-        // sawtooth from the rpm after each upshift to the rev limit; dotted lines.
+        // The settings menu's gear chart (gt_mode §14): each forward gear's line (sim::exact::gear_chart) from its low rpm at
+        // that speed to its high rpm at that speed, road speed to the right on a fixed 0 .. 97.22 m/s (350 km/h) scale,
+        // engine speed up to the highest line end, clipped to the box; light green, dark orange for one
+        // frame where the gear's ratio x final changed since the frame before.
         GarageCar* work = setting_work();
         if (!work) return;
-        std::optional<sim::CarSpec> spec = gt.car_spec(*work);
-        if (!spec || spec->gearbox.ratios.empty()) return;
-        const auto& g = spec->gearbox.ratios;
-        const float rev = spec->engine.rev_limit_rpm, fd = spec->gearbox.final_drive;
-        const float radius = spec->axle[1].tire_radius;
-        auto kmh = [&](float rpm, float ratio) { return rpm * 0.10472f * radius / (ratio * fd) * 3.6f; };
-        const float vmax = kmh(rev, g.back()) * 1.05f;
-        if (vmax <= 0 || rev <= 0) return;
-        auto dot = [&](float v, float rpm, SDL_FColor c, float size) {
+        const sim::exact::GearChart g =
+            sim::exact::gear_chart(gt.db(), sim::exact::make_equipment(gt.db(), work->car, work->parts, work->settings));
+        // Every frame the ratio x final words are compared with the last frame's (the chart's construction takes them
+        // without a mark: here, a chart not drawn the frame before).
+        static u32 last_frame = 0;
+        static std::array<float, 8> last{};
+        static std::array<bool, 8> changed{};
+        const u32 frame = ctl.frame();
+        if (frame != last_frame) {
+            const bool fresh = frame != last_frame + 1;
+            for (size_t i = 0; i < 8; ++i) {
+                const float v = float(u16(work->settings.gears[i])) / 1000.0f * (float(work->settings.final_drive) / 1000.0f);
+                changed[i] = !fresh && v != last[i];
+                last[i] = v;
+            }
+            last_frame = frame;
+        }
+        float top = 0;
+        for (int i = 1; i <= g.n && i < 8; ++i) top = std::max(top, float(g.rpm_hi[size_t(i)]));
+        if (top <= 0) return;
+        const float sx = w.w / sim::exact::F::raw(0x42C271C7).host(), sy = w.h / top;
+        for (int i = 1; i <= g.n && i < 8; ++i) {
+            const size_t k = size_t(i);
+            const float xa = w.x + g.speed_lo[k].host() * sx, ya = w.y + float(g.rpm_lo[k]) * sy;
+            const float xb = w.x + g.speed_hi[k].host() * sx, yb = w.y + float(g.rpm_hi[k]) * sy;
+            // A strip 4 wide, its ends shifted across by 2 x (screen) dy / length and up / down by 0.5.
+            const float dy = ya - yb, len = std::hypot(xb - xa, dy);
+            if (!(len > 0)) continue;
+            const float o = 2.0f * dy / len;
             menu::ElementDraw d;
-            d.kind = menu::ElementDraw::Kind::Fill;
-            d.has_box = true;
-            float x = w.x + 4 + (w.w - 8) * std::clamp(v / vmax, 0.0f, 1.0f);
-            float y = w.y + 4 + (w.h - 8) * std::clamp(rpm / (rev * 1.05f), 0.0f, 1.0f);
-            d.box = {x - size / 2, y - size / 2, size, size};
-            d.fill = c;
+            d.kind = menu::ElementDraw::Kind::Quad;
+            d.points[0] = {xa + o, ya + 0.5f};
+            d.points[1] = {xb + o, yb + 0.5f};
+            d.points[2] = {xb - o, yb - 0.5f};
+            d.points[3] = {xa - o, ya - 0.5f};
+            d.fill = changed[k] ? SDL_FColor{128 / 255.0f, 64 / 255.0f, 0, 1} : SDL_FColor{128 / 255.0f, 1, 128 / 255.0f, 1};
+            d.has_clip = true;
+            d.clip = {w.x, w.y, w.w, w.h};
             d.z = w.z;
             out.push_back(d);
-        };
-        // Rev limit line.
-        for (int k = 0; k <= 60; ++k) dot(vmax * float(k) / 60, rev, {0.6f, 0.15f, 0.1f, 0.8f}, 1.2f);
-        for (size_t i = 0; i < g.size(); ++i) {
-            float r0 = i == 0 ? 0.0f : rev * g[i] / g[i - 1];
-            float v0 = kmh(r0, g[i]), v1 = kmh(rev, g[i]);
-            for (int k = 0; k <= 40; ++k) {
-                float t = float(k) / 40;
-                dot(v0 + (v1 - v0) * t, r0 + (rev - r0) * t, {1.0f, 0.68f, 0.0f, 1}, 2.0f);
-            }
         }
         return;
     }

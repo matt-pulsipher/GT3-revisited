@@ -283,8 +283,24 @@ void MenuRenderer::draw_element(const Element& e, const std::vector<SDL_Texture*
 }
 
 void MenuRenderer::draw_effect(const ElementDraw& t, const SDL_FRect& dst) {
-    if (!t.has_box && !t.element) return;
     const float sx = dst.w / kMenuWidth, sy = dst.h / kMenuHeight;
+    if (t.kind == ElementDraw::Kind::Quad) {
+        SDL_FColor col{t.fill.r, t.fill.g, t.fill.b, t.fill.a * t.alpha};
+        SDL_Vertex qv[4];
+        for (int i = 0; i < 4; ++i) {
+            qv[i].position = {dst.x + (t.points[i].x + t.dx) * sx, dst.y + (kMenuHeight - t.points[i].y - t.dy) * sy};
+            qv[i].color = col;
+            qv[i].tex_coord = {0, 0};
+        }
+        static const int qi[6] = {0, 1, 2, 0, 2, 3};
+        SDL_BlendMode old;
+        SDL_GetRenderDrawBlendMode(r_, &old);
+        SDL_SetRenderDrawBlendMode(r_, SDL_BLENDMODE_BLEND);
+        SDL_RenderGeometry(r_, nullptr, qv, 4, qi, 6);
+        SDL_SetRenderDrawBlendMode(r_, old);
+        return;
+    }
+    if (!t.has_box && !t.element) return;
     const float bx = t.has_box ? t.box.x : t.element->x, by = t.has_box ? t.box.y : t.element->y;
     const float bw = t.has_box ? t.box.w : t.element->w, bh = t.has_box ? t.box.h : t.element->h;
     const float cx = bx + bw * 0.5f + t.dx, cy = by + bh * 0.5f + t.dy;

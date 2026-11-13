@@ -1414,6 +1414,42 @@ TEST(gtmode_disc_demo_tuned_save) {
     CHECK(write_save(out, gt.state()));
 }
 
+// The auto-level slider (gt_mode §14): each change rebuilds the gear sliders' ranges from the reference final
+// as it is at that moment, then the reference follows the final; so with a final changed since the reference was set,
+// the first change ranges around the old reference and the next around the final. A page opening builds them from the
+// reference as it then is.
+TEST(gtmode_disc_gear_auto_level_ranges) {
+    NEED_DATA();
+    GtMode gt(data);
+    gt.state().credits = 2000000;
+    CHECK(gt.buy_car("r34_gtr_v_99") == 0);
+    CHECK(gt.buy_part(22) && gt.fit_part(22)); // fully customizable transmission
+    GarageCar& real = *gt.state().ride_car();
+    const int r0 = real.ref_final;
+    real.settings.final_drive = r0 + 200; // a final committed without an auto-level change
+    const int f = real.settings.final_drive;
+    GarageCar work = real;
+    auto hi1 = [&](int level, int ref) {
+        sim::CarSettings c = work.settings;
+        c.gear_slider = level, c.final_drive = ref;
+        CHECK(sim::apply_gear_slider(gt.db(), work.parts, c));
+        return c.gears[1] * 9 / 8;
+    };
+    auto range_hi1 = [&] {
+        std::optional<SliderRange> r = slider_range(gt, real, work, "slider_gear_ratio_1");
+        return r ? r->sub_end - 1 : -1;
+    };
+    const int level = work.settings.gear_slider;
+    CHECK(range_hi1() == hi1(level, r0));
+    CHECK(slider_set(gt, real, work, "slider_gear_auto_level", level - 1, ""));
+    CHECK(work.ref_final == f && range_hi1() == hi1(level - 1, r0));
+    CHECK(slider_set(gt, real, work, "slider_gear_auto_level", level - 2, ""));
+    CHECK(range_hi1() == hi1(level - 2, f) && hi1(level - 2, f) != hi1(level - 2, r0));
+    CHECK(work.settings.gears[1] <= hi1(level - 2, f));
+    work.range_ref_final = 0; // the page opens again
+    CHECK(range_hi1() == hi1(level - 2, f));
+}
+
 TEST(gtmode_disc_setting_files) {
     NEED_DATA();
     GtMode gt(data);
