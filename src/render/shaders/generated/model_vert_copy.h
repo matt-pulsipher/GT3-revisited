@@ -1381,6 +1381,8 @@ inline constexpr char model_vert_copy_gles[] =
     "    v_lit_w = lit * gl_Position.w;\n"
     "    vec3 param_5 = v_world;\n"
     "    v_fog_w = vec2(fog_at(param_5) * gl_Position.w, drop);\n"
+    "    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;\n"
+    "    gl_Position.y = -gl_Position.y;\n"
     "}\n"
     "\n";
 inline constexpr char model_vert_copy_gles_blocks[] = "VertexUniforms,VertexLighting";
