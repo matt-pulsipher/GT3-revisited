@@ -316,7 +316,7 @@ std::optional<ModArchivePlan> plan_mod_install(const ZipArchive& zip, std::strin
     if (roots.empty()) {
         auto has_mod_folders = [&](const std::string& prefix) {
             for (const Entry* e : files)
-                for (const char* sub : {"files/", "cars/", "makers/", "textures/"})
+                for (const char* sub : {"files/", "cars/", "makers/", "events/", "textures/"})
                     if (starts_with(e->name, prefix + sub)) return true;
             return false;
         };
@@ -445,6 +445,70 @@ bool install_mod_archive(const ZipArchive& zip, const ModArchivePlan& plan, cons
                  (unsigned long long)m.bytes, had ? ", replacing the installed one" : "");
     }
     return true;
+}
+
+Bytes write_zip(const std::vector<std::pair<std::string, Bytes>>& files) {
+    Bytes out, central;
+    auto put16 = [](Bytes& b, u16 v) { b.push_back(u8(v)), b.push_back(u8(v >> 8)); };
+    auto put32 = [&](Bytes& b, u32 v) { put16(b, u16(v)), put16(b, u16(v >> 16)); };
+    constexpr u16 kVersion = 20, kStored = 0, kDeflate = 8, kUtf8 = 1u << 11;
+    constexpr u16 kDosTime = 0, kDosDate = (1 << 5) | 1; // 1980-01-01 00:00 (no clock in the file: the same bytes each time)
+    u16 count = 0;
+    for (const auto& [name, data] : files) {
+        const u32 crc = u32(crc32(crc32(0, nullptr, 0), data.data(), uInt(data.size())));
+        // Raw Deflate, kept only when it is smaller.
+        Bytes packed(compressBound(uLong(data.size())) + 64);
+        z_stream zs{};
+        u16 method = kStored;
+        if (deflateInit2(&zs, Z_BEST_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY) == Z_OK) {
+            zs.next_in = const_cast<Bytef*>(data.data());
+            zs.avail_in = uInt(data.size());
+            zs.next_out = packed.data();
+            zs.avail_out = uInt(packed.size());
+            if (deflate(&zs, Z_FINISH) == Z_STREAM_END && zs.total_out < data.size()) {
+                packed.resize(zs.total_out);
+                method = kDeflate;
+            }
+            deflateEnd(&zs);
+        }
+        const Bytes& body = method == kDeflate ? packed : data;
+        const u32 offset = u32(out.size());
+        auto header = [&](Bytes& b, bool central_entry) {
+            put32(b, central_entry ? 0x02014b50u : 0x04034b50u);
+            if (central_entry) put16(b, kVersion);
+            put16(b, kVersion);
+            put16(b, kUtf8);
+            put16(b, method);
+            put16(b, kDosTime);
+            put16(b, kDosDate);
+            put32(b, crc);
+            put32(b, u32(body.size()));
+            put32(b, u32(data.size()));
+            put16(b, u16(name.size()));
+            put16(b, 0); // extra
+            if (central_entry) {
+                put16(b, 0); // comment
+                put16(b, 0); // disk
+                put16(b, 0); // internal attributes
+                put32(b, 0); // external attributes
+                put32(b, offset);
+            }
+            b.insert(b.end(), name.begin(), name.end());
+        };
+        header(out, false);
+        out.insert(out.end(), body.begin(), body.end());
+        header(central, true);
+        ++count;
+    }
+    const u32 cd_offset = u32(out.size()), cd_size = u32(central.size());
+    out.insert(out.end(), central.begin(), central.end());
+    put32(out, 0x06054b50u);
+    put16(out, 0), put16(out, 0);
+    put16(out, count), put16(out, count);
+    put32(out, cd_size);
+    put32(out, cd_offset);
+    put16(out, 0);
+    return out;
 }
 
 bool remove_mod_folder(const std::string& mods_dir, const std::string& id, std::string* error) {

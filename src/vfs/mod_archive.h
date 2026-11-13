@@ -6,7 +6,7 @@
 //
 // An archive holds one mod or several. A mod is a folder with a mod.ini (the shallowest one on
 // each branch); an archive without any mod.ini is one mod when its top level, or its only top
-// folder, has files/, cars/, makers/ or textures/. Each mod installs as mods/<id>/: <id> is its folder's
+// folder, has files/, cars/, makers/, events/ or textures/. Each mod installs as mods/<id>/: <id> is its folder's
 // name, or for a mod at the top of the archive the archive's own name (else its mod.ini name).
 // Anything outside the mods (READMEs beside them, __MACOSX/) is left out.
 //
@@ -91,6 +91,11 @@ struct ModInstallProgress {
 // (except mods moved in before a later one failed to move). `progress` may be null.
 bool install_mod_archive(const ZipArchive& zip, const ModArchivePlan& plan, const std::string& mods_dir,
                          const std::string& staging_dir, ModInstallProgress* progress, std::string* error = nullptr);
+
+// A .zip of `files` (archive path, contents), each compressed with Deflate (stored when that
+// does not make it smaller), as install_mod_archive reads them: how the Event creator shares an
+// event (app/screen_event_creator.cpp).
+Bytes write_zip(const std::vector<std::pair<std::string, Bytes>>& files);
 
 // Deletes mods/<id>/ and everything in it.
 bool remove_mod_folder(const std::string& mods_dir, const std::string& id, std::string* error = nullptr);

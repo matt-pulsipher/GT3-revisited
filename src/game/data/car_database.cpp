@@ -3,6 +3,7 @@
 #include "base/config.h"
 #include "base/log.h"
 #include "game/data/mod_cars.h"
+#include "game/data/mod_events.h"
 #include "disc/volume.h"
 #include "formats/text/charset.h"
 #include "vfs/vfs.h"
@@ -124,6 +125,7 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
     extra_records_.clear();
     mod_cars_.clear();
     mod_makers_.clear();
+    mod_events_.clear();
     mod_car_errors_.clear();
     unsupported_ = false;
     paramdb_.clear();
@@ -176,14 +178,18 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
                 if (!by_mod.count(mod)) order.push_back(mod);
                 by_mod[mod].emplace_back(line.substr(tab + 1));
             }
+            std::vector<std::pair<std::string, std::vector<std::string>>> events; // after every mod's cars
             for (const std::string& mod : order) {
-                std::vector<std::string> cars;
+                std::vector<std::string> cars, evs;
                 for (const std::string& f : by_mod[mod]) {
                     if (f.find("/makers/") != std::string::npos) load_mod_maker_file(*this, f, mod, jp);
+                    else if (f.find("/events/") != std::string::npos) evs.push_back(f);
                     else cars.push_back(f);
                 }
                 load_mod_car_files(*this, cars, mod, jp);
+                if (!evs.empty()) events.emplace_back(mod, std::move(evs));
             }
+            for (const auto& [mod, files] : events) load_mod_event_files(*this, files, mod);
         }
     } catch (const std::exception& e) {
         error_ = e.what();
@@ -250,6 +256,25 @@ void CarDatabase::add_mod_car(ModCar m) {
             return;
         }
     mod_cars_.push_back(std::move(m));
+}
+
+void CarDatabase::add_mod_event(ModEvent e) {
+    for (ModEvent& x : mod_events_)
+        if (x.series == e.series) {
+            x = std::move(e);
+            return;
+        }
+    mod_events_.push_back(std::move(e));
+}
+
+const ModEvent* CarDatabase::mod_event(const std::string& code) const {
+    if (code.empty() || code[0] != kModEventPrefix) return nullptr;
+    for (const ModEvent& e : mod_events_) {
+        if (code == e.champ) return &e;
+        for (const std::string& r : e.races)
+            if (r == code) return &e;
+    }
+    return nullptr;
 }
 
 void CarDatabase::add_mod_maker(ModMaker m) {

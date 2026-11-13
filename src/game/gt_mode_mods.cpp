@@ -23,6 +23,7 @@
 #include "formats/png_reader.h"
 #include "game/data/car_database.h"
 #include "menu/flow/menu_set.h"
+#include "game/gt_mode_mods.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -33,7 +34,7 @@
 
 namespace gt3r::game {
 
-namespace {
+namespace mod_menu {
 
 using menu::Element;
 using menu::Layer;
@@ -159,6 +160,17 @@ const Element* find_item(const Page& p, const std::string& name) {
     return nullptr;
 }
 
+Page* layout_page(MenuScene& scene, const std::string& name) {
+    int i = scene.file().find_page(name);
+    return i < 0 ? nullptr : &scene.mutable_file().pages[size_t(i)];
+}
+
+} // namespace mod_menu
+
+namespace {
+
+using namespace mod_menu;
+
 // --- flow -----------------------------------------------------------------------------------
 
 void patch_gt_flow(const menu::flow::FileReader& read, MblFile& mbl) {
@@ -265,11 +277,6 @@ void patch_gt_flow(const menu::flow::FileReader& read, MblFile& mbl) {
 
 // --- layouts --------------------------------------------------------------------------------
 
-// The disc layout page a dealer page is drawn from (its own, or its template's).
-Page* layout_page(MenuScene& scene, const std::string& name) {
-    int i = scene.file().find_page(name);
-    return i < 0 ? nullptr : &scene.mutable_file().pages[size_t(i)];
-}
 
 // The first car's (or maker's) items and layers on a dealer (region) page: the template.
 struct Slot {
@@ -488,10 +495,14 @@ void install_mod_menu_patches() {
     mp.flow = [](const std::string& set, const menu::flow::FileReader& read, MblFile& mbl) {
         if (set != "gt_mode") return;
         patch_gt_flow(read, mbl);
+        patch_event_flow(read, mbl);
         gt_flow() = mbl;
     };
     mp.layout = [](const std::string& set, int, const menu::flow::FileReader& read, MenuScene& scene) {
-        if (set == "gt_mode") patch_gt_layout(read, scene, &gt_flow());
+        if (set == "gt_mode") {
+            patch_gt_layout(read, scene, &gt_flow());
+            patch_event_layout(read, scene, gt_flow());
+        }
         else if (set == "arcade") patch_arcade_layout(read, scene);
     };
 }

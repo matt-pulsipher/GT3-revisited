@@ -25,7 +25,7 @@ What a .zip may hold:
 
 - One mod or several. A mod is a folder with a `mod.ini`. A .zip without any
   `mod.ini` is one mod when its top level, or its only top folder, has
-  `files/`, `cars/`, `makers/` or `textures/`.
+  `files/`, `cars/`, `makers/`, `events/` or `textures/`.
 - Each mod installs as `mods/<its folder's name>/`. A mod whose `mod.ini` is
   at the top of the .zip is named after the .zip file.
 - Anything beside the mods (a README at the top, `__MACOSX/`) is left out.
@@ -51,6 +51,8 @@ mods/
       my_car.ini                   <- a new car (see "Adding cars")
     makers/
       my_maker.ini                 <- a new maker with a dealer (see "Dealers and makers")
+    events/
+      my_event.ini                 <- a GT Mode event (see "Adding events")
     files/
       menu/license_bg.img          <- replaces this file from GT3.VOL
       bgm/race_a05.ads             <- replaces a music track
@@ -463,6 +465,152 @@ The body is lit with GT3's car lighting and gets GT3's reflection pass on paint
 and glass. Wheels, tyres, the ground shadow, lamp glows and camera points still
 come from the donor's car file; the shadow is stretched to the car's size.
 
+## Adding events
+
+GT Mode events of your own: one or more races, each on a course of the disc with
+its laps and its opponents, entered as single races or run as a championship,
+with entry rules, prize money and a prize car.
+
+### The Event creator
+
+**Event creator** on the main menu makes them without writing a file:
+
+- **New event**, then its **title** and **description**, a **picture** (any PNG;
+  it is cropped and scaled to 640 x 448 and fills the screen behind the event),
+  the **league** GT Mode lists it in, single races or a **championship**, the
+  license it needs, the **car rules**, the **prizes** (per place, the champion's
+  bonus, a prize car) and the **opponents**.
+- **Car rules** are GT3's own: the car type (race and rally cars, tuned cars,
+  stock road cars), the drivetrain, the engine (NA or turbo) and the cars
+  allowed. The cars allowed are a list, as the disc's one-make and era series
+  have: add cars one at a time, or set the online lobby's filters (class C, B,
+  A, S or rally, a power limit, mod cars or not) and **Generate list** from the
+  cars that pass as the dealers sell them. The page lists the disc's cars that
+  may enter.
+- Each **race** has its course, laps and **skill**: how its opponents drive,
+  the league's own races' driving or the arcade's Easy, Normal, Hard or
+  Professional. As in GT3, one skill drives the whole field of a race. A race
+  draws its opponents from a pool of up to 32 cars, as GT3's races do: as many
+  as it sets (one to five, as the course's start grid has room), in the draw's
+  order, so a bigger pool gives a different field each time; you start behind
+  them. A race uses the event's opponents (every round of a championship does)
+  or, in single races, cars of its own.
+- Each car of a pool is **stock**, a **version from the disc** (a tuned car as
+  one of the disc's races fields it: "As in Sunday Cup"), or **your tune**:
+  the parts the tune shops sell for that car, category by category. It has a
+  colour of its own, or one drawn at the start. The page shows its power and
+  weight as built.
+- Every change is saved as you make it, in `mods/my_events/` (`events/<name>.ini`,
+  `pictures/<name>.png`): GT Mode lists the event the next time you go there.
+  The pages that edit part of an event (a race, its cars, a car, the prizes,
+  the car rules) have **Save** and **Cancel**: Cancel puts back what the page
+  held when it opened.
+  The title, the description and the prize amounts are text fields: a click or
+  a tap types in place (a phone's own keyboard); chosen with a controller, or in
+  VR, they open the game's keyboard, a number keypad for the amounts (Square
+  deletes, Start finishes).
+  **Export .zip** saves the event as a mod of its own; another player installs it
+  with the Mods screen's **Install from .zip**.
+
+The choices come off the disc that is open: its courses, its cars (mod cars
+too) and the leagues of its GT Mode race map. Prizes are capped at what that
+disc's own races pay.
+
+### In GT Mode
+
+An event shows on its league's page like the disc's series: its strip icon, its
+picture full screen, its title and the results so far. Behind it are its race
+page and entry page, copied from a disc series with room for its races, with the
+course logos, race information, preview and results of the disc's own. You enter
+with your active car, which must meet the license and car rules, checked as
+GT3 checks its own events.
+
+An event whose league the open disc doesn't have (or that names none) goes to
+**Custom Events**, a league added under the disc's own on the race map.
+
+Results are kept in the save. Prize money is paid like a disc race's. The
+prize car is given once: for winning the championship, or for winning every
+race of single races. Your events never count for a league, the endings or the
+game's completion.
+
+### The file
+
+`mods/<id>/events/<name>.ini`:
+
+```ini
+[event]
+title = Hot Hatch Cup
+description = Three rounds for front-wheel-drive hatchbacks.
+picture = pictures/hot_hatch_cup.png   ; relative to the mod folder; 640x448 shown
+league = r/beginner/beginner           ; the league page on the race map (see below)
+championship = yes                     ; no: single races
+prizes = 5000, 3000, 2000, 1000, 500, 250 ; credits for 1st .. 6th
+bonus = 10000                          ; the champion's bonus
+prize_car = r34_gtr_v_99               ; a car label (optional)
+prize_paint = -1                       ; its paint id, -1 = a random paint
+base = Galtezza_e_0501                 ; optional: a disc race whose rules fill the rest
+
+[entry]
+license = b            ; none, b, a, ib, ia, s, r
+drivetrain = ff        ; any, ff, fr, 4wd, mr, rr
+aspiration = any       ; any, na, turbo
+cars = any             ; any, race, tuned, stock
+allowed = vitz_euro_00, demio_glx_00   ; optional: only these cars may enter
+
+[field]               ; the pool of every race without its own, and of a championship
+opponents = vitz_euro_00:30, sun_e_demio_glx_00, tune:hot_mira:206   ; car:colour id (none: drawn at the start)
+
+[tune:hot_mira]       ; a tuned car: tune-shop items, the rest the car's own
+car = mira_tr_xx_avar_97
+parts = sus_semi_racing, nat_2, wtr_1, tir_soft
+
+[race1]
+course = trialmt
+laps = 2
+skill = league         ; league, easy, normal, hard, professional
+cars = 3               ; opponents it draws from its pool (default: as many as the pool has, at most 5)
+
+[race2]
+course = midfield
+laps = 3
+skill = hard
+opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
+```
+
+- Up to 10 races, `[race1]` to `[race10]`, and up to 5 opponents per lineup. A
+  course's start grid must have room for every car (the creator checks it).
+- A pool entry is a car label (`gt3tool car`, or the creator's car page; mod
+  cars work too), a car variant of the disc (an opponent as its races field it,
+  the labels in their pools), or `tune:<name>`. A colour is a `carcolor.db` id,
+  as GT3's records keep each entry's paint (the creator writes them); without
+  one the race start draws the paint.
+- A tune's `parts` are tune-shop items by their menu names (`sus_sports`,
+  `sus_semi_racing`, `sus_racing`, `nat_1`..`nat_3`, `tbk_1`..`tbk_4`,
+  `wtr_1`..`wtr_3`, `tir_sports`..`tir_super_soft`, `muf_*`, `clt_*`, `fly_*`,
+  `tms_*`, `lsd_*`, `icl_*`, `bkt_racing`, `cpu_on`...); a part the car has no
+  record for is left out. The tune becomes a car variant (table 31) with the
+  settings the car gets with those parts, as the disc's opponents are.
+- Everything a race keeps is a field of GT3's own event record (table 32) or its
+  regulation (table 33): a pool becomes the race's entry pool with its colours,
+  `cars` its car count, a tune a car variant record,
+  `allowed` a regulation (as many cars as a disc regulation holds). GT Mode runs
+  the races as it runs the disc's: the same opponent draw, entry check, race
+  information, prize pages, results and championship points. A race's `skill` copies the driving percentages of the
+  arcade race of that difficulty (Easy `AEST0001` .. Professional `APST0001`, on
+  dirt `A?AD0001`) into the race; `league` keeps the base race's.
+- Credits are written as a US or European disc counts them; a Japanese disc pays
+  them 100 times larger, like its own prizes. They are stored in hundreds.
+- League pages are the disc's own names: `r/beginner/beginner`, `r/amateur/amateur`,
+  `r/pro/pro`, `r/dirt/dirt`, `r/end/endurance` on the GT3 discs.
+- Each race is a copy of a disc race (`base`, or a GT Mode race of the disc)
+  with the file's values over it: its start, catch-up and tyre wear (and, with
+  `skill = league`, its opponents' driving) come from that race. A course with a dirt surface needs dirt tyres.
+- A course or a car the open disc lacks: a car is left out of its lineup; an
+  event whose course is missing, or with no opponents left, isn't listed.
+- The race codes are `X<mod>_<name>_0001`... (a championship `..._0500`, its rounds
+  `..._0501`...), so two mods can't clash. Renaming the file or the mod folder
+  starts its results over.
+
 ## What can be modded today
 
 | Kind | Status |
@@ -470,6 +618,7 @@ come from the donor's car file; the shadow is stretched to the car's size.
 | Music (`.ads`) | Works now: replace tracks; the jukebox and the game pick them up. Titles, artists and the song markers that time the replays' Video-mode cuts still come from `bgm/ads.inf` (music §8); the Options music list previews the intro file `bgm/i_<file>` |
 | Textures | Works now: PNG texture packs at any size (see "Texture packs"), PCSX2 packs converted; whole `.img` files through `files/` too |
 | New cars (`cars/*.ini`) | Works now: data-only cars on a disc car's shell or their own glTF body, including electric ones, sold at GT Mode dealers, new makers included (see above) |
+| GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes and a prize car, listed on a league page; made with the Event creator or by hand (see "Adding events") |
 | Any other file | Overrides are loaded wherever the game reads the file (menus, models, courses, sounds, databases, movies) |
 
 ## Planned
@@ -477,8 +626,8 @@ come from the donor's car file; the shadow is stretched to the car's size.
 - **Data patches**: small text files that change individual database
   records (e.g. one car's power or price) instead of replacing whole
   databases, so several mods can combine.
-- **New content**: courses and events as new entries.
-- **Scripting** (Lua) for custom events and rule sets.
+- **New content**: courses as new entries.
+- **Scripting** (Lua) for rule sets.
 
 ## Rules
 

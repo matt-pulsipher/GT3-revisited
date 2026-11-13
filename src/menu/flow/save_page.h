@@ -47,9 +47,10 @@ namespace gt3r::menu::flow {
 // it where the platform can, and an answer it sends later is dropped, never polled.
 // They only pick a place: what is exported (SavePage::kExportFormats) is chosen in the page,
 // the same on every platform. Settings -> Cameras opens and exports camera files with them too
-// (race/custom_cameras.h).
+// (race/custom_cameras.h), and the Event creator its pictures and .zip files.
 struct FileDialogs {
-    enum class Kind { OpenSave, ExportPs2, OpenCameras, ExportCameras };
+    // (OpenPicture and ExportEvent: the Event creator's picture and its .zip, app/screen_event_creator.cpp.)
+    enum class Kind { OpenSave, ExportPs2, OpenCameras, ExportCameras, OpenPicture, ExportEvent };
     // `default_name`: an export's file name to start with (its extension the format's).
     std::function<void(Kind kind, const std::string& default_name)> show;
     std::function<std::optional<std::string>()> poll;

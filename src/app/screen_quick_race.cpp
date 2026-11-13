@@ -419,6 +419,7 @@ private:
     // the machine tests, then arcade mode's single race classes and time trials.
     void build_events(App& app, const game::GtData& data) {
         std::map<std::string, std::string> titles = game_menu_titles(*app.vfs(), app.language());
+        add_mod_event_titles(titles, data.catalog, data.db); // (mod events: their own titles)
         const game::Catalog& cat = data.catalog;
         auto playable = [&](const std::string& code) {
             const data::Event* ev = db_.event(code);

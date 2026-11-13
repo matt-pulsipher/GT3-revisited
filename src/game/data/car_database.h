@@ -12,6 +12,7 @@
 
 #include "disc/region.h"
 #include "formats/db/gt_db.h"
+#include "game/data/mod_event_def.h"
 
 #include <array>
 #include <deque>
@@ -415,6 +416,11 @@ public:
     const std::vector<ModMaker>& mod_makers() const { return mod_makers_; }
     void add_mod_maker(ModMaker m);
     const ModCar* mod_car(const std::string& label) const;
+    // --- mod events (game/data/mod_events.h) ---
+    void add_mod_event(ModEvent e);
+    const std::vector<ModEvent>& mod_events() const { return mod_events_; }
+    // The event a race code (or a championship's own code) belongs to; null for disc codes.
+    const ModEvent* mod_event(const std::string& code) const;
     // Problems found while loading mod cars (one line each, naming the file).
     const std::vector<std::string>& mod_car_errors() const { return mod_car_errors_; }
     void add_mod_car_error(std::string e) { mod_car_errors_.push_back(std::move(e)); }
@@ -443,6 +449,7 @@ private:
     std::deque<Bytes> extra_records_; // records added by mods (stable addresses)
     std::vector<ModCar> mod_cars_;
     std::vector<ModMaker> mod_makers_;
+    std::vector<ModEvent> mod_events_;
     std::vector<std::string> mod_car_errors_;
     std::string error_;
     bool unsupported_ = false;

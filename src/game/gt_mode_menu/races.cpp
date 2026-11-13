@@ -73,15 +73,15 @@ void prepare_request(GameRequest& r) {
         if (ch.active()) {
             r.race_code = ch.races[size_t(ch.next)];
             r.opponents = ch.entrants;
-            r.opponent_paints = ch.paints;
+            // The paints the field raced in its first round; that round's: its pool entries' (gt_mode §20.4).
+            r.opponent_paints = !ch.paints.empty() ? ch.paints : gt.pool_paints(ch.races[size_t(ch.next)], ch.entrants);
             r.champ_round = ch.next + 1;
             r.champ_rounds = int(ch.races.size());
             r.champ_last = r.champ_round == r.champ_rounds;
             r.champ_points = ch.points;
         } else {
             r.race_code = s->race_code;
-            r.opponents = gt.pick_opponents(r.race_code);
-            r.opponent_paints.clear();
+            r.opponents = gt.pick_opponents(r.race_code, race_info_random(), &r.opponent_paints);
         }
         r.event = r.race_code;
         fill_car(r, gt);

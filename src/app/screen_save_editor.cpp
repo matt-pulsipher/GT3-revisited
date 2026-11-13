@@ -384,6 +384,7 @@ private:
             }
         }
         titles_ = game_menu_titles(*app.vfs(), app.language());
+        add_mod_event_titles(titles_, data_->catalog, data_->db); // (mod events: their own titles)
         series_ = ordered_series(*app.vfs(), data_->catalog);
         refresh_saves();
     }

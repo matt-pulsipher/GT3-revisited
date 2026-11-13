@@ -29,6 +29,7 @@ disk or redistributed.
 | **VR** | Meta Quest: the menus on a large virtual screen, races in stereo from the driver's seat, Touch controllers (sticks and analog triggers, or grab a steering wheel) |
 | **Controllers** | keyboard, any gamepad, wheels and pedals, all remappable; analog pressure buttons, DualSense adaptive triggers, Xbox impulse triggers, wheel force feedback, tilt steering, touch controls on phones and tablets (move, resize or hide each one) |
 | **Mods** | replace any game file, add music, add new cars (electric ones too) to the dealers, texture packs at any resolution (PCSX2 packs convert) |
+| **Event creator** | your own GT Mode events: courses, laps, skill and a pool of up to 32 opponents for each race (stock, the disc's tuned versions, or your own tunes), single races or a championship, car rules, prize money, a prize car and a picture; shared as a .zip |
 
 ## How it's built
 
@@ -136,6 +137,7 @@ game:
 | Mods | enable or disable installed mods |
 | Music jukebox | the soundtrack from your disc |
 | Quick race | any event with any car, or a custom race with your own grid of opponents |
+| Event creator | make your own GT Mode events (docs/MODDING.md "Adding events") |
 | Time trial | any car on any course; saved replays |
 | Movie theater | the game's movies |
 | Car database | specs, torque curves, upgrades and events |

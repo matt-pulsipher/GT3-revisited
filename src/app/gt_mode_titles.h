@@ -12,6 +12,9 @@
 namespace gt3r {
 
 class Vfs;
+namespace data {
+class CarDatabase;
+}
 
 // The titles the GT Mode menus show for their items: every menu/gt_mode.mbl item with a
 // focus layer (MblItem::str80) whose layout (the page in menu/<lang>/gt_mode<N>.pmb, that layer)
@@ -26,9 +29,17 @@ struct League {
     const char* tier;  // RaceSeries::tier
     const char* title; // "Beginner League"
 };
+// Custom Events: the league mod events go to when the disc lacks theirs (game/gt_mode_events_menu.cpp).
 constexpr League kLeagues[] = {{"beginner", "Beginner League"}, {"amateur", "Amateur League"},
                                {"pro", "Professional League"},  {"dirt", "Rally Events"},
-                               {"end", "Endurance Races"}};
+                               {"end", "Endurance Races"},      {"custom", "Custom Events"}};
+// A league page's title ("r/beginner/beginner" -> "Beginner League"), by its folder (the tier);
+// another tier capitalised.
+std::string league_title(const std::string& page);
+
+// The titles of mod events' series (data::ModEventDef::title, keyed by their pages as
+// game_menu_titles keys the disc's) added to `titles`.
+void add_mod_event_titles(std::map<std::string, std::string>& titles, const game::Catalog& cat, const data::CarDatabase& db);
 
 // The catalog's series in the order of their league pages (gt_mode.mbl), then any the pages do
 // not name.

@@ -166,9 +166,7 @@ void widget_draws(const MenuController& ctl, const Element& w, std::vector<menu:
         for (int k = first; k < 100; ++k) {
             char two[4];
             std::snprintf(two, sizeof two, "%02d", k);
-            if (std::find(gt.data().race_codes.begin(), gt.data().race_codes.end(), prefix + two) ==
-                gt.data().race_codes.end())
-                break;
+            if (!gt.data().result_code(prefix + two)) break;
             codes.push_back(prefix + two);
         }
         if (codes.empty()) return;
