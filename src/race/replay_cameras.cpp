@@ -314,7 +314,10 @@ ReplayDirector::Shot ReplayDirector::evaluate(const GtrcRecord& r, float D, cons
         const float wide = pair_angle(shot.eye, *pair, angle);
         if (wide > angle) want = 1.0f / std::tan(wide * 0.5f);
     }
-    if (r.zoom_max > r.zoom_min) want = std::clamp(want, r.zoom_min, r.zoom_max);
+    // The record's limits as the game applies them (the designer camera, presentation §G4e):
+    // at most max, then at least min, always. min = max fixes the zoom (Grand Valley's start
+    // shot: zoom(0) is 0 there, a telephoto from 22.9); min > max gives min.
+    want = std::max(std::min(want, r.zoom_max), r.zoom_min);
     want = std::max(want, 0.2f);
     if (mode_ == 1 && wide_) want = 1.0f; // mode 1's wide shot: 90 degrees across
     // Smoothed like the game (exact rate not decoded); snap on a cut.

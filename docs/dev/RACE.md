@@ -1080,7 +1080,8 @@ workstream (all 80 US courses, 4493 records, no errors):
   (gate the automount camera only).
 - Record: +0x00 kind, +0x04/+0x08 start/end track distance D, +0x0C duration,
   +0x18 on-board mount, +0x1C the heat haze (> 0: on; "Passes after the 3D picture"),
-  +0x28/+0x2C zoom min/max, curve pointers +0x34 zoom,
+  +0x28/+0x2C zoom min/max (always applied: capped at max, then raised to min, so min = max
+  is a fixed zoom), curve pointers +0x34 zoom,
   +0x40/44/48 camera x/y/z (world), +0x58/5C/60 look-at x/y/z.
 - Curve: `u32 n; n x {f32 t, f32 v}`, piecewise linear in t with linear
   extrapolation.

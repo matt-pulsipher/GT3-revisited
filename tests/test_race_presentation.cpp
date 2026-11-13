@@ -553,6 +553,25 @@ TEST(race_replay_pair_zoom) {
     CHECK(both > alone * 2.0f);
 }
 
+// A record's zoom limits always apply, as in the game: at most max, then at least min. min = max
+// fixes the zoom (Grand Valley's start shot: zoom by distance with zoom(0) = 0, min = max =
+// 22.904); min > max gives min (issue 306).
+TEST(race_replay_zoom_limits) {
+    GtrcRecord fixed = trackside(1000, 1900, 0, 0);
+    fixed.kind = 0x14; // looks at the car, zoom by distance
+    fixed.zoom = constant(0.0f);
+    fixed.zoom_min = fixed.zoom_max = 22.904f;
+    GtrcScript g = script_of({fixed});
+    ReplayDirector d(&g);
+    CHECK(near(d.update(10, 1, {0, 0, 120}, 1.0 / 60, 16.0f / 9.0f).fovy, ReplayDirector::zoom_fovy(22.904f)));
+    GtrcRecord crossed = trackside(1000, 1900, 0, 0);
+    crossed.zoom = constant(5.0f);
+    crossed.zoom_min = 22.904f, crossed.zoom_max = 2.414f;
+    GtrcScript h = script_of({crossed});
+    ReplayDirector e(&h);
+    CHECK(near(e.update(10, 1, {0, 0, 20}, 1.0 / 60, 16.0f / 9.0f).fovy, ReplayDirector::zoom_fovy(22.904f)));
+}
+
 namespace {
 
 std::vector<ReplayFocus::Car> focus_field(std::vector<std::pair<float, int>> x_rank) {

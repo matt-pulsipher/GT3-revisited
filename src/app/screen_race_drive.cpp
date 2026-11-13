@@ -632,8 +632,6 @@ void RaceScreen::update_drive(App& app, double dt) {
                                       ? rumble2_.rumble(app.input().gt3_rumble(1), app.input().dualsense(1))
                                       : PadRumble{});
     }
-    camera_.set_track_distance(track_->distance_of(render_state_.position));
-    camera_.set_lap(lap_count());
     // GT3's pre-race shot (presentation §B3): every live view with a standing-start hold plays
     // start.cam until one second before the signal (C >= 60 frames, t = 1 - (C - 60) / 600).
     camera_.set_intro(live_view() && race::start_shot_on(frames_to_signal()), race::start_shot_t(frames_to_signal()));
@@ -642,27 +640,7 @@ void RaceScreen::update_drive(App& app, double dt) {
     director_.set_view_mode(view_settings().mode);
     if (replaying_ || attract_) update_replay_focus(dt); // the followed car (TARGET), the pad's views and cuts
     update_camera_manager(dt);                           // the music's cut requests, view mode 1's cuts
-    if ((replaying_ || attract_) && field_) {
-        aim_replay_camera();
-        if (replay_focus_ >= 0 && replay_focus_ < field_->opponents()) {
-            sim::VehicleState fs = interpolate(field_->opponent_prev_state(replay_focus_), field_->opponent_state(replay_focus_),
-                                               step_.alpha());
-            camera_.set_track_distance(track_->distance_of(fs.position));
-            camera_.set_lap(field_->opponent_lap_count(replay_focus_));
-            const CarVisual* v = size_t(replay_focus_) < opp_visuals_.size() ? opp_visuals_[size_t(replay_focus_)].get() : nullptr;
-            if (v) camera_.set_replay_mounts(&v->mounts());
-            bind_hood(camera_, hood_bound_, v);
-            camera_.update(fs, field_->opponent_setup(replay_focus_), pad, dt);
-        } else {
-            if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
-            bind_hood(camera_, hood_bound_, car_visual_.get());
-            camera_.update(render_state_, vehicle_->setup(), pad, dt);
-        }
-    } else {
-        if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
-        bind_hood(camera_, hood_bound_, car_visual_.get());
-        camera_.update(render_state_, vehicle_->setup(), pad, dt);
-    }
+    update_race_camera(pad, dt);
     update_shot_filter();
     if (const float d = director_.take_dissolve(); d > 0) start_dissolve(d); // a course record's own
 

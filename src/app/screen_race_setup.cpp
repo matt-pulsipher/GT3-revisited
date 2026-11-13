@@ -297,12 +297,17 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (preset_.save) save_current_replay();
     if (preset_.quick && (finished_ || finished2_)) open_quick_menu(app);
     render_state_ = vehicle_->state();
-    // Place the camera now: a paused start (screenshots) never runs a drive update.
-    bind_hood(camera_, hood_bound_, car_visual_.get());
+    // Place the camera now: a paused start (screenshots) never runs a drive update. A replay
+    // opened here (the theater) takes its first shot now, so the camera gets the followed car's
+    // track distance and lap as on every frame (issue 306: the first cut had looked at the
+    // track's start, s = 0, and missed the grid's shot).
     camera_.snap(render_state_);
-    camera_.update(render_state_, vehicle_->setup(), PadState{}, 1.0 / 60.0);
+    director_.set_view_mode(view_settings().mode);
+    update_race_camera(PadState{}, 1.0 / 60.0);
     if (field_ && field_->has_second()) {
         bind_hood(camera2_, hood_bound2_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
+        camera2_.set_track_distance(track_->distance_of(render_state2_.position));
+        camera2_.set_lap(field_->second_laps().laps);
         camera2_.snap(render_state2_);
         camera2_.update(render_state2_, field_->second_setup(), PadState{}, 1.0 / 60.0);
     }

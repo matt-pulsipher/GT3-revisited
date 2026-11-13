@@ -2380,6 +2380,10 @@ attract demo.
     1 car-local.
   - kind & 0xC set: look at the car (+0.4 m up) instead of the target curves.
   - kind & 0x10 set: zoom = distance x zoom(0) instead of zoom(t).
+  - The zoom limits always apply: at most the maximum, then at least the
+    minimum. A record whose two limits are equal keeps that zoom (Grand
+    Valley's start shot, a telephoto of the grid); one whose minimum is above
+    its maximum takes the minimum (test `race_replay_zoom_limits`).
 - **Lap variants.** Records are laid out by D = k L + s, where s is the car's
   distance along the lap, L the lap length, and k the car's lap variant, with
   nvar = max(1, int(T / L) - 1 - int(first start / L)) variants. k comes from

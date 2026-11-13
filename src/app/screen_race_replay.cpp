@@ -518,6 +518,27 @@ void RaceScreen::aim_replay_camera() {
     camera_.set_replay_aim(aim, &pair, &ps, length);
 }
 
+void RaceScreen::update_race_camera(const PadState& pad, double dt) {
+    const bool opponent = (replaying_ || attract_) && field_ && replay_focus_ >= 0 && replay_focus_ < field_->opponents();
+    if ((replaying_ || attract_) && field_) aim_replay_camera();
+    if (opponent) {
+        const sim::VehicleState fs =
+            interpolate(field_->opponent_prev_state(replay_focus_), field_->opponent_state(replay_focus_), step_.alpha());
+        camera_.set_track_distance(track_->distance_of(fs.position));
+        camera_.set_lap(field_->opponent_lap_count(replay_focus_));
+        const CarVisual* v = size_t(replay_focus_) < opp_visuals_.size() ? opp_visuals_[size_t(replay_focus_)].get() : nullptr;
+        if (v) camera_.set_replay_mounts(&v->mounts());
+        bind_hood(camera_, hood_bound_, v);
+        camera_.update(fs, field_->opponent_setup(replay_focus_), pad, dt);
+        return;
+    }
+    camera_.set_track_distance(track_->distance_of(render_state_.position));
+    camera_.set_lap(lap_count());
+    if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
+    bind_hood(camera_, hood_bound_, car_visual_.get());
+    camera_.update(render_state_, vehicle_->setup(), pad, dt);
+}
+
 // View mode 1's look (presentation §G6) belongs to its cuts (ReplayDirector::roll_look); our
 // fallback trackside cameras (a course without a camera script) roll it at their own cuts.
 // Other view modes have none.
