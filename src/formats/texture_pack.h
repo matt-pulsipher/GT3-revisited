@@ -110,6 +110,9 @@ struct FileTexture {
     int paint = 0;
     const scene::Texture* texture = nullptr; // its full decode (the key's)
     u64 key = 0;
+    // The set's CLUT animations recolour it (course lights, signs): a picture replacing it shows
+    // as it is and no longer animates. Saved at the animations' reset state.
+    bool animated = false;
 };
 // Calls `each` for every texture of game file `path` (contents `data`): a menu page's pictures
 // (the first texture of each, which the page shows), or every embedded Tex1 set's textures (models,
@@ -117,8 +120,9 @@ struct FileTexture {
 void for_each_texture(const std::string& path, ByteSpan data, const std::function<void(const FileTexture&)>& each);
 
 // Saves game files' textures as PNGs named by key, each key once: under the root, a folder per
-// game file, "<set>-<texture>[-paint<n>]-<key>.png". A menu page's pictures are its sets; in
-// other files every embedded Tex1 set counts (models, courses, fonts...), with every car paint.
+// game file, "<set>-<texture>[-paint<n>][-anim]-<key>.png" ("-anim": FileTexture::animated in
+// any of the key's uses). A menu page's pictures are its sets; in other files every embedded
+// Tex1 set counts (models, courses, fonts...), with every car paint.
 class Dump {
 public:
     explicit Dump(std::string root) : root_(std::move(root)) {}
@@ -135,6 +139,7 @@ private:
     size_t saved_ = 0;
     std::unordered_map<u64, std::vector<std::string>> uses_; // key -> "<file>\t<texture>"
     std::vector<u64> order_;                                 // keys in the order first seen
+    std::unordered_map<u64, std::string> still_;             // saved without "-anim": its file
 };
 
 // Whether the dump reads a game file: not movies, music or sound streams (no textures, large).
