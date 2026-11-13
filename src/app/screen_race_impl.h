@@ -595,6 +595,9 @@ private:
     void follow(int car, int partner, int frames);
     std::vector<race::ReplayFocus::Car> focus_cars() const;
     void aim_replay_camera();
+    // The race camera's frame: the followed car's track distance and lap counter (the replay
+    // director's shot picker reads them), its aim and mounts, then the camera's update.
+    void update_race_camera(const PadState& pad, double dt);
     void update_shot_filter();
     // The post-process pass (presentation §G6, §G16): the grade (the shot's levels / filter over
     // the course's Env0 values), the dissolve and the trail.

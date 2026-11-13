@@ -10,7 +10,7 @@
 //     program shows them only in a slideshow nothing reachable starts).
 //   record: +0x00 u32 kind, +0x04 f32 start D, +0x08 f32 end D, +0x0C f32 duration,
 //     +0x18 u32 on-board mount, +0x1C f32 the heat haze (> 0: on; presentation §L6),
-//     +0x28/+0x2C f32 zoom min/max, rel-ptr curves:
+//     +0x28/+0x2C f32 zoom min/max (always applied: at most max, then at least min), rel-ptr curves:
 //     +0x34 zoom, +0x40/+0x44/+0x48 camera x/y/z, +0x58/+0x5C/+0x60 target x/y/z,
 //     +0x64 f32 the cut's dissolve (seconds, 0 none; presentation §G16).
 //   curve: u32 n, n x {f32 t, f32 value}; piecewise linear in t (0..1), linear

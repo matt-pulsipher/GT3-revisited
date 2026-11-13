@@ -1050,6 +1050,26 @@ TEST(race_replay_demo_openings_disc) {
     }
 }
 
+// A race replay's first shot at Grand Valley (issue 306): the grid, 50 m before the line, is in
+// the start record 0 (from 397 m back), a telephoto of the grid from 125 m (its zoom fixed at
+// 22.904 by min = max), not a wide view.
+TEST(race_replay_grandvalley_start_disc) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Bytes data = disc->volume().read(*disc->volume().find("courses/US/grandvalley"));
+    course::CourseFile f = course::CourseFile::parse(data);
+    GtrcScript g = GtrcScript::parse(f.section(data, course::kSlotReplayCameras));
+    std::unique_ptr<track::Track> t = track::Track::from_course_file(data, "grandvalley");
+    const float s = g.lap_length - 50;
+    const sim::Vec3 p = t->point_at(s);
+    ReplayDirector d(&g);
+    ReplayDirector::Shot shot = d.update(s, 0, {p.x, p.y, p.z}, 1.0 / 60, 16.0f / 9.0f);
+    std::printf("grandvalley start: record %d, %.0f m, fovy %.3f\n", shot.record, render::length(shot.eye - render::Vec3{p.x, p.y, p.z}),
+                shot.fovy);
+    CHECK(shot.valid && !d.on_board() && shot.record == 0);
+    CHECK(near(shot.fovy, ReplayDirector::zoom_fovy(22.904f)));
+}
+
 TEST(race_audio_models) {
     CHECK(OpponentEngines::attenuation(1) == 1.0f && OpponentEngines::attenuation(32) == 1.0f);
     CHECK(near(OpponentEngines::attenuation(64), 0.5f) && near(OpponentEngines::attenuation(128), 0.25f));
