@@ -21,7 +21,7 @@ on:
 # SHA256SUMS and build provenance attestations, one file per platform under a stable name
 # (gt3r-<platform>.<ext>) for .../releases/latest/download/; review it, then publish.
 #
-# Self-hosted runners: with the repository variable GT3R_SELF_HOSTED=true, the macOS builds (not iOS yet)
+# Self-hosted runners: with the repository variable GT3R_SELF_HOSTED=true, the macOS and iOS builds
 # and the Android/Quest APKs of trusted runs (push to master, v* tags, manual runs) go to the project's own
 # runners, a fresh macOS VM per job (the Android SDK and NDK run natively there). Pull requests and
 # other branches always use GitHub's runners. Unset the variable to use GitHub's runners everywhere.
@@ -75,7 +75,8 @@ jobs:
   # iOS (docs/dev/PLATFORMS.md "iOS"): no signing without GT3R_IOS_TEAM, so no artifact either
   # (an unsigned app installs nowhere).
   ios:
-    runs-on: macos-15 # needs full Xcode: not in the self-hosted image yet
+    # The self-hosted macOS image has Xcode 27.1.
+    runs-on: ${{ vars.GT3R_SELF_HOSTED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')))) && fromJSON('["self-hosted", "gt3r-macos"]') || 'macos-15' }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure
