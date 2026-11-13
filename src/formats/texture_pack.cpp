@@ -2,6 +2,7 @@
 
 #include "base/file.h"
 #include "base/log.h"
+#include "formats/clut_animation.h"
 #include "formats/menu/pmb.h"
 #include "formats/model/gtm1.h"
 #include "formats/png_reader.h"
@@ -288,13 +289,15 @@ void for_each_texture(const std::string& path, ByteSpan data, const std::functio
         std::vector<u64> plain; // the paint 0 keys
         for (int p = 0; p < paints; ++p) {
             std::vector<scene::Texture> full;
+            ClutTextures clut; // the textures its CLUT animations recolour (none with a paint)
             try {
-                gtm1::decode_texture_set(bytes, full, "", p, nullptr, false);
+                gtm1::decode_texture_set(bytes, full, "", p, &clut, false);
             } catch (const std::exception& e) {
                 LOG_WARN("Textures: %s %s: %s", path.c_str(), label.c_str(), e.what());
                 break;
             }
             if (page && full.size() > 1) full.resize(1);
+            const std::vector<u32> animated = clut.records(); // record order: sorted
             for (size_t i = 0; i < full.size(); ++i) {
                 const scene::Texture& t = full[i];
                 if (t.width == 0 || t.height == 0) continue;
@@ -304,6 +307,7 @@ void for_each_texture(const std::string& path, ByteSpan data, const std::functio
                 else if (i < plain.size() && plain[i] == ft.key) continue; // the paint leaves it as it is
                 ft.name = label + "-" + std::to_string(i) + (p ? "-paint" + std::to_string(p) : "");
                 ft.set = bytes, ft.index = i, ft.paint = p, ft.texture = &t;
+                ft.animated = std::binary_search(animated.begin(), animated.end(), u32(i));
                 each(ft);
             }
         }
@@ -315,15 +319,29 @@ size_t Dump::add_file(const std::string& path, ByteSpan data, bool* ok) {
     const std::string dir = root_ + "/" + path;
     bool made_dir = false;
     for_each_texture(path, data, [&](const FileTexture& ft) {
+        const std::string name = ft.name + (ft.animated ? "-anim" : "");
         auto [it, fresh] = uses_.try_emplace(ft.key);
-        it->second.push_back(path + "\t" + ft.name);
-        if (!fresh) return;
+        it->second.push_back(path + "\t" + name);
+        if (!fresh) {
+            // Saved still, animated here (the same pixels at the animation's reset): a replacement
+            // would stop this animation, so the file is marked too.
+            auto still = still_.find(ft.key);
+            if (ft.animated && still != still_.end()) {
+                const std::string& from = still->second;
+                const std::string to = from.substr(0, from.size() - 21) + "-anim" + from.substr(from.size() - 21);
+                if (!host_rename(from, to) && ok) *ok = false;
+                still_.erase(still);
+            }
+            return;
+        }
         order_.push_back(ft.key);
         if (!made_dir) made_dir = host_make_dir(dir);
         const scene::Texture& t = *ft.texture;
-        if (write_host_file(dir + "/" + ft.name + "-" + key_name(ft.key) + ".png", encode_png(t.width, t.height, t.rgba)))
+        const std::string png = dir + "/" + name + "-" + key_name(ft.key) + ".png";
+        if (write_host_file(png, encode_png(t.width, t.height, t.rgba))) {
             ++saved;
-        else if (ok)
+            if (!ft.animated) still_.emplace(ft.key, png);
+        } else if (ok)
             *ok = false;
     });
     saved_ += saved;
@@ -332,7 +350,8 @@ size_t Dump::add_file(const std::string& path, ByteSpan data, bool* ok) {
 
 bool Dump::finish() const {
     std::string text = "# Texture keys and where the game uses them (docs/MODDING.md \"Texture packs\").\n"
-                       "# key\tgame file\ttexture (picture or set - texture [- paint])\n";
+                       "# key\tgame file\ttexture (picture or set - texture [- paint] [- anim: its colours animate,\n"
+                       "# and a replacement shows as it is])\n";
     for (u64 key : order_)
         for (const std::string& use : uses_.at(key)) text += key_name(key) + "\t" + use + "\n";
     if (!host_make_dir(root_)) return false;

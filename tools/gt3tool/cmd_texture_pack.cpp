@@ -1,16 +1,18 @@
 // Texture pack commands (formats/texture_pack.h, docs/MODDING.md "Texture packs"):
 //
 //   tex-dump <outdir> [prefix]   every texture of the disc's files as PNGs named by key
-//   tex-keys <vol-path>          the keys of a file's textures
+//   tex-keys <vol-path>          the keys of a file's textures ("anim": its colours animate)
 //   tex-pcsx2 <pack> <mod dir>   convert a PCSX2 texture pack (textures/<serial> folder) into a mod
 
 #include "tool.h"
 
 #include "base/file.h"
+#include "formats/clut_animation.h"
 #include "formats/menu/pmb.h"
 #include "formats/pcsx2_textures.h"
 #include "formats/texture_pack.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 
@@ -45,9 +47,11 @@ int cmd_tex_keys(Disc& disc, const Args& a) {
     auto show = [](const std::string& label, ByteSpan set) {
         const Tex1 t = Tex1::parse(set);
         const std::vector<u64> keys = texture_pack::keys_of_set(set);
+        const std::vector<u32> animated = ClutTextures(set).records(); // colours animate: "anim"
         for (size_t i = 0; i < keys.size(); ++i)
-            std::printf("  %s-%zu %ux%u %s\n", label.c_str(), i, t.textures[i].tex0.width(), t.textures[i].tex0.height(),
-                        texture_pack::key_name(keys[i]).c_str());
+            std::printf("  %s-%zu %ux%u %s%s\n", label.c_str(), i, t.textures[i].tex0.width(), t.textures[i].tex0.height(),
+                        texture_pack::key_name(keys[i]).c_str(),
+                        std::binary_search(animated.begin(), animated.end(), u32(i)) ? " anim" : "");
     };
     if (menu::PmbFile::is_pmb(data)) {
         menu::PmbFile pmb = menu::PmbFile::parse(data);

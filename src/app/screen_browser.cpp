@@ -6,6 +6,7 @@
 #include "app/app.h"
 #include "app/screen_registry.h"
 #include "base/log.h"
+#include "formats/clut_animation.h"
 #include "formats/pcsx2_textures.h"
 #include "formats/tex1.h"
 #include "formats/texture_pack.h"
@@ -205,6 +206,7 @@ private:
                 GsMemory gs;
                 set.upload(sub, gs);
                 const std::vector<u64> keys = texture_pack::keys_of_set(sub);
+                const std::vector<u32> animated = ClutTextures(sub).records();
                 for (size_t i = 0; i < set.textures.size(); ++i) {
                     Tex1::Image img = set.decode(gs, i);
                     if (img.width == 0 || img.height == 0 || img.width > 2048 || img.height > 2048) continue;
@@ -220,6 +222,7 @@ private:
                                   set.textures.size(), img.width, img.height, psm_name(t0.psm),
                                   i < keys.size() ? texture_pack::key_name(keys[i]).c_str() : "-");
                     std::string text = label;
+                    if (std::binary_search(animated.begin(), animated.end(), u32(i))) text += "  animated";
                     if (pack && i < keys.size() && pack->contains(keys[i])) text += "  (replaced: " + pack->source_of(keys[i]) + ")";
                     preview_.labels.push_back(text);
                 }

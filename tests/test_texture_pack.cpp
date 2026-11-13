@@ -172,22 +172,26 @@ TEST(texture_pack_cuts_region_clamped_textures) {
 }
 
 TEST(texture_pack_dump_names_by_key) {
-    Bytes file(16, 0); // a container with a set 16 bytes in
-    const Bytes set = synthetic_set(true);
-    file.insert(file.end(), set.begin(), set.end());
+    // A container with a still set 16 bytes in, then a set whose CLUT animation recolours its texture.
+    Bytes file(16, 0);
+    const Bytes still = synthetic_set(false), animated = synthetic_set(true);
+    file.insert(file.end(), still.begin(), still.end());
+    file.insert(file.end(), animated.begin(), animated.end());
     const auto root = test::temp_dir("tp-dump");
     texture_pack::Dump dump(root.string());
     bool ok = true;
-    CHECK(dump.add_file("courses/US/x", file, &ok) == 1 && ok);
-    CHECK(dump.add_file("courses/US/y", file, &ok) == 0); // the same texture again: not saved twice
+    CHECK(dump.add_file("courses/US/x", file, &ok) == 2 && ok);
+    CHECK(dump.add_file("courses/US/y", file, &ok) == 0); // the same textures again: not saved twice
     CHECK(dump.finish());
-    const u64 key = texture_pack::keys_of_set(set)[0];
-    const std::string png = (root / "courses/US/x" / ("set0-0-" + texture_pack::key_name(key) + ".png")).string();
-    std::optional<Bytes> data = read_host_file(png);
-    CHECK(data.has_value());
-    if (data) {
-        PngImage img = decode_png(*data);
-        CHECK(texture_pack::key_of(img.width, img.height, img.rgba.data()) == key);
+    const u64 key = texture_pack::keys_of_set(still)[0], anim_key = texture_pack::keys_of_set(animated)[0];
+    CHECK(key != anim_key);
+    for (const auto& [name, k] : {std::pair{std::string("set0-0-"), key}, std::pair{std::string("set1-0-anim-"), anim_key}}) {
+        std::optional<Bytes> data = read_host_file((root / "courses/US/x" / (name + texture_pack::key_name(k) + ".png")).string());
+        CHECK(data.has_value());
+        if (data) {
+            PngImage img = decode_png(*data);
+            CHECK(texture_pack::key_of(img.width, img.height, img.rgba.data()) == k);
+        }
     }
     std::optional<Bytes> index = read_host_file((root / "textures.txt").string());
     CHECK(index.has_value());
@@ -195,7 +199,27 @@ TEST(texture_pack_dump_names_by_key) {
         const std::string text(index->begin(), index->end());
         CHECK(text.find(texture_pack::key_name(key) + "\tcourses/US/x\tset0-0\n") != std::string::npos);
         CHECK(text.find(texture_pack::key_name(key) + "\tcourses/US/y\tset0-0\n") != std::string::npos);
+        CHECK(text.find(texture_pack::key_name(anim_key) + "\tcourses/US/x\tset1-0-anim\n") != std::string::npos);
     }
+    // for_each_texture says which textures animate; the names it gives (PCSX2 pack imports) stay plain.
+    std::vector<std::pair<std::string, bool>> seen;
+    texture_pack::for_each_texture("courses/US/x", file, [&](const texture_pack::FileTexture& ft) { seen.emplace_back(ft.name, ft.animated); });
+    CHECK(seen.size() == 2);
+    if (seen.size() == 2) {
+        CHECK(seen[0].first == "set0-0" && !seen[0].second);
+        CHECK(seen[1].first == "set1-0" && seen[1].second);
+    }
+    // The same pixels still in one file and animated in a later one: the saved file is marked.
+    Bytes look_alike = synthetic_set(false);
+    put32(look_alike, 0x104, 0x80102030u), put32(look_alike, 0x108, 0x80405060u); // frame 0's colours
+    CHECK(texture_pack::keys_of_set(look_alike)[0] == anim_key);
+    const auto root2 = test::temp_dir("tp-dump-mixed");
+    texture_pack::Dump mixed(root2.string());
+    CHECK(mixed.add_file("courses/US/still", look_alike, &ok) == 1 && ok);
+    CHECK(mixed.add_file("courses/US/lit", animated, &ok) == 0 && ok);
+    const std::string base = "set0-0", tail = "-" + texture_pack::key_name(anim_key) + ".png";
+    CHECK(!read_host_file((root2 / "courses/US/still" / (base + tail)).string()).has_value());
+    CHECK(read_host_file((root2 / "courses/US/still" / (base + "-anim" + tail)).string()).has_value());
     CHECK(texture_pack::dump_reads("cars/day/am0006"));
     CHECK(!texture_pack::dump_reads("stream/akasaka_full.pss"));
     CHECK(!texture_pack::dump_reads("bgm/demo_a01.ads"));

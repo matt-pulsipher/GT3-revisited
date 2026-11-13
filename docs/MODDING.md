@@ -143,10 +143,10 @@ higher `priority` wins.
   file (`cars/day/am0006/`, `menu/US/gt_mode3.pmb/`...). It takes a minute or two and about
   400 MB. `textures.txt` there lists every key with each file and texture that uses it, so a
   texture shared by several files (saved under the first) can be found from the others.
-- The **Asset browser** (Developer options) shows each texture's key, and the mod replacing
-  it; **Square** saves the open file's textures into the same folder.
+- The **Asset browser** (Developer options) shows each texture's key, whether it animates, and
+  the mod replacing it; **Square** saves the open file's textures into the same folder.
 - `gt3tool tex-dump <iso> <outdir> [prefix]` saves them from the command line;
-  `gt3tool tex-keys <iso> <vol-path>` lists a file's keys.
+  `gt3tool tex-keys <iso> <vol-path>` lists a file's keys (`anim` after the animated ones).
 
 Copy a saved picture into your mod's `textures/`, keep the key at the end of its name, and edit
 or upscale it.
@@ -156,7 +156,9 @@ or upscale it.
 - Car colours: the textures a paint colour changes are saved once per colour (`-paint3` in the
   name), each with its own key; the rest are saved once.
 - Animated textures (course lights and signs that change colour) are saved with their first
-  colours. A replaced one shows the picture and no longer animates.
+  colours and `-anim` in the name (`set2-14-anim-0123456789abcdef.png`; `textures.txt` too). A
+  replaced one shows the picture and no longer animates, so leave them out of a pack (an
+  upscale script can skip names with `-anim` in them) unless a still picture is what you want.
 - Alpha 255 is opaque (the game's 0x80 is saved as 255).
 - A change applies to what loads next: a race, a menu page, a model in a viewer.
 - Movies, and the images the game composes while it runs (text set into video memory, screen
