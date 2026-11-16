@@ -240,7 +240,7 @@ car bought in GT Mode finds its cloned upgrade parts in the tune shop.
 ```ini
 [car]
 label = tesla_model_y_perf_26  ; unique id: a-z, 0-9, _
-name = Model Y Performance
+name = Model Y Performance     ; the race results show it alone, without the maker
 maker = TESLA                  ; matches an existing maker's name when there is one
 year = 2026
 price = 57490                  ; credits

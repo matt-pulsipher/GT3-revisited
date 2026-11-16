@@ -744,9 +744,13 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, cons
         }
     put16(car, 0xE0, maker_id);
     put16(car, 0xE2, maker_id);
+    // Each language's name and second name (car_name_fields). The second ("SUZUKI SPORTS
+    // LIMITED(J)" after "ALTO WORKS") is blank, as on most disc cars: the results and records
+    // show the two together.
     u16 name = db.add_unistring(game(def.name));
+    u16 second = db.add_unistring(" ");
     put16(car, 0xE4, name);
-    put16(car, 0xE6, name);
+    put16(car, 0xE6, second);
     put16(car, 0xE8, db.add_string(def.label));
     put16(car, 0xEA, def.year.value_or(donor->year));
     // The price as the disc stores its own cars' (docs/MODDING.md): credits in the US and
@@ -754,9 +758,9 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, cons
     put32(car, 0xEC, def.price.value_or(donor->price));
     put8(car, 0xF0, 0);
     if (def.category) put8(car, 0xF1, *def.category);
-    // The same names in every language (car_name_fields), and offered in every language
-    // (region byte +0xF7 = 0).
-    for (size_t o : {0xF2, 0xF4, 0x100, 0x102}) put16(car, o, name);
+    // The same names in every language, and offered in every language (region byte +0xF7 = 0).
+    for (size_t o : {0xF2, 0x100}) put16(car, o, name);
+    for (size_t o : {0xF4, 0x102}) put16(car, o, second);
     put8(car, 0xF7, 0);
     put16(car, 0x104, db.add_unistring(maker));
     db.add_label(def.label);

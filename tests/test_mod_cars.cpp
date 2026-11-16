@@ -16,6 +16,7 @@
 #include "game/data/mod_cars.h"
 #include "exact_drive.h"
 #include "race/exact_setup.h"
+#include "race/results.h"
 #include "sim/car_spec.h"
 #include "vfs/vfs.h"
 
@@ -234,6 +235,17 @@ TEST(modcar_texts_game_text) {
     if (!c || !m) return;
     CHECK(c->name == "Caf\x81\xE9 \x80\x92 Racer"); // é Latin-1, ’ the Latin font's (Windows-1252) code
     CHECK(c->latin_name == c->name);
+    // One name: a blank second name, so the results and records show it once. The same in every language's fields
+    // (car_name_fields: US +0xE4 / +0xE6, Japanese +0xF2 / +0xF4, British English +0x100 / +0x102).
+    CHECK(c->name_alt.find_first_not_of(' ') == std::string::npos);
+    CHECK(race::result_car_name(*db, "syn_mod", true) == c->latin_name);
+    const ByteSpan* r = db->record(data::TableId::Car, "syn_mod");
+    CHECK(r != nullptr);
+    if (r) {
+        auto text = [&](size_t o) { return db->unistrings().at(rd16(*r, o)); };
+        for (size_t o : {0xE4, 0xF2, 0x100}) CHECK(text(o) == c->name);
+        for (size_t o : {0xE6, 0xF4, 0x102}) CHECK(text(o).find_first_not_of(' ') == std::string::npos);
+    }
     CHECK(c->maker == disc_maker && c->maker_id == 77); // the disc's maker found
     CHECK(m->description == "Tr\x81\xE8s vite");
     CHECK(m->paints.size() == 1 && m->paints[0].first == "Bleu \x81\xC9lectrique");
