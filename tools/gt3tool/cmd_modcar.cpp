@@ -313,9 +313,6 @@ int cmd_modcar(Disc& disc, const Args& a) {
                     spec->mass, spec->engine.electric ? "electric" : "engine", spec->peak_torque(), spec->peak_power_kw(),
                     spec->peak_power_rpm(), spec->engine.rev_limit_rpm, spec->gearbox.ratios.size(), total,
                     spec->axle[0].tire_radius, spec->axle[1].tire_radius, spec->aero.c_drag);
-        if (spec->engine.electric)
-            std::printf("   electric: the test drives run on its donor's engine (%s) until the game's physics has the EV drive\n",
-                        def->donor.c_str());
         if (!tc.track) continue;
         Run r = straight_line(tc, def->label);
         if (!r.error.empty()) {

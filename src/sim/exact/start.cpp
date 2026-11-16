@@ -9,6 +9,7 @@
 #include "sim/exact/race_flow.h"
 #include "game/data/car_database.h"
 
+#include <cmath>
 #include <stdexcept>
 
 namespace gt3r::sim::exact {
@@ -551,6 +552,7 @@ StartResult start_cars(const StartRace& race_in, std::span<const StartEntry> ent
     std::vector<Car> cars(entries.size());
     for (size_t i = 0; i < cars.size(); ++i) {
         if (race.data) cars[i].behaviour = race.data->behaviour();
+        cars[i].ev = electric_drive(race.db, entries[i].eq);
         load_image(cars[i], r.records[i].data());
     }
     // The rank reset: free practice's code puts the cars in grid-slot order, the others' rank_reset in index order; the ranking
@@ -569,6 +571,23 @@ StartResult start_cars(const StartRace& race_in, std::span<const StartEntry> ent
         for (size_t i = 0; i < cars.size(); ++i) keep_best_lap(cars[i], entries[i].best_lap);
     for (size_t i = 0; i < cars.size(); ++i) store_image(cars[i], r.records[i].data());
     return r;
+}
+
+ElectricDrive electric_drive(const data::CarDatabase* db, const Equipment& eq) {
+    ElectricDrive ev;
+    if (!db) return ev;
+    const std::string label = db->label(eq.car);
+    const data::ModCar* m = db->mod_car(label);
+    const data::Car* car = db->car(label);
+    // On its own motor only (part slot 6, the engine): an entry recorded with its donor's engine keeps GT3's drive.
+    if (!m || !m->electric || !car || eq.part[size_t(data::TableId::Engine)] != car->parts[6]) return ev;
+    ev.on = true;
+    // Rounded (0.01 N m, 1 W): add_mod_car computes them in host floats, whose last bit can differ between compilers.
+    // The rounding makes such a difference unlikely to survive; one that does is in the replay's data fingerprint, so
+    // another build refuses the replay rather than playing it differently. (Online, each car is its owner's to drive.)
+    ev.regen_torque = F(float(std::round(double(m->regen_torque_nm) * 100.0) / 100.0));
+    ev.regen_power = F(float(std::round(double(m->regen_kw) * 1000.0)));
+    return ev;
 }
 
 Record start_car(const StartRace& race, const StartEntry& e, int i) {

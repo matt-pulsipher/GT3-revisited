@@ -299,8 +299,8 @@ Engine inertia J_e = the drivetrain's inertia word × 0.001 kg·m² (§6.2).
 
 The game also has a power cap for power-restricted races (a race-rule byte × 10 PS, with
 the torque softly limited over the top 30 % of the cap); no race mode sets the byte, so it
-never acts. There is no electric motor (GT3 has none); electric mod cars race on their
-donor car's engine (§6).
+never acts. There is no electric motor (GT3 has none); electric mod cars take a path of
+their own through these steps, which GT3's cars never take (docs/MODDING.md "Electric cars").
 
 ### §2.3 Turbo
 
@@ -1365,8 +1365,8 @@ wet course (category 1) the wet set of the front tire's stage (stage + 13). A ca
 such tires keeps them, and so does a car without both records of that stage. Replays and
 ghosts race on the tires they were recorded with.
 
-An electric mod car races on its donor car's stock engine, engine parts, drivetrain and
-gearbox: the race has no electric drive yet.
+An electric mod car races on its own motor, drivetrain and single reduction, with the
+electric drive (§2.2).
 
 **The menus' numbers** (the car pages' power and torque, the gear chart, the showroom top
 speed, the showroom ride height and the online plausibility checks) come from a separate
@@ -2477,7 +2477,6 @@ below; those marked (disc) need the disc.
   does not draw its particles: it draws its own puffs from the smoke emission (§8.3b).
 - The menus' spec keeps conventional defaults for missing values (§6), so a mod car whose
   records lack a value can show figures that differ from how it races.
-- Electric mod cars race on their donor car's engine (§6).
 - The HUD's boost gauge reads the turbo's boost factor from the two lagged stages minus 1
   (§2.3); how the game's gauge maps it is not pinned down.
 - A car whose wheel spin-inertia word is 0 would get no torque response and no free-wheel

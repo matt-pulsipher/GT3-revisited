@@ -403,6 +403,7 @@ HudData RaceScreen::hud_data(int player) {
     d.rpm = s.engine_rpm;
     d.rev_limit_rpm = su.rev_limit_rpm;
     d.shift_rpm = su.upshift_rpm > 0 ? su.upshift_rpm : su.rev_limit_rpm - 500;
+    if (su.forward_gears == 1) d.shift_rpm = 0; // a single-speed car (an electric mod car) never shifts: none
     d.onboard = cam.incar_hud();
     if (!car_.ratios.empty() && car_.final_drive > 0)
         d.top_speed_kmh = car_.limit_rpm / 60.0f * 2 * 3.14159f * car_.wheels.radius[1] /

@@ -184,7 +184,10 @@ players' cars from its own disc, so a car races only where it is the same car.
   tables are its offline races') and NTSC-U's rules at 60 steps a second as every online race, a road
   course, ASM and TCS on, the descriptor's engine condition). P is what the race reads of the
   car: mass and extents, engine curves, gearing, tyres, suspension, aids. Names, prices and
-  model ids are not in it, so a car whose records differ only there is the same car.
+  model ids are not in it, so a car whose records differ only there is the same car. An
+  electric mod car's drive (`sim::exact::ElectricDrive`: on, and its regen) is outside P too;
+  a game without the drive (0.6.6 and earlier) builds that car on its donor's engine, whose P
+  differs, so the two games see each other's electric car as different.
 - **Compared exactly.** The exact core builds P bit for bit alike on every platform: the
   digests of 316 cars of the NTSC-U disc fold to the same value on arm64 and x86-64, and so do
   the PAL and NTSC-J discs' (`net_car_params_disc`), and a synthetic set is pinned

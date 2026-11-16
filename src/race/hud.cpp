@@ -654,7 +654,7 @@ void Hud::draw_gear(SDL_Renderer* r, const HudData& d, float gx, float gy, float
         put(p.hint, std::string(" > ") + char('@' + std::min(d.hint_gear, 9)),
             gs_colour(red ? 0x800000F0u : 0x80000000u));
     }
-    bool shift = d.rpm > d.shift_rpm;
+    bool shift = d.shift_rpm > 0 && d.rpm > d.shift_rpm;
     shift_counter_ = shift ? (shift_counter_ + 42) & 0xFF : 0;
     bool lit = shift && s8(u8(shift_counter_)) >= 1;
     put(p.shift, ":", gs_colour(lit ? 0x800000FFu : 0x80000000u));
@@ -1186,7 +1186,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
         if (horizontal) {
             txt(x + w / 2, y - 3, d.automatic ? ">" : "=", "meter#1", 1, kTransmission, text::HAlign::Center, Right);
             // Shift light: a red dot at the panel's top right, lit above the shift-up rpm.
-            bool shift_lit = d.rpm > d.shift_rpm && (blink_ / 3) % 2 == 0;
+            bool shift_lit = d.shift_rpm > 0 && d.rpm > d.shift_rpm && (blink_ / 3) % 2 == 0;
             fill(r, X(x + w + 3, Right), Y(y - 4), 3 * kw, 3 * kh, shift_lit ? kRed : SDL_Color{60, 0, 0, 200});
         } else {
             // The race battle tachometer: the pen (left, baseline) 5 below the bar's

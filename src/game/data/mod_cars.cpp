@@ -408,6 +408,8 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
             return fail("[powertrain] electric: give torque_nm, power_kw and max_rpm (or a curve and max_rpm)");
         if (!d.max_rpm) return fail("[powertrain] electric: max_rpm is required");
         if (d.gears.size() > 1) return fail("[drivetrain] electric: one reduction ratio (gears = <ratio> or final_drive)");
+        for (const std::optional<float>& v : {d.regen_g, d.regen_kw, d.regen_torque_nm})
+            if (v && !(*v >= 0)) return fail("[powertrain] regen_g, regen_kw and regen_torque_nm: 0 or more");
     }
     if (d.max_rpm && *d.max_rpm > 25500) return fail("[powertrain] max_rpm: at most 25500");
     return d;
@@ -824,8 +826,13 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, cons
         // Regen: lift-off deceleration regen_g (default 0.2 g, typical one-pedal driving) turned
         // into motor torque through the driven tyre and the reduction; power-limited at speed.
         float r = 0.33f; // driven tyre radius, m
-        if (auto ts = drive == 1 ? def.front_tire : def.rear_tire)
-            r = ts->rim_in * 0.0127f + ts->width_mm_5 * 5 * 0.001f * ts->aspect_5 * 5 * 0.01f;
+        // (Host floats: a compiler may fuse the sum below into a multiply-add, Clang only within one statement, GCC on
+        // arm64 across them, so the last bit can differ between builds. electric_drive rounds the result.)
+        if (auto ts = drive == 1 ? def.front_tire : def.rear_tire) {
+            const float rim = ts->rim_in * 0.0127f;
+            const float sidewall = ts->width_mm_5 * 5 * 0.001f * ts->aspect_5 * 5 * 0.01f;
+            r = rim + sidewall;
+        }
         float mass = float(weight) + 120.0f; // as the spec builder counts it
         float g = def.regen_g.value_or(0.2f);
         m.regen_torque_nm = def.regen_torque_nm.value_or(overall_ratio > 0 ? g * 9.81f * mass * r / overall_ratio

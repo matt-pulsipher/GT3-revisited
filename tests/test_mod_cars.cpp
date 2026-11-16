@@ -17,11 +17,16 @@
 #include "exact_drive.h"
 #include "race/exact_setup.h"
 #include "sim/car_spec.h"
+#include "sim/exact/race_flow.h"
+#include "sim/exact/race_record.h"
+#include "sim/exact/start.h"
+#include "sim/exact/tick.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <memory>
 #include <tuple>
 #include <vector>
 
@@ -322,22 +327,315 @@ TEST(modcar_disc_end_to_end) {
     CHECK(!db.parts_for(data::TableId::FrontTire, "test_ev").empty());
     CHECK(db.parts_for(data::TableId::TurbineKit, "test_ev").empty());
     CHECK(db.mod_car("test_ev") && db.mod_car("test_ev")->fit.active());
-    // The game's physics has no EV drive yet: an electric mod car races on its donor's engine, engine parts, driveline and
-    // gearbox (and their settings), on its own body and tyres.
+    // An electric mod car races on its own motor, drivetrain and reduction, with the electric drive; its equipment with
+    // its donor's engine in it (a race recorded before the drive existed) races on that engine.
     using T = data::TableId;
     std::optional<sim::exact::Equipment> ev = race::exact_equipment(db, {"test_ev"});
     std::optional<sim::exact::Equipment> donor = race::exact_equipment(db, {"legacy_gtb_96"});
     CHECK(ev && donor);
     if (ev && donor) {
-        for (T t : {T::Engine, T::Drivetrain, T::Gear}) CHECK(ev->part[size_t(t)] == donor->part[size_t(t)]);
-        CHECK(ev->word(0x110) == donor->word(0x110) && ev->word(0xF4) == donor->word(0xF4)); // final drive, first gear
-        CHECK(ev->part[size_t(T::FrontTire)] != donor->part[size_t(T::FrontTire)]);
+        for (T t : {T::Engine, T::Drivetrain, T::Gear}) CHECK(ev->part[size_t(t)] != donor->part[size_t(t)]);
+        const sim::exact::ElectricDrive d = sim::exact::electric_drive(&db, *ev);
+        CHECK(d.on && d.regen_torque.host() > 0 && d.regen_power.host() > 0);
+        sim::exact::Equipment old = *ev;
+        old.part[size_t(T::Engine)] = donor->part[size_t(T::Engine)];
+        CHECK(!sim::exact::electric_drive(&db, old).on);
+        CHECK(!sim::exact::electric_drive(&db, *donor).on);
     }
     const std::vector<float> v = straight_kmh(*disc, db, "test_ev", {6.0});
-    CHECK(v.size() == 1 && v[0] > 60); // (it drives, on the donor's engine)
+    CHECK(v.size() == 1 && v[0] > 60);
     // A second definition with a disc car's label is refused.
     def->label = "legacy_gtb_96";
     CHECK(!data::add_mod_car(db, *def, &err));
+}
+
+TEST(modcar_regen_not_negative) {
+    std::string err;
+    std::string bad = std::string(kMinimal) + "\n[powertrain]\nregen_g = -0.2\n";
+    CHECK(!data::parse_mod_car(bad, &err) && err.find("regen") != std::string::npos);
+}
+
+// The electric drive's steps (sim/exact/tick_engine.cpp, tick_gear.cpp) on a hand-built car, without a disc. The
+// numbers are INVENTED: a flat 500 N m motor curve, 400 N m / 100 kW of regen, a 9:1 reduction, a 10,000 rpm top speed,
+// rear drive, tyres whose best braking slip is 0.1.
+TEST(modcar_electric_steps) {
+    namespace ex = sim::exact;
+    auto approx = [](float a, float b) { return std::fabs(a - b) < 0.05f; };
+    auto car = std::make_unique<ex::Car>();
+    ex::Car& c = *car;
+    c.ev = {true, ex::F(400.0f), ex::F(100000.0f)};
+    c.p.d.layout = 0; // rear drive: the motor turns with the rear axle
+    c.gear = 1;
+    c.p.d.ratio[1] = ex::F(9.0f);
+    c.p.d.gear_speed[1] = ex::F(27.0f); // motor rad/s per m/s: 5 km/h is 37.5 rad/s at the motor
+    c.p.e.rev_limit = 10000;            // 1,047 rad/s at the motor
+    c.p.e.torque.n = 2;
+    c.p.e.torque.x[0] = ex::F(0.0f), c.p.e.torque.y[0] = ex::F(500.0f);
+    c.p.e.torque.x[1] = ex::F(2000.0f), c.p.e.torque.y[1] = ex::F(500.0f);
+    c.p.tire[0].slip_brake = ex::F(0.1f); // (every wheel's tyre record, on every surface)
+    c.p.brake_slip_scale = {ex::F(1.0f), ex::F(1.0f)};
+    // The motor's torque with the rear axle at `axle` rad/s and the accelerator at `pedal`.
+    auto out_f = [&](float axle, float pedal) {
+        c.axle_speed = {ex::F(axle), ex::F(axle)};
+        c.throttle_pedal = ex::F(pedal);
+        return ex::engine_output(c, ex::F(pedal));
+    };
+    auto out = [&](float axle, float pedal) { return out_f(axle, pedal).host(); };
+    CHECK(approx(out(0, 1), 500)); // full torque from standstill
+    CHECK(approx(out(10, 0.1f), 50) && approx(out(10, 1), 500));
+    // Lift-off regen against the motor's turning: its torque at town speeds, capped by its power at speed, faded in over
+    // the accelerator's first 10 % and out below the motor's speed at 5 km/h.
+    CHECK(approx(out(10, 0), -400));            // 90 rad/s at the motor
+    CHECK(approx(out(60, 0), -100000.0f / 540)); // 540 rad/s: 100 kW
+    CHECK(approx(out(10, 0.05f), 25 - 200));     // half the regen, and 5 % of the drive
+    CHECK(approx(out(2, 0), -400 * 18 / 37.5f)); // 18 rad/s: below 5 km/h
+    CHECK(approx(out(-10, 0), 400));             // rolling against the gear: still against the turning
+    CHECK(out(0, 0) == 0);
+    // ... eased off as the driven tyres slip past their best braking slip, none at twice it. The front tyres are not
+    // driven: their slip does not count.
+    c.w[0].slip_ratio = ex::F(0.5f);
+    CHECK(approx(out(10, 0), -400));
+    c.w[2].slip_ratio = ex::F(0.15f);
+    CHECK(approx(out(10, 0), -200));
+    c.w[3].slip_ratio = ex::F(0.25f);
+    CHECK(out(10, 0) == 0);
+    for (ex::Wheel& w : c.w) w.slip_ratio = ex::F();
+    // The top speed: the drive fades out over the last 2 % below the motor's limit.
+    const float top = 10000 * 6.2831853f / 60 / 9; // the axle's speed there
+    CHECK(approx(out(top * 0.99f, 1), 250) && c.rev_limiter == 1);
+    CHECK(approx(out(top * 1.01f, 1), 0));
+    CHECK(approx(out(top * 0.9f, 1), 500) && c.rev_limiter == 0);
+    // Nothing while the race holds the car.
+    c.race_hold = 1;
+    CHECK(out(10, 1) == 0);
+    c.race_hold = 0;
+    // The clutch stays locked: the motor is never disconnected (GT3's opens it when nothing asks for it).
+    c.clutch = 1, c.clutch_req = ex::F();
+    ex::clutch_engage(c);
+    CHECK(c.clutch == 1);
+    // The stop and hold: below 5 km/h with the accelerator up, the friction brakes take over the regen's torque at the
+    // wheels (400 x 9 = 3,600 N m, a quarter on each), fading in as the regen fades out.
+    auto hold_f = [&](float kmh, float pedal) {
+        c.speed = ex::F(kmh / 3.6f);
+        c.throttle_pedal = ex::F(pedal);
+        ex::brakes_and_clutch(c);
+        return c.t[0].brake_torque;
+    };
+    auto hold = [&](float kmh, float pedal) { return hold_f(kmh, pedal).host(); };
+    CHECK(approx(hold(0, 0), 900) && c.t[3].brake_torque.host() == c.t[0].brake_torque.host());
+    CHECK(approx(hold(2.5f, 0), 450));
+    CHECK(hold(6, 0) == 0 && hold(0, 0.01f) == 0);
+    // Forward and reverse (gear 0) only below 5 km/h, the clutch locked through the change: the automatic gearbox asked
+    // for reverse at 150 km/h keeps the gear; at 3 km/h it changes. Back to forward the same way, rolling backwards.
+    const ex::GearSettings gs;
+    c.throttle_pedal = ex::F();
+    c.throttle = ex::F();
+    c.reverse_req = 1;
+    c.speed = ex::F(150.0f / 3.6f);
+    ex::gear_step(c, gs);
+    CHECK(c.gear == 1);
+    c.speed = ex::F(3.0f / 3.6f);
+    ex::gear_step(c, gs);
+    CHECK(c.gear == 0 && c.clutch == 1);
+    c.reverse_req = 0;
+    c.throttle = ex::F(1.0f);
+    c.speed = ex::F(-20.0f / 3.6f);
+    ex::gear_step(c, gs);
+    CHECK(c.gear == 0);
+    c.speed = ex::F(-3.0f / 3.6f);
+    ex::gear_step(c, gs);
+    CHECK(c.gear == 1 && c.clutch == 1);
+    c.throttle = ex::F();
+    // Pinned: the drive's outputs over speeds, pedals and slips, and the hold. A change to the drive that moves them must
+    // also change kElectricDriveVersion (race/exact_setup.cpp), so that replays recorded with the old drive are refused
+    // rather than played differently; then update the value here.
+    u64 h = 1469598103934665603ull; // FNV-1a over the outputs' bits
+    auto mix = [&](ex::F v) { h = (h ^ v.bits) * 1099511628211ull; };
+    for (float slip : {0.0f, 0.12f, 0.3f}) {
+        c.w[2].slip_ratio = c.w[3].slip_ratio = ex::F(slip);
+        for (float axle : {-30.0f, -2.0f, 0.0f, 2.0f, 10.0f, 60.0f, 115.5f, 117.0f})
+            for (float pedal : {0.0f, 0.03f, 0.1f, 1.0f}) mix(out_f(axle, pedal));
+    }
+    for (float kmh : {0.0f, 1.0f, 4.9f}) mix(hold_f(kmh, 0));
+    std::printf("    drive outputs %016llx\n", static_cast<unsigned long long>(h));
+    CHECK(h == 0xc3bcf97606a3f908ull);
+    // Off, the car is GT3's: its clutch opens when nothing asks for it, and a change into reverse slips it.
+    c.ev.on = false;
+    c.clutch = 1, c.clutch_req = ex::F();
+    ex::clutch_engage(c);
+    CHECK(c.clutch == 0);
+    c.clutch = 1, c.gear = 1, c.speed = ex::F(), c.reverse_req = 1;
+    ex::gear_step(c, gs);
+    CHECK(c.gear == 0 && c.clutch == 2);
+}
+
+// A snapshot keeps its car's electric drive: a restore takes it along with the car's parameters, so a free run's ghost
+// recorded on another car, or on a donor's engine, drives as it was recorded; and a replay file keeps it (record
+// version 6). Without a disc.
+TEST(modcar_electric_snapshot) {
+    namespace ex = sim::exact;
+    auto car = std::make_unique<ex::Car>();
+    car->ev = {true, ex::F(400.0f), ex::F(100000.0f)};
+    car->ghost = 2, car->index = 1, car->control = 1;
+    auto snap = std::make_unique<ex::Snapshot>();
+    snap->car.p.e.rev_limit = 7000; // the recorded car's own parameters, without the drive
+    ex::restore_car(*car, *snap, 0);
+    CHECK(!car->ev.on && car->p.e.rev_limit == 7000);
+    CHECK(car->ghost == 2 && car->index == 1 && car->control == 1);
+    snap->car.ev = {true, ex::F(123.45f), ex::F(67000.0f)};
+    ex::restore_car(*car, *snap, 0);
+    CHECK(car->ev.on && car->ev.regen_torque.bits == snap->car.ev.regen_torque.bits);
+    ex::RaceRecord r;
+    r.entries.resize(1);
+    r.pads.resize(1);
+    auto rec = std::make_shared<ex::SoloRecorders>(true);
+    rec->snapshot[1].car.ev = snap->car.ev;
+    r.recorders = rec;
+    const ex::RaceRecord back = ex::RaceRecord::parse(r.serialize());
+    CHECK(back.recorders != nullptr);
+    if (!back.recorders) return;
+    const ex::ElectricDrive& d = back.recorders->snapshot[1].car.ev;
+    CHECK(d.on && d.regen_torque.bits == snap->car.ev.regen_torque.bits);
+    CHECK(d.regen_power.bits == snap->car.ev.regen_power.bits);
+    CHECK(!back.recorders->snapshot[0].car.ev.on);
+}
+
+namespace {
+
+// A database with the minimal electric car (kMinimal), changed by `edit`.
+template <class Edit>
+bool electric_db(Disc& disc, data::CarDatabase& db, Edit&& edit) {
+    std::string err;
+    auto def = data::parse_mod_car(kMinimal, &err);
+    if (!def || !db.load(disc.volume())) return false;
+    edit(*def);
+    if (!data::add_mod_car(db, *def, &err)) return false;
+    db.rebuild();
+    return true;
+}
+
+} // namespace
+
+// The electric drive on the race's physics, the minimal electric car on the machine tests' straight: the clutch locked
+// at rest and through the launch (the donor's, GT3's, is not at rest), its one gear, lift-off regen, the stop and hold,
+// the top speed held at the motor's limit.
+TEST(modcar_electric_drive) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("GT3R_DISC not set");
+    data::CarDatabase db;
+    // max_rpm 9000: 136 km/h through 9.04 on the 275/35R21 rears (r 0.363 m), within the car's power.
+    CHECK(electric_db(*disc, db, [](data::ModCarDef& d) { d.max_rpm = 9000; }));
+    sim::ControlInputs in;
+    in.controller_kind = 2;
+    {
+        StraightRun donor = straight_run(*disc, db, "legacy_gtb_96");
+        CHECK(donor.field != nullptr);
+        if (donor.field) {
+            while (donor.field->race_time() < 1.0) donor.step(in);
+            const sim::VehicleTelemetry* t = donor.field->player().telemetry();
+            std::printf("    at rest: the donor's clutch state %d\n", t ? t->clutch_state : -1);
+            CHECK(t && t->clutch_state != 1);
+        }
+    }
+    StraightRun run = straight_run(*disc, db, "test_ev");
+    CHECK(run.field != nullptr);
+    if (!run.field) return;
+    const sim::VehicleState& s = run.field->player().state();
+    const sim::VehicleTelemetry* t = run.field->player().telemetry();
+    CHECK(t != nullptr);
+    if (!t) return;
+    auto drive = [&](double seconds) { // true when it stayed in gear 1 with the clutch locked
+        const double end = run.field->race_time() + seconds;
+        bool locked = true;
+        while (run.field->race_time() < end) {
+            run.step(in);
+            locked = locked && s.gear == 1 && t->clutch_state == 1;
+        }
+        return locked;
+    };
+    while (run.field->race_time() < 0) run.step(in); // the countdown
+    CHECK(drive(1.0) && s.speed_kmh < 0.5f);
+    in.throttle = 1;
+    CHECK(drive(0.25) && s.speed_kmh > 5); // full torque from standstill, nothing to slip
+    CHECK(drive(1.5));
+    // Lift-off at town speeds: the motor brakes at about the default 0.2 g.
+    in.throttle = 0;
+    drive(0.5);
+    const float v0 = s.speed_kmh;
+    drive(1.0);
+    const float g = (v0 - s.speed_kmh) / 3.6f / 9.81f;
+    std::printf("    lift-off from %.2f km/h: %.4f g\n", double(v0), double(g));
+    CHECK(v0 > 49.5f && v0 < 50.5f && g > 0.177f && g < 0.183f); // (0.180 g from 50.1 km/h)
+    // Below 5 km/h the regen has faded out and GT3's rolling resistance is 0 under 4 km/h (physics §3.5): the hold
+    // stops the car in about half a second (without it, about 3 s), and keeps it stopped.
+    while (s.speed_kmh >= 5 && run.field->race_time() < 60) run.step(in);
+    const double slow = run.field->race_time();
+    while (s.speed_kmh >= 0.05f && run.field->race_time() < slow + 10) run.step(in);
+    std::printf("    from 5 km/h to a stop: %.2f s\n", run.field->race_time() - slow);
+    CHECK(run.field->race_time() - slow < 1.0);
+    drive(3.0);
+    CHECK(s.speed_kmh < 0.05f);
+    // Top speed: the motor's limit; the drive fades out over its last 2 %.
+    in.throttle = 1;
+    CHECK(drive(30.0));
+    std::printf("    top speed %.1f km/h at %.0f rpm\n", double(s.speed_kmh), double(s.engine_rpm));
+    CHECK(s.engine_rpm > 8930 && s.engine_rpm < 8950 && s.speed_kmh > 130);
+}
+
+// Regen far past the driven axle's grip (rear drive, 2,000 N m at the motor, 1 MW): it eases off as the rear tyres
+// slip, so they keep turning near the road's speed instead of being dragged down while the car slides on.
+TEST(modcar_electric_regen_grip) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("GT3R_DISC not set");
+    data::CarDatabase db;
+    CHECK(electric_db(*disc, db, [](data::ModCarDef& d) {
+        d.drive = u8(data::DriveType::FR), d.front_torque_pct.reset();
+        d.regen_torque_nm = 2000.0f, d.regen_kw = 1000.0f;
+    }));
+    StraightRun run = straight_run(*disc, db, "test_ev");
+    CHECK(run.field != nullptr);
+    if (!run.field) return;
+    const sim::VehicleState& s = run.field->player().state();
+    sim::ControlInputs in;
+    in.controller_kind = 2;
+    while (run.field->race_time() < 0) run.step(in);
+    in.throttle = 1;
+    while (s.speed_kmh < 100 && run.field->race_time() < 20) run.step(in);
+    in.throttle = 0;
+    const float v0 = s.speed_kmh;
+    float slip = 0;
+    for (const double end = run.field->race_time() + 2.0; run.field->race_time() < end;) {
+        run.step(in);
+        slip = std::max({slip, s.wheels[2].slip_ratio, s.wheels[3].slip_ratio});
+    }
+    std::printf("    lift-off from %.0f km/h: %.0f km/h after 2 s, the rear tyres' slip at most %.3f\n", double(v0),
+                double(s.speed_kmh), double(slip));
+    CHECK(v0 >= 100 && slip < 0.3f && s.speed_kmh < v0 - 20);
+}
+
+// The replay's data fingerprint: an electric car on its own motor adds its regen and the drive's version, which no
+// record holds; the same car on its donor's engine (a race recorded before the drive) is its records' alone, as before.
+TEST(modcar_electric_fingerprint) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("GT3R_DISC not set");
+    data::CarDatabase a, b;
+    CHECK(electric_db(*disc, a, [](data::ModCarDef&) {}));
+    CHECK(electric_db(*disc, b, [](data::ModCarDef& d) { d.regen_g = 0.3f; })); // the same records, more regen
+    std::optional<sim::exact::Equipment> ev = race::exact_equipment(a, {"test_ev"});
+    std::optional<sim::exact::Equipment> donor = race::exact_equipment(a, {"legacy_gtb_96"});
+    CHECK(ev && donor);
+    if (!ev || !donor) return;
+    sim::exact::StartEntry own, old;
+    own.eq = *ev;
+    old.eq = *ev;
+    old.eq.part[size_t(data::TableId::Engine)] = donor->part[size_t(data::TableId::Engine)];
+    auto print = [](const data::CarDatabase& db, const sim::exact::StartEntry& e) {
+        return race::exact_data_fingerprint(db, std::span<const sim::exact::StartEntry>(&e, 1), {});
+    };
+    CHECK(sim::exact::electric_drive(&a, own.eq).on && !sim::exact::electric_drive(&a, old.eq).on);
+    CHECK(print(a, own) != print(b, own)); // the regen is in it
+    CHECK(print(a, old) == print(b, old)); // not without the drive
+    CHECK(print(a, own) != print(a, old));
 }
 
 // --- custom bodies: JSON, PNG and binary glTF -------------------------------------

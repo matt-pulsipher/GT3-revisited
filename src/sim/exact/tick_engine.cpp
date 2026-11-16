@@ -8,11 +8,82 @@ namespace {
 
 constexpr F kOne = F::raw(0x3F800000);
 constexpr F kHalf = F::raw(0x3F000000);
+constexpr F kTwo = F::raw(0x40000000);
 constexpr F kRpmToW = F::raw(0x3DD67750); // 2 pi / 60
 constexpr F kKmh10 = F::raw(0x4031C71D);  // 10 km/h in m/s
+// An electric mod car's drive (Car::ev; GT3 has none): its regen fades out below 5 km/h and over the accelerator's
+// first 10 %, its drive over the last 2 % below its top speed.
+constexpr F kKmh5 = F::raw(0x3FB1C71D);        // 5 km/h in m/s
+constexpr F kRegenPedal = F::raw(0x41200000);  // 10
+constexpr F kLimiterBand = F::raw(0x3CA3D70A); // 0.02
 
 // The pedal style that selects the clutch and gear behaviour: a pad-driven car's own, 0 for others.
 u8 style_of(const Car& c) { return c.control != 1 && c.driver_kind == 0 ? c.pedal_style : 0; }
+
+F clamp01(F x) {
+    if (x < F()) return F();
+    return kOne < x ? kOne : x;
+}
+
+F abs_f(F x) { return x < F() ? -x : x; }
+
+// An electric car's one-pedal stop: below 5 km/h with the accelerator up, the friction brakes take over what the motor's
+// regen loses as it fades (the same torque at the wheels, on all four), so the car stops and stays (stop_hold's braked
+// stop).
+void electric_hold(Car& c) {
+    if (!(c.throttle_pedal == F())) return;
+    const F v = abs_f(c.speed);
+    if (!(v < kKmh5)) return;
+    const F quarter = F::raw(0x3E800000); // (each wheel's share)
+    const F per_wheel = c.ev.regen_torque * abs_f(c.p.d.ratio[c.gear]) * quarter * (kOne - v / kKmh5);
+    for (Drive& t : c.t) t.brake_torque = t.brake_torque + per_wheel;
+}
+
+// The share of the regen the driven tyres can take: all of it up to each driven tyre's optimum braking slip (the ABS
+// target, physics §4.5), none at twice it. ABS acts on the brake pressure only, so without this a regen stronger than
+// the driven axle's grip (a low-grip surface, a lift in a corner) would drag the driven wheels down to a crawl while
+// the car slides on; an EV's stability control eases the regen off the same way.
+F regen_grip(const Car& c) {
+    const u8 l = c.p.d.layout; // the driven axles, as driven_axle_speed reads them
+    const bool front = l == 1 || l == 2 || l == 3 || l == 7, rear = l != 1 && l != 2;
+    F f = kOne;
+    for (size_t i = 0; i < 4; ++i) {
+        if (!(i < 2 ? front : rear)) continue;
+        const Wheel& w = c.w[i];
+        const F best = tire_record(c.p, int(i), w.surface).slip_brake * c.p.brake_slip_scale[i >> 1];
+        if (!(F() < best)) continue;
+        const F g = clamp01(kTwo - w.slip_ratio / best);
+        if (g < f) f = g;
+    }
+    return f;
+}
+
+// An electric car's motor torque for throttle x, at the motor's own speed w (signed: below 0 while the car rolls against
+// the gear; the clutch's c.omega stops at 0): the curve at |w| (a motor has no engine condition), faded out over the last
+// 2 % below the top speed (the limiter); the regen the lifted accelerator asks for (all of it with the pedal up, none
+// from 10 %) against the motor's turning, capped by its power, faded out below the motor's speed at 5 km/h (so it never
+// holds the driven wheels still or turns them backwards) and eased off as they slip (regen_grip); the motor's drag. None
+// while the race or a stop holds the car.
+F electric_output(Car& c, F x) {
+    const Engine& e = c.p.e;
+    if (c.race_hold != 0 || c.hold != 0) return F();
+    const F w = driven_axle_speed(c) * c.p.d.ratio[c.gear];
+    const F aw = abs_f(w);
+    const F top = ee::int_to_f(e.rev_limit) * kRpmToW;
+    const F fade = clamp01((top - aw) / (top * kLimiterBand));
+    c.rev_limiter = fade < kOne ? 1 : 0;
+    const F drag = e.friction * w;
+    F t = ((x * (lookup_bisect(e.torque, aw) + abs_f(drag))) * fade) - drag;
+    const F lift = clamp01(kOne - c.throttle_pedal * kRegenPedal);
+    if (F() < lift && F() < aw) {
+        F regen = c.ev.regen_torque;
+        if (c.ev.regen_power / aw < regen) regen = c.ev.regen_power / aw;
+        regen = (regen * lift) * clamp01(aw / (kKmh5 * abs_f(c.p.d.gear_speed[1])));
+        regen = regen * regen_grip(c);
+        t = F() < w ? t - regen : t + regen;
+    }
+    return power_cap(e, t, aw);
+}
 
 } // namespace
 
@@ -45,6 +116,10 @@ void engine_rpm(Car& c) {
 }
 
 void clutch_engage(Car& c) {
+    if (c.ev.on) { // the motor is never disconnected
+        c.clutch = 1;
+        return;
+    }
     if (c.clutch == 0) {
         if (!(c.clutch_req == F())) {
             const F v = c.speed;
@@ -73,6 +148,7 @@ void brakes_and_clutch(Car& c) {
     for (size_t i = 0; i < 4; ++i) c.t[i].brake_torque = c.w[i].brake * c.p.brake_torque[i >> 1];
     const F hb = c.handbrake * c.p.handbrake_torque;
     for (size_t i = 2; i < 4; ++i) c.t[i].brake_torque = c.t[i].brake_torque + hb;
+    if (c.ev.on) electric_hold(c);
     for (size_t i = 0; i < 4; ++i) {
         u8 f = c.t[i].brake_torque == F() ? 0 : 2;
         if (c.w[i].load == F()) f |= 1;
@@ -132,6 +208,7 @@ F power_cap(const Engine& e, F t, F w) {
 }
 
 F engine_output(Car& c, F x) {
+    if (c.ev.on) return electric_output(c, x);
     const Engine& e = c.p.e;
     if (c.rev_limiter == 0) {
         if (!(s32(c.rpm) < s32(e.rev_limit))) c.rev_limiter = 1;

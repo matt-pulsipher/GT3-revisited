@@ -395,8 +395,9 @@ course viewers export models for Blender. See [MODDING](docs/MODDING.md).
 - **Physics** runs at 60 steps a second on every disc, with the rules of the
   disc's release; races, replays and the disc's demonstrations play out as in
   the game ([PHYSICS](docs/dev/PHYSICS.md), European and Japanese discs:
-  [COMPATIBILITY](docs/COMPATIBILITY.md)). Electric mod cars race on their donor
-  car's engine for now ([MODDING](docs/MODDING.md)).
+  [COMPATIBILITY](docs/COMPATIBILITY.md)). Electric mod cars race with an
+  electric drive of our own, which GT3 has no counterpart of
+  ([MODDING](docs/MODDING.md)).
 - A few presentation details are measured from captures rather than
   specified exactly, and a few effects that come from PS2 microcode are
   approximated ([RACE](docs/dev/RACE.md#known-gaps),
