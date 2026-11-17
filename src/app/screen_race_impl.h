@@ -201,6 +201,9 @@ struct MenuLaunch {
     menu::flow::GameRequest request;
 };
 
+// The speedometer's top speed estimate for a car (presentation §D1; 0 without gears).
+float hud_top_speed_kmh(const CarSetup& c);
+
 class RaceScreen : public Screen {
 public:
     RaceScreen() : preset_(read_preset()) {}
@@ -565,6 +568,7 @@ private:
     void stop_playback();
     void save_current_replay();
     void draw_replay_items(App& app, Ui& ui, const SDL_FRect& rect);
+    void followed_car_hud(HudData& d); // a field replay's HUD from the followed car (presentation §D9)
     // The title and replay-mark clocks from a run's or replay's start (presentation §B3):
     // `replay` 0 a live run, 1 a replay, 2 the attract demo / menu backdrop (no title).
     void start_hud_clocks(int replay, float start_speed);
@@ -945,6 +949,8 @@ private:
     std::optional<text::StringTable> race_strings_;
     bool race_strings_tried_ = false;
     double odometer_m_ = 0;
+    std::vector<double> opp_trip_m_; // each opponent's trip this race (m)
+    std::vector<float> opp_top_kmh_; // each opponent's speedometer top speed (-1: not yet read)
     bool from_menu_ = false;
     bool scripted_ = false; // a menu launch with GT3R_RACE set (no pre-run quick menu unless qm=)
     App* app_ = nullptr;

@@ -391,6 +391,13 @@ HudRun RaceScreen::hud_run() const {
                                        : HudRun::TimeTrial;
 }
 
+// The speedometer's top speed (presentation §D1): from the rev limit, the rear wheel radius, the
+// top gear and the final drive; 0 when the car has no gears.
+float hud_top_speed_kmh(const CarSetup& c) {
+    if (c.ratios.empty() || c.final_drive <= 0) return 0;
+    return c.limit_rpm / 60.0f * 2 * 3.14159f * c.wheels.radius[1] / (c.ratios.back() * c.final_drive) * 3.6f;
+}
+
 HudData RaceScreen::hud_data(int player) {
     HudData d;
     d.imperial = imperial_;
@@ -405,9 +412,7 @@ HudData RaceScreen::hud_data(int player) {
     d.shift_rpm = su.upshift_rpm > 0 ? su.upshift_rpm : su.rev_limit_rpm - 500;
     if (su.forward_gears == 1) d.shift_rpm = 0; // a single-speed car (an electric mod car) never shifts: none
     d.onboard = cam.incar_hud();
-    if (!car_.ratios.empty() && car_.final_drive > 0)
-        d.top_speed_kmh = car_.limit_rpm / 60.0f * 2 * 3.14159f * car_.wheels.radius[1] /
-                          (car_.ratios.back() * car_.final_drive) * 3.6f;
+    if (const float top = hud_top_speed_kmh(car_); top > 0) d.top_speed_kmh = top;
     d.player_x = s.position.x, d.player_z = s.position.z;
     d.has_turbo = su.has_turbo;
     d.boost = p2 ? field_->second_boost() : vehicle_->boost();

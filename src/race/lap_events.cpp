@@ -46,6 +46,12 @@ int event_display_of(int car, HudPlay play, int followed) {
     return car == -1 ? 0 : car == -2 ? 1 : -1;
 }
 
+int lap_list_of(int car, HudPlay play, int followed) {
+    if (car == -2) return 1;
+    if (play == HudPlay::Replay) return car == followed ? 0 : -1;
+    return car == -1 ? 0 : -1;
+}
+
 // --- race gaps --------------------------------------------------------------------------------
 
 void PassingOrder::reset() { points_ = {}; }

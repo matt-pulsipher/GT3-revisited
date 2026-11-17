@@ -1233,6 +1233,17 @@ whatever the items say. Each part is drawn only while its item is on:
   in proportion to the input, brake red (240, 0, 0) and accel green
   (73, 204, 43), with the gauge art on top.
 
+- **Which car.** Every part shows the car the cameras follow (§G3), and changes
+  with it: its meters, lamps, odometers, steering, pedals and tyres, its position,
+  its name, and the map's own-car dot (drawn over the others). The lap count, the
+  lap clock, Best (the car's race entry's best lap) and Total (the entry's laps,
+  plus the running lap until the car finishes) are the followed car's. Last and
+  the lap-time list hold the laps posted while each car was followed, so a switch
+  keeps the earlier ones until the new car crosses the line
+  (`RaceScreen::followed_car_hud`, `race::lap_list_of`, test
+  `race_replay_followed_car_lap_list`). Ours: a computer car shows the automatic
+  mark (`>`) [?].
+
 A theater demonstration draws the items on its run's own layout instead (§G7).
 
 ### §D10 Time format

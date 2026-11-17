@@ -258,6 +258,10 @@ void RaceScreen::tick(App& app, const PadState& pad) {
                            s.position.z);
     }
     odometer_m_ += double(s.speed_kmh) / 3.6 * dt;
+    if (field_) { // each opponent's trip (the replay HUD of a followed opponent, presentation §D9)
+        opp_trip_m_.resize(size_t(field_->opponents()), 0.0);
+        for (int i = 0; i < field_->opponents(); ++i) opp_trip_m_[size_t(i)] += double(field_->opponent_state(i).speed_kmh) / 3.6 * dt;
+    }
     update_gear_hint(s);
     update_dirt(dt);
     update_smoke(dt);
