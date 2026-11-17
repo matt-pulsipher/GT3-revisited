@@ -908,6 +908,8 @@ void RaceScreen::reset_run_state() {
     finish_position_ = 0;
     lap_times_.clear();
     odometer_m_ = 0;
+    opp_trip_m_.clear();
+    opp_top_kmh_.clear();
     smoke_.clear();
     // The heat haze lenses as the original's race set-up leaves them (every run, replay and
     // demonstration; presentation §L6).

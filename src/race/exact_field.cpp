@@ -816,23 +816,19 @@ public:
         return humans_ > 1 ? std::optional<CarFacts>(cars_[1].facts) : std::nullopt;
     }
     std::optional<CarFacts> opponent_facts(int i) const override { return opp(i).facts; }
+    std::optional<sim::EngineCondition> opponent_condition(int i) const override {
+        return exact_condition(race_->cars()[size_t(opp0_ + i)]);
+    }
     float opponent_brake(int i) const override { return race_->cars()[size_t(opp0_ + i)].brake_pedal.host(); }
     float opponent_car_impulse(int i) const override { return opp(i).car; }
     float second_brake() const override { return humans_ > 1 ? race_->cars()[1].brake_pedal.host() : 0.0f; }
     float second_wall_impulse() const override { return humans_ > 1 ? cars_[1].wall : 0.0f; }
     float second_car_impulse() const override { return humans_ > 1 ? cars_[1].car : 0.0f; }
     float second_impact() const override { return humans_ > 1 ? cars_[1].impact : 0.0f; }
-    LapInfo second_laps() const override {
-        LapInfo l;
-        if (humans_ < 2) return l;
-        const ex::Car& c = race_->cars()[1];
-        l.laps = completed(1);
-        l.started = lap_count(1) > 0;
-        l.wrong_way = (c.x535 & 1) != 0;
-        l.current = std::max(0.0, race_time() - double(c.x530) / 1000.0);
-        l.best = c.best_lap == 0x157529FF ? -1 : double(c.best_lap) / 1000.0;
-        l.race_distance = distance(1);
-        return l;
+    LapInfo second_laps() const override { return humans_ < 2 ? LapInfo{} : laps_of(1); }
+    LapInfo car_laps(int car) const override {
+        const int k = car == -1 ? 0 : car == -2 ? (humans_ > 1 ? 1 : -1) : car >= 0 && car < opponents() ? opp0_ + car : -1;
+        return k < 0 ? LapInfo{} : laps_of(k);
     }
     int second_position() const override { return humans_ > 1 ? int(race_->cars()[1].rank) : 0; }
     void set_laps(int laps) override { (void)laps; } // set at the start (ExactFieldOptions::laps)
@@ -1062,6 +1058,25 @@ private:
         return std::max(0, int(c.laps) - int(c.lap_base));
     }
     int completed(int k) const { return std::max(0, lap_count(k) - 1); }
+    // Car k's laps: the lap clock since its last line crossing (lap 1: since GO), its own best (car + 0x16C4) and its race
+    // entry's best and lap sum (entry + 0x11F0, + 0x220).
+    LapInfo laps_of(int k) const {
+        LapInfo l;
+        const ex::Car& c = race_->cars()[size_t(k)];
+        l.laps = completed(k);
+        l.started = lap_count(k) > 0;
+        l.wrong_way = (c.x535 & 1) != 0;
+        l.current = std::max(0.0, race_time() - double(c.x530) / 1000.0);
+        l.best = c.best_lap == ex::kNoTime ? -1 : double(c.best_lap) / 1000.0;
+        l.race_distance = distance(k);
+        l.finished = c.finished != 0;
+        const std::vector<ex::EntryRecords>& rec = race_->flow().entries;
+        if (size_t(k) < rec.size()) {
+            l.entry_best = rec[size_t(k)].best_lap == ex::kNoTime ? -1 : double(rec[size_t(k)].best_lap) / 1000.0;
+            l.entry_total = double(rec[size_t(k)].laps.total) / 1000.0;
+        }
+        return l;
+    }
     double distance(int k) const {
         const ex::Car& c = race_->cars()[size_t(k)];
         return double(completed(k)) * double(course_->query->lap_length().host()) + double(c.f3e4.host());

@@ -96,8 +96,9 @@ void RaceScreen::lap_events(bool timer_updated) {
             const int half = event_display_of(x.car, play, followed);
             if (rules.session_laps && c.line && (session_best_ms_ < 0 || c.split_ms < session_best_ms_))
                 session_best_ms_ = c.split_ms;
-            // The players' own lap-time lists (the HUD's Last and lap list, presentation §D4).
-            const int own = x.car == -1 ? 0 : x.car == -2 ? 1 : -1;
+            // The lap-time lists (the HUD's Last and lap list, presentation §D4): the players' own
+            // cars, in replays the followed car's (§D9).
+            const int own = lap_list_of(x.car, play, followed);
             if (c.line && own >= 0) lap_lists_[size_t(own)].add(double(c.split_ms) / 1000.0);
             if (half >= 0) {
                 if (c.line) h[half].laps.push_back(green(lap_time_text(c.split_ms), true));

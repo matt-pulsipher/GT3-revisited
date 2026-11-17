@@ -51,6 +51,12 @@ LapEventRules lap_event_rules(HudRun run, HudPlay play);
 // the cameras follow (`followed`, as the car ids: -1 the player, >= 0 an opponent), on the
 // single view (presentation §D6, §G3).
 int event_display_of(int car, HudPlay play, int followed);
+// The lap-time list (the HUD's Last and lap-time list, presentation §D4) a car's lap goes to: 0
+// the single view's or player 1's, 1 player 2's, -1 none. The race display's ring takes the lap
+// times of the car it follows: live, each player's own car; in a replay the car the cameras
+// follow at that moment, so a switch keeps the laps posted before it (presentation §D9).
+// Player 2's list keeps that player's car.
+int lap_list_of(int car, HudPlay play, int followed);
 
 // Race gaps: who passed each timing point first on the lead lap.
 class PassingOrder {

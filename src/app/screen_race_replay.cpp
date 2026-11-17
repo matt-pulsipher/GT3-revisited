@@ -163,6 +163,7 @@ void RaceScreen::save_current_replay() {
 // The course name over the replay's start is drawn whatever ITEM says (presentation §B3).
 void RaceScreen::draw_replay_items(App& app, Ui& ui, const SDL_FRect& rect) {
     HudData d = hud_data(0);
+    if (field_ && !two_player_) followed_car_hud(d);
     d.live = false;
     d.wrong_way = d.auto_drive = false;
     d.countdown = d.finish_t = -1;
@@ -176,6 +177,79 @@ void RaceScreen::draw_replay_items(App& app, Ui& ui, const SDL_FRect& rect) {
         draw_event_icons(app, 0); // a gap's car picture
     }
     hud_.draw_title(ui.renderer(), d, vp);
+}
+
+// A field replay's HUD reads the car the cameras follow (presentation §D9): GT3's race display
+// takes every part from the current camera's target car, set every frame. Time lines: the lap count, the lap clock, Best (the entry's) and Total
+// (the entry's lap sum, plus the running lap until it finishes) are the followed car's; Last and
+// the lap-time list are the laps posted while each car was followed (lap_list_of). Following an
+// opponent, also its gauges, lamps, odometers, steering, pedals, tyres, position, name and the
+// map's own-car dot.
+void RaceScreen::followed_car_hud(HudData& d) {
+    const int car = replay_focus_ >= 0 && replay_focus_ < field_->opponents() ? replay_focus_ : -1;
+    const RaceField::LapInfo li = field_->car_laps(car);
+    const LapList& laps = lap_lists_[0];
+    d.last_lap = laps.recent.empty() ? -1 : laps.recent.back();
+    d.finished = li.finished;
+    if (car >= 0) {
+        d.lap = li.started ? li.laps + 1 : 0;
+        d.lap_time = li.current;
+        d.best_lap = li.entry_best;
+        d.wrong_way = li.wrong_way;
+    }
+    d.total_time = li.finished ? li.entry_total : li.entry_total + std::max(0.0, d.lap_time);
+    if (car < 0) return;
+    const std::vector<RaceField::Standing> st = field_->standings();
+    for (size_t k = 0; k < st.size(); ++k)
+        if (st[k].car == car) d.position = int(k) + 1;
+    // The meters.
+    const sim::VehicleState s = interpolate(field_->opponent_prev_state(car), field_->opponent_state(car), step_.alpha());
+    const sim::VehicleSetup& su = field_->opponent_setup(car);
+    d.speed_kmh = s.speed_kmh;
+    d.rpm = s.engine_rpm;
+    d.gear = s.gear;
+    d.rev_limiter = s.rev_limiter;
+    d.rev_limit_rpm = su.rev_limit_rpm;
+    d.shift_rpm = su.upshift_rpm > 0 ? su.upshift_rpm : su.rev_limit_rpm - 500;
+    d.has_turbo = su.has_turbo;
+    if (opp_top_kmh_.size() != size_t(field_->opponents())) opp_top_kmh_.assign(size_t(field_->opponents()), -1.0f);
+    float& top = opp_top_kmh_[size_t(car)];
+    if (top < 0) top = hud_top_speed_kmh(car_setup_from_database(db_, field_->opponent_label(car)));
+    d.top_speed_kmh = top;
+    d.automatic = true; // (ours: the computer shifts for itself)
+    d.hint_gear = -1, d.hint_blink = false; // replays show no recommended gear (§D2)
+    d.handbrake_lamp = false;
+    d.tcs_lamp = 0, d.asm_lamp = 0, d.clutch_engaged = true;
+    d.throttle = d.brake = d.steer = 0;
+    d.show_tires = false;
+    d.boost = 0;
+    if (const sim::VehicleTelemetry* t = field_->opponent_telemetry(car)) {
+        d.boost = t->boost;
+        if (t->tcs_status >= 0) {
+            d.tcs_lamp = t->tcs_status;
+            d.asm_lamp = t->asm_status > 0 ? 1 : 0;
+            d.clutch_engaged = t->clutch_locked;
+        }
+        if (t->steer_pct > -1000) {
+            d.steer = -float(t->steer_pct) / 100.0f;
+            d.throttle = t->throttle_pedal, d.brake = t->brake_pedal;
+        }
+        if (t->wear_on) {
+            d.show_tires = true;
+            for (int w = 0; w < 4; ++w) d.tire_levels[size_t(w)] = t->wear_level[size_t(w)];
+        }
+    }
+    const std::optional<sim::EngineCondition> c = field_->opponent_condition(car);
+    d.odometer_km = c ? 2.0 * double(c->odometer) / 1000.0 : 0.0;
+    d.oil_lamp = c && sim::oil_worn(c->oil_m);
+    d.trip_m = size_t(car) < opp_trip_m_.size() ? opp_trip_m_[size_t(car)] : 0.0;
+    d.car_name = car_display_name(field_->opponent_label(car));
+    // The map: the followed car's dot over the others, in the own-car colour.
+    d.others.clear();
+    for (int i = 0; i < field_->opponents(); ++i)
+        if (i != car) d.others.push_back({field_->opponent_state(i).position.x, field_->opponent_state(i).position.z});
+    d.others.push_back({render_state_.position.x, render_state_.position.z});
+    d.player_x = s.position.x, d.player_z = s.position.z;
 }
 
 // A run's or replay's start (presentation §B3): the title's clock (the long form for a run from

@@ -553,6 +553,16 @@ TEST(race_replay_lap_event_rules) {
         CHECK(none(lap_event_rules(run, HudPlay::Demo)));
 }
 
+TEST(race_replay_followed_car_lap_list) {
+    // presentation §D9: the lap-time list takes the laps of the car the display follows: live
+    // the players' own cars, in a replay the followed car at that moment; player 2's list keeps
+    // that player's car.
+    CHECK(lap_list_of(-1, HudPlay::Live, 3) == 0 && lap_list_of(-2, HudPlay::Live, 3) == 1 && lap_list_of(3, HudPlay::Live, 3) == -1);
+    CHECK(lap_list_of(3, HudPlay::Replay, 3) == 0 && lap_list_of(-1, HudPlay::Replay, 3) == -1);
+    CHECK(lap_list_of(-1, HudPlay::Replay, -1) == 0 && lap_list_of(2, HudPlay::Replay, -1) == -1);
+    CHECK(lap_list_of(-2, HudPlay::Replay, -1) == 1);
+}
+
 TEST(race_replay_followed_car_events) {
     // presentation §D6, §G3: live, each player's display shows that player's messages; in a
     // replay the single view shows the messages of the car the cameras follow, whichever it is.
