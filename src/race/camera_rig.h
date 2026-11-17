@@ -80,6 +80,11 @@ public:
     // the car model's frame (x right, y up, z back; origin at the wheelbase midpoint on the body's
     // lowest point). Defaults are GT3's fallbacks.
     void set_car_points(const render::Vec3& p0, const render::Vec3& p1) { point_[0] = p0, point_[1] = p1; }
+    // The points of the car the camera is on, from its GTCI mounts (car_camera_mounts): mount 0
+    // in-car, mount 1 the chase; GT3's fallbacks with fewer than two. GT3's driver's camera reads
+    // the table of the car it rides (on-board camera +0x15C -> that car's model), so a replay's or
+    // the Preview's driver's view on an opponent sits at that car's eye, not the player's.
+    void set_car_mounts(const std::vector<CarMount>& mounts);
     // L1 held: look back (heading + pi, pitch negated; ours, the far chase and roof, turned
     // round too); no mirror while held.
     void set_look_back(bool on) { look_back_ = on; }
@@ -103,6 +108,7 @@ public:
     render::Vec3 mirror_eye() const { return mode_ == CameraMode::Custom ? mirror_eye_ : eye_; }
     render::Mat4 mirror_view() const { return mode_ == CameraMode::Custom ? mirror_view_ : view_; }
     float mirror_fovy() const { return mode_ == CameraMode::Custom ? mirror_fovy_ : fovy_; }
+    static constexpr render::Vec3 kFallbackPoint0{0, -0.8f, 0}, kFallbackPoint1{0, -1.5f, -6.0f}; // (no GTCI points)
     static constexpr float kLookStart = 0.2f, kLookFull = 0.5f; // the stick's reach: turn from, full turn at
     static constexpr float kLookRate = 14.0f;                   // the ease (1/s; 95 % in about 0.2 s)
     static constexpr float kLookMirror = 0.35f;                 // turned past this (radians): no mirror
@@ -268,7 +274,7 @@ private:
     // spring 20 e - 10 w (semi-implicit Euler).
     float lag_yaw_ = 0, lag_yaw_w_ = 0, lag_yaw_acc_ = 0, lag_pitch_ = 0, lag_pitch_w_ = 0;
     double lag_time_ = 0;
-    render::Vec3 point_[2] = {{0, -0.8f, 0}, {0, -1.5f, -6.0f}};
+    render::Vec3 point_[2] = {kFallbackPoint0, kFallbackPoint1};
     bool look_back_ = false;
     float look_x_ = 0, look_y_ = 0; // the look's stick (set_look)
     float look_ = 0;                // its eased turn (radians, + right)

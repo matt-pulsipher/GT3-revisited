@@ -602,14 +602,14 @@ void RaceScreen::update_race_camera(const PadState& pad, double dt) {
         camera_.set_lap(field_->opponent_lap_count(replay_focus_));
         const CarVisual* v = size_t(replay_focus_) < opp_visuals_.size() ? opp_visuals_[size_t(replay_focus_)].get() : nullptr;
         if (v) camera_.set_replay_mounts(&v->mounts());
-        bind_hood(camera_, hood_bound_, v);
+        bind_camera_car(camera_, camera_car_, v);
         camera_.update(fs, field_->opponent_setup(replay_focus_), pad, dt);
         return;
     }
     camera_.set_track_distance(track_->distance_of(render_state_.position));
     camera_.set_lap(lap_count());
     if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
-    bind_hood(camera_, hood_bound_, car_visual_.get());
+    bind_camera_car(camera_, camera_car_, car_visual_.get());
     camera_.update(render_state_, vehicle_->setup(), pad, dt);
 }
 

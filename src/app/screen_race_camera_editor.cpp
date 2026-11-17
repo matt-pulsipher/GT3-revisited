@@ -60,7 +60,7 @@ void RaceScreen::start_camera_editor(App& app) {
     camera_.set_look(0, 0);
     editor_->begin();
     apply_editor_camera();
-    bind_hood(camera_, hood_bound_, car_visual_.get());
+    bind_camera_car(camera_, camera_car_, car_visual_.get());
     camera_.snap(render_state_);
     camera_.update(render_state_, vehicle_->setup(), PadState{}, 1.0 / 60.0);
     silence(app);
@@ -101,7 +101,7 @@ void RaceScreen::update_camera_editor(App& app, double dt) {
     apply_editor_camera();
     camera_.set_track_distance(track_->distance_of(render_state_.position));
     camera_.set_lap(lap_count());
-    bind_hood(camera_, hood_bound_, car_visual_.get());
+    bind_camera_car(camera_, camera_car_, car_visual_.get());
     camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
 }
 

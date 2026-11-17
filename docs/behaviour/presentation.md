@@ -1663,7 +1663,9 @@ opens the pause, §E2):
 - **Up / Down** (modes 0 and 3, and mode 2 with TARGET MANUAL): the next /
   previous car, wrapping, with a new shot for the new car (below, §H8).
 - **Cross** (modes 0, 2 and 3): the driver's view on the followed car (the view
-  the player last drove with) and back. Back on the replay cameras the view's
+  the player last drove with) and back. The view sits at that car's own camera
+  points (its in-car eye, its chase point: `CameraRig::set_car_mounts`, bound
+  with the camera's car), and in the in-car view that car is not drawn. Back on the replay cameras the view's
   reset re-arms the shot (§H8). A new or restarted replay starts on the replay cameras.
 - **Cross, Circle, L1, R1** (mode 1): a new cut (§G2).
 - **Up / Down** (mode 1): the race-sound level inside the sections the music
