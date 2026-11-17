@@ -37,8 +37,8 @@ struct Box {
 
 } // namespace
 
-void Occluder::add(const scene::Model& model) {
-    for (const scene::Mesh& m : model.meshes) {
+void Occluder::add(const std::vector<scene::Mesh>& meshes) {
+    for (const scene::Mesh& m : meshes) {
         if (m.lod != 0) continue;
         const auto& t = m.transform; // column-major
         auto xf = [&](const scene::Vertex& v) {

@@ -18,7 +18,8 @@ namespace gt3r::race {
 class Occluder {
 public:
     // Adds a model's opaque, non-additive LOD-0 triangles (mesh transforms applied).
-    void add(const scene::Model& model);
+    void add(const scene::Model& model) { add(model.meshes); }
+    void add(const std::vector<scene::Mesh>& meshes);
     // Builds the tree over the triangles added so far.
     void build();
     bool empty() const { return tris_.empty(); }

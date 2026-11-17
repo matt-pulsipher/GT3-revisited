@@ -1985,7 +1985,8 @@ by the course area):
 - `race::SunGlare` draws the glare billboard (style 0, `race/glare.img`
   for every style). Visibility: the original depth-tests an N x N pixel box
   around the sun; we cast a 3 x 3 grid of rays through the same angular box
-  against the course's opaque scenery and backdrop triangles
+  against the course's opaque scenery and backdrop triangles, the moving nodes in their start
+  pose included (some carry whole buildings: Smokey Mountain's hotel, public issue 321)
   (`race::Occluder`, a bounding volume tree; a few microseconds) and use the open fraction.
 - `race::SunDisc` draws the sun disc: `Flare::disc_mesh` as a `scene::Model` with the
   vertex program's colours baked in at load (sun RGB x gain / 2), one additive unlit primitive
