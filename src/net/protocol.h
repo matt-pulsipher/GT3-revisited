@@ -19,14 +19,18 @@ namespace gt3r::net {
 constexpr u16 kProtocolVersion = 4; // 4: races on the exact core (exact car states, pad frames)
 constexpr int kMaxPlayers = 6; // as the original's i.LINK battle
 constexpr size_t kMaxDatagram = 1200;
+// What a game supports beyond its protocol (Hello's last byte; older games send none): races with tyre wear.
+constexpr u8 kCapTireWear = 1;
+constexpr u8 kCaps = kCapTireWear;
 
 enum class Msg : u8 {
-    Hello = 1,    // C->H  u16 version, str name, str car, u8 paint, str build
+    Hello = 1,    // C->H  u16 version, str name, str car, u8 paint, str build, u8 n, {str endpoint}, u8 caps
     Welcome = 2,  // H->C  u8 your id
     Reject = 3,   // H->C  str reason
     Roster = 4,   // H->*  u8 n, {u8 id, str name, str car, u8 paint, u8 flags (1 ready, 2 loaded), u16 ping ms}
     Settings = 5, // H->*  str course, u8 laps, u8 mods, u16 ghost ms, u8 stock only, u16 max PS,
-                  //       u8 class, u8 category, u8 drive, u8 aspiration (net::Settings)
+                  //       u8 class, u8 category, u8 drive, u8 aspiration, u16 tires, u8 tire wear,
+                  //       u8 stock settings (net::Settings)
     Car = 6,      // C->H  str car, u8 paint, u8 ready
     Load = 7,     // H->*  str course, u8 laps, u8 n, {u8 id} grid order (pole first)
     Loaded = 8,   // C->H  (the race scene is ready)

@@ -17,6 +17,9 @@
 #include <bit>
 #include <cmath>
 #include <cstdio>
+#include <climits>
+#include <cstdlib>
+#include <cstring>
 
 namespace gt3r::game {
 
@@ -83,12 +86,25 @@ Bytes encode_online_car(const OnlineCar& c) {
     w.bytes(*c.digest); // trailing: older games stop reading before it
     // A mod car's donor and a garage mod car's package after the digest: 0.5.0 ignores what follows the digest. Only with
     // a digest, which the decoder would otherwise take these bytes for (the lobby always sends one).
+    // Then a disc, mod or arcade car's lobby tires and settings (a mod car's donor first, empty or not, which 0.5.0 and later
+    // read before them): u8 tire type (0xFF: the car's own), u8 flags (1: settings follow), the settings. Older games ignore
+    // them (their digest of the car then differs from ours).
+    const bool lobby = c.kind != OnlineCar::Kind::Garage && (c.tires >= 0 || (c.tune && c.kind != OnlineCar::Kind::Arcade));
     if (c.kind == OnlineCar::Kind::Garage && !c.package.empty()) {
         w.str(c.package);
         w.u32_(c.package_size);
         w.str(c.donor);
-    } else if (c.kind == OnlineCar::Kind::Mod && !c.donor.empty()) {
+    } else if (c.kind == OnlineCar::Kind::Mod && (!c.donor.empty() || lobby)) {
         w.str(c.donor);
+    }
+    if (lobby) {
+        w.u8_(c.tires >= 0 ? u8(c.tires) : u8(0xFF));
+        const bool tune = c.tune && c.kind != OnlineCar::Kind::Arcade;
+        w.u8_(tune ? 1 : 0);
+        if (tune) {
+            sim::CarSettings t = *c.tune;
+            each_setting(t, [&](int& v) { w.u32_(u32(s32(v))); });
+        }
     }
     return w.data;
 }
@@ -136,6 +152,18 @@ std::optional<OnlineCar> decode_online_car(ByteSpan data) {
     } else if (c.digest && c.kind == OnlineCar::Kind::Mod && r.remaining() > 0) {
         c.donor = r.str();
     }
+    // A disc, mod or arcade car's lobby tires and settings (absent from older games' descriptors).
+    if (c.digest && c.kind != OnlineCar::Kind::Garage && r.remaining() > 0) {
+        const u8 t = r.u8_(), flags = r.u8_();
+        if (t != 0xFF && t >= kTireTypes) return std::nullopt;
+        c.tires = t == 0xFF ? -1 : int(t);
+        if (flags & 1) {
+            if (c.kind == OnlineCar::Kind::Arcade) return std::nullopt; // an arcade car races with its variant's settings
+            sim::CarSettings tune;
+            each_setting(tune, [&](int& v) { v = int(s32(r.u32_())); });
+            c.tune = tune;
+        }
+    }
     if (!r.ok() || c.car.empty()) return std::nullopt;
     return c;
 }
@@ -180,13 +208,184 @@ namespace {
 // compares it: the lobby refuses the car where this disc builds another one).
 std::optional<race::ArcadeCar> arcade_here(const data::CarDatabase& db, const OnlineCar& c, const std::string& course,
                                            std::string* error) {
-    std::optional<race::ArcadeCar> ac = race::arcade_car(db, c.arcade, 0, course, error);
+    std::optional<race::ArcadeCar> ac = race::arcade_car_on(db, c.arcade, c.tires >= 0 ? c.tires : 10, course, error);
     if (!ac || ac->car == c.car || c.digest) return ac;
     if (error) *error = "arcade car " + c.arcade + " is not a " + c.car;
     return std::nullopt;
 }
 
 } // namespace
+
+// --- tires and settings ---
+
+namespace {
+
+size_t tire_slot(bool rear) { return size_t(part_slot(int(rear ? data::TableId::RearTire : data::TableId::FrontTire))); }
+
+// The stage (+0x10) of tyre part `id`; -1 when the record is missing.
+int tire_stage(const data::CarDatabase& db, bool rear, u64 id) {
+    const ByteSpan* r = db.record(rear ? data::TableId::RearTire : data::TableId::FrontTire, id);
+    return r && r->size() > 0x10 ? int((*r)[0x10]) : -1;
+}
+
+// The front and rear tyre parts of tire type `type` on disc or mod car `label` that GT Mode fits (fittable_parts): 0 its own
+// set, 1 .. 9 the tune shop's (the goods 56 + type and its rear goods, find_part).
+std::optional<std::pair<u64, u64>> fitted_tires(const data::CarDatabase& db, const std::string& label, int type) {
+    const data::Car* car = db.car(label);
+    if (!car || type < 0 || type > 9) return std::nullopt;
+    if (type == 0) return std::pair{car->parts[tire_slot(false)], car->parts[tire_slot(true)]};
+    const std::optional<PartOffer> f = find_part(db, label, 56 + type), r = find_part(db, label, rear_tire_goods(56 + type));
+    if (!f || !r) return std::nullopt;
+    auto fits = [&](bool rear, u64 id) {
+        const std::vector<u64> ok = fittable_parts(db, label, int(tire_slot(rear)));
+        return std::find(ok.begin(), ok.end(), id) != ok.end();
+    };
+    if (!fits(false, f->id) || !fits(true, r->id)) return std::nullopt;
+    return std::pair{f->id, r->id};
+}
+
+// An arcade car's variant (table 35); null when unknown here.
+const data::CarVariant* arcade_variant(const data::CarDatabase& db, const std::string& arcade) {
+    for (const data::CarVariant& v : db.arcade_cars())
+        if ((v.label == arcade || v.label == "_" + arcade) && db.car(v.car)) return &v;
+    return nullptr;
+}
+
+// Whether the database has both tyre records of stage `type` for car `base` (race::arcade_car_on's labels).
+bool has_tire_records(const data::CarDatabase& db, const std::string& base, int type) {
+    const char sfx = char('a' + type);
+    return db.record(data::TableId::FrontTire, "ft_" + base + "_" + sfx) && db.record(data::TableId::RearTire, "rt_" + base + "_" + sfx);
+}
+
+bool same(const sim::CarSettings& a, const sim::CarSettings& b) {
+    static_assert(std::is_trivially_copyable_v<sim::CarSettings>);
+    return std::memcmp(&a, &b, sizeof a) == 0;
+}
+
+// Why a car's parts and settings are not ones GT Mode can build ("" when they are, or when there is nothing to check): a garage
+// car's (garage_setup_problem), a disc or mod car's with its lobby tires and settings, an arcade car's chosen tires.
+std::string lobby_setup_problem(const data::CarDatabase& db, const OnlineCar& c) {
+    if (c.kind == OnlineCar::Kind::Garage) return garage_setup_problem(db, c.car, c.parts, c.settings);
+    if (c.kind == OnlineCar::Kind::Arcade) {
+        const data::CarVariant* v = arcade_variant(db, c.arcade);
+        if (c.tires >= 0 && v && !has_tire_records(db, v->car, c.tires)) return "tires the car does not have";
+        return {};
+    }
+    if (c.tires < 0 && !c.tune) return {};
+    if (!db.car(c.car)) return {};
+    if (c.tires > 0 && !fitted_tires(db, c.car, c.tires)) return "a part GT Mode does not fit on this car (tires)";
+    const std::optional<std::array<u64, 27>> parts = online_car_parts(db, c);
+    const std::optional<sim::CarSettings> settings = online_car_settings(db, c);
+    return parts && settings ? garage_setup_problem(db, c.car, *parts, *settings) : std::string();
+}
+
+} // namespace
+
+const char* tire_type_name(int type) {
+    static const char* const n[kTireTypes] = {
+        "Stock tires",        "Sports tires",       "Racing Super-slick tires", "Racing Slick tires",
+        "Racing Medium-slick tires", "Racing Medium tires", "Racing Medium-soft tires", "Racing Soft tires",
+        "Racing Super-soft tires",   "Simulation tires",    "Arcade Racing tires",      "Arcade Drift tires",
+    };
+    return type >= 0 && type < kTireTypes ? n[type] : "?";
+}
+
+std::vector<int> online_tire_choices(const data::CarDatabase& db, const OnlineCar& c) {
+    std::vector<int> out;
+    if (c.kind == OnlineCar::Kind::Arcade) {
+        if (const data::CarVariant* v = arcade_variant(db, c.arcade))
+            for (int t = 0; t < kTireTypes; ++t)
+                if (has_tire_records(db, v->car, t)) out.push_back(t);
+        return out;
+    }
+    if (!db.car(c.car)) return out;
+    for (int t = 0; t <= 9; ++t)
+        if (fitted_tires(db, c.car, t)) out.push_back(t);
+    return out;
+}
+
+int online_car_tires(const data::CarDatabase& db, const OnlineCar& c) {
+    if (c.tires >= 0) return c.tires;
+    switch (c.kind) {
+    case OnlineCar::Kind::Garage: return tire_stage(db, false, c.parts[tire_slot(false)]);
+    case OnlineCar::Kind::Arcade: return 10;
+    default: return db.car(c.car) ? 0 : -1;
+    }
+}
+
+bool set_online_car_tires(const data::CarDatabase& db, OnlineCar& c, int type) {
+    const std::vector<int> ok = online_tire_choices(db, c);
+    if (std::find(ok.begin(), ok.end(), type) == ok.end()) return false;
+    if (c.kind == OnlineCar::Kind::Garage) {
+        const std::optional<std::pair<u64, u64>> t = fitted_tires(db, c.car, type);
+        if (!t) return false;
+        c.parts[tire_slot(false)] = t->first, c.parts[tire_slot(true)] = t->second;
+        return true;
+    }
+    c.tires = type == (c.kind == OnlineCar::Kind::Arcade ? 10 : 0) ? -1 : type;
+    return true;
+}
+
+std::optional<std::array<u64, 27>> online_car_parts(const data::CarDatabase& db, const OnlineCar& c) {
+    if (c.kind == OnlineCar::Kind::Garage) return c.parts;
+    const data::Car* car = c.kind == OnlineCar::Kind::Arcade ? nullptr : db.car(c.car);
+    if (!car) return std::nullopt;
+    std::array<u64, 27> parts = car->parts;
+    if (c.tires > 0)
+        if (const std::optional<std::pair<u64, u64>> t = fitted_tires(db, c.car, c.tires))
+            parts[tire_slot(false)] = t->first, parts[tire_slot(true)] = t->second;
+    return parts;
+}
+
+std::optional<sim::CarSettings> online_car_settings(const data::CarDatabase& db, const OnlineCar& c) {
+    if (c.kind == OnlineCar::Kind::Garage) return c.settings;
+    if (c.tune && c.kind != OnlineCar::Kind::Arcade) return c.tune;
+    const std::optional<std::array<u64, 27>> parts = online_car_parts(db, c);
+    if (!parts) return std::nullopt;
+    return sim::stock_settings(db, c.car, *parts);
+}
+
+bool online_car_tunable(const data::CarDatabase& db, const OnlineCar& c) {
+    return c.kind != OnlineCar::Kind::Arcade && db.car(c.car) != nullptr;
+}
+
+void set_online_car_settings(const data::CarDatabase& db, OnlineCar& c, const sim::CarSettings& s) {
+    if (c.kind == OnlineCar::Kind::Garage) {
+        c.settings = s;
+        return;
+    }
+    if (c.kind == OnlineCar::Kind::Arcade) return;
+    c.tune.reset();
+    const std::optional<sim::CarSettings> stock = online_car_settings(db, c);
+    if (!stock || !same(*stock, s)) c.tune = s;
+}
+
+std::string settings_text(const sim::CarSettings& s) {
+    std::string out;
+    sim::CarSettings t = s;
+    each_setting(t, [&](int& v) { out += (out.empty() ? "" : ",") + std::to_string(v); });
+    return out;
+}
+
+std::optional<sim::CarSettings> settings_from_text(const std::string& text) {
+    std::vector<long> words;
+    size_t pos = 0;
+    while (pos <= text.size()) {
+        const size_t end = std::min(text.find(',', pos), text.size());
+        const std::string w = text.substr(pos, end - pos);
+        char* stop = nullptr;
+        const long v = std::strtol(w.c_str(), &stop, 10);
+        if (w.empty() || *stop || v < INT32_MIN || v > INT32_MAX) return std::nullopt;
+        words.push_back(v);
+        pos = end + 1;
+    }
+    sim::CarSettings s;
+    size_t i = 0, n = 0;
+    each_setting(s, [&](int&) { ++n; });
+    if (words.size() != n) return std::nullopt;
+    each_setting(s, [&](int& v) { v = int(words[i++]); });
+    return s;
+}
 
 std::optional<sim::CarSpec> online_car_spec(const data::CarDatabase& db, const OnlineCar& c, std::string* error,
                                             const std::string& course) {
@@ -199,7 +398,16 @@ std::optional<sim::CarSpec> online_car_spec(const data::CarDatabase& db, const O
         if (error) *error = "no car " + c.car + " here";
         return std::nullopt;
     }
-    if (c.kind != OnlineCar::Kind::Garage) return sim::build_car_spec(db, c.car, error);
+    if (c.kind != OnlineCar::Kind::Garage) {
+        if (c.tires < 0 && !c.tune) return sim::build_car_spec(db, c.car, error);
+        const std::optional<std::array<u64, 27>> parts = online_car_parts(db, c);
+        const std::optional<sim::CarSettings> settings = online_car_settings(db, c);
+        if (!parts || !settings) {
+            if (error) *error = "no car " + c.car + " here";
+            return std::nullopt;
+        }
+        return sim::build_car_spec(db, c.car, *parts, *settings, error);
+    }
     std::optional<sim::CarSpec> s = sim::build_car_spec(db, c.car, c.parts, c.settings, error);
     if (!s) return s;
     CarCondition cond;
@@ -270,11 +478,10 @@ CarHere online_car_here(const data::CarDatabase& db, const sim::exact::ProgramDa
         return c.kind == OnlineCar::Kind::Arcade && race::arcade_car(db, c.arcade, 0, {}) ? CarHere::Differs : CarHere::Unknown;
     if (c.digest && d && online_car_digest(db, *d, c) != c.digest) return CarHere::Differs;
     // After the digest: another region's car that builds alike may still fall outside this disc's ranges.
-    if (c.kind == OnlineCar::Kind::Garage)
-        if (std::string bad = garage_setup_problem(db, c.car, c.parts, c.settings); !bad.empty()) {
-            if (why) *why = std::move(bad);
-            return CarHere::Illegal;
-        }
+    if (std::string bad = lobby_setup_problem(db, c); !bad.empty()) {
+        if (why) *why = std::move(bad);
+        return CarHere::Illegal;
+    }
     // The body the race draws (the base car's model).
     const data::Car* car = db.car(online_car_base(db, c));
     const std::string model = car ? db.model_of(*car) : std::string();
@@ -419,6 +626,13 @@ std::string car_rules_summary(const CarRules& r) {
     if (r.drive) add(drive_rule_name(r.drive));
     if (r.aspiration) add(aspiration_rule_name(r.aspiration));
     if (r.stock_only) add("stock");
+    if (r.stock_settings) add("stock settings");
+    if ((r.tires & kAllTires) != kAllTires) {
+        int n = 0, one = -1;
+        for (int t = 0; t < kTireTypes; ++t)
+            if (r.tires & (1u << t)) ++n, one = t;
+        add(n == 1 ? std::string(tire_type_name(one)) + " only" : n ? std::to_string(n) + " tire types" : "no tires allowed");
+    }
     if (r.max_ps) add("at most " + std::to_string(r.max_ps) + " PS");
     if (!r.allow_mods) add("no mod cars");
     return out.empty() ? "any car" : out;
@@ -436,16 +650,26 @@ CarFacts online_car_facts(const data::CarDatabase& db, const GtData* gd, const O
     f.category = car->bytes.size() > 0xF1 ? car->bytes[0xF1] : 0;
     // The fitted parts: the car's own, an arcade car's variant parts over them, a garage car's.
     std::array<u64, 27> parts = car->parts;
-    if (c.kind == OnlineCar::Kind::Garage) parts = c.parts;
+    if (std::optional<std::array<u64, 27>> own = online_car_parts(db, c)) parts = *own;
     if (c.kind == OnlineCar::Kind::Arcade)
         for (const data::CarVariant& v : db.arcade_cars())
             if (v.label == c.arcade)
                 for (size_t i = 0; i < parts.size(); ++i)
                     if (v.parts[i]) parts[i] = v.parts[i];
+    // Tuned by GT3's test (GtMode::tuned, parts only): a garage car's parts, its tires not counted (the tire rule decides
+    // them).
     if (c.kind == OnlineCar::Kind::Garage) {
-        f.tuned = GtMode::tuned(db, c.car, c.parts);
-        f.setup = garage_setup_problem(db, c.car, c.parts, c.settings);
+        std::array<u64, 27> untired = c.parts;
+        untired[tire_slot(false)] = car->parts[tire_slot(false)], untired[tire_slot(true)] = car->parts[tire_slot(true)];
+        f.tuned = GtMode::tuned(db, c.car, untired);
     }
+    // Settings off the stock ones its parts give (the car settings rule): a garage car's, a disc or mod car's lobby settings.
+    if (c.kind != OnlineCar::Kind::Arcade)
+        if (std::optional<sim::CarSettings> st = online_car_settings(db, c))
+            f.settings_changed = !same(*st, sim::stock_settings(db, c.car, parts));
+    f.setup = lobby_setup_problem(db, c);
+    f.tires = online_car_tires(db, c);
+    if (c.kind == OnlineCar::Kind::Garage) f.tires_rear = tire_stage(db, true, c.parts[tire_slot(true)]);
     // Drivetrain and aspiration as GT3's event rules read them (GtMode::check_entry).
     static const int kRule[5] = {2, 1, 3, 4, 5}; // database drive type FR, FF, AWD, MR, RR -> rule
     if (auto dt = db.drivetrain(parts[size_t(part_slot(int(data::TableId::Drivetrain)))]); dt && dt->drive_type < 5)
@@ -509,6 +733,12 @@ bool car_meets_rules(const OnlineCar& c, const CarFacts& f, const CarRules& r, s
     if (r.aspiration && f.turbo != (r.aspiration == 2))
         return no(std::string(aspiration_rule_name(r.aspiration)) + " cars only");
     if (r.stock_only && f.tuned) return no("tuned garage cars are not allowed (stock cars only)");
+    if (r.stock_settings && f.settings_changed) return no("changed settings are not allowed (stock settings only)");
+    // Every car races on dirt tires on a dirt course (GT3 fits them before the race).
+    if (!r.dirt_course)
+        for (int t : {f.tires, f.tires_rear})
+            if (t >= 0 && (t >= kTireTypes || !(r.tires & (1u << t))))
+                return no(std::string(tire_type_name(t)) + " are not allowed");
     if (r.max_ps > 0 && f.built && f.power_ps > float(r.max_ps) + 0.5f)
         return no(std::to_string(int(f.power_ps + 0.5f)) + " PS is over the " + std::to_string(r.max_ps) + " PS limit");
     return true;

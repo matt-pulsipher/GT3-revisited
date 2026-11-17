@@ -187,6 +187,7 @@ bool Session::host(u16 port, const std::string& name, const std::string& car, u8
     me.name = name;
     me.car = car;
     me.paint = paint;
+    me.caps = caps_;
     players_ = {me};
     phase_ = Phase::Lobby;
     start_rx();
@@ -217,6 +218,7 @@ bool Session::join(const std::string& address, const std::string& name, const st
     w.str(version_.to_string());
     w.u8_(u8(std::min<size_t>(local_eps_.size(), 4)));
     for (size_t i = 0; i < local_eps_.size() && i < 4; ++i) w.str(local_eps_[i]);
+    w.u8_(caps_); // what this game supports (older hosts stop reading before it)
     send_reliable(*c, w);
     conns_.push_back(std::move(c));
     phase_ = Phase::Lobby;
@@ -243,6 +245,7 @@ bool Session::host_via(const std::string& server, const std::string& name, const
     me.name = name;
     me.car = car;
     me.paint = paint;
+    me.caps = caps_;
     players_ = {me};
     collect_local_endpoints();
     phase_ = Phase::Lobby;
@@ -279,6 +282,7 @@ bool Session::join_code(const std::string& server, const std::string& code, cons
     w.str(version_.to_string());
     w.u8_(u8(std::min<size_t>(local_eps_.size(), 4)));
     for (size_t i = 0; i < local_eps_.size() && i < 4; ++i) w.str(local_eps_[i]);
+    w.u8_(caps_); // what this game supports (older hosts stop reading before it)
     hello_ = w.data;
     phase_ = Phase::Lobby;
     server_started_ = now();
@@ -471,6 +475,9 @@ Writer Session::settings_msg() const {
     w.u8_(settings_.category);
     w.u8_(settings_.drive);
     w.u8_(settings_.aspiration);
+    w.u16_(settings_.tires);
+    w.u8_(settings_.tire_wear ? 1 : 0);
+    w.u8_(settings_.stock_settings ? 1 : 0);
     return w;
 }
 
@@ -1242,6 +1249,7 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
                 std::string ep = r.str();
                 if (std::find(eps.begin(), eps.end(), ep) == eps.end()) eps.push_back(ep);
             }
+            const u8 caps = r.remaining() ? r.u8_() : u8(0); // (older games send none)
             // Direct-IP sessions (no relay server checks versions): the same release only. Through
             // a relay server, its min_online decides (docs/dev/ONLINE.md "Versions and updates").
             GameVersion theirs = parse_game_version(build).value_or(GameVersion{});
@@ -1270,6 +1278,7 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
             p.car = car;
             p.paint = paint;
             p.endpoints = eps;
+            p.caps = caps;
             players_.push_back(p);
             Writer w;
             w.u8_(u8(Msg::Welcome));
@@ -1511,6 +1520,11 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
             s.drive = r.u8_();
             s.aspiration = r.u8_();
         }
+        if (r.remaining() >= 3) { // the tire rule and tire wear (a host without them: any tires, no wear)
+            s.tires = r.u16_();
+            s.tire_wear = r.u8_() & 1;
+        }
+        if (r.remaining() >= 1) s.stock_settings = r.u8_() & 1; // (a host without it: any settings)
         if (!r.ok()) break;
         settings_ = s;
         Event e;

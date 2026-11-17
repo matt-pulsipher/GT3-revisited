@@ -144,7 +144,12 @@ ExactCarSource exact_online_source(const data::CarDatabase& db, const game::Onli
         return {c.car, c.parts, c.settings};
     }
     if (c.kind == K::Arcade)
-        if (std::optional<ArcadeCar> ac = arcade_car(db, c.arcade, 0, course)) return {ac->label, std::nullopt, std::nullopt, ac->stage};
+        if (std::optional<ArcadeCar> ac = arcade_car_on(db, c.arcade, c.tires >= 0 ? c.tires : 10, course))
+            return {ac->label, std::nullopt, std::nullopt, ac->stage};
+    // A disc or mod car with the lobby's tires or settings: its parts with those tires, and those settings.
+    if (c.tires >= 0 || c.tune)
+        if (std::optional<std::array<u64, 27>> parts = game::online_car_parts(db, c))
+            if (std::optional<sim::CarSettings> settings = game::online_car_settings(db, c)) return {c.car, parts, settings};
     ExactCarSource s;
     s.label = c.car;
     return s;

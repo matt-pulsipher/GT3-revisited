@@ -20,9 +20,11 @@
 #include "disc/core_image.h"
 #include "disc/disc.h"
 #include "sim/car_spec.h"
+#include "race/exact_setup.h"
 #include "sim/exact/program_data.h"
 #include "vfs/vfs.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -162,6 +164,131 @@ TEST(net_car_digest_wire) {
         c.donor = "syn_a";
         CHECK(game::encode_online_car(c) == b);
     }
+}
+
+TEST(net_car_lobby_tires_wire) {
+    // A disc, mod or arcade car's lobby tires and settings (docs/dev/ONLINE.md "Tires and settings") trail what older games
+    // read: they read the same car without them (and their digest of it differs, so they refuse it).
+    std::array<u8, 32> dig{};
+    for (size_t i = 0; i < dig.size(); ++i) dig[i] = u8(i * 3 + 5);
+    game::OnlineCar d;
+    d.car = "syn_a";
+    d.digest = dig;
+    const Bytes plain = game::encode_online_car(d);
+    sim::CarSettings tune;
+    tune.gears = {-3000, 3500, 2200, 1500, 1100, 900, -999, -999};
+    tune.spring = {85, 72};
+    tune.tcs = 3;
+    d.tires = 7;
+    d.tune = tune;
+    const Bytes now = game::encode_online_car(d);
+    CHECK(now.size() > plain.size() + 2 && std::equal(plain.begin(), plain.end(), now.begin()));
+    std::optional<game::OnlineCar> nd = game::decode_online_car(now);
+    CHECK(nd && nd->tires == 7 && nd->tune && game::settings_text(*nd->tune) == game::settings_text(tune));
+    CHECK(nd && game::encode_online_car(*nd) == now);
+    std::optional<game::OnlineCar> as_old = game::decode_online_car(ByteSpan(now.data(), plain.size()));
+    CHECK(as_old && as_old->tires == -1 && !as_old->tune && as_old->digest == d.digest);
+    // Tires alone; no digest: neither (the lobby always sends one).
+    d.tune.reset();
+    std::optional<game::OnlineCar> td = game::decode_online_car(game::encode_online_car(d));
+    CHECK(td && td->tires == 7 && !td->tune);
+    game::OnlineCar nodig = d;
+    nodig.digest.reset();
+    std::optional<game::OnlineCar> ndd = game::decode_online_car(game::encode_online_car(nodig));
+    CHECK(ndd && ndd->tires == -1);
+
+    // A mod car from the list without a donor: an empty donor first (0.5.0 and later read a donor there).
+    game::OnlineCar m;
+    m.kind = game::OnlineCar::Kind::Mod;
+    m.car = "mod_x";
+    m.package = std::string(64, 'c');
+    m.digest = dig;
+    const Bytes m_plain = game::encode_online_car(m);
+    m.tires = 3;
+    const Bytes m_now = game::encode_online_car(m);
+    CHECK(m_now.size() == m_plain.size() + 1 + 2 && std::equal(m_plain.begin(), m_plain.end(), m_now.begin()));
+    std::optional<game::OnlineCar> md = game::decode_online_car(m_now);
+    CHECK(md && md->tires == 3 && md->donor.empty() && md->package == m.package && game::encode_online_car(*md) == m_now);
+    m.donor = "syn_a";
+    std::optional<game::OnlineCar> md2 = game::decode_online_car(game::encode_online_car(m));
+    CHECK(md2 && md2->tires == 3 && md2->donor == "syn_a");
+
+    // An arcade car: tires only (it races with its variant's settings); a garage car carries both in its parts and settings.
+    game::OnlineCar a;
+    a.kind = game::OnlineCar::Kind::Arcade;
+    a.car = "syn_a";
+    a.arcade = "syn_a_100";
+    a.digest = dig;
+    const Bytes a_plain = game::encode_online_car(a);
+    a.tune = tune;
+    CHECK(game::encode_online_car(a) == a_plain);
+    a.tires = 11;
+    const Bytes a_now = game::encode_online_car(a);
+    std::optional<game::OnlineCar> ad = game::decode_online_car(a_now);
+    CHECK(ad && ad->tires == 11 && !ad->tune);
+    Bytes a_tuned = a_now; // an arcade car with settings: refused
+    a_tuned.back() = 1;
+    for (int i = 0; i < 46; ++i) a_tuned.insert(a_tuned.end(), {0, 0, 0, 0});
+    CHECK(!game::decode_online_car(a_tuned));
+    game::OnlineCar g;
+    g.kind = game::OnlineCar::Kind::Garage;
+    g.car = "syn_a";
+    g.digest = dig;
+    const Bytes g_plain = game::encode_online_car(g);
+    g.tires = 5, g.tune = tune;
+    CHECK(game::encode_online_car(g) == g_plain);
+
+    // Malformed: a tire type past the last, settings cut short.
+    Bytes bad = game::encode_online_car(d);
+    bad[plain.size()] = u8(game::kTireTypes);
+    CHECK(!game::decode_online_car(bad));
+    d.tune = tune;
+    const Bytes full = game::encode_online_car(d);
+    CHECK(!game::decode_online_car(ByteSpan(full.data(), full.size() - 2)));
+
+    // The settings as the config keeps them.
+    CHECK(game::settings_from_text(game::settings_text(tune)) &&
+          game::settings_text(*game::settings_from_text(game::settings_text(tune))) == game::settings_text(tune));
+    CHECK(!game::settings_from_text("1,2,3") && !game::settings_from_text("") && !game::settings_from_text("x"));
+}
+
+TEST(net_car_tire_rules) {
+    // The lobby's tire rule: each tire type a car races on (both axles of a garage car's) must be allowed; on a dirt course
+    // every car races on dirt tires, so the rule does not apply there.
+    game::OnlineCar c;
+    c.car = "syn_a";
+    game::CarFacts f;
+    f.known = f.built = true;
+    f.tires = 7;
+    game::CarRules r;
+    std::string why;
+    CHECK(r.any() && game::car_meets_rules(c, f, r, &why));
+    r.tires = u16(game::kAllTires & ~(1u << 7));
+    CHECK(!r.any() && !game::car_meets_rules(c, f, r, &why) && why == "Racing Soft tires are not allowed");
+    r.dirt_course = true;
+    CHECK(game::car_meets_rules(c, f, r, &why));
+    r.dirt_course = false;
+    f.tires = 1, f.tires_rear = 7;
+    CHECK(!game::car_meets_rules(c, f, r, &why) && why == "Racing Soft tires are not allowed");
+    f.tires_rear = 1;
+    CHECK(game::car_meets_rules(c, f, r, &why));
+    r.tires = 1u << 7;
+    CHECK(game::car_rules_summary(r) == "Racing Soft tires only");
+    r.tires = (1u << 7) | (1u << 8);
+    CHECK(game::car_rules_summary(r) == "2 tire types");
+    r.tires = 0;
+    CHECK(game::car_rules_summary(r) == "no tires allowed" && !game::car_meets_rules(c, f, r, &why));
+    // Changed settings are the car settings rule's, tuned parts the stock-only rule's; neither is the tire rule's.
+    r = {};
+    r.stock_only = true;
+    f.settings_changed = true;
+    CHECK(game::car_meets_rules(c, f, r, &why));
+    r.stock_settings = true;
+    CHECK(!r.any() && !game::car_meets_rules(c, f, r, &why) && why == "changed settings are not allowed (stock settings only)");
+    CHECK(game::car_rules_summary(r) == "stock, stock settings");
+    f.settings_changed = false, f.tuned = true;
+    CHECK(!game::car_meets_rules(c, f, r, &why) && why == "tuned garage cars are not allowed (stock cars only)");
+    CHECK(std::string(game::tire_type_name(0)) == "Stock tires" && std::string(game::tire_type_name(11)) == "Arcade Drift tires");
 }
 
 TEST(net_car_params_digest) {
@@ -801,6 +928,111 @@ TEST(net_car_here_disc) {
     CHECK(!game::car_here_blocks(h));
     std::printf("  arcade Viper (%s here) named as %s: %s\n", viper.car.c_str(), twin.c_str(),
                 h == CarHere::Ok ? "races" : game::car_here_text(h));
+}
+
+TEST(net_car_tires_disc) {
+    // Tires and settings chosen in the lobby on a disc's cars: a disc car on each set the tune shop sells it, a garage car's
+    // tire parts, an arcade car on the arcade's drift set; each builds, reaches the digest and races here as sent.
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC (NTSC-U)");
+    data::CarDatabase db;
+    CHECK(db.load(disc->volume()));
+    std::optional<sim::exact::ProgramData> d = program_of(*disc);
+    CHECK(d.has_value());
+    if (!d || !db.car("r34_gtr_v_99")) return;
+    auto has_model = [&](const std::string& m) { return disc->volume().find("cars/day/" + m) != nullptr; };
+    auto sent = [&](game::OnlineCar c) {
+        c.digest = game::online_car_digest(db, *d, c);
+        return wire(c);
+    };
+    std::string why;
+    // A road car: its own set and the shop's.
+    game::OnlineCar r34 = game::online_car_from_db(db, "r34_gtr_v_99", 0);
+    const std::vector<int> choices = game::online_tire_choices(db, r34);
+    std::string list;
+    for (int t : choices) list += " " + std::to_string(t);
+    std::printf("  R34 tire types:%s\n", list.c_str());
+    CHECK(choices.size() >= 8 && choices.front() == 0 && std::find(choices.begin(), choices.end(), 7) != choices.end());
+    CHECK(std::find(choices.begin(), choices.end(), 10) == choices.end()); // the arcade's are an arcade car's
+    const game::OnlineCar stock = sent(r34);
+    CHECK(game::set_online_car_tires(db, r34, 7) && r34.tires == 7);
+    const game::OnlineCar soft = sent(r34);
+    CHECK(soft.tires == 7 && soft.digest && soft.digest != stock.digest);
+    CHECK(game::online_car_here(db, &*d, soft, has_model, &why) == CarHere::Ok);
+    const game::CarFacts sf = game::online_car_facts(db, nullptr, soft);
+    CHECK(sf.tires == 7 && !sf.tuned && !sf.settings_changed && sf.setup.empty());
+    const std::optional<sim::CarSpec> a = game::online_car_spec(db, stock), b = game::online_car_spec(db, soft);
+    CHECK(a && b && a->mass == b->mass);
+    // As the race builds it: its parts with the shop's soft set.
+    const race::ExactCarSource src = race::exact_online_source(db, soft, "trialmt");
+    CHECK(src.parts && (*src.parts)[size_t(game::part_slot(28))] == game::find_part(db, "r34_gtr_v_99", 63)->id);
+    CHECK(game::set_online_car_tires(db, r34, 0) && r34.tires == -1); // its own set again
+    CHECK(!game::set_online_car_tires(db, r34, 11));
+    // Settings the stock parts do not open: not a legal setup.
+    game::OnlineCar tuned = game::online_car_from_db(db, "r34_gtr_v_99", 0);
+    sim::CarSettings s = *game::online_car_settings(db, tuned);
+    s.spring[0] += 1;
+    game::set_online_car_settings(db, tuned, s);
+    CHECK(tuned.tune.has_value());
+    CHECK(game::online_car_here(db, &*d, sent(tuned), has_model, &why) == CarHere::Illegal);
+    std::printf("  R34, front spring +1 on stock parts: %s\n", why.c_str());
+    game::set_online_car_settings(db, tuned, *game::online_car_settings(db, game::online_car_from_db(db, "r34_gtr_v_99", 0)));
+    CHECK(!tuned.tune); // its stock settings: nothing to send
+    // A race car's suspension opens its sliders: a spring step is legal, and tuned.
+    for (const char* race : {"gt_one_race_99", "_gt_one_race_99"}) {
+        if (!db.car(race)) continue;
+        game::OnlineCar rc = game::online_car_from_db(db, race, 0);
+        const sim::CarSettings base = *game::online_car_settings(db, rc);
+        bool legal = false;
+        for (int step : {1, -1}) {
+            sim::CarSettings t = base;
+            t.spring[0] += step;
+            game::OnlineCar x = rc;
+            game::set_online_car_settings(db, x, t);
+            if (game::online_car_here(db, &*d, sent(x), has_model, &why) != CarHere::Ok) continue;
+            legal = true;
+            const game::CarFacts xf = game::online_car_facts(db, nullptr, sent(x));
+            game::CarRules r;
+            r.stock_only = true; // (settings are not GT3's tuning)
+            CHECK(xf.settings_changed && !xf.tuned && game::car_meets_rules(x, xf, r, &why));
+            r.stock_settings = true;
+            CHECK(!game::car_meets_rules(x, xf, r, &why));
+            break;
+        }
+        CHECK(legal);
+        std::printf("  %s: a front spring step is a legal lobby setting\n", race);
+    }
+
+    // A garage car: the tires are its parts; a tire change alone is not tuning.
+    game::GarageCar g;
+    g.car = "r34_gtr_v_99";
+    g.parts = db.car(g.car)->parts;
+    g.parts[26] = 0;
+    g.settings = sim::stock_settings(db, g.car, g.parts);
+    game::OnlineCar gc = game::online_car_from_garage(db, g);
+    CHECK(game::set_online_car_tires(db, gc, 8) && gc.tires == -1);
+    CHECK(gc.parts[size_t(game::part_slot(28))] == game::find_part(db, g.car, 64)->id &&
+          gc.parts[size_t(game::part_slot(29))] == game::find_part(db, g.car, 75)->id);
+    const game::CarFacts gf = game::online_car_facts(db, nullptr, gc);
+    CHECK(gf.tires == 8 && gf.tires_rear == 8 && !gf.tuned && !gf.settings_changed && gf.setup.empty());
+    CHECK(game::online_car_here(db, &*d, sent(gc), has_model, &why) == CarHere::Ok);
+
+    // An arcade car: the arcade's racing set by default, its drift set chosen.
+    game::OnlineCar arc;
+    for (const data::CarVariant& v : db.arcade_cars())
+        if (db.car(v.car) && arc.car.empty()) arc = game::online_car_from_arcade(db, v.label, 0);
+    CHECK(!arc.car.empty());
+    if (arc.car.empty()) return;
+    const std::vector<int> ac = game::online_tire_choices(db, arc);
+    CHECK(std::find(ac.begin(), ac.end(), 10) != ac.end() && std::find(ac.begin(), ac.end(), 11) != ac.end());
+    CHECK(game::online_car_tires(db, arc) == 10);
+    const game::OnlineCar racing = sent(arc);
+    CHECK(game::set_online_car_tires(db, arc, 11) && arc.tires == 11);
+    const game::OnlineCar drift = sent(arc);
+    CHECK(drift.digest != racing.digest && game::online_car_here(db, &*d, drift, has_model, &why) == CarHere::Ok);
+    CHECK(race::exact_online_source(db, drift, "trialmt").tire_stage == 11);
+    CHECK(game::set_online_car_tires(db, arc, 10) && arc.tires == -1);
+    std::printf("  arcade %s: racing and drift sets build different cars\n", arc.arcade.c_str());
 }
 
 TEST(net_car_setup_disc) {

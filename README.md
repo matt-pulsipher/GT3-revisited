@@ -335,8 +335,13 @@ players, each on their own machine:
   class lists' cars (raced as the arcade does), and every other car by its weight
   per power, as GT3 classes garage cars.
 - The host's **Car rules** limit the cars: class, production or race cars,
-  drivetrain, NA or turbo, stock cars only, a power limit, mod cars. The car
-  page can list only the cars allowed.
+  drivetrain, NA or turbo, stock cars only, stock settings only, which tires, a
+  power limit, mod cars. The car page can list only the cars allowed. The host can also turn on
+  **Tire wear**.
+- Each player chooses their car's **Tires** (the sets the tune shop sells for it;
+  an arcade car's racing or drift tires too) and can change its **Settings** in
+  the lobby, within the ranges its parts allow, as in GT Mode's settings menu.
+  The lobby remembers them per car; a GT Mode garage car keeps its own.
 - A GT Mode car races only with parts and settings the game's tune shop and
   settings menu can give it; any other setup (an edited save, say) is refused.
 - **Stability control (ASM)** and **Traction control (TCS)** are your own

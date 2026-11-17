@@ -2,7 +2,8 @@
 //
 // Start page: host a battle (UDP port [online] port, default 47630) or join one by
 // address; the player name; ASM and TCS. Lobby page: the players (name, car, ready, ping),
-// the course and laps (the host chooses), the car rules (their own page), your car, colour,
+// the course, laps and tire wear (the host chooses), the car rules (their own page, with the
+// allowed tires on a page of their own), your car, colour, tires, settings (their own page),
 // gearbox, ASM and TCS, Ready / Start. The host starts when everyone is ready; every
 // player's race screen loads, and the countdown starts for all at once. After the race
 // everyone comes back here.
@@ -18,9 +19,11 @@
 //   GT3R_ONLINE="join=127.0.0.1,car=nsx_type_r_02,name=Two"
 // readies at once; the host starts when `players` are in and ready. `page=cars`,
 // `page=makers`, `page=classes`, `page=courses` or `page=rules` opens that page once in the
-// lobby (screenshots; no auto start then). The host's rules: `class=B` (C, B, A, S, rally),
-// `category=production|race`, `drive=FF|FR|4WD|MR|RR`, `aspiration=na|turbo`, `maxps=300`,
-// `stock=1`, `mods=0`. `car=` also takes an arcade car label ("arm_tt_00").
+// lobby (screenshots; no auto start then); `page=tires` and `page=tuning` too. The host's
+// rules: `class=B` (C, B, A, S, rally), `category=production|race`, `drive=FF|FR|4WD|MR|RR`,
+// `aspiration=na|turbo`, `maxps=300`, `stock=1`, `mods=0`, `allowtires=0+1+7` (the tire types
+// allowed, game::kTireTypes), `stocksettings=1`, `wear=1` (tire wear). `car=` also takes an arcade car label
+// ("arm_tt_00"); `tires=7` puts it on that tire type.
 
 #include "app/screen_online.h"
 
@@ -35,6 +38,8 @@
 #include "game/data/car_database.h"
 #include "game/gt_mode.h"
 #include "game/gt_mode_menu.h"
+#include "game/gt_setting.h"
+#include "game/gt_state.h"
 #include "game/net_car.h"
 #include "game/mod_package.h"
 #include "menu/flow/options.h"
@@ -70,6 +75,8 @@ struct Script {
     bool accept = false;
     // The host's rules (-1 = as configured).
     int car_class = -1, category = -1, drive = -1, aspiration = -1, max_ps = -1, stock = -1, mods = -1;
+    int allow_tires = -1, wear = -1, stock_settings = -1; // the tire types allowed (a mask), tire wear, the settings rule
+    int tires = -1;                  // our car's tire type
 };
 
 int index_of(const std::string& v, std::initializer_list<const char*> names) {
@@ -118,6 +125,17 @@ Script read_script() {
         else if (k == "maxps") s.max_ps = std::atoi(v.c_str());
         else if (k == "stock") s.stock = v != "0";
         else if (k == "mods") s.mods = v != "0";
+        else if (k == "wear") s.wear = v != "0";
+        else if (k == "stocksettings") s.stock_settings = v != "0";
+        else if (k == "tires") s.tires = std::atoi(v.c_str());
+        else if (k == "allowtires") { // "0+1+7"
+            s.allow_tires = 0;
+            for (size_t a = 0; a < v.size();) {
+                const size_t b = std::min(v.find('+', a), v.size());
+                if (const int t = std::atoi(v.substr(a, b - a).c_str()); t >= 0 && t < game::kTireTypes) s.allow_tires |= 1 << t;
+                a = b + 1;
+            }
+        }
     }
     return s;
 }
@@ -213,12 +231,17 @@ public:
         if (page_ != Page::Start && page_ != Page::Cars && page_ != Page::Courses) offer_downloads(ns);
         // Another player's car that cannot race here (another region's disc): not ready while
         // it is in the lobby.
+        // Nor while our own car breaks the rules (the host changed them, e.g. disallowed our tires).
         if (!ns.is_host() && ns.in_lobby())
-            if (const net::Player* me = ns.my_id() >= 0 ? ns.player(u8(ns.my_id())) : nullptr; me && me->ready)
-                if (std::string why = remote_car_problem(ns); !why.empty()) {
+            if (const net::Player* me = ns.my_id() >= 0 ? ns.player(u8(ns.my_id())) : nullptr; me && me->ready) {
+                std::string why = remote_car_problem(ns);
+                if (why.empty())
+                    if (std::string mine = rule_problem(ns); !mine.empty()) why = "Your car: " + mine;
+                if (!why.empty()) {
                     ns.set_ready(false);
                     status(why, true);
                 }
+            }
         // Waiting for the relay's link slots needs everyone still ready (the race starts by itself).
         if (ns.is_host() && ns.relay_wait().waiting && !ns.all_ready()) {
             ns.cancel_start();
@@ -241,6 +264,8 @@ public:
         else if (page_ == Page::Cars) update_car_picker(app);
         else if (page_ == Page::Courses) update_course_picker(app);
         else if (page_ == Page::Rules) update_rules(app);
+        else if (page_ == Page::Tires) update_tires_page(app);
+        else if (page_ == Page::Tuning) update_tuning(app);
         else update_lobby(app);
     }
 
@@ -291,9 +316,11 @@ public:
         else if (page_ == Page::Cars) car_picker_.render(app, ui);
         else if (page_ == Page::Courses) course_picker_.render(app, ui, art_);
         else if (page_ == Page::Rules) render_rules(ui, ns);
+        else if (page_ == Page::Tires) render_tires_page(ui, ns);
+        else if (page_ == Page::Tuning) render_tuning(ui, ns);
         else render_lobby(app, ui, ns);
         if (keyboard_.is_open()) keyboard_.draw(ui, edit_target());
-        if ((page_ == Page::Lobby || page_ == Page::Rules) && !prompts_.empty()) render_prompt(ui);
+        if (page_ != Page::Start && page_ != Page::Cars && page_ != Page::Courses && !prompts_.empty()) render_prompt(ui);
         for (const auto& [hash, d] : downloading_) // progress of the downloads
             if (const net::Session::Download* dl = ns.download(hash); dl && dl->total) {
                 std::string t = "Downloading " + d.name + ": " + std::to_string(int(100.0 * dl->received / dl->total)) + " %";
@@ -305,7 +332,7 @@ public:
     }
 
 private:
-    enum class Page { Start, Lobby, Cars, Courses, Rules };
+    enum class Page { Start, Lobby, Cars, Courses, Rules, Tires, Tuning };
     // Pointer areas of the start, lobby and rules pages (arg: the row; footer: the action).
     enum Hit { kHitRow, kHitLeft, kHitRight, kHitFooter, kHitCode, kHitPromptYes, kHitPromptNo };
 
@@ -357,6 +384,9 @@ private:
         rules_.category = num("category", "0", 0, game::kCategoryRules);
         rules_.drive = num("drive", "0", 0, game::kDriveRules);
         rules_.aspiration = num("aspiration", "0", 0, game::kAspirationRules);
+        rules_.tires = u16(num("tires", std::to_string(game::kAllTires).c_str(), 0, game::kAllTires));
+        tire_wear_ = cfg.get("online", "tire_wear").value_or("off") == "on";
+        rules_.stock_settings = cfg.get("online", "stock_settings").value_or("off") == "on";
         car_picker_.set_by_class(cfg.get("online", "car_page").value_or("makers") == "classes");
         car_picker_.set_allowed_only(cfg.get("online", "car_page_filter").value_or("allowed") != "all");
         if (script_.have) {
@@ -375,6 +405,15 @@ private:
             if (script_.max_ps >= 0) rules_.max_ps = script_.max_ps;
             if (script_.stock >= 0) rules_.stock_only = script_.stock != 0;
             if (script_.mods >= 0) rules_.allow_mods = script_.mods != 0;
+            if (script_.allow_tires >= 0) rules_.tires = u16(script_.allow_tires);
+            if (script_.wear >= 0) tire_wear_ = script_.wear != 0;
+            if (script_.stock_settings >= 0) rules_.stock_settings = script_.stock_settings != 0;
+        }
+        load_tune(app);
+        if (script_.have && script_.tires >= 0) {
+            game::OnlineCar c = car_at(car_sel_, paint_);
+            if (game::set_online_car_tires(db_, c, script_.tires)) lobby_tires_ = script_.tires;
+            else LOG_WARN("Online: the car has no tire type %d", script_.tires);
         }
         if (cars_.empty()) status("No cars found on the disc", true);
     }
@@ -407,6 +446,9 @@ private:
         std::sort(cars_.begin() + ptrdiff_t(garage), cars_.end(), [](const Entry& a, const Entry& b) { return a.name < b.name; });
         if (gs) add_arcade_cars(app, db_, gs->gt().data(), cars_);
         facts_.assign(cars_.size(), std::nullopt);
+        tire_choices_.assign(cars_.size(), std::nullopt);
+        lobby_facts_.reset();
+        lobby_car_key_.clear();
         here_.clear(); // the database changed
     }
 
@@ -420,11 +462,25 @@ private:
         return e.arcade.empty() ? e.name : std::string(game::arcade_class_name(e.arcade_class)) + ": " + e.name;
     }
 
-    // The chosen car as the lobby sends it, with the digest of its parameter block as this machine builds it.
+    // The chosen car as the lobby sends it (its lobby tires and settings), with the digest of its parameter block as this
+    // machine builds it.
     game::OnlineCar current_car() const {
-        game::OnlineCar c = car_at(car_sel_, paint_);
+        game::OnlineCar c = lobby_car();
         if (program_) c.digest = game::online_car_digest(db_, *program_, c);
         return c;
+    }
+    // The chosen car with its lobby tires and settings (docs/dev/ONLINE.md "Tires and settings"); built once per change.
+    const game::OnlineCar& lobby_car() const {
+        std::string key = std::to_string(car_sel_) + "/" + std::to_string(paint_) + "/" + std::to_string(lobby_tires_) + "/" +
+                          (lobby_tune_ ? game::settings_text(*lobby_tune_) : std::string());
+        if (key != lobby_car_key_) {
+            game::OnlineCar c = car_at(car_sel_, paint_);
+            if (lobby_tires_ >= 0) game::set_online_car_tires(db_, c, lobby_tires_);
+            if (lobby_tune_) game::set_online_car_settings(db_, c, *lobby_tune_);
+            lobby_car_ = std::move(c);
+            lobby_car_key_ = std::move(key);
+        }
+        return lobby_car_;
     }
     game::OnlineCar car_at(int index, int paint) const {
         if (cars_.empty() || index < 0 || size_t(index) >= cars_.size()) return {};
@@ -610,6 +666,10 @@ private:
         cfg.set("online", "category", std::to_string(rules_.category));
         cfg.set("online", "drive", std::to_string(rules_.drive));
         cfg.set("online", "aspiration", std::to_string(rules_.aspiration));
+        cfg.set("online", "tires", std::to_string(rules_.tires));
+        cfg.set("online", "tire_wear", tire_wear_ ? "on" : "off");
+        cfg.set("online", "stock_settings", rules_.stock_settings ? "on" : "off");
+        store_tune(cfg);
         cfg.set("online", "car_page", car_picker_.by_class() ? "classes" : "makers");
         cfg.set("online", "car_page_filter", car_picker_.allowed_only() ? "allowed" : "all");
         app.save_config();
@@ -928,8 +988,8 @@ private:
 
     // --- lobby page ---
 
-    enum Row { kCourse, kLaps, kGhost, kRules, kCar, kColour, kGearbox, kAsm, kTcs, kGo, kKick, kLeave, kRows };
-    static constexpr float kRowY = 130, kRowH = 15;
+    enum Row { kCourse, kLaps, kGhost, kWear, kRules, kCar, kColour, kTires, kTuning, kGearbox, kAsm, kTcs, kGo, kKick, kLeave, kRows };
+    static constexpr float kRowY = 130, kRowH = 13; // (15 rows above the status line)
     enum LobbyFooter { kFootLeave };
 
     // Host: the players that can be removed (everyone but us), and their warnings.
@@ -961,6 +1021,8 @@ private:
             const net::Settings& st = ns.settings();
             r.allow_mods = st.allow_mods, r.stock_only = st.stock_only, r.max_ps = st.max_ps;
             r.car_class = st.car_class, r.category = st.category, r.drive = st.drive, r.aspiration = st.aspiration;
+            r.tires = st.tires;
+            r.stock_settings = st.stock_settings;
         }
         const std::string course = ns.is_host() ? course_label() : ns.course();
         for (const data::Course& c : db_.courses())
@@ -974,11 +1036,36 @@ private:
         if (!f) f = game::online_car_facts(db_, gt_data(), car_at(index, 0));
         return *f;
     }
-    // Entry `index` against the lobby's rules ("" = allowed).
+    // Entry `index` against the lobby's rules ("" = allowed): the chosen car with its lobby tires and settings; any other with
+    // its own settings, on any tire type it has that the rules allow.
     std::string car_problem(const net::Session& ns, int index) const {
         if (index < 0 || size_t(index) >= cars_.size()) return "";
         std::string why;
-        return game::car_meets_rules(car_at(index, 0), facts_at(index), rules_of(ns), &why) ? std::string() : why;
+        if (index == car_sel_) {
+            const game::OnlineCar c = lobby_car();
+            return game::car_meets_rules(c, lobby_facts(c), rules_of(ns), &why) ? std::string() : why;
+        }
+        game::CarRules r = rules_of(ns);
+        if (!r.dirt_course && allowed_tires(index, r.tires).empty()) return "none of its tires are allowed";
+        r.tires = game::kAllTires;
+        return game::car_meets_rules(car_at(index, 0), facts_at(index), r, &why) ? std::string() : why;
+    }
+    // The chosen car's facts with its lobby tires and settings (rebuilt when they change).
+    const game::CarFacts& lobby_facts(const game::OnlineCar& c) const {
+        Bytes key = game::encode_online_car(c);
+        if (!lobby_facts_ || lobby_facts_->first != key) lobby_facts_ = {std::move(key), game::online_car_facts(db_, gt_data(), c)};
+        return lobby_facts_->second;
+    }
+    // Entry `index`'s tire types (game::online_tire_choices, found once per car list) that `mask` allows.
+    std::vector<int> allowed_tires(int index, u16 mask) const {
+        if (index < 0 || size_t(index) >= cars_.size()) return {};
+        if (tire_choices_.size() != cars_.size()) tire_choices_.assign(cars_.size(), std::nullopt);
+        std::optional<std::vector<int>>& all = tire_choices_[size_t(index)];
+        if (!all) all = game::online_tire_choices(db_, car_at(index, 0));
+        std::vector<int> out;
+        for (int t : *all)
+            if (mask & (1u << t)) out.push_back(t);
+        return out;
     }
     std::string rule_problem(const net::Session& ns) const { return car_problem(ns, car_sel_); }
 
@@ -1029,6 +1116,9 @@ private:
         st.max_ps = u16(rules_.max_ps);
         st.car_class = u8(rules_.car_class), st.category = u8(rules_.category);
         st.drive = u8(rules_.drive), st.aspiration = u8(rules_.aspiration);
+        st.tires = rules_.tires;
+        st.tire_wear = tire_wear_;
+        st.stock_settings = rules_.stock_settings;
         net::online().set_settings(st);
         if (page_ == Page::Cars && app_) {
             assign_classes();
@@ -1102,6 +1192,11 @@ private:
             push_settings();
             break;
         }
+        case kWear:
+            if (!ns.is_host() || (!h && !cross)) break;
+            tire_wear_ = !tire_wear_;
+            push_settings();
+            break;
         case kRules: // the rules page (everyone sees it; the host changes it)
             if (!cross) break;
             page_ = Page::Rules;
@@ -1119,7 +1214,35 @@ private:
             if (!h) break;
             car_sel_ = (car_sel_ + h % int(cars_.size()) + int(cars_.size())) % int(cars_.size());
             paint_ = 0;
+            load_tune(app);
             announce_car();
+            break;
+        case kTires: {
+            if (cars_.empty() || ready || (!h && !cross)) break;
+            const std::vector<int> ok = allowed_tires(car_sel_, rules_of(ns).tires);
+            if (ok.empty()) {
+                status("The host allows none of this car's tires", true);
+                break;
+            }
+            // The next allowed type after the car's (Cross steps forward); from a type not allowed, the first or the last.
+            const int cur = game::online_car_tires(db_, lobby_car());
+            auto at = std::find(ok.begin(), ok.end(), cur);
+            int k = at == ok.end() ? (h < 0 ? int(ok.size()) - 1 : 0)
+                                   : (int(at - ok.begin()) + (h < 0 ? -1 : 1) + int(ok.size())) % int(ok.size());
+            set_lobby_tires(ok[size_t(k)]);
+            announce_car();
+            break;
+        }
+        case kTuning:
+            if (!cross || cars_.empty()) break;
+            if (!game::online_car_tunable(db_, car_at(car_sel_, paint_)) || !game::gt_mode_session()) {
+                status("An arcade car races with the arcade's settings", true);
+                break;
+            }
+            page_ = Page::Tuning;
+            tune_sel_ = tune_top_ = 0;
+            pointer_.clear();
+            picker_sound(app, "ok");
             break;
         case kColour:
             if (!h || ready || garage_selected()) break; // a garage car keeps its own paint
@@ -1150,7 +1273,13 @@ private:
                         }
                 // And every other player's car must race here as its owner races it.
                 std::string not_here = remote_car_problem(ns);
+                // Tire wear needs every player's game to know it (an older one would race without it).
+                std::string old_game;
+                if (tire_wear_)
+                    for (const net::Player& p : ns.players())
+                        if (!(p.caps & net::kCapTireWear)) old_game = p.name + "'s game is too old for tire wear (they need to update)";
                 if (!rule_breaker.empty()) status(rule_breaker, true);
+                else if (!old_game.empty()) status(old_game, true);
                 else if (!not_here.empty()) status(not_here, true);
                 else if (ns.all_ready()) ns.load();
                 else status(ns.players().size() < 2 ? "Waiting for players to join" : "Not everyone is ready", true);
@@ -1297,6 +1426,10 @@ private:
         row(kLaps, "Laps", std::to_string(host ? laps_ : ns.laps()), host, host);
         u16 gms = host ? ghost_ms_ : ns.settings().ghost_ping_ms;
         row(kGhost, "Ghost cars", ghost_text(gms), host, host);
+        const game::CarRules lobby_rules = rules_of(ns);
+        const bool wear = host ? tire_wear_ : ns.settings().tire_wear;
+        row(kWear, "Tire wear", wear ? "On" : "Off", host, host, 0,
+            wear && lobby_rules.dirt_course ? "(none on dirt courses)" : wear ? "(pit for fresh tires)" : "");
         row(kRules, "Car rules", game::car_rules_summary(rules_of(ns)), true, false, 0,
             host ? "(Cross: set the rules)" : "(Cross: see the rules)");
         std::string problem = ns.joined() ? rule_problem(ns) : "";
@@ -1325,6 +1458,30 @@ private:
                     (pname.empty() ? "" : pname + "  ") + std::to_string(paint_ + 1) + " of " + std::to_string(paint_count()),
                     !ready, arrows, 26);
             if (!pal.empty()) draw_paint_chip(ui, arrows ? 212 : 200, ry - 1, 18, 9, pal[size_t(cur)].rgb, false);
+        }
+        if (cars_.empty()) {
+            row(kTires, "Tires", "-", false, false);
+            row(kTuning, "Settings", "-", false, false);
+        } else {
+            const game::OnlineCar c = lobby_car();
+            const game::CarFacts& f = lobby_facts(c);
+            std::string tires = f.tires >= 0 ? game::tire_type_name(f.tires) : "?";
+            if (f.tires_rear >= 0 && f.tires_rear != f.tires)
+                tires = std::string(game::tire_type_name(f.tires)) + " / " + game::tire_type_name(f.tires_rear) + " (rear)";
+            const bool tire_ok = lobby_rules.dirt_course || [&] {
+                for (int t : {f.tires, f.tires_rear})
+                    if (t >= 0 && !(lobby_rules.tires & (1u << t))) return false;
+                return true;
+            }();
+            row(kTires, "Tires", tires, !ready, !ready, 0,
+                lobby_rules.dirt_course ? "(dirt course: every car on dirt tires)" : tire_ok ? "" : "not allowed here",
+                tire_ok ? colors::kDim : colors::kBad);
+            const bool tunable = game::online_car_tunable(db_, c);
+            row(kTuning, "Settings", tunable ? tuning_text(c) : "the arcade's", tunable, false, 0,
+                !tunable                         ? ""
+                : lobby_rules.stock_settings && f.settings_changed ? "the host allows stock settings only"
+                                                                   : "(Cross: set up the car)",
+                lobby_rules.stock_settings && f.settings_changed ? colors::kBad : colors::kDim);
         }
         row(kGearbox, "Transmission", manual_ ? "Manual" : "Automatic", true, true);
         row(kAsm, "Stability control (ASM)", asm_on_ ? "On" : "Off", true, true);
@@ -1357,7 +1514,7 @@ private:
 
     // --- rules page ---
 
-    enum RulesRow { kRMods, kRTuning, kRClass, kRCategory, kRDrive, kRAspiration, kRPower, kRReset, kRBack, kRRows };
+    enum RulesRow { kRMods, kRTuning, kRSettings, kRTires, kRClass, kRCategory, kRDrive, kRAspiration, kRPower, kRReset, kRBack, kRRows };
     static constexpr float kRulesY = 52, kRulesH = 18;
     enum RulesFooter { kFootRulesBack };
     int rules_sel_ = 0;
@@ -1389,6 +1546,14 @@ private:
             picker_sound(app, "cancel");
             return;
         }
+        if (row == kRTires) { // the tire types' page (everyone sees it; the host changes it)
+            if (!cross) return;
+            page_ = Page::Tires;
+            tires_sel_ = 0;
+            pointer_.clear();
+            picker_sound(app, "ok");
+            return;
+        }
         if (!ns.is_host() || (!h && !cross)) return;
         const int step = h ? (h > 0 ? 1 : -1) : 1; // Cross steps forward
         auto cycle = [&](int& v, int n) { v = (v + step + n + 1) % (n + 1); };
@@ -1396,6 +1561,7 @@ private:
         switch (row) {
         case kRMods: r.allow_mods = !r.allow_mods; break;
         case kRTuning: r.stock_only = !r.stock_only; break;
+        case kRSettings: r.stock_settings = !r.stock_settings; break;
         case kRClass: cycle(r.car_class, game::kArcadeClasses); break;
         case kRCategory: cycle(r.category, game::kCategoryRules); break;
         case kRDrive: cycle(r.drive, game::kDriveRules); break;
@@ -1426,12 +1592,19 @@ private:
         ui.text(24, 30, host ? "Every player's car must meet these rules before Ready and the start."
                              : "Your car must meet these rules before you can be ready.",
                 colors::kDim);
-        const char* labels[kRRows] = {"Mod cars", "Tuned cars", "Class", "Type", "Drivetrain", "Aspiration", "Power limit",
-                                      "Any car", "Back to the lobby"};
+        const char* labels[kRRows] = {"Mod cars", "Tuned cars", "Car settings", "Tires", "Class", "Type", "Drivetrain",
+                                      "Aspiration", "Power limit", "Any car", "Back to the lobby"};
         auto value = [&](int row) -> std::string {
             switch (row) {
             case kRMods: return r.allow_mods ? "allowed (others are offered the download)" : "not allowed";
             case kRTuning: return r.stock_only ? "stock cars only (no tuned garage cars)" : "allowed";
+            case kRSettings: return r.stock_settings ? "stock settings only" : "allowed";
+            case kRTires: {
+                int n = 0;
+                for (int t = 0; t < game::kTireTypes; ++t) n += (r.tires >> t) & 1;
+                return (n == game::kTireTypes ? std::string("all") : std::to_string(n) + " of " + std::to_string(game::kTireTypes)) +
+                       (host ? "  (Cross: choose)" : "  (Cross: see them)");
+            }
             case kRClass: return r.car_class ? game::arcade_class_name(r.car_class) + std::string(" only") : "any";
             case kRCategory: return game::category_rule_name(r.category) + std::string(r.category ? " only" : "");
             case kRDrive: return game::drive_rule_name(r.drive) + std::string(r.drive ? " only" : "");
@@ -1443,7 +1616,9 @@ private:
         };
         static const char* const kHelp[kRRows] = {
             "Cars added by mods. Players who lack one are offered it.",
-            "GT Mode garage cars with parts or settings off the stock car's.",
+            "GT Mode garage cars with parts off the stock car's (GT3's own test). Tires count apart.",
+            "Settings off the stock ones the car's parts give (GT Mode's settings, or changed in the lobby).",
+            "The tire types players may choose. On dirt courses every car races on dirt tires.",
             "",
             "Production cars, or the race and rally cars (as GT3's own events tell them apart).",
             "The car's drivetrain.",
@@ -1452,9 +1627,9 @@ private:
             "",
             ""};
         for (int i = 0; i < kRRows; ++i) {
-            const bool setting = i < kRReset;
+            const bool setting = i < kRReset && i != kRTires;
             const float y = kRulesY + float(i) * kRulesH + (i >= kRReset ? 6 : 0);
-            draw_row(ui, i, y, i == rules_sel_, labels[i], value(i), host || i == kRBack, host && setting, 160, 620);
+            draw_row(ui, i, y, i == rules_sel_, labels[i], value(i), host || i == kRBack || i == kRTires, host && setting, 160, 620);
         }
         const float y = kRulesY + float(kRRows) * kRulesH + 14;
         if (kHelp[rules_sel_][0]) ui.text(36, y, Ui::clip(kHelp[rules_sel_], 580), colors::kDim);
@@ -1473,6 +1648,349 @@ private:
         }
         footer_actions(ui, host ? "Up/Down: choose   Left/Right: change" : "Up/Down: choose",
                        {{"Triangle: back to the lobby", kFootRulesBack}}, hits_, kHitFooter, pointer_);
+    }
+
+    // --- tire types page (the rules' allowed tires) ---
+
+    enum TiresRow { kTAll = game::kTireTypes, kTBack, kTRows };
+    int tires_sel_ = 0;
+
+    void update_tires_page(App& app) {
+        const MenuInput& m = app.menu();
+        bool back = false;
+        row_pointer(tires_sel_, [&](int row, int h, bool cross) {
+            if (row < 0) row = kTBack, cross = true; // the footer: back
+            tires_action(app, row, h, cross);
+            return page_ == Page::Tires;
+        }, kTRows, &back);
+        if (page_ != Page::Tires) return;
+        tires_sel_ = (tires_sel_ + m.vertical() + kTRows) % kTRows;
+        if (back || m.pressed(PadButton::Triangle) || m.pressed(PadButton::Circle)) return tires_action(app, kTBack, 0, true);
+        int h = m.horizontal();
+        bool cross = m.pressed(PadButton::Cross);
+        if (h || cross) tires_action(app, tires_sel_, h, cross);
+    }
+
+    void tires_action(App& app, int row, int h, bool cross) {
+        net::Session& ns = net::online();
+        if (row == kTBack) {
+            if (!cross) return;
+            page_ = Page::Rules;
+            rules_sel_ = kRTires;
+            pointer_.clear();
+            picker_sound(app, "cancel");
+            return;
+        }
+        if (!ns.is_host() || (!h && !cross)) return;
+        if (row == kTAll) {
+            if (!cross) return;
+            rules_.tires = game::kAllTires;
+        } else if (row >= 0 && row < game::kTireTypes) {
+            rules_.tires ^= u16(1u << row);
+        } else {
+            return;
+        }
+        picker_sound(app, "cursor");
+        push_settings();
+        remember(app);
+    }
+
+    void render_tires_page(Ui& ui, const net::Session& ns) {
+        const bool host = ns.is_host();
+        ui.fill(0, 20, Ui::kWidth, Ui::kHeight - 36, colors::kBackground);
+        ui.header("TIRES", host ? "Which tires players may choose" : "The host sets them");
+        const game::CarRules r = rules_of(ns);
+        ui.text(24, 30, r.dirt_course ? "A dirt course: every car races on dirt tires, whatever is chosen here."
+                                      : "Every player's car must race on allowed tires before Ready and the start.",
+                colors::kDim);
+        std::vector<int> mine;
+        if (!cars_.empty()) mine = allowed_tires(car_sel_, game::kAllTires);
+        const int cur = cars_.empty() ? -1 : lobby_facts(lobby_car()).tires;
+        for (int i = 0; i < kTRows; ++i) {
+            const float y = kRulesY + float(i) * kRulesH + (i >= kTAll ? 6 : 0);
+            std::string value, hint;
+            if (i < game::kTireTypes) {
+                value = (r.tires >> i) & 1 ? "allowed" : "not allowed";
+                if (i == cur) hint = "your car's";
+                else if (std::find(mine.begin(), mine.end(), i) != mine.end()) hint = "your car has them";
+            } else if (i == kTAll) {
+                value = host ? "(Cross: allow every tire type)" : "";
+            }
+            const char* label = i < game::kTireTypes ? game::tire_type_name(i) : i == kTAll ? "All tires" : "Back to the rules";
+            draw_row(ui, i, y, i == tires_sel_, label, value, host || i == kTBack, host && i < game::kTireTypes, 250, 620, 0, hint);
+        }
+        footer_actions(ui, host ? "Up/Down: choose   Left/Right or Cross: allow or not" : "Up/Down: choose",
+                       {{"Triangle: back to the rules", 0}}, hits_, kHitFooter, pointer_);
+    }
+
+    // --- the car's settings page (docs/dev/ONLINE.md "Tires and settings") ---
+
+    struct TuneItem {
+        const char* label;
+        const char* item; // the GT Mode settings page's slider (game::slider_range)
+        const char* cls;  // its value widget (game::setting_text)
+    };
+    static const std::vector<TuneItem>& tune_items() {
+        static const std::vector<TuneItem> k = {
+            {"Spring rate (front)", "slider_rate_f", "spring_rate_f"},
+            {"Spring rate (rear)", "slider_rate_r", "spring_rate_r"},
+            {"Ride height (front)", "slider_height_f", "spring_height_f"},
+            {"Ride height (rear)", "slider_height_r", "spring_height_r"},
+            {"Shock absorbers (front)", "slider_damper_f", "spring_damper_f"},
+            {"Shock absorbers (rear)", "slider_damper_r", "spring_damper_r"},
+            {"Bound (front)", "slider_bound_f", "spring_bound_f"},
+            {"Bound (rear)", "slider_bound_r", "spring_bound_r"},
+            {"Rebound (front)", "slider_rebound_f", "spring_rebound_f"},
+            {"Rebound (rear)", "slider_rebound_r", "spring_rebound_r"},
+            {"Camber (front)", "slider_camber_f", "spring_camber_f"},
+            {"Camber (rear)", "slider_camber_r", "spring_camber_r"},
+            {"Toe (front)", "slider_toe_f", "spring_toe_f"},
+            {"Toe (rear)", "slider_toe_r", "spring_toe_r"},
+            {"Stabilizers (front)", "slider_stabilizer_f", "spring_stabilizer_f"},
+            {"Stabilizers (rear)", "slider_stabilizer_r", "spring_stabilizer_r"},
+            {"Brake balance (front)", "slider_brake_f", "spring_brake_f"},
+            {"Brake balance (rear)", "slider_brake_r", "spring_brake_r"},
+            {"LSD initial torque (front)", "slider_lsd_init_f", "lsd_int_f"},
+            {"LSD initial torque (rear)", "slider_lsd_init_r", "lsd_int_r"},
+            {"LSD acceleration (front)", "slider_lsd_accl_f", "lsd_acl_f"},
+            {"LSD acceleration (rear)", "slider_lsd_accl_r", "lsd_acl_r"},
+            {"LSD braking (front)", "slider_lsd_decl_f", "lsd_dec_f"},
+            {"LSD braking (rear)", "slider_lsd_decl_r", "lsd_dec_r"},
+            {"AYC", "slider_elec_aycc", "elec_aycc"},
+            {"Final gear", "slider_gear_ratio_final", "gear_ratio_final"},
+            {"Auto setting", "slider_gear_auto_level", "gear_ratio_auto"},
+            {"1st gear", "slider_gear_ratio_1", "gear_ratio_1"},
+            {"2nd gear", "slider_gear_ratio_2", "gear_ratio_2"},
+            {"3rd gear", "slider_gear_ratio_3", "gear_ratio_3"},
+            {"4th gear", "slider_gear_ratio_4", "gear_ratio_4"},
+            {"5th gear", "slider_gear_ratio_5", "gear_ratio_5"},
+            {"6th gear", "slider_gear_ratio_6", "gear_ratio_6"},
+            {"7th gear", "slider_gear_ratio_7", "gear_ratio_7"},
+            {"Downforce (front)", "slider_aero_f", "aero_f"},
+            {"Downforce (rear)", "slider_aero_r", "aero_r"},
+            {"ASM", "slider_elec_ascc", "elec_ascc"},
+            {"TCS", "slider_elec_tcsc", "elec_tcsc"},
+            {"VCD (front torque)", "slider_elec_vcdc", "elec_vcdc"},
+        };
+        return k;
+    }
+    static constexpr int kTuneVisible = 16;  // rows on screen (above the status line)
+    static constexpr float kTuneY = 52, kTuneH = 15;
+    int tune_sel_ = 0, tune_top_ = 0;
+
+    // The chosen car for the settings page as GT Mode's settings pages take it: `real` as it comes (a garage car's own setup,
+    // else its stock settings) on its lobby tires, `work` with its lobby settings.
+    bool tuning_cars(game::GarageCar& real, game::GarageCar& work) const {
+        if (cars_.empty()) return false;
+        const game::OnlineCar& lc = lobby_car();
+        if (!game::online_car_tunable(db_, lc)) return false;
+        const std::optional<std::array<u64, 27>> parts = game::online_car_parts(db_, lc);
+        if (!parts) return false;
+        // The car's own settings: a garage car's, else the parts' stock ones.
+        const game::OnlineCar own = car_at(car_sel_, paint_);
+        const sim::CarSettings settings = own.kind == game::OnlineCar::Kind::Garage ? own.settings
+                                                                                    : sim::stock_settings(db_, lc.car, *parts);
+        real = {};
+        const Entry& e = cars_[size_t(car_sel_)];
+        if (e.garage >= 0)
+            if (game::GtModeSession* gs = game::gt_mode_session(); gs && size_t(e.garage) < gs->gt().state().garage.size())
+                real = gs->gt().state().garage[size_t(e.garage)];
+        real.car = lc.car, real.parts = *parts, real.settings = settings;
+        work = real;
+        if (lobby_tune_) work.settings = *lobby_tune_;
+        return true;
+    }
+    // The settings page's rows: the sliders the car's parts open (as GT Mode's pages), then stock settings, the garage car's
+    // own (a garage car) and back.
+    enum TuneAction { kTuneStock = -1, kTuneGarage = -2, kTuneBack = -3 };
+    std::vector<int> tune_rows(const game::GarageCar& real, const game::GarageCar& work) const {
+        std::vector<int> out;
+        if (game::GtModeSession* gs = game::gt_mode_session()) {
+            const std::vector<TuneItem>& items = tune_items();
+            for (size_t i = 0; i < items.size(); ++i) {
+                if (!game::slider_enabled(gs->gt(), real, items[i].item)) continue;
+                const std::optional<game::SliderRange> r = game::slider_range(gs->gt(), real, work, items[i].item);
+                const std::optional<std::string> t = game::setting_text(gs->gt(), real, work, items[i].cls);
+                if (r && !r->fixed() && t && *t != "----") out.push_back(int(i));
+            }
+        }
+        out.push_back(kTuneStock);
+        if (cars_[size_t(car_sel_)].garage >= 0) out.push_back(kTuneGarage);
+        out.push_back(kTuneBack);
+        return out;
+    }
+
+    void update_tuning(App& app) {
+        const MenuInput& m = app.menu();
+        game::GarageCar real, work;
+        if (!tuning_cars(real, work)) return close_tuning(app);
+        const std::vector<int> rows = tune_rows(real, work);
+        const int n = int(rows.size());
+        tune_sel_ = std::clamp(tune_sel_, 0, n - 1);
+        bool back = false;
+        row_pointer(tune_sel_, [&](int row, int h, bool cross) {
+            if (row < 0) row = n - 1, cross = true; // the footer: back
+            tune_action(app, rows[size_t(row)], h, cross);
+            return page_ == Page::Tuning;
+        }, n, &back);
+        if (page_ != Page::Tuning) return;
+        tune_sel_ = (tune_sel_ + m.vertical() + n) % n;
+        if (back || m.pressed(PadButton::Triangle) || m.pressed(PadButton::Circle)) return close_tuning(app);
+        int h = m.horizontal();
+        if (m.pressed(PadButton::L1)) h = -10;
+        if (m.pressed(PadButton::R1)) h = 10;
+        const bool cross = m.pressed(PadButton::Cross);
+        if (h || cross) tune_action(app, rows[size_t(tune_sel_)], h, cross);
+    }
+
+    void close_tuning(App& app) {
+        page_ = Page::Lobby;
+        sel_ = kTuning;
+        pointer_.clear();
+        picker_sound(app, "cancel");
+    }
+
+    // Left / Right on a slider row moves it (L1 / R1 by ten), Cross on the other rows does them.
+    void tune_action(App& app, int row, int h, bool cross) {
+        if (row == kTuneBack) {
+            if (cross) close_tuning(app);
+            return;
+        }
+        net::Session& ns = net::online();
+        const net::Player* me = ns.my_id() >= 0 ? ns.player(u8(ns.my_id())) : nullptr;
+        if (me && me->ready && !ns.is_host()) return; // Ready: the car is fixed
+        game::GtModeSession* gs = game::gt_mode_session();
+        game::GarageCar real, work;
+        if (!gs || !tuning_cars(real, work)) return;
+        if (row == kTuneStock || row == kTuneGarage) {
+            if (!cross) return;
+            if (row == kTuneStock) work.settings = sim::stock_settings(db_, real.car, real.parts);
+            else work.settings = real.settings;
+        } else {
+            if (!h || row < 0 || size_t(row) >= tune_items().size()) return;
+            const char* item = tune_items()[size_t(row)].item;
+            const std::optional<game::SliderRange> r = game::slider_range(gs->gt(), real, work, item);
+            if (!r || r->fixed()) return;
+            const int v = std::clamp(r->value + h, r->lo(), r->hi());
+            if (v == r->value || !game::slider_set(gs->gt(), real, work, item, v, "")) return;
+        }
+        // The car's own settings again: nothing to send or keep.
+        if (game::settings_text(work.settings) == game::settings_text(real.settings)) lobby_tune_.reset();
+        else lobby_tune_ = work.settings;
+        picker_sound(app, "cursor");
+        announce_car();
+        remember(app);
+    }
+
+    void render_tuning(Ui& ui, const net::Session& ns) {
+        ui.fill(0, 20, Ui::kWidth, Ui::kHeight - 36, colors::kBackground);
+        game::GtModeSession* gs = game::gt_mode_session();
+        game::GarageCar real, work;
+        if (!gs || !tuning_cars(real, work)) return;
+        const Entry& e = cars_[size_t(car_sel_)];
+        ui.header("CAR SETTINGS", entry_name(e));
+        const net::Player* me = ns.my_id() >= 0 ? ns.player(u8(ns.my_id())) : nullptr;
+        const bool ready = me && me->ready && !ns.is_host();
+        ui.text(24, 30, ready ? "You are ready: the car is fixed until you press Ready again."
+                        : e.garage >= 0 ? "For online races only: the garage car keeps its own settings."
+                                        : "For online races only.",
+                colors::kDim);
+        const std::vector<int> rows = tune_rows(real, work);
+        const int n = int(rows.size());
+        tune_sel_ = std::clamp(tune_sel_, 0, n - 1);
+        if (tune_sel_ < tune_top_) tune_top_ = tune_sel_;
+        if (tune_sel_ >= tune_top_ + kTuneVisible) tune_top_ = tune_sel_ - kTuneVisible + 1;
+        tune_top_ = std::clamp(tune_top_, 0, std::max(0, n - kTuneVisible));
+        const sim::CarSettings stock = sim::stock_settings(db_, real.car, real.parts);
+        for (int i = tune_top_; i < n && i < tune_top_ + kTuneVisible; ++i) {
+            const float y = kTuneY + float(i - tune_top_) * kTuneH + (rows[size_t(i)] < 0 ? 6 : 0);
+            const int row = rows[size_t(i)];
+            if (row == kTuneStock) {
+                const bool is = game::settings_text(work.settings) == game::settings_text(stock);
+                draw_row(ui, i, y, i == tune_sel_, "Stock settings", is ? "(these are)" : "(Cross: back to them)", !ready, false, 250, 620);
+            } else if (row == kTuneGarage) {
+                const bool is = !lobby_tune_;
+                draw_row(ui, i, y, i == tune_sel_, "The garage car's settings", is ? "(these are)" : "(Cross: back to them)", !ready,
+                         false, 250, 620);
+            } else if (row == kTuneBack) {
+                draw_row(ui, i, y, i == tune_sel_, "Back to the lobby", "", true, false, 250, 620);
+            } else {
+                const TuneItem& t = tune_items()[size_t(row)];
+                std::string v = game::setting_text(gs->gt(), real, work, t.cls).value_or("-");
+                // The game's degree sign (its text encoding's) is not in the UI font.
+                for (size_t k; (k = v.find("\xA1\xEB")) != std::string::npos;) v.replace(k, 2, " deg");
+                draw_row(ui, i, y, i == tune_sel_, t.label, v, !ready, !ready, 250, 620);
+            }
+        }
+        if (n > kTuneVisible)
+            ui.text_right(Ui::kWidth - 24, kTuneY + float(kTuneVisible) * kTuneH + 8,
+                          std::to_string(tune_top_ + 1) + "-" + std::to_string(std::min(n, tune_top_ + kTuneVisible)) + " of " +
+                              std::to_string(n),
+                          colors::kDim);
+        if (rows.size() <= 3)
+            ui.text(36, kTuneY + float(n) * kTuneH + 14, "This car's parts have no adjustable settings.", colors::kDim);
+        if (rules_of(ns).stock_settings && game::settings_text(work.settings) != game::settings_text(stock))
+            ui.text(36, kTuneY + float(std::min(n, kTuneVisible)) * kTuneH + 24, "The host allows stock settings only.", colors::kBad);
+        footer_actions(ui, "Up/Down: choose   Left/Right: change   L1/R1: by ten", {{"Triangle: back to the lobby", 0}}, hits_,
+                       kHitFooter, pointer_);
+    }
+
+    // --- the car's lobby tires and settings, kept per car ([online_tune]) ---
+
+    // The config key of entry `index`: "garage3.r34_gtr_v_99", "arcade.nsx_s_zero_97_290", else its label.
+    std::string tune_key(int index) const {
+        if (index < 0 || size_t(index) >= cars_.size()) return {};
+        const Entry& e = cars_[size_t(index)];
+        if (e.garage >= 0) return "garage" + std::to_string(e.garage) + "." + e.label;
+        if (!e.arcade.empty()) return "arcade." + e.arcade;
+        return e.label;
+    }
+
+    // The chosen car's tires and settings as last kept ("tires=7;settings=..."): dropped when the car no longer has those
+    // tires, or those settings are not ones GT Mode can give it now (a garage car changed since).
+    void load_tune(App& app) {
+        lobby_tires_ = -1;
+        lobby_tune_.reset();
+        if (cars_.empty()) return;
+        const std::string v = app.config().get("online_tune", tune_key(car_sel_)).value_or("");
+        for (std::string_view part : split(v, ';')) {
+            const std::string kv(trim(part));
+            if (kv.rfind("tires=", 0) == 0) {
+                game::OnlineCar c = car_at(car_sel_, paint_);
+                const int t = std::atoi(kv.c_str() + 6);
+                if (game::set_online_car_tires(db_, c, t)) lobby_tires_ = t;
+            } else if (kv.rfind("settings=", 0) == 0) {
+                lobby_tune_ = game::settings_from_text(kv.substr(9));
+            }
+        }
+        if (lobby_tune_) {
+            game::OnlineCar c = lobby_car();
+            if (!game::online_car_facts(db_, gt_data(), c).setup.empty()) {
+                LOG_INFO("Online: the kept settings for %s no longer fit it", tune_key(car_sel_).c_str());
+                lobby_tune_.reset();
+            }
+        }
+    }
+    void store_tune(IniDocument& cfg) const {
+        if (cars_.empty()) return;
+        const std::string key = tune_key(car_sel_);
+        if (lobby_tires_ < 0 && !lobby_tune_) return cfg.remove("online_tune", key);
+        std::string v;
+        if (lobby_tires_ >= 0) v = "tires=" + std::to_string(lobby_tires_);
+        if (lobby_tune_) v += (v.empty() ? "" : ";") + std::string("settings=") + game::settings_text(*lobby_tune_);
+        cfg.set("online_tune", key, v);
+    }
+    // Puts the chosen car on tire type `t` (none kept when it is the car's own).
+    void set_lobby_tires(int t) {
+        lobby_tires_ = t == game::online_car_tires(db_, car_at(car_sel_, paint_)) ? -1 : t;
+    }
+    // The Settings row: "Stock", "The garage car's" or "Changed in the lobby".
+    std::string tuning_text(const game::OnlineCar& c) const {
+        const std::optional<std::array<u64, 27>> parts = game::online_car_parts(db_, c);
+        const std::optional<sim::CarSettings> st = game::online_car_settings(db_, c);
+        if (!parts || !st) return "-";
+        if (game::settings_text(*st) == game::settings_text(sim::stock_settings(db_, c.car, *parts))) return "Stock";
+        return lobby_tune_ ? "Changed in the lobby" : "The garage car's";
     }
 
     // --- pickers ---
@@ -1494,6 +2012,7 @@ private:
         if (r != CarPicker::Result::Chosen || (me && me->ready && !net::online().is_host())) return;
         car_sel_ = car_picker_.car();
         paint_ = cars_[size_t(car_sel_)].garage >= 0 ? 0 : car_picker_.paint();
+        load_tune(app);
         announce_car();
         remember(app);
     }
@@ -1600,6 +2119,10 @@ private:
                 } else if (script_.page == "rules") {
                     page_ = Page::Rules;
                     rules_sel_ = kRClass;
+                } else if (script_.page == "tires") {
+                    page_ = Page::Tires;
+                } else if (script_.page == "tuning") {
+                    page_ = Page::Tuning;
                 }
             }
             return;
@@ -1658,6 +2181,14 @@ private:
     std::map<std::string, Download> downloading_; // by package hash
     game::CarRules rules_; // the host's rules (as set here; without dirt_course)
     u16 ghost_ms_ = 150;
+    bool tire_wear_ = false; // the host's
+    // The chosen car's lobby tires (a tire type; -1: its own) and settings (none: its own), kept per car ([online_tune]).
+    int lobby_tires_ = -1;
+    std::optional<sim::CarSettings> lobby_tune_;
+    mutable std::optional<std::pair<Bytes, game::CarFacts>> lobby_facts_;  // lobby_facts, by descriptor
+    mutable game::OnlineCar lobby_car_;                                     // lobby_car, for lobby_car_key_
+    mutable std::string lobby_car_key_;
+    mutable std::vector<std::optional<std::vector<int>>> tire_choices_; // per cars_ entry: game::online_tire_choices
     int kick_sel_ = 0;
     bool kick_armed_ = false;
     std::string status_;

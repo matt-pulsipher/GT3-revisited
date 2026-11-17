@@ -27,6 +27,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
     cfg.opponents.clear();
     cfg.max_opponents = 0;
     cfg.event.clear();
+    cfg.battle_wear = ns.settings().tire_wear; // the host's (the lobby refuses the start while a player's game lacks it)
     net_.player.clear(), net_.paint.clear(), net_.names.clear(), net_.top_speed.clear();
     const std::vector<u8>& grid = ns.grid();
     for (size_t slot = 0; slot < grid.size(); ++slot) {

@@ -332,9 +332,10 @@ public:
             rs.start_type = ev && ev->bytes.size() >= 0x1F4 ? demo_start_type(*ev, opts_.kind)
                             : opts_.kind == ex::Conductor::TimeTrial || opts_.kind == ex::Conductor::FreeRun ? 3
                                                                                                                  : 2;
-        if (!cfg_.remote.empty()) { // the i.LINK battle: four seconds on the grid, the race's laps, no tyre wear or catch-up
+        if (!cfg_.remote.empty()) { // the i.LINK battle: four seconds on the grid, the race's laps, the lobby's tyre wear, no catch-up
             rs.start_type = 1, rs.countdown = 0;
             rs.battle_laps = opts_.laps;
+            rs.battle_wear = cfg_.battle_wear ? 2 : 0; // (the split-screen battle's setting: GT3's i.LINK menus have none)
         }
         if (battle) {
             rs.start_type = -1; // the split-screen battle: no countdown
