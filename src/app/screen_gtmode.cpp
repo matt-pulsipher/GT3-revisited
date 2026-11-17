@@ -158,23 +158,14 @@ private:
         float bmin[3]{}, bmax[3]{};
     };
     struct Targets {
-        SDL_Texture* black = nullptr;
-        SDL_Texture* white = nullptr;
+        SDL_Texture* tex = nullptr;
         int used = 0; // App::frame of the last use
     };
     // Offscreen 2D targets by size. The car's box changes size every frame while it zooms to
     // the next car, so a size unused for 8 frames is freed (otherwise every size of every zoom
     // stayed allocated).
     Targets& targets_for(std::map<std::pair<int, int>, Targets>& m, int w, int h) {
-        for (auto it = m.begin(); it != m.end();) {
-            if (it->second.used < frame_ - 8) {
-                if (it->second.black) SDL_DestroyTexture(it->second.black);
-                if (it->second.white) SDL_DestroyTexture(it->second.white);
-                it = m.erase(it);
-            } else {
-                ++it;
-            }
-        }
+        prune_targets(m, frame_);
         Targets& t = m[{w, h}];
         t.used = frame_;
         return t;
@@ -279,8 +270,8 @@ private:
             show_.elev += show_.elev_v / 60.0f;
             ++show_.frames;
         }
-        if (!view_black_) view_black_ = std::make_unique<render::View3D>(*app.gpu());
-        if (!view_white_) view_white_ = std::make_unique<render::View3D>(*app.gpu());
+        if (!view_) view_ = std::make_unique<render::View3D>(*app.gpu());
+        view_used_ = frame_;
         // The game's yaw in degrees: 180 = in front of the car (the timed reference shows it
         // head-on ~2 s after entry), 90 = the side, nose to the right (~6 s).
         const float yaw = show_.yaw * 3.14159265f / 180.0f;
@@ -314,7 +305,7 @@ private:
         auto jittered = [&](SDL_Renderer* rr, SDL_Texture* target, int w, int h, int n, auto&& draw_pass) {
             static const float kJ2[2][2] = {{0.25f, 0.75f}, {0.75f, 0.25f}};
             static const float kJ4[4][2] = {{0.375f, 0.25f}, {0.125f, 0.75f}, {0.875f, 0.25f}, {0.625f, 0.75f}};
-            SDL_Texture*& tmp = targets_for(pass_tex_, w, h).black;
+            SDL_Texture*& tmp = targets_for(pass_tex_, w, h).tex;
             if (n > 1 && !tmp) tmp = SDL_CreateTexture(rr, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
             if (!tmp) n = 1;
             const float px = 0.6f * float(w) / 640.0f, py = 0.6f * float(h) / 448.0f;
@@ -330,11 +321,10 @@ private:
                     continue;
                 }
                 SDL_SetRenderTarget(rr, tmp);
+                clear_picture(rr);
                 draw_pass(pj);
                 SDL_SetRenderTarget(rr, target);
-                SDL_SetTextureBlendMode(tmp, SDL_BLENDMODE_BLEND);
-                SDL_SetTextureAlphaModFloat(tmp, 1.0f / float(i + 1));
-                SDL_RenderTexture(rr, tmp, nullptr, nullptr);
+                accumulate(rr, tmp, 1.0f / float(i + 1));
             }
         };
         const int mirror_passes = passes <= 2 || fade < 0.8f ? 1 : 2;
@@ -348,15 +338,14 @@ private:
             // keep their winding and lighting (the body is left / right symmetric).
             render::DrawItem it{m.model.get(), render::scale({-1, -1, 1}), 0};
             jittered(r, SDL_GetRenderTarget(r), w, h, mirror_passes, [&](const render::Mat4& pj) {
-                view_black_->draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, pj, eye, {it}, o);
+                view_->draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, pj, eye, {it}, o);
             });
         });
-        composite(r, page, [&](SDL_Texture* tex, int w, int h, float bg) {
+        composite(r, page, [&](SDL_Texture* tex, int w, int h) {
             render::DrawOptions o = showroom_options(cam, view, false, env, reflect);
             o.repeated = canvas_ != nullptr;
-            o.clear[0] = o.clear[1] = o.clear[2] = bg;
-            o.clear[3] = 1;
-            render::View3D& v = bg > 0.5f ? *view_white_ : *view_black_;
+            picture_options(o);
+            render::View3D& v = *view_;
             // GT3 draws the floor shadow (node 6, colour bias 0 and scale 1: its own texture and
             // vertex colours) in every car pass, before the body, and never in the mirror.
             std::vector<render::DrawItem> items;
@@ -429,8 +418,8 @@ private:
             static const int kIdx[6] = {0, 1, 2, 1, 3, 2};
             SDL_RenderGeometry(r, light, v, 4, kIdx, 6);
         };
-        if (!view_black_) view_black_ = std::make_unique<render::View3D>(*app.gpu());
-        if (!view_white_) view_white_ = std::make_unique<render::View3D>(*app.gpu());
+        if (!view_) view_ = std::make_unique<render::View3D>(*app.gpu());
+        view_used_ = frame_;
         auto draw_cars = [&](bool lit, float opacity) {
             std::vector<render::DrawItem> items;
             for (size_t i = 0; i < sc.cars.size(); ++i) {
@@ -450,13 +439,11 @@ private:
                 items.push_back(it);
             }
             if (items.empty() || opacity <= 0) return;
-            composite(r, page, [&](SDL_Texture*, int w, int h, float bg) {
+            composite(r, page, [&](SDL_Texture*, int w, int h) {
                 render::DrawOptions o;
                 o.repeated = canvas_ != nullptr;
-                o.clear[0] = o.clear[1] = o.clear[2] = bg;
-                o.clear[3] = 1;
-                render::View3D& v = bg > 0.5f ? *view_white_ : *view_black_;
-                v.draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, proj, eye, items, o);
+                picture_options(o);
+                view_->draw(r, SDL_FRect{0, 0, float(w), float(h)}, view, proj, eye, items, o);
             }, opacity);
         };
         InPicture in_picture(canvas_, r);
@@ -487,6 +474,7 @@ private:
     // result medals): restarted for every new presentation, animated in real time.
     void draw_prize(App& app, SDL_Renderer* r, const menu::Element& e, const SDL_FRect& page_box, const std::string& path,
                     int serial, float fade, bool trophy, bool mini = false) {
+        prize_used_ = frame_;
         if (!prize_ || prize_path_ != path) {
             prize_.reset();
             prize_path_ = path;
@@ -546,9 +534,9 @@ private:
         InPicture in_picture(canvas_, r);
         composite(
             r, area,
-            [&](SDL_Texture* tex, int w, int h, float bg) {
-                const float clear[4] = {bg, bg, bg, 1};
-                SDL_Texture*& tmp = targets_for(pass_tex_, w, h).black;
+            [&](SDL_Texture* tex, int w, int h) {
+                const float clear[4] = {0, 0, 0, 1};
+                SDL_Texture*& tmp = targets_for(pass_tex_, w, h).tex;
                 if (!tmp && passes > 1) tmp = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
                 const float A = prize_->focus(), B = prize_->aperture();
                 const float px_scale = float(w) / 640.0f / (canvas_ ? canvas_->scale_x() : 1.0f); // of a screen pixel
@@ -558,6 +546,7 @@ private:
                     if (passes > 1) ps.px = (j[0] - 0.5f) * px_scale, ps.py = (j[1] - 0.5f) * px_scale;
                     ps.aspect = game_aspect(area);
                     ps.repeated = canvas_ != nullptr;
+                    ps.transmission = true;
                     if (A > 1) {
                         float th = float(i) * 6.2831853f / float(passes);
                         ps.ex = B * std::cos(th), ps.ey = B * std::sin(th), ps.focus = A;
@@ -568,37 +557,32 @@ private:
                         continue;
                     }
                     SDL_SetRenderTarget(r, tmp);
+                    clear_picture(r);
                     prize_->draw(r, SDL_FRect{0, 0, float(w), float(h)}, clear, &ps);
                     SDL_SetRenderTarget(r, tex);
-                    SDL_SetTextureBlendMode(tmp, SDL_BLENDMODE_BLEND);
-                    SDL_SetTextureAlphaModFloat(tmp, 1.0f / float(i + 1));
-                    SDL_RenderTexture(r, tmp, nullptr, nullptr);
+                    accumulate(r, tmp, 1.0f / float(i + 1));
                 }
             },
             fade);
     }
 
-    // Turntable render with exact compositing: the model shader's alpha is not
-    // coverage, so render over black (B = a*m) and over white (W = a*m + 1 - a),
-    // then page = page * (W - B) + B.
+    // Turntable render, composited exactly (composite: one transmission picture).
     void render(App& app, SDL_Renderer* r, const SDL_FRect& dst, const Loaded& m, float zoom, float pitch,
                 float yaw = -1000, float ambient = -1, float fovy = 0.8f, int lights = 0) {
-        if (!view_black_) view_black_ = std::make_unique<render::View3D>(*app.gpu());
-        if (!view_white_) view_white_ = std::make_unique<render::View3D>(*app.gpu());
+        if (!view_) view_ = std::make_unique<render::View3D>(*app.gpu());
+        view_used_ = frame_;
         render::OrbitCamera cam;
         cam.frame(m.bmin, m.bmax);
         cam.distance *= zoom * std::tan(cam.fovy * 0.5f) / std::tan(fovy * 0.5f); // same framing, longer lens
         cam.fovy = fovy;
         cam.pitch = pitch;
         cam.yaw = yaw > -999 ? yaw : 0.6f + float(double(SDL_GetTicks() % 18000) / 18000.0 * 6.283185307); // 1 turn / 18 s
-        composite(r, dst, [&](SDL_Texture*, int w, int h, float bg) {
+        composite(r, dst, [&](SDL_Texture*, int w, int h) {
             render::DrawOptions o;
             (void)lights;
-            o.clear[0] = o.clear[1] = o.clear[2] = bg;
-            o.clear[3] = 1;
+            picture_options(o);
             if (ambient >= 0) o.ambient = ambient;
-            render::View3D& v = bg > 0.5f ? *view_white_ : *view_black_;
-            v.draw(r, SDL_FRect{0, 0, float(w), float(h)}, cam, {{m.model.get(), {}, 0}}, o);
+            view_->draw(r, SDL_FRect{0, 0, float(w), float(h)}, cam, {{m.model.get(), {}, 0}}, o);
         });
     }
 
@@ -609,65 +593,84 @@ private:
         int w = int(dst.w + 0.5f), h = int(dst.h + 0.5f);
         if (w < 8 || h < 8 || factor <= 0) return;
         Targets& t = targets_for(targets_, w, h);
-        if (!t.black) t.black = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
-        if (!t.black) return;
+        if (!t.tex) t.tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
+        if (!t.tex) return;
         SDL_Texture* prev = SDL_GetRenderTarget(r);
-        SDL_SetRenderTarget(r, t.black);
+        SDL_SetRenderTarget(r, t.tex);
         paint(w, h);
         SDL_FlushRenderer(r);
         SDL_SetRenderTarget(r, prev);
         static const SDL_BlendMode kAdd = SDL_ComposeCustomBlendMode(
             SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD, SDL_BLENDFACTOR_ZERO,
             SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
-        SDL_SetTextureBlendMode(t.black, kAdd);
+        SDL_SetTextureBlendMode(t.tex, kAdd);
         Uint8 k = Uint8(std::clamp(factor, 0.0f, 1.0f) * 255 + 0.5f);
-        SDL_SetTextureColorMod(t.black, k, k, k);
-        SDL_RenderTexture(r, t.black, nullptr, &dst);
-        SDL_SetTextureColorMod(t.black, 255, 255, 255);
+        SDL_SetTextureColorMod(t.tex, k, k, k);
+        SDL_RenderTexture(r, t.tex, nullptr, &dst);
+        SDL_SetTextureColorMod(t.tex, 255, 255, 255);
         SDL_FlushRenderer(r);
     }
 
-    // Draws a 3D picture twice (`paint(target, w, h, background)` over black, then
-    // over white) and composites it onto the page in `dst`.
+    // Draws a 3D picture once (`paint(target, w, h)`, a transmission picture: picture_options)
+    // and composites it onto the page in `dst`: page x (1 - coverage) + colour, both scaled by
+    // `opacity` while it fades in. (GT3's models are not drawn with coverage alpha; the
+    // transmission picture keeps what every blend, the floor shadow's multiply too, lets
+    // through.)
     template <class Paint>
     void composite(SDL_Renderer* r, const SDL_FRect& dst, Paint&& paint, float opacity = 1.0f) {
         int w = int(dst.w + 0.5f), h = int(dst.h + 0.5f);
         if (w < 8 || h < 8) return;
         Targets& t = targets_for(targets_, w, h);
-        if (!t.black) t.black = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
-        if (!t.white) t.white = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
-        if (!t.black || !t.white) return;
+        if (!t.tex) t.tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
+        if (!t.tex) return;
         SDL_Texture* prev = SDL_GetRenderTarget(r);
-        auto render_on = [&](SDL_Texture* tex, float bg) {
-            SDL_SetRenderTarget(r, tex);
-            paint(tex, w, h, bg);
-            SDL_FlushRenderer(r);
-        };
-        render_on(t.black, 0);
-        render_on(t.white, 1);
-        static const SDL_BlendMode kSub = SDL_ComposeCustomBlendMode(
-            SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_REV_SUBTRACT, SDL_BLENDFACTOR_ZERO,
-            SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
-        static const SDL_BlendMode kAdd = SDL_ComposeCustomBlendMode(
-            SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD, SDL_BLENDFACTOR_ZERO,
-            SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
-        SDL_SetTextureBlendMode(t.black, kSub);
-        SDL_RenderTexture(r, t.black, nullptr, nullptr); // white := W - B
-        if (opacity < 1.0f) {
-            // Fading in: white := lerp(1, W - B, opacity), and B is drawn scaled by it.
-            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(r, 255, 255, 255, Uint8(std::clamp(1.0f - opacity, 0.0f, 1.0f) * 255 + 0.5f));
-            SDL_RenderFillRect(r, nullptr);
-        }
+        SDL_SetRenderTarget(r, t.tex);
+        clear_picture(r);
+        paint(t.tex, w, h);
+        SDL_FlushRenderer(r);
         SDL_SetRenderTarget(r, prev);
-        SDL_SetTextureBlendMode(t.white, SDL_BLENDMODE_MOD);
-        SDL_RenderTexture(r, t.white, nullptr, &dst);
-        SDL_SetTextureBlendMode(t.black, kAdd);
-        Uint8 o = Uint8(std::clamp(opacity, 0.0f, 1.0f) * 255 + 0.5f);
-        SDL_SetTextureColorMod(t.black, o, o, o);
-        SDL_RenderTexture(r, t.black, nullptr, &dst);
-        SDL_SetTextureColorMod(t.black, 255, 255, 255);
-        SDL_FlushRenderer(r); // the targets are reused by the next model of this frame
+        const float o = std::clamp(opacity, 0.0f, 1.0f);
+        SDL_SetTextureBlendMode(t.tex, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
+        SDL_SetTextureColorModFloat(t.tex, o, o, o);
+        SDL_SetTextureAlphaModFloat(t.tex, o);
+        SDL_RenderTexture(r, t.tex, nullptr, &dst);
+        SDL_SetTextureColorModFloat(t.tex, 1, 1, 1);
+        SDL_SetTextureAlphaModFloat(t.tex, 1);
+        SDL_FlushRenderer(r); // the target is reused by the next model of this frame
+    }
+
+    // A transmission picture of the page's models (render::DrawOptions::transmission).
+    static void picture_options(render::DrawOptions& o) {
+        o.clear[0] = o.clear[1] = o.clear[2] = 0;
+        o.clear[3] = 1;
+        o.transmission = true;
+    }
+    // The render target before a picture goes in: black, alpha 1 (a transmission picture's alpha
+    // lands as 1 x what it lets through, inverted: DrawOptions::transmission).
+    static void clear_picture(SDL_Renderer* r) {
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
+        SDL_RenderClear(r);
+    }
+    // One accumulation pass into the render target: target = lerp(target, pass, weight), every
+    // channel (pictures with coverage alpha, and opaque ones).
+    static void accumulate(SDL_Renderer* r, SDL_Texture* pass, float weight) {
+        static const SDL_BlendMode kKeep = SDL_ComposeCustomBlendMode(
+            SDL_BLENDFACTOR_ZERO, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD, SDL_BLENDFACTOR_ZERO,
+            SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD);
+        static const SDL_BlendMode kAdd = SDL_ComposeCustomBlendMode(
+            SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD, SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE,
+            SDL_BLENDOPERATION_ADD);
+        const float k = std::clamp(weight, 0.0f, 1.0f);
+        SDL_SetRenderDrawBlendMode(r, kKeep); // target x (1 - weight)
+        SDL_SetRenderDrawColorFloat(r, 0, 0, 0, k);
+        SDL_RenderFillRect(r, nullptr);
+        SDL_SetTextureBlendMode(pass, kAdd); // + pass x weight
+        SDL_SetTextureColorModFloat(pass, k, k, k);
+        SDL_SetTextureAlphaModFloat(pass, k);
+        SDL_RenderTexture(r, pass, nullptr, nullptr);
+        SDL_SetTextureColorModFloat(pass, 1, 1, 1);
+        SDL_SetTextureAlphaModFloat(pass, 1);
     }
 
     // The GPU copy of a showroom reflection map (a menu image), uploaded once per distinct
@@ -754,16 +757,38 @@ private:
 public:
     // Before a race: the models, views and targets kept between frames (the pages load them
     // again when drawn).
+    // After each menu frame: the prize model and the 3D view no page drew for kIdleFrames (a
+    // presentation that closed, a car page left), and targets unused for 8 frames. Their GPU
+    // memory goes back at once instead of staying until the next race.
+    void trim(App& app) {
+        constexpr int kIdleFrames = 30;
+        const int now = app.frame();
+        if (prize_ && now - prize_used_ > kIdleFrames) {
+            prize_.reset();
+            prize_path_.clear();
+        }
+        if (view_ && now - view_used_ > kIdleFrames) view_.reset();
+        for (auto* m : {&targets_, &pass_tex_}) prune_targets(*m, now);
+    }
+    static void prune_targets(std::map<std::pair<int, int>, Targets>& m, int now) {
+        for (auto it = m.begin(); it != m.end();) {
+            if (it->second.used < now - 8) {
+                if (it->second.tex) SDL_DestroyTexture(it->second.tex);
+                it = m.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     void release(App& app) {
         cars_.clear();
         prize_.reset();
         prize_path_.clear();
-        view_black_.reset();
-        view_white_.reset();
+        view_.reset();
         for (auto* m : {&targets_, &pass_tex_}) {
             for (auto& [size, t] : *m) {
-                if (t.black) SDL_DestroyTexture(t.black);
-                if (t.white) SDL_DestroyTexture(t.white);
+                if (t.tex) SDL_DestroyTexture(t.tex);
             }
             m->clear();
         }
@@ -793,14 +818,15 @@ private:
     std::map<int, Showroom> shows_; // 0 single / dealer, 1 / 2 the 2 Player cars
     std::map<std::string, ShowroomCamera> cameras_;
     std::unique_ptr<render::PrizeView> prize_;
-    std::map<std::pair<int, int>, Targets> pass_tex_; // multi-pass scratch targets (in .black)
+    std::map<std::pair<int, int>, Targets> pass_tex_; // multi-pass scratch targets
     int frame_ = 0; // App::frame of this draw
+    int view_used_ = 0, prize_used_ = 0; // App::frame of the last draw with view_ / prize_ (trim)
     menu::MenuCanvas* canvas_ = nullptr; // of this draw, when its models go into the picture
     std::string prize_path_;
     int prize_serial_ = -1, prize_skip_ = -1;
     u64 prize_ticks_ = 0;
     std::map<std::pair<int, int>, Targets> targets_;
-    std::unique_ptr<render::View3D> view_black_, view_white_;
+    std::unique_ptr<render::View3D> view_; // the models' pictures (and the showroom floor mirror)
     std::map<u64, SDL_GPUTexture*> env_maps_; // showroom reflection maps (env_map)
 };
 
@@ -818,6 +844,7 @@ const bool gt_mode_hooks_installed = [] {
         menu_models().draw(app, r, e, box, alpha, page, image, canvas);
     });
     menu::flow::set_gt_mode_widget_release([](App& app) { menu_models().release(app); });
+    menu::flow::set_gt_mode_widget_trim([](App& app) { menu_models().trim(app); });
     return true;
 }();
 

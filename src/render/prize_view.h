@@ -41,6 +41,7 @@ public:
         float ex = 0, ey = 0, focus = 0;
         float aspect = 0;
         bool repeated = false;
+        bool transmission = false; // DrawOptions::transmission (with clear (0, 0, 0, 1))
     };
     // Draws into `rect` (cleared to `clear`; alpha 0 keeps what is behind when supported).
     void draw(SDL_Renderer* r, const SDL_FRect& rect, const float clear[4] = nullptr, const Pass* pass = nullptr);

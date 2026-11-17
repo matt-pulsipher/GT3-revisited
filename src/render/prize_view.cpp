@@ -53,6 +53,7 @@ void PrizeView::draw(SDL_Renderer* r, const SDL_FRect& rect, const float clear[4
         for (int i = 0; i < 4; ++i) o.clear[i] = clear[i];
     o.composite_alpha = alpha_;
     o.repeated = pass && pass->repeated;
+    o.transmission = pass && pass->transmission;
     // The scene's lights (prm.md "Lights"), set like OpenGL lights after the view matrix:
     // directional, towards the light = the record's vector normalised and turned by the view
     // (camera space here, where the model is drawn). Light-model ambient (0, 0, 0); each
