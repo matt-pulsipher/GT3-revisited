@@ -972,15 +972,17 @@ bool GtMode::fit(GarageCar& c, int goods) const {
     sim::CarSettings stock = sim::stock_settings(db(), c.car, c.parts);
     refresh_settings(c.settings, stock, g.table);
     if (g.table == 17) c.ref_final = c.settings.final_drive;
-    // A tire set: the front goods fits the matching rear tire too.
-    if (int r = rear_tire_goods(goods); r >= 0) fit(c, r);
     return true;
 }
 
 bool GtMode::fit_part(int goods) {
     GarageCar* c = state_.ride_car();
     if (!c || goods < 0 || goods >= kGoodsCount || !c->owned.test(size_t(goods))) return false;
-    return fit(*c, goods);
+    if (!fit(*c, goods)) return false;
+    // The shop fits a tire set: a front goods fits the matching rear tire too. Change Parts
+    // fits one end only (fit_goods).
+    if (int r = rear_tire_goods(goods); r >= 0) fit(*c, r);
+    return true;
 }
 
 s64 GtMode::all_tires_price() const {

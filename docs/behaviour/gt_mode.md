@@ -416,7 +416,8 @@ that do not exist. Measured on an R34 GT-R: turbo stages 1–4 cost 4,800 / 13,5
    | traction control | TCS level |
    | stability control | ASCC words |
 
-4. A front tire also fits the matching rear tire.
+4. A front tire also fits the matching rear tire. This is the shop's rule only: Change
+   Parts fits one end at a time (§14).
 
 A fitted change counts as "tuned" (§8). The shop shows the power before and after a
 part (`power_with`: the same peak computation on a copy with the part fitted). After
@@ -905,7 +906,9 @@ the old value is kept. A part change that would break them opens `not_to_change`
 tires cannot be changed for a dirt event (`dirt_tire_only`).
 
 **Part change pages.** The `chg/` pages list the parts the car owns. Choosing one fits
-it at once (§6.3), plays the `ok` sound and saves (the racing brake item plays none).
+it at once (§6.3 steps 1–3), plays the `ok` sound and saves (the racing brake item plays
+none). Front and rear tires are separate pages: a front tire leaves the rear tires as
+they are, and the other way round.
 Items for goods the car does not own are disabled (the `disable` sound). The
 `attach_*` marks show what is fitted. A stage-0 item also counts as fitted when the
 car has its stock part. Port polish, engine balance, displacement and weight reduction

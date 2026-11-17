@@ -725,6 +725,15 @@ TEST(gtmode_disc_tune_shop) {
     CHECK(all == 10500 + 13500 + 16500 + 22500 + 27500 + 47500);
     CHECK(gt.buy_all_tires());
     CHECK(gt.can_buy_all_tires() == Check::AlreadyHaveTires);
+    // Change Parts fits one end only (issue 317): front super-hard (58) keeps the soft rear, then rear
+    // medium (72) keeps that front.
+    GarageCar& rc = *gt.state().ride_car();
+    CHECK(gt.fit_goods(rc, 58));
+    CHECK(rc.parts[size_t(part_slot(28))] == find_part(data->db, "r34_gtr_v_99", 58)->id);
+    CHECK(rc.parts[size_t(part_slot(29))] == find_part(data->db, "r34_gtr_v_99", 74)->id);
+    CHECK(gt.fit_goods(rc, 72));
+    CHECK(rc.parts[size_t(part_slot(28))] == find_part(data->db, "r34_gtr_v_99", 58)->id);
+    CHECK(rc.parts[size_t(part_slot(29))] == find_part(data->db, "r34_gtr_v_99", 72)->id);
     // Wash / oil / wheels.
     s64 c1 = gt.state().credits;
     CHECK(gt.wash() && gt.change_oil());
@@ -1529,7 +1538,9 @@ TEST(gtmode_disc_change_parts_rows) {
     CHECK(row(*vitz, "parts_eng_turbine") == pt("STAGE_1") && row(*vitz, "parts_eng_inter_cooler") == pt("NO_EQUIP"));
     // Tyres; on a dirt event the dirt tyres when owned, else "----".
     CHECK(row(*vitz, "parts_tir_f") == pt("TIRE_NORMAL") && row(*vitz, "parts_tir_r") == pt("TIRE_NORMAL"));
-    CHECK(gt.fit_goods(*vitz, 63));
+    CHECK(gt.fit_goods(*vitz, 63)); // one end at a time, as Change Parts fits them
+    CHECK(row(*vitz, "parts_tir_f") == pt("TIRE_SOFT") && row(*vitz, "parts_tir_r") == pt("TIRE_NORMAL"));
+    CHECK(gt.fit_goods(*vitz, 74));
     CHECK(row(*vitz, "parts_tir_f") == pt("TIRE_SOFT") && row(*vitz, "parts_tir_r") == pt("TIRE_SOFT"));
     CHECK(row(*vitz, "parts_tir_f", true) == "----" && row(*vitz, "parts_tir_r", true) == "----");
     vitz->owned.set(66);

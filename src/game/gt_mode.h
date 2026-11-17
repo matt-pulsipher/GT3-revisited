@@ -297,8 +297,8 @@ public:
     bool owns(int goods) const;
     Check can_buy_part(int goods) const;
     bool buy_part(int goods);
-    bool fit_part(int goods);         // must be owned (stage-0 goods = back to stock)
-    // Fits a goods on any car (the shop's fitting rules; ownership not checked).
+    bool fit_part(int goods);         // the shop's fit: must be owned (stage-0 goods = back to stock); a front tire fits its rear too
+    // Fits one goods on any car (Change Parts' rule: one slot, so a front tire leaves the rear alone; ownership not checked).
     bool fit_goods(GarageCar& c, int goods) const { return fit(c, goods); }
     Check can_buy_all_tires() const;
     s64 all_tires_price() const;
