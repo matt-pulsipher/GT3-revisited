@@ -12,6 +12,7 @@
 #include "game/mod_package.h"
 #include "game/gt_mode.h"
 #include "game/gt_state.h"
+#include "game/gt_parts.h"
 #include "game/net_car.h"
 #include "net/geoip.h"
 #include "net/relay_server.h"
@@ -1375,7 +1376,7 @@ TEST(net_car_rules_disc) {
     CHECK(game::car_meets_rules(r34, f, r, &why));
     r.car_class = 0;
     CHECK(game::car_meets_rules(r34, f, r, &why));
-    // A garage car counts as tuned only when its parts or settings differ from the stock car's.
+    // A garage car counts as tuned by GT3's own test (GtMode::tuned): its parts, not its settings.
     game::OnlineCar garage = r34;
     garage.kind = game::OnlineCar::Kind::Garage;
     garage.parts = db.car("r34_gtr_v_99")->parts;
@@ -1383,8 +1384,21 @@ TEST(net_car_rules_disc) {
     r = {};
     r.stock_only = true;
     CHECK(game::car_meets_rules(garage, game::online_car_facts(db, nullptr, garage), r, &why));
-    garage.settings.final_drive += 100;
+    // Settings off the stock ones: still a stock car (the setup check judges their range on its own).
+    garage.settings.tcs = 0, garage.settings.downforce_front += 5;
+    CHECK(!game::online_car_facts(db, nullptr, garage).tuned);
+    garage.settings = sim::stock_settings(db, "r34_gtr_v_99", garage.parts);
+    auto muffler = game::find_part(db, "r34_gtr_v_99", 37); // sports muffler
+    CHECK(muffler.has_value());
+    if (muffler) garage.parts[size_t(game::part_slot(int(data::TableId::Muffler)))] = muffler->id;
     CHECK(!game::car_meets_rules(garage, game::online_car_facts(db, nullptr, garage), r, &why));
+    // A factory tuner car as it comes is tuned too.
+    if (const data::Car* spoon = db.car("spoon_s2000_00")) {
+        game::OnlineCar tuner = garage;
+        tuner.car = spoon->label, tuner.parts = spoon->parts;
+        tuner.settings = sim::stock_settings(db, spoon->label, spoon->parts);
+        CHECK(!game::car_meets_rules(tuner, game::online_car_facts(db, nullptr, tuner), r, &why));
+    }
     // A mod car this machine lacks passes what needs the car; mods off refuses it.
     game::OnlineCar mod;
     mod.kind = game::OnlineCar::Kind::Mod;
