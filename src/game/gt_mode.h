@@ -371,10 +371,9 @@ public:
     Check can_enter(const std::string& code) const; // ride car + entry rules
     bool series_unlocked(const std::string& code) const; // F1 needs the S license
     bool tuned(const GarageCar& c) const;
-    // The same test for any car's parts and settings: a part other than the stock car's (the last
-    // slot not counted), or settings other than its stock ones.
-    static bool tuned(const data::CarDatabase& db, const std::string& car, const std::array<u64, 27>& parts,
-                      const sim::CarSettings& settings);
+    // The same test for any car's parts, GT3's own: a part other than the stock car's (the last
+    // slot not counted), or a part above its kind's first stage. Settings do not count.
+    static bool tuned(const data::CarDatabase& db, const std::string& car, const std::array<u64, 27>& parts);
     // Entering a race / test / machine test / free run costs one day.
     void enter() { ++state_.day; }
     // Single race result: place 0-based (-1 = retired). Pays the place prize,

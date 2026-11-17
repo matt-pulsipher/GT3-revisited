@@ -511,7 +511,14 @@ event-record bytes (`docs/formats/database.md`, table 32). Each rule fails on it
 | Car class | +0x1F4: 1 race car, 2 tuned, 3 production | 1: a production car (category 0); 2: not tuned; 3: a race / rally car, or tuned |
 
 A car is **tuned** when any fitted part (the wheel slot aside) differs from its stock
-part, or when its settings differ from the stock settings of its stock parts.
+part, or when one of these parts is above its kind's first stage: brakes, brake
+controller, drivetrain, transmission, suspension, LSD, weight reduction, racing
+modification, port polish, engine balance, displacement, computer, NA tune, turbo,
+flywheel, clutch, muffler, ASM and TCS; the driveshaft too unless the drivetrain is FF,
+MR or RR, and the intercooler only with a turbo. A missing part counts as the first
+stage. So a tuner car (Spoon, Mugen, Mines, Nismo R-tune...) is tuned as it comes.
+Settings never count: a stock car with changed settings is still a normal car
+(`gtmode_disc_normal_car_rule`).
 
 `GtMode::can_enter` turns the result into one popup:
 

@@ -17,6 +17,8 @@
 #include <bit>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <type_traits>
 
 namespace gt3r::game {
 
@@ -173,6 +175,20 @@ OnlineCar online_car_from_arcade(const data::CarDatabase& db, const std::string&
 }
 
 namespace {
+
+// The lobby's "stock cars only" rule (ours, not GT3's): a part other than the stock car's (the
+// last slot not counted), or settings other than its stock ones. Stricter than GT3's entry test
+// (GtMode::tuned), which reads only the parts.
+bool off_stock(const data::CarDatabase& db, const std::string& label, const std::array<u64, 27>& parts,
+               const sim::CarSettings& settings) {
+    const data::Car* car = db.car(label);
+    if (!car) return false;
+    for (size_t i = 0; i + 1 < parts.size(); ++i)
+        if (parts[i] != car->parts[i]) return true;
+    static_assert(std::is_trivially_copyable_v<sim::CarSettings>);
+    const sim::CarSettings stock = sim::stock_settings(db, label, car->parts);
+    return std::memcmp(&settings, &stock, sizeof stock) != 0;
+}
 
 // The arcade car `c` names, as this machine builds it for `course`: the arcade car's parts with
 // its racing tyres (the car page's default), as the arcade races it. Its base car is the one
@@ -443,7 +459,7 @@ CarFacts online_car_facts(const data::CarDatabase& db, const GtData* gd, const O
                 for (size_t i = 0; i < parts.size(); ++i)
                     if (v.parts[i]) parts[i] = v.parts[i];
     if (c.kind == OnlineCar::Kind::Garage) {
-        f.tuned = GtMode::tuned(db, c.car, c.parts, c.settings);
+        f.tuned = off_stock(db, c.car, c.parts, c.settings);
         f.setup = garage_setup_problem(db, c.car, c.parts, c.settings);
     }
     // Drivetrain and aspiration as GT3's event rules read them (GtMode::check_entry).
