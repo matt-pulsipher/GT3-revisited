@@ -475,7 +475,7 @@ void RaceScreen::update_drive(App& app, double dt) {
             director_.set_view_mode(view_settings().mode);
             update_camera_manager(dt);
             if (car_visual_) camera_.set_replay_mounts(&car_visual_->mounts());
-            bind_hood(camera_, hood_bound_, car_visual_.get());
+            bind_camera_car(camera_, camera_car_, car_visual_.get());
             camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
             if (run_preview_) {
                 if (player_.done() && pre_demo_run_) { // loop the run
@@ -532,7 +532,7 @@ void RaceScreen::update_drive(App& app, double dt) {
             camera_.set_look(0, 0);
             camera_.set_track_distance(track_->distance_of(render_state_.position));
             camera_.set_lap(lap_count());
-            bind_hood(camera_, hood_bound_, car_visual_.get());
+            bind_camera_car(camera_, camera_car_, car_visual_.get());
             camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
         }
         update_pause(app, dt);
@@ -626,7 +626,7 @@ void RaceScreen::update_drive(App& app, double dt) {
         camera2_.set_intro(live_view() && race::start_shot_on(frames_to_signal()), race::start_shot_t(frames_to_signal()));
         camera2_.set_track_distance(track_->distance_of(render_state2_.position));
         camera2_.set_lap(field_->second_laps().laps);
-        bind_hood(camera2_, hood_bound2_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
+        bind_camera_car(camera2_, camera2_car_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
         camera2_.update(render_state2_, field_->second_setup(), pad2, dt);
         app.input().set_rumble(1, rumble2_on_ && !replaying_ && !focus_quiet_
                                       ? rumble2_.rumble(app.input().gt3_rumble(1), app.input().dualsense(1))

@@ -152,6 +152,11 @@ CameraSound CameraRig::sound_kind() const {
     }
 }
 
+void CameraRig::set_car_mounts(const std::vector<CarMount>& mounts) {
+    if (mounts.size() >= 2) point_[0] = mounts[0].pos, point_[1] = mounts[1].pos;
+    else point_[0] = kFallbackPoint0, point_[1] = kFallbackPoint1;
+}
+
 void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup, const PadState& pad, double dt) {
     float fdt = float(std::min(dt, 0.1));
     if (!snapped_) snap(s);

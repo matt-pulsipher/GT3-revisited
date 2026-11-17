@@ -305,7 +305,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     director_.set_view_mode(view_settings().mode);
     update_race_camera(PadState{}, 1.0 / 60.0);
     if (field_ && field_->has_second()) {
-        bind_hood(camera2_, hood_bound2_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
+        bind_camera_car(camera2_, camera2_car_, car2_visual_ ? car2_visual_.get() : car_visual_.get());
         camera2_.set_track_distance(track_->distance_of(render_state2_.position));
         camera2_.set_lap(field_->second_laps().laps);
         camera2_.snap(render_state2_);
@@ -318,7 +318,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (preset_.ritems >= 0 && (replaying_ || demo_)) replay_settings_.items = u8(preset_.ritems); // (not stored)
     if (preset_.rcam >= 0 && replaying_) { // screenshots: a player view in the replay (2: the in-car view)
         camera_.set_mode(CameraMode(std::clamp(preset_.rcam, 0, int(CameraMode::Count) - 1)));
-        bind_hood(camera_, hood_bound_, car_visual_.get());
+        bind_camera_car(camera_, camera_car_, car_visual_.get());
         camera_.snap(render_state_);
         camera_.update(render_state_, vehicle_->setup(), PadState{}, 1.0 / 60.0);
     }
@@ -665,7 +665,7 @@ bool RaceScreen::build_vehicle(App& app) {
             track_->set_lap_source(exact_lap_source(*field_)); // the exact core times the player's laps itself
             if (1.0 / step_.step() != field_->tick_hz()) step_ = FixedStep(field_->tick_hz()); // (PAL: 50 a second)
             car2_visual_.reset();
-            hood_bound2_.reset();
+            camera2_car_.reset();
             // Player 2's car as the battle has it (a garage car: its own model and bought wheels).
             const int paint2 = battle_.paint2;
             std::string car2 = preset_.car2.empty() ? car_.label : preset_.car2;
@@ -722,8 +722,8 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
                                               showroom.car_span(), showroom.wheel_span(), showroom.stand_in);
     car_visual_->set_full_detail(full_car_detail_);
     if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
-    hood_bound_.reset();
-    hood_bound2_.reset();
+    camera_car_.reset();
+    camera2_car_.reset();
     // The driver's side ([vr] seat_side = car): the seat the body's own driver sits in, else the
     // side of the maker's country; a mod car's own word first (CarDatabase::driver_side).
     const DriverSeat& seat = car_visual_->driver_seat();
@@ -737,17 +737,18 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
              double(seat.right), seat.side ? "" : ", no side");
 }
 
-void RaceScreen::bind_hood(CameraRig& cam, std::optional<const CarVisual*>& bound, const CarVisual* v) {
+void RaceScreen::bind_camera_car(CameraRig& cam, std::optional<const CarVisual*>& bound, const CarVisual* v) {
     if (bound && *bound == v) return;
     bound = v;
     cam.set_hood_profile(v ? v->hood_profile() : HoodCameraProfile{});
+    if (v) cam.set_car_mounts(v->mounts()); // the driver's eye and the chase point of that car (issue 249)
 }
 
 // The opponents' cars as drawn and heard (a race's field, a free practice's): their paints (the event's entry ids, else the
 // game's draw), models and engine notes.
 void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     opp_visuals_.clear();
-    hood_bound_.reset();
+    camera_car_.reset();
     // Paint colours: player first, then the opponents (event entry ids or the game's draw). The attract demo's race has no
     // player car: its slot-0 car is drawn like the others when its entry gives no paint.
     std::vector<PaintEntry> entries;
