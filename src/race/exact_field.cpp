@@ -571,9 +571,7 @@ public:
             v.label = car_labels[size_t(i)];
             const std::string base = exact_base_car(db, v.label);
             if (const data::Car* dc = db.car(base)) v.model = db.model_of(*dc);
-            if (const data::ModCar* m = db.mod_car(base); m && m->electric)
-                LOG_INFO("Race (exact): %s is an electric mod car; it runs on its donor's engine (%s) until the exact core has "
-                         "the EV drive", v.label.c_str(), m->donor.c_str());
+            if (c.ev.on) LOG_INFO("Race (exact): %s is an electric mod car: the electric drive", v.label.c_str());
             v.setup = exact_setup(c);
             v.facts = exact_facts(c);
             exact_state(c, v.setup, v.state);

@@ -58,7 +58,7 @@ struct HudData {
     float speed_kmh = 0;
     float rpm = 0;
     float rev_limit_rpm = 7000; // tach scale and red band
-    float shift_rpm = 6800;     // red band start, shift light
+    float shift_rpm = 6800;     // red band start, shift light (0: neither, a car that never shifts)
     float top_speed_kmh = 250;  // estimate; selects the speedometer scale
     bool imperial = false;      // mph (NTSC-U): speed_120mp/160mp/200mp faces, "mph" label
     bool has_turbo = false;     // boost meter shown

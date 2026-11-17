@@ -43,7 +43,9 @@ struct RaceChange {
 void apply_change(ExactRace& race, const RaceChange& c);
 
 struct RaceRecord {
-    static constexpr u32 kVersion = 5; // the record's own layout (inside a replay file; versions 1 to 4 still read)
+    // The record's own layout (inside a replay file; versions 1 to 5 still read). 6: each recorder snapshot keeps its
+    // car's electric drive (Car::ev), which the car's record image does not hold.
+    static constexpr u32 kVersion = 6;
 
     // ---- the program and the course ----
     u64 program = 0;        // ProgramData::fingerprint of the program the race ran on

@@ -188,7 +188,10 @@ ExactRace::ExactRace(const RaceSetup& s) {
     r.info = s.info, r.conductor = s.conductor, r.course_addr = s.course_addr, r.road = s.road_addr;
     const StartResult sr = start_cars(r, s.entries);
     cars_.resize(n);
-    for (size_t i = 0; i < n; ++i) cars_[i].behaviour = how, load_image(cars_[i], sr.records[i].data());
+    for (size_t i = 0; i < n; ++i) {
+        cars_[i].behaviour = how, cars_[i].ev = electric_drive(s.db, s.entries[i].eq);
+        load_image(cars_[i], sr.records[i].data());
+    }
     order_ = sr.order;
     // The rest of the ranking set-up: the proximity matrices cleared, the gap matrices,
     // the bodies built (per car, the pair tables) after the copy-in (the build leaves

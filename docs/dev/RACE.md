@@ -865,10 +865,14 @@ it was: equipment with its parts and settings, pedal style, wheel type, ASM / TC
 grid slot), the fingerprint of the program's tables it ran on, the behaviour it ran with (the rules
 and step rate, `sim::Behaviour`: the disc's release's rules at 60 steps a second, online NTSC-U's), a
 fingerprint of the game data it was built from (`exact_data_fingerprint`: the course file and every
-entry's database records), every car's pad frame of every step (changed fields only; a CPU car's stream
-stays empty; the free run ghost's extra steps' reads apart), the game's own changes to the race between
-steps (`RaceChange`: the start countdown, the pause menu's AT / MT, a seeded engine condition, an AI
-take-over) and `race_hash` after the last step. Version 4 keeps each entry's spark points (`RaceRecord::sparks`; an
+entry's database records; for an electric mod car on the electric drive also its regen and the drive's
+version, `kElectricDriveVersion`, which no record holds), every car's pad frame of every step (changed
+fields only; a CPU car's stream stays empty; the free run ghost's extra steps' reads apart), the game's
+own changes to the race between steps (`RaceChange`: the start countdown, the pause menu's AT / MT, a
+seeded engine condition, an AI take-over) and `race_hash` after the last step. Version 6 keeps each
+recorder snapshot's electric drive (`Car::ev`, which the car's record image lacks), so a free run's ghost
+restored from it drives as it was recorded; an older record's snapshots have none, as no game that wrote
+one had the drive. Version 4 keeps each entry's spark points (`RaceRecord::sparks`; an
 older record plays without sparks, as it ran). Version 3 also keeps the solo modes' recorders as the run
 starts (`sim::exact::SoloRecorders`, their record memory stored sparse) and the run's own pad frame recording
 (`RaceRecord::run_recording`: the player's device's block as the race's end closes it, GT3's recorder),
@@ -1175,9 +1179,10 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
   event's cars fit its course; the arcade's dirt races are one against one). The start port itself reads a
   slot past the course's grid table as the program does (CourseQuery::slot: what follows the table in the
   road block, the loader's pointer words with the block's address, RaceSetup::road_addr). An electric mod
-  car races with its donor's stock engine, engine parts, drivetrain and gearbox (`exact_equipment`; the log
-  and the mods screen say so) until the exact core has the EV drive. The test autopilot (`GT3R_RACE auto=1`)
-  sets the configuration byte 3: the race's own AI drives the players' cars with their pads decoded.
+  car races on its own motor with the electric drive (`sim::exact::electric_drive`, Car::ev; the log says
+  so); a replay recorded while electric cars raced on their donor's engine has that engine in its equipment
+  and plays on it. The test autopilot (`GT3R_RACE auto=1`) sets the configuration byte 3: the race's own AI
+  drives the players' cars with their pads decoded.
 - **Inputs**: the race pad (the player's race layout in GT3's type A meanings) through the pad read
   (`sim::exact::pad_read`, the live path: the analog pad with pressure buttons, pad type 8; the
   wheel kind the steering-wheel path, the stick's x as its position, Cross / Square as its pedals):

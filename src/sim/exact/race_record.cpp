@@ -227,33 +227,40 @@ std::vector<PadFrame> get_frames(Reader& r) {
     return decode_pads(r.bytes(len), n);
 }
 
-// A snapshot: its words, the car's record image and the collision body's points.
+// A snapshot: its words, the car's record image, the collision body's points and (version 6) the car's electric drive.
 void put_snapshot(Writer& w, const Snapshot& s) {
     w.put<u8>(s.sub), w.put<u8>(s.phase), w.put<u32>(s.frame), w.put<u32>(s.frames), w.put<u32>(s.frac.bits), w.put<u32>(s.time);
     std::vector<u8> image(kCarSize, 0);
     store_image(s.car, image.data());
     w.bytes(ByteSpan(image.data(), image.size()));
     w.put<u8>(s.has_body ? 1 : 0);
-    if (!s.has_body) return;
-    for (const collide::exact::Point& p : s.body) {
-        for (F v : {p.lx, p.ly, p.ux, p.uy, p.sx, p.sy, p.ex, p.ey}) w.put<u32>(v.bits);
-        w.put<u32>(p.flags), w.put<u8>(p.hit ? 1 : 0), w.put<u32>(p.t.bits), w.put<s32>(p.wall);
-        w.put<u32>(p.tx.bits), w.put<u32>(p.ty.bits), w.put<s32>(p.other), w.put<s32>(p.edge);
-    }
+    if (s.has_body)
+        for (const collide::exact::Point& p : s.body) {
+            for (F v : {p.lx, p.ly, p.ux, p.uy, p.sx, p.sy, p.ex, p.ey}) w.put<u32>(v.bits);
+            w.put<u32>(p.flags), w.put<u8>(p.hit ? 1 : 0), w.put<u32>(p.t.bits), w.put<s32>(p.wall);
+            w.put<u32>(p.tx.bits), w.put<u32>(p.ty.bits), w.put<s32>(p.other), w.put<s32>(p.edge);
+        }
+    w.put<u8>(u8((s.car.ev.on ? 1 : 0) | (s.car.ev.waiting ? 2 : 0)));
+    if (s.car.ev.on) w.put<u32>(s.car.ev.regen_torque.bits), w.put<u32>(s.car.ev.regen_power.bits);
 }
 
-Snapshot get_snapshot(Reader& r, const Behaviour& how) {
+// (Before version 6 no snapshot had the electric drive: no game that wrote one had it.)
+Snapshot get_snapshot(Reader& r, const Behaviour& how, u32 version) {
     Snapshot s;
     s.sub = r.get<u8>(), s.phase = r.get<u8>(), s.frame = r.get<u32>(), s.frames = r.get<u32>();
     s.frac = F::raw(r.get<u32>()), s.time = r.get<u32>();
     s.car.behaviour = how;
     load_image(s.car, r.bytes(kCarSize).data());
     s.has_body = r.get<u8>() != 0;
-    if (!s.has_body) return s;
-    for (collide::exact::Point& p : s.body) {
-        for (F* v : {&p.lx, &p.ly, &p.ux, &p.uy, &p.sx, &p.sy, &p.ex, &p.ey}) *v = F::raw(r.get<u32>());
-        p.flags = r.get<u32>(), p.hit = r.get<u8>() != 0, p.t = F::raw(r.get<u32>()), p.wall = r.get<s32>();
-        p.tx = F::raw(r.get<u32>()), p.ty = F::raw(r.get<u32>()), p.other = r.get<s32>(), p.edge = r.get<s32>();
+    if (s.has_body)
+        for (collide::exact::Point& p : s.body) {
+            for (F* v : {&p.lx, &p.ly, &p.ux, &p.uy, &p.sx, &p.sy, &p.ex, &p.ey}) *v = F::raw(r.get<u32>());
+            p.flags = r.get<u32>(), p.hit = r.get<u8>() != 0, p.t = F::raw(r.get<u32>()), p.wall = r.get<s32>();
+            p.tx = F::raw(r.get<u32>()), p.ty = F::raw(r.get<u32>()), p.other = r.get<s32>(), p.edge = r.get<s32>();
+        }
+    if (const u8 ev = version >= 6 ? r.get<u8>() : 0; ev & 1) {
+        s.car.ev.on = true, s.car.ev.waiting = (ev & 2) != 0 ? 1 : 0;
+        s.car.ev.regen_torque = F::raw(r.get<u32>()), s.car.ev.regen_power = F::raw(r.get<u32>());
     }
     return s;
 }
@@ -298,11 +305,11 @@ void put_recorders(Writer& w, const SoloRecorders& s) {
     put_pool(w, s.pool1);
 }
 
-std::shared_ptr<const SoloRecorders> get_recorders(Reader& r, const Behaviour& how) {
+std::shared_ptr<const SoloRecorders> get_recorders(Reader& r, const Behaviour& how, u32 version) {
     const u8 f = r.get<u8>();
     auto s = std::make_shared<SoloRecorders>((f & 1) != 0);
     s->ghost_option = (f & 2) != 0, s->ghost_empty = (f & 4) != 0;
-    for (Snapshot& h : s->snapshot) h = get_snapshot(r, how);
+    for (Snapshot& h : s->snapshot) h = get_snapshot(r, how, version);
     get_pool(r, s->pool1);
     s->start();
     return s;
@@ -311,7 +318,7 @@ std::shared_ptr<const SoloRecorders> get_recorders(Reader& r, const Behaviour& h
 // Version 2's free run recorders (their frames as lists): recorded on the stores as the program records them.
 std::shared_ptr<const SoloRecorders> get_free_run_v2(Reader& r, const Behaviour& how) {
     auto s = std::make_shared<SoloRecorders>(true);
-    s->snapshot[1] = get_snapshot(r, how), s->snapshot[2] = get_snapshot(r, how), s->snapshot[0] = get_snapshot(r, how);
+    for (size_t k : {1u, 2u, 0u}) s->snapshot[k] = get_snapshot(r, how, 2);
     s->ghost_empty = r.get<u8>() == 0;
     r.get<u32>(), r.get<u32>(); // (the lap's frames, the playback's place)
     for (u32 store : {1u, 2u, 0u}) {
@@ -592,7 +599,7 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
         r.nested.push_back(std::move(n));
     }
     if (version >= 3) {
-        if (rd.get<u8>() != 0) r.recorders = get_recorders(rd, r.behaviour);
+        if (rd.get<u8>() != 0) r.recorders = get_recorders(rd, r.behaviour, version);
         r.ghost_car = rd.get<s8>();
         r.external_ghost = rd.get<u8>() != 0;
         const u32 len = rd.var();

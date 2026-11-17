@@ -204,6 +204,9 @@ keep their recent results (`ee_math.cpp`).
   changes a table races with its values (Settings says "with this disc's
   changes"); changes made by emulator cheats are not read.
   A disc whose program cannot be read cannot race: the race screen says so.
-- Electric mod cars race on their donor car's engine (docs/MODDING.md).
+- Electric mod cars take a path of their own through phase 7's engine, clutch and
+  gearbox steps (`ElectricDrive`, set at the race start by `electric_drive` from the
+  database, outside the record; docs/MODDING.md "Electric cars"). GT3's cars never
+  take it.
 - The HUD's boost gauge reads the turbo's boost factor from the two lagged stages
   minus 1 (`exact_telemetry`); how the game's gauge maps it is not pinned down.

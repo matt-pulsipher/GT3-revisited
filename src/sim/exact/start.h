@@ -78,6 +78,9 @@ struct StartEntry {
 
 // The per-car part for entry i of the race: the whole record.
 Record start_car(const StartRace& race, const StartEntry& e, int i);
+// The drive of an entry's car outside its record (Car::ev): on for an electric mod car on its own motor, with its regen.
+// (A race recorded while electric cars raced on their donor's engine has that engine in its equipment, and keeps it.)
+ElectricDrive electric_drive(const data::CarDatabase* db, const Equipment& eq);
 // The conductor's ranking (the race order conductor + 0xE388, one car index per position): the rank reset puts the
 // cars in index order (rank = index + 1); the ranking sorts the order (an insertion sort: more laps
 // ahead, then a car not finished ahead of a finished one, then the greater race progress, or for two finished cars the

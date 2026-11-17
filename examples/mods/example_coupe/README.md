@@ -1,15 +1,19 @@
 # Example Coupe: a complete mod car
 
-This folder is a working mod that adds one car, the **GT3R Concept Coupe**: a
+This folder is a working mod that adds the **GT3R Concept Coupe**: a
 front-engined, rear-drive 2+2 with a 3.0-liter V6, a six-speed manual and
-22-inch wheels. It is meant to be copied. Every file is small and commented, so you
-can see how each part of a car mod works and then replace it with your own.
+22-inch wheels. Its electric version, the **Concept Coupe E**, shares the body. It
+is meant to be copied. Every file is small and commented, so you can see how each
+part of a car mod works and then replace it with your own.
 
 It shows:
 
 - a car defined as data (`cars/gt3r_concept_coupe_24.ini`): dimensions, weight,
   engine curve, gearing, tires, paints, dealer and arcade settings, with a comment
   on every value
+- an electric car (`cars/gt3r_concept_coupe_e_24.ini`): the same body with a motor
+  on each axle and one reduction gear, commented where it differs (see "The
+  electric version")
 - a body of its own (`models/concept_coupe.glb`, binary glTF) with materials
   named for the game's loader, and wheels drawn by the engine from the tire sizes
 - a new maker with its own dealer (`makers/gt3r.ini`)
@@ -24,10 +28,12 @@ The format is described in [docs/MODDING.md](../../../docs/MODDING.md) ("Adding 
 example_coupe/
   mod.ini                          the mod's name, author and priority
   cars/gt3r_concept_coupe_24.ini   the car
+  cars/gt3r_concept_coupe_e_24.ini its electric version
   makers/gt3r.ini                  a maker the disc doesn't have, with a dealer
-  models/concept_coupe.glb         the body (CC-BY 4.0, see Credits)
+  models/concept_coupe.glb         the body, shared by both (CC-BY 4.0, see Credits)
   images/concept_coupe.png         dealer picture, 640x448
   images/concept_coupe_thumb.png   strip button and arcade icon, 51x27
+  images/concept_coupe_e*.png      the same for the electric version
   source/                          how the body and pictures were made (not loaded)
 ```
 
@@ -45,16 +51,19 @@ Mods screen, or copy the whole folder into the `mods` folder of your user data f
 
 A new mod is enabled (the Mods screen reads the folder again when you come back to
 the game; Cross turns a mod off and on). Select **Example Coupe** there: the screen
-lists the car, or the reason it failed to load.
+lists the cars, or the reason one failed to load.
 
 ## Try it
 
-- **Time trial** or **Quick race**: pick the GT3R Concept Coupe from the car list.
-- **GT Mode**: it is for sale at the GT3R dealer, on the Europe > Germany page of
-  the car dealers, for 52,000 credits. The color picker offers the six `[paints]`.
-- **Arcade**: it joins the class its power-to-weight ranks it in, at the end of the
+- **Time trial** or **Quick race**: pick the GT3R Concept Coupe (or Concept Coupe E)
+  from the car list.
+- **GT Mode**: both are for sale at the GT3R dealer, on the Europe > Germany page of
+  the car dealers, for 52,000 and 78,000 credits. The color picker offers the six
+  `[paints]`.
+- **Arcade**: each joins the class its power-to-weight ranks it in, at the end of the
   car list.
-- **Car viewer** (`gt3r --screen cars`): the entry `mod:gt3r_concept_coupe_24`.
+- **Car viewer** (`gt3r --screen cars`): the entries `mod:gt3r_concept_coupe_24` and
+  `mod:gt3r_concept_coupe_e_24`.
 
 ## Make it yours
 
@@ -112,7 +121,7 @@ were chosen to match that diameter, so the engine's wheels fill the arches.
 gt3tool modcar game.iso examples/mods/example_coupe
 ```
 
-loads the car, prints its specs and test-drives it on the game's own physics, on
+loads each car, prints its specs and test-drives it on the game's own physics, on
 the machine tests' course, next to the `[reference]` targets (magazine figures for
 cars of its class: ~300 PS, 1,420 kg, rear drive, summer tires). Results:
 
@@ -134,6 +143,35 @@ with an earlier version of the tool, which no longer drives a skidpad. Fit the t
 speed and top speed with power and drag first, then 0-60 with `output_pct`, and
 repeat once.
 
+## The electric version
+
+`cars/gt3r_concept_coupe_e_24.ini` is the same car with `type = electric`
+(docs/MODDING.md "Electric cars"). It shares the body file, the tires and the donor,
+and its file comments only what changes:
+
+- `[powertrain]` gives the motors' power, torque and top speed (`power_kw`,
+  `torque_nm`, `max_rpm`) instead of an engine curve. The game builds the curve: full
+  torque from standstill up to power / torque, constant power above it.
+- `[drivetrain]` has one ratio, the reduction, and an AWD split (one motor per axle).
+- The race drives it with the electric drive: no gear changes, regen when you lift
+  off, and it stops and holds at a standstill. The tune shop sells it no engine,
+  gearbox or driveline parts.
+
+`gt3tool modcar` drives both cars. The electric one, against its `[reference]`
+targets (its class: ~540 PS, 1,850 kg, two motors):
+
+| Test | Game | Target |
+|---|---|---|
+| 0-60 mph (1 ft rollout) | 3.33 s | 3.3 s |
+| Quarter mile (1 ft rollout) | 11.62 s @ 121 mph | 11.6 s |
+| Top speed (GT3's top-speed test) | 250 km/h | 250 km/h |
+| 60-0 mph | 93 ft | |
+| Lift-off (regen) | 0.16 g from 100 to 50 km/h, 0.21 g from 50 to 10 | |
+
+The first guesses landed on the targets, so nothing was fitted. `max_rpm` sets the
+top speed directly: 15,800 rpm through the 9.0 reduction on the 768 mm tires is
+250 km/h.
+
 ## Pictures
 
 The dealer picture is a car viewer screenshot on the viewer's own dark backdrop,
@@ -142,6 +180,14 @@ cropped and scaled by `source/pictures.py` (Python 3 with Pillow):
 ```bash
 GT3R_VIEWER="find=mod:gt3r_concept_coupe_24,clean=1,yaw=2.35,pitch=0.14,zoom=0.75" gt3r game.iso --screen cars --shot shot.png
 python3 source/pictures.py shot.png images/concept_coupe.png images/concept_coupe_thumb.png
+```
+
+The electric version's, in its first paint, from a little further back (`zoom=1.0`,
+so the crop stays inside a 2560x1440 screenshot):
+
+```bash
+GT3R_VIEWER="find=mod:gt3r_concept_coupe_e_24,clean=1,yaw=2.35,pitch=0.14,zoom=1.0" gt3r game.iso --screen cars --shot shot.png
+python3 source/pictures.py shot.png images/concept_coupe_e.png images/concept_coupe_e_thumb.png
 ```
 
 Add `key=1` to `GT3R_VIEWER` for a flat magenta background you can key out instead.

@@ -8,6 +8,7 @@ namespace {
 
 constexpr F kRpmToW = F::raw(0x3DD67750); // 2 pi / 60
 constexpr F kKmh1 = F::raw(0x3E8E38E4);   // 1 km/h in m/s
+constexpr F kKmh5 = F::raw(0x3FB1C71D);   // 5 km/h in m/s
 
 // A held lockout ends its count at 1 while a shift input is held.
 int lockout_tick(Car& c, bool held) {
@@ -180,8 +181,20 @@ int gear_decision(Car& c, const GearSettings& s) {
 
 void gear_step(Car& c, const GearSettings& s) {
     const int g = gear_decision(c, s);
+    c.ev.waiting = 0;
     if (g == -1) return;
-    if (c.clutch != 0) c.clutch = g == 0 || c.gear == 0 ? 2 : 3;
+    if (c.ev.on) {
+        // An electric car's clutch stays locked, and it changes between forward and reverse only below 5 km/h, as
+        // electric cars do: at speed its motor would brake the driven wheels alone at full torque, past ABS. Until then
+        // the change waits, and the motor brakes (electric_output).
+        const F v = c.speed < F() ? -c.speed : c.speed;
+        if ((g == 0) != (c.gear == 0) && !(v < kKmh5)) {
+            c.ev.waiting = 1;
+            return;
+        }
+    } else if (c.clutch != 0) {
+        c.clutch = g == 0 || c.gear == 0 ? 2 : 3;
+    }
     set_gear(c, u8(g));
 }
 

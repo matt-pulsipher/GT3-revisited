@@ -103,35 +103,7 @@ std::string exact_base_car(const data::CarDatabase& db, const std::string& label
     return {};
 }
 
-namespace {
-
-// An electric mod car on the exact core: its donor car's engine (the exact core has no EV drive yet): the donor's stock
-// engine, engine parts, drivetrain and gearbox records, and their settings words (the gear ratios, final drive and slider,
-// the front torque split, the turbo's).
-ex::Equipment donor_powertrain(const data::CarDatabase& db, const data::ModCar& m, ex::Equipment eq) {
-    const data::Car* donor = db.car(m.donor);
-    if (!donor) return eq;
-    const ex::Equipment d = ex::stock_equipment(db, m.donor, donor->parts);
-    using T = data::TableId;
-    for (T t : {T::Engine, T::PortPolish, T::EngineBalance, T::Displacement, T::Computer, T::NaTune, T::TurbineKit, T::Drivetrain,
-                T::Flywheel, T::Clutch, T::PropellerShaft, T::Gear, T::Intercooler, T::Muffler})
-        eq.part[size_t(t)] = d.part[size_t(t)];
-    auto word = [&](u32 off) { eq.setting[(off - 0xF0) / 4] = d.setting[(off - 0xF0) / 4]; };
-    for (u32 off = 0xF0; off <= 0x118; off += 4) word(off); // the gears, final drive, slider and front torque
-    for (u32 off = 0x12C; off < 0x144; off += 4) word(off); // the turbo's
-    return eq;
-}
-
-} // namespace
-
 std::optional<ex::Equipment> exact_equipment(const data::CarDatabase& db, const ExactCarSource& src, std::string* error) {
-    std::optional<ex::Equipment> eq = exact_equipment_as_built(db, src, error);
-    if (eq)
-        if (const data::ModCar* m = db.mod_car(exact_base_car(db, src.label)); m && m->electric) eq = donor_powertrain(db, *m, *eq);
-    return eq;
-}
-
-std::optional<ex::Equipment> exact_equipment_as_built(const data::CarDatabase& db, const ExactCarSource& src, std::string* error) {
     const std::string& label = src.label;
     if (src.parts) { // a garage car / a recorded car: its own parts and settings
         const std::string base = exact_base_car(db, label);
@@ -183,6 +155,12 @@ u8 exact_course_category(const data::CarDatabase& db, const std::string& course)
     return r && r->size() >= 9 ? ex::race_course_category(*r) : 0; // (the database's course records are 9 bytes or more)
 }
 
+namespace {
+// Mixed into the fingerprint for an electric mod car on the electric drive. Change it when the drive changes how such a
+// car races, so replays recorded with the old drive are refused rather than played differently.
+constexpr u64 kElectricDriveVersion = 0xE1EC7D01;
+} // namespace
+
 u64 exact_data_fingerprint(const data::CarDatabase& db, std::span<const ex::StartEntry> entries, ByteSpan course_file) {
     u64 h = hash_bytes(course_file);
     auto mix = [&](data::TableId t, u64 id) {
@@ -193,6 +171,11 @@ u64 exact_data_fingerprint(const data::CarDatabase& db, std::span<const ex::Star
     };
     for (const ex::StartEntry& e : entries) {
         mix(data::TableId::Car, e.eq.car);
+        // An electric mod car's drive is not in its records: its regen and the drive's version, so a build without the
+        // drive, or with another one, refuses the race instead of running it differently.
+        if (const ex::ElectricDrive d = ex::electric_drive(&db, e.eq); d.on)
+            for (u64 v : {kElectricDriveVersion, u64(d.regen_torque.bits), u64(d.regen_power.bits)})
+                h = (h ^ v) * 1099511628211ull;
         for (size_t t = 0; t < e.eq.part.size(); ++t) {
             const ByteSpan* r = mix(data::TableId(t), e.eq.part[t]);
             if (r && (t == size_t(data::TableId::FrontTire) || t == size_t(data::TableId::RearTire)) && r->size() >= 0x58) {

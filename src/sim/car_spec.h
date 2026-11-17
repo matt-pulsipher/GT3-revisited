@@ -42,7 +42,7 @@ struct EngineSpec {
     float rev_limit_rpm = 7000;        // [physics §2.1] engine +0x45 x100 (+ parts), >= +0x46 x100 + 200
     float upshift_rpm = 0;             // [physics §2.6] UP = engine +0x46 x100 (0 = rev limit - 500)
     TurboSpec turbo;                   // [physics §2.3]
-    bool electric = false;             // a mod car's electric motor (it races with its donor's engine for now)
+    bool electric = false;             // a mod car's electric motor (the race's drive: sim::exact::ElectricDrive)
 };
 
 struct GearboxSpec {
