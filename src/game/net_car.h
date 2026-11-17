@@ -25,6 +25,7 @@
 
 #include <array>
 #include <functional>
+#include <vector>
 #include <optional>
 #include <string>
 
@@ -55,6 +56,12 @@ struct OnlineCar {
     std::string donor;   // the disc car under it (data::ModCar::donor); "" = not known
     // Arcade car.
     std::string arcade; // arcade car label (table 35), e.g. "nsx_s_zero_97_290"
+    // Chosen in the lobby (docs/dev/ONLINE.md "Tires and settings"): a disc, mod or arcade car's tires (a tire type,
+    // kTireTypes; -1: the car's own) and a disc or mod car's settings (none: its parts' stock settings). A garage car
+    // carries both in its parts and settings. They travel after the digest (older games ignore them, and build another
+    // digest).
+    int tires = -1;
+    std::optional<sim::CarSettings> tune;
     // The owner's online_car_digest (absent from older games' descriptors; a protocol-3 game's held another digest, but
     // those games cannot join a protocol-4 lobby).
     std::optional<std::array<u8, 32>> digest;
@@ -175,6 +182,37 @@ std::string catalog_torque_text(const data::CarDatabase& db, u64 engine_id, cons
 // the flat (plausibility checks).
 float geared_top_speed(const sim::CarSpec& spec);
 
+// --- Tires and settings (docs/dev/ONLINE.md "Tires and settings") ---
+
+// A tire type is a tyre stage (the tyre records' +0x10): 0 the car's own (its stock set), 1 sports, 2 .. 8 the racing
+// compounds from super-slick to super-soft, 9 simulation, 10 and 11 the arcade's racing and drift tires (arcade cars).
+constexpr int kTireTypes = 12;
+constexpr u16 kAllTires = (1u << kTireTypes) - 1;
+// "Stock tires", "Sports tires", "Racing Super-slick tires", ... (the names GT3's parts pages give them).
+const char* tire_type_name(int type);
+// The tire types `c` can race on: a disc, mod or garage car's sets GT Mode fits on it (fittable_parts), an arcade car's sets
+// the database has for its base car (its own two and the tune shop's).
+std::vector<int> online_tire_choices(const data::CarDatabase& db, const OnlineCar& c);
+// The tire type `c` races on (on a road course): its chosen one, else a garage car's fitted set, a disc or mod car's own (0),
+// an arcade car's racing set (10). -1 when not known here.
+int online_car_tires(const data::CarDatabase& db, const OnlineCar& c);
+// Puts `c` on tire type `type`, one of online_tire_choices: a garage car's tire parts, else OnlineCar::tires (0: the car's
+// own, which a disc or mod car sends as -1). False when the car has no such set.
+bool set_online_car_tires(const data::CarDatabase& db, OnlineCar& c, int type);
+// A disc, mod or garage car's parts as it races: a garage car's, a disc or mod car's own with its chosen tires. nullopt for an
+// arcade car (its variant's parts) or a car not in this database.
+std::optional<std::array<u64, 27>> online_car_parts(const data::CarDatabase& db, const OnlineCar& c);
+// Its settings with those parts: a garage car's, a disc or mod car's tune, else the parts' stock settings.
+std::optional<sim::CarSettings> online_car_settings(const data::CarDatabase& db, const OnlineCar& c);
+// Whether its settings can be changed in the lobby: a disc, mod or garage car of this database (not an arcade car).
+bool online_car_tunable(const data::CarDatabase& db, const OnlineCar& c);
+// Gives `c` settings `s` (a garage car's, else OnlineCar::tune; none when they are the parts' stock settings).
+void set_online_car_settings(const data::CarDatabase& db, OnlineCar& c, const sim::CarSettings& s);
+// Settings as text ("-3000,3500,...": every word, in the descriptor's order) and back (nullopt when malformed): a car's lobby
+// settings kept in the config.
+std::string settings_text(const sim::CarSettings& s);
+std::optional<sim::CarSettings> settings_from_text(const std::string& text);
+
 // --- Lobby car rules (docs/dev/ONLINE.md "Lobby car rules") ---
 
 // A lobby's rules. Each choice is 0 for "any car".
@@ -186,10 +224,14 @@ struct CarRules {
     int category = 0;        // 1 production cars, 2 race and rally cars (car +0xF1)
     int drive = 0;           // as GT3's events count it: 1 FF, 2 FR, 3 4WD, 4 MR, 5 RR
     int aspiration = 0;      // 1 NA, 2 turbo
+    bool stock_settings = false; // every car on the stock settings its parts give (no settings changed)
+    u16 tires = kAllTires;   // the tire types allowed (bit n: type n, kTireTypes)
     bool dirt_course = false; // the course is dirt: the arcade's class page refuses the road
-                              // classes there, and the rally class on road courses
+                              // classes there, and the rally class on road courses (and every car
+                              // races on dirt tires there: the tire rule does not apply)
     bool any() const {
-        return allow_mods && !stock_only && !max_ps && !car_class && !category && !drive && !aspiration;
+        return allow_mods && !stock_only && !stock_settings && !max_ps && !car_class && !category && !drive && !aspiration &&
+               (tires & kAllTires) == kAllTires;
     }
 };
 constexpr int kDriveRules = 5, kCategoryRules = 2, kAspirationRules = 2;
@@ -207,11 +249,15 @@ struct CarFacts {
     int drive = 0;        // 1 FF, 2 FR, 3 4WD, 4 MR, 5 RR (CarRules::drive); 0 = unknown
     bool turbo = false;   // turbo kit fitted (as GT3's events read it: turbo kit record +0x11)
     int category = 0;     // car +0xF1: 0 production, 1 race, 2 rally
-    bool tuned = false;   // a garage car GT3 counts as tuned (GtMode::tuned)
+    bool tuned = false;   // a garage car GT3 counts as tuned (GtMode::tuned), its tires not counted (the tire rule's)
+    bool settings_changed = false; // settings off the stock ones its parts give (a garage car's, lobby settings)
+    int tires = -1;       // the tire type it races on (online_car_tires)
+    int tires_rear = -1;  // a garage car's rear set's (GT Mode can fit the rear set apart); -1 for the others
     int arcade_class = 0; // the class list it is in (arcade cars, mod cars with one); 0 = none
     float kg_per_ps = 0;  // weight per power: the spec's mass less 120 kg over its power (built)
     int weight_class = 0; // the class of that weight per power (data::class_by_weight), 1..4
-    std::string setup;    // a garage car GT Mode cannot build: why (garage_setup_problem); "" otherwise
+    std::string setup;    // a garage car (or a disc or mod car with lobby tires or settings) GT Mode cannot build: why
+                          // (garage_setup_problem); "" otherwise
     bool mod = false;     // a mod car: the descriptor names one (online_car_is_mod), or it is one in this database
 };
 // `gd` (may be null) gives the arcade class lists.

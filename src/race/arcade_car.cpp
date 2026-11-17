@@ -7,12 +7,17 @@ namespace gt3r::race {
 
 std::optional<ArcadeCar> arcade_car(const data::CarDatabase& db, const std::string& id, int tire_mode,
                                     const std::string& course, std::string* error) {
+    return arcade_car_on(db, id, tire_mode == 1 ? 11 : 10, course, error);
+}
+
+std::optional<ArcadeCar> arcade_car_on(const data::CarDatabase& db, const std::string& id, int chosen,
+                                       const std::string& course, std::string* error) {
     for (const data::CarVariant& v : db.arcade_cars()) {
         if (v.label != id && v.label != "_" + id) continue;
         ArcadeCar out;
         out.label = v.label, out.car = v.car;
         std::array<u64, 27> parts = v.parts;
-        int stage = tire_mode == 1 ? 11 : 10;
+        int stage = chosen;
         for (const data::Course& c : db.courses())
             if (c.label == course) stage = c.surface == 2 ? 12 : c.surface == 1 ? stage + 13 : stage;
         out.stage = stage;

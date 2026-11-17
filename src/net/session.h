@@ -43,6 +43,7 @@ struct Player {
     u8 paint = 0;
     bool ready = false, loaded = false;
     u16 ping_ms = 0;                    // the host's round trip to this player
+    u8 caps = 0;                        // host: what the player's game supports (kCap*, from its Hello; 0 for older games)
     std::vector<std::string> endpoints; // where peers can reach it: as the host sees it, then its LAN addresses
 };
 
@@ -58,6 +59,9 @@ struct Settings {
     // category (1 production, 2 race and rally), the drivetrain (1 FF, 2 FR, 3 4WD, 4 MR, 5 RR)
     // and the aspiration (1 NA, 2 turbo).
     u8 car_class = 0, category = 0, drive = 0, aspiration = 0;
+    u16 tires = 0x0FFF;     // the tire types allowed (game::CarRules::tires; bit n: type n)
+    bool tire_wear = false; // the race wears tires (the i.LINK battle's tyre wear setting)
+    bool stock_settings = false; // game::CarRules::stock_settings
 };
 
 // How this player reaches another one.
@@ -156,6 +160,8 @@ public:
     const std::optional<UpdateRequired>& update_required() const { return update_required_; }
     // Tests: play as another game version (default: this build's).
     void set_game_version(const GameVersion& v) { version_ = v; }
+    // Tests: play as a game that supports only `caps` (kCap*; 0 = a game from before them).
+    void set_caps(u8 caps) { caps_ = caps; }
     bool via_server() const { return server_.valid(); }
 
     void close(); // tells the others (best effort)
@@ -298,6 +304,7 @@ private:
 
     UdpSocket sock_;
     GameVersion version_ = this_game_version();
+    u8 caps_ = kCaps; // sent in Hello
     std::optional<UpdateRequired> update_required_;
     // Receive thread: datagrams are read and timestamped the moment they arrive (not when the
     // game loop next polls), so round trips and clock offsets measure the network only.

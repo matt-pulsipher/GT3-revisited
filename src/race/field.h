@@ -143,7 +143,8 @@ struct FieldConfig {
     std::vector<std::string> opponent_skills;
     bool no_rubber_band = false;
     // The split-screen battle's options (its Options page, docs/dev/RACE.md "Options"): the catch-up for the
-    // trailing player (0 off, 1 low, 2 high), the handicap in metres (> 0: player 2 starts back, < 0: player 1), tyre damage.
+    // trailing player (0 off, 1 low, 2 high), the handicap in metres (> 0: player 2 starts back, < 0: player 1), tyre damage
+    // (also the online lobby's tire wear).
     int battle_catchup = 0;
     float handicap_m = 0;
     bool battle_wear = false;

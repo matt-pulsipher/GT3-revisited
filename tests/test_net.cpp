@@ -1507,11 +1507,30 @@ TEST(net_settings_carry_rules) {
     st.allow_mods = false;
     st.car_class = 2, st.category = 1, st.drive = 4, st.aspiration = 2;
     st.ghost_ping_ms = 0;
+    st.tires = 0x0083;
+    st.tire_wear = true;
+    st.stock_settings = true;
     host.set_settings(st);
     CHECK(pump({&host, &c1}, [&] { return c1.settings().max_ps == 350; }));
+    CHECK(c1.settings().tires == 0x0083 && c1.settings().tire_wear && c1.settings().stock_settings);
     CHECK(c1.settings().stock_only && !c1.settings().allow_mods && c1.settings().ghost_ping_ms == 0);
     CHECK(c1.settings().car_class == 2 && c1.settings().category == 1 && c1.settings().drive == 4 &&
           c1.settings().aspiration == 2);
+}
+
+TEST(net_hello_caps) {
+    // The host knows what each player's game supports (tire wear): a game from before it sends nothing.
+    FakeClock clock;
+    net::Session host, c1, c2;
+    if (!host.host(0, "Host", "a", 0)) SKIP("no UDP sockets here");
+    const std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    c1.join(addr, "One", "b", 0);
+    c2.set_caps(0);
+    c2.join(addr, "Two", "c", 0);
+    CHECK(pump({&host, &c1, &c2}, [&] { return host.player(1) && host.player(2); }));
+    CHECK(host.player(0) && (host.player(0)->caps & net::kCapTireWear));
+    CHECK(host.player(1) && host.player(1)->caps == net::kCaps);
+    CHECK(host.player(2) && host.player(2)->caps == 0);
 }
 
 // --- cheat warnings --------------------------------------------------------------------

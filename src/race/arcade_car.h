@@ -26,5 +26,10 @@ struct ArcadeCar {
 // 0 racing / 1 drift (-1 = racing). nullopt when `id` is not an arcade car.
 std::optional<ArcadeCar> arcade_car(const data::CarDatabase& db, const std::string& id, int tire_mode,
                                     const std::string& course, std::string* error = nullptr);
+// The same on the base car's tyre stage `stage` (0..11: 10 racing, 11 drift, else a tune-shop set; online cars, docs/dev/
+// ONLINE.md "Tires and settings"); the course turns it as above (dirt 12, wet + 13). A stage the car has no records for
+// keeps the variant's own tyres.
+std::optional<ArcadeCar> arcade_car_on(const data::CarDatabase& db, const std::string& id, int stage,
+                                       const std::string& course, std::string* error = nullptr);
 
 } // namespace gt3r::race
