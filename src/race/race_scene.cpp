@@ -155,6 +155,11 @@ CourseScene::CourseScene(render::GpuContext& ctx, ByteSpan data, const std::stri
     mo.sky_low = true;
     scene::Model sky_low = course::build_course_model(data, mo, name + "/sky2");
     if (!sky_low.meshes.empty()) sky_low_ = std::make_unique<render::GpuModel>(ctx, sky_low);
+    // The moving nodes cover the sun and the lamps too (GT3 depth-tests the finished frame), and
+    // some carry whole buildings with their flags: Smokey Mountain's hotel. They go in as they
+    // stand at the start; rebuilding the tree as they move would cost more than posing them.
+    for (const Moving* m : {&scenery_moving_, &backdrop_moving_})
+        for (const gtm1::AnimatedNodes& a : m->nodes) occluder_.add(a.meshes());
     occluder_.build();
 
     // The reflection map's scene: slot 5 scenery and the slot 23 sky dome.

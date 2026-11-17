@@ -68,7 +68,8 @@ public:
     // for `eye` (the map's camera). False when the course has none.
     bool add_env_items(std::vector<render::DrawItem>& items, const render::Vec3& eye,
                        const render::Mat4& sky_rotation) const;
-    // Opaque scenery and backdrop triangles for ray tests (sun visibility).
+    // Opaque scenery and backdrop triangles for ray tests (the sun glare's and the lamp glows'
+    // visibility), the moving nodes included in their start pose.
     const Occluder& occluder() const { return occluder_; }
     // The lights of the course's own lit packets (Env0 scene lights: SunParams::course_lights),
     // given to every course item; none = the draw options' lights.
