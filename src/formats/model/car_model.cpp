@@ -347,6 +347,173 @@ std::optional<Bytes> menu_rim(const FileReader& read, const std::string& model, 
     return wheel.empty() ? car_rim(read, "menu/cars/" + model) : read("menu/wheel/" + wheel);
 }
 
+void mark_car_glass(scene::Model& model) {
+    using V = std::array<float, 3>;
+    constexpr u32 kSkip = scene::kAdditive | scene::kEnvironmentMap | scene::kMultiplyDest | scene::kAlphaOnly |
+                          scene::kDepthOnly;
+    constexpr u32 kOver = scene::kEnvironmentMap | scene::kAlphaOnly | scene::kDepthOnly;
+    constexpr double kGlassDark = 100; // glass: the brightest channel's mean (0..255) at most ...
+    constexpr double kGlassGrey = 40;  // ... the channel means this close (grey: not a lamp lens) ...
+    constexpr float kGlassLow = 0.45f; // ... and its lowest corner above this share of the body's height
+    constexpr double kBackingDark = 48; // the opaque dark panels behind it: that mean at most, ...
+    constexpr double kBackingFlat = 0.35; // ... and this share of shaded texels at most: flat black
+                                          // panes, not the painted interiors (dash, seats) GT3 shows
+                                          // through the glass
+    constexpr float kBackingGap = 0.15f; // a backing triangle's centre this close to the glass (metres)
+    constexpr float kBackingArea = 0.05f; // and a part's such triangles this large together (m2): not a mirror // a backing triangle's centre this close to the glass (metres)
+    constexpr float kBelowTop = 0.03f;   // and this far below the glass's top (the roof stays), ...
+    constexpr float kBelowBottom = 0.05f; // ... its corners no further below the glass's bottom
+    struct Shade {
+        bool known = false;
+        double brightest = 0, chroma = 0;
+        double shaded = 0; // share of the texels left by the alpha test that are dark grey, not black
+    };
+    std::vector<Shade> shades(model.textures.size());
+    auto shade = [&](int t) -> const Shade* {
+        if (t < 0 || size_t(t) >= model.textures.size() || model.textures[size_t(t)].rgba.empty()) return nullptr;
+        Shade& s = shades[size_t(t)];
+        if (!s.known) {
+            const std::vector<u32>& px = model.textures[size_t(t)].rgba;
+            double sum[3] = {0, 0, 0};
+            for (u32 c : px)
+                for (int k = 0; k < 3; ++k) sum[k] += double((c >> (8 * k)) & 255);
+            for (double& v : sum) v /= double(px.size());
+            s.known = true, s.brightest = std::max({sum[0], sum[1], sum[2]});
+            s.chroma = s.brightest - std::min({sum[0], sum[1], sum[2]});
+            size_t kept = 0, grey = 0;
+            for (u32 c : px) {
+                if ((c >> 24) <= 0x20) continue; // (cut away by the alpha test)
+                const u32 m = std::max({c & 255, (c >> 8) & 255, (c >> 16) & 255});
+                ++kept, grey += m > 6 && m <= 60;
+            }
+            s.shaded = kept ? double(grey) / double(kept) : 0;
+        }
+        return &s;
+    };
+    auto sub = [](V a, V b) { return V{a[0] - b[0], a[1] - b[1], a[2] - b[2]}; };
+    auto dot = [](V a, V b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    auto along = [](V a, V d, float t) { return V{a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t}; };
+    // The point of triangle abc closest to p (Ericson, Real-Time Collision Detection 5.1.5).
+    auto closest = [&](V p, V a, V b, V c) -> V {
+        const V ab = sub(b, a), ac = sub(c, a), ap = sub(p, a);
+        const float d1 = dot(ab, ap), d2 = dot(ac, ap);
+        if (d1 <= 0 && d2 <= 0) return a;
+        const V bp = sub(p, b);
+        const float d3 = dot(ab, bp), d4 = dot(ac, bp);
+        if (d3 >= 0 && d4 <= d3) return b;
+        const float vc = d1 * d4 - d3 * d2;
+        if (vc <= 0 && d1 >= 0 && d3 <= 0) return along(a, ab, d1 / (d1 - d3));
+        const V cp = sub(p, c);
+        const float d5 = dot(ab, cp), d6 = dot(ac, cp);
+        if (d6 >= 0 && d5 <= d6) return c;
+        const float vb = d5 * d2 - d1 * d6;
+        if (vb <= 0 && d2 >= 0 && d6 <= 0) return along(a, ac, d2 / (d2 - d6));
+        const float va = d3 * d6 - d5 * d4;
+        if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return along(b, sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6)));
+        const float den = 1 / (va + vb + vc);
+        return along(along(a, ab, vb * den), ac, vc * den);
+    };
+    for (scene::Mesh& mesh : model.meshes) {
+        if (mesh.name != "body") continue;
+        const auto at = [&](u32 index) {
+            const float* p = mesh.vertices[index].pos;
+            return V{p[0], p[1], p[2]};
+        };
+        const auto valid = [&](const scene::Primitive& p) {
+            return size_t(p.first_index) + p.index_count <= mesh.indices.size() && p.index_count % 3 == 0 &&
+                   std::all_of(mesh.indices.begin() + p.first_index, mesh.indices.begin() + p.first_index + p.index_count,
+                               [&](u32 i) { return i < mesh.vertices.size(); });
+        };
+        float lo = INFINITY, hi = -INFINITY;
+        for (const scene::Vertex& v : mesh.vertices) lo = std::min(lo, v.pos[1]), hi = std::max(hi, v.pos[1]);
+        const float low = lo + kGlassLow * (hi - lo);
+
+        // The glass: plain blended passes with a dark grey texture, high on the body.
+        std::vector<std::array<V, 3>> glass;
+        std::vector<V> corners;
+        float glass_top = -INFINITY, glass_bottom = INFINITY;
+        for (scene::Primitive& p : mesh.primitives) {
+            if (!(p.flags & scene::kAlphaBlend) || (p.flags & kSkip) || !valid(p)) continue;
+            const Shade* sh = shade(p.texture);
+            if (!sh || sh->brightest > kGlassDark || sh->chroma > kGlassGrey) continue;
+            float bottom = INFINITY, top = -INFINITY;
+            for (u32 i = p.first_index; i < p.first_index + p.index_count; ++i) {
+                const float y = at(mesh.indices[i])[1];
+                bottom = std::min(bottom, y), top = std::max(top, y);
+            }
+            if (!(bottom > low)) continue;
+            p.flags |= scene::kGlass;
+            glass_top = std::max(glass_top, top), glass_bottom = std::min(glass_bottom, bottom);
+            for (u32 i = p.first_index; i + 2 < p.first_index + p.index_count; i += 3)
+                glass.push_back({at(mesh.indices[i]), at(mesh.indices[i + 1]), at(mesh.indices[i + 2])});
+            for (u32 i = p.first_index; i < p.first_index + p.index_count; ++i) corners.push_back(at(mesh.indices[i]));
+        }
+        if (glass.empty()) continue;
+        std::sort(corners.begin(), corners.end());
+
+        // The passes drawn over it (reflection, alpha, depth) go with it.
+        for (scene::Primitive& p : mesh.primitives) {
+            if (!(p.flags & kOver) || (p.flags & scene::kGlass) || !p.index_count || !valid(p)) continue;
+            if (std::all_of(mesh.indices.begin() + p.first_index, mesh.indices.begin() + p.first_index + p.index_count,
+                            [&](u32 i) { return std::binary_search(corners.begin(), corners.end(), at(i)); }))
+                p.flags |= scene::kGlass;
+        }
+
+        // The dark panels set just behind it (GT3 blacks the windows out from outside with them):
+        // their triangles close to the glass and below its top. A part with some of them is split.
+        auto backing = [&](u32 i) {
+            const V a = at(mesh.indices[i]), b = at(mesh.indices[i + 1]), c = at(mesh.indices[i + 2]);
+            const V m{(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3};
+            if (m[1] > glass_top - kBelowTop || std::min({a[1], b[1], c[1]}) < glass_bottom - kBelowBottom) return false;
+            for (const auto& t : glass) {
+                const V d = sub(m, closest(m, t[0], t[1], t[2]));
+                if (dot(d, d) <= kBackingGap * kBackingGap) return true;
+            }
+            return false;
+        };
+        std::vector<scene::Primitive> out;
+        out.reserve(mesh.primitives.size());
+        for (const scene::Primitive& p : mesh.primitives) {
+            const Shade* sh = shade(p.texture);
+            if (!(p.flags & scene::kAlphaTest) || (p.flags & (kSkip | scene::kAlphaBlend | scene::kGlass)) || !sh ||
+                sh->brightest > kBackingDark || sh->shaded > kBackingFlat || !valid(p)) {
+                out.push_back(p);
+                continue;
+            }
+            std::vector<u32> keep, hide;
+            for (u32 i = p.first_index; i + 2 < p.first_index + p.index_count; i += 3) {
+                std::vector<u32>& to = backing(i) ? hide : keep;
+                to.insert(to.end(), mesh.indices.begin() + i, mesh.indices.begin() + i + 3);
+            }
+            float area = 0;
+            for (size_t i = 0; i + 2 < hide.size(); i += 3) {
+                const V u = sub(at(hide[i + 1]), at(hide[i])), w = sub(at(hide[i + 2]), at(hide[i]));
+                const V n{u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]};
+                area += 0.5f * std::sqrt(dot(n, n));
+            }
+            if (hide.empty() || area < kBackingArea) {
+                out.push_back(p);
+                continue;
+            }
+            if (keep.empty()) {
+                out.push_back(p);
+                out.back().flags |= scene::kGlass;
+                continue;
+            }
+            // (new index ranges at the end: other primitives may share this one's)
+            scene::Primitive k = p, h = p;
+            k.first_index = u32(mesh.indices.size()), k.index_count = u32(keep.size());
+            mesh.indices.insert(mesh.indices.end(), keep.begin(), keep.end());
+            h.first_index = u32(mesh.indices.size()), h.index_count = u32(hide.size());
+            mesh.indices.insert(mesh.indices.end(), hide.begin(), hide.end());
+            h.flags |= scene::kGlass;
+            out.push_back(k);
+            out.push_back(h);
+        }
+        mesh.primitives = std::move(out);
+    }
+}
+
 scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std::string& name) {
     CarFile f = CarFile::parse(data);
     gtm1::Gtm1 g = gtm1::Gtm1::parse(f.body);
@@ -356,6 +523,7 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std
     if (opt.lod >= 0) {
         gtm1::MorphDraws md;
         scene::Model m = car_lod(f, g, opt, opt.lod, name, morphs ? &md : nullptr);
+        mark_car_glass(m);
         if (opt.body_mod.active()) apply_body_mod(m, opt.body_mod, name);
         m.compute_bounds();
         if (!md.empty()) opt.morphs->push_back(std::move(md));
@@ -367,7 +535,9 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std
     for (int lod = 0; lod < n; ++lod) {
         gtm1::MorphDraws md;
         const int base = int(all.textures.size());
-        merge(all, car_lod(f, g, opt, lod, name, morphs ? &md : nullptr));
+        scene::Model m = car_lod(f, g, opt, lod, name, morphs ? &md : nullptr);
+        mark_car_glass(m);
+        merge(all, std::move(m));
         if (!md.empty()) {
             md.rebase_textures(base);
             opt.morphs->push_back(std::move(md));

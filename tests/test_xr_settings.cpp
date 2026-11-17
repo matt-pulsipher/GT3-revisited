@@ -49,4 +49,18 @@ TEST(xr_settings_seat_side) {
     CHECK(std::fabs(xr::Settings::load(IniDocument::parse("[vr]\nseat_offset = 0\n")).seat_offset - 0.1f) < 1e-6f);
 }
 
+// The windows from inside (issue 320): clear by default, tinted on request, kept by a save.
+TEST(xr_settings_car_windows) {
+    CHECK(xr::Settings::load(IniDocument::parse("")).clear_windows);
+    CHECK(!xr::Settings::load(IniDocument::parse("[vr]\ncar_windows = Tinted\n")).clear_windows);
+    CHECK(xr::Settings::load(IniDocument::parse("[vr]\ncar_windows = clear\n")).clear_windows);
+    for (bool clear : {false, true}) {
+        xr::Settings s;
+        s.clear_windows = clear;
+        IniDocument cfg;
+        s.save(cfg);
+        CHECK(xr::Settings::load(cfg).clear_windows == clear);
+    }
+}
+
 #endif // GT3R_XR

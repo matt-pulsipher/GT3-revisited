@@ -110,6 +110,18 @@ struct CarModelOptions {
     std::vector<gtm1::MorphDraws>* morphs = nullptr;
 };
 
+// Flags a car body's windows scene::kGlass, for a view from inside without them. GT3 glass is a
+// plain alpha-blended pass with a dark grey texture (mostly ~90 % dark) whose lowest corner is in
+// the upper 55 % of the body; the reflection, alpha-only and depth-only passes whose every corner
+// lies on it go with it, and so do the flat black alpha-tested panes GT3 sets just behind it to
+// black the windows out from outside: their triangles within 15 cm of the glass, below its top
+// and not below its bottom, 0.05 m2 or more in a part (so a mirror stays); a part holding some is
+// split in two. The cars' simple interiors stay (dashboards, seats and steering wheels painted
+// on panels behind the glass: shaded textures, not flat black), as do lamp lenses, badges and
+// decals (coloured, bright or low) and the roof.
+// load_car_model does this for GT3 bodies.
+void mark_car_glass(scene::Model& model);
+
 // Number of distinct LOD branches node `node` takes (1 when it has no LOD switch).
 int gtm1_lod_count(const gtm1::Gtm1& g, u32 node);
 

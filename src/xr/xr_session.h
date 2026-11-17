@@ -70,6 +70,7 @@ struct Settings {
     bool stereo = true;          // stereo = on: races in 3D; off: on the virtual screen
     bool level_horizon = false;  // level_horizon = on: the in-car view ignores the car's pitch and roll
     bool show_car = false;       // car_body = on: the own car's body around the in-car view
+    bool clear_windows = true;   // car_windows = clear: that body (and an in-car custom camera's) without its tinted glass
     bool wheel = false;          // steering = wheel: both grips held, turn the controllers like a wheel
     int wheel_degrees = 180;     // wheel_degrees: rotation from full left to full right
     float screen_distance = 2.4f, screen_width = 2.6f; // menus' virtual screen (metres)
