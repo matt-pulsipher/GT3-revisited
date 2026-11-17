@@ -58,6 +58,9 @@ enum PrimitiveFlags : u32 {
     // is below 0x80. Every reflection pass leaves 0x80 where it draws, so these skip what an
     // earlier one covered and the texels at full reflectivity (texel x vertex alpha = 0x80).
     kDestAlphaTest = 1u << 15,
+    // A car's windows: the glass and the reflection and depth passes drawn over it
+    // (mark_car_glass, glTF "glass" materials). Left out where DrawItem::hide_glass asks.
+    kGlass = 1u << 16,
 };
 
 // Fixed-function lighting material of a lit primitive (GT3 cars: GTM1 material

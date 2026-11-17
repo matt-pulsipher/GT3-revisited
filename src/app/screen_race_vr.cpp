@@ -59,7 +59,8 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
     // The items once for both eyes, from the head. The own car as the flat view has it (a custom
     // camera's fades out while it would block the view); [vr] car_body = on draws its body round
     // a view on the car that leaves it out. Round the driver's seat (that body, and a custom
-    // in-car camera's own) it is drawn from inside: its bonnet, not its roof and windows.
+    // in-car camera's own) it is drawn from inside: its bonnet, not its roof and windows; and,
+    // with [vr] car_windows = clear, without its glass (~90 % dark: it hid the road, issue 320).
     const render::Mat4 head = base * x.head().matrix();
     const render::Vec3 head_pos = head.transform_point({0, 0, 0});
     const sim::Vec3 right{head.at(0, 0), head.at(1, 0), head.at(2, 0)};
@@ -77,7 +78,7 @@ void RaceScreen::render_vr_eyes(App& app, Ui& ui, const render::DrawOptions& o) 
     collect_items(head_pos, right, shown || cabin, true, sv);
     spark_pass_ = false;
     for (size_t i = player_items_[0]; i < player_items_[1]; ++i) {
-        if (inside) items_[i].single_sided = true;
+        if (inside) items_[i].single_sided = true, items_[i].hide_glass = st.clear_windows;
         if (!cabin && car_fade < 1) items_[i].alpha = std::min(items_[i].alpha, car_fade); // (translucent, as the ghost car is)
     }
     const float fovy = std::atan(e0.tan_up) - std::atan(e0.tan_down);

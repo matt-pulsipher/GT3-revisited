@@ -280,6 +280,14 @@ a part drawn without depth writes, after its reflection (`nm0006`'s windows);
 they are `scene::kDepthOnly` primitives, drawn in model order with the blended
 passes.
 
+Behind the glass of most closed bodies sits an alpha-tested panel: either a flat
+black pane that blacks the window out from outside, or a simple interior (dash,
+seats, steering wheel) painted in shades of grey. `mark_car_glass` flags the
+glass, the reflection, alpha-only and depth-only passes on its corners and the
+flat black panes within 15 cm of it `scene::kGlass`, so VR's in-car view can leave
+them out (`[vr] car_windows = clear`); painted interiors stay. US 1.10 finds glass on
+239 of 244 bodies (not the F1 car and a few rally, race and sample bodies).
+
 Offsets in `06`/`07`/`08`/`09`/`0A` are relative to the address of the operand
 field that holds them. Ops 0x0C and 0x10 (matrices) appear in a few cars only
 (24 matrices in total, e.g. `ty0032`).

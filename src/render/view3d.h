@@ -319,6 +319,8 @@ struct DrawItem {
     // Double-sided primitives culled like the rest (back faces): a car body seen from inside
     // (VR's in-car view) shows its bonnet, not the inside of its roof and windows.
     bool single_sided = false;
+    // The car's windows (scene::kGlass) left out: VR's in-car body seen without its tinted glass.
+    bool hide_glass = false;
     // Drawn after every other item, with their depth: GT3's tyre smoke pass comes after the
     // whole scene and the heat haze (DrawOptions::haze), before the glare (presentation §L6).
     bool late = false;

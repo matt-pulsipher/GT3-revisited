@@ -926,6 +926,12 @@ private:
                    n.show_car = v;
                    apply(n);
                });
+        choice("Windows from inside", "In-car views with the car's body: GT3's dark-tinted glass, or none.",
+               {"Clear", "Tinted"}, s.clear_windows ? 0 : 1, [apply, s](int i) {
+                   xr::Settings n = s;
+                   n.clear_windows = i == 0;
+                   apply(n);
+               });
         choice("Steering", "Wheel: squeeze both grips and turn the controllers like a steering wheel.",
                {"Thumbstick", "Wheel"}, s.wheel ? 1 : 0, [apply, s](int i) {
                    xr::Settings n = s;

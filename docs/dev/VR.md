@@ -22,7 +22,7 @@ Builds with `GT3R_XR` (the Quest APK, `-Pquest`; the Windows package
 | PC VR (Quest Link, SteamVR) | ✅ played by hand on a Quest 3 over Quest Link (USB). Under SteamVR's null headset on an RTX 3080, with Meta's as the system's runtime: stereo races (~120 fps at 1852x2056 per eye), auto takes the running SteamVR, `runtime = steamvr` starts it, and SteamVR makes a `frame_controller` binding from ours. The window, its mouse and Recenter view also under Monado on Linux |
 | Wheel and force feedback in VR | ⚠️ unverified on a real wheel: they use the desktop's input, and SDL opens force feedback for use without window focus. On the Quest, players report a G29 in PS3 mode steers with no force feedback; force feedback there comes only from SDL's Logitech USB driver (G29 in PS3 mode, G27, G25, Driving Force GT; [INPUT](../INPUT.md#force-feedback-ffb)) |
 | Index, Vive, Windows Mixed Reality and Steam Frame controllers | ⚠️ unverified: bindings suggested from the OpenXR specification (the Steam Frame's from Valve's) |
-| Car body in the in-car view (`[vr] car_body`) | ❌ off by default: GT3's car models have inward-facing cabin panels, which wall the eye in black |
+| Car body in the in-car view (`[vr] car_body`) | ⚠️ off by default: GT3's car models have inward-facing cabin panels, which wall the eye in black. `car_windows = clear` (the default) leaves out the glass and the black panels GT3 sets behind it (issue 320: the ~90 % dark glass hid the road); the roof and other cabin panels stay |
 
 ## Building
 
@@ -279,6 +279,7 @@ the rates the headset offers (`XR_FB_display_refresh_rate`, 90 Hz default).
 | `stereo` | `on` | races in 3D; `off`: on the virtual screen |
 | `level_horizon` | `off` | in-car view (and a custom camera on the car) follows the car's heading only |
 | `car_body` | `off` | the own car's body around the in-car view, and a custom camera on the car that hides it (see Status) |
+| `car_windows` | `clear` | that body, and an in-car custom camera's, without its windows (scene::kGlass, `mark_car_glass`: the glass, its reflection and depth passes and the dark panels just behind it); `tinted`: as GT3 draws them |
 | `steering` | `stick` | `wheel`: grips grab a steering wheel |
 | `wheel_degrees` | `180` | wheel rotation lock to lock |
 | `screen_width`, `screen_distance` | `2.6`, `2.4` | metres |

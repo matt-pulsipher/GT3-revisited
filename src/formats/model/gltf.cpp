@@ -286,6 +286,7 @@ scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name
         if (blend) p.flags |= scene::kAlphaBlend | scene::kNoDepthWrite;
         if (mat["doubleSided"].boolean()) p.flags |= scene::kDoubleSided;
         if (role == Role::Paint) p.flags |= scene::kTintable;
+        if (role == Role::Glass) p.flags |= scene::kGlass;
         // GT3-style fixed-function material: the base colour is in the vertex colours.
         p.material.valid = true;
         float spec = role == Role::Paint ? 0.55f : role == Role::Glass ? 0.8f : 0.15f + 0.4f * metallic * (1 - rough);
@@ -312,7 +313,8 @@ scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name
             e.first_index = u32(env.indices.size());
             for (u32 k = p.first_index; k < p.first_index + p.index_count; ++k) env.indices.push_back(body.indices[k] - first + efirst);
             e.index_count = p.index_count;
-            e.flags = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit | scene::kNoDepthWrite;
+            e.flags = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit | scene::kNoDepthWrite |
+                      (role == Role::Glass ? scene::kGlass : 0u);
             e.env_rows = true;
             for (int k = 0; k < 3; ++k) e.env_c0[k] = 1.0f, e.env_c1[k] = 0.8f; // 1 - 0.8 cos: Fresnel-like
             env.primitives.push_back(e);

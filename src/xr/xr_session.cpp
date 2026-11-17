@@ -80,6 +80,7 @@ Settings Settings::load(const IniDocument& cfg) {
     s.stereo = flag(cfg, "stereo", s.stereo);
     s.level_horizon = flag(cfg, "level_horizon", s.level_horizon);
     s.show_car = flag(cfg, "car_body", s.show_car);
+    s.clear_windows = to_lower(cfg.get("vr", "car_windows").value_or("clear")) != "tinted";
     s.wheel = to_lower(cfg.get("vr", "steering").value_or("stick")) == "wheel";
     if (auto v = number(cfg, "wheel_degrees")) s.wheel_degrees = int(clampf(*v, 90, 900));
     if (auto v = number(cfg, "screen_distance")) s.screen_distance = clampf(*v, 1.0f, 10.0f);
@@ -101,6 +102,7 @@ void Settings::save(IniDocument& cfg) const {
     cfg.set("vr", "stereo", stereo ? "on" : "off");
     cfg.set("vr", "level_horizon", level_horizon ? "on" : "off");
     cfg.set("vr", "car_body", show_car ? "on" : "off");
+    cfg.set("vr", "car_windows", clear_windows ? "clear" : "tinted");
     cfg.set("vr", "steering", wheel ? "wheel" : "stick");
     cfg.set("vr", "wheel_degrees", std::to_string(wheel_degrees));
     cfg.set("vr", "screen_distance", fmt(screen_distance));

@@ -1621,6 +1621,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     push_lighting(VertexLighting{});
     bool vl_on = false;
     auto draw_prim = [&](const Visible& v, const scene::Primitive& p, int half = 0) {
+        if (v.item->hide_glass && (p.flags & scene::kGlass)) return;
         bool background = v.item->background;
         PipelineKey key;
         key.blend = (p.flags & scene::kMultiplyDest) ? BlendMode::MultiplyDest
