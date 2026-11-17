@@ -811,6 +811,17 @@ bool chord_input_held(const InputSource& s, float v) {
     return v >= 0.5f; // a trigger (0..1) or a stick's positive half
 }
 
+bool chord_input_released(const InputSource& s, float v) {
+    if (!s.is_analog()) return v < 0.5f;
+    if (s.half == InputSource::Half::Negative) return v > -kStickDeadzone;
+    return v < kStickDeadzone; // a trigger, a stick's positive half, a pedal resting at -1
+}
+
+bool same_physical_input(const InputSource& b, const InputSource& c) {
+    if (b.kind != c.kind || b.code != c.code || b.device != c.device) return false;
+    return b.kind != InputSource::Kind::JoyHat || (b.hat_dir & c.hat_dir);
+}
+
 void ActionBindings::bind(PadAction a, const Chord& c, bool replace) {
     std::vector<Chord>& v = chords[static_cast<size_t>(a)];
     if (replace) std::erase_if(v, [&](const Chord& x) { return x.set() == c.set(); });
