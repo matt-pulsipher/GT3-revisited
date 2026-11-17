@@ -100,7 +100,7 @@ body:
       label: Screenshots, video, logs
       description: |
         Drag files here. F12 saves a screenshot to the `screenshots` folder in the game's user data folder.
-        For a crash or freeze, attach the crash report or the game's output if you have it (Linux and macOS: start the game from a terminal; Android and Quest: `adb logcat`).
+        Attach the game's log: Settings → Disc & saves → Show the log opens its folder. After a crash, attach both `gt3r.log` and `gt3r.prev.log` (the session that crashed, if you started the game again since). Your user name is left out of the folders they list, but look them over before you attach them.
         A save or replay that shows the problem helps too: zip it first.
     validations:
       required: false

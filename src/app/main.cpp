@@ -5,6 +5,7 @@
 #include "app/app.h"
 #include "app/gles_probe.h"
 #include "app/launch_help.h"
+#include "base/log_file.h"
 
 #include <SDL3/SDL_main.h>
 
@@ -41,4 +42,5 @@ void SDL_AppQuit(void* state, SDL_AppResult) {
         app->shutdown();
         delete app;
     }
+    gt3r::log_file::close();
 }

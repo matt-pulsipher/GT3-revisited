@@ -105,6 +105,7 @@ Testing variables (in the environment, or --env NAME=value):
 
  Rendering and timing (docs/dev/RENDERING.md, docs/dev/VR.md)
   GT3R_HITCH=<ms>              log every frame longer than this, with its parts
+  GT3R_CRASH_TEST=<kind>       close at startup as a bug would (throw, segv, abort): the log's last line
   GT3R_DYN_CYCLE=<s>           sweep the dynamic resolution every s seconds
   GT3R_DIRECT=1                macOS: let fullscreen go direct-to-display
   GT3R_VR_EYE_SIZE=<px>        VR: the eye image size
