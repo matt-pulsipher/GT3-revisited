@@ -427,25 +427,37 @@ TEST(modcar_electric_steps) {
     CHECK(hold(6, 0) == 0 && hold(0, 0.01f) == 0);
     // Forward and reverse (gear 0) only below 5 km/h, the clutch locked through the change: the automatic gearbox asked
     // for reverse at 150 km/h keeps the gear; at 3 km/h it changes. Back to forward the same way, rolling backwards.
+    // While the change waits, the pedal that asked for it (in GT3's automatic the reverse button is the reverse
+    // accelerator) brakes like a lifted accelerator instead of driving the car on the way it is going.
     const ex::GearSettings gs;
     c.throttle_pedal = ex::F();
     c.throttle = ex::F();
     c.reverse_req = 1;
     c.speed = ex::F(150.0f / 3.6f);
     ex::gear_step(c, gs);
-    CHECK(c.gear == 1);
+    CHECK(c.gear == 1 && c.ev.waiting == 1);
+    CHECK(approx(out(10, 1), -400)); // the reverse button's pedal, rolling forwards in gear 1: regen, no drive
     c.speed = ex::F(3.0f / 3.6f);
     ex::gear_step(c, gs);
-    CHECK(c.gear == 0 && c.clutch == 1);
+    CHECK(c.gear == 0 && c.clutch == 1 && c.ev.waiting == 0);
     c.reverse_req = 0;
     c.throttle = ex::F(1.0f);
     c.speed = ex::F(-20.0f / 3.6f);
     ex::gear_step(c, gs);
-    CHECK(c.gear == 0);
+    CHECK(c.gear == 0 && c.ev.waiting == 1);
+    c.gear = 1; // (the reverse ratio here: gear 1's)
+    CHECK(approx(out(-10, 1), 400)); // the accelerator, rolling backwards in reverse: regen against it, no drive
+    c.gear = 0;
     c.speed = ex::F(-3.0f / 3.6f);
     ex::gear_step(c, gs);
-    CHECK(c.gear == 1 && c.clutch == 1);
+    CHECK(c.gear == 1 && c.clutch == 1 && c.ev.waiting == 0);
+    CHECK(approx(out(-2, 1), 500)); // changed: the accelerator drives forwards again
     c.throttle = ex::F();
+    // Nothing asked: nothing waits.
+    c.ev.waiting = 1;
+    c.speed = ex::F(50.0f / 3.6f);
+    ex::gear_step(c, gs);
+    CHECK(c.gear == 1 && c.ev.waiting == 0);
     // Pinned: the drive's outputs over speeds, pedals and slips, and the hold. A change to the drive that moves them must
     // also change kElectricDriveVersion (race/exact_setup.cpp), so that replays recorded with the old drive are refused
     // rather than played differently; then update the value here.
@@ -482,9 +494,9 @@ TEST(modcar_electric_snapshot) {
     ex::restore_car(*car, *snap, 0);
     CHECK(!car->ev.on && car->p.e.rev_limit == 7000);
     CHECK(car->ghost == 2 && car->index == 1 && car->control == 1);
-    snap->car.ev = {true, ex::F(123.45f), ex::F(67000.0f)};
+    snap->car.ev = {true, ex::F(123.45f), ex::F(67000.0f), 1}; // (a change of direction waiting)
     ex::restore_car(*car, *snap, 0);
-    CHECK(car->ev.on && car->ev.regen_torque.bits == snap->car.ev.regen_torque.bits);
+    CHECK(car->ev.on && car->ev.regen_torque.bits == snap->car.ev.regen_torque.bits && car->ev.waiting == 1);
     ex::RaceRecord r;
     r.entries.resize(1);
     r.pads.resize(1);
@@ -496,8 +508,8 @@ TEST(modcar_electric_snapshot) {
     if (!back.recorders) return;
     const ex::ElectricDrive& d = back.recorders->snapshot[1].car.ev;
     CHECK(d.on && d.regen_torque.bits == snap->car.ev.regen_torque.bits);
-    CHECK(d.regen_power.bits == snap->car.ev.regen_power.bits);
-    CHECK(!back.recorders->snapshot[0].car.ev.on);
+    CHECK(d.regen_power.bits == snap->car.ev.regen_power.bits && d.waiting == 1);
+    CHECK(!back.recorders->snapshot[0].car.ev.on && back.recorders->snapshot[0].car.ev.waiting == 0);
 }
 
 namespace {
@@ -580,6 +592,59 @@ TEST(modcar_electric_drive) {
     CHECK(drive(30.0));
     std::printf("    top speed %.1f km/h at %.0f rpm\n", double(s.speed_kmh), double(s.engine_rpm));
     CHECK(s.engine_rpm > 8930 && s.engine_rpm < 8950 && s.speed_kmh > 130);
+}
+
+// A change of direction asked at speed, the way GT3's automatic asks for it: the reverse button (the reverse
+// accelerator) at 40 km/h, then the accelerator while reversing at about 15 km/h. Each waits until 5 km/h and brakes the car
+// down to it, instead of driving it on the way it is going; then the car drives off the other way.
+TEST(modcar_electric_direction_change) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("GT3R_DISC not set");
+    data::CarDatabase db;
+    CHECK(electric_db(*disc, db, [](data::ModCarDef&) {}));
+    StraightRun run = straight_run(*disc, db, "test_ev");
+    CHECK(run.field != nullptr);
+    if (!run.field) return;
+    const sim::VehicleState& s = run.field->player().state();
+    sim::ControlInputs in;
+    in.controller_kind = 2;
+    while (run.field->race_time() < 0) run.step(in);
+    in.throttle = 1;
+    while (s.speed_kmh < 40 && run.field->race_time() < 20) run.step(in);
+    // Reverse at 40 km/h: the car slows in gear 1 (never faster than it was), takes reverse near standstill, and reverses.
+    // (speed_kmh is the speed either way. Each pedal is let go half a second before the next is pressed: the car still
+    // gains a little speed for a few steps after a pedal is let go. The gearbox decides after the drive in a step, as in
+    // GT3, so the pressed pedal drives for one step before the change waits: about 1 km/h.)
+    in.throttle = 0;
+    for (const double end = run.field->race_time() + 0.5; run.field->race_time() < end;) run.step(in);
+    run.field->player().set_reverse_request(true);
+    float v = s.speed_kmh, fastest = v, slowest = v;
+    double t0 = run.field->race_time();
+    while (s.gear == 1 && run.field->race_time() < t0 + 20) {
+        run.step(in);
+        fastest = std::max(fastest, s.speed_kmh), slowest = std::min(slowest, s.speed_kmh);
+    }
+    while (s.speed_kmh < 15 && run.field->race_time() < t0 + 20) run.step(in);
+    std::printf("    reverse from %.1f km/h: at most %.1f km/h before reverse, at %.1f km/h; reversing at 15 km/h after %.2f s\n",
+                double(v), double(fastest), double(slowest), run.field->race_time() - t0);
+    CHECK(fastest <= v + 2 && slowest < 5.5f); // (the change at 5 km/h of the car's own forward speed)
+    CHECK(s.gear == -1 && s.speed_kmh >= 15 && run.field->race_time() - t0 < 8);
+    // The accelerator while reversing at about 15 km/h: the car slows in reverse, takes gear 1 near standstill, and drives off.
+    run.field->player().set_reverse_request(false);
+    for (const double end = run.field->race_time() + 0.5; run.field->race_time() < end;) run.step(in);
+    CHECK(s.gear == -1); // (still in reverse, rolling backwards)
+    in.throttle = 1;
+    v = s.speed_kmh, fastest = v, slowest = v;
+    t0 = run.field->race_time();
+    while (s.gear == -1 && run.field->race_time() < t0 + 20) {
+        run.step(in);
+        fastest = std::max(fastest, s.speed_kmh), slowest = std::min(slowest, s.speed_kmh);
+    }
+    while (s.speed_kmh < 15 && run.field->race_time() < t0 + 20) run.step(in);
+    std::printf("    forward from %.1f km/h reversing: at most %.1f km/h before gear 1, at %.1f km/h; 15 km/h after %.2f s\n",
+                double(v), double(fastest), double(slowest), run.field->race_time() - t0);
+    CHECK(fastest <= v + 2 && slowest < 5.5f); // (the change at 5 km/h of the car's own forward speed)
+    CHECK(s.gear == 1 && s.speed_kmh >= 15 && run.field->race_time() - t0 < 8);
 }
 
 // Regen far past the driven axle's grip (rear drive, 2,000 N m at the motor, 1 MW): it eases off as the rear tyres

@@ -320,13 +320,15 @@ struct GearSettings {
 
 // An electric mod car's drive, which GT3's step does not have: the motor turns with the driven wheels through the
 // single reduction, so the clutch stays locked (no slip, no launch) and the car never shifts, changing direction only
-// near standstill (tick_gear.cpp); the motor's curve starts at standstill; the top speed (the rev limit) fades the drive
-// out instead of cutting it; a lifted accelerator brakes with the motor (regen, eased off as the driven tyres slip),
-// which the friction brakes take over near standstill to stop and hold the car (tick_engine.cpp).
+// near standstill (tick_gear.cpp), and braking as with the accelerator up while a change waits; the motor's curve starts
+// at standstill; the top speed (the rev limit) fades the drive out instead of cutting it; a lifted accelerator brakes
+// with the motor (regen, eased off as the driven tyres slip), which the friction brakes take over near standstill to
+// stop and hold the car (tick_engine.cpp).
 struct ElectricDrive {
     bool on = false;
     F regen_torque; // the lift-off braking torque at the motor (N m)
     F regen_power;  // its power limit (W), which caps it at speed
+    u8 waiting = 0; // 1: the last gear step refused a change of direction (at 5 km/h or more)
 };
 
 // The car record. Members by record offset; F = car + 0xF84.

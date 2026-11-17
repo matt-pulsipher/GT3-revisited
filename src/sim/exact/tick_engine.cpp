@@ -63,10 +63,13 @@ F regen_grip(const Car& c) {
 // 2 % below the top speed (the limiter); the regen the lifted accelerator asks for (all of it with the pedal up, none
 // from 10 %) against the motor's turning, capped by its power, faded out below the motor's speed at 5 km/h (so it never
 // holds the driven wheels still or turns them backwards) and eased off as they slip (regen_grip); the motor's drag. None
-// while the race or a stop holds the car.
+// while the race or a stop holds the car. While a change of direction waits (ev.waiting: reverse asked at speed, or the
+// accelerator while rolling backwards in reverse), the pedal that asked for it brakes like a lifted accelerator, so the
+// car slows to the change instead of speeding up the way it is going.
 F electric_output(Car& c, F x) {
     const Engine& e = c.p.e;
     if (c.race_hold != 0 || c.hold != 0) return F();
+    if (c.ev.waiting != 0) x = F();
     const F w = driven_axle_speed(c) * c.p.d.ratio[c.gear];
     const F aw = abs_f(w);
     const F top = ee::int_to_f(e.rev_limit) * kRpmToW;
@@ -74,7 +77,7 @@ F electric_output(Car& c, F x) {
     c.rev_limiter = fade < kOne ? 1 : 0;
     const F drag = e.friction * w;
     F t = ((x * (lookup_bisect(e.torque, aw) + abs_f(drag))) * fade) - drag;
-    const F lift = clamp01(kOne - c.throttle_pedal * kRegenPedal);
+    const F lift = c.ev.waiting != 0 ? kOne : clamp01(kOne - c.throttle_pedal * kRegenPedal);
     if (F() < lift && F() < aw) {
         F regen = c.ev.regen_torque;
         if (c.ev.regen_power / aw < regen) regen = c.ev.regen_power / aw;

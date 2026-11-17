@@ -393,7 +393,10 @@ complete electric car to start from.
   available from standstill. The default curve holds constant torque up to the
   base speed, then constant power, easing to 85 % at `max_rpm`. `max_rpm` also
   acts as the top-speed limiter: the drive fades out over its last 2 %. The car
-  changes between forward and reverse only below 5 km/h. The HUD's tachometer
+  changes between forward and reverse only below 5 km/h. Asked for the other way
+  above that (reverse while moving forward, or the accelerator while reversing),
+  it brakes with the motor as if the pedal were up, then changes near standstill
+  and drives off the other way. The HUD's tachometer
   has no red band and no shift light for it, since it never shifts.
 - **AWD:** both axles get a fixed torque split (one motor per axle).
 - **One-pedal driving:** lifting off brakes the car with the motor instead of

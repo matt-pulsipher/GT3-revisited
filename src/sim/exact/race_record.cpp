@@ -240,7 +240,7 @@ void put_snapshot(Writer& w, const Snapshot& s) {
             w.put<u32>(p.flags), w.put<u8>(p.hit ? 1 : 0), w.put<u32>(p.t.bits), w.put<s32>(p.wall);
             w.put<u32>(p.tx.bits), w.put<u32>(p.ty.bits), w.put<s32>(p.other), w.put<s32>(p.edge);
         }
-    w.put<u8>(s.car.ev.on ? 1 : 0);
+    w.put<u8>(u8((s.car.ev.on ? 1 : 0) | (s.car.ev.waiting ? 2 : 0)));
     if (s.car.ev.on) w.put<u32>(s.car.ev.regen_torque.bits), w.put<u32>(s.car.ev.regen_power.bits);
 }
 
@@ -258,8 +258,8 @@ Snapshot get_snapshot(Reader& r, const Behaviour& how, u32 version) {
             p.flags = r.get<u32>(), p.hit = r.get<u8>() != 0, p.t = F::raw(r.get<u32>()), p.wall = r.get<s32>();
             p.tx = F::raw(r.get<u32>()), p.ty = F::raw(r.get<u32>()), p.other = r.get<s32>(), p.edge = r.get<s32>();
         }
-    if (version >= 6 && r.get<u8>() != 0) {
-        s.car.ev.on = true;
+    if (const u8 ev = version >= 6 ? r.get<u8>() : 0; ev & 1) {
+        s.car.ev.on = true, s.car.ev.waiting = (ev & 2) != 0 ? 1 : 0;
         s.car.ev.regen_torque = F::raw(r.get<u32>()), s.car.ev.regen_power = F::raw(r.get<u32>());
     }
     return s;
