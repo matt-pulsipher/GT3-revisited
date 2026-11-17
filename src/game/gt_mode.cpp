@@ -86,11 +86,6 @@ void refresh_settings(sim::CarSettings& s, const sim::CarSettings& stock, int ta
     }
 }
 
-bool same_settings(const sim::CarSettings& a, const sim::CarSettings& b) {
-    static_assert(std::is_trivially_copyable_v<sim::CarSettings>);
-    return std::memcmp(&a, &b, sizeof a) == 0;
-}
-
 } // namespace
 
 const char* license_name(License l) {
@@ -1281,15 +1276,35 @@ std::optional<EventRules> GtMode::rules(const std::string& code) const {
     return x;
 }
 
-bool GtMode::tuned(const GarageCar& c) const { return tuned(db(), c.car, c.parts, c.settings); }
+bool GtMode::tuned(const GarageCar& c) const { return tuned(db(), c.car, c.parts); }
 
-bool GtMode::tuned(const data::CarDatabase& db, const std::string& label, const std::array<u64, 27>& parts,
-                   const sim::CarSettings& settings) {
+// GT3's test (NTSC-U; the entry check and the race information page's Tuning row
+// call it): the car's own record must be found and every fitted part be the car's stock part,
+// and then each of these parts must be its kind's first stage, a missing record
+// counting as that stage. Only the parts count; the settings are never read.
+bool GtMode::tuned(const data::CarDatabase& db, const std::string& label, const std::array<u64, 27>& parts) {
+    using T = data::TableId;
     const data::Car* car = db.car(label);
-    if (!car) return false;
+    if (!car) return true;
     for (size_t i = 0; i + 1 < parts.size(); ++i)
         if (parts[i] != car->parts[i]) return true;
-    return !same_settings(settings, sim::stock_settings(db, label, car->parts));
+    auto record = [&](T t) { return db.record(t, parts[size_t(part_slot(int(t)))]); };
+    auto stage = [&](T t) {
+        const ByteSpan* r = record(t);
+        return r && r->size() > 0x10 ? (*r)[0x10] : 0;
+    };
+    for (T t : {T::Brake, T::BrakeController, T::Drivetrain, T::Gear, T::Suspension, T::Lsd, T::Lightweight,
+                T::RacingModify, T::PortPolish, T::EngineBalance, T::Displacement, T::Computer, T::NaTune,
+                T::TurbineKit, T::Flywheel, T::Clutch, T::Muffler, T::Ascc, T::Tcsc})
+        if (stage(t) != 0) return true;
+    // The driveshaft only when the drivetrain record's +0x14 is not FF, MR or RR (1, 3, 4).
+    const ByteSpan* d = record(T::Drivetrain);
+    const int drive = d && d->size() > 0x14 ? (*d)[0x14] : 0;
+    if (drive != 1 && drive != 3 && drive != 4 && stage(T::PropellerShaft) != 0) return true;
+    // The intercooler only with a turbo (turbine kit +0x11 set).
+    const ByteSpan* t = record(T::TurbineKit);
+    if (t && t->size() > 0x11 && (*t)[0x11] != 0 && stage(T::Intercooler) != 0) return true;
+    return false;
 }
 
 EntryResult GtMode::check_entry(const std::string& code, const GarageCar& c) const {

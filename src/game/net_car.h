@@ -207,7 +207,7 @@ struct CarFacts {
     int drive = 0;        // 1 FF, 2 FR, 3 4WD, 4 MR, 5 RR (CarRules::drive); 0 = unknown
     bool turbo = false;   // turbo kit fitted (as GT3's events read it: turbo kit record +0x11)
     int category = 0;     // car +0xF1: 0 production, 1 race, 2 rally
-    bool tuned = false;   // a garage car off the stock car (GtMode::tuned)
+    bool tuned = false;   // a garage car off the stock car, parts or settings
     int arcade_class = 0; // the class list it is in (arcade cars, mod cars with one); 0 = none
     float kg_per_ps = 0;  // weight per power: the spec's mass less 120 kg over its power (built)
     int weight_class = 0; // the class of that weight per power (data::class_by_weight), 1..4

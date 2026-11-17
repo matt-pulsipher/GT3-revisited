@@ -867,6 +867,42 @@ TEST(gtmode_disc_entry_rules) {
     CHECK(dirt && dirt->dirt_tires);
 }
 
+// Public issue 331: the Roadster Endurance (car class 3, normal cars only) refused a stock Miata
+// whose settings had been changed. GT3's tuned test reads only the parts: settings
+// never count, a part upgrade does, and so does a stock part above its first stage (the tuner
+// cars).
+TEST(gtmode_disc_normal_car_rule) {
+    NEED_DATA();
+    if (!data->db.event("Eroadster_n_0001") || !data->db.car("roadster_rs_00") || !data->db.car("spoon_s2000_00"))
+        SKIP("needs the Roadster Endurance, the Miata LS and the Spoon S2000");
+    GtMode gt(data);
+    gt.state().credits = 10000000;
+    for (int i = 0; i < 6 * 8; ++i) gt.state().license_tests[size_t(i)].medal = Medal::Gold;
+    auto r = gt.rules("Eroadster_n_0001");
+    CHECK(r && r->car_class == 3 && r->regulation == "reg_roadster");
+    CHECK(gt.buy_car("roadster_rs_00") == 0);
+    GarageCar& miata = gt.state().garage[size_t(gt.state().ride)];
+    CHECK(gt.can_enter("Eroadster_n_0001") == Check::Ok);
+    // Settings off the stock ones: still a normal car.
+    miata.settings.brake_front += 1;
+    miata.settings.tcs = 0;
+    CHECK(!gt.tuned(miata));
+    CHECK(gt.can_enter("Eroadster_n_0001") == Check::Ok);
+    // A sports muffler fitted: tuned, refused.
+    CHECK(gt.buy_part(37) && gt.fit_part(37));
+    CHECK(gt.tuned(miata));
+    CHECK(gt.check_entry("Eroadster_n_0001", miata).car_class);
+    CHECK(gt.can_enter("Eroadster_n_0001") == Check::RegulationViolation);
+    // Back on the stock muffler: a normal car again.
+    CHECK(gt.fit_part(36));
+    CHECK(!gt.tuned(miata));
+    // A tuner car as it comes counts as tuned (its stock parts are above the first stage).
+    const data::Car* spoon = data->db.car("spoon_s2000_00");
+    CHECK(GtMode::tuned(data->db, spoon->label, spoon->parts));
+    const data::Car* s2000 = data->db.car("s2000_a_99");
+    CHECK(s2000 && !GtMode::tuned(data->db, s2000->label, s2000->parts));
+}
+
 TEST(gtmode_disc_licenses) {
     NEED_DATA();
     GtMode gt(data);

@@ -529,8 +529,9 @@ Each rule is "any" by default (`game::CarRules`, `game::car_meets_rules`; tested
 - **Mod cars:** allowed (default) or not. A mod car from a GT Mode garage is one too:
   by its package, or, where the car is installed, by this database.
 - **Tuned cars:** allowed, or stock cars only. A garage car counts as tuned when a part
-  or a setting differs from the stock car's, as GT Mode's own test (`GtMode::tuned`);
-  an untuned garage car races in a stock lobby.
+  or a setting differs from the stock car's (stricter than GT Mode's entry test,
+  `GtMode::tuned`, which reads only the parts); an untuned garage car races in a stock
+  lobby.
 - **Class:** one of the arcade's classes C, B, A, S or rally cars: only the cars of that
   class, as the car page's classes give them (every car has one: its list's, else by its
   weight per power, a rally car on dirt). A garage car's class is its weight per power as
