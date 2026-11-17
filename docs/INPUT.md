@@ -448,9 +448,11 @@ again before new ones come from the playlist. They work three ways:
 
 - **Chords** (Settings → Controls → Player N song controls; none by default):
   one to four inputs held together, the last one pressed fires it. A chord is
-  keys, or one controller's buttons, triggers and stick directions; it may share
-  inputs with other controls, which then also do their own thing (Select + R1
-  also changes the view). Cross on the row, then hold the inputs and let go;
+  keys, or one controller's buttons, triggers and stick directions. Once it fires,
+  its inputs do nothing else until each is let go: R1 + D-pad Left skips a song
+  without steering. The inputs pressed before the last one still do their own
+  thing until then, so start a chord with one that does nothing in a race (on
+  the Modern layout, RB or Select). Cross on the row, then hold the inputs and let go;
   Square adds another chord, Select (Delete) clears the highlighted column.
   Saved per player:
 

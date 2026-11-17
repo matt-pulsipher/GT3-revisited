@@ -178,8 +178,10 @@ std::string_view pad_action_key(PadAction a);  // its config key: "next_song", "
 std::string_view pad_action_name(PadAction a); // as Settings names it: "Next song", "Previous song", ...
 
 // Inputs held together: one to four of one set (keys, or one controller's buttons, triggers and
-// stick directions). It fires when the last of them goes down; a chord may share inputs with
-// other controls, which then also do their own thing. "pad.back+pad.rightshoulder".
+// stick directions). It fires when the last of them goes down. From then its inputs are taken from
+// the pads (InputManager), each until it is let go, so Back + D-pad Left skips a song without
+// steering; inputs pressed before the last one reach the pads until the chord is complete.
+// "pad.back+pad.rightshoulder".
 struct Chord {
     static constexpr size_t kMaxInputs = 4;
     std::vector<InputSource> inputs;
@@ -192,6 +194,12 @@ struct Chord {
 // Whether a source's value (InputManager's, normalised) holds it down as part of a chord:
 // buttons and keys pressed, a trigger or stick half past half way.
 bool chord_input_held(const InputSource& s, float value);
+// Whether a source's value is back at rest after a chord held it (within kStickDeadzone of it on
+// the chord's side): a chord's inputs stay off the pads until then.
+bool chord_input_released(const InputSource& s, float value);
+// Whether a binding's source reads the same input as a chord's: the same key, button or hat
+// direction, or the same axis whichever half (a stick a chord holds left steers neither way).
+bool same_physical_input(const InputSource& binding, const InputSource& chord);
 
 // A player's chords, per action ("next_song = pad.back+pad.rightshoulder | key.rightbracket").
 struct ActionBindings {

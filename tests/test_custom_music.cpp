@@ -1039,6 +1039,18 @@ TEST(chord_parse_and_save) {
     CHECK(Chord::parse("pad.lefttrigger+pad.leftx-", c) && c.inputs[1].half == InputSource::Half::Negative);
     CHECK(chord_input_held(c.inputs[0], 0.6f) && !chord_input_held(c.inputs[0], 0.4f));
     CHECK(chord_input_held(c.inputs[1], -0.7f) && !chord_input_held(c.inputs[1], 0.7f));
+    // Taken until back at rest: past the dead zone on the chord's side still counts.
+    CHECK(!chord_input_released(c.inputs[0], 0.2f) && chord_input_released(c.inputs[0], 0.05f));
+    CHECK(!chord_input_released(c.inputs[1], -0.3f) && chord_input_released(c.inputs[1], -0.05f));
+    CHECK(chord_input_released(c.inputs[1], 0.9f)); // pushed the other way: let go of left
+    // The same input: an axis whichever half, a hat's own direction, a tagged device's own.
+    InputSource lx, lxneg, hat_l, hat_r, tagged;
+    CHECK(InputSource::parse("pad.leftx", lx) && InputSource::parse("pad.leftx-", lxneg));
+    CHECK(InputSource::parse("joy.hat0.left", hat_l) && InputSource::parse("joy.hat0.right", hat_r));
+    tagged = lxneg;
+    tagged.device = "Wheel 2";
+    CHECK(same_physical_input(lx, lxneg) && same_physical_input(hat_l, hat_l));
+    CHECK(!same_physical_input(hat_r, hat_l) && !same_physical_input(lx, tagged) && !same_physical_input(lx, hat_l));
 
     ActionBindings a;
     Chord pad, key, other;
@@ -1194,6 +1206,93 @@ TEST(input_chord_gamepad) {
         frame();
         CHECK(!in.action_pressed(0, PadAction::NextSong));
         button(1, false), button(2, false);
+        in.set_background(false);
+        SDL_CloseJoystick(pad);
+    }
+    if (id) SDL_DetachVirtualJoystick(id);
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+}
+
+// A chord that is down takes its inputs from the pads (issue 322): RB + D-pad Left skips a song
+// without the D-pad steering, Back + stick left without the stick steering. Each input stays
+// taken until it is let go, whichever goes first; an input pressed before the chord was complete
+// reaches the pads until then.
+TEST(input_chord_takes_its_inputs) {
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) SKIP("no SDL gamepad subsystem");
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    desc.name = "Test Pad";
+    desc.nbuttons = 3; // in mask order: back, right shoulder, d-pad left
+    desc.button_mask = (1u << SDL_GAMEPAD_BUTTON_BACK) | (1u << SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) |
+                       (1u << SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+    desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+    desc.axis_mask = (1u << SDL_GAMEPAD_AXIS_COUNT) - 1;
+    const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+    SDL_Joystick* pad = id ? SDL_OpenJoystick(id) : nullptr;
+    CHECK(pad != nullptr);
+    if (pad) {
+        InputManager in;
+        in.set_device_filter(0, desc.name);
+        in.set_background(true);
+        auto frame = [&] {
+            SDL_UpdateJoysticks();
+            for (SDL_Event e; SDL_PollEvent(&e);) in.handle_event(e);
+            in.update(1.0 / 60);
+        };
+        auto button = [&](int b, bool down) { SDL_SetJoystickVirtualButton(pad, b, down); };
+        auto stick = [&](Sint16 v) { SDL_SetJoystickVirtualAxis(pad, SDL_GAMEPAD_AXIS_LEFTX, v); };
+        auto left = [&] { return in.race_pad(0).down(PadButton::Left) || in.pad(0).down(PadButton::Left); };
+        auto steer = [&] { return in.race_pad(0).axis_fine(PadAxis::LX); };
+        frame();
+        CHECK(in.device_name(0) == "Test Pad");
+        Chord next, prev;
+        CHECK(Chord::parse("pad.rightshoulder+pad.dpleft", next) && Chord::parse("pad.back+pad.leftx-", prev));
+        in.bind_action(0, PadAction::NextSong, next, true);
+        in.bind_action(0, PadAction::PreviousSong, prev, true);
+        // Without the chord the D-pad steers.
+        button(2, true);
+        frame();
+        CHECK(left() && !in.action_held(0, PadAction::NextSong));
+        button(2, false);
+        frame();
+        // RB, then Left: the skip, never Left; RB itself reaches the menu pad until then.
+        button(1, true);
+        frame();
+        CHECK(in.pad(0).down(PadButton::R1));
+        button(2, true);
+        frame();
+        CHECK(in.action_pressed(0, PadAction::NextSong) && !left() && !in.pad(0).down(PadButton::R1));
+        // RB let go first: Left stays taken until it is let go too, then steers on its next press.
+        button(1, false);
+        frame();
+        CHECK(!in.action_held(0, PadAction::NextSong) && !left() && !in.pad(0).down(PadButton::R1));
+        button(2, false);
+        frame();
+        button(2, true);
+        frame();
+        CHECK(left() && !in.action_pressed(0, PadAction::NextSong));
+        button(2, false);
+        frame();
+        // Back + the stick left: no steering, nor after Back is let go, until the stick comes back.
+        button(0, true);
+        frame();
+        stick(-32768);
+        frame();
+        CHECK(in.action_pressed(0, PadAction::PreviousSong) && steer() == 0.0f);
+        button(0, false);
+        frame();
+        CHECK(steer() == 0.0f);
+        stick(-12000); // under half way, past the dead zone: still taken
+        frame();
+        CHECK(steer() == 0.0f);
+        stick(0);
+        frame();
+        stick(-32768);
+        frame();
+        CHECK(steer() < -0.9f && !in.action_pressed(0, PadAction::PreviousSong));
+        stick(0);
+        frame();
         in.set_background(false);
         SDL_CloseJoystick(pad);
     }
