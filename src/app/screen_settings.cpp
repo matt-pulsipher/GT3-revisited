@@ -1211,6 +1211,17 @@ private:
                        note_ = "Could not open " + dir;
                        note_left_ = 4;
                    });
+        // The log file (base/log_file.h), in the user data folder.
+        action("Show the log",
+               std::string(mobile ? "Opens the game's folder in the Files app (GT3 Revisited). "
+                                  : "Shows the game's folder in the file manager. ") +
+                   "Attach gt3r.log to a bug report, and gt3r.prev.log too after a crash: it holds the session before "
+                   "this one. Your user name is left out of the folders they list.",
+               "", [this, a] {
+                   if (platform::open_user_folder(a->data_dir(), a->data_dir())) return;
+                   note_ = "Could not open " + a->data_dir();
+                   note_left_ = 4;
+               });
     }
 
     void choose_save_folder(App& app) {

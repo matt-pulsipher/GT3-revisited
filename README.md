@@ -176,6 +176,8 @@ beside it instead. Saves and replays can go in another folder of your choice
 | `music_playlist.txt` | your songs' playlist (their order and check marks) |
 | `music_songs.txt` | your songs as the last scan found them, and how loud each is (so the next start has them at once) |
 | `screenshots/` | F12 screenshots |
+| `gt3r.log` | this session's log, for bug reports (Settings → Disc & saves → **Show the log**); after a crash it ends with why the game closed. Your home folder shows as `~` and your user name as `<user>`; it stops at a few MB |
+| `gt3r.prev.log` | the session before this one's log (the one that crashed, once you start the game again) |
 
 ### Your music
 

@@ -5,6 +5,8 @@
 #include "app/updates.h"
 
 #include "base/log.h"
+#include "base/log_file.h"
+#include "platform/crash_handlers.h"
 #include "disc/region.h"
 #include "gt3r_version.h"
 #include "formats/png_writer.h"
@@ -59,6 +61,13 @@ void SDLCALL on_dialog(void* user, const char* const* files, int) {
 
 bool App::init(int argc, char** argv) {
     SDL_SetAppMetadata("GT3 Revisited", GT3R_VERSION, "org.gt3revisited.gt3r");
+    // The log file first, so it holds everything after it (gt3r.log; base/log_file.h).
+    {
+        const std::string dir = game::user_data_dir();
+        SDL_CreateDirectory(dir.c_str());
+        log_file::open(dir);
+    }
+    if (const char* c = SDL_getenv("GT3R_CRASH_TEST")) platform::crash_test(c); // platform/crash_handlers.h
 #if GT3R_XR
     // In a headset the window doesn't have keyboard focus (on the Quest it is invisible, on a PC
     // the headset's software may take it), and SDL drops joystick input without it: the
