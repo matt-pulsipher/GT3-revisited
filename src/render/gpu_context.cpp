@@ -408,6 +408,14 @@ std::vector<PipelineKey> warm_keys() {
                 grid.push_back(k);
             }
     }
+    // The GT Mode screens' models (DrawOptions::transmission): the transparent pictures' blends.
+    const size_t pictures = grid.size();
+    for (size_t i = 0; i < pictures; ++i) {
+        PipelineKey k = grid[i];
+        if (!k.coverage || k.blend == BlendMode::DestAlphaAdd || k.blend == BlendMode::DestAlphaLerp) continue;
+        k.transmission = true;
+        grid.push_back(k);
+    }
     // Most draws are model.frag's PLAIN variant (PipelineKey::plain). The general one draws the
     // cars' reflection and alpha-only passes, the post passes and the sphere-mapped prize scenes.
     std::vector<PipelineKey> keys;
@@ -450,12 +458,14 @@ std::vector<PipelineKey> warm_keys() {
         keys.push_back(wet);
     }
     // The showroom rims' turned copies (DrawItem::spin_turn): their opaque and blended passes.
-    for (BlendMode b : {BlendMode::Opaque, BlendMode::Alpha, BlendMode::Additive})
-        for (CullMode c : {CullMode::Back, CullMode::None}) {
-            PipelineKey k;
-            k.blend = b, k.depth_write = b != BlendMode::Additive, k.cull = c, k.spin_copy = true;
-            keys.push_back(k);
-        }
+    for (bool picture : {false, true})
+        for (BlendMode b : {BlendMode::Opaque, BlendMode::Alpha, BlendMode::Additive})
+            for (CullMode c : {CullMode::Back, CullMode::None}) {
+                PipelineKey k;
+                k.blend = b, k.depth_write = b != BlendMode::Additive, k.cull = c, k.spin_copy = true;
+                k.coverage = k.transmission = picture;
+                keys.push_back(k);
+            }
     // The cars' depth-only passes (scene::kDepthOnly), in the main views and the pictures.
     for (bool coverage : {false, true})
         for (CullMode c : {CullMode::Back, CullMode::None, CullMode::Front}) {
@@ -606,6 +616,27 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
         b.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
         b.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
         break;
+    }
+    // Transmission (DrawOptions::transmission): the alpha is multiplied by the blend's own factor
+    // on the destination colour, so it ends as what the pixel lets through of what is behind.
+    if (key.transmission) {
+        if (!b.enable_blend) { // opaque: the colour as is, nothing let through
+            b.enable_blend = true;
+            b.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            b.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            b.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        }
+        b.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        b.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        switch (key.blend) {
+        case BlendMode::Opaque: b.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO; break;
+        case BlendMode::Alpha: b.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA; break;
+        case BlendMode::MultiplyDest: b.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA; break;
+        // The additive blends (frame alpha is off in these pictures, so the destination-alpha
+        // blends never come here).
+        default: b.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE; break;
+        }
+        b.color_write_mask |= SDL_GPU_COLORCOMPONENT_A;
     }
     // GS-style frame alpha: the source alpha replaces the destination's (the GS never blends
     // the alpha channel), with the colour channels written or masked off.

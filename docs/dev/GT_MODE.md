@@ -263,8 +263,14 @@ Phase 2 additions:
   (`screen_gtmode.cpp`) through `GtModeWidgetDrawer`, called by the menu
   renderer's new overlay hook after the widget's own art. The car turns on
   a turntable; because the model shader's alpha is not coverage, it is
-  rendered over black (B) and over white (W) and composited exactly as
-  page × (W − B) + B with SDL blend modes.
+  rendered once as a transmission picture (`DrawOptions::transmission`):
+  the colour over black (B), and an alpha that each GS blend multiplies by
+  its own destination factor (opaque 0, alpha 1 − As, additive 1, the floor
+  shadow's multiply As), so it holds what the pixel lets through (T). It is
+  composited exactly as page × T + B (a premultiplied blend), as the older
+  pair of renders over black and over white did. The views, prizes and
+  targets a page stops drawing are freed 30 frames later
+  (`set_gt_mode_widget_trim`, after each menu frame), not at the next race.
 - **Presentations**: a result that obtains a license or awards prize cars
   queues `lc_get/license_get` (layers `<lic>_mess0/1`) and
   `car_get/car_get` (reason line = the page's hidden text element for the

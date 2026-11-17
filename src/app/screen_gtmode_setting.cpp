@@ -253,6 +253,7 @@ private:
         renderer_->draw_elements(flow_->draw_list(), ro, SDL_FRect{0, 0, kMenuWidth, kMenuHeight});
         canvas_.end(r);
         SDL_SetRenderTarget(r, prev);
+        if (const menu::flow::GtModeWidgetRelease& trim = menu::flow::gt_mode_widget_trim()) trim(app);
     }
 
     std::string set_, page_, event_, last_page_;

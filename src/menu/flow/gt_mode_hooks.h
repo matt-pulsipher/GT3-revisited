@@ -174,5 +174,9 @@ const GtModeWidgetDrawer& gt_mode_widget_drawer();
 using GtModeWidgetRelease = std::function<void(App& app)>;
 void set_gt_mode_widget_release(GtModeWidgetRelease f);
 const GtModeWidgetRelease& gt_mode_widget_release();
+// Called after each menu frame is drawn: frees what the widget drawer kept for models no page
+// drew lately (a presentation's prize after it closes, the 3D views and targets after a car page).
+void set_gt_mode_widget_trim(GtModeWidgetRelease f);
+const GtModeWidgetRelease& gt_mode_widget_trim();
 
 } // namespace gt3r::menu::flow

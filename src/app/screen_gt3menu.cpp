@@ -639,6 +639,7 @@ private:
             canvas_.end(r);
         }
         SDL_SetRenderTarget(r, prev);
+        if (const menu::flow::GtModeWidgetRelease& trim = menu::flow::gt_mode_widget_trim()) trim(app);
     }
 
     text::GameFonts fonts_; // before renderer_: the text drawer refers to it

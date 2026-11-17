@@ -56,6 +56,9 @@ struct PipelineKey {
     // Write the alpha channel as coverage (pictures composited over the 2D frame with a
     // transparent clear); otherwise alpha is never written.
     bool coverage = false;
+    // With coverage: the alpha channel is what the pixel lets through of the page instead, each
+    // blend multiplying it by its own destination factor (DrawOptions::transmission).
+    bool transmission = false;
     AlphaWrite alpha = AlphaWrite::Keep;
     // One sample and no depth target, whatever the MSAA level: View3D's small single-sample
     // passes (the depth of field's downsampled pictures).

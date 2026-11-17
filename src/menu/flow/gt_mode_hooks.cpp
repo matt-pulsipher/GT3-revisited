@@ -15,6 +15,10 @@ GtModeWidgetRelease& release() {
     static GtModeWidgetRelease r;
     return r;
 }
+GtModeWidgetRelease& trim() {
+    static GtModeWidgetRelease t;
+    return t;
+}
 } // namespace
 
 void set_gt_mode_hooks(GtModeHooks h) { hooks() = std::move(h); }
@@ -25,5 +29,8 @@ const GtModeWidgetDrawer& gt_mode_widget_drawer() { return drawer(); }
 
 void set_gt_mode_widget_release(GtModeWidgetRelease f) { release() = std::move(f); }
 const GtModeWidgetRelease& gt_mode_widget_release() { return release(); }
+
+void set_gt_mode_widget_trim(GtModeWidgetRelease f) { trim() = std::move(f); }
+const GtModeWidgetRelease& gt_mode_widget_trim() { return trim(); }
 
 } // namespace gt3r::menu::flow

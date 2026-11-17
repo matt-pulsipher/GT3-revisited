@@ -734,6 +734,15 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         SDL_SetTextureBlendMode(shown, kColourOnly);
     }
     SDL_SetTextureAlphaModFloat(shown, std::clamp(opt.composite_alpha, 0.0f, 1.0f));
+    // A transmission picture: its colour as is, and the target's alpha (1 there) times what the
+    // picture lets through: 1 - that = the coverage.
+    if (opt.transmission) {
+        static const SDL_BlendMode kCoverage = SDL_ComposeCustomBlendMode(
+            SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ZERO, SDL_BLENDOPERATION_ADD, SDL_BLENDFACTOR_ZERO,
+            SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD);
+        SDL_SetTextureBlendMode(shown, kCoverage);
+        SDL_SetTextureAlphaModFloat(shown, 1.0f);
+    }
     // The used corner, scaled. Linear filtering would blend the texel beyond its right and
     // bottom edges (unused, the clear colour) into the last pixels: stop half a texel short.
     const float inset = opt.nearest ? 0.0f : 0.5f;
@@ -1634,7 +1643,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         if (opt.mirrored && key.cull != CullMode::None)
             key.cull = key.cull == CullMode::Back ? CullMode::Front : CullMode::Back;
         key.depth_write = !(p.flags & scene::kNoDepthWrite) && !background && half != 2;
-        key.coverage = opt.clear[3] < 1.0f;
+        key.coverage = opt.clear[3] < 1.0f || opt.transmission;
         key.spin_copy = v.copies > 0;
         key.plain = !v.item->wheel_blur && !key.spin_copy && plain_pass(*v.item, p, opt);
         key.gs_filter = key.plain && v.item->texture && v.item->gs_bilinear;
@@ -1654,6 +1663,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             else if (!(p.flags & scene::kKeepAlpha)) key.alpha = AlphaWrite::Write;
             frame_alpha_written_ = frame_alpha_written_ || key.alpha != AlphaWrite::Keep;
         }
+        key.transmission = opt.transmission && !key.depth_only;
         if (!bind(key)) return;
         use_mesh(v, false);
         const GpuModel* model = v.item->model;

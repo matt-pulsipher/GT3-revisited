@@ -37,6 +37,13 @@ struct DrawOptions {
     // Opacity of the finished picture over what the 2D renderer already holds (with a clear
     // alpha of 0, the background shows where nothing was drawn).
     float composite_alpha = 1.0f;
+    // A picture composited over a 2D page in one render (the GT Mode screens' models): the colour
+    // blends as usual over a black clear, and the alpha keeps what each pixel lets through of the
+    // page, every GS blend multiplying it by its factor on the destination (opaque 0, alpha
+    // 1 - As, additive 1, multiply As). The picture lands in the 2D target as premultiplied
+    // colour with alpha = 1 - that (its coverage), so the target's alpha must be 1 there
+    // beforehand. Needs clear = (0, 0, 0, 1); composite_alpha is not applied.
+    bool transmission = false;
     Vec3 light_dir{0.45f, 0.8f, 0.4f}; // towards the light, world space
     float ambient = 0.35f;
     float alpha_ref = 0.5f;            // alpha test threshold for kAlphaTest (opaque primitives)
