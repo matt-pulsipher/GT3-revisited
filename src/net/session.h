@@ -24,6 +24,7 @@
 #include "net/rendezvous.h"
 #include "net/socket.h"
 
+#include <array>
 #include <atomic>
 #include <deque>
 #include <mutex>
@@ -62,6 +63,16 @@ struct Settings {
     u16 tires = 0x0FFF;     // the tire types allowed (game::CarRules::tires; bit n: type n)
     bool tire_wear = false; // the race wears tires (the i.LINK battle's tyre wear setting)
     bool stock_settings = false; // game::CarRules::stock_settings
+    // CPU cars on the grid's empty places (docs/dev/ONLINE.md "CPU cars"), pole first; car k races as id kCpuId + k, its car
+    // the host's CarInfo for that id. The host runs them. `cpu_place`: how many of them start ahead of the players.
+    struct CpuCar {
+        u8 paint = 0;
+        u8 skill = 1;                 // the lobby's skill (0 Easy .. 3 Professional), for the lobby's pages
+        std::array<u8, 16> driver{};  // the driver overrides the skill gives on the host's disc (sim::exact::DriverOverrides)
+        bool operator==(const CpuCar&) const = default;
+    };
+    std::vector<CpuCar> cpu;
+    u8 cpu_place = 0;
 };
 
 // How this player reaches another one.
@@ -108,7 +119,7 @@ struct Event {
         CarInfo,      // player: their car descriptor changed (car_info(player))
         PackageDone,  // text = package hash: downloaded and verified (take_package)
         PackageFailed,// text = package hash, course = reason
-        Contact,      // player = who hit us: contact (point / impulse on our car)
+        Contact,      // player = who hit target (us; host: also one of our CPU cars): contact (point / impulse on target)
         Flag,         // host: player = suspect, flag (kind, value, reporter)
         Load,         // load the race: course, laps, grid (player ids, pole first)
         Go,           // the countdown starts at start_at_ms (now_ms() clock; race_start_ms() refines it)
@@ -121,6 +132,7 @@ struct Event {
     Kind kind = Kind::Roster;
     std::string text;
     u8 player = 0;
+    u8 target = 0; // Contact: the car hit
     double time = 0, best = -1;
     std::string course;
     int laps = 0;
@@ -222,8 +234,13 @@ public:
     const Download* download(const std::string& hash) const;
     std::optional<Bytes> take_package(const std::string& hash); // a finished download (once)
 
+    // Host: CPU car k's descriptor (game::OnlineCar), sent to everyone as id kCpuId + k (car_info gives it back).
+    void set_cpu_car_info(int k, const Bytes& info);
+
     // Race.
     void send_state(const CarSnapshot& s);
+    // Host: one of our CPU cars' states (s.player its id), to every client.
+    void send_cpu_state(const CarSnapshot& s);
     struct Remote {
         CarSnapshot snap;
         double recv_ms = 0;
@@ -231,9 +248,11 @@ public:
     };
     const Remote* remote(u8 id) const; // nullptr until a state arrived
     void send_finish(double race_time, double best_lap);
+    void send_cpu_finish(u8 id, double race_time, double best_lap); // host: a CPU car's
     void retire(); // leaving the race (the session stays)
-    // A hit our machine saw between our car and player `target`'s: the impulse their car felt.
-    void send_contact(u8 target, const Event::Hit& hit);
+    // A hit our machine saw between our car (host: or our CPU car `from`) and car `target` (a player's, or the host's CPU
+    // car): the impulse their car felt.
+    void send_contact(u8 target, const Event::Hit& hit, int from = -1);
     // A plausibility check our machine flagged about another player's car (sent to the host).
     void report_flag(u8 suspect, FlagKind kind, float value);
     // Host: removes a player from the session (they are told why).

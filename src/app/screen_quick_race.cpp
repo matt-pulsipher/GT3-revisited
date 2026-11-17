@@ -1030,7 +1030,7 @@ private:
 
     // The event a skill takes its driver overrides from; "" = none on this disc.
     std::string skill_event(int skill) const {
-        std::string code = arcade_code(dirt_course(custom_.course) ? "D" : "S", skill);
+        std::string code = OpponentGrid::skill_race(skill, dirt_course(custom_.course));
         return db_.event(code) ? code : std::string();
     }
 
@@ -1047,13 +1047,7 @@ private:
     int course_grid_limit(App& app, const std::string& course) {
         auto [it, fresh] = grid_limits_.try_emplace(course, OpponentGrid::kMaxCars);
         if (fresh)
-            if (std::optional<Bytes> f = app.vfs()->read(course_file_path(*app.vfs(), course))) try {
-                const course::CourseFile cf = course::CourseFile::parse(*f);
-                const int slots = int(course::Road::parse(cf.section(*f, course::kSlotRoad)).grid.size());
-                it->second = std::clamp(slots - 1, 1, OpponentGrid::kMaxCars);
-            } catch (const std::exception& e) {
-                LOG_WARN("Quick race: %s's start grid: %s", course.c_str(), e.what());
-            }
+            if (const int slots = course_grid_size(*app.vfs(), course); slots > 0) it->second = std::clamp(slots - 1, 1, OpponentGrid::kMaxCars);
         return it->second;
     }
 

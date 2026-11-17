@@ -24,41 +24,104 @@ constexpr double kStartGhost = 3.0;       // s after the start signal
 
 void RaceScreen::configure_online_field(FieldConfig& cfg) {
     net::Session& ns = net::online();
+    const net::Settings& st = ns.settings();
     cfg.opponents.clear();
+    cfg.opponent_sources.clear(), cfg.opponent_drivers.clear(), cfg.opponent_skills.clear();
+    cfg.grid_slots.clear();
     cfg.max_opponents = 0;
     cfg.event.clear();
     cfg.battle_wear = ns.settings().tire_wear; // the host's (the lobby refuses the start while a player's game lacks it)
     net_.player.clear(), net_.paint.clear(), net_.names.clear(), net_.top_speed.clear();
+    net_.cpu.clear(), net_.local.clear(), net_.cpu_tick.clear(), net_.cpu_finish_sent.clear();
+    // The field's opponents: the CPU cars we run (the host's), then the other cars (players' and, for everyone but the host,
+    // the host's CPU cars), each on its grid slot (pole first).
+    struct Seat {
+        u8 id;
+        int slot;
+    };
+    std::vector<Seat> ours, theirs;
     const std::vector<u8>& grid = ns.grid();
     for (size_t slot = 0; slot < grid.size(); ++slot) {
-        u8 id = grid[slot];
-        if (int(id) == ns.my_id()) {
-            cfg.player_slot = int(slot);
-            continue;
-        }
-        const net::Player* p = ns.player(id);
-        if (!p) continue; // left before the race
-        FieldConfig::Remote rm{p->car, int(slot), {}, {}};
+        const u8 id = grid[slot];
+        if (int(id) == ns.my_id()) cfg.player_slot = int(slot);
+        else if (net::is_cpu_id(id) && ns.is_host()) ours.push_back({id, int(slot)});
+        else theirs.push_back({id, int(slot)});
+    }
+    // A car's descriptor as this machine races it: its label, the car as raced, its top speed (plausibility).
+    struct Car {
+        std::string label;
+        ExactCarSource source;
+        sim::EngineCondition condition;
         float top_speed = 150.0f; // (m/s: unknown gearing, a generous bound)
+        std::string name;         // the car's name (a CPU car's name)
+    };
+    auto car_of = [&](u8 id, const std::string& fallback, const std::string& who) {
+        Car c;
+        c.label = fallback;
         // Their car as they race it (garage parts and settings, arcade tyres: weight, size and
         // grip count in contact and prediction). The lobby has checked that it races here as
         // its owner races it; one that does not is the stock car, or a stand-in when unknown.
         if (const Bytes* info = ns.car_info(id))
             if (std::optional<game::OnlineCar> oc = game::decode_online_car(*info)) {
                 std::string base = game::online_car_base(db_, *oc); // an arcade car's twin on this disc
-                rm.car = base.empty() ? oc->car : base;
+                c.label = base.empty() ? oc->car : base;
+                c.name = oc->name.empty() ? c.label : oc->name;
                 std::string err;
                 if (std::optional<sim::CarSpec> sp = game::online_car_spec(db_, *oc, &err, preset_.course))
-                    top_speed = game::geared_top_speed(*sp);
-                else LOG_WARN("Online: %s's car: %s", p->name.c_str(), err.c_str());
-                if (!base.empty()) rm.source = exact_online_source(db_, *oc, preset_.course, &rm.condition);
+                    c.top_speed = game::geared_top_speed(*sp);
+                else LOG_WARN("Online: %s's car: %s", who.c_str(), err.c_str());
+                if (!base.empty()) c.source = exact_online_source(db_, *oc, preset_.course, &c.condition);
             }
-        net_.top_speed.push_back(top_speed);
-        cfg.remote.push_back(rm);
+        return c;
+    };
+    auto cpu_of = [&](u8 id) -> const net::Settings::CpuCar* {
+        const size_t k = size_t(id - net::kCpuId);
+        return net::is_cpu_id(id) && k < st.cpu.size() ? &st.cpu[k] : nullptr;
+    };
+    auto add = [&](u8 id, int paint, const std::string& name, float top_speed, bool cpu, bool local) {
         net_.player.push_back(id);
-        net_.paint.push_back(p->paint);
-        net_.names.push_back(p->name);
+        net_.paint.push_back(paint);
+        net_.names.push_back(name);
+        net_.top_speed.push_back(top_speed);
+        net_.cpu.push_back(cpu);
+        net_.local.push_back(local);
+    };
+    // Our CPU cars (the host's): opponents of this race, driven by its AI with the skill's driver overrides.
+    if (!ours.empty()) cfg.grid_slots.push_back(cfg.player_slot);
+    for (const Seat& s : ours) {
+        const net::Settings::CpuCar* cc = cpu_of(s.id);
+        const std::string who = "CPU car " + std::to_string(s.id - net::kCpuId + 1);
+        Car c = car_of(s.id, "", who);
+        if (!cc || c.label.empty()) {
+            LOG_WARN("Online: %s has no car; its place stays empty", who.c_str());
+            continue;
+        }
+        cfg.opponents.push_back(c.label);
+        cfg.opponent_sources.push_back(c.source);
+        cfg.opponent_drivers.push_back(cc->driver);
+        cfg.grid_slots.push_back(s.slot);
+        ++cfg.max_opponents;
+        add(s.id, cc->paint, c.name, c.top_speed, true, true);
     }
+    if (cfg.grid_slots.size() < 2) cfg.grid_slots.clear();
+    for (const Seat& s : theirs) {
+        const net::Player* p = ns.player(s.id);
+        const net::Settings::CpuCar* cc = cpu_of(s.id);
+        if (!p && !cc) continue; // left before the race
+        const std::string who = p ? p->name : "CPU car " + std::to_string(s.id - net::kCpuId + 1);
+        Car c = car_of(s.id, p ? p->car : std::string(), who);
+        if (c.label.empty()) {
+            LOG_WARN("Online: %s has no car; its place stays empty", who.c_str());
+            continue;
+        }
+        FieldConfig::Remote rm{c.label, s.slot, c.source, c.condition, std::nullopt};
+        if (cc) rm.driver = cc->driver; // (the host's CPU car: its prediction's AI drives with the same skill)
+        cfg.remote.push_back(rm);
+        add(s.id, p ? p->paint : cc->paint, cc ? c.name : who, c.top_speed, cc != nullptr, false);
+    }
+    net_.cpu_tick.assign(net_.player.size(), 0);
+    net_.reported_contact.assign(net_.player.size(), -1e18);
+    net_.cpu_finish_sent.assign(net_.player.size(), false);
     net_.cars.clear();
     net_.cars.resize(net_.player.size());
     net_.wait = ns.joined() ? NetWait::Loading : NetWait::None;
@@ -100,7 +163,24 @@ void RaceScreen::online_event(App& app, const net::Event& e) {
         }
         break;
     case K::Contact:
-        // Another player's machine saw their car hit ours. If ours saw the contact too (within
+        // That car was in a contact (the plausibility checks allow it a shove), whether or not ours saw it.
+        if (int i = net_index(e.player); i >= 0 && field_ && size_t(i) < net_.reported_contact.size())
+            net_.reported_contact[size_t(i)] = field_->race_time();
+        // Host: a player's machine saw their car hit one of our CPU cars. The host answers for it as a player's machine
+        // does for its own car: only a hit it missed.
+        if (net::is_cpu_id(e.target)) {
+            const int cpu = net_index(e.target), from = net_index(e.player);
+            if (cpu < 0 || from < 0 || !field_ || !net_.local[size_t(cpu)] || field_->opponent_ghost(from) ||
+                field_->opponent_retired(from) || field_->opponent_ghost(cpu))
+                break;
+            if (field_->last_contact_between(cpu, from) >= field_->race_time() - kContactWindow) break;
+            field_->apply_opponent_impulse(cpu, e.contact.point_x, e.contact.point_z, e.contact.jx, e.contact.jz);
+            ++net_.contacts_applied;
+            LOG_INFO("Online: %s's machine saw a hit on CPU car %d ours missed (%.0f N s), applied", net_.names[size_t(from)].c_str(),
+                     int(e.target - net::kCpuId) + 1, std::hypot(e.contact.jx, e.contact.jz));
+            break;
+        }
+        // Another player's machine saw their car (or the host's CPU car) hit ours. If ours saw the contact too (within
         // 0.2 s) it has already been solved here; a ghosted car never touches us.
         if (int i = net_index(e.player); i >= 0 && field_ && !field_->opponent_ghost(i) && !field_->opponent_retired(i)) {
             if (field_->last_contact_with(i) >= field_->race_time() - kContactWindow) break;
@@ -127,7 +207,8 @@ void RaceScreen::online_event(App& app, const net::Event& e) {
     case K::Disconnected:
     case K::Rejected:
         net_.lost = true;
-        for (int i = 0; i < int(net_.player.size()); ++i) online_retire(i);
+        for (int i = 0; i < int(net_.player.size()); ++i)
+            if (!net_.local[size_t(i)]) online_retire(i); // (our CPU cars race on with us)
         if (net_.wait != NetWait::None) net_.wait = NetWait::None; // drive on alone
         toast("Connection lost: " + e.text);
         break;
@@ -176,7 +257,8 @@ bool RaceScreen::online_update(App& app, double dt) {
         LOG_INFO("Online: finished in %.3f s; contacts: %d hits sent, %d applied from the others", t, net_.contacts_sent,
                  net_.contacts_applied);
         for (size_t i = 0; i < net_.cars.size() && i < net_.names.size(); ++i)
-            LOG_INFO("Online: %s: %u states, prediction %s, last error %.3f m", net_.names[i].c_str(),
+            if (!net_.local[i]) // (our CPU cars: run here)
+                LOG_INFO("Online: %s: %u states, prediction %s, last error %.3f m", net_.names[i].c_str(),
                      ns.remote(u8(net_.player[i])) ? ns.remote(u8(net_.player[i]))->count : 0u,
                      net_.cars[i].physics() ? "exact shadow" : "dead reckoning", net_.cars[i].last_error());
     }
@@ -202,6 +284,7 @@ void RaceScreen::online_before_step(double dt) {
     net::Session& ns = net::online();
     double now = field_->race_time();
     for (size_t i = 0; i < net_.player.size() && int(i) < field_->opponents(); ++i) {
+        if (net_.local[i]) continue; // (our CPU car: our race runs it)
         RemoteCar& rc = net_.cars[i];
         const net::Session::Remote* r = ns.remote(u8(net_.player[i]));
         // The prediction shadow: their car alone on a one-car race of our course, built for their entry (ASM / TCS, the
@@ -221,9 +304,13 @@ void RaceScreen::online_before_step(double dt) {
                 net_.checks.resize(net_.player.size());
                 for (size_t k = 0; k < net_.checks.size() && k < net_.top_speed.size(); ++k) net_.checks[k].set_car(net_.top_speed[k]);
             }
-            bool contact = field_->last_contact_with(int(i)) > now - 1.0;
+            bool contact = field_->last_local_contact(int(i)) > now - 1.0 ||
+                           (i < net_.reported_contact.size() && net_.reported_contact[i] > now - 1.0);
             auto report = [&](std::optional<Plausibility::Flag> f) {
-                if (f) ns.report_flag(u8(net_.player[i]), f->kind, f->value);
+                if (!f) return;
+                if (net_.cpu[i]) // (the host's own CPU car: nobody to warn about; a sign of a fault)
+                    LOG_WARN("Online: %s (CPU car) %s (%.2f)", net_.names[i].c_str(), net::flag_text(f->kind), f->value);
+                else ns.report_flag(u8(net_.player[i]), f->kind, f->value);
             };
             report(net_.checks[i].on_state(snap, contact));
             if (rc.physics()) report(net_.checks[i].on_prediction_error(rc.last_error(), rc.last_error_horizon(), contact));
@@ -231,8 +318,10 @@ void RaceScreen::online_before_step(double dt) {
         // Its finish claim against when we saw it cross the line.
         if (i < net_.claims.size() && net_.claims[i] >= 0 && field_->remote_observed_finish(int(i)) >= 0 &&
             i < net_.checks.size()) {
-            if (auto f = net_.checks[i].on_finish(net_.claims[i], field_->remote_observed_finish(int(i))))
-                ns.report_flag(u8(net_.player[i]), f->kind, f->value);
+            if (auto f = net_.checks[i].on_finish(net_.claims[i], field_->remote_observed_finish(int(i)))) {
+                if (net_.cpu[i]) LOG_WARN("Online: %s (CPU car) %s (%.2f)", net_.names[i].c_str(), net::flag_text(f->kind), f->value);
+                else ns.report_flag(u8(net_.player[i]), f->kind, f->value);
+            }
             net_.claims[i] = -1;
         }
         if (rc.has()) {
@@ -270,8 +359,14 @@ void RaceScreen::online_after_step() {
     for (const RaceField::RemoteHit& h : field_->take_remote_hits())
         if (size_t(h.opponent) < net_.player.size()) {
             net::Event::Hit hit{net_.state_tick, h.point_x, h.point_z, h.jx, h.jz};
-            ns.send_contact(u8(net_.player[size_t(h.opponent)]), hit);
+            const bool by_cpu = h.from >= 0 && size_t(h.from) < net_.player.size() && net_.local[size_t(h.from)];
+            ns.send_contact(u8(net_.player[size_t(h.opponent)]), hit, by_cpu ? net_.player[size_t(h.from)] : -1);
             ++net_.contacts_sent;
+            if (by_cpu) {
+                LOG_INFO("Online: %s (CPU car) hit %s's (%.0f N s) at %.2f s", net_.names[size_t(h.from)].c_str(),
+                         net_.names[size_t(h.opponent)].c_str(), std::hypot(h.jx, h.jz), field_->race_time());
+                continue;
+            }
             const sim::exact::Car& me = race->cars()[0];
             const sim::exact::Car& them = race->cars()[size_t(1 + h.opponent)];
             LOG_INFO("Online: our car hit %s's (%.0f N s) at %.2f s: ours at (%.2f %.2f) %.1f km/h, theirs posed at (%.2f %.2f) "
@@ -279,7 +374,37 @@ void RaceScreen::online_after_step() {
                      net_.names[size_t(h.opponent)].c_str(), std::hypot(h.jx, h.jz), field_->race_time(), me.pos.x.host(),
                      me.pos.y.host(), me.speed.host() * 3.6f, them.pos.x.host(), them.pos.y.host(), them.speed.host() * 3.6f);
         }
+    online_cpu_cars(*race);
     ns.poll(); // out at once
+}
+
+// Host: our CPU cars' states, 30 a second each (staggered: half of them each step), and their finishes. Their states carry
+// no pad frames and the AI's control source (1), so every other machine's prediction is the race's AI driving the car with
+// the CPU car's driver overrides (race::exact_shadow; docs/dev/ONLINE.md "CPU cars").
+void RaceScreen::online_cpu_cars(const sim::exact::ExactRace& race) {
+    net::Session& ns = net::online();
+    if (!ns.is_host()) return;
+    std::vector<RaceField::Standing> st;
+    for (size_t i = 0; i < net_.player.size(); ++i) {
+        if (!net_.local[i] || 1 + i >= size_t(race.size())) continue;
+        const sim::exact::Car& c = race.cars()[1 + i]; // (opponent i is car 1 + i: one player, no ghost car)
+        if ((net_.state_tick + u32(i)) % 2 == 0) {
+            net::CarEntry e = car_entry(c, true, true);
+            e.control = 1;
+            net::CarSnapshot snap = make_snapshot(c, e, ++net_.cpu_tick[i], field_->race_time(),
+                                                  std::max(0, int(c.laps) - int(c.lap_base) - 1), nullptr, 0);
+            snap.player = u8(net_.player[i]);
+            ns.send_cpu_state(snap);
+        }
+        if (net_.cpu_finish_sent[i]) continue;
+        if (st.empty()) st = field_->standings();
+        for (const RaceField::Standing& s : st)
+            if (s.car == int(i) && s.finished) {
+                net_.cpu_finish_sent[i] = true;
+                ns.send_cpu_finish(u8(net_.player[i]), s.time, c.best_lap == sim::exact::kNoTime ? -1.0 : c.best_lap / 1000.0);
+                LOG_INFO("Online: %s (CPU car) finished in %.3f s", net_.names[i].c_str(), s.time);
+            }
+    }
 }
 
 // Lobby setting: a car whose round trip to us is above the threshold drives as a ghost
@@ -287,16 +412,21 @@ void RaceScreen::online_after_step() {
 void RaceScreen::online_ghosts(const net::Session& ns) {
     if (!field_) return;
     u16 limit = ns.settings().ghost_ping_ms;
-    // Race distances (player and opponents) for the lapped-car rule.
+    // Race distances (player and opponents) for the lapped-car rule. A car still behind the start line (its lap counter 0,
+    // as the cars on the back of the grid start) is that far short of it, not a lap's progress ahead: else a car on the grid
+    // was "lapped" by every car that had crossed the line, for the first seconds after the start.
+    const double lap = track_ ? track_->length() : 0;
     double mine = 0;
     std::vector<double> dist(size_t(field_->opponents()), 0.0);
     for (const RaceField::Standing& st : field_->standings()) {
-        if (st.car == -1) mine = st.distance;
-        else if (st.car >= 0 && size_t(st.car) < dist.size()) dist[size_t(st.car)] = st.distance;
+        const bool started = st.car == -1 ? track_ && track_->lap_started() : st.car >= 0 && field_->opponent_lap_count(st.car) > 0;
+        const double d = st.distance - (started ? 0.0 : lap);
+        if (st.car == -1) mine = d;
+        else if (st.car >= 0 && size_t(st.car) < dist.size()) dist[size_t(st.car)] = d;
     }
-    const double lap = track_ ? track_->length() : 0;
     net_.ghost.resize(net_.player.size(), false);
     for (size_t i = 0; i < net_.player.size() && int(i) < field_->opponents(); ++i) {
+        if (net_.local[i]) continue; // (our CPU car: its finish ghosts it, in the field)
         net::Link l = ns.link(u8(net_.player[i]));
         const char* why = nullptr;
         // Late positions make contact unfair (lobby setting).

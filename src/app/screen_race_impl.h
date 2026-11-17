@@ -669,6 +669,7 @@ private:
     void configure_online_field(FieldConfig& cfg);
     int net_index(u8 player) const;
     void online_retire(int i);
+    void online_cpu_cars(const sim::exact::ExactRace& race); // host: our CPU cars' states and finishes
     void online_event(App& app, const net::Event& e);
     bool online_update(App& app, double dt);
     int online_ticks(int n);
@@ -1001,9 +1002,15 @@ private:
         NetWait wait = NetWait::None;
         double start_at = 0;         // net::now_ms() of the countdown start
         long long ticks = 0;         // ticks run since then
-        std::vector<int> player;     // opponent index -> player id
+        std::vector<int> player;     // opponent index -> player id (a CPU car's: net::kCpuId + k)
         std::vector<int> paint;      // opponent index -> paint
         std::vector<std::string> names;
+        // The host's CPU cars (docs/dev/ONLINE.md "CPU cars"), by opponent index: a CPU car, and one this machine runs (we
+        // host it); our CPU cars' state ticks and whether their finishes went out.
+        std::vector<bool> cpu, local;
+        std::vector<u32> cpu_tick;
+        std::vector<bool> cpu_finish_sent;
+        std::vector<double> reported_contact; // opponent index -> race time its machine (or the host) last reported a hit
         std::vector<RemoteCar> cars;
         bool finish_sent = false, lost = false, loaded_sent = false, left = false;
         u32 state_tick = 0;

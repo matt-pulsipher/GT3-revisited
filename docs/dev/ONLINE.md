@@ -73,7 +73,7 @@ same pad frames compute the same race. That would allow, later:
 
 Not built.
 
-## State (protocol 4)
+## State (protocol 5)
 
 A car's state is 113 bytes on the wire with three frames of history when one repeats,
 116 while steering (every frame different), at most 125. A race datagram carrying it is
@@ -124,8 +124,9 @@ newest, and a lost datagram loses no frame (what a lockstep game would need).
     the host's clock.
   - **Settings:** course, laps, *ghost above* a round trip (default 150 ms;
     0 = always contact), the car rules ("Lobby car rules" below), then the allowed
-    tire types (u16), tire wear (u8) and the car settings rule (u8). An older host's
-    message without them reads as every tire type allowed, no wear and any settings.
+    tire types (u16), tire wear (u8) and the car settings rule (u8), then the CPU cars
+    ("CPU cars" below). An older host's message without the tire fields reads as every
+    tire type allowed, no wear and any settings.
   - **Capabilities.** Hello ends with a byte of what the game supports
     (`net::kCaps`; bit 1 tire wear). Older games send none, which reads as 0. The host
     refuses the start with tire wear on while a player's game lacks it ("Bob's game is
@@ -323,6 +324,55 @@ against its own disc's GT Mode rules (`game::garage_setup_problem` in
   other upgrade, then every slider at its bottom end (8,765 garage cars on NTSC-U). All
   of them are legal. Each car with a spring, a gear ratio or another car's suspension
   past them is refused (724 of 724).
+
+## CPU cars
+
+The host can fill the grid's empty places with CPU cars (issue 128). The lobby's **CPU cars** row
+shows how many and their skill (Left / Right changes how many); Cross opens their page, an `OpponentGrid` as
+Quick race's custom race has it: how many, where the players start among them, a skill for all, then each car
+(Cross: its car page, any disc car or arcade car that meets the lobby's car rules; Left / Right: its skill).
+Everyone else sees the page read-only, and the CPU cars in the player list. The host's lineup is kept in
+`[online_cpu]`.
+
+- **Room.** At most six cars in all, as GT3's races and its i.LINK battle, and no more than the course's grid
+  holds (`course_grid_size`, the road's grid slots): Smokey Mountain's North layout has five. The lineup
+  shrinks as players join (the host resends it on every roster change). The host refuses the start when the
+  players alone are more than the grid holds ("This course's grid has room for 5 cars"); before, every machine
+  but one refused the race.
+- **Ids and wire.** CPU car k races as id `net::kCpuId + k` (0x80..0x84), never a player's. Settings carry the
+  lineup (`Settings::cpu`: paint, skill and the 16 bytes of driver overrides, `cpu_place`: how many start
+  ahead of the players); each car's descriptor travels as a `CarInfo` for its id, so every machine checks it as
+  it checks a player's car ("Regional discs"). The Load's grid holds their ids around the players.
+- **Driver overrides, not skills.** A skill is the arcade race of that difficulty's driver overrides
+  (A{E,N,H,P}ST0001, dirt A?AD0001), whose values differ between releases (NTSC-J's Hard is 100/100/100). The
+  host sends the bytes its own disc gives, so the host's car and every machine's prediction drive alike.
+- **The host runs them**, as opponents of its own race (`FieldConfig::opponents`, `opponent_sources`: as every
+  machine builds the car, `exact_online_source`; `opponent_drivers`). Every other machine poses them as it poses a
+  player's car (`FieldConfig::Remote::driver`). Running them on every machine instead would not stay together: each
+  machine poses the players' cars a little differently, and the AI reacts to them.
+- **States.** The host sends each CPU car's state 30 times a second (half of them each step), with no pad frames
+  and control source 1, so the prediction shadow is the race's AI driving the car with its overrides
+  (`exact_shadow`, configuration 3). A CPU state is 92 bytes.
+- **Contacts.** The host reports its CPU cars' hits on players' cars like its own car's (`RemoteHit::from`;
+  `Contact` from the CPU car's id). A player's machine reports its hits on a CPU car to the host, which applies one
+  only when it saw no contact between that CPU car and that player's car within 0.2 s
+  (`last_contact_between`, `apply_opponent_impulse`). A contact any machine reports also counts as contact for
+  the plausibility checks of that car.
+- **Finishes.** The host sends each CPU car's finish (`Finish` with its id); a finished CPU car is a ghost on
+  the host as everywhere else. The results name a CPU car by its car.
+- **Plausibility** runs on CPU cars too; a warning about one is only logged (it would be the host's own fault).
+
+Measured (`net_cpu_cars_race`, US 1.10, Trial Mountain, two players and four CPU cars of mixed skill on the
+race's AI, 100 ms each way, 5 % of states lost): CPU cars posed 2.2 cm rms, 0.62 m at worst; no warnings; the
+race order the same on both machines at every step; every finish the same on both. Two instances on one Mac,
+three Hard CPU cars, one lap: the same finish times on both, about 3,300 states per CPU car, no warnings.
+
+Not done:
+- The lapped rule ghosts a pair of cars, but the ghost flag is per car: on the host a CPU car and a player's car
+  that are a lap apart still touch when neither is lapped against the host's own car.
+- CPU cars touch a player's car somewhat more often than a car run on the same machine (measured over 40
+  races with a slow car in their way): on the host the player's car does not give way at once, its own machine
+  answers the hit.
 
 ## Pickers (`src/app/online_pickers.cpp`)
 
@@ -1146,6 +1196,9 @@ at 100–200 links are the busy desktop, not the relay.
     owner had it, no cheat warning;
   - `net_exact_stalled_machine`, `net_exact_prediction_beats_dead_reckoning`,
     `net_exact_shadow_cost` (the figures above).
+  - tests/test_net_cpu_cars.cpp: `net_cpu_cars_race` (CPU cars through the race screen's paths, "CPU cars" above),
+    `net_cpu_cars_shadow_skill` (a CPU car's prediction drives with its skill); `net_cpu_cars_session` (no disc:
+    the lineup, ids, states, finishes and contacts through loopback sessions).
   The `net_relay_*` tests cover the server: code joins, relay fallback, cookie
   challenges and rollover, spoofed binds, rate limits, join caps, and old
   protocol versions. They also cover link slots:
@@ -1226,7 +1279,8 @@ GT3R_RACE="auto=1,cam=1" GT3R_ONLINE="join=127.0.0.1,car=supra_rz_97,name=Two" g
    players.~~ (done)
 5. ~~Races on the exact core: posed remote cars, exact prediction shadows,
    protocol 4.~~ (done)
-6. Later: input-only lockstep or rollback ("Later: input-only lockstep" above).
+6. ~~CPU cars on the empty places (protocol 5).~~ (done; "CPU cars" above)
+7. Later: input-only lockstep or rollback ("Later: input-only lockstep" above).
 
 ## Known issues
 

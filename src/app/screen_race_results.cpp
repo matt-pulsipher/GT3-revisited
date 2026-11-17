@@ -34,7 +34,8 @@ std::vector<ResultRow> RaceScreen::result_rows(bool full_names) const {
         ResultRow r;
         if (c.car == -1) r.name = full_names && db_.car(car_.label) ? car_display_name(car_.label, true) : car_.name;
         else if (c.car == -2) r.name = car_display_name(preset_.car2.empty() ? car_.label : preset_.car2, full_names);
-        else if (online_ && size_t(c.car) < net_.names.size()) // (a player's name is UTF-8)
+        else if (online_ && size_t(c.car) < net_.names.size() && !(size_t(c.car) < net_.cpu.size() && net_.cpu[size_t(c.car)]))
+            // (a player's name is UTF-8; a CPU car is named by its car)
             r.name = text::encode_game_text(text::utf8_decode(net_.names[size_t(c.car)]), hud_.fonts().jis());
         else r.name = car_display_name(field_->opponent_label(c.car), full_names);
         r.time = result_time_text(i == 0, c.finished, c.time, w.time, std::max(0, w.laps - c.laps));

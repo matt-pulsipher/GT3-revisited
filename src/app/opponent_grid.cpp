@@ -1,5 +1,8 @@
 #include "app/opponent_grid.h"
 
+#include "game/data/car_database.h"
+#include "sim/exact/race_inputs.h"
+
 #include <cstdlib>
 
 namespace gt3r {
@@ -7,6 +10,17 @@ namespace gt3r {
 const char* OpponentGrid::skill_name(int skill) {
     static const char* const kNames[kSkills] = {"Easy", "Normal", "Hard", "Professional"};
     return kNames[std::clamp(skill, 0, kSkills - 1)];
+}
+
+std::string OpponentGrid::skill_race(int skill, bool dirt) {
+    static const char kLevel[] = "ENHP";
+    return std::string("A") + kLevel[std::clamp(skill, 0, kSkills - 1)] + (dirt ? "AD" : "ST") + "0001";
+}
+
+std::optional<std::array<u8, 16>> OpponentGrid::skill_driver(const data::CarDatabase& db, int skill, bool dirt) {
+    const data::Event* ev = db.event(skill_race(skill, dirt));
+    if (!ev || ev->bytes.size() < 0x1F4) return std::nullopt;
+    return sim::exact::driver_overrides(sim::exact::race_config(ev->bytes));
 }
 
 std::string OpponentGrid::ordinal(int n) {
@@ -56,7 +70,7 @@ int OpponentGrid::place_in(const IniDocument& cfg, const std::string& section) {
 }
 
 void OpponentGrid::fill(App& app, const std::vector<std::string>& entries, int fallback, int count) {
-    if (count_ <= 0) count_ = std::clamp(count, 1, kMaxCars);
+    if (count_ <= 0) count_ = std::clamp(count, min_, kMaxCars);
     for (int k = 0; k < kMaxCars; ++k) {
         if (cars_[size_t(k)].car >= 0) continue;
         Car c;
@@ -82,9 +96,10 @@ void OpponentGrid::set_car(int k, int car, int paint) {
     c.paint = paint;
 }
 
-int OpponentGrid::shown() const { return limit_ > 0 ? std::clamp(count_, 1, limit_) : 0; }
+int OpponentGrid::shown() const { return limit_ > 0 ? std::clamp(count_, min_, limit_) : 0; }
 
 int OpponentGrid::paint_count(App& app, int car) const {
+    if (car < 0 || size_t(car) >= list_->size()) return 1;
     return std::max(1, int(picker_->paints(app, (*list_)[size_t(car)]).size()));
 }
 
@@ -95,10 +110,11 @@ int OpponentGrid::who(int row) const {
 }
 
 int OpponentGrid::action(int row, int h, bool cross) {
-    if (limit_ <= 0) return kNobody;
+    if (limit_ <= 0 || read_only_) return kNobody;
     const int n = shown(), step = h < 0 ? -1 : 1;
     if (row == kCountRow) {
-        if (h) count_ = (n - 1 + step + limit_) % limit_ + 1;
+        const int span = limit_ - min_ + 1;
+        if (h) count_ = (n - min_ + step + span) % span + min_;
         return kNobody;
     }
     if (row == kPlaceRow) {
@@ -121,20 +137,45 @@ void OpponentGrid::render_row(App& app, Ui& ui, int row, const UiRect& r, bool f
     if (focused) ui.fill_round(r.x, r.y, r.w, r.h - 2, 4, colors::kHighlight);
     h.hits.add({r.x, r.y, r.w, r.h - 2}, h.row, h.arg);
     if (row < kLineup) {
-        std::string label = "Opponents", value = std::to_string(n);
-        if (row == kPlaceRow) label = "Your place", value = ordinal(player_place() + 1) + " of " + std::to_string(n + 1);
+        std::string label = count_text_, value = n == 0 ? "None" : std::to_string(n);
+        if (row == kPlaceRow) {
+            label = place_text_, value = ordinal(player_place() + 1) + " of " + std::to_string(n + 1);
+            if (!players_text_.empty()) { // (a block of players: where it starts among the CPU cars)
+                const int ahead = player_place();
+                value = ahead == 0 ? "On pole" : "Behind " + std::to_string(ahead) + (ahead == 1 ? " car" : " cars");
+            }
+        }
         if (row == kSkillRow) {
             const int skill = cars_[0].skill;
             const bool same = std::all_of(cars_.begin(), cars_.begin() + n, [&](const Car& c) { return c.skill == skill; });
             label = "Skill for all", value = same ? skill_name(skill) : "Mixed";
         }
         ui.text(r.x + 6, r.y + (r.h - 2 - Ui::kChar) / 2, label, focused ? colors::kAccent : colors::kText);
-        value_arrows(ui, {r.right() - 156, r.y + 1, 152, r.h - 4}, value, colors::kText, h.hits, h.left, h.right, h.arg, h.pointer);
+        if (read_only_) ui.text_right(r.right() - 10, r.y + (r.h - 2 - Ui::kChar) / 2, value, colors::kText);
+        else value_arrows(ui, {r.right() - 156, r.y + 1, 152, r.h - 4}, value, colors::kText, h.hits, h.left, h.right, h.arg, h.pointer);
         return;
     }
     const int k = who(row);
     const bool you = k == kPlayer;
+    if (you && !players_text_.empty()) { // (the players' place: no car of its own)
+        if (!focused) ui.fill_round(r.x, r.y, r.w, r.h - 2, 4, colors::kPanel);
+        ui.text(r.x + 6, r.y + 12, std::to_string(row - kLineup + 1), focused ? colors::kAccent : colors::kDim);
+        ui.text(r.x + 84, r.y + 12, Ui::clip(players_text_, r.right() - r.x - 90), colors::kAccent);
+        return;
+    }
     const int car = you ? player_car_ : cars_[size_t(k)].car, paint = you ? player_paint_ : cars_[size_t(k)].paint;
+    auto skill_value = [&] {
+        if (you) return;
+        const char* v = skill_name(cars_[size_t(k)].skill);
+        if (read_only_) ui.text_right(r.right() - 10, r.y + 12, v, colors::kText);
+        else value_arrows(ui, {r.right() - 156, r.y + 4, 152, r.h - 10}, v, colors::kText, h.hits, h.left, h.right, h.arg, h.pointer);
+    };
+    if (car < 0 || size_t(car) >= list_->size()) { // (a car this machine's list lacks: its label)
+        ui.text(r.x + 6, r.y + 12, std::to_string(row - kLineup + 1), focused ? colors::kAccent : colors::kDim);
+        ui.text(r.x + 84, r.y + 12, Ui::clip(you ? "You" : cars_[size_t(k)].label, r.right() - r.x - 250), colors::kDim);
+        skill_value();
+        return;
+    }
     const PickerCar& c = (*list_)[size_t(car)];
     if (you && !focused) ui.fill_round(r.x, r.y, r.w, r.h - 2, 4, colors::kPanel);
     ui.text(r.x + 6, r.y + 12, std::to_string(row - kLineup + 1), focused ? colors::kAccent : colors::kDim);
@@ -147,9 +188,7 @@ void OpponentGrid::render_row(App& app, Ui& ui, int row, const UiRect& r, bool f
         draw_paint_chip(ui, tx, r.y + 18, 18, 9, p.rgb, false);
         ui.text(tx + 23, r.y + 18, Ui::clip(p.name, room - 23), colors::kDim);
     }
-    if (!you)
-        value_arrows(ui, {r.right() - 156, r.y + 4, 152, r.h - 10}, skill_name(cars_[size_t(k)].skill), colors::kText, h.hits, h.left, h.right,
-                     h.arg, h.pointer);
+    skill_value();
 }
 
 } // namespace gt3r
