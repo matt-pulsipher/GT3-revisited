@@ -5,6 +5,8 @@
 #include "app/app.h"
 #include "app/ui.h"
 #include "base/log.h"
+#include "formats/course/course_file.h"
+#include "formats/course/road.h"
 #include "formats/model/car_model.h"
 #include "formats/model/wheel_spec.h"
 #include "game/data/car_database.h"
@@ -88,6 +90,18 @@ void fill_gradient(Ui& ui, float x, float y, float w, float h, Color top, Color 
 constexpr Color kStripBack{0, 0, 0, 150};
 
 } // namespace
+
+int course_grid_size(const Vfs& vfs, const std::string& course) {
+    std::optional<Bytes> f = vfs.read(course_file_path(vfs, course));
+    if (!f) return 0;
+    try {
+        const course::CourseFile cf = course::CourseFile::parse(*f);
+        return int(course::Road::parse(cf.section(*f, course::kSlotRoad)).grid.size());
+    } catch (const std::exception& e) {
+        LOG_WARN("%s's start grid: %s", course.c_str(), e.what());
+        return 0;
+    }
+}
 
 void picker_sound(App& app, const char* name) {
     static menu::flow::MenuSounds* sounds = nullptr; // kept for the app's life (like the menus' own)

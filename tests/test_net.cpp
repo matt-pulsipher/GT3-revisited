@@ -368,6 +368,91 @@ TEST(net_mesh_direct_links) {
     CHECK(pump({&host, &c1, &c2}, [&] { return c2.remote(1) && c2.remote(1)->snap.tick == 20; }));
 }
 
+// The host's CPU cars (docs/dev/ONLINE.md "CPU cars"): the lineup and descriptors reach everyone, the grid holds their ids
+// around the players, their states, finishes and contacts travel from and to the host, and no client can speak for one.
+TEST(net_cpu_cars_session) {
+    FakeClock clock;
+    net::Session host, c1, c2;
+    if (!three(host, c1, c2)) SKIP("no UDP sockets here");
+    std::vector<net::Session*> all{&host, &c1, &c2};
+    CHECK(pump(all, [&] { return c1.link(2).direct && c2.link(1).direct; }));
+    net::Settings st;
+    st.course = "trialmt";
+    net::Settings::CpuCar a, b;
+    a.paint = 3, a.skill = 2;
+    for (size_t k = 0; k < a.driver.size(); ++k) a.driver[k] = u8(10 + k);
+    b.paint = 1, b.skill = 0;
+    b.driver[0] = 70;
+    st.cpu = {a, b};
+    st.cpu_place = 1;
+    host.set_settings(st);
+    const Bytes info_a{1, 2, 3}, info_b{4, 5};
+    host.set_cpu_car_info(0, info_a);
+    host.set_cpu_car_info(1, info_b);
+    CHECK(pump(all, [&] {
+        return c1.settings().cpu.size() == 2 && c2.car_info(net::kCpuId + 1) && c1.car_info(net::kCpuId);
+    }));
+    CHECK(c1.settings().cpu == st.cpu && c1.settings().cpu_place == 1);
+    CHECK(*c1.car_info(net::kCpuId) == info_a && *c2.car_info(net::kCpuId + 1) == info_b);
+    // A roster change keeps them (the roster drops the descriptors of players who left).
+    c1.set_ready(true), c2.set_ready(true);
+    CHECK(pump(all, [&] { return host.all_ready(); }));
+    CHECK(pump(all, [&] { return c2.player(1) && c2.player(1)->ready; }));
+    CHECK(c2.car_info(net::kCpuId) && *c2.car_info(net::kCpuId) == info_a);
+    // The grid: one CPU car ahead of the players, the other behind them.
+    host.load();
+    CHECK(pump(all, [&] { return c1.grid().size() == 5 && c2.grid().size() == 5; }));
+    const std::vector<u8> grid{u8(net::kCpuId), 0, 1, 2, u8(net::kCpuId + 1)};
+    CHECK(host.grid() == grid && c1.grid() == grid && c2.grid() == grid);
+    CHECK(c1.link(net::kCpuId).known && c1.link(net::kCpuId).rtt_ms == c1.link(0).rtt_ms);
+    // States: the host's CPU cars reach every client; a client's state never passes for a CPU car's.
+    for (u32 t = 1; t <= 10; ++t) {
+        net::CarSnapshot s;
+        s.player = net::kCpuId;
+        s.tick = t;
+        s.motion.pos = {fbits(float(t)), 0, 0};
+        host.send_cpu_state(s);
+        s.player = net::kCpuId + 1;
+        c1.send_state(s); // (a client cannot)
+        for (net::Session* x : all) x->poll();
+    }
+    CHECK(pump(all, [&] {
+        return c1.remote(net::kCpuId) && c2.remote(net::kCpuId) && c2.remote(net::kCpuId)->snap.tick == 10 && c2.remote(1) &&
+               c2.remote(1)->snap.tick == 10;
+    }));
+    CHECK(c2.remote(net::kCpuId)->snap.motion.pos[0] == fbits(10.0f));
+    CHECK(!c2.remote(net::kCpuId + 1) && !host.remote(net::kCpuId + 1));
+    drain(host), drain(c1), drain(c2);
+    // A CPU car's finish, from the host.
+    host.send_cpu_finish(net::kCpuId + 1, 100.5, 33.25);
+    std::vector<net::Event> f2;
+    CHECK(pump(all, [&] {
+        for (auto& e : drain(c2)) f2.push_back(e);
+        return has(f2, net::Event::Kind::Finish);
+    }));
+    for (const net::Event& e : f2)
+        if (e.kind == net::Event::Kind::Finish) CHECK(e.player == net::kCpuId + 1 && e.time == 100.5 && e.best == 33.25);
+    // Contacts: a client's hit on a CPU car goes to the host; a CPU car's hit on a player comes from the host as that car's;
+    // a client cannot send one as a CPU car.
+    net::Event::Hit hit{7, 1.0f, 2.0f, 300.0f, -400.0f};
+    c2.send_contact(net::kCpuId, hit);
+    host.send_contact(1, hit, net::kCpuId + 1);
+    c1.send_contact(2, hit, net::kCpuId);
+    std::vector<net::Event> eh, e1, e2;
+    CHECK(pump(all, [&] {
+        for (auto& e : drain(host)) eh.push_back(e);
+        for (auto& e : drain(c1)) e1.push_back(e);
+        for (auto& e : drain(c2)) e2.push_back(e);
+        return has(eh, net::Event::Kind::Contact) && has(e1, net::Event::Kind::Contact) && has(e2, net::Event::Kind::Contact);
+    }));
+    for (const net::Event& e : eh)
+        if (e.kind == net::Event::Kind::Contact) CHECK(e.target == net::kCpuId && e.player == 2 && e.contact.jx == 300.0f);
+    for (const net::Event& e : e1)
+        if (e.kind == net::Event::Kind::Contact) CHECK(e.target == 1 && e.player == net::kCpuId + 1 && e.contact.jz == -400.0f);
+    for (const net::Event& e : e2)
+        if (e.kind == net::Event::Kind::Contact) CHECK(e.target == 2 && e.player == 1);
+}
+
 TEST(net_mesh_relay_fallback) {
     // Punching blocked (symmetric NAT): the pair gives up and the host relays their states.
     FakeClock clock;
@@ -439,7 +524,7 @@ TEST(net_old_protocol_told_to_update) {
         while (size_t n = old.recv_from(from, buf, sizeof buf)) reply.append(reinterpret_cast<const char*>(buf), n);
         return reply.find("update") != std::string::npos;
     }));
-    CHECK(reply.find("update required: the host has a newer version of the game (online protocol 4, yours 3)") !=
+    CHECK(reply.find("update required: the host has a newer version of the game (online protocol 5, yours 3)") !=
           std::string::npos);
     CHECK(host.players().size() == 1); // not let in
     // The other way round: a newer game is told the host must update.

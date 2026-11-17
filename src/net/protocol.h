@@ -16,8 +16,13 @@
 
 namespace gt3r::net {
 
-constexpr u16 kProtocolVersion = 4; // 4: races on the exact core (exact car states, pad frames)
+constexpr u16 kProtocolVersion = 5; // 4: races on the exact core (exact car states, pad frames); 5: CPU cars
 constexpr int kMaxPlayers = 6; // as the original's i.LINK battle
+// The host's CPU cars on the grid's empty places (docs/dev/ONLINE.md "CPU cars"): ids of their own, never a player's. The
+// host runs them; their states, finishes and descriptors (CarInfo) come from it.
+constexpr u8 kCpuId = 0x80;  // CPU car k is kCpuId + k
+constexpr int kMaxCpuCars = 5;
+constexpr bool is_cpu_id(u8 id) { return id >= kCpuId && id < kCpuId + kMaxCpuCars; }
 constexpr size_t kMaxDatagram = 1200;
 // What a game supports beyond its protocol (Hello's last byte; older games send none): races with tyre wear.
 constexpr u8 kCapTireWear = 1;
@@ -30,23 +35,25 @@ enum class Msg : u8 {
     Roster = 4,   // H->*  u8 n, {u8 id, str name, str car, u8 paint, u8 flags (1 ready, 2 loaded), u16 ping ms}
     Settings = 5, // H->*  str course, u8 laps, u8 mods, u16 ghost ms, u8 stock only, u16 max PS,
                   //       u8 class, u8 category, u8 drive, u8 aspiration, u16 tires, u8 tire wear,
-                  //       u8 stock settings (net::Settings)
+                  //       u8 stock settings, u8 CPU cars ahead of the players,
+                  //       u8 n, {u8 paint, u8 skill, 16 bytes driver overrides} (net::Settings)
     Car = 6,      // C->H  str car, u8 paint, u8 ready
-    Load = 7,     // H->*  str course, u8 laps, u8 n, {u8 id} grid order (pole first)
+    Load = 7,     // H->*  str course, u8 laps, u8 n, {u8 id} grid order (pole first; CPU cars' ids too)
     Loaded = 8,   // C->H  (the race scene is ready)
     Go = 9,       // H->*  u32 delay ms (start the countdown that long after the host sent it)
-    State = 10,   // *     CarSnapshot (unreliable; the host relays clients' states)
-    Finish = 11,  // *     u8 id, f64 race time, f64 best lap (reliable; relayed)
+    State = 10,   // *     CarSnapshot (unreliable; the host relays clients' states and sends its CPU cars')
+    Finish = 11,  // *     u8 id, f64 race time, f64 best lap (reliable; relayed; the host's for its CPU cars)
     Ping = 12,    // *     f64 sender time (unreliable)
     Pong = 13,    // *     f64 echoed time (unreliable)
     Bye = 14,     // *     (unreliable, sent a few times)
     Lobby = 15,   // H->*  back to the lobby after a race
     Retire = 16,  // *     u8 id (left the race; reliable; relayed)
-    CarInfo = 17, // C->H  bytes (game::OnlineCar); H->* u8 id, bytes
+    CarInfo = 17, // C->H  bytes (game::OnlineCar); H->* u8 id, bytes (a CPU car's too)
     PkgRequest = 18, // *  str sha256: send me that mod car package (docs/dev/ONLINE.md "Mod cars")
     PkgChunk = 19,   // *  str sha256, u32 total, u32 offset, bytes
     PkgError = 20,   // *  str sha256, str reason
-    Contact = 21,    // *  u8 target, u8 from, u32 tick, f32 point x, z, f32 impulse x, z (reliable; relayed)
+    Contact = 21,    // *  u8 target, u8 from, u32 tick, f32 point x, z, f32 impulse x, z (reliable; relayed; a CPU
+                     //    car's hits go to and come from the host)
     Flag = 22,       // C->H u8 suspect, u8 FlagKind, f32 value (reliable); H->C u8 suspect, u8 kind, f32 value, u8 reporter
     Kick = 23,       // H->C str reason (the host removed us)
 };

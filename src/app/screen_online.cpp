@@ -3,7 +3,8 @@
 // Start page: host a battle (UDP port [online] port, default 47630) or join one by
 // address; the player name; ASM and TCS. Lobby page: the players (name, car, ready, ping),
 // the course, laps and tire wear (the host chooses), the car rules (their own page, with the
-// allowed tires on a page of their own), your car, colour, tires, settings (their own page),
+// allowed tires on a page of their own), the CPU cars on the grid's empty places (their own page,
+// docs/dev/ONLINE.md "CPU cars"), your car, colour, tires, settings (their own page),
 // gearbox, ASM and TCS, Ready / Start. The host starts when everyone is ready; every
 // player's race screen loads, and the countdown starts for all at once. After the race
 // everyone comes back here.
@@ -23,13 +24,16 @@
 // rules: `class=B` (C, B, A, S, rally), `category=production|race`, `drive=FF|FR|4WD|MR|RR`,
 // `aspiration=na|turbo`, `maxps=300`, `stock=1`, `mods=0`, `allowtires=0+1+7` (the tire types
 // allowed, game::kTireTypes), `stocksettings=1`, `wear=1` (tire wear). `car=` also takes an arcade car label
-// ("arm_tt_00"); `tires=7` puts it on that tire type.
+// ("arm_tt_00"); `tires=7` puts it on that tire type. The host's CPU cars: `cpu=3` (how many),
+// `skill=easy|normal|hard|pro` (all of them), `cpuplace=0` (how many start ahead of the players);
+// `page=cpu` opens their page.
 
 #include "app/screen_online.h"
 
 #include "app/app.h"
 #include "app/presence.h"
 #include "app/online_pickers.h"
+#include "app/opponent_grid.h"
 #include "app/screen_registry.h"
 #include "app/text_keyboard.h"
 #include "app/updates.h"
@@ -75,6 +79,8 @@ struct Script {
     bool accept = false;
     // The host's rules (-1 = as configured).
     int car_class = -1, category = -1, drive = -1, aspiration = -1, max_ps = -1, stock = -1, mods = -1;
+    // The host's CPU cars (-1 = as configured): how many, every one's skill, how many start ahead of the players.
+    int cpu = -1, cpu_skill = -1, cpu_place = -1;
     int allow_tires = -1, wear = -1, stock_settings = -1; // the tire types allowed (a mask), tire wear, the settings rule
     int tires = -1;                  // our car's tire type
 };
@@ -125,6 +131,9 @@ Script read_script() {
         else if (k == "maxps") s.max_ps = std::atoi(v.c_str());
         else if (k == "stock") s.stock = v != "0";
         else if (k == "mods") s.mods = v != "0";
+        else if (k == "cpu") s.cpu = std::clamp(std::atoi(v.c_str()), 0, net::kMaxCpuCars);
+        else if (k == "skill") s.cpu_skill = index_of(v, {"easy", "normal", "hard", "pro"});
+        else if (k == "cpuplace") s.cpu_place = std::max(0, std::atoi(v.c_str()));
         else if (k == "wear") s.wear = v != "0";
         else if (k == "stocksettings") s.stock_settings = v != "0";
         else if (k == "tires") s.tires = std::atoi(v.c_str());
@@ -195,7 +204,14 @@ public:
                 if (const net::Player* p = ns.player(e->player)) status(p->name + " left", false);
                 else status("A player left", false);
                 break;
+            case K::Roster:
+                if (ns.is_host()) refresh_cpu(); // (a player came or went: the room left for CPU cars)
+                break;
+            case K::CarInfo:
+                if (!ns.is_host() && net::is_cpu_id(e->player)) sync_cpu_view();
+                break;
             case K::Settings:
+                if (!ns.is_host()) sync_cpu_view();
                 course_sel_ = find_course(e->course, course_sel_);
                 if (page_ == Page::Cars) { // the rules or the course changed
                     assign_classes();
@@ -264,6 +280,7 @@ public:
         else if (page_ == Page::Cars) update_car_picker(app);
         else if (page_ == Page::Courses) update_course_picker(app);
         else if (page_ == Page::Rules) update_rules(app);
+        else if (page_ == Page::Cpu) update_cpu(app);
         else if (page_ == Page::Tires) update_tires_page(app);
         else if (page_ == Page::Tuning) update_tuning(app);
         else update_lobby(app);
@@ -316,6 +333,7 @@ public:
         else if (page_ == Page::Cars) car_picker_.render(app, ui);
         else if (page_ == Page::Courses) course_picker_.render(app, ui, art_);
         else if (page_ == Page::Rules) render_rules(ui, ns);
+        else if (page_ == Page::Cpu) render_cpu(app, ui, ns);
         else if (page_ == Page::Tires) render_tires_page(ui, ns);
         else if (page_ == Page::Tuning) render_tuning(ui, ns);
         else render_lobby(app, ui, ns);
@@ -332,7 +350,7 @@ public:
     }
 
 private:
-    enum class Page { Start, Lobby, Cars, Courses, Rules, Tires, Tuning };
+    enum class Page { Start, Lobby, Cars, Courses, Rules, Tires, Tuning, Cpu };
     // Pointer areas of the start, lobby and rules pages (arg: the row; footer: the action).
     enum Hit { kHitRow, kHitLeft, kHitRight, kHitFooter, kHitCode, kHitPromptYes, kHitPromptNo };
 
@@ -384,6 +402,39 @@ private:
         rules_.category = num("category", "0", 0, game::kCategoryRules);
         rules_.drive = num("drive", "0", 0, game::kDriveRules);
         rules_.aspiration = num("aspiration", "0", 0, game::kAspirationRules);
+        // The CPU cars (the host's; saved like Quick race's lineup): none at first.
+        // A label's place on the list: the class pages' arcade car or the car itself, else an event entry's car (its variant's
+        // base car), as Quick race's lineup finds them.
+        auto find_cpu = [this](const std::string& label) {
+            auto find = [&](const std::string& l) {
+                for (size_t i = 0; i < cars_.size(); ++i)
+                    if (cpu_car_ok(int(i)) && car_key(cars_[i]) == l) return int(i);
+                return -1;
+            };
+            if (const int k = find(label); k >= 0) return k;
+            for (const std::string& l : {label, "_" + label}) {
+                if (db_.car(l)) return find(l);
+                if (const data::CarVariant* v = db_.variant(l)) return find(v->car);
+                for (const data::CarVariant& v : db_.arcade_cars())
+                    if (v.label == l && db_.car(v.car)) return find(v.car);
+            }
+            return -1;
+        };
+        for (OpponentGrid* g : {&cpu_grid_, &cpu_view_}) {
+            g->attach(cars_, art_, car_picker_, find_cpu);
+            g->set_min(0);
+            g->set_texts("CPU cars", "Players start", "The players");
+        }
+        cpu_view_.set_read_only(true);
+        cpu_grid_.read(cfg, "online_cpu");
+        if (!cars_.empty()) {
+            const int saved = cpu_grid_.count();
+            const data::Event* field = db_.event(OpponentGrid::skill_race(1, false)); // (the arcade's Normal race's cars)
+            int fallback = 0;
+            while (fallback + 1 < int(cars_.size()) && !cpu_car_ok(fallback)) ++fallback;
+            cpu_grid_.fill(app, field ? field->entries : std::vector<std::string>{}, fallback, 0);
+            cpu_grid_.set_count(saved);
+        }
         rules_.tires = u16(num("tires", std::to_string(game::kAllTires).c_str(), 0, game::kAllTires));
         tire_wear_ = cfg.get("online", "tire_wear").value_or("off") == "on";
         rules_.stock_settings = cfg.get("online", "stock_settings").value_or("off") == "on";
@@ -405,6 +456,14 @@ private:
             if (script_.max_ps >= 0) rules_.max_ps = script_.max_ps;
             if (script_.stock >= 0) rules_.stock_only = script_.stock != 0;
             if (script_.mods >= 0) rules_.allow_mods = script_.mods != 0;
+            if (script_.cpu >= 0) cpu_grid_.set_count(script_.cpu);
+            if (script_.cpu_place >= 0) cpu_grid_.set_player_place(script_.cpu_place);
+            if (script_.cpu_skill >= 0)
+                for (int k = 0; k < OpponentGrid::kMaxCars; ++k) {
+                    OpponentGrid::Car c = cpu_grid_.car(k);
+                    c.skill = script_.cpu_skill;
+                    cpu_grid_.set_place(k, c);
+                }
             if (script_.allow_tires >= 0) rules_.tires = u16(script_.allow_tires);
             if (script_.wear >= 0) tire_wear_ = script_.wear != 0;
             if (script_.stock_settings >= 0) rules_.stock_settings = script_.stock_settings != 0;
@@ -672,6 +731,7 @@ private:
         store_tune(cfg);
         cfg.set("online", "car_page", car_picker_.by_class() ? "classes" : "makers");
         cfg.set("online", "car_page_filter", car_picker_.allowed_only() ? "allowed" : "all");
+        cpu_grid_.write(cfg, "online_cpu");
         app.save_config();
     }
 
@@ -988,8 +1048,8 @@ private:
 
     // --- lobby page ---
 
-    enum Row { kCourse, kLaps, kGhost, kWear, kRules, kCar, kColour, kTires, kTuning, kGearbox, kAsm, kTcs, kGo, kKick, kLeave, kRows };
-    static constexpr float kRowY = 130, kRowH = 13; // (15 rows above the status line)
+    enum Row { kCourse, kLaps, kGhost, kWear, kRules, kCpu, kCar, kColour, kTires, kTuning, kGearbox, kAsm, kTcs, kGo, kKick, kLeave, kRows };
+    static constexpr float kRowY = 130, kRowH = 12; // (16 rows above the status line)
     enum LobbyFooter { kFootLeave };
 
     // Host: the players that can be removed (everyone but us), and their warnings.
@@ -1098,6 +1158,14 @@ private:
                 const Here& h = car_here(*ns.car_info(p.id));
                 return p.name + "'s car " + game::car_here_text(h.h) + (h.why.empty() ? "" : ": " + h.why);
             }
+        // The host's CPU cars race here as the host's machine builds them (docs/dev/ONLINE.md "CPU cars").
+        if (!ns.is_host())
+            for (size_t k = 0; k < ns.settings().cpu.size(); ++k) {
+                const Bytes* info = ns.car_info(u8(net::kCpuId + k));
+                if (!info) return "Waiting for the host's CPU cars";
+                if (const Here& h = car_here(*info); game::car_here_blocks(h.h))
+                    return "CPU car " + std::to_string(k + 1) + " " + game::car_here_text(h.h) + (h.why.empty() ? "" : ": " + h.why);
+            }
         return {};
     }
 
@@ -1116,6 +1184,7 @@ private:
         st.max_ps = u16(rules_.max_ps);
         st.car_class = u8(rules_.car_class), st.category = u8(rules_.category);
         st.drive = u8(rules_.drive), st.aspiration = u8(rules_.aspiration);
+        cpu_settings(st);
         st.tires = rules_.tires;
         st.tire_wear = tire_wear_;
         st.stock_settings = rules_.stock_settings;
@@ -1204,6 +1273,21 @@ private:
             pointer_.clear();
             picker_sound(app, "ok");
             break;
+        case kCpu: // the CPU cars' page (everyone sees it; the host changes it); Left / Right: how many
+            if (cross) {
+                if (!ns.is_host()) sync_cpu_view();
+                page_ = Page::Cpu;
+                cpu_sel_ = 0;
+                pointer_.clear();
+                picker_sound(app, "ok");
+                break;
+            }
+            if (!ns.is_host() || !h) break;
+            cpu_grid_.set_limit(cpu_limit(ns));
+            if (cpu_grid_.limit() == 0) break;
+            cpu_grid_.set_count(std::clamp(cpu_grid_.shown() + (h > 0 ? 1 : -1), 0, cpu_grid_.limit()));
+            push_settings();
+            break;
         case kCar:
             if (cars_.empty() || ready) break;
             if (cross) { // the car page
@@ -1271,6 +1355,11 @@ private:
                             if (!game::car_meets_rules(*oc, game::online_car_facts(db_, gt_data(), *oc), rules_of(ns), &why))
                                 rule_breaker = (int(p.id) == ns.my_id() ? std::string("Your car") : p.name + "'s car") + ": " + why;
                         }
+                // The CPU cars too, and room on the course's grid for everyone.
+                push_settings(); // (the CPU cars that fit the players there are now)
+                if (rule_breaker.empty()) rule_breaker = cpu_rules_problem(ns);
+                if (const int slots = grid_size(course_label()); slots > 0 && int(ns.players().size()) > slots)
+                    rule_breaker = "This course's grid has room for " + std::to_string(slots) + " cars";
                 // And every other player's car must race here as its owner races it.
                 std::string not_here = remote_car_problem(ns);
                 // Tire wear needs every player's game to know it (an older one would race without it).
@@ -1393,6 +1482,14 @@ private:
             }
             y += 14;
         }
+        // The host's CPU cars after the players.
+        for (const CpuRow& c : cpu_rows(ns)) {
+            ui.text(24, y, "CPU " + std::to_string(c.k + 1), colors::kDim);
+            if (c.rgb) draw_paint_chip(ui, 140, y, 8, 8, *c.rgb, false);
+            ui.text(152, y, Ui::clip(c.car, 130), c.blocked ? colors::kBad : colors::kDim);
+            ui.text(290, y, OpponentGrid::skill_name(c.skill), colors::kDim);
+            y += 14;
+        }
         if (!ns.joined()) ui.text(24, y, "Connecting...", colors::kDim);
         // Settings.
         const net::Player* meP = ns.my_id() >= 0 ? ns.player(u8(ns.my_id())) : nullptr;
@@ -1432,6 +1529,8 @@ private:
             wear && lobby_rules.dirt_course ? "(none on dirt courses)" : wear ? "(pit for fresh tires)" : "");
         row(kRules, "Car rules", game::car_rules_summary(rules_of(ns)), true, false, 0,
             host ? "(Cross: set the rules)" : "(Cross: see the rules)");
+        row(kCpu, "CPU cars", cpu_summary(ns), true, host && cpu_limit(ns) > 0, 0,
+            host ? (cpu_limit(ns) > 0 ? "(Cross: choose the cars)" : "") : "(Cross: see the cars)");
         std::string problem = ns.joined() ? rule_problem(ns) : "";
         if (cars_.empty()) row(kCar, "Car", "-", !ready, false);
         else {
@@ -1993,6 +2092,212 @@ private:
         return lobby_tune_ ? "Changed in the lobby" : "The garage car's";
     }
 
+    // --- CPU cars (docs/dev/ONLINE.md "CPU cars") ---
+
+    // A car the computer may drive: a car of the disc or of the arcade's lists (a garage car races only as its owner's car;
+    // a mod car needs every machine to have it).
+    bool cpu_car_ok(int i) const {
+        return i >= 0 && size_t(i) < cars_.size() && cars_[size_t(i)].garage < 0 && !cars_[size_t(i)].mod;
+    }
+    std::string cpu_car_problem(const net::Session& ns, int i) const {
+        if (i < 0 || size_t(i) >= cars_.size()) return "no such car";
+        if (cars_[size_t(i)].garage >= 0) return "garage cars can't be CPU cars";
+        if (cars_[size_t(i)].mod) return "mod cars can't be CPU cars";
+        return car_problem(ns, i);
+    }
+    // How many cars a course's grid holds (0: unknown).
+    int grid_size(const std::string& course) {
+        auto [it, fresh] = grid_sizes_.try_emplace(course, 0);
+        if (fresh && app_ && app_->vfs()) it->second = course_grid_size(*app_->vfs(), course);
+        return it->second;
+    }
+    int grid_size(const std::string& course) const { return const_cast<OnlineScreen*>(this)->grid_size(course); }
+    // Room for CPU cars: the course's grid (six cars at most, as GT3's races) less the players.
+    int cpu_limit(const net::Session& ns) const {
+        const int slots = grid_size(ns.is_host() ? course_label() : ns.course());
+        const int cars = std::min(net::kMaxPlayers, slots > 0 ? slots : net::kMaxPlayers);
+        return std::clamp(cars - int(ns.players().size()), 0, net::kMaxCpuCars);
+    }
+    // Host: the lineup as the lobby sends it (as many CPU cars as fit), each car's descriptor out to everyone.
+    void cpu_settings(net::Settings& st) {
+        net::Session& ns = net::online();
+        if (!ns.is_host()) return;
+        cpu_grid_.set_limit(cpu_limit(ns));
+        const bool dirt = rules_of(ns).dirt_course;
+        for (int k = 0; k < cpu_grid_.shown(); ++k) {
+            const OpponentGrid::Car& c = cpu_grid_.car(k);
+            if (!cpu_car_ok(c.car)) break; // (a car not on this disc's list: none from here on)
+            net::Settings::CpuCar cc;
+            cc.paint = u8(c.paint), cc.skill = u8(c.skill);
+            cc.driver = OpponentGrid::skill_driver(db_, c.skill, dirt).value_or(std::array<u8, 16>{});
+            st.cpu.push_back(cc);
+            game::OnlineCar oc = car_at(c.car, c.paint);
+            if (program_) oc.digest = game::online_car_digest(db_, *program_, oc);
+            ns.set_cpu_car_info(k, game::encode_online_car(oc));
+        }
+        st.cpu_place = u8(std::min(cpu_grid_.player_place(), int(st.cpu.size())));
+    }
+    // Host: a player came or went: the lineup again when what fits changed.
+    void refresh_cpu() {
+        net::Session& ns = net::online();
+        net::Settings st = ns.settings();
+        st.cpu.clear();
+        cpu_settings(st);
+        if (st.cpu != ns.settings().cpu || st.cpu_place != ns.settings().cpu_place) push_settings();
+    }
+    // Everyone else: the host's lineup on the page (read-only).
+    void sync_cpu_view() {
+        const net::Session& ns = net::online();
+        const net::Settings& st = ns.settings();
+        cpu_view_.set_limit(OpponentGrid::kMaxCars);
+        cpu_view_.set_count(int(st.cpu.size()));
+        cpu_view_.set_player_place(st.cpu_place);
+        for (size_t k = 0; k < st.cpu.size() && k < size_t(OpponentGrid::kMaxCars); ++k) {
+            OpponentGrid::Car c;
+            if (const Bytes* info = ns.car_info(u8(net::kCpuId + k)))
+                if (std::optional<game::OnlineCar> oc = game::decode_online_car(*info))
+                    c.label = oc->kind == game::OnlineCar::Kind::Arcade ? oc->arcade : oc->car;
+            c.paint = st.cpu[k].paint, c.skill = std::clamp(int(st.cpu[k].skill), 0, OpponentGrid::kSkills - 1);
+            cpu_view_.set_place(int(k), c);
+        }
+    }
+    OpponentGrid& cpu_page_grid() { return net::online().is_host() ? cpu_grid_ : cpu_view_; }
+    // The CPU cars as the lobby's player list shows them.
+    struct CpuRow {
+        int k = 0, skill = 1;
+        std::string car;
+        std::optional<u32> rgb;
+        bool blocked = false;
+    };
+    std::vector<CpuRow> cpu_rows(const net::Session& ns) {
+        std::vector<CpuRow> out;
+        const game::GtData* gd = gt_data();
+        for (size_t k = 0; k < ns.settings().cpu.size(); ++k) {
+            const net::Settings::CpuCar& c = ns.settings().cpu[k];
+            CpuRow r;
+            r.k = int(k), r.skill = c.skill;
+            if (const Bytes* info = ns.car_info(u8(net::kCpuId + k)))
+                if (std::optional<game::OnlineCar> oc = game::decode_online_car(*info)) {
+                    r.car = oc->name.empty() ? oc->car : oc->name;
+                    if (oc->kind == game::OnlineCar::Kind::Arcade)
+                        if (int cls = gd ? game::arcade_class_of(*gd, oc->arcade) : 0)
+                            r.car = std::string(game::arcade_class_name(cls)) + ": " + r.car;
+                    if (app_) r.rgb = paint_rgb(*app_, oc->car, c.paint);
+                    r.blocked = !ns.is_host() && game::car_here_blocks(car_here(*info).h);
+                }
+            out.push_back(r);
+        }
+        return out;
+    }
+    // "None", "3 - Hard", "2 - mixed skills".
+    std::string cpu_summary(const net::Session& ns) const {
+        const std::vector<net::Settings::CpuCar>& cpu = ns.settings().cpu;
+        if (cpu.empty()) return ns.is_host() && cpu_limit(ns) == 0 ? "None (the grid is full)" : "None";
+        const bool same = std::all_of(cpu.begin(), cpu.end(), [&](const net::Settings::CpuCar& c) { return c.skill == cpu[0].skill; });
+        return std::to_string(cpu.size()) + " - " + (same ? OpponentGrid::skill_name(cpu[0].skill) : "mixed skills");
+    }
+    // Host: a CPU car against the lobby's car rules ("" = all allowed).
+    std::string cpu_rules_problem(const net::Session& ns) const {
+        for (int k = 0; k < cpu_grid_.shown() && k < int(ns.settings().cpu.size()); ++k)
+            if (std::string why = cpu_car_problem(ns, cpu_grid_.car(k).car); !why.empty())
+                return "CPU car " + std::to_string(k + 1) + ": " + why;
+        return {};
+    }
+
+    enum CpuFooter { kFootCpuBack };
+    static constexpr float kCpuX = 40, kCpuR = 600, kCpuY = 50;
+    int cpu_sel_ = 0;
+
+    void update_cpu(App& app) {
+        const MenuInput& m = app.menu();
+        net::Session& ns = net::online();
+        OpponentGrid& g = cpu_page_grid();
+        if (ns.is_host()) g.set_limit(cpu_limit(ns));
+        const int rows = g.rows();
+        bool back = false;
+        row_pointer(cpu_sel_, [&](int row, int h, bool cross) {
+            if (row < 0) {
+                back = true;
+                return false;
+            }
+            cpu_action(app, row, h, cross);
+            return page_ == Page::Cpu;
+        }, rows, &back);
+        if (back || m.pressed(PadButton::Triangle) || m.pressed(PadButton::Circle)) {
+            page_ = Page::Lobby;
+            sel_ = kCpu;
+            pointer_.clear();
+            picker_sound(app, "cancel");
+            return;
+        }
+        if (page_ != Page::Cpu || rows == 0) return;
+        if (int v = m.vertical()) {
+            cpu_sel_ = (cpu_sel_ + v + rows) % rows;
+            picker_sound(app, "cursor");
+        }
+        cpu_sel_ = std::clamp(cpu_sel_, 0, rows - 1);
+        int h = m.horizontal();
+        const bool cross = m.pressed(PadButton::Cross);
+        if (h || cross) cpu_action(app, cpu_sel_, h, cross);
+    }
+
+    // Left / Right (or an arrow) and Cross (or a click) on a row of the CPU cars' page; only the host changes them.
+    void cpu_action(App& app, int row, int h, bool cross) {
+        net::Session& ns = net::online();
+        if (!ns.is_host() || (!h && !cross)) return;
+        const int who = cpu_grid_.action(row, h, cross);
+        if (who >= 0 && who != OpponentGrid::kPlayer) { // its car page
+            picking_cpu_ = who;
+            const OpponentGrid::Car& c = cpu_grid_.car(who);
+            assign_classes();
+            car_picker_.open(app, art_, db_, cars_, std::max(0, c.car), c.paint,
+                             [this](int i, int) {
+                                 const std::string why = cpu_car_problem(net::online(), i);
+                                 return why.empty() ? std::string() : "Not for CPU cars here: " + why;
+                             },
+                             [this](int i) { return cpu_car_problem(net::online(), i).empty(); });
+            page_ = Page::Cars;
+            picker_sound(app, "ok");
+            return;
+        }
+        if (who == OpponentGrid::kPlayer) return;
+        picker_sound(app, "cursor");
+        push_settings();
+        remember(app);
+    }
+
+    void render_cpu(App& app, Ui& ui, const net::Session& ns) {
+        const bool host = ns.is_host();
+        OpponentGrid& g = cpu_page_grid();
+        if (host) g.set_limit(cpu_limit(ns));
+        g.set_texts("CPU cars", "Players start", "The players (" + std::to_string(ns.players().size()) + ")");
+        ui.fill(0, 20, Ui::kWidth, Ui::kHeight - 36, colors::kBackground);
+        ui.header("CPU CARS", host ? "Cars the computer drives on the grid's empty places" : "The host chooses them");
+        float y = kCpuY;
+        if (g.rows() == 0) {
+            ui.text(kCpuX, y, "No room for CPU cars: the course's grid is full.", colors::kDim);
+        }
+        for (int r = 0; r < g.rows(); ++r) {
+            const UiRect rect{kCpuX, y, kCpuR - kCpuX, g.row_h(r)};
+            g.render_row(app, ui, r, rect, r == cpu_sel_, {hits_, pointer_, kHitRow, kHitLeft, kHitRight, r});
+            y += g.row_h(r);
+        }
+        // What the row under the cursor does.
+        std::string help;
+        const int rows = g.rows();
+        const int row = rows ? std::clamp(cpu_sel_, 0, rows - 1) : -1;
+        if (row == OpponentGrid::kCountRow)
+            help = host ? "This course's grid has room for " + std::to_string(cpu_limit(ns)) + " CPU cars beside the players"
+                        : "The host's CPU cars";
+        else if (row == OpponentGrid::kPlaceRow) help = "Where the players start among the CPU cars";
+        else if (row == OpponentGrid::kSkillRow) help = "Sets every CPU car's skill at once";
+        else if (row >= OpponentGrid::kLineup && g.who(row) != OpponentGrid::kPlayer)
+            help = host ? "Cross: the car and its color   Left/Right: its skill" : "";
+        if (!help.empty()) ui.text(kCpuX + 6, std::max(y + 6, 300.0f), Ui::clip(help, kCpuR - kCpuX), colors::kDim);
+        footer_actions(ui, host ? "Up/Down: choose   Left/Right: change" : "Up/Down: choose",
+                       {{"Triangle: back to the lobby", kFootCpuBack}}, hits_, kHitFooter, pointer_);
+    }
+
     // --- pickers ---
 
     void open_car_picker(App& app) {
@@ -2005,6 +2310,17 @@ private:
     void update_car_picker(App& app) {
         CarPicker::Result r = car_picker_.update(app);
         if (r == CarPicker::Result::None) return;
+        if (picking_cpu_ >= 0) { // a CPU car's (the host's CPU cars page)
+            const int k = std::exchange(picking_cpu_, -1);
+            page_ = Page::Cpu;
+            pointer_.clear();
+            if (r == CarPicker::Result::Chosen && net::online().is_host() && cpu_car_ok(car_picker_.car())) {
+                cpu_grid_.set_car(k, car_picker_.car(), car_picker_.paint());
+                push_settings();
+            }
+            remember(app);
+            return;
+        }
         page_ = Page::Lobby;
         pointer_.clear();
         remember(app); // the page's view and filter
@@ -2062,6 +2378,7 @@ private:
                  l.asm_on ? "on" : "off", l.tcs_on ? "on" : "off");
         in_race_ = true;
         page_ = Page::Lobby; // a picker or the rules page left open closes for the race
+        picking_cpu_ = -1;
         app.push(make_online_race_screen(l));
     }
 
@@ -2119,6 +2436,9 @@ private:
                 } else if (script_.page == "rules") {
                     page_ = Page::Rules;
                     rules_sel_ = kRClass;
+                } else if (script_.page == "cpu") {
+                    if (!ns.is_host()) sync_cpu_view();
+                    page_ = Page::Cpu;
                 } else if (script_.page == "tires") {
                     page_ = Page::Tires;
                 } else if (script_.page == "tuning") {
@@ -2180,6 +2500,10 @@ private:
     };
     std::map<std::string, Download> downloading_; // by package hash
     game::CarRules rules_; // the host's rules (as set here; without dirt_course)
+    OpponentGrid cpu_grid_; // the host's CPU cars (as set here, kept in [online_cpu])
+    OpponentGrid cpu_view_; // everyone else's view of the host's
+    int picking_cpu_ = -1;  // the CPU car whose car page is open
+    std::map<std::string, int> grid_sizes_; // by course label
     u16 ghost_ms_ = 150;
     bool tire_wear_ = false; // the host's
     // The chosen car's lobby tires (a tire type; -1: its own) and settings (none: its own), kept per car ([online_tune]).

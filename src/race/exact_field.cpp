@@ -233,7 +233,7 @@ public:
         // Never more cars than the course's grid slots, as GT3's menus never make such a field (every event's cars fit its
         // course; the arcade's dirt races are one against one). The race start itself reads a slot past the grid table as the
         // program does (what follows the table in the road block: cars mostly off the road), but no game path asks for one.
-        const int max_opp = slots - humans_;
+        const int max_opp = std::max(0, slots - humans_ - int(cfg_.remote.size())); // (online: the players' places too)
         if (int(labels.size()) > max_opp) {
             LOG_WARN("Race (exact): %zu opponents on a %d-slot grid: %d race", labels.size(), slots, max_opp);
             labels.resize(size_t(max_opp));
@@ -249,14 +249,18 @@ public:
         for (size_t i = 0; i < labels.size(); ++i) {
             const std::string& l = labels[i];
             std::string err;
-            std::optional<ex::Equipment> eq = exact_equipment(db, {l}, &err);
+            const ExactCarSource src = i < cfg_.opponent_sources.size() && !cfg_.opponent_sources[i].label.empty()
+                                           ? cfg_.opponent_sources[i]
+                                           : ExactCarSource{l};
+            std::optional<ex::Equipment> eq = exact_equipment(db, src, &err);
             if (!eq) {
                 LOG_WARN("Race (exact): opponent %s: %s", l.c_str(), err.c_str());
                 continue;
             }
             if (cfg_.grid_by_power) figure.push_back(exact_grid_figure(db, *data_, *eq, cfg_.grid_hp));
             std::optional<ex::DriverOverrides> driver;
-            if (i < cfg_.opponent_skills.size())
+            if (i < cfg_.opponent_drivers.size() && cfg_.opponent_drivers[i]) driver = *cfg_.opponent_drivers[i];
+            else if (i < cfg_.opponent_skills.size())
                 if (const data::Event* skill = db.event(cfg_.opponent_skills[i]); skill && skill->bytes.size() >= 0x1F4)
                     driver = ex::driver_overrides(ex::race_config(skill->bytes));
             opps.push_back({l, *eq, driver});
@@ -267,8 +271,11 @@ public:
         int p1 = std::clamp(cfg_.player_slot >= 0 ? cfg_.player_slot : n_opp, 0, slots - 1);
         int p2 = p1 + 1 < slots ? p1 + 1 : p1 - 1;
         std::vector<int> free;
+        auto remote_slot = [&](int s) {
+            return std::any_of(cfg_.remote.begin(), cfg_.remote.end(), [&](const FieldConfig::Remote& r) { return r.slot == s; });
+        };
         for (int s = 0; s < slots; ++s)
-            if (s != p1 && !(humans_ > 1 && s == p2)) free.push_back(s);
+            if (s != p1 && !(humans_ > 1 && s == p2) && !remote_slot(s)) free.push_back(s);
         std::vector<int> place(opps.size());
         for (size_t i = 0; i < place.size(); ++i) place[i] = int(i);
         if (cfg_.grid_by_power) place = gt_grid_places(figure);
@@ -428,6 +435,7 @@ public:
                 if (error) *error = "remote player's car " + r.car + ": " + err;
                 return false;
             }
+            e->driver = r.driver; // (a CPU car's: its prediction's AI)
             remote_cars.push_back(h.car.label);
             rs.entries.push_back(*e);
         }
@@ -881,6 +889,21 @@ public:
         const Remote* rm = remote_of(opp0_ + i);
         return rm ? rm->last_contact : -1e18;
     }
+    double last_contact_between(int by, int i) const override {
+        const auto it = touched_.find({by < 0 ? 0 : opp0_ + by, opp0_ + i});
+        return it == touched_.end() ? -1e18 : it->second;
+    }
+    double last_local_contact(int i) const override {
+        const Remote* rm = remote_of(opp0_ + i);
+        return rm ? rm->last_local : -1e18;
+    }
+    // A hit on our CPU car only another machine saw (course frame, as apply_player_impulse).
+    void apply_opponent_impulse(int i, float px, float pz, float jx, float jz) override {
+        if (!local_cpu(opp0_ + i) || !(std::isfinite(px) && std::isfinite(pz) && std::isfinite(jx) && std::isfinite(jz))) return;
+        race_->apply_impulse(opp0_ + i, ex::F(px), ex::F(-pz), ex::F(jx), ex::F(-jz));
+        CarView& v = cars_[size_t(opp0_ + i)];
+        v.car = std::max(v.car, std::hypot(jx, jz));
+    }
     double remote_observed_finish(int i) const override { return remote_of(opp0_ + i) ? opp(i).finish : -1; }
     // A hit on our car only the other machine saw (course frame: x, z; the physics frame's y is -z).
     void apply_player_impulse(float px, float pz, float jx, float jz) override {
@@ -892,6 +915,7 @@ public:
         if (Remote* rm = remote_of(opp0_ + i)) rm->ghost = on;
     }
     bool opponent_ghost(int i) const override {
+        if (local_cpu(opp0_ + i)) return race_->cars()[size_t(opp0_ + i)].finished != 0; // (a finished CPU car)
         const Remote* rm = remote_of(opp0_ + i);
         return rm && (rm->ghost || rm->claimed);
     }
@@ -1014,6 +1038,7 @@ private:
         bool retired = false, ghost = false, claimed = false, have_pose = false;
         double claim = -1;           // its owner's finish time
         double last_contact = -1e18; // race time our car last touched it
+        double last_local = -1e18;   // race time any of our cars (ours, our CPU cars) last touched it
         sim::VehicleState shown;     // the pose's drawn state (the prediction, blended)
         sim::VehicleTelemetry tel;
     };
@@ -1029,7 +1054,11 @@ private:
             const Remote& rm = remote_[j];
             race_->cars()[size_t(first_remote_) + j].ghost = rm.ghost || rm.claimed || rm.retired ? 1 : 0;
         }
+        // Our CPU cars (the host's): a finished one is a ghost, as every other machine has it once its finish arrives.
+        for (int k = opp0_; online() && k < first_remote_ && k < race_->size(); ++k)
+            if (race_->cars()[size_t(k)].finished) race_->cars()[size_t(k)].ghost = 1;
     }
+    bool local_cpu(int k) const { return online() && k >= opp0_ && k < first_remote_ && k < race_->size(); }
     // After the step: a remote car is drawn as its pose shows it; our car's contacts with remote cars go to their owners.
     void online_after_step() {
         if (!online()) return;
@@ -1040,15 +1069,19 @@ private:
             v.state = rm.shown;
             v.tel = rm.tel;
         }
+        // Our cars' contacts with remote cars: our player's car's and (the host's) our CPU cars'.
         const double now = race_time();
         for (const ex::ExactRace::CarContact& c : race_->car_contacts()) {
-            const int other = c.struck == 0 ? c.striker : c.striker == 0 ? c.struck : -1;
+            const bool struck_remote = remote_of(c.struck) != nullptr;
+            const int other = struck_remote ? c.struck : c.striker, ours = struck_remote ? c.striker : c.struck;
             Remote* rm = remote_of(other);
-            if (!rm) continue;
+            if (!rm || remote_of(ours) || (ours != 0 && !local_cpu(ours))) continue;
             // The impulse on the remote car, in the course frame (x, z = -y).
             const float sign = c.struck == other ? 1.0f : -1.0f;
-            remote_hits_.push_back({other - opp0_, c.x, -c.y, c.jx * sign, -c.jy * sign});
-            rm->last_contact = now;
+            remote_hits_.push_back({other - opp0_, ours == 0 ? -1 : ours - opp0_, c.x, -c.y, c.jx * sign, -c.jy * sign});
+            if (ours == 0) rm->last_contact = now;
+            rm->last_local = now;
+            touched_[{ours, other}] = now;
         }
     }
     const CarView& opp(int i) const { return cars_.at(size_t(opp0_ + i)); }
@@ -1113,6 +1146,7 @@ private:
     int first_remote_ = 1 << 20; // the first remote car's index
     std::vector<Remote> remote_;
     std::vector<RemoteHit> remote_hits_;
+    std::map<std::pair<int, int>, double> touched_; // (our car, remote car) -> race time of their last contact
     ex::RaceSetup rs_; // the race's setup (the shadows' from it)
     bool lap_done_ = false;
     double last_lap_s_ = -1;
