@@ -420,8 +420,9 @@ private:
     void release_cube();
     SDL_GPUTexture* placeholder_cube();
     // Records the draws of one view into an open render pass: every item, those without
-    // DrawItem::late, or only those.
-    enum class Items : u8 { All, Early, Late };
+    // DrawItem::late, or only those; SpinMask: only the early items' turned rim copies
+    // (DrawItem::spin_turn), as their mask (PipelineKey::spin_mask, for spin_resolve).
+    enum class Items : u8 { All, Early, Late, SpinMask };
     void encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Mat4& view, const Mat4& proj, const Vec3& eye,
                 const std::vector<DrawItem>& items, const DrawOptions& options, Items which = Items::All);
     // --- The passes after the scene (presentation §L6): DrawOptions::haze, late items, overlay,
@@ -487,7 +488,17 @@ private:
     // The main view's scene pass: pixels per unit of x in normalised device coordinates (half the
     // picture's width), for spin_copy_count and spin_rects_. 0 elsewhere: a copy a sample, no rects.
     float spin_px_ = 0;
-    void spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle);
+    // Where the picture shows a spinning rim: every copy drawn again on every sample over the
+    // scene's depth (Items::SpinMask), black in a white picture-sized mask (spin_mask_): the area
+    // the turn sweeps, less what lies in front of it. The filter only reads and changes those
+    // pixels, so the body over a rim's rectangle (or a car passing) stays sharp. Needs the scene's
+    // depth kept (spin_mask_wanted).
+    bool spin_mask_wanted(const std::vector<DrawItem>& items) const;
+    bool spin_filter_wanted() const; // a rim's copies lie apart enough to need the filter
+    bool encode_spin_mask(SDL_GPUCommandBuffer* cmd, const Mat4& view, const Mat4& proj, const Vec3& eye,
+                          const std::vector<DrawItem>& items, const DrawOptions& o, int pw, int ph);
+    SDL_GPUTexture* spin_mask_ = nullptr;
+    void spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle, bool masked);
     bool ensure_dof_levels(float aspect, int pw, int ph, bool pyramid);
     void encode_dof(SDL_GPUCommandBuffer* cmd, const DrawOptions& o, const Mat4& proj, float aspect,
                     SDL_GPUTexture* out, bool cycle);
@@ -499,8 +510,10 @@ private:
         float taps[2] = {1, 1}, step[2] = {0, 0};    // taps across / down, their spacing
         float sigma[2] = {0, 0};                     // > 0: the taps weighted by a Gaussian (in taps), else equal
     };
+    // `mask` (spin_resolve): a picture-sized mask, black where the taps count (white: left out),
+    // the result laid over the picture at `alpha` x the pixel's own coverage.
     void encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* src, const Resample& r,
-                         float alpha, float depth, bool single);
+                         float alpha, float depth, bool single, SDL_GPUTexture* mask = nullptr);
 
     GpuContext& ctx_;
     // The targets are width_ x height_, sized for the largest 3D scale (GpuContext::render_ceiling);
