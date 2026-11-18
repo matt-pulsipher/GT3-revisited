@@ -131,6 +131,62 @@ scene::Model build_brake_parts(const BrakeParts& bin, const BrakeRecord& rec, bo
     return m;
 }
 
+namespace {
+
+// How far in (m along the axle from the hub centre, + inward) brake_record_behind_rim's rotor must
+// sit to lie 3 mm behind `rim`'s faces across the axle over the parts; `rec.offset` at least.
+float rotor_place_behind(const BrakeParts& bin, const BrakeRecord& rec, const scene::Model& rim, bool right) {
+    constexpr float kGap = 0.003f;     // m between a part and the rim in front of it
+    constexpr float kCaliper = 0.005f; // the caliper's plane, outward of the rotor's (build_brake_parts)
+    const float r = rec.radius, c = std::cos(rec.angle), s = std::sin(rec.angle);
+    const std::array<float, 4>* cal = bin.has_caliper(rec.caliper) ? &bin.caliper_place[size_t(rec.caliper)] : nullptr;
+    const float side = right ? -1.0f : 1.0f;
+    float need = rec.offset;
+    auto at = [&](float x, float y, float z) {
+        const float a = side * x; // along the axle, + inward
+        if (y * y + z * z <= r * r) need = std::max(need, a + kGap);
+        if (cal) { // in the caliper's own axes (build_brake_parts' turn undone), in brake radii
+            const float y0 = (y * c + z * s) / r, z0 = (z * c - y * s) / r;
+            if (std::fabs(y0 - (*cal)[3]) <= (*cal)[1] && std::fabs(z0 - (*cal)[2]) <= (*cal)[0])
+                need = std::max(need, a + kGap + kCaliper);
+        }
+    };
+    // Points over each face (a 5 x 5 grid of barycentric steps), so a face crossing the parts'
+    // outline counts where it covers them, not only at its corners.
+    constexpr int kSteps = 5;
+    constexpr float kAcross = 0.25f; // cos^2 of 60 degrees: a face's normal within 60 degrees of the axle
+    for (const scene::Mesh& m : rim.meshes)
+        for (size_t t = 0; t + 2 < m.indices.size(); t += 3) {
+            const float* p[3] = {m.vertices[m.indices[t]].pos, m.vertices[m.indices[t + 1]].pos,
+                                 m.vertices[m.indices[t + 2]].pos};
+            // Faces across the axle only (spokes, hub, dish): a barrel runs along it, round the parts.
+            const float e1[3] = {p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]};
+            const float e2[3] = {p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]};
+            const float n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+            if (n[0] * n[0] <= kAcross * (n[0] * n[0] + n[1] * n[1] + n[2] * n[2])) continue; // (and degenerate faces)
+            for (int i = 0; i <= kSteps; ++i)
+                for (int j = 0; i + j <= kSteps; ++j) {
+                    const float u = float(i) / kSteps, v = float(j) / kSteps, w = 1 - u - v;
+                    at(w * p[0][0] + u * p[1][0] + v * p[2][0], w * p[0][1] + u * p[1][1] + v * p[2][1],
+                       w * p[0][2] + u * p[1][2] + v * p[2][2]);
+                }
+        }
+    return need;
+}
+
+} // namespace
+
+BrakeRecord brake_record_behind_rim(const BrakeParts& bin, const BrakeRecord& rec, const scene::Model& rim,
+                                    const scene::Model& race_rim, bool right, float max_inward) {
+    BrakeRecord out = rec;
+    if (!bin.has_rotor(rec.rotor) || rec.radius <= 0) return out;
+    // GT3's own race rims sometimes have faces in front of the place too (a dish behind alpha-cut
+    // spokes): only what `rim` reaches beyond the race rim moves the parts.
+    const float deeper = rotor_place_behind(bin, rec, rim, right) - rotor_place_behind(bin, rec, race_rim, right);
+    if (deeper > 0) out.offset = std::min(rec.offset + deeper, std::max(rec.offset, max_inward));
+    return out;
+}
+
 scene::Model build_brake_glow(const BrakeParts& bin, const BrakeRecord& rec, bool right) {
     scene::Model m;
     m.name = "brake_glow";

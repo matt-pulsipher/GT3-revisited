@@ -6,8 +6,12 @@
 #include "formats/model/car_model.h"
 #include "formats/model/gtm1.h"
 #include "formats/model/wheel_model.h"
+#include "formats/model/wheel_spec.h"
+#include "game/data/car_database.h"
 #include "race/wheel_fx.h"
+#include "vfs/vfs.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -140,6 +144,59 @@ TEST(brake_parts_geometry) {
     CHECK(build_brake_parts(b, rec, false, 8.0f).meshes[0].primitives.size() == 1);
 }
 
+// A rim face in the hub frame: a square of half size `half` across the axle at `x` (car axes).
+scene::Model rim_face(float x, float half) {
+    scene::Model m;
+    scene::Mesh mesh;
+    for (int k = 0; k < 4; ++k) {
+        scene::Vertex v;
+        v.pos[0] = x, v.pos[1] = k & 1 ? half : -half, v.pos[2] = k & 2 ? half : -half;
+        mesh.vertices.push_back(v);
+    }
+    mesh.indices = {0, 1, 2, 2, 1, 3};
+    m.meshes.push_back(mesh);
+    return m;
+}
+
+TEST(brake_record_behind_rim) {
+    const BrakeParts b = BrakeParts::parse(synthetic_brake_bin());
+    BrakeRecord rec;
+    rec.caliper = -1, rec.rotor = 1, rec.radius = 0.2f, rec.offset = -0.05f;
+    const scene::Model race = rim_face(-0.08f, 0.1f); // a race rim in front of the place, as GT3 means it
+    // A left wheel's spokes 3 cm out of the hub (x -0.03): the rotor 5 cm out is in front of them,
+    // so it moves in to 3 mm behind them; a right wheel's the same with x mirrored.
+    CHECK(near(brake_record_behind_rim(b, rec, rim_face(-0.03f, 0.1f), race, false, 0.1f).offset, -0.027f));
+    CHECK(near(brake_record_behind_rim(b, rec, rim_face(0.03f, 0.1f), rim_face(0.08f, 0.1f), true, 0.1f).offset, -0.027f));
+    // Spokes outward of the rotor already: unchanged.
+    CHECK(brake_record_behind_rim(b, rec, rim_face(-0.08f, 0.1f), race, false, 0.1f).offset == -0.05f);
+    // Only where the rim covers the parts: a face crossing the rotor's disc counts inside it.
+    scene::Model slanted = rim_face(-0.03f, 0.3f);
+    slanted.meshes[0].vertices[0].pos[0] = 0.07f; // a corner at (-0.3, -0.3), outside the disc, 7 cm in
+    const float o = brake_record_behind_rim(b, rec, slanted, race, false, 0.2f).offset;
+    CHECK(o > -0.027f && o < 0.07f);
+    // A race rim that already reaches behind the place (a dish GT3 draws the parts through): only
+    // what the menus' rim reaches beyond it counts.
+    CHECK(near(brake_record_behind_rim(b, rec, rim_face(-0.03f, 0.1f), rim_face(-0.04f, 0.1f), false, 0.1f).offset, -0.04f));
+    CHECK(brake_record_behind_rim(b, rec, rim_face(-0.05f, 0.1f), rim_face(-0.04f, 0.1f), false, 0.1f).offset == -0.05f);
+    // A barrel (faces along the axle) round the rotor counts for nothing.
+    scene::Model barrel = rim_face(0, 0.1f);
+    for (size_t k = 0; k < 4; ++k) {
+        scene::Vertex& v = barrel.meshes[0].vertices[k];
+        v.pos[0] = k & 2 ? 0.09f : -0.06f, v.pos[2] = 0.15f; // y +-0.1: inside the rotor's 0.2 m disc
+    }
+    CHECK(brake_record_behind_rim(b, rec, barrel, race, false, 0.1f).offset == -0.05f);
+    // No further in than max_inward.
+    CHECK(near(brake_record_behind_rim(b, rec, rim_face(0.05f, 0.1f), race, false, 0.02f).offset, 0.02f));
+    // The caliper (5 mm outward of the rotor) clears the rim too: its square here is at radial
+    // 0.75 r +- 0.4 r towards the back (z 0.07 to 0.23), beyond a 5 cm hub but not a 10 cm one.
+    rec.caliper = 0;
+    CHECK(near(brake_record_behind_rim(b, rec, rim_face(-0.03f, 0.05f), race, false, 0.1f).offset, -0.027f));
+    CHECK(near(brake_record_behind_rim(b, rec, rim_face(-0.03f, 0.1f), race, false, 0.1f).offset, -0.022f));
+    // No rotor: the record as it is.
+    rec.rotor = 9;
+    CHECK(brake_record_behind_rim(b, rec, rim_face(0.05f, 0.1f), race, false, 0.1f).offset == -0.05f);
+}
+
 TEST(brake_glow) {
     const BrakeParts b = BrakeParts::parse(synthetic_brake_bin());
     BrakeRecord rec;
@@ -249,4 +306,61 @@ TEST(brake_parts_disc) {
     }
     std::printf("  %zu cars, %zu with a front caliper, %zu with a spinning rim image\n", cars, with_caliper, spinning);
     CHECK(cars == 286 && with_caliper > 200 && spinning > 200);
+}
+
+// Showroom wheels (issue 345): the menus' deeper rims move the brake parts in (the GT40 race
+// car's front by over 4 cm); a race rim measured against itself never does.
+TEST(brake_parts_behind_showroom_rims_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    data::CarDatabase db;
+    CHECK(db.load(vfs));
+    const std::optional<Bytes> bb = vfs.read("race/brake.bin");
+    CHECK(bb.has_value());
+    if (!bb) return;
+    const BrakeParts bin = BrakeParts::parse(*bb);
+    size_t cars = 0, moved = 0;
+    float most = 0;
+    std::string most_model;
+    std::vector<std::string> seen;
+    for (const data::Car& car : db.cars()) {
+        const std::string model = db.model_of(car);
+        if (std::find(seen.begin(), seen.end(), model) != seen.end()) continue;
+        seen.push_back(model);
+        const std::optional<Bytes> race = vfs.read("cars/day/" + model);
+        const std::optional<Bytes> menu = vfs.read("menu/cars/" + model);
+        if (!race || !menu || !CarFile::is_car(*race) || !CarFile::is_car(*menu)) continue;
+        const std::optional<WheelSpec> ws = wheel_spec_from_database(db, model);
+        if (!ws) continue;
+        const std::array<BrakeRecord, 2> rec = parse_brake_records(CarFile::parse(*race).info);
+        ++cars;
+        auto rims = [&](int lod, bool showroom, bool right) {
+            CarModelOptions o;
+            o.lod = lod, o.wheels = true, o.wheel_spec = ws;
+            if (showroom) o.showroom_car = *menu;
+            const char* name = right ? "wheel_fr" : "wheel_fl";
+            scene::Model rim = scene::extract(load_car_model(*race, o, model), [&](const scene::Mesh& x) { return x.name == name; });
+            const float cx = (right ? 0.5f : -0.5f) * ws->track[0], cy = ws->radius[0], cz = -0.5f * ws->wheelbase;
+            for (scene::Mesh& x : rim.meshes)
+                for (scene::Vertex& v : x.vertices) v.pos[0] -= cx, v.pos[1] -= cy, v.pos[2] -= cz;
+            return rim;
+        };
+        for (int i = 0; i < 2; ++i) { // fl, fr (the rears' rims are the same files)
+            const bool right = i == 1;
+            const float max_in = 0.5f * ws->width[0] - 0.01f;
+            const scene::Model menu_rim = rims(0, true, right), race0 = rims(0, false, right);
+            const BrakeRecord in = brake_record_behind_rim(bin, rec[0], menu_rim, race0, right, max_in);
+            CHECK(in.offset >= rec[0].offset && in.offset <= std::max(rec[0].offset, max_in));
+            // A race rim against itself never moves them.
+            CHECK(brake_record_behind_rim(bin, rec[0], race0, race0, right, max_in).offset == rec[0].offset);
+            if (in.offset == rec[0].offset) continue;
+            ++moved;
+            if (in.offset - rec[0].offset > most) most = in.offset - rec[0].offset, most_model = model;
+            if (model == "fo0007") CHECK(in.offset - rec[0].offset > 0.04f);
+        }
+    }
+    std::printf("  %zu cars: %zu front menu rims move the parts in (most %.3f m, %s)\n", cars, moved, most,
+                most_model.c_str());
+    CHECK(cars > 200 && moved > 0);
 }

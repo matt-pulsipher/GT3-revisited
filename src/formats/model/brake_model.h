@@ -67,6 +67,15 @@ private:
 // Empty without a rotor. `right`: a right-hand wheel (its outer face towards +X).
 scene::Model build_brake_parts(const BrakeParts& bin, const BrakeRecord& rec, bool right, float shininess);
 
+// Showroom wheels in races (ours, issue 345): the GTCI record places the parts for the race rim,
+// but a menus' modelled rim can reach further in (the GT40's spokes by up to 4 cm), so the rotor and
+// caliper would cut through it. The record with its offset moved inward by as much as `rim`'s faces
+// across the axle, over the rotor's disc and the caliper's square, need the parts (3 mm behind them)
+// further in than `race_rim`'s do; no further in than `max_inward` (m from the hub centre). Both
+// rims in the hub frame of build_brake_parts (a right wheel's outer face towards +X).
+BrakeRecord brake_record_behind_rim(const BrakeParts& bin, const BrakeRecord& rec, const scene::Model& rim,
+                                    const scene::Model& race_rim, bool right, float max_inward);
+
 // The rotor's glow (rotor table bit 0): a square of the glow texture over the rotor, 1 mm
 // outward of it, in the wheel's spinning frame (as the tyre: the hub frame turned by the
 // spin). The game adds it unlit, Cs x FIX + Cd, without depth writes (brake_glow_fix).

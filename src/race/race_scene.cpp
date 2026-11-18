@@ -419,6 +419,15 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
     } catch (const std::exception& e) {
         LOG_WARN("Car %s: wheel effects: %s", model.c_str(), e.what());
     }
+    // Showroom wheels: LOD 0's race rims as well (set_brake_parts measures the menus' ones against them).
+    scene::Model race_wheels;
+    if (showroom_rims_) {
+        CarModelOptions ro = opt;
+        ro.lod = 0, ro.effects = false, ro.morphs = nullptr;
+        ro.showroom_car = {}, ro.showroom_wheel = {};
+        race_wheels = scene::extract(load_car_model(car_file, ro, model),
+                                     [](const scene::Mesh& m) { return m.name.rfind("wheel_", 0) == 0; });
+    }
     for (int i = 0; i < 4; ++i) {
         std::string n = kWheelNames[i];
         int axle = i >> 1;
@@ -434,6 +443,12 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
             return w;
         };
         scene::Model rim = hub_model(n);
+        if (showroom_rims_) { // LOD 0's menus' rim, and the race rim it stands in for, to measure it against
+            showroom_rim_[size_t(i)] = scene::extract(rim, [](const scene::Mesh& m) { return m.lod == 0; });
+            race_rim_[size_t(i)] = scene::extract(race_wheels, [&](const scene::Mesh& m) { return m.name == n; });
+            for (scene::Mesh& m : race_rim_[size_t(i)].meshes)
+                for (scene::Vertex& v : m.vertices) v.pos[0] -= c.x, v.pos[1] -= c.y, v.pos[2] -= c.z;
+        }
         if (!rim.meshes.empty()) {
             if (rim_spin) {
                 rim_spin_texture_ = int(rim.textures.size()); // (the same index in every wheel's model)
@@ -457,6 +472,17 @@ void CarVisual::set_brake_parts(const BrakeParts& bin) {
         if (!parts.meshes.empty()) brakes_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, parts);
         scene::Model glow = build_brake_glow(bin, rec, right);
         if (!glow.meshes.empty()) glows_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, glow);
+        // Showroom wheels: the menus' rim is deeper than the race rim GTCI places the parts for.
+        showroom_brakes_[size_t(i)].reset(), showroom_glows_[size_t(i)].reset();
+        const scene::Model& menu_rim = showroom_rim_[size_t(i)];
+        if (menu_rim.meshes.empty()) continue;
+        const BrakeRecord in = brake_record_behind_rim(bin, rec, menu_rim, race_rim_[size_t(i)], right,
+                                                       0.5f * wheel_width_[size_t(i >> 1)] - 0.01f);
+        if (in.offset == rec.offset) continue;
+        scene::Model sp = build_brake_parts(bin, in, right, tyre_shininess_);
+        if (!sp.meshes.empty()) showroom_brakes_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, sp);
+        scene::Model sg = build_brake_glow(bin, in, right);
+        if (!sg.meshes.empty()) showroom_glows_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, sg);
     }
 }
 
@@ -678,8 +704,15 @@ void CarVisual::add_body_items(std::vector<render::DrawItem>& items, const sim::
         // GT3's order: the tyre, the rotor and caliper, the tyre's black faces with the rotor's
         // glow, then the rim. The parts are drawn whole before the tyre's opaque faces (in_order),
         // which then cover the caliper's soft shadow where it wrote no depth, as in GT3.
-        if (wl.parts && brakes_[k]) {
-            render::DrawItem it = styled({brakes_[k].get(), hub, 0});
+        // Showroom wheels at LOD 0: the modelled rim, blurred by copies of it turned back over the
+        // blur's turn (GT3's copies of a flat rim's image as geometry: DrawItem::spin_turn), with
+        // the brake parts behind it.
+        const bool modelled = lod == 0 && showroom_rims_;
+        const bool moved_in = modelled && showroom_brakes_[k];
+        const render::GpuModel* parts = moved_in ? showroom_brakes_[k].get() : brakes_[k].get();
+        const render::GpuModel* glow = moved_in ? showroom_glows_[k].get() : glows_[k].get();
+        if (wl.parts && parts) {
+            render::DrawItem it = styled({parts, hub, 0});
             it.in_order = true;
             items.push_back(it);
         }
@@ -691,15 +724,12 @@ void CarVisual::add_body_items(std::vector<render::DrawItem>& items, const sim::
             }
             items.push_back(it);
         }
-        if (wl.glow > 0 && glows_[k]) {
-            render::DrawItem it = styled({glows_[k].get(), spun, 0});
+        if (wl.glow > 0 && glow) {
+            render::DrawItem it = styled({glow, spun, 0});
             it.tint = wl.glow; // GS ALPHA 0x68: Cs x FIX + Cd (the glow texture's alpha is 0x80)
             it.no_fog = true;
             items.push_back(it);
         }
-        // Showroom wheels at LOD 0: the modelled rim, blurred by copies of it turned back over the
-        // blur's turn (GT3's copies of a flat rim's image as geometry: DrawItem::spin_turn).
-        const bool modelled = lod == 0 && showroom_rims_;
         if (const render::GpuModel* rim = rims_[k].get()) {
             const int rim_fx = modelled ? 0 : wl.rim;
             render::DrawItem it = styled({rim, spun, lod});
