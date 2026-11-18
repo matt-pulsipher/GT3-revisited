@@ -1,5 +1,6 @@
 #include "formats/course/course_model.h"
 
+#include "formats/model/coplanar_overlays.h"
 #include "formats/model/gtm1.h"
 
 #include <cmath>
@@ -51,7 +52,10 @@ scene::Model gtm1_model(ByteSpan block, const CourseModelOptions& opt, const std
     o.clut_sets = clut_sets;
     o.animated = animated;
     scene::Model m = gtm1::build_model(g, o, name);
-    for (scene::Mesh& mesh : m.meshes) mesh.name = name + "/" + mesh.name;
+    for (scene::Mesh& mesh : m.meshes) {
+        mesh.name = name + "/" + mesh.name;
+        gtm1::mark_coplanar_overlays(mesh); // (GT3's Z merges them; ours must bias them)
+    }
     return m;
 }
 

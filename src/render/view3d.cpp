@@ -1643,6 +1643,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         if (opt.mirrored && key.cull != CullMode::None)
             key.cull = key.cull == CullMode::Back ? CullMode::Front : CullMode::Back;
         key.depth_write = !(p.flags & scene::kNoDepthWrite) && !background && half != 2;
+        key.depth_bias = (p.flags & scene::kCoplanarOverlay) != 0;
         key.coverage = opt.clear[3] < 1.0f || opt.transmission;
         key.spin_copy = v.copies > 0;
         key.plain = !v.item->wheel_blur && !key.spin_copy && plain_pass(*v.item, p, opt);

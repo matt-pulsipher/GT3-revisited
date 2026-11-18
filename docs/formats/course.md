@@ -646,6 +646,13 @@ sampling, alpha test) for checking decodes offline.
 - ALPHA 0x58 only applies to packets with PRIM.ABE. Some road base passes (Laguna, Rome,
   Tahiti dirt walls) are opaque packets (PRIM 0x3C) drawn while the register still holds
   0x58; they are ordinary opaque geometry, not sheen passes.
+- Some opaque packets lie on an earlier packet's face from other vertices, within a millimetre
+  of its plane, and rely on GT3's Z buffer (PSMZ24, GEQUAL) to draw them over it: Midfield's
+  start-straight grandstand (slot 1 node 595, chunk 689) draws its window glass, then the
+  window frames 0.1 mm behind it over a 28 m band, then 0x58 passes (chunks 692 / 693, runtime
+  texture slot) over each one's vertices. The race draws such packets with a small depth bias
+  (docs/dev/RENDERING.md, coordinate conventions; issue 349). Midfield marks 105 primitives,
+  Seattle about 300, Deep Forest about 440.
 - State histogram per slot: `gt3tool course-states <iso> courses/US/<name> [slot] [tex | cover x z r]`.
 
 ## Course line (slot 27)

@@ -87,6 +87,9 @@ struct PipelineKey {
     // Writes the depth whatever is there and no colour: View3D's depth reset after an item
     // (DrawItem::depth_reset).
     bool depth_reset = false;
+    // A small depth bias towards the eye (scene::kCoplanarOverlay): wins over the earlier face it
+    // lies on, as GT3's Z buffer lets it.
+    bool depth_bias = false;
     auto operator<=>(const PipelineKey&) const = default;
 };
 
