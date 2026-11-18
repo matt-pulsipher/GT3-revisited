@@ -1113,7 +1113,7 @@ private:
         const race::MusicLibrary& lib = app.music_library();
         const std::string folder = app.music_folder();
         const bool chosen = app.music_folder_chosen();
-        const char* formats = "MP3, FLAC and WAV files in it (and its folders) play as race songs in place of the game's. "
+        const char* formats = "MP3, FLAC, WAV and Ogg files in it (and its folders) play as race songs in place of the game's. "
                               "Change that on the Options page's Favorite Music List: Original, Custom or Both.";
         // Phones and tablets: the chosen folder by its name (its path is long), the game's as the
         // Files app shows it.
@@ -1143,7 +1143,7 @@ private:
         std::string songs = lib.scanning() ? "Looking for songs..."
                             : lib.has_songs() ? std::to_string(lib.songs().size()) + (lib.songs().size() == 1 ? " song" : " songs")
                                               : "None yet";
-        // Files in other formats (AAC, Ogg...) and damaged ones are skipped: say so, as they are
+        // Files in other formats (AAC, Opus...) and damaged ones are skipped: say so, as they are
         // missing from the list.
         if (!lib.scanning()) {
             if (chosen && !app.music_access()) songs = "Music access is off";
@@ -1152,7 +1152,7 @@ private:
             const size_t skipped = lib.unplayable() + lib.broken();
             if (skipped)
                 songs += " (" + std::to_string(skipped) + (skipped == 1 ? " file" : " files") + " skipped: " +
-                         (lib.broken() ? "damaged, or not MP3, FLAC or WAV)" : "not MP3, FLAC or WAV)");
+                         (lib.broken() ? "damaged, or not MP3, FLAC, WAV or Ogg)" : "not MP3, FLAC, WAV or Ogg)");
         }
         info("Songs", songs);
         action("Look for new songs", "Reads the music folder again.", "", [a] { a->music_library().rescan(); });

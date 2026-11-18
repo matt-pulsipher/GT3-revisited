@@ -1,6 +1,7 @@
 #include "audio/audio_engine.h"
 
 #include "audio/music_file.h"
+#include "base/config.h"
 #include "base/log.h"
 #include "vfs/vfs.h"
 
@@ -266,9 +267,46 @@ void AudioEngine::forget_disc_music() {
     seq_stale_ = true;
 }
 
+std::string AudioEngine::sequence_file(Vfs& vfs, int index) {
+    if (!load_sequences(vfs) || index < 0) return {};
+    std::vector<std::string> names;
+    for (const sound::MusicEntry& e : music_index_)
+        if (int(e.sequence) == index) {
+            if (!e.title.empty()) names.push_back(to_lower(e.title));
+            names.push_back(to_lower(e.name));
+        }
+    if (names.empty()) return {};
+    for (const std::string& f : vfs.list_dir("music/")) {
+        if (f.back() == '/' || music_file_type(f) == MusicFileType::None) continue;
+        const std::string stem = to_lower(f.substr(0, f.rfind('.')));
+        if (std::find(names.begin(), names.end(), stem) != names.end()) return "music/" + f;
+    }
+    return {};
+}
+
+bool AudioEngine::play_sequence_file(Vfs& vfs, const std::string& path, int index, float volume) {
+    if (!music_stream_) return false;
+    std::unique_ptr<MusicStream> stream;
+    try {
+        if (std::optional<Vfs::Stream> s = vfs.open_stream(path))
+            stream = open_music_reader(s->size, std::move(s->read), music_file_type(path), true);
+    } catch (const std::exception& ex) {
+        LOG_ERROR("Cannot play %s: %s", path.c_str(), ex.what());
+    }
+    if (!stream) {
+        LOG_WARN("Cannot decode %s; playing sequence %d", path.c_str(), index);
+        return false;
+    }
+    start_stream(std::move(stream), nullptr, volume, true, path);
+    replaced_sequence_ = index;
+    return true;
+}
+
 bool AudioEngine::play_sequence(Vfs& vfs, int index, float volume) {
     if (seq_stale_) sequencer_.stop(voices_); // the new piece comes from the files read again
     if (!load_sequences(vfs)) return false;
+    if (std::string file = sequence_file(vfs, index); !file.empty() && play_sequence_file(vfs, file, index, volume))
+        return true;
     stop_stream();
     // The request's level is the sequencer's music volume (music §6).
     sequencer_.set_master_volume(bgm::sequence_volume(volume));
@@ -359,6 +397,7 @@ std::unique_ptr<MusicStream> open_ads_music(AdsStream::ReadFn read) {
 void AudioEngine::start_stream(std::unique_ptr<MusicStream> stream, std::shared_ptr<Bytes> data, float volume,
                                bool resume, const std::string& what, float trim) {
     sequencer_.stop(voices_);
+    replaced_sequence_ = -1;
     const u32 rate = stream->sample_rate(), channels = stream->channels();
     SDL_AudioSpec in{SDL_AUDIO_S16, int(channels), int(rate)};
     const double length = rate ? double(stream->total_frames()) / rate : 0.0;
@@ -395,6 +434,7 @@ void AudioEngine::start_stream(std::unique_ptr<MusicStream> stream, std::shared_
 }
 
 void AudioEngine::stop_stream() {
+    replaced_sequence_ = -1;
     // Same lock order as play_stream(): stream, then mutex_, and the device call unlocked.
     if (music_stream_) SDL_LockAudioStream(music_stream_);
     {

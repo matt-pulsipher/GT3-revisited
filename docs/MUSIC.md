@@ -1,6 +1,6 @@
 # Your music
 
-Your own MP3, FLAC and WAV files can play as race songs, in place of the
+Your own MP3, FLAC, WAV and Ogg files can play as race songs, in place of the
 disc's or mixed with them. They play from where they are: nothing is copied,
 converted or uploaded.
 
@@ -101,9 +101,9 @@ starts), and the next one in your list while it plays, and remembers both.
 
 ## Files
 
-- **Formats**: MP3, FLAC and WAV. AAC (`.m4a`), Ogg, Opus, WMA and others don't
+- **Formats**: MP3, FLAC, WAV and Ogg Vorbis (`.ogg`). AAC (`.m4a`), Opus, WMA and others don't
   play; **Songs** in Settings counts the files it skipped.
-- **Titles and artists** come from the files' tags (ID3, FLAC comments, WAV
+- **Titles and artists** come from the files' tags (ID3, FLAC and Ogg comments, WAV
   INFO), otherwise from the file name.
 - **Folders**: every folder inside is searched (32 levels deep at most), linked
   folders too; names starting with `.` are skipped. Up to 10,000 songs (the
@@ -121,7 +121,7 @@ starts), and the next one in your list while it plays, and remembers both.
 
 | Songs says | |
 |---|---|
-| None yet | no MP3, FLAC or WAV files in the folder: add some, then Look for new songs |
+| None yet | no MP3, FLAC, WAV or Ogg files in the folder: add some, then Look for new songs |
 | Folder not found | the folder was moved or deleted, or its drive is unplugged |
 | Music access is off | Android: Allow music access |
 | *n* files skipped | files in other formats, or damaged ones |

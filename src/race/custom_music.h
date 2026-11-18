@@ -1,7 +1,7 @@
 #pragma once
 
 // Ours: the player's own race music. A music folder (Settings -> Audio -> Your music; [music]
-// folder, by default the user data folder's music/) holds MP3, FLAC and WAV files at any depth;
+// folder, by default the user data folder's music/) holds MP3, FLAC, WAV and Ogg Vorbis files at any depth;
 // they play as race songs beside the disc's, chosen on the Options music list's tabs:
 //   Original  the disc's race playlist only (GT3's rules, race_playlist.h)
 //   Custom    the player's songs only, from a playlist of the same kind
@@ -149,7 +149,7 @@ public:
 
     const std::vector<CustomSong>& songs() const { return songs_; }
     bool has_songs() const { return !songs_.empty(); }
-    // Files in music formats that don't play (AAC, Ogg...), from the last scan.
+    // Files in music formats that don't play (AAC, Opus...), from the last scan.
     size_t unplayable() const { return info_.unplayable; }
     size_t broken() const { return info_.broken; } // files that don't open, from the last scan
     // The last scan found more songs than RacePlaylist::kMaxCustomSongs (the first ones kept).
@@ -168,7 +168,7 @@ public:
     // What a scan found besides the songs.
     struct ScanInfo {
         size_t unplayable = 0; // files in formats that don't play
-        size_t broken = 0;     // MP3 / FLAC / WAV files that don't open (damaged, or not what they're named)
+        size_t broken = 0;     // MP3 / FLAC / WAV / Ogg files that don't open (damaged, or not what they're named)
         bool found = false;    // the folder could be read
         bool capped = false;   // more songs than the limit
     };

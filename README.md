@@ -181,7 +181,7 @@ beside it instead. Saves and replays can go in another folder of your choice
 
 ### Your music
 
-Your own MP3, FLAC and WAV files can play as race songs: choose their folder
+Your own MP3, FLAC, WAV and Ogg files can play as race songs: choose their folder
 in **Settings → Audio → Music folder** (or copy them into `music/`) and they
 play in place of the disc's. The **Both** and **Original** tabs in the game's
 **Options → Favorite Music List** mix them with the disc's or go back to it. In
@@ -546,8 +546,9 @@ original program's code in any form.
 - [stb_truetype](https://github.com/nothings/stb) v1.26 by Sean Barrett,
   public domain (or MIT), rasterises these fonts.
 - [dr_mp3, dr_flac and dr_wav](https://github.com/mackron/dr_libs) by David
-  Reid, public domain (or MIT-0), decode your own music
-  ([third_party/dr_libs](third_party/dr_libs)).
+  Reid, public domain (or MIT-0), and [stb_vorbis](https://github.com/nothings/stb)
+  v1.24 by Sean Barrett, public domain (or MIT), decode your own music and mods'
+  ([third_party/dr_libs](third_party/dr_libs), [third_party/stb](third_party/stb)).
 - [SDL 3](https://libsdl.org) and [zlib](https://zlib.net), zlib License,
   fetched at build time (Windows builds ship `SDL3.dll`).
 - [libchdr](https://github.com/rtissera/libchdr) v0.3.0, BSD 3-Clause, reads

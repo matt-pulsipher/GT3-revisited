@@ -9,6 +9,7 @@
 #include "audio/music_file.h"
 #include "base/config.h"
 #include "base/file.h"
+#include "formats/sound/seq.h"
 #include "input/bindings.h"
 #include "input/input_manager.h"
 #include "input/touch_controls.h"
@@ -28,6 +29,7 @@
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -50,8 +52,10 @@ void put_syncsafe(Bytes& b, u32 v) {
     for (int i = 3; i >= 0; --i) b.push_back(u8((v >> (7 * i)) & 0x7F));
 }
 
-// A 16-bit PCM WAV: frame f of channel c holds f * 2 + c; `info`: LIST INFO subchunks after the samples.
-Bytes wav(u32 frames, u16 channels, u32 rate, const std::vector<std::pair<std::string, std::string>>& info = {}) {
+// A 16-bit PCM WAV: frame f of channel c holds f * 2 + c; `info`: LIST INFO subchunks after the samples;
+// `loop`: a smpl chunk after them with one loop (first, last frame; the last inclusive).
+Bytes wav(u32 frames, u16 channels, u32 rate, const std::vector<std::pair<std::string, std::string>>& info = {},
+          std::optional<std::pair<u32, u32>> loop = std::nullopt) {
     Bytes data;
     for (u32 f = 0; f < frames; ++f)
         for (u16 c = 0; c < channels; ++c) put16(data, u16(f * 2 + c));
@@ -66,9 +70,14 @@ Bytes wav(u32 frames, u16 channels, u32 rate, const std::vector<std::pair<std::s
             if ((text.size() + 1) & 1) list.push_back(0);
         }
     }
+    Bytes smpl;
+    if (loop) {
+        for (u32 v : {0u, 0u, 1000000000u / rate, 60u, 0u, 0u, 0u, 1u, 0u}) put32(smpl, v); // header, one loop
+        for (u32 v : {0u, 0u, loop->first, loop->second, 0u, 0u}) put32(smpl, v);
+    }
     Bytes b;
     put(b, "RIFF");
-    put32(b, u32(4 + 8 + 16 + 8 + data.size() + (list.empty() ? 0 : 8 + list.size())));
+    put32(b, u32(4 + 8 + 16 + 8 + data.size() + (list.empty() ? 0 : 8 + list.size()) + (smpl.empty() ? 0 : 8 + smpl.size())));
     put(b, "WAVE");
     put(b, "fmt ");
     put32(b, 16);
@@ -86,6 +95,30 @@ Bytes wav(u32 frames, u16 channels, u32 rate, const std::vector<std::pair<std::s
         put32(b, u32(list.size()));
         b.insert(b.end(), list.begin(), list.end());
     }
+    if (!smpl.empty()) {
+        put(b, "smpl");
+        put32(b, u32(smpl.size()));
+        b.insert(b.end(), smpl.begin(), smpl.end());
+    }
+    return b;
+}
+
+// kTinyFlac (800 frames) with Vorbis comments in place of its empty VORBIS_COMMENT block.
+Bytes flac_with_comments(const std::vector<std::string>& comments) {
+    constexpr size_t kBlock = 42, kFrames = 42 + 4 + 40; // the comment block's header; the audio frames
+    Bytes body;
+    put32(body, 1);
+    put(body, "x");
+    put32(body, u32(comments.size()));
+    for (const std::string& c : comments) {
+        put32(body, u32(c.size()));
+        put(body, c);
+    }
+    Bytes b(test::kTinyFlac, test::kTinyFlac + kBlock);
+    b.push_back(0x84); // last block, type 4
+    b.push_back(u8(body.size() >> 16)), b.push_back(u8(body.size() >> 8)), b.push_back(u8(body.size()));
+    b.insert(b.end(), body.begin(), body.end());
+    b.insert(b.end(), test::kTinyFlac + kFrames, test::kTinyFlac + sizeof(test::kTinyFlac));
     return b;
 }
 
@@ -133,7 +166,9 @@ TEST(music_file_types) {
     CHECK(music_file_type("c.wav") == MusicFileType::Wav && music_file_type("c.WAVE") == MusicFileType::Wav);
     CHECK(music_file_type("d.m4a") == MusicFileType::None && music_file_type("mp3") == MusicFileType::None);
     CHECK(music_file_type("dir.mp3/readme") == MusicFileType::None);
-    CHECK(unplayable_music_file("e.m4a") && unplayable_music_file("f.OGG") && !unplayable_music_file("g.txt"));
+    CHECK(music_file_type("i.OGG") == MusicFileType::Ogg && music_file_type("j.oga") == MusicFileType::Ogg);
+    CHECK(unplayable_music_file("e.m4a") && unplayable_music_file("f.opus") && !unplayable_music_file("g.txt"));
+    CHECK(!unplayable_music_file("f.ogg"));
     CHECK(!unplayable_music_file("h.mp3"));
 }
 
@@ -222,6 +257,133 @@ TEST(music_file_wav_stream) {
     CHECK(!open_music_file(utf8(test::temp_path("missing.wav")), false));
     write(test::temp_path("bad.mp3"), bytes_of("not an mp3 at all"));
     CHECK(!open_music_file(utf8(test::temp_path("bad.mp3")), false));
+}
+
+// A file's own loop: a WAV's smpl chunk, a FLAC's or Ogg's LOOPSTART with LOOPLENGTH or LOOPEND. The part
+// before the loop plays once, then the loop over and over; a loop that doesn't fit the file is
+// ignored (the whole file loops); without `loop` the file plays through once.
+TEST(music_file_loop_points) {
+    auto mem = [](Bytes b) { return std::make_shared<const Bytes>(std::move(b)); };
+    std::vector<s16> buf(2 * 600);
+    std::unique_ptr<MusicStream> w = open_music_memory(mem(wav(1000, 2, 22050, {}, std::pair{200u, 599u})), MusicFileType::Wav, true);
+    CHECK(w != nullptr);
+    if (w) {
+        CHECK(w->read(buf.data(), 700) == 600 && buf[2 * 599] == s16(1198));      // up to the loop's end
+        CHECK(w->read(buf.data(), 600) == 400 && buf[0] == s16(400));              // the loop from frame 200
+        CHECK(w->read(buf.data(), 50) == 50 && buf[0] == s16(400) && w->position_seconds() < 0.012);
+    }
+    std::unique_ptr<MusicStream> once = open_music_memory(mem(wav(1000, 2, 22050, {}, std::pair{200u, 599u})), MusicFileType::Wav, false);
+    CHECK(once && once->read(buf.data(), 600) == 600 && once->read(buf.data(), 600) == 400 && buf[0] == s16(1200));
+    CHECK(once && once->read(buf.data(), 600) == 0);
+    std::unique_ptr<MusicStream> past = open_music_memory(mem(wav(1000, 2, 22050, {}, std::pair{200u, 1500u})), MusicFileType::Wav, true);
+    CHECK(past && past->read(buf.data(), 600) == 600 && past->read(buf.data(), 600) == 400);
+    CHECK(past && past->read(buf.data(), 10) == 10 && buf[0] == 0);
+
+    std::vector<s16> mono(800), again(800);
+    std::unique_ptr<MusicStream> plain = open_music_memory(mem(flac_with_comments({})), MusicFileType::Flac, false);
+    CHECK(plain && plain->total_frames() == 800 && plain->read(mono.data(), 800) == 800);
+    for (const std::vector<std::string>& tags :
+         {std::vector<std::string>{"LOOPSTART=300", "LOOPLENGTH=200"}, {"loopend=500", "LoopStart=300", "TITLE=x"}}) {
+        std::unique_ptr<MusicStream> f = open_music_memory(mem(flac_with_comments(tags)), MusicFileType::Flac, true);
+        CHECK(f != nullptr);
+        if (!f) continue;
+        CHECK(f->read(again.data(), 800) == 500 && std::equal(again.begin(), again.begin() + 500, mono.begin()));
+        CHECK(f->read(again.data(), 800) == 200 && std::equal(again.begin(), again.begin() + 200, mono.begin() + 300));
+    }
+    std::unique_ptr<MusicStream> bad = open_music_memory(mem(flac_with_comments({"LOOPSTART=300", "LOOPLENGTH=x"})), MusicFileType::Flac, true);
+    CHECK(bad && bad->read(again.data(), 800) == 800);
+
+    // Ogg Vorbis: decodes, its tags, its LOOPSTART / LOOPLENGTH loop.
+    auto ogg = mem(Bytes(test::kTinyOgg, test::kTinyOgg + sizeof(test::kTinyOgg)));
+    std::unique_ptr<MusicStream> o1 = open_music_memory(ogg, MusicFileType::Ogg, false);
+    CHECK(o1 && o1->sample_rate() == 8000 && o1->channels() == 2 && o1->total_frames() >= 800);
+    std::vector<s16> straight(2 * 1000), looped(2 * 1000);
+    size_t frames = 0;
+    while (o1 && frames < 1000) {
+        const size_t got = o1->read(straight.data() + 2 * frames, 1000 - frames);
+        if (!got) break;
+        frames += got;
+    }
+    CHECK(o1 && frames == o1->total_frames());
+    s16 peak = 0;
+    for (size_t i = 0; i < 2 * 500; ++i) peak = std::max<s16>(peak, s16(std::abs(straight[i])));
+    CHECK(peak > 1000); // the tone, not silence
+    std::unique_ptr<MusicStream> o2 = open_music_memory(ogg, MusicFileType::Ogg, true);
+    CHECK(o2 != nullptr);
+    if (o2) {
+        size_t n = 0;
+        while (n < 500) {
+            const size_t got = o2->read(looped.data() + 2 * n, 1000 - n);
+            if (!got) break;
+            n += got;
+        }
+        CHECK(n == 500 && std::equal(looped.begin(), looped.begin() + 2 * 500, straight.begin()));
+        CHECK(o2->read(looped.data(), 1000) == 200 && std::equal(looped.begin(), looped.begin() + 400, straight.begin() + 600));
+    }
+    const MusicTags ot = parse_music_tags(MusicFileType::Ogg, *ogg);
+    CHECK(ot.title == "Tiny Tone" && ot.artist == "Test");
+    CHECK(parse_music_tags(MusicFileType::Ogg, ByteSpan(*ogg).first(60)).title.empty()); // cut in its first page: nothing, no crash
+    CHECK(!open_music_memory(mem(bytes_of("OggS not really")), MusicFileType::Ogg, false));
+    const std::filesystem::path op = test::temp_path("tone.ogg");
+    write(op, *ogg);
+    CHECK(music_file_decodes(utf8(op)) && read_music_tags(utf8(op), MusicFileType::Ogg).title == "Tiny Tone");
+
+    // Through a reader (a mod's file in the VFS), as from memory.
+    auto bytes = mem(wav(1000, 2, 22050, {}, std::pair{200u, 599u}));
+    std::unique_ptr<MusicStream> r = open_music_reader(
+        bytes->size(), [bytes](u64 off, void* out, size_t len) { std::memcpy(out, bytes->data() + off, len); }, MusicFileType::Wav, true);
+    CHECK(r && r->read(buf.data(), 700) == 600 && r->read(buf.data(), 600) == 400 && buf[0] == s16(400));
+}
+
+// Ours (issue 330): a mod's recording of a menu sequence, music/<title or id>.wav / .flac / .ogg / .mp3
+// in any case, streams in its place at the menu level, looping; the jukebox and the menus
+// still see a sequence playing. A file that doesn't decode leaves the sequencer playing, and so
+// does turning the mod off. Needs any disc.
+TEST(sound_mod_recording_replaces_sequence) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) SKIP("no audio");
+    {
+        AudioEngine audio;
+        if (!audio.ok()) SKIP("no audio device");
+        const std::filesystem::path mods = test::temp_path("seq_mods");
+        write(mods / "menus" / "files" / "music" / "Dealer-01.WAV", wav(44100, 2, 44100, {}, std::pair{11025u, 44099u}));
+        write(mods / "menus" / "files" / "music" / "wash01.flac", flac_with_comments({}));
+        write(mods / "menus" / "files" / "music" / "Tune-01.ogg", Bytes(test::kTinyOgg, test::kTinyOgg + sizeof(test::kTinyOgg)));
+        write(mods / "menus" / "files" / "music" / "home01.mp3", bytes_of("not an mp3 at all"));
+        write(mods / "menus" / "files" / "music" / "unknown.wav", wav(100, 1, 8000));
+        Vfs vfs(&disc->volume());
+        vfs.scan_mods(utf8(mods), nullptr);
+        auto index_of = [&](const char* name) {
+            for (const sound::MusicEntry& e : audio.music_index(vfs))
+                if (e.name == name) return int(e.sequence);
+            return -1;
+        };
+        const int dealer = index_of("dealer01"), wash = index_of("wash01"), option = index_of("home01");
+        CHECK(dealer >= 0 && wash >= 0 && option >= 0);
+        CHECK(audio.sequence_file(vfs, dealer) == "music/Dealer-01.WAV");
+        CHECK(audio.sequence_file(vfs, wash) == "music/wash01.flac");
+        const int tune = index_of("tune01");
+        CHECK(tune >= 0 && audio.sequence_file(vfs, tune) == "music/Tune-01.ogg");
+        CHECK(audio.play_sequence(vfs, "tune01", bgm::kMenuVolume) && audio.replaced_sequence() == tune);
+        CHECK(audio.sequence_file(vfs, index_of("gtmenu01")).empty());
+
+        CHECK(audio.play_sequence(vfs, "dealer01", bgm::kMenuVolume));
+        CHECK(audio.replaced_sequence() == dealer && audio.sequence_playing() && !audio.sequencer().active());
+        CHECK(std::abs(audio.music_length() - 1.0) < 1e-6);
+        CHECK(audio.play_sequence(vfs, wash, bgm::kMenuVolume) && audio.replaced_sequence() == wash);
+        CHECK(audio.play_sequence(vfs, "home01", bgm::kMenuVolume)); // undecodable: the sequencer
+        CHECK(audio.replaced_sequence() < 0 && audio.sequencer().active() && audio.sequence_playing());
+        CHECK(audio.play_sequence(vfs, "dealer01") && audio.replaced_sequence() == dealer);
+        audio.stop_music();
+        CHECK(!audio.sequence_playing() && audio.replaced_sequence() < 0);
+        vfs.set_mod_enabled("menus", false);
+        CHECK(audio.sequence_file(vfs, dealer).empty());
+        CHECK(audio.play_sequence(vfs, "dealer01") && audio.replaced_sequence() < 0 && audio.sequencer().active());
+        audio.stop_music();
+    }
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
 // Waits for a library's scan (true when one landed).

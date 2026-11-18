@@ -285,8 +285,8 @@ Shuffle) and a 16-bit seed.
   in the list, and any change starts a new pass. The options menu stores the
   result. A disc whose songs could not be read leaves the list as it is.
 
-**The player's own songs (ours,** `race/custom_music.h`**).** MP3, FLAC and
-WAV files in the player's music folder play as race songs too, chosen on the
+**The player's own songs (ours,** `race/custom_music.h`**).** MP3, FLAC,
+WAV and Ogg Vorbis files in the player's music folder play as race songs too, chosen on the
 Options music list's tabs (menus §10.1, `[options] music_source`):
 
 - **Original**: the race playlist above, unchanged.
@@ -561,6 +561,16 @@ looping unless `:once` is given, at the request's level; this is how the
 Replay Theater page (§4.1) and the menu's presentation pages (§4.2) ask for
 streamed music.
 
+**A mod's recording (ours).** A mod can give a sequence a recording in its
+place: `music/<name>.wav`, `.flac`, `.ogg` or `.mp3`, `<name>` being the sequence's
+`music.inf` title (`dealer-01`) or one of its names (`dealer01`), in any case
+(`AudioEngine::sequence_file`). The recording then streams instead of the
+sequence, at the same request level as a stream (§6), looping: from its own
+loop points (a WAV's `smpl` chunk, a FLAC's or Ogg's `LOOPSTART` / `LOOPLENGTH`
+or `LOOPEND` tags), else from its start. The sequence still counts as playing, so
+saving the options doesn't start it over (§4.3). A recording
+that doesn't decode leaves the sequence to the sequencer.
+
 ## §6 Volume and options
 
 Every music request carries a **level** (`bgm::k*Volume`):
@@ -677,7 +687,8 @@ a musical rhythm but aren't timed to the song itself.
 The home menu's **Music jukebox** (`src/app/screen_jukebox.cpp`, `gt3r
 --screen jukebox`) lists every sequence of `music/music.seq` (one row each,
 with the `music.inf` names that use it), then every stream of `bgm/ads.inf`
-whose file exists, mods included. Cross plays the row: a sequence loops; a
+whose file exists, mods included; a sequence with a mod's recording (§5.2)
+is marked `MOD` and plays the recording. Cross plays the row: a sequence loops; a
 stream plays once and the next row starts when it ends, wrapping round to the
 first. Both play at full level (1.0, §6), outside the BGM layer and the Menu
 BGM switch. Circle stops; Left / Right change the Music volume in steps of

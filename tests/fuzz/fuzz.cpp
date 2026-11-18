@@ -1,6 +1,6 @@
 // Fuzz targets for every reader that sees untrusted bytes: files in downloaded mod car
 // packages (PNG, glTF, JSON, car definitions, the package container), the player's own music
-// (tags, the MP3 / FLAC / WAV decoders and their loudness, the remembered song list) and
+// (tags, the MP3 / FLAC / WAV / Ogg Vorbis decoders and their loudness, the remembered song list) and
 // network input (game datagram payloads, car descriptors, rendezvous messages, version
 // strings and the relay's versions file).
 // docs/dev/ONLINE.md "Fuzzing".
@@ -12,7 +12,7 @@
 //   cmake --build build-fuzz --target gt3r_fuzz
 //   build-fuzz/gt3r_fuzz all 60          # every target, 60 s each (built-in mutation fuzzer)
 //   build-fuzz/gt3r_fuzz glb 600 crash.bin  # one target; extra files are replayed first (and
-//                                          # mutated: real MP3 / FLAC files seed music_decode)
+//                                          # mutated: real MP3 / FLAC / Ogg files seed music_decode)
 //
 // With clang's libFuzzer (Linux): add -DGT3R_LIBFUZZER=ON and run
 //   GT3R_FUZZ_TARGET=glb build-fuzz/gt3r_fuzz corpus/  (coverage guided)
@@ -31,6 +31,8 @@
 #include "net/rendezvous.h"
 #include "net/session.h"
 #include "race/custom_music.h"
+
+#include "../music_fixtures.h"
 
 #include <chrono>
 #include <cmath>
@@ -127,10 +129,10 @@ Bytes tiny_flac_tags() {
     return b;
 }
 
-// Byte 0 picks the format (bits 0-1: MP3, FLAC, WAV, MP3) and for decoding a loop (bit 2).
+// Byte 0 picks the format (bits 0-1: MP3, FLAC, WAV, Ogg) and for decoding a loop (bit 2).
 MusicFileType fuzz_music_type(ByteSpan d) {
     static const MusicFileType kTypes[4] = {MusicFileType::Mp3, MusicFileType::Flac, MusicFileType::Wav,
-                                            MusicFileType::Mp3};
+                                            MusicFileType::Ogg};
     return d.empty() ? MusicFileType::Mp3 : kTypes[d[0] & 3];
 }
 
@@ -216,7 +218,8 @@ std::vector<Target> targets() {
          [] {
              return std::vector<Bytes>{music_input(0, tiny_id3(Bytes(160, 0))), music_input(1, tiny_flac_tags()),
                                        music_input(2, tiny_wav(1, 2, 16, "Seed")),
-                                       music_input(0, tiny_id3(tiny_flac_tags()))};
+                                       music_input(0, tiny_id3(tiny_flac_tags())),
+                                       music_input(3, Bytes(test::kTinyOgg, test::kTinyOgg + sizeof(test::kTinyOgg)))};
          }},
         {"music_decode", // byte 0: the format and a loop; then the file, decoded up to 64k frames
          [](ByteSpan d) {
@@ -242,7 +245,8 @@ std::vector<Target> targets() {
          [] {
              return std::vector<Bytes>{music_input(2, tiny_wav(1, 2, 16)), music_input(6, tiny_wav(1, 1, 8)),
                                        music_input(2, tiny_wav(1, 6, 24)), music_input(2, tiny_wav(3, 2, 32)),
-                                       music_input(2, tiny_wav(0xFFFE, 2, 16)), music_input(0, tiny_id3(Bytes(400, 0xFF)))};
+                                       music_input(2, tiny_wav(0xFFFE, 2, 16)), music_input(0, tiny_id3(Bytes(400, 0xFF))),
+                                       music_input(7, Bytes(test::kTinyOgg, test::kTinyOgg + sizeof(test::kTinyOgg)))};
          }},
         {"song_list", // the remembered songs (music_songs.txt), a file in the user data folder
          [](ByteSpan d) {

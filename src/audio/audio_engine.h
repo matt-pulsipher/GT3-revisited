@@ -80,13 +80,22 @@ public:
     bool play_music_file(const std::string& path, bool loop, float volume = 1.0f, bool resume = true, float trim = 1.0f);
     // Plays sequence `index` of music/music.seq with music/music.ins (loaded
     // on first use through the VFS) at request level `volume`. Sequences loop forever.
+    // Ours: a mod's recording of the sequence (sequence_file) streams instead, looping (its own
+    // loop, music_file.h), at the same level; the sequencer plays when it doesn't decode.
     bool play_sequence(Vfs& vfs, int index, float volume = 1.0f);
     // Same, by music.inf name (e.g. "gtmenu01", the ids the game uses).
     // A music.inf name, or "bgm:<id>[:once]" for a BGM-layer cue (bgm::Player).
     bool play_sequence(Vfs& vfs, const std::string& name, float volume = 1.0f);
     // music.inf entries (loads the sequenced music if needed; empty if absent).
     const std::vector<sound::MusicEntry>& music_index(Vfs& vfs);
-    bool sequence_playing() const { return sequencer_.active(); }
+    // A sequence plays: the sequencer's, or a mod's recording of one.
+    bool sequence_playing() const { return sequencer_.active() || replaced_sequence_ >= 0; }
+    // The sequence a mod's recording stands in for now, else -1.
+    int replaced_sequence() const { return replaced_sequence_; }
+    // A mod's recording of sequence `index`: music/<name>.wav, .flac, .ogg or .mp3 (any case), <name>
+    // being the sequence's music.inf title ("dealer-01", as the jukebox lists it) or one of the
+    // ids the game asks for ("dealer01"). Empty when there is none.
+    std::string sequence_file(Vfs& vfs, int index);
     Sequencer& sequencer() { return sequencer_; }
     // The disc or its mods changed: the stream index (bgm/ads.inf, bgm::Player::forget) and the
     // sequenced music are read again when next used. What plays now plays on; a playing
@@ -135,6 +144,7 @@ public:
 
 private:
     bool load_sequences(Vfs& vfs);
+    bool play_sequence_file(Vfs& vfs, const std::string& path, int index, float volume);
     void start_stream(std::unique_ptr<MusicStream> stream, std::shared_ptr<Bytes> data, float volume, bool resume,
                       const std::string& what, float trim = 1.0f);
     void stop_stream();
@@ -165,6 +175,7 @@ private:
     std::vector<double> seq_loop_seconds_;
     bool seq_load_tried_ = false;
     bool seq_stale_ = false; // forget_disc_music(): read again once no sequence plays
+    std::atomic<int> replaced_sequence_{-1}; // the stream is a mod's recording of this sequence
     SDL_AudioStream* sfx_stream_ = nullptr;
     float sfx_volume_ = 0.8f;
     std::string device_name_;
