@@ -106,9 +106,10 @@ there:
   players on the same disc, on its own physics. CPU cars race at Normal,
   Professional or Ace, each car as it drives in its own Single Race at that
   level.
-- Quick race offers the arcade time trials and the custom race. The custom
-  race's opponents race at Normal, Professional or Ace, as the online CPU cars
-  do.
+- Quick race offers the license tests, Single Race on road and dirt courses
+  (at Normal, Professional or Ace, your car's own race when it has one), the
+  pod race, the arcade time trials and the custom race. The custom race's
+  opponents race at Normal, Professional or Ace, as the online CPU cars do.
 - Game Status: the map with each course's license medal and cups, the prize
   cars won so far, the completion figure, and the show room with the car and
   its specification table. The directions move over the map.
