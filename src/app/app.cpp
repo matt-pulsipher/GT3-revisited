@@ -1,5 +1,6 @@
 #include "app/app.h"
 #include "base/hitch.h"
+#include "app/button_prompts.h"
 #include "app/screen_registry.h"
 #include "app/presence.h"
 #include "app/updates.h"
@@ -846,6 +847,7 @@ SDL_AppResult App::iterate() {
 #endif
     const Screen* shown = screens_.empty() ? nullptr : screens_.back().get(); // (after this frame's changes)
     layout_ui(shown && shown->adaptive_ui(), shown && shown->follows_aspect());
+    Ui::set_prompts(button_prompts(*input_, touch_.controls().visible(), touch_ui_)); // "{Cross}" in our hints
     begin_gamma_frame();
     ui_->clear();
     Uint64 h_r0 = SDL_GetTicksNS();

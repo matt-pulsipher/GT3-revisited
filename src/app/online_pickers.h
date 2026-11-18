@@ -242,7 +242,7 @@ private:
     void select(App& app, int to);
     const std::vector<PickerCourse>* courses_ = nullptr;
     std::function<u32(const std::string&)> length_m_;
-    std::string hint_ = "The host chooses the course", back_ = "Triangle: back to the lobby";
+    std::string hint_ = "The host chooses the course", back_ = "{Triangle}: back to the lobby";
     int sel_ = 0, prev_ = -1;
     float strip_x_ = 0;
     int pulse_ = 0, fade_ = 0; // frames since the last move

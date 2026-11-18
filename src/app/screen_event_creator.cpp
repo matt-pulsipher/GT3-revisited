@@ -207,7 +207,7 @@ public:
         if (!error_.empty()) {
             ui.header("EVENT CREATOR", "");
             ui.text_center(150, error_, colors::kBad);
-            footer_actions(ui, "", {{"Triangle: back", kFootBack}}, hits_, kHitFooter, pointer_);
+            footer_actions(ui, "", {{"{Triangle}: back", kFootBack}}, hits_, kHitFooter, pointer_);
             return;
         }
         if (page_ == Page::Cars) {
@@ -227,7 +227,7 @@ public:
         std::string hint = rows.empty() ? std::string() : rows[size_t(sel_)].hint;
         if (!note_.empty()) hint = note_;
         if (naming_ && !name_keyboard_.is_open()) hint = "Type, Enter to keep, Esc to cancel";
-        footer_actions(ui, hint, {{"Cross: choose", kFootChoose}, {"Triangle: back", kFootBack}}, hits_, kHitFooter, pointer_);
+        footer_actions(ui, hint, {{"{Cross}: choose", kFootChoose}, {"{Triangle}: back", kFootBack}}, hits_, kHitFooter, pointer_);
         if (naming_) render_naming(ui);
     }
 
@@ -564,7 +564,7 @@ private:
             const data::ModEventDef& d = events_[i];
             const std::string races = std::to_string(d.races.size()) + (d.races.size() == 1 ? " race" : " races");
             rows.push_back(action_row(d.title, d.championship ? "Championship, " + races : races,
-                                      "Cross: edit   In GT Mode: " + league_title(league_on_disc(d.league)),
+                                      "{Cross}: edit   In GT Mode: " + league_title(league_on_disc(d.league)),
                                       [this, &app, i] { edit_event(app, i); }, kLeftX, y));
         }
         rows.push_back(back_row(app));
@@ -584,10 +584,10 @@ private:
                                  [this, &app] { begin_naming(app, Text::Title); }, x, y));
         rows.push_back(field_row("Description", "description", ed_.description, "", "A line about it (shown on its card)",
                                  [this, &app] { begin_naming(app, Text::Description); }, x, y));
-        rows.push_back(action_row("Picture", picture_state(), "Cross: choose a picture (PNG); it fills the screen behind the event",
+        rows.push_back(action_row("Picture", picture_state(), "{Cross}: choose a picture (PNG); it fills the screen behind the event",
                                   [this, &app] { open_dialog(app, menu::flow::FileDialogs::Kind::OpenPicture, ""); }, x, y));
         if (has_picture()) {
-            rows.push_back(action_row("", "Remove picture", "Cross: no picture (GT Mode shows the title instead)", [this] {
+            rows.push_back(action_row("", "Remove picture", "{Cross}: no picture (GT Mode shows the title instead)", [this] {
                 picture_.clear(), picture_removed_ = true, dirty_ = true;
                 picture_tex_dirty_ = true;
             }, x, y));
@@ -606,13 +606,13 @@ private:
         static const char* const kLicenses[] = {"None", "B", "A", "International B", "International A", "S", "Rally"};
         auto cycle = [this](int& v, int n) { return [this, &v, n](int h) { v = (v + (h < 0 ? -1 : 1) + n) % n, dirty_ = true; }; };
         rows.push_back(value_row("License", kLicenses[ed_.license], "The license a player needs to enter", cycle(ed_.license, 7), x, y));
-        rows.push_back(action_row("Car rules", rules_summary(), "Cross: which cars may enter",
+        rows.push_back(action_row("Car rules", rules_summary(), "{Cross}: which cars may enter",
                                   [this] { open_sub(Page::Rules); }, x, y));
-        rows.push_back(action_row("Prizes", money(ed_.prizes[0]) + " for 1st", "Cross: prize money and a prize car",
+        rows.push_back(action_row("Prizes", money(ed_.prizes[0]) + " for 1st", "{Cross}: prize money and a prize car",
                                   [this] { open_sub(Page::Prizes); }, x, y));
         rows.push_back(action_row("Opponents", std::to_string(ed_.field.size()) + (ed_.field.size() == 1 ? " car" : " cars"),
-                                  ed_.championship ? "Cross: the cars a championship's field is drawn from"
-                                                   : "Cross: the cars every race without its own draws its opponents from",
+                                  ed_.championship ? "{Cross}: the cars a championship's field is drawn from"
+                                                   : "{Cross}: the cars every race without its own draws its opponents from",
                                   [this] { open_pool(-1); }, x, y));
         // The races, at the right under the picture.
         float ry = 146;
@@ -622,7 +622,7 @@ private:
             const bool own = !ed_.championship && !r.opponents.empty();
             (void)app;
             rows.push_back(action_row("Race " + std::to_string(k + 1), course_name(r.course) + ", " + laps + (own ? ", own cars" : ""),
-                                      "Cross: its course, laps and opponents", [this, &app, k] { open_race(app, int(k)); }, kRightX, ry,
+                                      "{Cross}: its course, laps and opponents", [this, &app, k] { open_race(app, int(k)); }, kRightX, ry,
                                       kRightW));
         }
         if (int(ed_.races.size()) < data::ModEventDef::kMaxRaces)
@@ -641,7 +641,7 @@ private:
         data::ModEventRace& r = ed_.races[size_t(race_)];
         float y = 110;
         const float x = kLeftX, w = 232;
-        rows.push_back(action_row("Course", course_name(r.course), "Cross: choose a course   Left/Right: the next one",
+        rows.push_back(action_row("Course", course_name(r.course), "{Cross}: choose a course   {Left/Right}: the next one",
                                   [this] { open_courses(); }, x, y, w));
         rows.back().change = [this, &app, &r](int h) {
             auto it = std::find_if(courses_.begin(), courses_.end(), [&](const PickerCourse& c) { return c.label == r.course; });
@@ -649,7 +649,7 @@ private:
             r.course = courses_[size_t((i + (h < 0 ? -1 : 1) + n) % n)].label;
             course_changed(app);
         };
-        rows.push_back(value_row("Laps", std::to_string(r.laps), "Left/Right: laps (L1/R1: 10 at a time)", [this, &r](int h) {
+        rows.push_back(value_row("Laps", std::to_string(r.laps), "{Left/Right}: laps ({L1}/{R1}: 10 at a time)", [this, &r](int h) {
             r.laps = (r.laps - 1 + h + kMaxLaps * 10) % kMaxLaps + 1, dirty_ = true;
         }, x, y, w));
         static const char* const kSkillNames[] = {"League's", "Easy", "Normal", "Hard", "Professional"};
@@ -665,7 +665,7 @@ private:
                                      }, x, y, w));
         if (own)
             rows.push_back(action_row("Its cars", std::to_string(r.opponents.size()) + (r.opponents.size() == 1 ? " car" : " cars"),
-                                      "Cross: the cars this race draws its opponents from", [this] { open_pool(race_); }, x, y, w));
+                                      "{Cross}: the cars this race draws its opponents from", [this] { open_pool(race_); }, x, y, w));
         const int most = std::min({data::ModEventDef::kMaxOpponents, int(race_pool(r).size()), grid_limit(app, r.course)});
         const int n = r.cars > 0 ? std::min(r.cars, most) : most;
         rows.push_back(value_row("Racing you", std::to_string(n) + (n == 1 ? " car" : " cars"),
@@ -691,14 +691,14 @@ private:
         float y = kTopY;
         std::vector<data::ModEventCar>& p = pool();
         if (p.size() < size_t(data::ModEventDef::kMaxPool))
-            rows.push_back(action_row("", "Add a car", "Cross: choose a car (then its version and color)",
+            rows.push_back(action_row("", "Add a car", "{Cross}: choose a car (then its version and color)",
                                       [this, &app] { open_cars(app, Pick::PoolAdd, 0, 0); }, kLeftX, y));
         editing_buttons(rows);
         // The cars, at the right: Cross opens one.
         const float colw = kRightW / 2;
         for (size_t i = 0; i < p.size(); ++i) {
             float ly = 0;
-            Row r = action_row("", entry_name(p[i]), "Cross: its version, color and parts", [this, i] { open_entry(int(i)); },
+            Row r = action_row("", entry_name(p[i]), "{Cross}: its version, color and parts", [this, i] { open_entry(int(i)); },
                                kRightX + float(i % 2) * colw, ly, colw);
             r.r.y = kTopY + 16 + float(i / 2) * 14, r.r.h = 14;
             r.dim = true;
@@ -714,7 +714,7 @@ private:
         data::ModEventCar& c = p[size_t(entry_)];
         const std::string car = entry_car(c);
         float y = kTopY;
-        rows.push_back(action_row("Car", car_name(car), "Cross: another car", [this, &app, car] {
+        rows.push_back(action_row("Car", car_name(car), "{Cross}: another car", [this, &app, car] {
             open_cars(app, Pick::EntryCar, car_index(car), 0);
         }, kLeftX, y));
         const std::vector<Version> vs = versions(car);
@@ -799,8 +799,8 @@ private:
                                      [this, &app] { begin_number(app, "Champion's bonus", "bonus", &ed_.bonus, max_bonus_); }, kLeftX, y));
         y += 8;
         rows.push_back(action_row("Prize car", ed_.prize_car.empty() ? "None" : car_name(ed_.prize_car),
-                                  ed_.championship ? "Given once, for winning the championship. Cross: choose   Left/Right: none"
-                                                   : "Given once, for winning every race. Cross: choose   Left/Right: none",
+                                  ed_.championship ? "Given once, for winning the championship. {Cross}: choose   {Left/Right}: none"
+                                                   : "Given once, for winning every race. {Cross}: choose   {Left/Right}: none",
                                   [this, &app] { open_cars(app, Pick::PrizeCar, car_index(ed_.prize_car), prize_paint_index()); }, kLeftX, y));
         rows.back().change = [this](int) { ed_.prize_car.clear(), ed_.prize_paint = -1, dirty_ = true; };
         editing_buttons(rows);
@@ -894,7 +894,7 @@ private:
                                  kLeftX, y));
         rows.push_back(action_row("Cars allowed",
                                   ed_.allowed.empty() ? "Any" : std::to_string(ed_.allowed.size()) + (ed_.allowed.size() == 1 ? " car" : " cars"),
-                                  "Cross: the list of the cars that may enter (by class, power, or one by one)",
+                                  "{Cross}: the list of the cars that may enter (by class, power, or one by one)",
                                   [this] { open_sub(Page::Allowed); }, kLeftX, y));
         y += 6;
         rows.push_back(action_row("Any car", "", "Clears every rule above", [this] {
@@ -936,7 +936,7 @@ private:
                               true, "The list becomes the cars that pass the filters above and the event's rules"));
         y += kButtonH + 8;
         if (ed_.allowed.size() < list_room())
-            rows.push_back(action_row("", "Add a car", "Cross: choose a car", [this, &app] { open_cars(app, Pick::AllowedCar, 0, 0); },
+            rows.push_back(action_row("", "Add a car", "{Cross}: choose a car", [this, &app] { open_cars(app, Pick::AllowedCar, 0, 0); },
                                       kLeftX, y));
         if (!ed_.allowed.empty())
             rows.push_back(action_row("", "Clear the list (any car)", "", [this] { ed_.allowed.clear(), dirty_ = true; }, kLeftX, y));
@@ -945,7 +945,7 @@ private:
         float ly = kTopY + 16;
         const float colw = kRightW / 2;
         for (size_t i = 0; i < ed_.allowed.size() && ly + float(i / 2) * 14 < kButtonY - 14; ++i) {
-            Row r = action_row("", car_name(ed_.allowed[i]), "Cross: take it off the list", [this, i] {
+            Row r = action_row("", car_name(ed_.allowed[i]), "{Cross}: take it off the list", [this, i] {
                 ed_.allowed.erase(ed_.allowed.begin() + std::ptrdiff_t(i));
                 dirty_ = true;
             }, kRightX + float(i % 2) * colw, ly, colw);
@@ -1101,7 +1101,7 @@ private:
 
     void open_courses() {
         auto it = std::find_if(courses_.begin(), courses_.end(), [&](const PickerCourse& c) { return c.label == ed_.races[size_t(race_)].course; });
-        course_picker_.set_labels("The race's course", "Triangle: back");
+        course_picker_.set_labels("The race's course", "{Triangle}: back");
         course_picker_.open(courses_, it == courses_.end() ? 0 : int(it - courses_.begin()), [](const std::string&) { return 0u; });
         page_ = Page::Courses;
     }

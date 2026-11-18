@@ -86,7 +86,7 @@ public:
                 ui.text_right(Ui::kWidth - 10, Ui::kHeight - 31, t, colors::kDim);
             }
         }
-        ui.footer("Cross: play  Circle: stop  Left/Right: volume  Square: reverb  Tri: back");
+        ui.footer("{Cross}: play  {Circle}: stop  {Left/Right}: volume  {Square}: reverb  {Triangle}: back");
     }
 
 private:

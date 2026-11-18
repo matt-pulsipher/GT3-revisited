@@ -247,7 +247,7 @@ public:
         if (!flow_) {
             ui.header("GAME MENUS", "");
             ui.text(8, 40, error_.empty() ? "loading..." : error_, colors::kBad);
-            ui.footer("Triangle: back");
+            ui.footer("{Triangle}: back");
             return;
         }
         draw_frame(app);

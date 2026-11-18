@@ -646,9 +646,9 @@ std::string CameraEditor::legend() const {
                : seat ? "Drag: aim    The seat moves with its sliders"
                       : "Drag: rotate    Two fingers: move    Pinch: nearer / farther";
     case Input::Pad:
-        return mirror ? "Left stick: move    L2 / R2: size    D-pad: menu, up to Save    L1 / R1: page    Start: save"
-               : seat ? "Right stick: aim    D-pad: menu and seat, up to Save    L1 / R1: page    Start: save    Select: hide"
-                      : "Left stick: move    Right stick: rotate    L2 / R2: down / up    D-pad: menu, up to Save    Start: save";
+        return mirror ? "Left stick: move    {L2}/{R2}: size    {Arrows}: menu, up to Save    {L1}/{R1}: page    {Start}: save"
+               : seat ? "Right stick: aim    {Arrows}: menu and seat, up to Save    {L1}/{R1}: page    {Start}: save    {Select}: hide"
+                      : "Left stick: move    Right stick: rotate    {L2}/{R2}: down / up    {Arrows}: menu, up to Save    {Start}: save";
     case Input::Pointer:
     default:
         return mirror ? "Drag: move the mirror    Wheel: size"

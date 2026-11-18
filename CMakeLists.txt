@@ -165,21 +165,24 @@ if(GT3R_OPENXR_LOADER)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GT3R_OPENXR_LOADER} $<TARGET_FILE_DIR:gt3r>)
 endif()
 
-# UI font (Barlow, SIL OFL 1.1, third_party/fonts/barlow) compiled into the
-# executable, rasterised at runtime with stb_truetype (public domain).
+# UI fonts compiled into the executable, rasterised at runtime with stb_truetype
+# (public domain): Barlow (SIL OFL 1.1, third_party/fonts/barlow) and the button
+# glyphs of PromptFont (SIL OFL 1.1, third_party/fonts/promptfont).
 set(GT3R_UI_FONTS
   ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/BarlowSemiCondensed-Medium.ttf
-  ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/BarlowCondensed-SemiBold.ttf)
+  ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/BarlowCondensed-SemiBold.ttf
+  ${CMAKE_SOURCE_DIR}/third_party/fonts/promptfont/promptfont.ttf)
 set(GT3R_UI_FONT_SRC ${CMAKE_BINARY_DIR}/generated/ui_font_data.cpp)
 list(JOIN GT3R_UI_FONTS "|" _ui_font_files)
 add_custom_command(OUTPUT ${GT3R_UI_FONT_SRC}
   COMMAND ${CMAKE_COMMAND} -DOUT=${GT3R_UI_FONT_SRC} -DNAMESPACE=gt3r::font_data
-          -DNAMES=kBody|kTitle -DFILES=${_ui_font_files}
+          -DNAMES=kBody|kTitle|kPrompt -DFILES=${_ui_font_files}
           -P ${CMAKE_SOURCE_DIR}/cmake/EmbedFiles.cmake
   DEPENDS ${GT3R_UI_FONTS} ${CMAKE_SOURCE_DIR}/cmake/EmbedFiles.cmake
   COMMENT "Embedding UI fonts"
   VERBATIM)
-target_sources(${GT3R_APP_TARGET} PRIVATE ${GT3R_UI_FONT_SRC})
+add_library(gt3r_ui_fonts STATIC ${GT3R_UI_FONT_SRC}) # the game and the unit tests
+target_link_libraries(${GT3R_APP_TARGET} PRIVATE gt3r_ui_fonts)
 target_include_directories(${GT3R_APP_TARGET} SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party/stb)
 
 if(GT3R_BUILD_TOOLS AND NOT ANDROID AND NOT IOS)
@@ -213,6 +216,10 @@ if(GT3R_BUILD_TESTS AND NOT ANDROID AND NOT IOS)
   file(GLOB GT3R_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/*.cpp)
   add_executable(gt3r_tests ${GT3R_TEST_SOURCES})
   target_link_libraries(gt3r_tests PRIVATE gt3r_engine)
+  # Our screens' text and button prompts (tests/test_button_prompts.cpp), with the embedded fonts.
+  target_sources(gt3r_tests PRIVATE src/app/ui.cpp src/app/ui_font.cpp src/app/button_prompts.cpp)
+  target_link_libraries(gt3r_tests PRIVATE gt3r_ui_fonts)
+  target_include_directories(gt3r_tests SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/third_party/stb)
   # Disc tests that load files from the source tree (examples/mods/...).
   target_compile_definitions(gt3r_tests PRIVATE GT3R_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
   add_test(NAME unit COMMAND gt3r_tests)

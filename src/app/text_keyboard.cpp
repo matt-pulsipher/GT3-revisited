@@ -173,8 +173,8 @@ void TextKeyboard::draw(Ui& ui, const std::string& text) {
         }
         ui.button(k.r, label, int(i) == focus_, k.key == kShift && upper_, k.key == kDone);
     }
-    ui.footer(std::string(layout_ == Layout::Number ? "Cross: type a digit" : "Cross: type") + "   Square: delete   Start: " + done_ +
-              "   Triangle: cancel");
+    ui.footer(std::string(layout_ == Layout::Number ? "{Cross}: type a digit" : "{Cross}: type") + "   {Square}: delete   {Start}: " + done_ +
+              "   {Triangle}: cancel");
 }
 
 TextKeyboard::Result text_field_event(const SDL_Event& e, std::string& s, bool pad_typing) {

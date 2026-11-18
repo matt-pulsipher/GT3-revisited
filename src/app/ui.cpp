@@ -1,5 +1,9 @@
 #include "app/ui.h"
 
+#include "app/button_prompts.h"
+
+#include <SDL3/SDL_keyboard.h>
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -20,6 +24,69 @@ float baseline(FontFace f, float em, float band) { return (band + ui_font::cap_h
 
 float title_em(int scale) { return Ui::kTitleCap * float(scale) / std::max(ui_font::cap_height(FontFace::Title, 1), 0.1f); }
 
+constexpr std::string_view kPromptTokens[kPromptCount] = {
+    "Cross", "Circle", "Square", "Triangle", "L1", "R1", "L2", "R2", "L3", "R3", "Start", "Select",
+    "Up", "Down", "Left", "Right", "Up/Down", "Left/Right", "Arrows",
+};
+
+PromptTable& prompt_table() {
+    static PromptTable t = [] {
+        PromptTable d;
+        for (size_t i = 0; i < kPromptCount; ++i) d.text[i] = std::string(kPromptTokens[i]);
+        return d;
+    }();
+    return t;
+}
+
+} // namespace
+
+std::string_view prompt_token(Prompt p) { return kPromptTokens[static_cast<size_t>(p)]; }
+
+void Ui::set_prompts(const PromptTable& t) {
+    if (!ui_font::available() || !ui_font::prompts_available()) return; // the names stay
+    prompt_table() = t;
+}
+
+bool Ui::prompts_keyboard() { return prompt_table().keyboard; }
+
+std::string Ui::expand_prompts(std::string_view s) {
+    size_t open = s.find('{');
+    if (open == std::string_view::npos) return std::string(s);
+    const PromptTable& t = prompt_table();
+    std::string out;
+    out.reserve(s.size());
+    size_t from = 0;
+    for (; open != std::string_view::npos; open = s.find('{', open + 1)) {
+        const size_t close = s.find('}', open + 1);
+        if (close == std::string_view::npos) break;
+        std::string_view name = s.substr(open + 1, close - open - 1), key;
+        if (size_t bar = name.find('|'); bar != std::string_view::npos) key = name.substr(bar + 1), name = name.substr(0, bar);
+        for (size_t i = 0; i < kPromptCount; ++i)
+            if (name == kPromptTokens[i]) {
+                std::string glyph = t.text[i];
+                if (t.keyboard && !key.empty()) {
+                    const SDL_Scancode sc = SDL_GetScancodeFromName(std::string(key).c_str());
+                    glyph = sc == SDL_SCANCODE_UNKNOWN ? std::string(key) : key_glyph(sc);
+                    if (glyph.empty()) glyph = key;
+                }
+                out.append(s.substr(from, open - from)).append(glyph);
+                from = close + 1, open = close;
+                break;
+            }
+    }
+    out.append(s.substr(from));
+    return out;
+}
+
+namespace {
+
+// `s` with its button prompts expanded, kept in `buf` when it has any.
+std::string_view expanded(std::string_view s, std::string& buf) {
+    if (s.find('{') == std::string_view::npos) return s;
+    buf = Ui::expand_prompts(s);
+    return buf;
+}
+
 } // namespace
 
 Ui::Ui(SDL_Renderer* r) : r_(r) {
@@ -27,15 +94,19 @@ Ui::Ui(SDL_Renderer* r) : r_(r) {
     if (ui_font::available()) font_ = std::make_unique<UiFontRenderer>(r_);
 }
 
-void Ui::text(float x, float y, std::string_view s, Color c) {
+void Ui::text(float x, float y, std::string_view raw, Color c) {
+    std::string e;
+    const std::string_view s = expanded(raw, e);
     if (font_ && font_->draw(FontFace::Body, kBodyEm, x, y + baseline(FontFace::Body, kBodyEm, kChar), s, to_f(c))) return;
     SDL_SetRenderDrawColor(r_, c.r, c.g, c.b, c.a);
     std::string str(s);
     SDL_RenderDebugText(r_, x, y, str.c_str());
 }
 
-void Ui::text_mono(float x, float y, std::string_view s, Color c) {
-    if (!font_) return text(x, y, s, c);
+void Ui::text_mono(float x, float y, std::string_view raw, Color c) {
+    if (!font_) return text(x, y, raw, c);
+    std::string e;
+    const std::string_view s = expanded(raw, e);
     for (size_t i = 0; i < s.size();) {
         size_t j = i + 1;
         while (j < s.size() && (static_cast<unsigned char>(s[j]) & 0xC0) == 0x80) ++j;
@@ -53,15 +124,19 @@ void Ui::text_center_in(float x, float w, float y, std::string_view s, Color c) 
     text(std::floor(x + (w - text_width(s)) / 2), y, s, c);
 }
 
-float Ui::text_width(std::string_view s, int scale) {
+float Ui::text_width(std::string_view raw, int scale) {
+    std::string e;
+    const std::string_view s = expanded(raw, e);
     scale = std::max(scale, 1);
     if (!ui_font::available()) return float(s.size() * kChar * size_t(scale));
     return scale == 1 ? ui_font::width(FontFace::Body, kBodyEm, s) : ui_font::width(FontFace::Title, title_em(scale), s);
 }
 
-void Ui::text_big(float x, float y, std::string_view s, int scale, Color c) {
+void Ui::text_big(float x, float y, std::string_view raw, int scale, Color c) {
     scale = std::max(scale, 1);
-    if (scale == 1) return text(x, y, s, c);
+    if (scale == 1) return text(x, y, raw, c);
+    std::string e;
+    const std::string_view s = expanded(raw, e);
     const float em = title_em(scale);
     if (font_ && font_->draw(FontFace::Title, em, x, y + baseline(FontFace::Title, em, float(kChar * scale)), s, to_f(c)))
         return;
@@ -107,7 +182,9 @@ template <class F> size_t largest_fit(size_t hi, F fits) {
 
 } // namespace
 
-std::vector<std::string> Ui::wrap(std::string_view s, float width) {
+std::vector<std::string> Ui::wrap(std::string_view raw, float width) {
+    std::string e; // a button's glyph is one code point
+    const std::string_view s = expanded(raw, e);
     std::vector<std::string> out;
     std::string line;
     size_t i = 0;
@@ -139,13 +216,17 @@ std::vector<std::string> Ui::wrap(std::string_view s, float width) {
     return out;
 }
 
-std::string Ui::elide(std::string_view s, float width) {
+std::string Ui::elide(std::string_view raw, float width) {
+    std::string e;
+    const std::string_view s = expanded(raw, e);
     if (text_width(s) <= width) return std::string(s);
     size_t n = largest_fit(count_cps(s), [&](size_t k) { return text_width(elide_middle(s, k)) <= width; });
     return elide_middle(s, n);
 }
 
-std::string Ui::clip(std::string_view s, float width) {
+std::string Ui::clip(std::string_view raw, float width) {
+    std::string e;
+    const std::string_view s = expanded(raw, e);
     if (text_width(s) <= width) return std::string(s);
     size_t n = largest_fit(count_cps(s), [&](size_t k) {
         return text_width(std::string(s.substr(0, prefix_bytes(s, k))) + "...") <= width;

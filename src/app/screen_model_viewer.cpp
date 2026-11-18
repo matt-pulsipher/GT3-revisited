@@ -167,8 +167,8 @@ public:
 
         if (!fullscreen_) draw_list(ui);
         draw_stats(app, ui, vr);
-        ui.footer(fullscreen_ ? "Stick: orbit L1/R1: zoom X: spin []: wire Sel: LOD Start: cull R2: export Tri: back"
-                              : "Up/Down: select  Cross: view  Square: wireframe  L1/R1: zoom  R2: export  Triangle: back");
+        ui.footer(fullscreen_ ? "Stick: orbit {L1}/{R1}: zoom {Cross}: spin {Square}: wire {Select}: LOD {Start}: cull {R2}: export {Triangle}: back"
+                              : "{Up/Down}: select  {Cross}: view  {Square}: wireframe  {L1}/{R1}: zoom  {R2}: export  {Triangle}: back");
     }
 
 private:

@@ -77,7 +77,7 @@ public:
         if (!error_.empty() || !gt_) {
             ui.header("CAR DATABASE", "");
             ui.text_center(150, error_, colors::kBad);
-            ui.footer("Triangle: back");
+            ui.footer("{Triangle}: back");
             return;
         }
         if (mode_ == Mode::Cars) render_cars(ui);
@@ -175,7 +175,7 @@ private:
         if (page_ == 0) render_specs(ui, x, c, s);
         else if (page_ == 1) render_curve(ui, x, c);
         else render_parts(ui, x, c);
-        ui.footer("Up/Down: car  Left/Right: page  Circle: sort  Square: events  Triangle: back");
+        ui.footer("{Up/Down}: car  {Left/Right}: page  {Circle}: sort  {Square}: events  {Triangle}: back");
     }
 
     void render_specs(Ui& ui, float x, const data::Car& c, const CarDatabase::Summary& s) {
@@ -321,7 +321,7 @@ private:
             ui.text(x, y, clip(name, 46));
             y += 11;
         }
-        ui.footer("Up/Down: event  Square: cars  Triangle: back   (prize/laps fields partly inferred)");
+        ui.footer("{Up/Down}: event  {Square}: cars  {Triangle}: back   (prize/laps fields partly inferred)");
     }
 
     const CarDatabase& db() const { return gt_->db(); }

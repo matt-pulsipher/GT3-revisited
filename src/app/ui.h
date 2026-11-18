@@ -6,6 +6,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_render.h>
 
+#include <array>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -33,6 +34,27 @@ constexpr Color kHighlight{52, 58, 82};
 constexpr Color kBackground{14, 15, 20};
 constexpr Color kOutline{78, 86, 118};
 } // namespace colors
+
+// Button prompts in our screens' text: a token in braces, "{Cross}: choose", draws as the button
+// the player presses for that pad button on the controller in use (a PlayStation, Xbox or
+// Nintendo pad's button, a keyboard key), from the table App sets every frame
+// (app/button_prompts.h). Tokens are the pad's buttons by the DualShock 2's names, plus
+// {Up/Down}, {Left/Right} and {Arrows} (the four directions). "{Select|Delete}" is a key the
+// screen reads itself: Select's prompt, but that key (an SDL scancode name) while the prompts show
+// the keyboard. Other text in braces stays as it is.
+enum class Prompt : u8 {
+    Cross, Circle, Square, Triangle, L1, R1, L2, R2, L3, R3, Start, Select,
+    Up, Down, Left, Right, UpDown, LeftRight, Arrows,
+    Count
+};
+constexpr size_t kPromptCount = static_cast<size_t>(Prompt::Count);
+// What each token draws: UTF-8 text, PromptFont glyphs as ui_font::prompt_glyph(). `keyboard`:
+// they show the keyboard's keys.
+struct PromptTable {
+    std::array<std::string, kPromptCount> text;
+    bool keyboard = false;
+};
+std::string_view prompt_token(Prompt p); // "Cross", "Up/Down"
 
 // Rectangle in UI units.
 struct UiRect {
@@ -96,6 +118,12 @@ public:
     static std::string elide(std::string_view s, float width);
     // `s` fitted into `width` units by cutting its end ("...").
     static std::string clip(std::string_view s, float width);
+    // Button prompts (Prompt): what the tokens draw from now on, and `s` with its tokens replaced
+    // (text(), text_width() and the fitting functions above do this themselves). Until the first
+    // set_prompts(), and when PromptFont is unavailable, PlayStation buttons by name.
+    static void set_prompts(const PromptTable& t);
+    static std::string expand_prompts(std::string_view s);
+    static bool prompts_keyboard(); // the prompts show the keyboard's keys (PromptTable::keyboard)
     // Rounded rectangle, filled or as an outline `t` units thick.
     void fill_round(float x, float y, float w, float h, float r, Color c);
     void frame_round(float x, float y, float w, float h, float r, float t, Color c);

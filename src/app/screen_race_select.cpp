@@ -89,7 +89,7 @@ void RaceScreen::render_select(App&, Ui& ui) {
         list(0, 12, 616, "REPLAY", int(replay_files_.size()), replay_sel_, true,
              [&](int i) { return replay_files_[size_t(i)].name; });
         if (replay_files_.empty()) ui.text(12, kTop + 2, "No saved replays (Pause > Save replay while driving).", colors::kDim);
-        ui.footer("Up/Down: select  Cross: watch  Circle: back");
+        ui.footer("{Up/Down}: select  {Cross}: watch  {Circle}: back");
         return;
     }
     list(0, 12, 236, "COURSE", int(courses_.size()), course_sel_, column_ == 0,
@@ -98,7 +98,7 @@ void RaceScreen::render_select(App&, Ui& ui) {
     if (!error_.empty()) ui.text(12, Ui::kHeight - 30, error_.substr(0, 76), colors::kBad);
     std::string gb = std::string("Gearbox: ") + (controls_.config().automatic ? "automatic" : "manual");
     ui.text_right(Ui::kWidth - 12, Ui::kHeight - 30, gb, colors::kDim);
-    ui.footer("Up/Down/Left/Right: select  []: AT/MT  O: replays  X: drive  Tri: back");
+    ui.footer("{Arrows}: select  {Square}: AT/MT  {Circle}: replays  {Cross}: drive  {Triangle}: back");
 }
 
 } // namespace gt3r::race_screen

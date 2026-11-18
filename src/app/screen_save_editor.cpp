@@ -327,7 +327,7 @@ public:
         ui.fill(0, dy, ui.width(), ui.height() - dy, Color{22, 24, 31});
         ui.fill(0, dy, ui.width(), 1, colors::kOutline);
         std::string desc = note_left_ > 0 ? note_
-                         : focus_tabs_    ? "Left/Right: switch page    Down: rows"
+                         : focus_tabs_    ? "{Left/Right}: switch page    {Down}: rows"
                          : sel_ >= 0 && sel_ < n ? rows_[size_t(sel_)].desc
                                                  : "";
         std::vector<std::string> lines = Ui::wrap(desc, S.w - 16);
@@ -598,7 +598,7 @@ private:
     void build_career() {
         GameState& s = gt_->state();
         heading("Money");
-        number("Credits", "The money you have to spend. Left/Right: 10,000 Cr. at a time; Cross: type a number.",
+        number("Credits", "The money you have to spend. {Left/Right}: 10,000 Cr. at a time; {Cross}: type a number.",
                s.credits, 0, game::kEditMaxMoney, 10000, credits(s.credits), [&s](s64 v) { s.credits = v; });
         heading("Progress");
         number("Day", "GT Mode's day count: a day passes for every race or test you enter.", s.day, 1, game::kEditMaxDays, 1,
@@ -1202,14 +1202,14 @@ private:
     }
 
     std::string footer_hint() const {
-        const std::string back = editing() ? "    Triangle/Esc: back    Start/P: save" : "    Triangle/Esc: back";
-        if (focus_tabs_) return "Left/Right: page" + back;
+        const std::string back = editing() ? "    {Triangle}: back    {Start}: save" : "    {Triangle}: back";
+        if (focus_tabs_) return "{Left/Right}: page" + back;
         if (sel_ < 0 || sel_ >= int(rows_.size())) return back.substr(4);
         switch (rows_[size_t(sel_)].kind) {
-        case Row::Kind::Choice: return "Left/Right: change" + back;
-        case Row::Kind::Slider: return "Left/Right: adjust (or drag)" + back;
-        case Row::Kind::Number: return "Left/Right: change    Cross/Enter: type a number" + back;
-        default: return "Cross/Enter: choose" + back;
+        case Row::Kind::Choice: return "{Left/Right}: change" + back;
+        case Row::Kind::Slider: return "{Left/Right}: adjust (or drag)" + back;
+        case Row::Kind::Number: return "{Left/Right}: change    {Cross}: type a number" + back;
+        default: return "{Cross}: choose" + back;
         }
     }
 

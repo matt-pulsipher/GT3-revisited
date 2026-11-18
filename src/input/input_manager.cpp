@@ -503,7 +503,26 @@ std::string InputManager::describe(int player, const InputSource& src) const {
     return prefix + own.to_string();
 }
 
+SDL_Gamepad* InputManager::gamepad(int player) const {
+    const Device* d = find_device(players_[player].device);
+    return d ? d->gamepad : nullptr;
+}
+
 void InputManager::handle_event(const SDL_Event& e) {
+    switch (e.type) { // last_input_was_key
+    case SDL_EVENT_KEY_DOWN: // not a phone's or remote's system keys (Back, volume, media)
+        if (!e.key.repeat && (e.key.scancode < SDL_SCANCODE_MUTE ||
+                              (e.key.scancode > SDL_SCANCODE_VOLUMEDOWN && e.key.scancode < SDL_SCANCODE_MODE)))
+            last_input_key_ = true;
+        break;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
+    case SDL_EVENT_JOYSTICK_HAT_MOTION: last_input_key_ = false; break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+        if (std::abs(int(e.gaxis.value)) > 16000) last_input_key_ = false;
+        break;
+    default: break;
+    }
     switch (e.type) {
     case SDL_EVENT_JOYSTICK_ADDED:
         add_device(e.jdevice.which);

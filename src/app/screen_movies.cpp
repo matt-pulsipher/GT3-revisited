@@ -102,7 +102,7 @@ public:
             ui.text(22, y, movie_title(files_[idx].name), colors::kText);
             ui.text_right(Ui::kWidth - 10, y, files_[idx].name, colors::kDim);
         }
-        ui.footer("Cross: play   Square: course preview stills   Triangle: back");
+        ui.footer("{Cross}: play   {Square}: course preview stills   {Triangle}: back");
     }
 
 private:
@@ -197,7 +197,7 @@ private:
                 ui.text(200, 150, "cannot decode " + name, colors::kBad);
             }
         }
-        ui.footer("Up/Down: course   Square/Triangle: back to movies");
+        ui.footer("{Up/Down}: course   {Square}/{Triangle}: back to movies");
     }
 
     void render_playback(Ui& ui) {
@@ -228,7 +228,7 @@ private:
         ui.bar(10, Ui::kHeight - 30, Ui::kWidth - 190, 6, len > 0 ? float(std::min(1.0, pos / len)) : 0.0f,
                colors::kAccent);
         ui.text_right(Ui::kWidth - 10, Ui::kHeight - 31, t, colors::kDim);
-        ui.footer("Cross: pause  L1/R1: prev/next  Left/Right: volume  Square: info  Circle: stop");
+        ui.footer("{Cross}: pause  {L1}/{R1}: prev/next  {Left/Right}: volume  {Square}: info  {Circle}: stop");
     }
 
     std::vector<MovieFile> files_;

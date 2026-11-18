@@ -272,24 +272,6 @@ void RaceScreen::render_pause(Ui& ui) {
 
 namespace {
 
-// What the player presses for menu button `b` (the pause screen's hints): the touch control's
-// label while the touch controls show, else the first input their menu buttons bind to it, the
-// keyboard's when no controller is in use.
-std::string button_hint(App& app, PadButton b) {
-    if (app.touch().controls().visible()) return std::string(pad_button_name(b));
-    InputManager& in = app.input();
-    for (BindingSet set : {BindingSet::Controller, BindingSet::Keyboard}) {
-        if (set == BindingSet::Controller && in.kind(0) == DeviceKind::Keyboard) continue;
-        for (const Binding& bd : in.bindings(0, false, set).bindings)
-            if (bd.target.kind == PadTarget::Kind::Button && bd.target.button == b) {
-                std::string name = in.describe(0, bd.source);
-                if (name.rfind("Key ", 0) == 0) name.erase(0, 4); // "Q", not "Key Q"
-                return name;
-            }
-    }
-    return std::string(pad_button_name(b));
-}
-
 // |<< or >>| (Previous / Next), `h` units high, centred on (cx, cy).
 void skip_icon(Ui& ui, float cx, float cy, float h, bool next, Color c) {
     const float tw = h * 0.55f, bw = std::max(1.0f, h * 0.16f), left = cx - (2 * tw + bw) / 2;
@@ -311,7 +293,7 @@ void RaceScreen::draw_song(Ui& ui, bool controls) {
     const std::optional<RaceMusic::SongInfo> song = music_.now_playing(app_->audio());
     if (!song) return;
     const float W = ui.width(), H = ui.height();
-    const std::string prev = controls ? button_hint(*app_, PadButton::L1) : "", next = controls ? button_hint(*app_, PadButton::R1) : "";
+    const std::string prev = controls ? Ui::expand_prompts("{L1}") : "", next = controls ? Ui::expand_prompts("{R1}") : "";
     // The hints' width beside the song: "<button>  |<<  Previous" each side.
     const float side = controls ? std::ceil(std::max(Ui::text_width(prev + "  Previous"), Ui::text_width("Next  " + next))) + 22 : 0;
     const float text_w = std::max(Ui::text_width(song->title), Ui::text_width(song->artist));

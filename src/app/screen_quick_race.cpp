@@ -224,7 +224,7 @@ public:
         if (!error_.empty()) {
             ui.header("QUICK RACE", "");
             ui.text_center(150, error_, colors::kBad);
-            footer_actions(ui, "", {{"Triangle: back", kFootBack}}, hits_, kHitFooter, pointer_);
+            footer_actions(ui, "", {{"{Triangle}: back", kFootBack}}, hits_, kHitFooter, pointer_);
             return;
         }
         if (page_ == Page::Cars) {
@@ -698,7 +698,7 @@ private:
         ui.scrollbar(UiRect{8, kListY, kListW - 6, kListRows * kRowH}, float(rows_.size()) * kRowH, float(list_first_) * kRowH);
         if (const int c = rows_[size_t(row_)].custom; c >= 0) render_custom_info(app, ui, c ? saved_[size_t(c - 1)] : last_custom_);
         else render_info(app, ui, true);
-        footer_actions(ui, "Up/Down: event   L1/R1 or Left/Right: category", {{"Cross: choose", kFootChoose}, {"Triangle: back", kFootBack}},
+        footer_actions(ui, "{Up/Down}: event   {L1}/{R1} or {Left/Right}: category", {{"{Cross}: choose", kFootChoose}, {"{Triangle}: back", kFootBack}},
                        hits_, kHitFooter, pointer_);
     }
 
@@ -962,7 +962,7 @@ private:
             if (rows[i] != Row::Start) value_arrows(ui, arrows, value, colors::kText, hits_, kHitLeft, kHitRight, int(i), pointer_, indent);
         }
         if (!last_result_.empty()) ui.text(330, Ui::kHeight - 30, Ui::clip(last_result_, 302), colors::kGood);
-        footer_actions(ui, "Up/Down: choose   Left/Right: change", {{"Cross: choose", kFootChoose}, {"Triangle: events", kFootBack}}, hits_,
+        footer_actions(ui, "{Up/Down}: choose   {Left/Right}: change", {{"{Cross}: choose", kFootChoose}, {"{Triangle}: events", kFootBack}}, hits_,
                        kHitFooter, pointer_);
     }
 
@@ -1286,7 +1286,7 @@ private:
             auto it = std::find_if(courses_.begin(), courses_.end(), [&](const PickerCourse& c) { return c.label == custom_.course; });
             const int n = int(courses_.size()), i = it == courses_.end() ? 0 : int(it - courses_.begin());
             if (cross) {
-                course_picker_.set_labels("Custom race", "Triangle: back");
+                course_picker_.set_labels("Custom race", "{Triangle}: back");
                 course_picker_.open(courses_, i, [this](const std::string& c) { return course_length(c); });
                 page_ = Page::Courses;
                 picker_sound(app, "ok");
@@ -1333,14 +1333,14 @@ private:
     // What the row under the cursor does, for the footer.
     std::string custom_hint(const CustomRow& row) const {
         if (row.kind == CRow::CatchUp) return "Catch-up: cars far ahead of you slow down, cars far behind you speed up";
-        if (row.kind != CRow::Grid) return "Up/Down: choose   Left/Right: change";
+        if (row.kind != CRow::Grid) return "{Up/Down}: choose   {Left/Right}: change";
         if (row.grid == OpponentGrid::kSkillRow) return "Sets every opponent's skill at once";
         if (row.grid == OpponentGrid::kPlaceRow) return "Where you start, 1st on pole";
         if (row.grid == OpponentGrid::kCountRow)
             return grid_.limit() < OpponentGrid::kMaxCars ? "This course's grid has room for " + std::to_string(grid_.limit()) + " opponents"
-                                                          : "Up/Down: choose   Left/Right: change";
+                                                          : "{Up/Down}: choose   {Left/Right}: change";
         const int who = grid_.who(row.grid);
-        if (who == OpponentGrid::kPlayer) return "Cross: your car and colour";
+        if (who == OpponentGrid::kPlayer) return "{Cross}: your car and colour";
         const int skill = grid_.car(who).skill;
         return std::string(OpponentGrid::skill_name(skill)) + ": " + skill_facts(skill);
     }
@@ -1388,7 +1388,7 @@ private:
         turntable_.draw(app, stage, db_, shown, opponent ? grid_.car(who).paint : custom_.paint, art_);
         ui.text(stage.x + 8, stage.y + 6, Ui::clip(shown.name, stage.w - 16), colors::kText);
         if (!last_result_.empty()) ui.text(stage.x + 8, stage.y + stage.h - 12, Ui::clip(last_result_, stage.w - 16), colors::kGood);
-        footer_actions(ui, custom_hint(at), {{"Cross: choose", kFootChoose}, {"Triangle: back", kFootBack}}, hits_, kHitFooter, pointer_);
+        footer_actions(ui, custom_hint(at), {{"{Cross}: choose", kFootChoose}, {"{Triangle}: back", kFootBack}}, hits_, kHitFooter, pointer_);
     }
 
     void update_courses(App& app) {

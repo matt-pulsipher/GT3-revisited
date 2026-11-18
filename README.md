@@ -537,8 +537,14 @@ original program's code in any form.
   ([third_party/fonts/barlow/OFL.txt](third_party/fonts/barlow/OFL.txt)).
   It is compiled into the executable; the game's menus use the fonts from
   your disc.
+- [PromptFont](https://shinmera.com/promptfont) v1.10 by Yukari "Shinmera"
+  Hafner (based on Xolonium by Severin Meyer), the controller and keyboard
+  button icons on our own screens: Copyright 2018-2023 Yukari Hafner, SIL Open
+  Font License 1.1
+  ([third_party/fonts/promptfont/OFL.txt](third_party/fonts/promptfont/OFL.txt)).
+  It is compiled into the executable.
 - [stb_truetype](https://github.com/nothings/stb) v1.26 by Sean Barrett,
-  public domain (or MIT), rasterises that font.
+  public domain (or MIT), rasterises these fonts.
 - [dr_mp3, dr_flac and dr_wav](https://github.com/mackron/dr_libs) by David
   Reid, public domain (or MIT-0), decode your own music
   ([third_party/dr_libs](third_party/dr_libs)).

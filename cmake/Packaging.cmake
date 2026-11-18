@@ -68,6 +68,7 @@ if(APPLE)
   install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE
           ${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.md DESTINATION .)
   install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/OFL.txt DESTINATION . RENAME Barlow-OFL.txt)
+  install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/promptfont/OFL.txt DESTINATION . RENAME PromptFont-OFL.txt)
   # Seal the finished bundle with an ad-hoc signature (no Apple account needed). The
   # linker signs only the executable; without sealing the bundle's resources the
   # signature is invalid and macOS calls a downloaded copy "damaged" instead of
@@ -90,6 +91,7 @@ elseif(WIN32)
   install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/LICENSE
           ${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.md DESTINATION .)
   install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/OFL.txt DESTINATION . RENAME Barlow-OFL.txt)
+  install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/promptfont/OFL.txt DESTINATION . RENAME PromptFont-OFL.txt)
 else()
   include(GNUInstallDirs)
   install(TARGETS gt3r ${_tools} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -100,4 +102,6 @@ else()
           ${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/gt3r)
   install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/barlow/OFL.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/gt3r
           RENAME Barlow-OFL.txt)
+  install(FILES ${CMAKE_SOURCE_DIR}/third_party/fonts/promptfont/OFL.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/gt3r
+          RENAME PromptFont-OFL.txt)
 endif()
