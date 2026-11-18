@@ -228,7 +228,10 @@ private:
         // composite, which a tile-based mobile GPU pays for in full (5 fps on a Galaxy A15).
         // At the screen's resolution the passes' part of a game pixel has nothing left to add.
         if (platform::is_mobile() || canvas_) passes = 1;
-        if (show_.key != entry) {
+        // A new car, or the same car shown anew (its menu frame count restarted: back on the
+        // page after a race, or back from the class row): the intro starts over. Keeping the
+        // old state held the camera still until the new count caught up with the old one.
+        if (show_.key != entry || (frame >= 0 && frame < show_.frames + show_.load_wait)) {
             show_ = Showroom{};
             show_.key = entry;
             show_.look[0] = cam.key(0x34), show_.look[1] = cam.key(0x35), show_.look[2] = cam.key(0x36);
