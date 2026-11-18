@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <optional>
 
 #if defined(__clang__) || defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -31,6 +32,11 @@
 #define DR_WAV_IMPLEMENTATION
 #define DR_WAV_NO_STDIO
 #include "../../third_party/dr_libs/dr_wav.h"
+// stb_vorbis's declarations; its implementation is compiled in vorbis_decoder.cpp.
+#define STB_VORBIS_HEADER_ONLY
+#define STB_VORBIS_NO_STDIO
+#define STB_VORBIS_NO_PUSHDATA_API
+#include "../../third_party/stb/stb_vorbis.c"
 #if defined(__clang__) || defined(__GNUC__)
 #pragma GCC diagnostic pop
 #elif defined(_MSC_VER)
@@ -55,15 +61,23 @@ std::string extension(std::string_view name) {
 struct Source {
     std::unique_ptr<File> file;
     std::shared_ptr<const Bytes> mem;
+    MusicReadFn reader; // a mod's file through the VFS (Vfs::Stream)
+    u64 reader_size = 0;
     u64 pos = 0;
 
-    u64 size() const { return file ? file->size() : mem ? mem->size() : 0; }
+    u64 size() const { return file ? file->size() : mem ? mem->size() : reader ? reader_size : 0; }
     size_t read(void* out, size_t len) {
         const u64 left = size() - std::min(pos, size());
         len = size_t(std::min<u64>(len, left));
         if (len == 0) return 0;
         if (mem) {
             std::memcpy(out, mem->data() + pos, len);
+        } else if (reader) {
+            try {
+                reader(pos, out, len);
+            } catch (const std::exception&) {
+                return 0;
+            }
         } else {
             try {
                 file->read_at(pos, out, len);
@@ -86,7 +100,73 @@ struct Source {
 
 size_t on_read(void* user, void* out, size_t len) { return static_cast<Source*>(user)->read(out, len); }
 
-class Mp3Stream : public MusicStream {
+// A Vorbis comment's value as a frame count ("LOOPSTART=44100"), if it is `key` (any case).
+std::optional<u64> loop_tag(std::string_view comment, std::string_view key) {
+    if (comment.size() <= key.size() || comment[key.size()] != '=' || to_lower(comment.substr(0, key.size())) != key)
+        return std::nullopt;
+    const std::string_view v = comment.substr(key.size() + 1);
+    if (v.empty() || v.size() > 18) return std::nullopt;
+    u64 n = 0;
+    for (char c : v) {
+        if (c < '0' || c > '9') return std::nullopt;
+        n = n * 10 + u64(c - '0');
+    }
+    return n;
+}
+
+// The loop tags among a file's Vorbis comments (FLAC, Ogg Vorbis): LOOPSTART with LOOPLENGTH or
+// LOOPEND (exclusive), in frames.
+struct LoopTags {
+    std::optional<u64> start, length, end;
+    void add(std::string_view comment) {
+        if (auto v = loop_tag(comment, "loopstart")) start = v;
+        else if (auto v = loop_tag(comment, "looplength")) length = v;
+        else if (auto v = loop_tag(comment, "loopend")) end = v;
+    }
+};
+
+// The decoders' common part: the frame count and the loop. A loop region [loop_start,
+// loop_end) from the file (a WAV's smpl chunk, a FLAC's LOOPSTART tags) plays the intro once,
+// then the region over and over; without one, the whole file loops.
+class DecodedStream : public MusicStream {
+public:
+    double position_seconds() const override { return sample_rate() ? double(frame_) / sample_rate() : 0.0; }
+    size_t read(s16* out, size_t frames) override {
+        if (loop_ && loop_end_ && frame_ >= loop_end_ && seek(loop_start_)) frame_ = loop_start_;
+        size_t got = decode(out, want(frames));
+        if (got == 0 && loop_ && frame_ > loop_start_ && seek(loop_start_)) {
+            frame_ = loop_start_;
+            got = decode(out, want(frames));
+        }
+        frame_ += got;
+        return got;
+    }
+    u64 loop_start() const { return loop_start_; }
+    u64 loop_end() const { return loop_end_; }
+
+protected:
+    virtual size_t decode(s16* out, size_t frames) = 0;
+    virtual bool seek(u64 frame) = 0;
+    void set_loop(const LoopTags& t) {
+        if (t.start && (t.length || t.end)) set_loop(*t.start, t.length ? *t.start + *t.length : *t.end);
+    }
+    // A loop region in frames (`end` exclusive); one that is empty or runs past the end is ignored.
+    void set_loop(u64 start, u64 end) {
+        const u64 total = total_frames();
+        if (end <= start || (total && end > total)) return;
+        loop_start_ = start;
+        loop_end_ = end;
+    }
+    bool loop_ = false;
+
+private:
+    size_t want(size_t frames) const {
+        return loop_ && loop_end_ && frame_ < loop_end_ ? size_t(std::min<u64>(frames, loop_end_ - frame_)) : frames;
+    }
+    u64 frame_ = 0, loop_start_ = 0, loop_end_ = 0;
+};
+
+class Mp3Stream : public DecodedStream {
 public:
     ~Mp3Stream() override {
         if (open_) drmp3_uninit(&mp3_);
@@ -104,25 +184,18 @@ public:
     u32 sample_rate() const override { return mp3_.sampleRate; }
     u32 channels() const override { return mp3_.channels; }
     u64 total_frames() const override { return mp3_.totalPCMFrameCount == DRMP3_UINT64_MAX ? 0 : mp3_.totalPCMFrameCount; }
-    double position_seconds() const override { return double(frame_) / mp3_.sampleRate; }
-    size_t read(s16* out, size_t frames) override {
-        size_t got = size_t(drmp3_read_pcm_frames_s16(&mp3_, frames, out));
-        if (got == 0 && loop_ && frame_ > 0 && drmp3_seek_to_pcm_frame(&mp3_, 0)) {
-            frame_ = 0;
-            got = size_t(drmp3_read_pcm_frames_s16(&mp3_, frames, out));
-        }
-        frame_ += got;
-        return got;
-    }
+
+protected:
+    size_t decode(s16* out, size_t frames) override { return size_t(drmp3_read_pcm_frames_s16(&mp3_, frames, out)); }
+    bool seek(u64 frame) override { return drmp3_seek_to_pcm_frame(&mp3_, frame); }
 
 private:
     Source src_;
     drmp3 mp3_{};
-    bool open_ = false, loop_ = false;
-    u64 frame_ = 0;
+    bool open_ = false;
 };
 
-class FlacStream : public MusicStream {
+class FlacStream : public DecodedStream {
 public:
     ~FlacStream() override {
         if (flac_) drflac_close(flac_);
@@ -130,35 +203,40 @@ public:
     bool open(Source src, bool loop) {
         src_ = std::move(src);
         loop_ = loop;
-        flac_ = drflac_open(
-            on_read,
-            [](void* u, int off, drflac_seek_origin o) -> drflac_bool32 { return static_cast<Source*>(u)->seek(off, int(o)); },
-            [](void* u, drflac_int64* at) -> drflac_bool32 { return *at = drflac_int64(static_cast<Source*>(u)->pos), 1; },
-            &src_, nullptr);
-        return flac_ && flac_->channels > 0 && flac_->sampleRate > 0;
+        flac_ = drflac_open_with_metadata(
+            [](void* u, void* out, size_t len) { return static_cast<FlacStream*>(u)->src_.read(out, len); },
+            [](void* u, int off, drflac_seek_origin o) -> drflac_bool32 {
+                return static_cast<FlacStream*>(u)->src_.seek(off, int(o));
+            },
+            [](void* u, drflac_int64* at) -> drflac_bool32 { return *at = drflac_int64(static_cast<FlacStream*>(u)->src_.pos), 1; },
+            [](void* u, drflac_metadata* m) { static_cast<FlacStream*>(u)->on_meta(*m); }, this, nullptr);
+        if (!flac_ || flac_->channels == 0 || flac_->sampleRate == 0) return false;
+        set_loop(tags_);
+        return true;
     }
     u32 sample_rate() const override { return flac_->sampleRate; }
     u32 channels() const override { return flac_->channels; }
     u64 total_frames() const override { return flac_->totalPCMFrameCount; }
-    double position_seconds() const override { return double(frame_) / flac_->sampleRate; }
-    size_t read(s16* out, size_t frames) override {
-        size_t got = size_t(drflac_read_pcm_frames_s16(flac_, frames, out));
-        if (got == 0 && loop_ && frame_ > 0 && drflac_seek_to_pcm_frame(flac_, 0)) {
-            frame_ = 0;
-            got = size_t(drflac_read_pcm_frames_s16(flac_, frames, out));
-        }
-        frame_ += got;
-        return got;
-    }
+
+protected:
+    size_t decode(s16* out, size_t frames) override { return size_t(drflac_read_pcm_frames_s16(flac_, frames, out)); }
+    bool seek(u64 frame) override { return drflac_seek_to_pcm_frame(flac_, frame); }
 
 private:
+    // The callbacks get `this` (the metadata callback needs it); reads go to src_.
+    void on_meta(const drflac_metadata& m) {
+        if (m.type != DRFLAC_METADATA_BLOCK_TYPE_VORBIS_COMMENT) return;
+        drflac_vorbis_comment_iterator it;
+        drflac_init_vorbis_comment_iterator(&it, m.data.vorbis_comment.commentCount, m.data.vorbis_comment.pComments);
+        drflac_uint32 len = 0;
+        while (const char* c = drflac_next_vorbis_comment(&it, &len)) tags_.add(std::string_view(c, len));
+    }
     Source src_;
     drflac* flac_ = nullptr;
-    bool loop_ = false;
-    u64 frame_ = 0;
+    LoopTags tags_;
 };
 
-class WavStream : public MusicStream {
+class WavStream : public DecodedStream {
 public:
     ~WavStream() override {
         if (open_) drwav_uninit(&wav_);
@@ -166,32 +244,88 @@ public:
     bool open(Source src, bool loop) {
         src_ = std::move(src);
         loop_ = loop;
-        open_ = drwav_init(
+        open_ = drwav_init_with_metadata(
             &wav_, on_read,
             [](void* u, int off, drwav_seek_origin o) -> drwav_bool32 { return static_cast<Source*>(u)->seek(off, int(o)); },
             [](void* u, drwav_int64* at) -> drwav_bool32 { return *at = drwav_int64(static_cast<Source*>(u)->pos), 1; },
-            &src_, nullptr);
-        return open_ && wav_.channels > 0 && wav_.sampleRate > 0;
+            &src_, 0, nullptr);
+        if (!open_ || wav_.channels == 0 || wav_.sampleRate == 0) return false;
+        // The smpl chunk's first loop: its sample offsets are frames, the last one inclusive.
+        for (drwav_uint32 i = 0; i < wav_.metadataCount; ++i) {
+            const drwav_metadata& m = wav_.pMetadata[i];
+            if (m.type != drwav_metadata_type_smpl || m.data.smpl.sampleLoopCount == 0 || !m.data.smpl.pLoops) continue;
+            const drwav_smpl_loop& l = m.data.smpl.pLoops[0];
+            set_loop(l.firstSampleOffset, u64(l.lastSampleOffset) + 1);
+            break;
+        }
+        return true;
     }
     u32 sample_rate() const override { return wav_.sampleRate; }
     u32 channels() const override { return wav_.channels; }
     u64 total_frames() const override { return wav_.totalPCMFrameCount; }
-    double position_seconds() const override { return double(frame_) / wav_.sampleRate; }
-    size_t read(s16* out, size_t frames) override {
-        size_t got = size_t(drwav_read_pcm_frames_s16(&wav_, frames, out));
-        if (got == 0 && loop_ && frame_ > 0 && drwav_seek_to_pcm_frame(&wav_, 0)) {
-            frame_ = 0;
-            got = size_t(drwav_read_pcm_frames_s16(&wav_, frames, out));
-        }
-        frame_ += got;
-        return got;
-    }
+
+protected:
+    size_t decode(s16* out, size_t frames) override { return size_t(drwav_read_pcm_frames_s16(&wav_, frames, out)); }
+    bool seek(u64 frame) override { return drwav_seek_to_pcm_frame(&wav_, frame); }
 
 private:
     Source src_;
     drwav wav_{};
-    bool open_ = false, loop_ = false;
-    u64 frame_ = 0;
+    bool open_ = false;
+};
+
+// Ogg Vorbis through stb_vorbis, which decodes from memory: the file is read whole (a few MB
+// for a song; at most kMaxBytes).
+class OggStream : public DecodedStream {
+public:
+    static constexpr u64 kMaxBytes = 256ull << 20;
+    ~OggStream() override {
+        if (v_) stb_vorbis_close(v_);
+    }
+    bool open(Source src, bool loop) {
+        loop_ = loop;
+        const u64 size = src.size();
+        if (size == 0 || size > kMaxBytes) return false;
+        if (src.mem) {
+            data_ = src.mem;
+        } else {
+            auto bytes = std::make_shared<Bytes>(size_t(size));
+            src.pos = 0;
+            if (src.read(bytes->data(), bytes->size()) != bytes->size()) return false;
+            data_ = std::move(bytes);
+        }
+        int error = 0;
+        v_ = stb_vorbis_open_memory(data_->data(), int(data_->size()), &error, nullptr);
+        if (!v_) return false;
+        info_ = stb_vorbis_get_info(v_);
+        if (info_.channels <= 0 || info_.sample_rate == 0) return false;
+        const stb_vorbis_int64 total = stb_vorbis_stream_length_in_samples64(v_);
+        total_ = total > 0 ? u64(total) : 0;
+        LoopTags tags;
+        const stb_vorbis_comment c = stb_vorbis_get_comment(v_);
+        for (int i = 0; i < c.comment_list_length; ++i)
+            if (c.comment_list[i]) tags.add(c.comment_list[i]);
+        set_loop(tags);
+        return true;
+    }
+    u32 sample_rate() const override { return info_.sample_rate; }
+    u32 channels() const override { return u32(info_.channels); }
+    u64 total_frames() const override { return total_; }
+
+protected:
+    size_t decode(s16* out, size_t frames) override {
+        const size_t ch = size_t(info_.channels);
+        frames = std::min<size_t>(frames, size_t(INT32_MAX) / ch);
+        const int got = stb_vorbis_get_samples_short_interleaved(v_, info_.channels, out, int(frames * ch));
+        return got > 0 ? size_t(got) : 0;
+    }
+    bool seek(u64 frame) override { return stb_vorbis_seek64(v_, stb_vorbis_int64(frame)) != 0; }
+
+private:
+    std::shared_ptr<const Bytes> data_; // stb_vorbis reads it in place
+    stb_vorbis* v_ = nullptr;
+    stb_vorbis_info info_{};
+    u64 total_ = 0;
 };
 
 // --- tags ------------------------------------------------------------------------------------------
@@ -365,6 +499,38 @@ void parse_flac(ByteSpan d, MusicTags& t) {
     }
 }
 
+// An Ogg file's second packet (its first logical stream's), as far as `d` holds it: Vorbis puts
+// its comment header there. Packets are cut into segments across pages; a page starts "OggS".
+Bytes ogg_second_packet(ByteSpan d) {
+    Bytes packet;
+    int index = 0; // the packet being read
+    u32 serial = 0;
+    for (size_t at = 0; at + 27 <= d.size() && has_magic(d.subspan(at), "OggS");) {
+        const u32 page_serial = rd32(d, at + 14);
+        const size_t segments = d[at + 26];
+        if (at + 27 + segments > d.size()) break;
+        if (at == 0) serial = page_serial;
+        size_t body = at + 27 + segments;
+        for (size_t i = 0; i < segments; ++i) {
+            const size_t len = d[at + 27 + i];
+            const size_t have = body < d.size() ? std::min(len, d.size() - body) : 0;
+            if (page_serial == serial) {
+                if (index == 1) packet.insert(packet.end(), d.begin() + ptrdiff_t(body), d.begin() + ptrdiff_t(body + have));
+                if (len < 255 && ++index > 1) return packet; // the packet ends with a short segment
+            }
+            body += len;
+        }
+        at = body;
+    }
+    return packet;
+}
+
+void parse_ogg(ByteSpan d, MusicTags& t) {
+    const Bytes packet = ogg_second_packet(d);
+    if (packet.size() > 7 && packet[0] == 3 && std::memcmp(packet.data() + 1, "vorbis", 6) == 0)
+        parse_vorbis_comments(ByteSpan(packet).subspan(7), t);
+}
+
 // A WAV LIST chunk's body ("INFO" and its subchunks).
 void parse_info_list(ByteSpan d, MusicTags& t) {
     if (!has_magic(d, "INFO")) return;
@@ -400,11 +566,12 @@ MusicFileType music_file_type(std::string_view name) {
     if (e == "mp3") return MusicFileType::Mp3;
     if (e == "flac") return MusicFileType::Flac;
     if (e == "wav" || e == "wave") return MusicFileType::Wav;
+    if (e == "ogg" || e == "oga") return MusicFileType::Ogg;
     return MusicFileType::None;
 }
 
 bool unplayable_music_file(std::string_view name) {
-    static const char* const kOther[] = {"m4a", "aac", "mp4", "m4b", "ogg", "oga", "opus", "wma", "aif", "aiff", "alac", "ape", "wv"};
+    static const char* const kOther[] = {"m4a", "aac", "mp4", "m4b", "opus", "wma", "aif", "aiff", "alac", "ape", "wv"};
     const std::string e = extension(name);
     return std::find(std::begin(kOther), std::end(kOther), e) != std::end(kOther);
 }
@@ -432,6 +599,11 @@ std::unique_ptr<MusicStream> open_source(Source src, MusicFileType type, bool lo
         case MusicFileType::Wav: {
             auto w = std::make_unique<WavStream>();
             if (w->open(std::move(src), loop)) return w;
+            break;
+        }
+        case MusicFileType::Ogg: {
+            auto o = std::make_unique<OggStream>();
+            if (o->open(std::move(src), loop)) return o;
             break;
         }
         case MusicFileType::None: break;
@@ -472,6 +644,14 @@ std::unique_ptr<MusicStream> open_music_memory(std::shared_ptr<const Bytes> data
     return open_source(std::move(src), type, loop);
 }
 
+std::unique_ptr<MusicStream> open_music_reader(u64 size, MusicReadFn read, MusicFileType type, bool loop) {
+    if (!read) return nullptr;
+    Source src;
+    src.reader = std::move(read);
+    src.reader_size = size;
+    return open_source(std::move(src), type, loop);
+}
+
 MusicTags parse_music_tags(MusicFileType type, ByteSpan head, ByteSpan tail) {
     MusicTags t;
     try {
@@ -481,6 +661,7 @@ MusicTags parse_music_tags(MusicFileType type, ByteSpan head, ByteSpan tail) {
             parse_id3v1(tail, t);
             break;
         case MusicFileType::Flac: parse_flac(head, t); break;
+        case MusicFileType::Ogg: parse_ogg(head, t); break;
         case MusicFileType::Wav: {
             ByteSpan id3;
             walk_wav(
@@ -522,6 +703,13 @@ MusicTags read_music_tags(const std::string& path, MusicFileType type) {
             Bytes tail;
             if (type == MusicFileType::Mp3 && size >= 128) tail = f->read_at(size - 128, 128);
             return parse_music_tags(type, head, tail);
+        }
+        if (type == MusicFileType::Ogg) {
+            // A comment header longer than the first read (cover art in it): up to 1 MB.
+            MusicTags got = parse_music_tags(type, head);
+            if (got.title.empty() && got.artist.empty() && size > head.size())
+                got = parse_music_tags(type, f->read_at(0, size_t(std::min<u64>(size, kMaxTag))));
+            return got;
         }
         if (type == MusicFileType::Wav) {
             // The LIST and id3 chunks are often after the samples, at the end.

@@ -1,30 +1,38 @@
 #pragma once
 
-// The player's own music (Settings -> Audio -> Your music): MP3, FLAC and WAV files, decoded
-// with dr_mp3 / dr_flac / dr_wav (third_party/dr_libs), and their title / artist tags.
+// The player's own music (Settings -> Audio -> Your music) and mods' menu music: MP3, FLAC, WAV
+// and Ogg Vorbis files, decoded with dr_mp3 / dr_flac / dr_wav (third_party/dr_libs) and
+// stb_vorbis (third_party/stb), and their title / artist tags.
 
 #include "audio/music_stream.h"
 #include "base/bytes.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 
 namespace gt3r {
 
-enum class MusicFileType : u8 { None, Mp3, Flac, Wav };
+enum class MusicFileType : u8 { None, Mp3, Flac, Wav, Ogg };
 
-// By the file name's extension, any case: .mp3, .flac, .wav / .wave.
+// By the file name's extension, any case: .mp3, .flac, .wav / .wave, .ogg / .oga.
 MusicFileType music_file_type(std::string_view name);
-// Music formats that don't play (AAC .m4a / .aac, Ogg, Opus, WMA, AIFF...): a music folder's
+// Music formats that don't play (AAC .m4a / .aac, Opus, WMA, AIFF...): a music folder's
 // scan counts them, so Settings can say why they are missing.
 bool unplayable_music_file(std::string_view name);
 
-// Opens `path` (a host path) for streaming; `loop` starts it over at its end. nullptr when it
-// can't be read or decoded.
+// Opens `path` (a host path) for streaming; `loop` starts it over at its end, or at the file's
+// own loop: a WAV's smpl chunk (its first loop) or a FLAC's LOOPSTART with LOOPLENGTH or LOOPEND
+// tags (frames, the end exclusive) play the part before the loop once, then the loop over and
+// over; an Ogg Vorbis file's LOOPSTART tags likewise. nullptr when it can't be read or decoded.
 std::unique_ptr<MusicStream> open_music_file(const std::string& path, bool loop);
 // The same for a file's bytes in memory (the tests' and the fuzzer's).
 std::unique_ptr<MusicStream> open_music_memory(std::shared_ptr<const Bytes> data, MusicFileType type, bool loop);
+// The same through a reader (offsets from the file's start; throws on error): a mod's file
+// through the VFS (Vfs::Stream).
+using MusicReadFn = std::function<void(u64 offset, void* out, size_t len)>;
+std::unique_ptr<MusicStream> open_music_reader(u64 size, MusicReadFn read, MusicFileType type, bool loop);
 // Whether a file opens for playing (open_music_file without its log): the music folder's scan
 // leaves damaged files out.
 bool music_file_decodes(const std::string& path);
@@ -37,6 +45,7 @@ struct MusicTags {
 //         text encodings; else ID3v1 in `tail`
 //   FLAC  the VORBIS_COMMENT block's TITLE / ARTIST (an ID3v2 tag before "fLaC" is skipped)
 //   WAV   the LIST "INFO" chunk's INAM / IART, else an "id3 " chunk's ID3v2 tag
+//   Ogg   the Vorbis comment header's TITLE / ARTIST
 MusicTags parse_music_tags(MusicFileType type, ByteSpan head, ByteSpan tail = {});
 // The same from the file (reads its start, and for WAV walks its chunks).
 MusicTags read_music_tags(const std::string& path, MusicFileType type);

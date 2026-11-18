@@ -56,6 +56,7 @@ mods/
     files/
       menu/license_bg.img          <- replaces this file from GT3.VOL
       bgm/race_a05.ads             <- replaces a music track
+      music/dealer-01.flac         <- your own recording of a menu tune (see "Menu music")
     textures/
       tyres/tread-0123456789abcdef.png  <- replaces the texture with this key (see "Texture packs")
 ```
@@ -625,11 +626,48 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
   `..._0501`...), so two mods can't clash. Renaming the file or the mod folder
   starts its results over.
 
+## Menu music
+
+The menu tunes aren't recordings: the game plays them from notes
+(`music/music.seq` with the instruments in `music/music.ins`). A mod can put a
+recording in place of any of them: a `.wav`, `.flac`, `.ogg` (Vorbis) or `.mp3` file in
+`files/music/`, named after the tune.
+
+```
+mods/
+  my_menu_music/
+    files/
+      music/
+        main-01.flac               <- the title menu
+        dealer-01.wav              <- the dealers
+```
+
+The names are the tunes' titles in the **Jukebox** (`main-01`, `tune-01`,
+`lisence`, `dealer-01`, `wash-01`, `option`, `menu-03b`, `mapmenu`, `home2`);
+the ids the game asks for (`gtmenu01`, `dealer01`...) work too. Capitals don't
+matter. The Jukebox marks a tune with a recording `MOD`.
+
+A recording loops like the tune it replaces. Without loop points the whole file
+starts over at its end. To play an intro once and then loop the rest, give the
+file loop points (in samples, counted from the start):
+
+- **WAV**: a `smpl` chunk (the first loop is used), as audio editors and sample
+  tools write it.
+- **FLAC** and **Ogg**: the tags `LOOPSTART` and `LOOPLENGTH` (or `LOOPEND`, the first sample
+  after the loop).
+
+MP3 files always loop whole; their encoder padding leaves a short gap at the
+loop, so use WAV, FLAC or Ogg for a seamless one. The recording plays at the menu
+music's level and follows the Music volume; it isn't evened out, so match the
+loudness of the tunes around it. A file that doesn't decode leaves the original
+tune playing (the log says why).
+
 ## What can be modded today
 
 | Kind | Status |
 |---|---|
 | Music (`.ads`) | Works now: replace tracks; the jukebox and the game pick them up. Titles, artists and the song markers that time the replays' Video-mode cuts still come from `bgm/ads.inf` (music §8); the Options music list previews the intro file `bgm/i_<file>` |
+| Menu music | Works now: a WAV, FLAC, Ogg or MP3 recording in place of any sequenced menu tune, with its own loop points (see "Menu music") |
 | Textures | Works now: PNG texture packs at any size (see "Texture packs"), PCSX2 packs converted; whole `.img` files through `files/` too |
 | New cars (`cars/*.ini`) | Works now: data-only cars on a disc car's shell or their own glTF body, including electric ones, sold at GT Mode dealers, new makers included (see above) |
 | GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes and a prize car, listed on a league page; made with the Event creator or by hand (see "Adding events") |

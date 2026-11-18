@@ -67,13 +67,13 @@ public:
             std::string artist = t.artist.size() > 24 ? t.artist.substr(0, 21) + "..." : t.artist;
             ui.text(10, y, idx == playing_ ? ">" : " ", colors::kGood);
             ui.text(22, y, title, c);
-            ui.text(352, y, t.sequence >= 0 ? "SEQ" : "ADS", colors::kDim);
+            ui.text(352, y, t.sequence >= 0 ? (t.recording ? "MOD" : "SEQ") : "ADS", colors::kDim);
             ui.text(408, y, artist, colors::kDim);
         }
         if (playing_ >= 0) {
             double pos = app.audio().music_position(), len = app.audio().music_length();
             char t[64];
-            if (tracks_[playing_].sequence >= 0) {
+            if (tracks_[playing_].sequence >= 0 && app.audio().replaced_sequence() < 0) {
                 // Sequences loop: show the time, the loop length and the passes.
                 int loops = app.audio().sequencer().loops_completed();
                 std::snprintf(t, sizeof(t), "%d:%02d  loop %d:%02d  x%d  %d voices", int(pos) / 60, int(pos) % 60,
@@ -96,6 +96,7 @@ private:
         std::string title, artist;
         std::string file; // streamed: path under bgm/
         int sequence = -1; // sequenced: index into music.seq
+        bool recording = false; // a mod's recording plays for the sequence (AudioEngine::sequence_file)
     };
 
     void load(App& app) {
@@ -112,7 +113,10 @@ private:
             }
             t.title += " " + e.name;
         }
-        for (auto& [i, t] : seqs) tracks_.push_back(std::move(t));
+        for (auto& [i, t] : seqs) {
+            t.recording = !app.audio().sequence_file(*app.vfs(), t.sequence).empty();
+            tracks_.push_back(std::move(t));
+        }
 
         auto inf = app.vfs()->read("bgm/ads.inf");
         if (!inf) {
