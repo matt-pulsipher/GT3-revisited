@@ -77,6 +77,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         course_bytes_ = course;
         car_ = car_setup_from_database(db_, ca.label);
         if (replay && !replay->car_model.empty()) launch_model_ = replay->car_model;
+        // ... and its fitted wheels (issue 347: the theater's launch has no garage car, so its stock rims were drawn).
+        if (replay && !replay->wheel.empty()) launch_.request.car_wheel = replay->wheel;
         std::string model = launch_model_.empty() ? ca.model : launch_model_;
         std::optional<Bytes> car_file = read_car(app, model);
         if (!car_file || car_file->empty()) throw FormatError("car model cars/day/" + model + " is missing or empty");
@@ -732,7 +734,8 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
     const data::Car* driven = db_.car(car_.label);
     const data::DriverSide side = driven ? db_.driver_side(*driven, body) : body;
     driver_side_ = side == data::DriverSide::Left ? -1 : side == data::DriverSide::Right ? 1 : 0;
-    LOG_INFO("Race: %s, its driver %s (the body: left %.2f, right %.2f m2%s)", car_.label.c_str(),
+    LOG_INFO("Race: %s%s%s, its driver %s (the body: left %.2f, right %.2f m2%s)", car_.label.c_str(),
+             wheel_file ? " on wheels " : "", wheel_file ? wheel_label.c_str() : "",
              driver_side_ < 0 ? "on the left" : driver_side_ > 0 ? "on the right" : "in the middle (nothing says)", double(seat.left),
              double(seat.right), seat.side ? "" : ", no side");
 }
