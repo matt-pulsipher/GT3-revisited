@@ -1,6 +1,9 @@
 buildscript {
     repositories {
         google()
+        // Google's mirror of Maven Central first: Central answers busy CI addresses with
+        // HTTP 429 (Too Many Requests). Central itself stays as the fallback.
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         mavenCentral()
     }
     dependencies {
@@ -11,6 +14,8 @@ buildscript {
 allprojects {
     repositories {
         google()
+        // Maven Central mirror first, as above.
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         mavenCentral()
     }
 }
