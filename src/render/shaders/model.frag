@@ -195,13 +195,16 @@ vec3 gt3_grade(vec3 c) {
 // blurred picture laid over the frame. The mean of grade.x x grade.y bilinear taps spaced
 // grade.zw apart around v_uv x view_row0.xy + view_row0.zw (one tap: the plain bilinear sample),
 // every tap clamped to view_row1 (the used part of the texture, half a texel in from its edges: a
-// clamp to its edge), at the weight tint.a.
+// clamp to its edge), at the weight tint.a. flat_color.z = 1 (View3D::spin_resolve): u_sphere is a
+// mask, black where the taps count; each tap weighs by its coverage (1 - the mask), and the result
+// by the pixel's own (none: left as it is).
 vec4 dof_sample() {
     vec2 uv = v_uv * u.view_row0.xy + u.view_row0.zw;
     vec2 n = max(u.grade.xy, vec2(1.0));
     // flat_color.xy > 0: the taps weighted by a Gaussian of that spread (in taps) per axis, else
     // equally (a box mean).
     vec2 s = u.flat_color.xy;
+    bool masked = u.flat_color.z > 0.5;
     vec3 sum = vec3(0.0);
     float total = 0.0;
     for (float j = 0.0; j < n.y; j += 1.0)
@@ -210,10 +213,15 @@ vec4 dof_sample() {
             vec2 g = vec2(s.x > 0.0 ? exp(-0.5 * k.x * k.x / (s.x * s.x)) : 1.0,
                           s.y > 0.0 ? exp(-0.5 * k.y * k.y / (s.y * s.y)) : 1.0);
             float w = g.x * g.y;
-            sum += w * texture(u_tex, clamp(uv + k * u.grade.zw, u.view_row1.xy, u.view_row1.zw)).rgb;
+            vec2 t = clamp(uv + k * u.grade.zw, u.view_row1.xy, u.view_row1.zw);
+            if (masked) w *= 1.0 - texture(u_sphere, t).r;
+            sum += w * texture(u_tex, t).rgb;
             total += w;
         }
-    return vec4(sum / total, u.tint.a);
+    if (!masked) return vec4(sum / total, u.tint.a);
+    float own = 1.0 - texture(u_sphere, clamp(uv, u.view_row1.xy, u.view_row1.zw)).r;
+    if (own <= 0.0 || total <= 0.0) return vec4(0.0);
+    return vec4(sum / total, u.tint.a * own);
 }
 #endif
 
@@ -385,12 +393,19 @@ void shade() {
 // mean of the copies it holds, and each copy's own depth keeps whatever lies behind its spokes (the
 // brake parts) sharp. A pixel's samples hold one copy each; the cells of a 4 x 4 ordered pattern
 // share out the rest, so a pixel's copies spread over the whole turn. Without sample masks (OpenGL
-// ES 3.0) the copies come one to a pixel (as many as cells).
+// ES 3.0) the copies come one to a pixel (as many as cells). No cells (View3D's mask of the copies,
+// PipelineKey::spin_mask): every copy on every sample, the area the turn sweeps.
 const int kSpinCells[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
 
 void spin_copy_samples() {
     int copy = v_copy;
     int cells = int(u.wheel_blur.w + 0.5);
+    if (cells <= 0) {
+#ifndef NO_SAMPLE_MASK
+        gl_SampleMask[0] = -1; // (an output: left unset it would be undefined)
+#endif
+        return;
+    }
     ivec2 p = ivec2(gl_FragCoord.xy) & 3;
     if (kSpinCells[p.y * 4 + p.x] * cells / 16 != copy % cells) discard;
 #ifndef NO_SAMPLE_MASK

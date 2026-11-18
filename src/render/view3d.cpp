@@ -430,7 +430,7 @@ void View3D::release_target() {
         *w = nullptr;
     }
     SDL_GPUDevice* dev = ctx_.device();
-    for (SDL_GPUTexture** t : {&color_, &msaa_, &depth_, &scene_, &last_, &snap_, &half_, &haze_src_, &dof_}) {
+    for (SDL_GPUTexture** t : {&color_, &msaa_, &depth_, &scene_, &last_, &snap_, &half_, &haze_src_, &dof_, &spin_mask_}) {
         if (*t) SDL_ReleaseGPUTexture(dev, *t);
         *t = nullptr;
     }
@@ -589,6 +589,8 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     haze_low_valid_ = lenses && ph > 448 && ensure_quad() &&
                       ensure_dof_texture(haze_low_, std::max(1, int(std::lround(480.0f * aspect))), 224);
     const bool after_pass = lenses || dof;
+    // The spinning rims' mask is drawn over the finished scene's depth (spin_resolve).
+    const bool spin_mask = spin_mask_wanted(items);
 
     SDL_GPUColorTargetInfo ct{};
     ct.clear_color = {opt.clear[0], opt.clear[1], opt.clear[2], opt.clear[3]};
@@ -608,7 +610,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     dt.texture = depth_;
     dt.clear_depth = kFarDepth;
     dt.load_op = SDL_GPU_LOADOP_CLEAR;
-    dt.store_op = after_pass ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
+    dt.store_op = after_pass || spin_mask ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
     dt.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
     dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
     dt.cycle = cycle && !opt.repeated;
@@ -659,7 +661,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         }
         SDL_GPUDepthStencilTargetInfo hd = dt;
         hd.load_op = SDL_GPU_LOADOP_LOAD;
-        hd.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        hd.store_op = spin_mask ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
         hd.cycle = false;
         pass = SDL_BeginGPURenderPass(cmd, &ht, 1, &hd);
         if (lenses) encode_screen(cmd, pass, *opt.haze, screen.haze, true);
@@ -667,7 +669,11 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         SDL_EndGPURenderPass(pass);
     }
     guard_on_ = false; // (the other entry points draw every triangle themselves)
-    if (!spin_rects_.empty()) spin_resolve(cmd, staged, pw, ph, cycle);
+    if (spin_filter_wanted()) { // (a copy a sample: nothing to even out)
+        spin_px_ = 0.5f * float(pw); // (the copies as the scene pass drew them)
+        spin_resolve(cmd, staged, pw, ph, cycle, spin_mask && encode_spin_mask(cmd, view, proj, eye, items, opt, pw, ph));
+        spin_px_ = 0;
+    }
     if (post) {
         // The finished picture (graded), then the frozen one and the last one over it.
         SDL_GPUColorTargetInfo pt{};
@@ -1135,9 +1141,9 @@ bool View3D::ensure_dof_levels(float aspect, int pw, int ph, bool pyramid) {
 }
 
 void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* src,
-                             const Resample& r, float alpha, float depth, bool single) {
+                             const Resample& r, float alpha, float depth, bool single, SDL_GPUTexture* mask) {
     PipelineKey key;
-    key.blend = alpha >= 1.0f ? BlendMode::Opaque : BlendMode::Alpha;
+    key.blend = alpha >= 1.0f && !mask ? BlendMode::Opaque : BlendMode::Alpha;
     key.cull = CullMode::None;
     key.depth_write = false;
     key.single = single;
@@ -1158,10 +1164,11 @@ void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass,
     SDL_PushGPUVertexUniformData(cmd, 1, &off, sizeof(off));
     SDL_GPUTextureSamplerBinding sbs[3] = {{src, ctx_.sampler(true, true, true)},
                                            {placeholder_cube(), ctx_.sampler(true, true)},
-                                           {ctx_.white_texture(), ctx_.sampler(true, true)}};
+                                           {mask ? mask : ctx_.white_texture(), ctx_.sampler(true, true, true)}};
     SDL_BindGPUFragmentSamplers(pass, 0, sbs, 3);
     FragmentUniforms fu{};
     fu.params[0] = -1, fu.params[1] = 1, fu.params[3] = 6;
+    fu.flat_color[2] = mask ? 1.0f : 0.0f;
     fu.tint[0] = fu.tint[1] = fu.tint[2] = 1, fu.tint[3] = alpha;
     fu.light_dir[1] = 1;
     fu.view_row0[0] = r.scale[0], fu.view_row0[1] = r.scale[1];
@@ -1180,11 +1187,12 @@ void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass,
 // (spin_copy_period's taps, from a copy of the picture): the mean of all the copies, at the weight
 // of how far apart a pixel's own copies lie at the rim's edge (1 from a pixel on), so a rim hardly
 // turning keeps its sharpness. The heat haze's copy of the picture is free by then and is reused.
-void View3D::spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle) {
+// With the copies' mask (`masked`, encode_spin_mask) the filter reads and changes only the pixels
+// the turn sweeps (any copy), at their coverage; without it, the whole rectangle (the body too).
+void View3D::spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle,
+                          bool masked) {
     const int samples = ctx_.gles() ? 1 : ctx_.msaa(); // (the OpenGL ES variant has no sample masks)
     auto weight_of = [&](const SpinRect& s) { return s.period < 2 ? 0.0f : std::min(s.spread_px / float(samples), 1.0f); };
-    if (std::none_of(spin_rects_.begin(), spin_rects_.end(), [&](const SpinRect& s) { return weight_of(s) >= 0.02f; }))
-        return; // (a copy a sample: nothing to even out)
     if (!ensure_post(&haze_src_) || !ensure_quad()) return;
     copy_picture(cmd, picture, haze_src_, pw, ph, cycle);
     SDL_GPUColorTargetInfo t{};
@@ -1211,9 +1219,54 @@ void View3D::spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, in
         if (weight < 0.02f || x1 <= x0 || y1 <= y0) continue;
         const SDL_Rect sc{x0, y0, x1 - x0, y1 - y0};
         SDL_SetGPUScissor(pass, &sc);
-        encode_resample(cmd, pass, haze_src_, r, weight, 0.0f, true);
+        encode_resample(cmd, pass, haze_src_, r, weight, 0.0f, true, masked ? spin_mask_ : nullptr);
     }
     SDL_EndGPURenderPass(pass);
+}
+
+bool View3D::spin_mask_wanted(const std::vector<DrawItem>& items) const {
+    return ctx_.spin_copies() &&
+           std::any_of(items.begin(), items.end(), [](const DrawItem& i) { return i.spin_turn != 0 && !i.late; });
+}
+
+bool View3D::spin_filter_wanted() const {
+    const int samples = ctx_.gles() ? 1 : ctx_.msaa();
+    return std::any_of(spin_rects_.begin(), spin_rects_.end(), [&](const SpinRect& s) {
+        return s.period >= 2 && std::min(s.spread_px / float(samples), 1.0f) >= 0.02f;
+    });
+}
+
+bool View3D::encode_spin_mask(SDL_GPUCommandBuffer* cmd, const Mat4& view, const Mat4& proj, const Vec3& eye,
+                              const std::vector<DrawItem>& items, const DrawOptions& o, int pw, int ph) {
+    if (!ensure_post(&spin_mask_)) return false;
+    SDL_GPUColorTargetInfo ct{};
+    ct.clear_color = {1, 1, 1, 1};
+    ct.load_op = SDL_GPU_LOADOP_CLEAR;
+    if (msaa_) { // (free again: the scene's samples were resolved)
+        ct.texture = msaa_;
+        ct.store_op = SDL_GPU_STOREOP_RESOLVE;
+        ct.resolve_texture = spin_mask_;
+    } else {
+        ct.texture = spin_mask_;
+        ct.store_op = SDL_GPU_STOREOP_STORE;
+    }
+    SDL_GPUDepthStencilTargetInfo dt{};
+    dt.texture = depth_;
+    dt.load_op = SDL_GPU_LOADOP_LOAD;
+    dt.store_op = SDL_GPU_STOREOP_DONT_CARE;
+    dt.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+    dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &dt);
+    if (!pass) return false;
+    const SDL_GPUViewport vp{0, 0, float(pw), float(ph), 0, 1};
+    const SDL_Rect sc{0, 0, pw, ph};
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_SetGPUScissor(pass, &sc);
+    const DrawStats kept = stats_; // (the frame's counters stay the scene's)
+    encode(cmd, pass, view, proj, eye, items, o, Items::SpinMask);
+    stats_ = kept;
+    SDL_EndGPURenderPass(pass);
+    return true;
 }
 
 // presentation §G17. The GS samples a pixel at its corner, the bilinear filter at the
@@ -1485,6 +1538,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         const GpuModel* model = item.model;
         if (!model || !model->valid()) continue;
         if ((which == Items::Early && item.late) || (which == Items::Late && !item.late)) continue;
+        if (which == Items::SpinMask && (item.late || item.spin_turn == 0 || !ctx_.spin_copies())) continue;
         if (reaches_past_far(item, opt, view, eye)) {
             stats_.meshes_culled += int(model->meshes().size());
             continue;
@@ -1518,7 +1572,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             const int n = spin_px_ > 0 ? spin_copy_count(spread_px, radius_px, samples) : samples;
             const int cells = std::max(n / samples, 1);
             vis.push_back({&item, &mesh, m.world, m.dist, n, cells});
-            if (spin_px_ > 0 && in_front) {
+            if (spin_px_ > 0 && in_front && which != Items::SpinMask) {
                 const Vec3 cc = view_proj.transform_point(c);
                 const float rx = 1.1f * r * sx / (cw - r), ry = 1.1f * r * sy / (cw - r);
                 SpinRect s{&item, cc.x / cw - rx, cc.y / cw - ry, cc.x / cw + rx, cc.y / cw + ry, spread_px,
@@ -1629,8 +1683,12 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     // Per-vertex lighting off until a primitive needs it (slot 1 of the vertex uniforms).
     push_lighting(VertexLighting{});
     bool vl_on = false;
+    const bool spin_mask = which == Items::SpinMask;
     auto draw_prim = [&](const Visible& v, const scene::Primitive& p, int half = 0) {
         if (v.item->hide_glass && (p.flags & scene::kGlass)) return;
+        // The mask: what covers the picture (not the depth-only, alpha-only or added passes).
+        if (spin_mask && (p.flags & (scene::kDepthOnly | scene::kAlphaOnly | scene::kAdditive | scene::kMultiplyDest)))
+            return;
         bool background = v.item->background;
         PipelineKey key;
         key.blend = (p.flags & scene::kMultiplyDest) ? BlendMode::MultiplyDest
@@ -1664,6 +1722,11 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             frame_alpha_written_ = frame_alpha_written_ || key.alpha != AlphaWrite::Keep;
         }
         key.transmission = opt.transmission && !key.depth_only;
+        if (spin_mask) {
+            const CullMode cull = key.cull;
+            key = PipelineKey{};
+            key.cull = cull, key.depth_write = false, key.spin_copy = key.spin_mask = true;
+        }
         if (!bind(key)) return;
         use_mesh(v, false);
         const GpuModel* model = v.item->model;
@@ -1780,7 +1843,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         fu.wheel_blur[0] = textured ? float(v.item->wheel_blur) : 0.0f;
         fu.wheel_blur[1] = v.item->wheel_blur_lod;
         for (int i = 0; i < 4; ++i) fu.wheel_steps[i] = v.item->wheel_steps[size_t(i)];
-        fu.wheel_blur[3] = key.spin_copy ? float(v.cells) : 0.0f;
+        fu.wheel_blur[3] = key.spin_copy && !spin_mask ? float(v.cells) : 0.0f; // (the mask: every copy everywhere)
         fu.wheel_blur[2] = v.item->fade < 1.0f ? std::max(v.item->fade, 1e-3f) : 0.0f; // (DrawItem::fade)
         fu.tint[3] = std::max(v.item->alpha, 0.0f); // > 1 (blended items): the blend clamps
         fu.tint[0] = fu.tint[1] = fu.tint[2] = v.item->tint;
