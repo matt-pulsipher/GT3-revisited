@@ -347,7 +347,7 @@ public:
         ui.button(lay_.back, back_label(), false, press_.back && gesture_.active());
         ui.text(lay_.back.right() + 12, std::floor(lay_.back.y + (lay_.back.h - Ui::kChar) / 2), "SETTINGS", colors::kAccent);
         if (!touch)
-            ui.text_right(S.right() - 8, std::floor(lay_.back.y + (lay_.back.h - Ui::kChar) / 2), "L1/R1 or Tab: section",
+            ui.text_right(S.right() - 8, std::floor(lay_.back.y + (lay_.back.h - Ui::kChar) / 2), Ui::prompts_keyboard() ? "{L1|Tab}: section" : "{L1}/{R1}: section",
                           colors::kDim);
 
         // Tab bar.
@@ -383,7 +383,7 @@ public:
         ui.fill(0, dy, ui.width(), ui.height() - dy, Color{22, 24, 31});
         ui.fill(0, dy, ui.width(), 1, colors::kOutline);
         std::string desc = note_left_ > 0 ? note_
-                         : focus_tabs_         ? "Left/Right: switch section    Down: options"
+                         : focus_tabs_         ? "{Left/Right}: switch section    {Down}: options"
                          : sel_ >= 0 && sel_ < n ? rows_[sel_].desc
                                                  : "";
         std::vector<std::string> lines = Ui::wrap(desc, S.w - 16);
@@ -1121,7 +1121,7 @@ private:
         std::string shown = folder;
         while (shown.size() > 1 && (shown.back() == '/' || shown.back() == '\\')) shown.pop_back();
         if (mobile) shown = shown.substr(shown.find_last_of("/\\") + 1);
-        action("Music folder", std::string("Cross: choose another folder; its songs play where they are. ") + formats,
+        action("Music folder", std::string("{Cross}: choose another folder; its songs play where they are. ") + formats,
                chosen ? shown : mobile ? "GT3 Revisited > music" : "Game's music folder", [this, a] { choose_music_folder(*a); });
         if (chosen)
             action("Use the game's music folder", "Back to the music folder in the game's user data folder.", "",
@@ -1157,7 +1157,7 @@ private:
         info("Songs", songs);
         action("Look for new songs", "Reads the music folder again.", "", [a] { a->music_library().rescan(); });
         toggle("Song on the pause screen",
-               "The race song's title and artist on the pause screen, with L1 / R1 to skip, and for a moment after "
+               "The race song's title and artist on the pause screen, with {L1}/{R1} to skip, and for a moment after "
                "a skip while driving.",
                app.show_song(), [a](bool v) {
                    a->config().set("music", "show_song", v ? "on" : "off");
@@ -1190,7 +1190,7 @@ private:
         }
         Row& r = action("Save folder",
                         to_game_ ? std::string("Change it in Settings from GT3 Revisited's main menu.")
-                                 : std::string("Cross: choose another folder for GT Mode saves and replays, such as one a sync "
+                                 : std::string("{Cross}: choose another folder for GT Mode saves and replays, such as one a sync "
                                                "app keeps the same on your other devices. A folder without saves gets a copy "
                                                "of yours; one with saves is used as it is."),
                         saves_view_.shown, [this, a] { choose_save_folder(*a); });
@@ -1342,6 +1342,9 @@ private:
                 if (xbox.restart) xbox.desc = "Takes effect after restarting GT3 Revisited.";
             }
 #endif
+            // The credit PromptFont asks for (third_party/fonts/promptfont).
+            info("Button icons", "PromptFont by Yukari \"Shinmera\" Hafner");
+            info("", "Available at https://shinmera.com/promptfont");
         }
         for (int p = 0; p < InputManager::kMaxPlayers; ++p) {
             heading(p == 0 ? "Player 1" : "Player 2 (split screen)");
@@ -1561,8 +1564,9 @@ private:
         InputManager& in = app.input();
         const std::string label = race ? std::string(race_action_name(t)) : target_name(t);
         Row& r = add(Row::Kind::Binding, label,
-                     "Cross, then the new input: a key replaces the keyboard's, anything else the controller's "
-                     "(Esc, Back or a tap cancels). Square adds one. Select clears the highlighted column (Left/Right).");
+                     "{Cross}, then the new input: a key replaces the keyboard's, anything else the controller's "
+                     "(Esc, Back or a tap cancels). {Square} adds one. {Select|Delete} clears the highlighted column "
+                     "({Left/Right}).");
         r.player = p;
         r.race = race;
         r.target = t;
@@ -1594,9 +1598,9 @@ private:
         Row& r = add(Row::Kind::Binding, label,
                      std::string(act == PadAction::RecenterView ? "Puts the seat and the screen where you are looking now."
                                                                 : "In races, while a race song plays.") +
-                         " Cross, then hold the inputs together and let go: keys, or a "
+                         " {Cross}, then hold the inputs together and let go: keys, or a "
                          "controller's buttons, triggers and stick directions (up to 4; they may share other controls). "
-                         "Square adds one. Select clears the highlighted column (Left/Right).");
+                         "{Square} adds one. {Select|Delete} clears the highlighted column ({Left/Right}).");
         r.player = p;
         r.action = int(act);
         auto chords = [&](BindingSet set) {
@@ -2053,7 +2057,10 @@ private:
         ui.button(n.ok, "OK", false, false, true);
         if (!touch)
             ui.text(x + 12, by + bh + 6,
-                    Ui::clip("Enter: OK    Esc: cancel    Pad: Up/Down letter, Right add, Left delete, A: OK", w - 24), colors::kDim);
+                    Ui::clip(Ui::prompts_keyboard() ? "{Cross|Return}: OK    {Circle|Escape}: cancel"
+                                                    : "{Up/Down}: letter    {Right}: add    {Left}: delete    {Cross}: OK    {Circle}: cancel",
+                             w - 24),
+                    colors::kDim);
     }
 
     void build_ffb(App& app) {
@@ -2354,9 +2361,9 @@ private:
                 (rec && !rec->description.empty() ? rec->description + (rec->modified ? ", modified" : "") + ": " : "") +
                 elide_middle(p, 72) + ". ";
             Row& r = action(platform::disc_file_name(p),
-                            where + (is_current ? "This disc is open. Square: remove from the library."
-                                     : ok       ? "Cross: switch to this disc (back to its title menu). Square: remove."
-                                                : "Not found (moved or drive not connected). Square: remove."),
+                            where + (is_current ? "This disc is open. {Square}: remove from the library."
+                                     : ok       ? "{Cross}: switch to this disc (back to its title menu). {Square}: remove."
+                                                : "Not found (moved or drive not connected). {Square}: remove."),
                             is_current ? "In use" : !ok ? "Missing" : what, [a, p, is_current] {
                                 if (!is_current) a->request_disc(p);
                             });
@@ -2495,18 +2502,18 @@ private:
         };
     }
     std::string footer_hint() const {
-        const std::string back = to_game_ ? "    Triangle/Esc: back to game" : "    Triangle/Esc: back";
-        if (sel_ < 0 || sel_ >= int(rows_.size()) || focus_tabs_) return "Left/Right: section" + back;
+        const std::string back = to_game_ ? "    {Triangle}: back to game" : "    {Triangle}: back";
+        if (sel_ < 0 || sel_ >= int(rows_.size()) || focus_tabs_) return "{Left/Right}: section" + back;
         const Row& r = rows_[sel_];
         switch (r.kind) {
-        case Row::Kind::Toggle: return "Left/Right: switch" + back;
-        case Row::Kind::Choice: return "Left/Right: change" + back;
-        case Row::Kind::Slider: return "Left/Right: adjust (or drag)" + back;
+        case Row::Kind::Toggle: return "{Left/Right}: switch" + back;
+        case Row::Kind::Choice: return "{Left/Right}: change" + back;
+        case Row::Kind::Slider: return "{Left/Right}: adjust (or drag)" + back;
         case Row::Kind::Binding:
-            return r.enabled ? "Cross: rebind  Square: add  Select/Del: clear  Left/Right: column" + back : back.substr(4);
+            return r.enabled ? "{Cross}: rebind  {Square}: add  {Select|Delete}: clear  {Left/Right}: column" + back : back.substr(4);
         default:
-            if (r.field) return "Cross: rename" + back;
-            return (r.remove ? "Cross: open    Square: remove" : "Cross: open") + back;
+            if (r.field) return "{Cross}: rename" + back;
+            return (r.remove ? "{Cross}: open    {Square}: remove" : "{Cross}: open") + back;
         }
     }
 

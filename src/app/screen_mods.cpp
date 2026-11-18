@@ -356,11 +356,11 @@ public:
         const Color sc = message_.empty() ? colors::kDim : message_bad_ ? colors::kBad : colors::kGood;
         for (size_t i = 0; i < lines.size(); ++i) ui.text(S.x + 8, sy + 5 + float(i) * 11, lines[i], sc);
         if (!touch)
-            ui.footer(can_convert_pcsx2() ? "Cross: on/off  Square: remove  Start: install .zip  Select: open folder  "
-                                            "Circle: save textures  R1: PCSX2 pack  Triangle: back"
-                      : can_install()     ? "Cross: on/off   Square: remove   Start: install .zip   Select: open folder   "
-                                            "Circle: save textures   Triangle: back"
-                                          : "Cross: on/off   Square: remove   Triangle: back");
+            ui.footer(can_convert_pcsx2() ? "{Cross}: on/off  {Square}: remove  {Start}: install .zip  {Select}: open folder  "
+                                            "{Circle}: save textures  {R1}: PCSX2 pack  {Triangle}: back"
+                      : can_install()     ? "{Cross}: on/off   {Square}: remove   {Start}: install .zip   {Select}: open folder   "
+                                            "{Circle}: save textures   {Triangle}: back"
+                                          : "{Cross}: on/off   {Square}: remove   {Triangle}: back");
 
         if (job_) render_progress(ui);
         if (texture_job_) render_texture_progress(ui);
@@ -694,7 +694,7 @@ private:
         const float v = texture_job_->progress();
         ui.bar(p.x + 14, p.y + 32, w - 70, 8, v, colors::kAccent);
         ui.text_right(p.right() - 14, p.y + 31, std::to_string(int(v * 100)) + "%", colors::kDim);
-        ui.text(p.x + 14, p.y + 45, texture_job_->cancelled() ? "Stopping..." : ui.touch() ? "" : "Triangle: stop", colors::kDim);
+        ui.text(p.x + 14, p.y + 45, texture_job_->cancelled() ? "Stopping..." : ui.touch() ? "" : "{Triangle}: stop", colors::kDim);
     }
 
     // --- drawing ---

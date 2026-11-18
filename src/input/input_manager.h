@@ -259,6 +259,12 @@ public:
     // Human label for a source on this player's device (e.g. "Cross" on a
     // PlayStation pad, "A" on Xbox, "Right paddle").
     std::string describe(int player, const InputSource& src) const;
+    // The player's Controller as SDL maps it as a gamepad (its type and face button labels pick
+    // the button prompts, app/button_prompts.h); null for the keyboard, wheels and joysticks.
+    SDL_Gamepad* gamepad(int player) const;
+    // The last input pressed was a keyboard key (false after a controller's button, d-pad or
+    // stick): the button prompts show keys while the player uses the keyboard.
+    bool last_input_was_key() const { return last_input_key_; }
 
     // Ours: the player's chords for actions beyond the pad's buttons (bindings.h PadAction),
     // saved in [playerN.actions]. Pressed: the chord went down in the last update() (once per
@@ -414,6 +420,7 @@ private:
     std::vector<bool> key_latch_;
 
     bool capturing_ = false;
+    bool last_input_key_ = false; // last_input_was_key
     bool chord_capture_ = false; // capturing_ is on for a chord (begin_chord_capture)
     std::vector<InputSource> chord_inputs_;
     std::optional<Chord> captured_chord_;

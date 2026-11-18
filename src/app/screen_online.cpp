@@ -639,8 +639,8 @@ private:
         ui.text_center_in(x, w, y + 32, Ui::clip(car, w - 40) + "  (" + size + ")", colors::kAccent);
         ui.text_center_in(x, w, y + 50, "Download it? It is checked, then added to your mods.", colors::kDim);
         const UiRect yes{x + w / 2 - 170, y + 74, 160, 24}, no{x + w / 2 + 10, y + 74, 160, 24};
-        ui.button(yes, "Cross: download", hovering(pointer_, yes), false, true);
-        ui.button(no, "Circle: no (a stand-in)", hovering(pointer_, no), false);
+        ui.button(yes, "{Cross}: download", hovering(pointer_, yes), false, true);
+        ui.button(no, "{Circle}: no (a stand-in)", hovering(pointer_, no), false);
         hits_.add({0, 0, Ui::kWidth, Ui::kHeight}, -1); // nothing behind the prompt
         hits_.add(yes, kHitPromptYes);
         hits_.add(no, kHitPromptNo);
@@ -986,7 +986,7 @@ private:
             ui.footer(joins ? "Type, Enter to join, Esc to cancel (pad: up/down letter, right add, left delete, A join)"
                             : "Type, Enter to finish, Esc to cancel (pad: up/down letter, right add, left delete, A done)");
         else if (!editing_)
-            footer_actions(ui, "Up/Down: choose", {{"Cross: choose", kFootChoose}, {"Triangle: back", kFootBack}}, hits_,
+            footer_actions(ui, "{Up/Down}: choose", {{"{Cross}: choose", kFootChoose}, {"{Triangle}: back", kFootBack}}, hits_,
                            kHitFooter, pointer_);
         ui.text_center(Ui::kHeight - 62, "With a code nobody forwards ports: players connect directly when they can,",
                        colors::kDim);
@@ -1392,7 +1392,7 @@ private:
                 const net::Player* p = k[size_t(kick_sel_)];
                 if (!kick_armed_) {
                     kick_armed_ = true;
-                    status("Press Cross again to remove " + p->name, true);
+                    status("Press {Cross} again to remove " + p->name, true);
                 } else {
                     std::string name = p->name;
                     ns.kick(p->id);
@@ -1519,7 +1519,7 @@ private:
             }
             if (host) hits_.add({thumb.x, thumb.y, thumb.w, thumb.h}, kHitRow, kCourse); // the course page
         }
-        row(kCourse, "Course", course, host, host, 0, host ? "(Cross: course page)" : "");
+        row(kCourse, "Course", course, host, host, 0, host ? "({Cross}: course page)" : "");
         row(kLaps, "Laps", std::to_string(host ? laps_ : ns.laps()), host, host);
         u16 gms = host ? ghost_ms_ : ns.settings().ghost_ping_ms;
         row(kGhost, "Ghost cars", ghost_text(gms), host, host);
@@ -1528,9 +1528,9 @@ private:
         row(kWear, "Tire wear", wear ? "On" : "Off", host, host, 0,
             wear && lobby_rules.dirt_course ? "(none on dirt courses)" : wear ? "(pit for fresh tires)" : "");
         row(kRules, "Car rules", game::car_rules_summary(rules_of(ns)), true, false, 0,
-            host ? "(Cross: set the rules)" : "(Cross: see the rules)");
+            host ? "({Cross}: set the rules)" : "({Cross}: see the rules)");
         row(kCpu, "CPU cars", cpu_summary(ns), true, host && cpu_limit(ns) > 0, 0,
-            host ? (cpu_limit(ns) > 0 ? "(Cross: choose the cars)" : "") : "(Cross: see the cars)");
+            host ? (cpu_limit(ns) > 0 ? "({Cross}: choose the cars)" : "") : "({Cross}: see the cars)");
         std::string problem = ns.joined() ? rule_problem(ns) : "";
         if (cars_.empty()) row(kCar, "Car", "-", !ready, false);
         else {
@@ -1540,7 +1540,7 @@ private:
             const std::string icon = art_.has_car_icon(app, car_icon_name(e)) ? car_icon_name(e)
                                      : art_.has_car_icon(app, e.label)       ? e.label
                                                                               : std::string();
-            std::string hint = !problem.empty() ? problem : ready ? "" : "(Cross: car page)";
+            std::string hint = !problem.empty() ? problem : ready ? "" : "({Cross}: car page)";
             row(kCar, "Car", entry_name(e), !ready, !ready, icon.empty() ? 0.0f : 30.0f, hint,
                 problem.empty() ? colors::kDim : colors::kBad);
             if (!icon.empty()) art_.car_icon(app, icon, SDL_FRect{ready ? 200.0f : 212.0f, ry - 3, 26, 14});
@@ -1579,7 +1579,7 @@ private:
             row(kTuning, "Settings", tunable ? tuning_text(c) : "the arcade's", tunable, false, 0,
                 !tunable                         ? ""
                 : lobby_rules.stock_settings && f.settings_changed ? "the host allows stock settings only"
-                                                                   : "(Cross: set up the car)",
+                                                                   : "({Cross}: set up the car)",
                 lobby_rules.stock_settings && f.settings_changed ? colors::kBad : colors::kDim);
         }
         row(kGearbox, "Transmission", manual_ ? "Manual" : "Automatic", true, true);
@@ -1601,13 +1601,13 @@ private:
             if (k.empty()) row(kKick, "Remove a player", "(nobody else here)", false, false);
             else {
                 const net::Player* p = k[size_t(std::clamp(kick_sel_, 0, int(k.size()) - 1))];
-                row(kKick, kick_armed_ ? "Remove? Cross again" : "Remove a player", p->name, true, true, 0, warnings_of(ns, p->id));
+                row(kKick, kick_armed_ ? "Remove? {Cross} again" : "Remove a player", p->name, true, true, 0, warnings_of(ns, p->id));
             }
         } else {
             row(kKick, "Remove a player", "(the host's choice)", false, false);
         }
         row(kLeave, "Leave", "", true, false);
-        footer_actions(ui, "Up/Down: choose   Left/Right: change   Cross: confirm", {{"Triangle: leave", kFootLeave}}, hits_,
+        footer_actions(ui, "{Up/Down}: choose   {Left/Right}: change   {Cross}: confirm", {{"{Triangle}: leave", kFootLeave}}, hits_,
                        kHitFooter, pointer_);
     }
 
@@ -1702,14 +1702,14 @@ private:
                 int n = 0;
                 for (int t = 0; t < game::kTireTypes; ++t) n += (r.tires >> t) & 1;
                 return (n == game::kTireTypes ? std::string("all") : std::to_string(n) + " of " + std::to_string(game::kTireTypes)) +
-                       (host ? "  (Cross: choose)" : "  (Cross: see them)");
+                       (host ? "  ({Cross}: choose)" : "  ({Cross}: see them)");
             }
             case kRClass: return r.car_class ? game::arcade_class_name(r.car_class) + std::string(" only") : "any";
             case kRCategory: return game::category_rule_name(r.category) + std::string(r.category ? " only" : "");
             case kRDrive: return game::drive_rule_name(r.drive) + std::string(r.drive ? " only" : "");
             case kRAspiration: return game::aspiration_rule_name(r.aspiration) + std::string(r.aspiration ? " only" : "");
             case kRPower: return r.max_ps ? "at most " + std::to_string(r.max_ps) + " PS" : "no limit";
-            case kRReset: return host ? "(Cross: clear every rule)" : "";
+            case kRReset: return host ? "({Cross}: clear every rule)" : "";
             default: return "";
             }
         };
@@ -1745,8 +1745,8 @@ private:
                                     (why.empty() ? std::string(" - allowed") : " - " + why),
                     why.empty() ? colors::kGood : colors::kBad);
         }
-        footer_actions(ui, host ? "Up/Down: choose   Left/Right: change" : "Up/Down: choose",
-                       {{"Triangle: back to the lobby", kFootRulesBack}}, hits_, kHitFooter, pointer_);
+        footer_actions(ui, host ? "{Up/Down}: choose   {Left/Right}: change" : "{Up/Down}: choose",
+                       {{"{Triangle}: back to the lobby", kFootRulesBack}}, hits_, kHitFooter, pointer_);
     }
 
     // --- tire types page (the rules' allowed tires) ---
@@ -1813,13 +1813,13 @@ private:
                 if (i == cur) hint = "your car's";
                 else if (std::find(mine.begin(), mine.end(), i) != mine.end()) hint = "your car has them";
             } else if (i == kTAll) {
-                value = host ? "(Cross: allow every tire type)" : "";
+                value = host ? "({Cross}: allow every tire type)" : "";
             }
             const char* label = i < game::kTireTypes ? game::tire_type_name(i) : i == kTAll ? "All tires" : "Back to the rules";
             draw_row(ui, i, y, i == tires_sel_, label, value, host || i == kTBack, host && i < game::kTireTypes, 250, 620, 0, hint);
         }
-        footer_actions(ui, host ? "Up/Down: choose   Left/Right or Cross: allow or not" : "Up/Down: choose",
-                       {{"Triangle: back to the rules", 0}}, hits_, kHitFooter, pointer_);
+        footer_actions(ui, host ? "{Up/Down}: choose   {Left/Right} or {Cross}: allow or not" : "{Up/Down}: choose",
+                       {{"{Triangle}: back to the rules", 0}}, hits_, kHitFooter, pointer_);
     }
 
     // --- the car's settings page (docs/dev/ONLINE.md "Tires and settings") ---
@@ -2006,10 +2006,10 @@ private:
             const int row = rows[size_t(i)];
             if (row == kTuneStock) {
                 const bool is = game::settings_text(work.settings) == game::settings_text(stock);
-                draw_row(ui, i, y, i == tune_sel_, "Stock settings", is ? "(these are)" : "(Cross: back to them)", !ready, false, 250, 620);
+                draw_row(ui, i, y, i == tune_sel_, "Stock settings", is ? "(these are)" : "({Cross}: back to them)", !ready, false, 250, 620);
             } else if (row == kTuneGarage) {
                 const bool is = !lobby_tune_;
-                draw_row(ui, i, y, i == tune_sel_, "The garage car's settings", is ? "(these are)" : "(Cross: back to them)", !ready,
+                draw_row(ui, i, y, i == tune_sel_, "The garage car's settings", is ? "(these are)" : "({Cross}: back to them)", !ready,
                          false, 250, 620);
             } else if (row == kTuneBack) {
                 draw_row(ui, i, y, i == tune_sel_, "Back to the lobby", "", true, false, 250, 620);
@@ -2030,7 +2030,7 @@ private:
             ui.text(36, kTuneY + float(n) * kTuneH + 14, "This car's parts have no adjustable settings.", colors::kDim);
         if (rules_of(ns).stock_settings && game::settings_text(work.settings) != game::settings_text(stock))
             ui.text(36, kTuneY + float(std::min(n, kTuneVisible)) * kTuneH + 24, "The host allows stock settings only.", colors::kBad);
-        footer_actions(ui, "Up/Down: choose   Left/Right: change   L1/R1: by ten", {{"Triangle: back to the lobby", 0}}, hits_,
+        footer_actions(ui, "{Up/Down}: choose   {Left/Right}: change   {L1}/{R1}: by ten", {{"{Triangle}: back to the lobby", 0}}, hits_,
                        kHitFooter, pointer_);
     }
 
@@ -2292,10 +2292,10 @@ private:
         else if (row == OpponentGrid::kPlaceRow) help = "Where the players start among the CPU cars";
         else if (row == OpponentGrid::kSkillRow) help = "Sets every CPU car's skill at once";
         else if (row >= OpponentGrid::kLineup && g.who(row) != OpponentGrid::kPlayer)
-            help = host ? "Cross: the car and its color   Left/Right: its skill" : "";
+            help = host ? "{Cross}: the car and its color   {Left/Right}: its skill" : "";
         if (!help.empty()) ui.text(kCpuX + 6, std::max(y + 6, 300.0f), Ui::clip(help, kCpuR - kCpuX), colors::kDim);
-        footer_actions(ui, host ? "Up/Down: choose   Left/Right: change" : "Up/Down: choose",
-                       {{"Triangle: back to the lobby", kFootCpuBack}}, hits_, kHitFooter, pointer_);
+        footer_actions(ui, host ? "{Up/Down}: choose   {Left/Right}: change" : "{Up/Down}: choose",
+                       {{"{Triangle}: back to the lobby", kFootCpuBack}}, hits_, kHitFooter, pointer_);
     }
 
     // --- pickers ---

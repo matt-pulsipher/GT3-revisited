@@ -861,7 +861,7 @@ public:
         ui.header("GT MODE", path_);
         if (!gt_) {
             ui.text(8, 40, error_.empty() ? "loading..." : error_, colors::kBad);
-            ui.footer("Triangle: back");
+            ui.footer("{Triangle}: back");
             return;
         }
         const game::GameState& s = gt_->state();
@@ -912,7 +912,7 @@ public:
             ui.text(364, y, b, col);
             y += 11;
         }
-        ui.footer("Up/Down: scroll   Triangle: back   (play GT mode in the 'gt3menu' screen)");
+        ui.footer("{Up/Down}: scroll   {Triangle}: back   (play GT mode in the 'gt3menu' screen)");
     }
 
 private:

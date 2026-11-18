@@ -207,8 +207,8 @@ public:
             }
         }
         if (!touch)
-            ui.footer(kCanQuit ? "Up/Down: select    Cross/Enter: choose    Triangle/Esc: quit"
-                               : "Up/Down: select    Cross/Enter: choose");
+            ui.footer(kCanQuit ? "{Up/Down}: select    {Cross}: choose    {Triangle}: quit"
+                               : "{Up/Down}: select    {Cross}: choose");
     }
 
     TouchLayout touch_layout() const override { return TouchLayout::None; } // buttons are tapped directly
@@ -452,8 +452,8 @@ public:
                 status = more;
         ui.text(S.x + 12, by + 16, status, colors::kDim);
         if (!touch)
-            ui.footer(developer_ ? "Arrows: select    Cross/Enter: open    Triangle/Esc: back"
-                                 : "Arrows: select    Cross/Enter: open    Triangle/Esc: quit");
+            ui.footer(developer_ ? "{Arrows}: select    {Cross}: open    {Triangle}: back"
+                                 : "{Arrows}: select    {Cross}: open    {Triangle}: quit");
     }
 
     TouchLayout touch_layout() const override { return TouchLayout::None; }

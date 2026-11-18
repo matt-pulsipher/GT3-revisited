@@ -147,7 +147,7 @@ public:
             double pos = app.audio().music_position(), len = app.audio().music_length();
             ui.bar(px + 6, Ui::kHeight - 40, pw - 12, 6, len > 0 ? float(pos / len) : 0.0f, colors::kAccent);
         }
-        ui.footer("Cross: open  Triangle: up  L1/R1: page  Left/Right: texture  Square: save textures  Circle: stop");
+        ui.footer("{Cross}: open  {Triangle}: up  {L1}/{R1}: page  {Left/Right}: texture  {Square}: save textures  {Circle}: stop");
     }
 
 private:

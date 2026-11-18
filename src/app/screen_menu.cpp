@@ -85,7 +85,7 @@ public:
         ui.text(px + 8, 58, "640x448 space. Image sets (.imgs,", colors::kDim);
         ui.text(px + 8, 70, "yellow) are named texture lists.", colors::kDim);
         if (!error_.empty()) ui.text(px + 8, 94, error_, colors::kBad);
-        ui.footer("Cross: open  L1/R1: language  L2/R2: page  Triangle: back");
+        ui.footer("{Cross}: open  {L1}/{R1}: language  {L2}/{R2}: page  {Triangle}: back");
     }
 
 private:
@@ -268,7 +268,7 @@ private:
             std::string name = pg->name.size() > 23 ? pg->name.substr(0, 22) + "~" : pg->name;
             ui.text(10, y, name, colors::kAccent);
             y += 16;
-            ui.text(10, y, "Layers (L1/R1, Square):", colors::kDim);
+            ui.text(10, y, "Layers ({L1}/{R1}, {Square}):", colors::kDim);
             y += 12;
             SceneOptions so = options();
             for (int l = 0; l < int(pg->layers.size()) && y < Ui::kHeight - 90; ++l) {
@@ -311,7 +311,7 @@ private:
             SDL_SetRenderTarget(r, prev);
             SDL_RenderTexture(r, target_, nullptr, &dst);
         }
-        ui.footer("L/R page  U/D focus  X outline  O widget  Sel 4:3  Start font  Tri back");
+        ui.footer("{Left/Right} page  {Up/Down} focus  {Cross} outline  {Circle} widget  {Select} 4:3  {Start} font  {Triangle} back");
     }
 
     void render_imgs(Ui& ui) {
@@ -357,7 +357,7 @@ private:
             }
             ui.text(8, 26, buf, colors::kAccent);
         }
-        ui.footer("Arrows: select  Square: grid/single  Triangle: back");
+        ui.footer("{Arrows}: select  {Square}: grid/single  {Triangle}: back");
     }
 
     text::GameFonts fonts_; // declared before renderer_: the text drawer refers to it

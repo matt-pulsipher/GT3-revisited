@@ -61,7 +61,7 @@ public:
         ui.header("TEXT & FONTS", kModeNames[int(mode_)]);
         if (!error_.empty()) {
             ui.text_center(150, error_, colors::kBad);
-            ui.footer("Triangle: back");
+            ui.footer("{Triangle}: back");
             return;
         }
         switch (mode_) {
@@ -141,7 +141,7 @@ private:
         big.valign = VAlign::Middle;
         big.color = {120, 200, 255, 255};
         if (!raw.empty() && y < py + ph - 60) font->draw_game(px + pw / 2, (y + py + ph - 30) / 2, raw, big);
-        ui.footer("Up/Down: key  Left/Right: font  Cross: language  Square: mode  Triangle: back");
+        ui.footer("{Up/Down}: key  {Left/Right}: font  {Cross}: language  {Square}: mode  {Triangle}: back");
     }
 
     void render_fonts(Ui& ui) {
@@ -180,7 +180,7 @@ private:
         st.color = {255, 200, 40, 255};
         st.scale *= 0.75f;
         f->draw(280, 160, d.first > 0x41 || d.last < 0x7A ? sample_digits(d) : "GT3 A-spec  1'23.456  Lap 3/5", st);
-        ui.footer("Left/Right: font  Up/Down: variant  Square: mode  Triangle: back");
+        ui.footer("{Left/Right}: font  {Up/Down}: variant  {Square}: mode  {Triangle}: back");
     }
 
     static std::string sample_digits(const LatinFont& d) {
@@ -219,7 +219,7 @@ private:
                     ui.text(8 + kKanjiCols * cell + 8, 40 + r * cell + 7, code, colors::kDim);
                 }
             }
-        ui.footer("Up/Down: scroll  L1/R1: page  Cross: variant  Square: mode  Triangle: back");
+        ui.footer("{Up/Down}: scroll  {L1}/{R1}: page  {Cross}: variant  {Square}: mode  {Triangle}: back");
     }
 
     bool loaded_ = false;

@@ -26,6 +26,8 @@ extern const unsigned char kBody[];
 extern const std::size_t kBody_size;
 extern const unsigned char kTitle[];
 extern const std::size_t kTitle_size;
+extern const unsigned char kPrompt[];
+extern const std::size_t kPrompt_size;
 } // namespace font_data
 
 namespace {
@@ -73,8 +75,26 @@ Face load_face(const unsigned char* data, std::size_t size, const char* name) {
 const Face& face(FontFace which) {
     static const Face body = load_face(font_data::kBody, font_data::kBody_size, "body");
     static const Face title = load_face(font_data::kTitle, font_data::kTitle_size, "title");
-    return which == FontFace::Title ? title : body;
+    static const Face prompt = load_face(font_data::kPrompt, font_data::kPrompt_size, "prompt");
+    return which == FontFace::Title ? title : which == FontFace::Prompt ? prompt : body;
 }
+
+// Button glyphs are drawn kPromptScale times the text's em (PromptFont's face buttons are then a
+// little taller than the capitals), flat ones (shoulder buttons, wide keys) larger until they are
+// kPromptMinHeight em tall (at most kPromptMaxScale), each centred on the capitals.
+constexpr float kPromptScale = 1.1f, kPromptMinHeight = 0.62f, kPromptMaxScale = 1.7f;
+
+bool is_prompt(u32 cp) { return cp >= ui_font::kPromptBase && cp < ui_font::kPromptBase + 0x10000; }
+
+// Where `cp` comes from in text set in `f`: PromptFont for prompt_glyph()s (when it loaded).
+struct Source {
+    const Face* face;
+    FontFace which;
+    int glyph;
+    float scale = 1; // of the em (button glyphs)
+    float mid = 0;   // button glyphs: the middle of the glyph's box above the baseline, in its em
+};
+Source source(FontFace f, u32 cp);
 
 // Next code point of UTF-8 `s` at `i` (advances `i`); malformed -> '?'.
 u32 next_cp(std::string_view s, size_t& i) {
@@ -97,11 +117,39 @@ int glyph_index(const Face& f, u32 cp) {
     return g ? g : stbtt_FindGlyphIndex(&f.info, int(kReplacement));
 }
 
+Source source(FontFace f, u32 cp) {
+    if (is_prompt(cp)) {
+        const Face& p = face(FontFace::Prompt);
+        if (p.ok)
+            if (int g = stbtt_FindGlyphIndex(&p.info, int(cp - ui_font::kPromptBase))) {
+                int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+                stbtt_GetGlyphBox(&p.info, g, &x0, &y0, &x1, &y1);
+                const float per_em = stbtt_ScaleForMappingEmToPixels(&p.info, 1.0f);
+                const float h = float(y1 - y0) * per_em;
+                const float scale = h > 0 ? std::clamp(kPromptMinHeight / h, kPromptScale, kPromptMaxScale) : kPromptScale;
+                return {&p, FontFace::Prompt, g, scale, float(y0 + y1) / 2 * per_em};
+            }
+        cp = kReplacement;
+    }
+    const Face& t = face(f);
+    return {&t, f, glyph_index(t, cp)};
+}
+
+// Lift of button glyph `src`'s baseline above the text's, in units at `em`.
+float prompt_lift(FontFace f, float em, const Source& src) { return face(f).cap * em / 2 - src.mid * src.scale * em; }
+
 } // namespace
 
 namespace ui_font {
 
 bool available() { return face(FontFace::Body).ok && face(FontFace::Title).ok; }
+
+bool prompts_available() { return face(FontFace::Prompt).ok; }
+
+std::string prompt_glyph(u32 cp) {
+    const u32 c = kPromptBase + (cp & 0xFFFF); // 4 UTF-8 bytes
+    return {char(0xF0 | (c >> 18)), char(0x80 | ((c >> 12) & 0x3F)), char(0x80 | ((c >> 6) & 0x3F)), char(0x80 | (c & 0x3F))};
+}
 
 float cap_height(FontFace which, float em) { return face(which).cap * em; }
 
@@ -110,16 +158,29 @@ float width(FontFace which, float em, std::string_view s) {
     if (!f.ok) return 0;
     const float k = stbtt_ScaleForMappingEmToPixels(&f.info, em);
     int units = 0, prev = 0;
+    float prompts = 0; // button glyphs' advances, in units
     for (size_t i = 0; i < s.size();) {
         u32 cp = next_cp(s, i);
-        int g = glyph_index(f, cp), adv = 0;
-        if (cp >= 32 && cp < 127) adv = f.ascii_adv[cp - 32];
-        else stbtt_GetGlyphHMetrics(&f.info, g, &adv, nullptr);
-        if (prev) units += stbtt_GetGlyphKernAdvance(&f.info, prev, g);
+        if (cp >= 32 && cp < 127) {
+            const int g = glyph_index(f, cp);
+            if (prev) units += stbtt_GetGlyphKernAdvance(&f.info, prev, g);
+            units += f.ascii_adv[cp - 32];
+            prev = g;
+            continue;
+        }
+        const Source src = source(which, cp);
+        int adv = 0;
+        stbtt_GetGlyphHMetrics(&src.face->info, src.glyph, &adv, nullptr);
+        if (src.face != &f) { // never kerned against text
+            prompts += float(adv) * stbtt_ScaleForMappingEmToPixels(&src.face->info, em * src.scale);
+            prev = 0;
+            continue;
+        }
+        if (prev) units += stbtt_GetGlyphKernAdvance(&f.info, prev, src.glyph);
         units += adv;
-        prev = g;
+        prev = src.glyph;
     }
-    return float(units) * k;
+    return float(units) * k + prompts;
 }
 
 } // namespace ui_font
@@ -158,7 +219,7 @@ struct UiFontRenderer::Impl {
     }
 
     static constexpr int kMaxSide = 2048;
-    static constexpr size_t kMaxAtlases = 8;
+    static constexpr size_t kMaxAtlases = 12; // the faces' sizes and the button glyphs' sizes
 
     Atlas& atlas(FontFace f, int px) {
         ++tick;
@@ -274,49 +335,77 @@ bool UiFontRenderer::draw(FontFace which, float em, float x, float baseline, std
     const float ox = wx0 * density, oy = wy0 * density;
 
     const int px = std::clamp(int(std::lround(em * ppu)), 4, 512);
-    Impl::Atlas& a = impl_->atlas(which, px);
     const float k = stbtt_ScaleForMappingEmToPixels(&f.info, em); // font units -> render units
 
     auto& verts = impl_->verts;
     auto& idx = impl_->idx;
-    verts.clear(), idx.clear();
     const float by = std::round(oy + baseline * ppu);
     const SDL_FColor col = c;
-    int units = 0, prev = 0;
-    std::vector<std::pair<int, float>> placed; // glyph, pen x in output pixels
+    // Each glyph's face and pixel size, index, pen x in output pixels and baseline lift. Button
+    // glyphs (prompt_glyph) come from PromptFont's atlases at their own sizes and are never kerned
+    // against the text.
+    struct Placed {
+        FontFace face;
+        int px;
+        int g;
+        float pen, lift;
+    };
+    std::vector<Placed> placed;
     placed.reserve(s.size());
+    int units = 0, prev = 0;
+    float prompts = 0; // button glyphs' advances, render units
     for (size_t i = 0; i < s.size();) {
-        u32 cp = next_cp(s, i);
-        int g = glyph_index(f, cp), adv = 0;
-        stbtt_GetGlyphHMetrics(&f.info, g, &adv, nullptr);
-        if (prev) units += stbtt_GetGlyphKernAdvance(&f.info, prev, g);
-        placed.emplace_back(g, std::round(ox + (x + float(units) * k) * ppu));
+        const Source src = source(which, next_cp(s, i));
+        int adv = 0;
+        stbtt_GetGlyphHMetrics(&src.face->info, src.glyph, &adv, nullptr);
+        const float pen = std::round(ox + (x + float(units) * k + prompts) * ppu);
+        if (src.face != &f) {
+            const int gpx = std::clamp(int(std::lround(em * src.scale * ppu)), 4, 512);
+            placed.push_back({src.which, gpx, src.glyph, pen, std::round(prompt_lift(which, em, src) * ppu)});
+            prompts += float(adv) * stbtt_ScaleForMappingEmToPixels(&src.face->info, em * src.scale);
+            prev = 0;
+            continue;
+        }
+        if (prev) units += stbtt_GetGlyphKernAdvance(&f.info, prev, src.glyph);
+        placed.push_back({which, px, src.glyph, std::round(ox + (x + float(units) * k + prompts) * ppu), 0});
         units += adv;
-        prev = g;
+        prev = src.glyph;
     }
-    // Pack first: growing the atlas recreates its texture. A full atlas starts
-    // over, which can drop glyphs of this string packed before it: pack again.
-    for (int pass = 0; pass < 2; ++pass) {
-        for (const auto& [g, pen] : placed) impl_->glyph(a, g);
-        if (std::all_of(placed.begin(), placed.end(), [&](const auto& p) { return a.glyphs.count(p.first) != 0; })) break;
+    // One batch per atlas: the text's, then each button glyph size.
+    std::vector<std::pair<FontFace, int>> parts{{which, px}};
+    for (const Placed& p : placed)
+        if (std::find(parts.begin(), parts.end(), std::pair{p.face, p.px}) == parts.end()) parts.emplace_back(p.face, p.px);
+    for (const auto& [part, part_px] : parts) {
+        Impl::Atlas& a = impl_->atlas(part, part_px);
+        const auto mine = [&](const Placed& p) { return p.face == part && p.px == part_px; };
+        // Pack first: growing the atlas recreates its texture. A full atlas starts over, which
+        // can drop glyphs of this string packed before it: pack again.
+        for (int pass = 0; pass < 2; ++pass) {
+            for (const Placed& p : placed)
+                if (mine(p)) impl_->glyph(a, p.g);
+            if (std::all_of(placed.begin(), placed.end(), [&](const Placed& p) { return !mine(p) || a.glyphs.count(p.g); }))
+                break;
+        }
+        if (!impl_->upload(a)) return false;
+        const float iw = 1.0f / float(a.w), ih = 1.0f / float(a.h);
+        verts.clear(), idx.clear();
+        for (const Placed& p : placed) {
+            if (!mine(p)) continue;
+            const Impl::Glyph& gl = impl_->glyph(a, p.g);
+            if (gl.w <= 0 || gl.h <= 0) continue;
+            const float x0 = (p.pen + float(gl.xoff) - ox) / ppu, y0 = (by - p.lift + float(gl.yoff) - oy) / ppu;
+            const float x1 = x0 + float(gl.w) / ppu, y1 = y0 + float(gl.h) / ppu;
+            const float u0 = float(gl.x) * iw, v0 = float(gl.y) * ih;
+            const float u1 = float(gl.x + gl.w) * iw, v1 = float(gl.y + gl.h) * ih;
+            const int b = int(verts.size());
+            verts.push_back({{x0, y0}, col, {u0, v0}});
+            verts.push_back({{x1, y0}, col, {u1, v0}});
+            verts.push_back({{x1, y1}, col, {u1, v1}});
+            verts.push_back({{x0, y1}, col, {u0, v1}});
+            for (int q : {0, 1, 2, 0, 2, 3}) idx.push_back(b + q);
+        }
+        if (!verts.empty()) SDL_RenderGeometry(r, a.tex, verts.data(), int(verts.size()), idx.data(), int(idx.size()));
     }
-    if (!impl_->upload(a)) return false;
-    const float iw = 1.0f / float(a.w), ih = 1.0f / float(a.h);
-    for (const auto& [g, pen] : placed) {
-        const Impl::Glyph& gl = impl_->glyph(a, g);
-        if (gl.w <= 0 || gl.h <= 0) continue;
-        const float x0 = (pen + float(gl.xoff) - ox) / ppu, y0 = (by + float(gl.yoff) - oy) / ppu;
-        const float x1 = x0 + float(gl.w) / ppu, y1 = y0 + float(gl.h) / ppu;
-        const float u0 = float(gl.x) * iw, v0 = float(gl.y) * ih;
-        const float u1 = float(gl.x + gl.w) * iw, v1 = float(gl.y + gl.h) * ih;
-        const int b = int(verts.size());
-        verts.push_back({{x0, y0}, col, {u0, v0}});
-        verts.push_back({{x1, y0}, col, {u1, v0}});
-        verts.push_back({{x1, y1}, col, {u1, v1}});
-        verts.push_back({{x0, y1}, col, {u0, v1}});
-        for (int q : {0, 1, 2, 0, 2, 3}) idx.push_back(b + q);
-    }
-    if (!verts.empty()) SDL_RenderGeometry(r, a.tex, verts.data(), int(verts.size()), idx.data(), int(idx.size()));
     return true;
 }
 

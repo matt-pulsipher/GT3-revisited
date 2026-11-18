@@ -98,7 +98,7 @@ public:
         if (!error_.empty()) ui.text(10, 30, error_, colors::kBad);
         render_effects(ui);
         render_engine(ui);
-        ui.footer("Sq play O stop X throttle </>/L1/R1 car Start variant Sel view R2 rev L2 interp");
+        ui.footer("{Square} play  {Circle} stop  {Cross} throttle  {Left/Right}/{L1}/{R1} car  {Start} variant  {Select} view  {R2} rev  {L2} interp");
     }
 
 private:
@@ -273,7 +273,7 @@ private:
         // Throttle and bank levels.
         const float bx = x0 + 196, bw = Ui::kWidth - bx - 12;
         const auto& st = engine_.state();
-        ui.text(bx, 64, "throttle (Cross)", colors::kDim);
+        ui.text(bx, 64, "throttle ({Cross})", colors::kDim);
         ui.bar(bx, 76, bw, 6, throttle_, colors::kAccent);
         ui.text(bx, 90, "engine bank", colors::kDim);
         ui.bar(bx, 102, bw, 6, st.level[0] / float(EngineSound::kMaxLevel), colors::kGood);
