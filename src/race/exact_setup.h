@@ -48,6 +48,12 @@ struct RacePhysics {
 RacePhysics race_physics(const ex::ProgramData& d);
 // "Gran Turismo 3".
 const char* race_core_name(RaceCore c);
+// Whose rules an online race follows (docs/dev/ONLINE.md "Model"): NTSC-U's on GT3's own tables on every disc of Gran
+// Turismo 3's code, so players on any of its releases race one physics; unset (the disc's own rules and tables) on a Gran
+// Turismo Concept release, whose lobby has players on that disc alone (net::OnlineDisc).
+std::optional<sim::Program> online_rules(const ex::ProgramData& d);
+// The program data online cars are built on (their digests, game::online_car_params): `d` with online_rules' rules.
+ex::ProgramData online_program_data(const ex::ProgramData& d);
 // The course of a course file (the last one loaded is kept: a restart and a replay of the race reuse it).
 std::shared_ptr<const ex::RaceCourse> exact_course(ByteSpan course_file, const std::string& label, const ex::ProgramData& d);
 

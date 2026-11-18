@@ -46,10 +46,13 @@ bool pit_leave(Car& c, AiPlan& plan);
 bool drive_on(Car& c, AiPlan& plan);
 // The stop driver along line 6 (blended): kind 6.
 bool stop_on_line(Car& c, AiPlan& plan);
+// The stop driver along line 6 (blended):
+// kind 5.
+bool stop_lap(Car& c, AiPlan& plan);
 // The stop driver with the wheels straight: kind 7.
 bool stop_straight(Car& c);
 // The run-on after a finish: corner speeds x 0.8, the throttle multiplier 0.5.
-void slow_down(Driver& d);
+void slow_down(Driver& d, Program rule = Program::NtscU);
 // The end of a run with `mode` [ai §1.1]: end_of_run_head, then end_of_run_drive.
 void end_of_run(Car& c, int mode, const PitInputs& in, AiPlan& plan);
 // The finish bookkeeping: mode 4 is 2 on the pit surface, else 0; the car is marked finished. False when it had not

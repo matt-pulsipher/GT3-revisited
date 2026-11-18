@@ -6,6 +6,7 @@
 
 #include "test_framework.h"
 #include "car_db_synth.h"
+#include "concept_discs.h"
 #include "program_synth.h"
 
 #include "disc/volume.h"
@@ -1121,4 +1122,37 @@ TEST(net_car_setup_disc) {
     std::printf("  %s: %d cars, %d garage cars checked, %d not legal; %d of %d tampered cars refused\n",
                 region_name(disc->info().region), cars, builds, bad, refusals, probes);
     CHECK(cars > 0 && bad == 0 && refusals == probes);
+}
+
+TEST(net_online_rules_disc) {
+    // Whose rules an online race follows (docs/dev/ONLINE.md "Model"): NTSC-U's on GT3's tables on a Gran Turismo 3 disc
+    // (GT3R_DISC), so its releases share lobbies; a Gran Turismo Concept disc's own (GT3R_DISC_CONCEPT), its lobby holding
+    // that disc alone, so its cars' online blocks are the ones its offline races build.
+    int checked = 0;
+    if (Disc* disc = test::any_region_disc())
+        if (std::optional<sim::exact::ProgramData> d = program_of(*disc)) {
+            CHECK(race::online_rules(*d) == sim::Program::NtscU);
+            CHECK(race::online_program_data(*d).behaviour().rules == sim::Program::NtscU);
+            ++checked;
+        }
+    for (const std::string& path : test::concept_discs()) {
+        std::unique_ptr<Disc> disc = Disc::open(path);
+        std::optional<sim::exact::ProgramData> d = program_of(*disc);
+        CHECK(d.has_value());
+        if (!d) continue;
+        CHECK(!race::online_rules(*d).has_value());
+        const sim::exact::ProgramData o = race::online_program_data(*d);
+        CHECK(o.fingerprint() == d->fingerprint() && o.behaviour().rules == d->program());
+        data::CarDatabase db;
+        CHECK(db.load(disc->volume()));
+        const auto cars = lobby_cars(db, false);
+        CHECK(!cars.empty());
+        if (!cars.empty()) {
+            const auto x = game::online_car_digest(db, *d, cars.begin()->second);
+            CHECK(x.has_value());
+            std::printf("  %s: own rules online, %s's digest built\n", sim::program_name(d->program()), cars.begin()->first.c_str());
+        }
+        ++checked;
+    }
+    if (!checked) SKIP("needs GT3R_DISC or GT3R_DISC_CONCEPT");
 }

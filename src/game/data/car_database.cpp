@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 namespace gt3r::data {
 
@@ -109,7 +110,7 @@ bool CarDatabase::load(const Volume& vol, std::optional<std::string> suffix) {
             if (!e) return std::nullopt;
             return vol.read(*e);
         },
-        suffix ? std::move(suffix) : std::optional<std::string>(RegionData{vol.region()}.db_suffix()));
+        suffix ? std::move(suffix) : std::optional<std::string>(vol.region_data().db_suffix()));
 }
 
 bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt) {
@@ -121,7 +122,11 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
     const std::string suffix = suffix_opt ? *suffix_opt : region_data(read).db_suffix();
     std::optional<Language> lang;
     if (std::optional<Bytes> b = read(Vfs::kLanguageFile)) lang = text::language_from_code(std::string(b->begin(), b->end()));
-    language_ = lang.value_or(suffix == "_eu" ? Language::BR : suffix.empty() ? Language::JP : Language::US);
+    // Without a language: the set's own for GT3's three sets, else (another game's set) the disc region's.
+    language_ = lang.value_or(suffix == "_eu"   ? Language::BR
+                              : suffix.empty()  ? Language::JP
+                              : suffix == "_us" ? Language::US
+                                                : region_data(read).default_language());
     extra_records_.clear();
     mod_cars_.clear();
     mod_makers_.clear();
@@ -143,11 +148,19 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
         auto tables = db::parse_archive(paramdb_);
         if (tables.size() != size_t(TableId::Count))
             throw FormatError("paramdb: expected 36 tables, found " + std::to_string(tables.size()));
+        // The archive's tables in the file's order, then each under the TableId it holds (table_layout).
+        std::array<db::Table, size_t(TableId::Count)> parsed;
+        for (size_t i = 0; i < tables.size(); ++i) parsed[i] = db::Table::parse(tables[i]);
+        layout_ = table_layout(parsed);
         for (size_t i = 0; i < tables.size(); ++i) {
-            tables_[i] = db::Table::parse(tables[i]);
-            by_id_[i].clear();
-            for (size_t r = 0; r < tables_[i].size(); ++r) by_id_[i].emplace(tables_[i].id_of(r), r);
+            const size_t t = size_t(layout_[i]);
+            tables_[t] = std::move(parsed[i]);
+            by_id_[t].clear();
+            for (size_t r = 0; r < tables_[t].size(); ++r) by_id_[t].emplace(tables_[t].id_of(r), r);
         }
+        if (layout_[size_t(TableId::Car)] != TableId::Car)
+            LOG_INFO("CarDatabase: database/paramdb%s.db (table version 0x%04X) keeps its last six tables in another order", suffix.c_str(),
+                     unsigned(tables_[0].version));
         // racemode.db labels (event race modes) are plain strings in the game.
         for (const char* m : {"RACE_MODE_SINGLE", "RACE_MODE_ENDULANCE", "RACE_MODE_LICENSE", "RACE_MODE_FREE_TIME_TRIAL",
                               "RACE_MODE_0_400", "RACE_MODE_0_1000", "RACE_MODE_TIME_ATTACK", "RACE_MODE_2P_BATTLE",
@@ -193,7 +206,7 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
         }
     } catch (const std::exception& e) {
         error_ = e.what();
-        unsupported_ = !paramdb_.empty() && dynamic_cast<const FormatError*>(&e) != nullptr; // there, but not GT3's layout
+        unsupported_ = !paramdb_.empty() && dynamic_cast<const FormatError*>(&e) != nullptr; // there, but in no layout known here
         LOG_ERROR("CarDatabase: %s", error_.c_str());
         return false;
     }
@@ -225,6 +238,12 @@ void CarDatabase::us_medal_times(const Reader& read) {
         ++n;
     }
     LOG_INFO("CarDatabase: the US medal times for %d events (database/paramdb_us.db)", n);
+}
+
+size_t CarDatabase::place_of(TableId t) const {
+    for (size_t i = 0; i < layout_.size(); ++i)
+        if (layout_[i] == t) return i;
+    return size_t(t);
 }
 
 const ByteSpan* CarDatabase::record(TableId t, u64 id) const {
@@ -292,14 +311,65 @@ const ModCar* CarDatabase::mod_car(const std::string& l) const {
     return nullptr;
 }
 
-PartInfo CarDatabase::part_info(ByteSpan r, bool tire) const {
+PartInfo CarDatabase::part_info(ByteSpan r, bool tire, size_t price_at) const {
     PartInfo p;
     p.label = label(rd64(r, 0));
     p.car = label(rd64(r, 8));
     p.stage = r[16];
     // Tire records end with id slots; their price sits at +0x14.
-    p.price = rd32(r, tire ? 0x14 : r.size() - 4);
+    p.price = rd32(r, tire ? 0x14 : price_at ? price_at : r.size() - 4);
     return p;
+}
+
+// Where a part table's price is when it is not the record's last word: the gear table's stays at +0x2C (GT3's last
+// word) in Gran Turismo Concept's 56-byte records, which append to GT3's 48.
+static size_t price_offset(TableId t) { return t == TableId::Gear ? 0x2C : 0; }
+
+// Which table each of the archive's 36 holds. See car_database.h.
+std::array<TableId, size_t(TableId::Count)> table_layout(std::span<const db::Table> tables) {
+    std::array<TableId, size_t(TableId::Count)> layout;
+    for (size_t i = 0; i < layout.size(); ++i) layout[i] = TableId(int(i));
+    constexpr size_t kFirst = size_t(TableId::Car), kCount = size_t(TableId::Count);
+    if (tables.size() != kCount) return layout;
+    // The six by record size: one of 504 (events), one of 16 (courses), two of 264 and two of 272. Anything else
+    // (a test's or a tool's tables) stays in GT3's order.
+    std::vector<size_t> r264, r272, r504, r16;
+    for (size_t i = kFirst; i < kCount; ++i) {
+        switch (tables[i].record_size) {
+        case kCarRecordSize: r264.push_back(i); break;
+        case kVariantRecordSize: r272.push_back(i); break;
+        case kEventRecordSize: r504.push_back(i); break;
+        case kCourseRecordSize: r16.push_back(i); break;
+        default: return layout;
+        }
+    }
+    if (r264.size() != 2 || r272.size() != 2 || r504.size() != 1 || r16.size() != 1) return layout;
+    auto ids_of = [&](size_t i) {
+        std::unordered_set<u64> ids;
+        for (size_t r = 0; r < tables[i].size(); ++r) ids.insert(tables[i].id_of(r));
+        return ids;
+    };
+    // Cars: the 264-byte table that holds the base cars of the two 272-byte tables (their +8). The other 264-byte
+    // table is the regulations. Neither holding one (no variants): file order, cars first, as GT3.
+    const std::unordered_set<u64> a264 = ids_of(r264[0]), b264 = ids_of(r264[1]);
+    size_t in_a = 0, in_b = 0;
+    for (size_t t : r272)
+        for (ByteSpan r : tables[t].records) in_a += a264.count(rd64(r, 8)), in_b += b264.count(rd64(r, 8));
+    const bool cars_second = in_b > in_a;
+    // Variants: the 272-byte table that fills more of the events' 32 entry slots (+0x10..); the other is the arcade
+    // cars (a few events enter those too). A tie (no events): file order, variants first, as in both known layouts.
+    const std::unordered_set<u64> a272 = ids_of(r272[0]), b272 = ids_of(r272[1]);
+    size_t ev_a = 0, ev_b = 0;
+    for (ByteSpan r : tables[r504[0]].records)
+        for (size_t k = 0; k < 32; ++k) ev_a += a272.count(rd64(r, 0x10 + k * 8)), ev_b += b272.count(rd64(r, 0x10 + k * 8));
+    const bool variants_second = ev_b > ev_a;
+    layout[r264[cars_second ? 1 : 0]] = TableId::Car;
+    layout[r264[cars_second ? 0 : 1]] = TableId::Regulation;
+    layout[r272[variants_second ? 1 : 0]] = TableId::CarVariant;
+    layout[r272[variants_second ? 0 : 1]] = TableId::ArcadeCar;
+    layout[r504[0]] = TableId::Event;
+    layout[r16[0]] = TableId::Course;
+    return layout;
 }
 
 void CarDatabase::decode() {
@@ -316,7 +386,7 @@ void CarDatabase::decode() {
 
     const CarNameFields names = car_name_fields(language_);
     for (ByteSpan r : table(TableId::Car).records) {
-        if (r.size() < 264) throw FormatError("car record too small");
+        if (r.size() < kCarRecordSize) throw FormatError("car record too small");
         Car c;
         c.label = label(rd64(r, 0));
         for (size_t i = 0; i < c.parts.size(); ++i) c.parts[i] = rd64(r, 8 + i * 8);
@@ -375,7 +445,7 @@ void CarDatabase::decode() {
     }
 
     for (ByteSpan r : table(TableId::Event).records) {
-        if (r.size() < 504) throw FormatError("event record too small");
+        if (r.size() < kEventRecordSize) throw FormatError("event record too small");
         Event e;
         e.label = label(rd64(r, 0));
         e.course = label(rd64(r, 8));
@@ -434,7 +504,7 @@ const Event* CarDatabase::event(const std::string& l) const {
 std::optional<PartInfo> CarDatabase::part(TableId t, u64 id) const {
     const ByteSpan* r = record(t, id);
     if (!r || !is_part_table(t)) return std::nullopt;
-    return part_info(*r, t == TableId::FrontTire || t == TableId::RearTire);
+    return part_info(*r, t == TableId::FrontTire || t == TableId::RearTire, price_offset(t));
 }
 
 std::vector<PartInfo> CarDatabase::parts_for(TableId t, const std::string& car_label) const {
@@ -442,7 +512,7 @@ std::vector<PartInfo> CarDatabase::parts_for(TableId t, const std::string& car_l
     if (!is_part_table(t)) return out;
     u64 code = db::id_hash(car_label);
     for (ByteSpan r : table(t).records)
-        if (rd64(r, 8) == code) out.push_back(part_info(r, t == TableId::FrontTire || t == TableId::RearTire));
+        if (rd64(r, 8) == code) out.push_back(part_info(r, t == TableId::FrontTire || t == TableId::RearTire, price_offset(t)));
     std::stable_sort(out.begin(), out.end(), [](const PartInfo& a, const PartInfo& b) { return a.stage < b.stage; });
     return out;
 }
@@ -530,7 +600,7 @@ std::optional<Gearbox> CarDatabase::gearbox(u64 id) const {
     if (!p) return std::nullopt;
     ByteSpan r = *p;
     Gearbox g;
-    g.part = part_info(r);
+    g.part = part_info(r, false, price_offset(TableId::Gear));
     g.gears = r[0x11];
     auto ratio = [&](size_t off) { return s16(rd16(r, off)) / 1000.0f; };
     g.reverse = ratio(0x12);

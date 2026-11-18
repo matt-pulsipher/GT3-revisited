@@ -11,6 +11,13 @@
 //   NTSC-U  database/paramdb_us.db              gameconf/product.gcf      US
 //   PAL     database/paramdb_eu.db              gameconf/product_eu.gcf   BR, FR, GR, IT, SP
 //
+// Gran Turismo Concept runs on the same engine and names its own files (GameKind below): each
+// release's program names one database (database/paramdb_bs.db, _kr, _gtc_eu, _gtc_tw, with
+// the matching paramstr / paramunistr files) and its game configs (gameconf/concept*.gcf),
+// while its volume also carries other releases' files, GT3's among them. So a disc's files are
+// the ones its program names (ProgramFiles), whatever the release; the table above is what the
+// three GT3 programs name.
+//
 // Everything else follows the game's language (text::Language, in the game's order JP, US,
 // BR (British English), FR, GR, IT, SP; its index is the one the arcade car filter compares
 // with a car's region byte): the menu/<code>/ and race/<code>/ folders, the text block, the
@@ -31,6 +38,15 @@ namespace gt3r {
 enum class Region : int { Japan = 0, America = 1, Europe = 2 };
 using Language = text::Language;
 
+// The game a disc's program is. The engine shipped as Gran Turismo 3 and as Gran Turismo
+// Concept (2001 Tokyo, 2002 Tokyo-Seoul, 2002 Tokyo-Geneva); a program says which it is by the
+// game configuration it loads: gameconf/product*.gcf (GT3) or gameconf/concept*.gcf (Concept).
+// What follows the kind: the course folders (RegionData::course_path). The database layout
+// does not: the tables are told apart from their records (game/data/car_database.h).
+enum class GameKind : int { Gt3 = 0, Concept = 1 };
+// "Gran Turismo 3", "Gran Turismo Concept".
+const char* game_name(GameKind g);
+
 // "jp", "us", "eu": folder and config names.
 const char* region_key(Region r);
 // "NTSC-J", "NTSC-U", "PAL".
@@ -40,6 +56,27 @@ std::optional<Region> region_from_key(std::string_view key);
 // The release whose program `program` is (CORE.GT3 unpacked, CoreImage::program): the
 // car database it loads names the region.
 std::optional<Region> region_of_program(ByteSpan program);
+// The data files a program names (strings in its data, each a whole NUL-terminated string).
+struct ProgramFiles {
+    // "database/paramdb<suffix>.db": the car database it loads; the paramstr, paramunistr and
+    // id index files carry the same suffix. None when the program names no such file. (A
+    // program naming several: the first of "_eu", "_us", "" it names, as region_of_program;
+    // else the first in the program.)
+    std::optional<std::string> db_suffix;
+    // Every "gameconf/<name>.gcf" it names, in the program's order.
+    std::vector<std::string> gcf;
+
+    // Concept when the game configs are named concept*, else GT3.
+    GameKind game() const;
+    // The game config the program loads in `lang`. A program naming one loads that one. One
+    // naming several picks by the language (GT3, Concept Tokyo: the
+    // same test): language 0 (JP) the plain name, 1 (US) "<name>_us", any other "<name>_eu"
+    // (Concept: Korean "<name>_kr"); the plain one when it does not name that. Empty when it
+    // names none.
+    std::string gcf_for(Language lang) const;
+};
+ProgramFiles files_of_program(ByteSpan program);
+
 // The release a boot file name suggests ("SCES_502.94" -> PAL), for discs whose program
 // cannot be read.
 std::optional<Region> region_of_serial(std::string_view serial);
@@ -47,17 +84,45 @@ std::optional<Region> region_of_serial(std::string_view serial);
 // The files of one region's data set.
 struct RegionData {
     Region region = Region::America;
+    GameKind game = GameKind::Gt3;
+    // What the disc's program names (ProgramFiles), when that is not the region's GT3 files:
+    // the database suffix and the game config.
+    std::optional<std::string> program_db_suffix;
+    std::optional<std::string> program_gcf;
+    // The program names a game config for each language and loads its own language's (a Concept program of the 2001
+    // generation: Tokyo-Seoul v1.02, whose config is v2.00's; its own constants are the older program's, concept §12).
+    bool gcf_per_language = false;
 
-    // "", "_us", "_eu": database/paramdb<suffix>.db, paramstr<suffix>.db, paramunistr<suffix>.db.
-    const char* db_suffix() const;
-    // The program's game configuration file.
-    const char* gcf_path() const;
-    // The languages the release offers, and the one it starts in (JP, US; PAL: BR).
+    RegionData() = default;
+    RegionData(Region r) : region(r) {} // a region's GT3 data set
+
+    // A disc's data set: `region`, with the files `files` (of its program) names.
+    static RegionData of_program(Region region, const ProgramFiles& files);
+
+    // database/paramdb<suffix>.db, paramstr<suffix>.db, paramunistr<suffix>.db: the program's,
+    // else the region's ("", "_us", "_eu").
+    std::string db_suffix() const;
+    // The program's game configuration file: its own, else the region's.
+    std::string gcf_path() const;
+    // The languages the release offers, and the one it starts in (JP, US; PAL: BR). A Concept release: its
+    // program's own language (Japanese, Korean; Tokyo-Geneva: British English, its Asian release Traditional
+    // Chinese) and what its language page offers (Europe: BR, FR, GR, IT, SP, PT; Asia: TW, US).
     std::vector<Language> languages() const;
     Language default_language() const;
-    // A course file in `lang`: NTSC-J courses/<label>; otherwise the language's folder,
-    // courses/JP, courses/US, courses/UK (BR) or courses/EU (FR, GR, IT, SP).
+    // The page of menu/language.mbl the release's first start shows: "root", Concept's Asian release "root_tw".
+    std::string language_page() const;
+    // A course file in `lang`: GT3 NTSC-J courses/<label>; otherwise (every Concept release
+    // too) the language's folder, courses/JP, courses/US, courses/UK (BR) or courses/EU (FR,
+    // GR, IT, SP). A disc may lack the folder (Concept Tokyo-Geneva has courses/UK and
+    // courses/EU only, its Asian release courses/JP only): course_file_path (vfs/vfs.h) then
+    // takes the folder the disc has.
     std::string course_path(std::string_view label, Language lang) const;
+
+    // The text of Vfs::kRegionFile: the region key, then for a disc whose program names other
+    // files than the region's GT3 ones a line each: "game=concept", "db=<suffix>",
+    // "gcf=<path>", "gcfs=per-language". from_text reads it back (none when the key is unknown).
+    std::string to_text() const;
+    static std::optional<RegionData> from_text(std::string_view text);
 };
 
 // --- Choosing the language ---
@@ -82,7 +147,7 @@ struct Units {
     bool power_hp = false;     // HP, BHP and CV figures are PS x 0.98619
     bool torque_ftlb = false;  // torque in ft.lb (kgf.m x 7.2329), else kgf.m
 };
-// US: mph, HP, ft.lb. BR, IT, SP: km/h, BHP. FR: km/h, CV. GR and JP: km/h, PS. Torque is
+// US: mph, HP, ft.lb. BR, IT, SP: km/h, BHP. FR, PT: km/h, CV. GR, JP, KR, CN, TW: km/h, PS. Torque is
 // kgf.m in every language but US.
 Units language_units(Language lang);
 // The player's speed unit (Settings > Display > Speed units, [race] units = kmh | mph): true =

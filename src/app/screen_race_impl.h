@@ -63,6 +63,7 @@
 #include "race/point_lights.h"
 #include "formats/text/mltx.h"
 #include "race/pylons.h"
+#include "race/leaves.h"
 #include "race/sparks.h"
 #include "race/tyre_smoke.h"
 #include "race/wet_road.h"
@@ -128,8 +129,10 @@ struct DebugPreset {
     double warp = 0, quit = 0, rwarp = 0;
     bool demo_drive = false; // tests: the player's run driven by the disc's demo inputs (judged as a real run)
     double leave = 0; // tests: back to the menus this many seconds after the finish (posts the result)
+    int place = 0;    // tests: a finished race is reported with this finishing position (the prize pages after a real race)
     int exit_laps = 0; // screenshots: a run ends as the pause menu's Exit once it has this many laps
     double pause_at = 0, skip_at = 0; // screenshots: the pause window / a Next song at this race time (s)
+    int pod_prompt = 0;               // screenshots: a pod race's stop prompt held on screen (16 or 17: messages 0x10 / 0x11)
     std::string replay; // file to watch ("last" = newest)
     std::string event;  // race against the event's opponents (e.g. AEAT0001)
     bool two_player = false; // 2P battle (split screen, pad 2)
@@ -141,6 +144,13 @@ struct DebugPreset {
     // Scripted player input (tests / screenshots): "thr:1@0;steer:-1@3" sets throttle to 1 at
     // 0 s and steering to full left at 3 s (seconds since the run started; brk, steer, thr).
     std::string script;
+    // Tests (GT3R_RACE line=<km/h>): a driver on the player's pad that follows the car's AI line at up to this speed. The
+    // run is the player's own, judged and recorded as one (auto=1 hands the car to the race's AI, whose runs are not judged).
+    float line_pace = 0;
+    // With line=: a pod race's stops (Gran Turismo Concept, concept §9.2): 0 none (the line driver misses them), 1 every
+    // lap, 2 the odd laps only. The driver stops 10 m into the stop area and holds the brakes and the handbrake until the
+    // stop is counted.
+    int pod_stops = 0, pod_stops2 = 0; // (pod_stops2=: player 2's car, driven by line= too in a race of two)
     int prize = -1;          // licence result: show this medal (0 gold .. 2 bronze), for screenshots
     bool demo = false;       // start the demonstration (licence: the disc's demo run)
     std::string qm;          // quick menu: choose this item when it opens ("option", "record", "data_logger", ...)
@@ -337,6 +347,7 @@ private:
 
     // Drive loop (screen_race_drive.cpp)
     sim::ControlInputs scripted_inputs(double t, bool& reverse) const; // GT3R_RACE script=
+    sim::ControlInputs line_inputs(int player = 0) const;              // GT3R_RACE line=
     void next_view(CameraRig& cam, int player);
     // Ours: the look around from a race pad's right stick (CameraRig::set_look).
     void look_around(App& app, CameraRig& cam, const PadState& pad) const;
@@ -407,6 +418,9 @@ private:
     size_t player_items_[2] = {0, 0}; // collect_items: the player's car is items_[first, end)
     size_t scenery_items_ = 0;          // collect_items: the course's items are items_[0, end)
     HudData hud_data(int player);
+    // The Analyzer's REPLAY: the logger display (Hud::draw_logger) over track A's car, and on Gran Turismo 3 track B's.
+    void draw_logger_display(App& app, Ui& ui);
+    float logger_pedals_[2][2] = {{-1, -1}, {-1, -1}}; // each track's car's throttle / brake a frame ago
     float sun_visibility(const render::Vec3& eye, float fovy, float rect_h);
     bool split_horizontal(App& app) const;
     static sim::Vec3 cam_right(const CameraRig& c);
@@ -485,6 +499,7 @@ private:
     void end_free_run(App& app);
     std::string quick_menu_layout(bool before) const;
     bool menu_before_run() const;
+    bool concept_menus() const;
     void fill_license_menu(App& app);
     std::string records_key() const;
     bool course_time_trial() const;
@@ -550,7 +565,11 @@ private:
     menu::flow::GameResult build_result() const;
     void leave(App& app);
     int presented_medal() const;
-    // `game_text`: the value's own bytes (what the menu font draws: quick-menu widgets), else UTF-8.
+    // A realtime text ("<group>_<name>"): the game's language's value in text/realtime.dat, else the program's built-in
+    // default (the game's rule; game text only: 2001 Tokyo's file has no pod race texts, GT3 NTSC-J's no RACEDISPLAY
+    // group, and both programs hold Japanese defaults), else American English, else `fallback`. `game_text`: the
+    // value's own bytes (what the game font draws: every race display text, the event display's notes and the FAIL
+    // words included), else UTF-8.
     std::string race_text(const char* key, const char* fallback, bool game_text = false);
     // Tells the menus how the requested race went (GT mode awards prizes from it).
     void post_result() { menu::flow::post_game_result(result_latch_.for_leave(build_result())); }
@@ -785,6 +804,7 @@ private:
     bool pylon_hit_ = false; // the player's car touched a pylon
     TyreSmoke smoke_;                             // tyre smoke / dirt dust (course slots 26 / 32)
     SparkDraw sparks_;                            // the race's sparks (race/particle.img)
+    LeafDraw leaves_;                             // a later build's leaves (race/particle.img's pictures 1 .. 8)
     // collect_items draws the sparks with this view (the one-player view, the VR head); off for the mirror and the
     // split-screen halves. The view's camera at the last draw (a change is a cut).
     bool spark_pass_ = false;
@@ -920,12 +940,27 @@ private:
     std::vector<int> practice_grid_;
     std::vector<u32> practice_entry_best_; // each entry's best lap so far (entry + 0x11D8), the next practice's start
     static constexpr int kNoPoleCar = -100;
+    // Gran Turismo Concept's pod races (concept §9.2): the event is one (its test kind is 5); the display's three
+    // notes at the start of a live one-player run (once a run); a player's car's stop prompt now (player 0 / 1: 0 none,
+    // 0x10, 0x11).
+    bool pod_race() const;
+    bool pod_intro_posted_ = false;
+    int pod_prompt(int player = 0) const;
+    // A player's car disqualified at the line (the race's event 11 on its car: the pod display's examination message,
+    // simple exam display, race::ConceptExamMessage): seconds since, -1 none. One player: the disc's
+    // RACEDISPLAY_Disqualification fades in, is held and fades out, with the fail jingle, then the race ends (event 1);
+    // two players: each half's message stays once held (no jingle), and the race ends once both are (two-player pod race display).
+    std::array<double, 2> pod_dq_t_{-1.0, -1.0};
+    bool pod_disqualified() const { return !two_player_ && pod_dq_t_[0] >= 0; }
+    // The display's step (1: the step of the disqualification, its stage 1).
+    int pod_dq_frame(int player) const { return int(std::lround(pod_dq_t_[size_t(player)] * 60.0)); }
     bool practice_ready_posted_ = false;   // the free practice's "Qualifying starts after 1 warm-up lap" (once a run)
     bool practice_pit_exit_ = false;       // the player's car left the pit lane this step (START, count_s)
     int practice_pole_car_ = kNoPoleCar;   // the free practice's P.P. car (-1 the player, k opponent k; none before a lap)
     bool music_on_ = true, menu_music_on_ = true, rumble_on_ = true, rumble2_on_ = true;
     bool wheel_force_on_ = true, wheel_force2_on_ = true; // the GT FORCE Force Feedback options
     bool aids_options_apply_ = false, asm_on_ = true, tcs_on_ = true;
+    int assist2_ = -1; // Concept's 2 player car page: player 2's driving assist (0 ASM and TCS, 1 TCS, 2 neither; -1 as player 1)
     bool race_se_ = true, replay_se_ = true, ghost_on_ = true, wide_mode_ = false;
     QuickMenu quick_menu_;
     RaceResultLatch result_latch_;
@@ -951,6 +986,8 @@ private:
     bool any_run_recorded_ = false; // GameResult::records_done
     std::optional<text::StringTable> race_strings_;
     bool race_strings_tried_ = false;
+    // The program's realtime text groups read so far (game::find_realtime_group), by group name.
+    std::map<std::string, std::vector<std::pair<std::string, std::string>>> program_texts_;
     double odometer_m_ = 0;
     std::vector<double> opp_trip_m_; // each opponent's trip this race (m)
     std::vector<float> opp_top_kmh_; // each opponent's speedometer top speed (-1: not yet read)
@@ -1102,6 +1139,9 @@ private:
     std::array<LapList, 2> lap_lists_{};
     long long session_best_ms_ = -1;
     std::string license_event_;   // licence test event ("" = not a licence test)
+    // Gran Turismo Concept's course license with the pace car (concept §9.2, race training): the test with one computer car,
+    // the event pool's third entry, under the pace-car conductor (sim::exact::Conductor::Training).
+    bool pace_car_ = false;
     u32 event_paint_id_ = 0xFFFFFFFFu; // licence test, attract demo: the slot-0 car's colour id (0xFFFFFFFF = none)
     bool draw_player_paint_ = false;   // attract demo: the slot-0 car has no colour id, so the paint draw gives it one
     // Machine tests (presentation §B7): the test (the event's test byte) and the run's timing

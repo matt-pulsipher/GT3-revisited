@@ -32,7 +32,7 @@ struct CarGetRoulette {
     static constexpr float kSpinSpeed = 0.1f;          // candidates per frame (PAL 0.12)
     static constexpr float kMinSpeed = 0.016666668f;   // the slowdown's floor (PAL 0.02)
     static constexpr int kStopTurns = 12;              // whole candidates of travel: (12 div n) n
-    // The floor light under each car (TheCar +0x360): 1 on the car the roulette is on,
+    // The floor light under each car (the car +0x360): 1 on the car the roulette is on,
     // else down by this per frame to 0 (PAL 0.06).
     static constexpr float kSpotStep = 0.05f;
     // The carousel (at page build, per frame):

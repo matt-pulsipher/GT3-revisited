@@ -5,6 +5,7 @@
 
 #include "game/data/car_database.h"
 #include "sim/car_spec.h"
+#include "sim/exact/special.h"
 
 #include <algorithm>
 
@@ -103,6 +104,8 @@ void gear(const Equipment& eq, S& s, const Rec& r) {
     s.b(0xCA, 0);
     s.b(0xC8, r.b(0x11));
 }
+// ... the later builds' (Rule::GearSpec, Concept 2001 Tokyo): also the record's gearbox kind.
+void gear_kind(S& s, const Rec& r) { s.b(0xE1, r.b(0x30)); }
 
 void suspension(const Equipment& eq, S& s, const Rec& r) {
     for (u32 i = 0; i < 4; ++i) s.b(0x64 + i, r.b(0x1D + i));
@@ -423,6 +426,7 @@ void build_spec(const data::CarDatabase& db, const ProgramData& d, Equipment& eq
     engine(s, rec(TableId::Engine));
     drivetrain(s, rec(TableId::Drivetrain));
     gear(eq, s, rec(TableId::Gear));
+    if (!gt3_program(d.behaviour().rule(Rule::GearSpec))) gear_kind(s, rec(TableId::Gear));
     suspension(eq, s, rec(TableId::Suspension));
     lsd(eq, s, rec(TableId::Lsd));
     tire(db, s, rec(TableId::FrontTire), false);
@@ -449,6 +453,9 @@ void build_spec(const data::CarDatabase& db, const ProgramData& d, Equipment& eq
     for (s32 i = s.b(0x71); i < 16; ++i) s.b(0x72 + u32(i), 0xFF), s.h(0x82 + 2 * u32(i), 0);
     if (eq.word(0x1B8) != 0) s.h(0xA2, u16(eq.word(0x1B8)));
     s.b(0x0F, 9);
+    // (Rule::SpecBuild: the later builds give the two cars their program names a special kind, special.h)
+    if (!gt3_program(d.behaviour().rule(Rule::SpecBuild)))
+        if (const u8 kind = special_kind(d, eq.car)) s.b(0x11, kind);
     // The fix-ups [physics §6.3]
     for (u32 o : {0x1Cu, 0x1Eu})
         if (s.sh(o) == 0) s.h(o, s.sh(0x1A) / 2);
@@ -467,7 +474,8 @@ void build_spec(const data::CarDatabase& db, const ProgramData& d, Equipment& eq
     if (mode == 2)
         for (u32 o : {0x10Eu, 0x10Fu, 0x110u, 0x109u, 0x10Cu, 0x10Du, 0x111u, 0x114u, 0x115u, 0x116u}) s.b(o, 0);
     if (s.b(0x112) == 0) s.b(0x112, 100);
-    if (s.b(0x113) == 0) s.b(0x113, 100);
+    // (Rule::SpecBuild: the later builds' default for +0x113 is 90, Concept 2001 Tokyo)
+    if (s.b(0x113) == 0) s.b(0x113, gt3_program(d.behaviour().rule(Rule::SpecBuild)) ? 100 : 90);
     if (s.b(0x117) == 100) s.b(0x110, 0);
     s.b(0x12, 1);
     for (u32 i = 0; i < 16; ++i) s.b(0x132 + i, d.b(ProgramData::Table::SpecSurfaceClass, i));

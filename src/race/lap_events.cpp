@@ -144,11 +144,9 @@ std::string gap_text(long long gap_ms) {
 }
 
 std::string lap_diff_text(int laps, const std::string& format) {
+    // The text is the program's format (sprintf): without a "%d" (PAL's "Laps", "Tours", ...) the count is not shown.
     std::string s = format;
-    size_t at = s.find("%d");
-    std::string n = std::to_string(std::abs(laps));
-    if (at != std::string::npos) s.replace(at, 2, n);
-    else s = n + " " + s;
+    if (const size_t at = s.find("%d"); at != std::string::npos) s.replace(at, 2, std::to_string(std::abs(laps)));
     return std::string(1, laps >= 0 ? '+' : kDash) + s;
 }
 

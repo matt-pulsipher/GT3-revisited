@@ -130,7 +130,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
             race_opponent_paints_ = replay->opponent_paints;
             if (!replay->car2.empty()) two_player_ = true, preset_.car2 = replay->car2;
         }
-        race_mode_ = two_player_ || !race_event_.empty() || !race_opponents_.empty() || online_;
+        // (The pace-car test is a licence run, a solo mode with one computer car.)
+        race_mode_ = two_player_ || !race_event_.empty() || (!race_opponents_.empty() && !pace_car_) || online_;
         if (!build_vehicle(app)) throw FormatError(error_);
         build_tv_cameras();
         gtrc_.reset();
@@ -166,6 +167,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
             point_lights_.load(cf.section(*course, course::kSlotRoad)); // night lamp list (point-light courses)
             if (app.gpu()) smoke_.load(*app.gpu(), cf.section(*course, 32), cf.section(*course, 26)); // tyre smoke / dust
             if (app.gpu() && !sparks_.loaded()) sparks_.load(*app.gpu(), *app.vfs()); // the sparks' glow (race/particle.img)
+            if (app.gpu() && !leaves_.loaded()) leaves_.load(*app.gpu(), *app.vfs()); // a later build's leaves (the same image)
             spark_shot_.reset();
             pylons_.load(app.gpu(), *course); // pylons / cones (GTRW list + slot 36 types)
             if (sun_.params().has_shadow) pylons_.set_shadow(sun_.params().shadow_rgb, sun_.params().shadow_alpha);
@@ -221,6 +223,12 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (!hud_loaded_) {
         hud_.load(*app.vfs(), app.renderer(), lang_);
         hud_loaded_ = true;
+        // A Gran Turismo Concept disc's display rows are its own tables' (concept §9.3); GT3's are built in.
+        race::clear_hud_tables();
+        if (app.vfs()->region().game == GameKind::Concept) {
+            const std::optional<Bytes> modes = app.vfs()->read("database/racemode.db"), rows = app.vfs()->read("database/racedetail.db");
+            if (!modes || !rows || !race::set_hud_tables(*modes, *rows)) LOG_WARN("Race: the disc's display tables could not be read");
+        }
     }
     engine_.stop(app.audio().voices());
     std::string err;
@@ -470,6 +478,7 @@ void RaceScreen::restart() {
     replaying_ = false;
     run_recorded_ = false;
     retry_locked_ = false; // every run starts with RETRY available (presentation §E3)
+    pod_intro_posted_ = false;
     result_latch_.reset(); // a new live run
     latched_rows_.reset();
     run_replay_.reset();
@@ -547,9 +556,11 @@ ExactFieldOptions RaceScreen::exact_options(App& app) {
     ExactFieldOptions o;
     o.data = exact_data_;
     // The disc's own release's rules for the player's races; the game's demos (the attract demo, the quick menu's and the
-    // theater's demonstrations, the licence preview) and online races (every client shares one physics, docs/dev/ONLINE.md)
-    // NTSC-U's on every disc.
-    if (attract_ || demo_ || preview_ || !theater_demo_.empty() || online_) o.rules = sim::Program::NtscU;
+    // theater's demonstrations, the licence preview) NTSC-U's on every disc; online races (every client shares one
+    // physics, docs/dev/ONLINE.md) NTSC-U's on GT3's discs and a Gran Turismo Concept disc's own (race::online_rules).
+    // (The licence menu's box replaying the player's own run, run_preview_, plays that run's record as any replay.)
+    if (attract_ || demo_ || (preview_ && !run_preview_) || !theater_demo_.empty()) o.rules = sim::Program::NtscU;
+    else if (online_) o.rules = exact_data_ ? race::online_rules(*exact_data_) : std::optional(sim::Program::NtscU);
     o.course_file = course_bytes_;
     o.course = courses_[size_t(course_sel_)].label;
     o.player.car = launch_source_.value_or(ExactCarSource{cars_[size_t(car_sel_)].label});
@@ -648,6 +659,7 @@ bool RaceScreen::build_vehicle(App& app) {
             o.second.pedal_style = manual2_ == 1 ? 1 : 0;
             o.second.wheel = app.input().wheel_steering(1);
             o.second.asm_on = o.player.asm_on, o.second.tcs_on = o.player.tcs_on;
+            if (assist2_ >= 0 && aids_options_apply_) o.second.asm_on = assist2_ == 0, o.second.tcs_on = assist2_ <= 1;
         }
         cfg.exact = std::move(o);
         std::string err;
@@ -881,6 +893,7 @@ void RaceScreen::reset_run_state() {
     machine_time_ = -1, top_speed_kmh_ = 0, hud_top_kmh_ = 0;
     if (machine_) machine_->reset();
     tt_failed_ = false;
+    pod_dq_t_ = {-1.0, -1.0};
     tt_hold_ = solo_field_ ? std::max(0.0, -solo_field_->race_time()) : 0; // (the race holds the car itself)
     // The course's animations restart with every run; the start-signal lights follow the
     // countdown (none for rolling and flying starts).

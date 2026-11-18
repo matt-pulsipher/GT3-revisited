@@ -62,9 +62,14 @@ struct GameRequest {
     // 1 drift (-1 = not chosen, e.g. GT mode).
     int transmission = -1;
     int tire_mode = -1;
+    // Gran Turismo Concept (the Concept spec): the car page's driving assist choice (0..2, -1 = not chosen);
+    // a course license test run with the pace car.
+    int assist = -1;
+    bool lead_car = false;
     // 2 Player Battle: player 2's car, class, paint and choices ("" / -1 = none).
     std::string car2, car2_class;
     int car2_color = 0, transmission2 = -1, tire_mode2 = -1;
+    int assist2 = -1; // (Concept: player 2's driving assist choice, as `assist`)
     // Player 2's garage car (arcade garage classes) as car_parts / car_model / car_wheel are
     // player 1's: its fitted parts and settings, model and bought wheels.
     std::optional<std::array<std::uint64_t, 27>> car2_parts;

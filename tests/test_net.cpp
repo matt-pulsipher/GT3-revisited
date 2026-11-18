@@ -6,6 +6,7 @@
 #include "net/protocol.h"
 #include "base/file.h"
 #include "base/sha256.h"
+#include "disc/disc.h"
 #include "disc/volume.h"
 #include "formats/png_writer.h"
 #include "game/data/car_database.h"
@@ -547,6 +548,71 @@ TEST(net_session_rejects_when_racing) {
     }));
     CHECK(!late.active());
     CHECK(host.players().size() == 2);
+}
+
+TEST(net_session_disc_must_match) {
+    // The host lets in only players whose disc matches its own: a Gran Turismo 3 release joins a Gran Turismo 3 host
+    // whatever its region, another disc is turned away with both discs named, and a host on that disc lets it in.
+    FakeClock clock;
+    const net::OnlineDisc gtc{"files:8d5d67d9bdd40790", "Gran Turismo Concept (SCES-50858)"};
+    net::Session host, gt3, other;
+    if (!host.host(0, "Host", "a", 0)) SKIP("no UDP sockets here");
+    const std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    gt3.join(addr, "One", "b", 0);
+    CHECK(pump({&host, &gt3}, [&] { return gt3.my_id() == 1; }));
+    other.set_disc(gtc);
+    other.join(addr, "Two", "c", 0);
+    std::vector<net::Event> ev;
+    CHECK(pump({&host, &gt3, &other}, [&] {
+        for (auto& e : drain(other)) ev.push_back(e);
+        return has(ev, net::Event::Kind::Rejected);
+    }));
+    std::string why;
+    for (const net::Event& e : ev)
+        if (e.kind == net::Event::Kind::Rejected) why = e.text;
+    CHECK(why == "the host plays a Gran Turismo 3 release, you Gran Turismo Concept (SCES-50858); discs must match");
+    CHECK(!other.active() && host.players().size() == 2);
+    // A host on that disc: the same disc joins, a Gran Turismo 3 release does not.
+    net::Session chost, same, plain;
+    chost.set_disc(gtc), same.set_disc(gtc);
+    CHECK(chost.host(0, "Host", "a", 0));
+    const std::string caddr = "127.0.0.1:" + std::to_string(chost.port());
+    same.join(caddr, "Same", "b", 0);
+    CHECK(pump({&chost, &same}, [&] { return same.my_id() == 1; }));
+    plain.join(caddr, "Plain", "c", 0);
+    ev.clear();
+    CHECK(pump({&chost, &same, &plain}, [&] {
+        for (auto& e : drain(plain)) ev.push_back(e);
+        return has(ev, net::Event::Kind::Rejected);
+    }));
+    CHECK(chost.players().size() == 2);
+}
+
+TEST(net_online_disc_identity) {
+    // Which discs race together (docs/dev/ONLINE.md "Discs").
+    DiscInfo us, pal, mod, gtc, patched;
+    us.serial = "PBPX_955.03", us.verified = true, us.digest = "164c486ca0a61886";
+    pal.serial = "SCES_502.94", pal.verified = true, pal.region = Region::Europe, pal.digest = "075246ad42a4b418";
+    CHECK(game::online_disc(&us, GameKind::Gt3).id == "gt3" && game::online_disc(&pal, GameKind::Gt3).id == "gt3");
+    // A disc the game does not know (a mod under its own serial): its files.
+    mod.serial = "SCEF_502.94", mod.region = Region::Europe, mod.digest = "0123456789abcdef";
+    CHECK(game::online_disc(&mod, GameKind::Gt3).id == "files:0123456789abcdef");
+    CHECK(game::online_disc(&mod, GameKind::Gt3).name == "an unrecognized disc (SCEF-50294)");
+    // Two versions of it: both named the same, told apart.
+    CHECK(net::disc_mismatch({"files:1", "an unrecognized disc (SCEF-50294)"}, {"files:2", "an unrecognized disc (SCEF-50294)"}) ==
+          "the host plays another version of an unrecognized disc (SCEF-50294); discs must match");
+    // A known release whose files were changed.
+    patched = pal, patched.modified = true, patched.digest = "fedcba9876543210";
+    patched.description = "Gran Turismo 3 A-Spec (PAL)";
+    CHECK(game::online_disc(&patched, GameKind::Gt3).id == "files:fedcba9876543210");
+    CHECK(game::online_disc(&patched, GameKind::Gt3).name == "a modified copy of Gran Turismo 3 A-Spec (PAL) (SCES-50294)");
+    // A Gran Turismo Concept release.
+    gtc.serial = "SCES_508.58", gtc.digest = "8d5d67d9bdd40790", gtc.data.game = GameKind::Concept;
+    CHECK(game::online_disc(&gtc, GameKind::Concept).id == "files:8d5d67d9bdd40790");
+    CHECK(game::online_disc(&gtc, GameKind::Concept).name == "Gran Turismo Concept (SCES-50858)");
+    // No disc image (the files alone).
+    CHECK(game::online_disc(nullptr, GameKind::Gt3).id == "gt3");
+    CHECK(game::online_disc(nullptr, GameKind::Concept).id != "gt3");
 }
 
 TEST(net_remote_car_prediction) {

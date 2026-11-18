@@ -107,6 +107,15 @@ FontFile FontFile::parse(ByteSpan d) {
     return f;
 }
 
+const char* kanji_font_path(Language l) {
+    switch (l) {
+    case Language::KR: return "font/system.hf";
+    case Language::CN:
+    case Language::TW: return "font/system.tf";
+    default: return "font/system.kf";
+    }
+}
+
 KanjiFont KanjiFont::parse(ByteSpan d) {
     KanjiFont k;
     if (has_magic(d, "KNJI")) {

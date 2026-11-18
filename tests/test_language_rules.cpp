@@ -213,7 +213,7 @@ TEST(language_prize_cars_awarded) {
         CHECK(data != nullptr);
         if (!data) continue;
         for (PrizeSet& p : data->prizes)
-            if (p.name == "Gsyn_e_0000") p.cars = {PrizeCar{7, synth::world::kTwinOpel, 0x102, 1}};
+            if (p.name == "Gsyn_e_0000") p.cars = {PrizeCar{7, synth::world::kTwinOpel, 0x102, 1, {}, -1}};
         const PrizeCar cand = data->prize_candidate(data->prize_set("Gsyn_e_0000")->cars[0]);
         const bool br = l == Language::BR;
         CHECK(cand.car == (br ? synth::world::kTwinVauxhall : synth::world::kTwinOpel));

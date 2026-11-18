@@ -78,6 +78,7 @@ const char* se_bank_path(u8 bank) {
     case 0: return "sound/gt3sys.ins";
     case 1: return "sound/gt3se01.ins";
     case 2: return "sound/gt3se02.ins";
+    case 3: return "sound/gt3pod.ins";
     default: return nullptr;
     }
 }

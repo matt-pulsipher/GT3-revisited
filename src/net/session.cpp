@@ -61,6 +61,11 @@ std::string protocol_mismatch(u16 theirs) {
     return "the host has an older version of the game (online protocol " + h + ", yours " + t + "): the host needs to update";
 }
 
+std::string disc_mismatch(const OnlineDisc& host, const OnlineDisc& theirs) {
+    const std::string what = host.name == theirs.name ? "another version of " + host.name : host.name + ", you " + theirs.name;
+    return "the host plays " + what + "; discs must match";
+}
+
 namespace {
 
 constexpr double kTimeoutMs = 8000;     // no datagram for this long: the peer is gone
@@ -195,6 +200,22 @@ bool Session::host(u16 port, const std::string& name, const std::string& car, u8
     return true;
 }
 
+Writer Session::hello_msg(const std::string& name, const std::string& car, u8 paint) const {
+    Writer w;
+    w.u8_(u8(Msg::Hello));
+    w.u16_(kProtocolVersion);
+    w.str(name);
+    w.str(car);
+    w.u8_(paint);
+    w.str(version_.to_string());
+    w.u8_(u8(std::min<size_t>(local_eps_.size(), 4)));
+    for (size_t i = 0; i < local_eps_.size() && i < 4; ++i) w.str(local_eps_[i]);
+    w.u8_(caps_); // what this game supports (older hosts stop reading before it)
+    w.str(disc_.id); // after it: hosts without the disc check stop reading before it
+    w.str(disc_.name);
+    return w;
+}
+
 bool Session::join(const std::string& address, const std::string& name, const std::string& car, u8 paint,
                    std::string* error) {
     close();
@@ -209,17 +230,7 @@ bool Session::join(const std::string& address, const std::string& name, const st
     c->addr = a;
     c->player = 0;
     c->last_recv = now();
-    Writer w;
-    w.u8_(u8(Msg::Hello));
-    w.u16_(kProtocolVersion);
-    w.str(name);
-    w.str(car);
-    w.u8_(paint);
-    w.str(version_.to_string());
-    w.u8_(u8(std::min<size_t>(local_eps_.size(), 4)));
-    for (size_t i = 0; i < local_eps_.size() && i < 4; ++i) w.str(local_eps_[i]);
-    w.u8_(caps_); // what this game supports (older hosts stop reading before it)
-    send_reliable(*c, w);
+    send_reliable(*c, hello_msg(name, car, paint));
     conns_.push_back(std::move(c));
     phase_ = Phase::Lobby;
     start_rx();
@@ -273,17 +284,7 @@ bool Session::join_code(const std::string& server, const std::string& code, cons
     host_ = false;
     my_id_ = -1;
     collect_local_endpoints();
-    Writer w;
-    w.u8_(u8(Msg::Hello));
-    w.u16_(kProtocolVersion);
-    w.str(name);
-    w.str(car);
-    w.u8_(paint);
-    w.str(version_.to_string());
-    w.u8_(u8(std::min<size_t>(local_eps_.size(), 4)));
-    for (size_t i = 0; i < local_eps_.size() && i < 4; ++i) w.str(local_eps_[i]);
-    w.u8_(caps_); // what this game supports (older hosts stop reading before it)
-    hello_ = w.data;
+    hello_ = hello_msg(name, car, paint).data;
     phase_ = Phase::Lobby;
     server_started_ = now();
     server_sent_ = 0;
@@ -1262,10 +1263,15 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
             // Direct-IP sessions (no relay server checks versions): the same release only. Through
             // a relay server, its min_online decides (docs/dev/ONLINE.md "Versions and updates").
             GameVersion theirs = parse_game_version(build).value_or(GameVersion{});
+            // The joining player's disc, after the capabilities (older games send none: a Gran Turismo 3 release, the only
+            // discs they raced).
+            OnlineDisc disc;
+            if (r.ok() && r.remaining() > 0) disc.id = r.str(), disc.name = r.str();
             std::string reject;
             if (!r.ok()) reject = "malformed hello";
             else if (version != kProtocolVersion) reject = protocol_mismatch(version);
             else if (!server_.valid() && compare_core(theirs, version_) != 0) reject = version_mismatch(theirs, version_);
+            else if (disc.id != disc_.id) reject = disc_mismatch(disc_, disc);
             else if (phase_ != Phase::Lobby) reject = "a race is running";
             else if (int(players_.size()) >= kMaxPlayers) reject = "the session is full";
             if (!reject.empty()) {

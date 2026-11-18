@@ -125,6 +125,9 @@ int cmd_shot(Disc& disc, const Args& a) {
     std::string base = a[0].substr(a[0].find_last_of('/') + 1);
     base = base.substr(0, base.find('.'));
     Vfs vfs(&disc.volume());
+    // A page of menu/<LANG>/ draws in that language (its cell font).
+    if (a[0].rfind("menu/", 0) == 0 && a[0].find('/', 5) != std::string::npos)
+        if (auto l = text::language_from_code(a[0].substr(5, a[0].find('/', 5) - 5))) vfs.set_language(*l);
     int written = 0;
     for (int p = 0; p < int(scene.file().pages.size()); ++p) {
         const Page& pg = scene.file().pages[p];

@@ -266,6 +266,28 @@ line: u32 n, n × 40-byte control points
 - Lines 0–2 and 5 cover the whole lap and are near-identical variants of the racing line. Lines 3 and 4 cover part of a lap (pit lane?). Line 6 is optional.
 - Points are sparse: 4–90 per lap, denser in corners. The line is a chain of **straights and circular arcs**: a point with flags bit 0 set starts an arc to the next point whose signed radius (in metres, > 0 turning left in the world frame) is the `radius` word; otherwise a straight follows. Of the two arcs of that radius joining the points, the one that continues the previous segment's direction is meant (hairpins on the slalom courses exceed 180°). `AiLine::sample_arcs()` rebuilds it: 100% of the samples lie on the road in trialmt, 99.6% over all 80 US courses, and driving it laps every lap course (78/78; the two 60 m circle tests have a 3-point line).
 - Line 0 is empty on some courses (several licence files, seattle, slalom80r, r_smtsouth); use the first non-empty of 0, 1, 2, 5, 6. The first and last point can be far apart (a long straight without points), so "closed" is better decided from coverage of the lap.
+- The second header word is the section's version. Every course has 8. Version 7 (one leftover file on Gran Turismo Concept discs, below) has no build stamp: the offsets are the same seven and the first line starts at 0x28. `AiLines::parse` reads both.
+
+### Course folders of other games on the engine (Gran Turismo Concept)
+
+The course files of the Concept discs are GT3's format and load with the same code
+(`gt3tool course-survey`, `track-survey`). Two kinds of file in their course folders are not
+finished courses, and the surveys tell them apart from the data:
+
+- **A file with the offset table but no scenery model** (`tahitiroad`, 91,008 bytes, on three
+  of the four discs): slots 2, 3, 4, 10 and 14 (`Vls0`), 31 (AI lines, version 7), 32 (`Env0`),
+  33 (`GTCM`) and 34 (`GTRC`) only. There is no slot 1 model and no `GTRW` road, so it is the
+  data sections of an early course build and nothing can be driven or drawn.
+  `CourseFile::looks_like_course` is false for it; the surveys list it as "not a course".
+- **Courses carrying another road's AI lines.** Development courses (`test`, `test4`, `n_seattle`,
+  `tahitimaze_rec`, `ss_*`, a short `L_tahitimaze1`) have a complete road and scenery, but
+  their slot 31 is a copy of another course's: under half of its control points lie over the
+  file's own road (0 to 17 of up to 205), and several share one section byte for byte (the same
+  build stamp and point counts). Driving the line cannot lap such a road, and the grid can face
+  against it. `track-survey` prints "AI lines of another road" with the point counts and totals
+  them apart; nothing is wrong with the reader. Some of these files also keep a stale lap
+  length in the road header (three different roads report 4895.4 m).
+- `courses/.list` (the Japanese releases) is a text list of the folder's names, not a course.
 
 ## Driver parameter sets (slots 37–40)
 
@@ -592,10 +614,31 @@ Rome, Seattle, the Tahiti courses, Apricot Hill, Monte Carlo). Tahiti dirt 596 s
 
 ## Other files
 
-- `cameras/attach.cam`, `start.cam`: `GTRC`, the layout of slot 34 (docs/dev/RACE.md "Replay (TV) cameras"); the race's pre-race shot plays `start.cam`'s record 0.
+- `cameras/attach.cam`, `start.cam`: `GTRC`, the layout of slot 34 (docs/dev/RACE.md "Replay (TV) cameras"); the race's pre-race shot plays `start.cam`'s record 0. Gran Turismo Concept adds `cameras/replay.cam`: the same format, one record of kind 0x420, byte for byte its `start.cam`.
 - `replay/*.dat`: 3 files of 87,128 bytes. Start `u32 7200, u32 7200` (frames?), with a flag at 0x0C.
 - `demo/*`: 67 files in the game's save envelope (docs/FORMATS.md "Demo runs"): `u32 0x40`, `u32` body size, `u32 0x40000/0x30000/0x10000`, `u32` CRC-32, then `"Base"` at 0x10. The licence and arcade time-trial demonstrations are decoded (`src/race/demo_replay.*`).
 - `demo/thumbnail/*`: 68 files of 96 bytes.
+
+`gt3tool misc-survey` reads these and the other small files (the paint lists, `race/particle.img`,
+the camera scripts, the demo runs and every `.prm` scene) with the engine's loaders and prints what
+each holds. On the Gran Turismo Concept discs:
+
+| File | Read by the GT3 loader | Difference |
+|---|---|---|
+| `database/carcolor.db`, `.sdb` | yes | more models and colours (288 models / 612 definitions on GT3; 348 / 683 to 428 / 928); every listed colour has a definition and every name word is inside the string table |
+| `race/particle.img` | yes (texture 0, the 16 x 16 spark glow, is the same) | a `Tex1` of 9 textures: 8 more of 32 x 32, 4-bit, on two palettes: leaves (the particles' leaf classes are in the program, not read here) |
+| `cameras/replay.cam` | yes | new file, `GTRC`, equal to `start.cam` |
+| `menu/prem_00..09.prm` | yes | new prize scenes: 1 view key, 302 model keys, the licence card's model (2,866 triangles, 11 textures) |
+| `race/test.prm` | yes | a different small scene |
+| `demo/*` | all but 8 of 140 (2001 Tokyo, Tokyo-Seoul), all but 11 of 176 (Tokyo-Geneva) | the seven old-version saves GT3 also has are skipped as there; new: saves whose recorder block has **mode 1** (`c_replay01`; Tokyo-Geneva also `gtc_eu_demo_0`, `gtc_eu_demo_0_p`, `gtc_tw_demo_0`), below |
+| `replay/*.dat` | no (as on GT3) | the same three files |
+
+A mode 1 recorder block is not GT3's input stream and is not decoded: after `u32 1` come
+`u16 0, u8, u8`, two zero words, an `f32`, a `u32`, four zero words, four words that look like
+memory addresses of the recording program, nine `f32` (1.2 to 2.7), then a bit stream to the end
+of the save. Both car records of these saves name the same car. `DemoReplay::parse` refuses them
+("recorder mode is not a single input stream"). Saves with two mode 0 blocks (two cars' inputs)
+exist on GT3 too; the parser reads the first.
 
 ## Tools
 

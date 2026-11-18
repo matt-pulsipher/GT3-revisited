@@ -4,6 +4,7 @@
 // the records rows, the Cars Permitted rows, the wheel shop's tiles, the image widgets
 // (widget_art.cpp), the dealer's paint column and the garage list.
 
+#include "game/concept_menu.h"
 #include "game/gt_mode_menu/internal.h"
 
 #include "game/gt_setting.h"
@@ -50,7 +51,7 @@ void hide_ok_until_accepted(const MenuController& ctl, const std::string& page, 
     }
 }
 
-// The prize car page's "Bonus car acquired" ticker (CarGetMessageItem: its update and draw run
+// The prize car page's "Bonus car acquired" ticker (car get message item: its update and draw run
 // only once the roulette has given the controls back): none until then,
 // then its marquee from the frame after. The "after" layer is built on that frame too:
 // its band fades in over 24 frames from then (its elements' fade flags, as any
@@ -183,6 +184,23 @@ void inset_garage_car_texts(const PageRef& ref, const std::string& page, DrawLis
 void inset_tune_shop_texts(const MenuController& ctl, DrawList& out) {
     for (int level = 0; level <= ctl.depth(); ++level) {
         if (!starts(ctl.page_name_at(level), "ts/")) continue;
+        const PageRef ref = ctl.page_at(level);
+        if (!ref) continue;
+        const menu::Page& lay = ref.layout();
+        for (menu::ElementDraw& d : out)
+            if (d.element && page_owns(lay, d.element)) d.font_inset = true;
+    }
+}
+
+// Gran Turismo Concept's settings menu (its Custom page and the slider pages over it): the slider pages
+// hold an axle's letter right-aligned in a box that overlaps its value's left-aligned one, and the Custom page's letters
+// start at their icons' edge; drawn as the original's items draw their texts, half the font's size in from the box's
+// side, the letter and the value stand side by side.
+void inset_concept_slider_texts(const MenuController& ctl, DrawList& out) {
+    if (!concept_active()) return;
+    for (int level = 0; level <= ctl.depth(); ++level) {
+        const std::string& name = ctl.page_name_at(level);
+        if (!starts(name, "set/") && name != "custom") continue;
         const PageRef ref = ctl.page_at(level);
         if (!ref) continue;
         const menu::Page& lay = ref.layout();
@@ -424,10 +442,10 @@ void draw_wheel_tiles(const MenuController& ctl, GtModeSession& s, const PageRef
 }
 
 // The garage's wheel list (hm/hm_wheel, WheelList): per button the page's "wheel" frame, the
-// "mark" frame over the entry the car wears, then the entry's tile in the middle (WheelButton
+// "mark" frame over the entry the car wears, then the entry's tile in the middle (wheel button
 // the program draws them in that order), clipped to the "menu_wheel" window. The focused button
 // keeps the controller's own draws of the item (its focus look), moved to where the list puts
-// it. The scroll bar shows only when the row is longer than it (ScrollBar): the track
+// it. The scroll bar shows only when the row is longer than it (scroll bar): the track
 // (the widget's own art) with the hidden "pinch" over the visible share at the row's scroll
 // position. (The page's hidden tiles named after car models are never drawn: GT3's list only
 // names the placeholder's "default_wheel" and the bought wheels.)
@@ -639,6 +657,7 @@ void extra_draws(const MenuController& ctl, std::vector<menu::ElementDraw>& out)
     raise_prize_model(ctl, page, out);
     place_status_day(ctl, out);
     inset_tune_shop_texts(ctl, out);
+    inset_concept_slider_texts(ctl, out);
     menu::flow::MenuSet::PageRef ref = ctl.page();
     if (!ref) return;
     inset_garage_car_texts(ref, page, out);

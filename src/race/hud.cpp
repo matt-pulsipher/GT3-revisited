@@ -927,6 +927,8 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
     if (const HudRow* msg = row(HudPart::Messages); msg && d.live) {
         const float my = d.split ? 200.0f : float(msg->y);
         if (d.wrong_way) text(r, ux(msg->x), uy(my) - 6, "WRONG WAY", "sw_16", 1, kRed, text::HAlign::Center);
+        else if (!d.car_message.empty())
+            game_text(r, ux(msg->x), uy(my) - 6, d.car_message, "sw_16", 1, d.car_message_red ? kRed : kAmber, text::HAlign::Center);
         else if (d.auto_drive) text(r, ux(msg->x), uy(my) - 6, "AUTO DRIVE", "sw_16", 1, kAmber, text::HAlign::Center);
     }
     // Event display (presentation §D6): centred on its row's anchor, the pen on the baseline,
@@ -989,38 +991,161 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
                 f->draw_game(ux(anchor(cn->x, w * sq, cn->align)), uy(cn->y), d.car_name, st);
             }
     }
-    if (const HudRow* sw = row(HudPart::Steering); sw && (d.items & kItemSteering)) {
-        // A light grey tick from 24 to 43 units above the pivot, and the "steering" wheel with its
-        // top edge at 43 above the pivot, centred across, turned about the pivot (the wheel's hub)
-        // with the steering, up to 90 degrees either side.
-        const float px = anchor(sw->x, 0, sw->align), py = sw->y;
-        polygon_strip(r, {{px - 0.5f, py - 43}, {px + 0.5f, py - 43}, {px - 0.5f, py - 24}, {px + 0.5f, py - 24}},
-                      SDL_Color{208, 208, 208, 255});
-        if (const Image* im = image("steering")) {
-            const float a = 90.0f * std::clamp(d.steer, -1.0f, 1.0f);
-            SDL_FRect rc{ux(px - im->w / 2), uy(py - 43), im->w * vsx(), im->h * vsy()};
-            const SDL_FPoint hub{im->w / 2 * vsx(), 43 * vsy()};
-            SDL_RenderTextureRotated(r, im->tex, nullptr, &rc, a, &hub, SDL_FLIP_NONE);
+    if (const HudRow* sw = row(HudPart::Steering); sw && (d.items & kItemSteering)) draw_steering_row(r, d, *sw, 0);
+    if (const HudRow* ab = row(HudPart::AccelBrake, 0); ab && (d.items & kItemAccelBrake)) draw_pedals_row(r, d, *ab, 0);
+    (void)kGrey;
+}
+
+// The logger display (the Analyzer's REPLAY; solo race's display of mode LOGGER): its rows for one car, `dx` frame
+// units to the right. Gran Turismo 3 (/ the solo race) draws it for track A's car, then track B's 560
+// to the right, each on the whole frame; Gran Turismo Concept (the solo race) for track A's alone, under the
+// Analyzer's own page. The parts are the race display's: a release's own pictures say which kind it draws (Gran
+// Turismo 3's "steering" wheel and accel / brake gauges, Concept's "replay_sign_*" boxes).
+void Hud::draw_logger(SDL_Renderer* r, const HudData& d, float dx, const SDL_FRect* viewport) {
+    g_screen = screen_;
+    g_vp = viewport ? *viewport : screen_;
+    g_43 = d.four_three;
+    g_dx = 0, g_dy = 0, g_s = 1;
+    char buf[32];
+    for (const HudRow& row : hud_layout(HudMode::Logger)) {
+        const float x = anchor(row.x, float(row.w), row.align) + dx, y = anchor(row.y, float(row.h), row.valign);
+        switch (row.part) {
+        case HudPart::Steering: draw_steering_row(r, d, row, dx); break;
+        case HudPart::AccelBrake:
+            if (row.sub == 1) {
+                if (d.hybrid) draw_capacity(r, d, x, y, float(row.w), float(row.h));
+            } else {
+                draw_pedals_row(r, d, row, dx);
+            }
+            break;
+        case HudPart::BarTach:
+            // Race battle tachometer: "meter_mini" in the row's box, lit across with the rpm, AT / MT 5 below its top left.
+            if (const Image* im = image("meter_mini")) {
+                const float w = float(row.w), h = float(row.h);
+                const float frac = std::clamp(d.rpm / float(tach_scale(d.rev_limit_rpm)), 0.0f, 1.0f);
+                SDL_FRect dst{ux(x), uy(y), w * vsx(), h * vsy()};
+                SDL_SetTextureAlphaMod(im->tex, 70);
+                SDL_RenderTexture(r, im->tex, nullptr, &dst);
+                SDL_SetTextureAlphaMod(im->tex, 255);
+                float tw = im->w, th = im->h;
+                SDL_GetTextureSize(im->tex, &tw, &th);
+                SDL_FRect src{0, 0, tw * frac, th}, lit{dst.x, dst.y, dst.w * frac, dst.h};
+                SDL_RenderTexture(r, im->tex, &src, &lit);
+                text(r, ux(x), uy(y + 5), d.automatic ? ">" : "=", "meter#1", 1, kTransmission, text::HAlign::Left, true);
+            }
+            break;
+        case HudPart::Gear:
+            draw_gear(r, d, x, y, float(row.w), float(row.h), (row.sub & 1) ? -4.0f : -35.0f, (row.sub & 1) ? -12.0f : 0.0f);
+            break;
+        case HudPart::DigitalSpeed: {
+            // RaceDigitalSpeedmeter, as the replay's small panel draws it (Hud::draw).
+            const float sx = anchor(row.x, 0, row.align) + dx;
+            std::snprintf(buf, sizeof(buf), "%3d", int(d.imperial ? d.speed_kmh / 1.609344f : d.speed_kmh));
+            text(r, ux(sx), uy(row.y), buf, "speed", 1, kAmber, text::HAlign::Right, true);
+            text(r, ux(sx + row.w), uy(float(row.y + row.h)), d.imperial ? "mph" : "km/h", "sw_12", 1, kAmber,
+                 text::HAlign::Left, true);
+            break;
+        }
+        default: break;
         }
     }
-    if (const HudRow* ab = row(HudPart::AccelBrake); ab && (d.items & kItemAccelBrake)) {
-        // Brake (red) at the row's x, accel (green) at x + its width: dark grey gauges filled
-        // from the bottom (the row's y), the gauge art on top.
-        auto gauge = [&](float x0, const char* art, float v, SDL_Color c) {
-            const Image* im = image(art);
-            const float w = im ? im->w : 8, h = im ? im->h : 64, x = anchor(x0, 0, ab->align), y = ab->y - h;
-            fill(r, ux(x), uy(y), w * vsx(), h * vsy(), SDL_Color{32, 32, 32, 255});
-            const float fh = std::floor(h * std::clamp(v, 0.0f, 1.0f));
-            fill(r, ux(x), uy(ab->y - fh), w * vsx(), fh * vsy(), c);
-            if (im) {
-                SDL_FRect rc{ux(x), uy(y), w * vsx(), h * vsy()};
-                SDL_RenderTexture(r, im->tex, nullptr, &rc);
-            }
-        };
-        gauge(ab->x, "brake_gage", d.brake, kRed);
-        gauge(float(ab->x + ab->w), "accel_gage", d.throttle, SDL_Color{73, 204, 43, 255});
+}
+
+// The steering monitor on its row, `dx` frame units to the right. Gran Turismo 3 (RaceSteeringDisplay, its "steering"
+// picture): a light grey tick from 24 to 43 units above the pivot (the row's point) and the wheel with its top edge at 43
+// above it, centred across, turned about the pivot (the wheel's hub) with the steering, up to 90 degrees either side.
+// Gran Turismo Concept (the race steering display, its "replay_sign_gtforce" picture in 0x80D0D0D0): the picture centred
+// on the row's point at the row's width and height (the routine scales it by twice the row's size over the picture's;
+// that its sprite draw halves it is ours, as every other part of Concept's display fills its row's box), turned the same.
+void Hud::draw_steering_row(SDL_Renderer* r, const HudData& d, const HudRow& row, float dx) {
+    const float px = anchor(row.x, 0, row.align) + dx, py = row.y, a = 90.0f * std::clamp(d.steer, -1.0f, 1.0f);
+    if (const Image* im = image("steering")) {
+        polygon_strip(r, {{px - 0.5f, py - 43}, {px + 0.5f, py - 43}, {px - 0.5f, py - 24}, {px + 0.5f, py - 24}},
+                      SDL_Color{208, 208, 208, 255});
+        SDL_FRect rc{ux(px - im->w / 2), uy(py - 43), im->w * vsx(), im->h * vsy()};
+        const SDL_FPoint hub{im->w / 2 * vsx(), 43 * vsy()};
+        SDL_RenderTextureRotated(r, im->tex, nullptr, &rc, a, &hub, SDL_FLIP_NONE);
+    } else if (const Image* gt = image("replay_sign_gtforce")) {
+        const float w = float(row.w), h = float(row.h);
+        SDL_FRect rc{ux(px - w / 2), uy(py - h / 2), w * vsx(), h * vsy()};
+        const SDL_FPoint hub{w / 2 * vsx(), h / 2 * vsy()};
+        SDL_SetTextureColorMod(gt->tex, 208, 208, 208);
+        SDL_RenderTextureRotated(r, gt->tex, nullptr, &rc, a, &hub, SDL_FLIP_NONE);
+        SDL_SetTextureColorMod(gt->tex, 255, 255, 255);
     }
-    (void)kGrey;
+}
+
+// The accel / brake monitor on its row (sub 0), `dx` frame units to the right. Gran Turismo 3 (the race AB monitor, its
+// "brake_gage" and "accel_gage" pictures): the brake gauge at the row's x, the accel gauge its width to the right, dark
+// grey gauges filled from the row's y up. Gran Turismo Concept: draw_pedal_boxes in the row's box.
+void Hud::draw_pedals_row(SDL_Renderer* r, const HudData& d, const HudRow& row, float dx) {
+    if (!image("brake_gage")) {
+        draw_pedal_boxes(r, d, anchor(row.x, float(row.w), row.align) + dx, anchor(row.y, float(row.h), row.valign),
+                         float(row.w), float(row.h));
+        return;
+    }
+    auto gauge = [&](float x0, const char* art, float v, SDL_Color c) {
+        const Image* im = image(art);
+        const float w = im ? im->w : 8, h = im ? im->h : 64, x = anchor(x0, 0, row.align) + dx, y = row.y - h;
+        fill(r, ux(x), uy(y), w * vsx(), h * vsy(), SDL_Color{32, 32, 32, 255});
+        const float fh = std::floor(h * std::clamp(v, 0.0f, 1.0f));
+        fill(r, ux(x), uy(row.y - fh), w * vsx(), fh * vsy(), c);
+        if (im) {
+            SDL_FRect rc{ux(x), uy(y), w * vsx(), h * vsy()};
+            SDL_RenderTexture(r, im->tex, nullptr, &rc);
+        }
+    };
+    gauge(row.x, "brake_gage", d.brake, kRed);
+    gauge(float(row.x + row.w), "accel_gage", d.throttle, SDL_Color{73, 204, 43, 255});
+}
+
+// Gran Turismo Concept's accel / brake monitor (the race AB monitor, 2002 Tokyo-Geneva Europe): two boxes of the
+// row's size 4 apart (brake, then accel), each at half-alpha black with a dark inner box 2 in, its sign at the bottom
+// (the inner width across, 16 / 22 of it high) and above it the pedal's bar from the bottom: solid up to the lower of
+// the pedal's value now and a frame ago, fading out up to the higher.
+void Hud::draw_pedal_boxes(SDL_Renderer* r, const HudData& d, float x, float y, float w, float h) {
+    const int iw = int(w) - 4, sign_h = iw * 16 / 22;
+    const float bar_h = h - float(sign_h) - 8;
+    auto box = [&](float bx, const char* sign, float now, float before, SDL_Color c) {
+        fill(r, ux(bx), uy(y), w * vsx(), h * vsy(), gs_colour(0x40000000u));
+        fill(r, ux(bx + 2), uy(y + 2), float(iw) * vsx(), bar_h * vsy(), gs_colour(0x80202020u));
+        if (const Image* im = image(sign)) {
+            SDL_FRect rc{ux(bx + 2), uy(y + 2 + h - float(sign_h) - 4), float(iw) * vsx(), float(sign_h) * vsy()};
+            SDL_RenderTexture(r, im->tex, nullptr, &rc);
+        }
+        const float a = std::clamp(now, 0.0f, 1.0f), b = std::clamp(before < 0 ? now : before, 0.0f, 1.0f);
+        const float lo = std::min(a, b), hi = std::max(a, b), bottom = y + 2 + bar_h;
+        const float y_lo = bottom - bar_h * lo, y_hi = bottom - bar_h * hi, X0 = ux(bx + 2), X1 = ux(bx + 2 + float(iw));
+        const SDL_FColor on = fcol(c), off{on.r, on.g, on.b, 0};
+        const SDL_Vertex v[6] = {{{X0, uy(y_hi)}, off, {}}, {{X1, uy(y_hi)}, off, {}}, {{X0, uy(y_lo)}, on, {}},
+                                 {{X1, uy(y_lo)}, on, {}},  {{X0, uy(bottom)}, on, {}}, {{X1, uy(bottom)}, on, {}}};
+        const int idx[12] = {0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4};
+        SDL_RenderGeometry(r, nullptr, v, 6, idx, 12);
+    };
+    box(x, "replay_sign_brake", d.brake, d.brake_prev, kRed);
+    box(x + w + 4, "replay_sign_accel", d.throttle, d.throttle_prev, SDL_Color{73, 204, 43, 255});
+}
+
+// Gran Turismo Concept's store monitor (the race capacity monitor, 2002 Tokyo-Geneva Europe), drawn for a car of
+// drive layout 7 (the hybrid system's): a half-alpha black box of the row's size, a dark inner box 2 in, the
+// "meter_sign_dualnote" sign at its bottom in blue (0x80CC4600; the inner width across, 5 / 7 of it high) and above it
+// the store's share of its capacity as a bar from the bottom, blue (0, 0.2745, 0.8) while the flow display is at 0 or
+// above, (0.55, 0.1, 0.25) while the store is drawn.
+void Hud::draw_capacity(SDL_Renderer* r, const HudData& d, float x, float y, float w, float h) {
+    const int iw = int(w) - 4, sign_h = iw * 5 * 4 / 28;
+    const float sign_y = y + h - float(sign_h) - 2, top = y + 2, bottom = sign_y - 2;
+    fill(r, ux(x), uy(y), w * vsx(), h * vsy(), gs_colour(0x40000000u));
+    fill(r, ux(x + 2), uy(y + 2), float(iw) * vsx(), (h - 4) * vsy(), gs_colour(0x80202020u));
+    if (const Image* im = image("meter_sign_dualnote")) {
+        SDL_FRect rc{ux(x + 2), uy(sign_y), float(iw) * vsx(), float(sign_h) * vsy()};
+        SDL_SetTextureColorMod(im->tex, 0x00, 0x46, 0xCC);
+        SDL_RenderTexture(r, im->tex, nullptr, &rc);
+        SDL_SetTextureColorMod(im->tex, 255, 255, 255);
+    }
+    const float v = d.hybrid_charging ? 1.0f : 0.0f, u = 1 - v;
+    const SDL_Color c{u8(255 * 0.55f * u), u8(255 * (0.2745098f * v + 0.1f * u)), u8(255 * (0.8f * v + 0.25f * u)), 255};
+    const float fh = std::trunc((bottom - top) * std::clamp(d.hybrid_level, 0.0f, 1.0f));
+    fill(r, ux(x + 2), uy(bottom - fh), float(iw) * vsx(), fh * vsy(), c);
 }
 
 // 2P layouts (GT3 racedetail rows): racemode 7 = 4:3 horizontal split, 640x224 per
@@ -1047,11 +1172,49 @@ constexpr SplitLayout kSplit43{640, 224, 640, 180, 24, 48, 615, 36, 615, {64, 88
 constexpr SplitLayout kSplit169{426.667f, 448, 320, 360, 16, 60, 310 + kMargin, 60, 413, {96, 120, 144}, 10, 105,
                                 220, 435, 413, 435, 65, 25, 313, 422, 213, 210, 384};
 
+// The halves' layout on the disc's rows (hud_layout.h): the layouts above stand on Gran Turismo 3's rows, so a part moves
+// by what its row differs from GT3's (another release's tables, set_hud_tables: Gran Turismo Concept's). `event_w`: the
+// event display's width (its row's).
+SplitLayout split_layout(bool horizontal, float& event_w) {
+    SplitLayout L = horizontal ? kSplit43 : kSplit169;
+    const HudMode m = horizontal ? HudMode::Battle : HudMode::BattleWide;
+    struct Delta {
+        float x = 0, y = 0, w = 0, h = 0;
+    };
+    auto delta = [&](HudPart part, int sub = -1) {
+        const HudRow *now = hud_row(m, part, sub, 1), *gt3 = hud_builtin_row(m, part, sub, 1);
+        if (!now || !gt3) return Delta{};
+        return Delta{float(now->x - gt3->x), float(now->y - gt3->y), float(now->w - gt3->w), float(now->h - gt3->h)};
+    };
+    Delta v = delta(HudPart::Rank);
+    L.rank_x += v.x, L.rank_y += v.y;
+    v = delta(HudPart::LapCount);
+    L.lap_r += v.x, L.lap_y += v.y;
+    static constexpr TimeLine kLines[3] = {TimeLine::Fastest, TimeLine::Last, TimeLine::Lap};
+    L.lines_r += delta(HudPart::TimeLine, int(kLines[0])).x;
+    for (int i = 0; i < 3; ++i) L.line_y[i] += delta(HudPart::TimeLine, int(kLines[i])).y;
+    v = delta(HudPart::Map);
+    L.map_x += v.x, L.map_y += v.y;
+    v = delta(HudPart::DigitalSpeed);
+    L.speed_r += v.x, L.speed_y += v.y;
+    v = delta(HudPart::BarTach);
+    L.tach_r += v.x, L.tach_y += v.y, L.tach_w += v.w, L.tach_h += v.h;
+    v = delta(HudPart::Gear);
+    L.gear_x += v.x, L.gear_y += v.y;
+    v = delta(HudPart::Title);
+    L.big_x += v.x, L.big_y += v.y;
+    L.warn_y += delta(HudPart::Messages).y;
+    const HudRow* ev = hud_row(m, HudPart::Events, -1, 1);
+    event_w = ev && ev->w > 0 ? float(ev->w) : horizontal ? 320.0f : 384.0f;
+    return L;
+}
+
 void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, bool horizontal) {
     g_43 = false;
     g_dx = g_dy = 0, g_s = 1;
     pole_icon_rect_ = {0, 0, 0, 0};
-    const SplitLayout& L = horizontal ? kSplit43 : kSplit169;
+    float event_w = 0;
+    const SplitLayout L = split_layout(horizontal, event_w);
     // Across: the layout's scale on the 16:9 screen at this height, at most the half's width
     // (a narrower half squeezes it). What a wider half has left over goes between the layout's
     // parts: the middle ones move by half of it, the right-hand ones by all of it.
@@ -1218,26 +1381,41 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
     // (No "PLAYER n WIN!": the original shows AUTO DRIVE, then its results panel over the half.)
     if (d.auto_drive && horizontal)
         txt(L.speed_r - 78, L.speed_y - 20, "AUTO DRIVE", "sw_16", 1.3f, kAmber, text::HAlign::Right, Right);
-    if (d.wrong_way) txt(L.big_x, L.warn_y - 8, "WRONG WAY", "sw_16", 1, kRed, text::HAlign::Center, Mid);
+    if (d.wrong_way) {
+        txt(L.big_x, L.warn_y - 8, "WRONG WAY", "sw_16", 1, kRed, text::HAlign::Center, Mid);
+    } else if (!d.car_message.empty() && fonts_ok_) {
+        // The half's other car messages in WRONG WAY's place (Gran Turismo Concept's pod prompts: each half is a pod
+        // display of its own), game text.
+        text::TextStyle st;
+        if (text::GameFont* f = fonts_.resolve("sw_16", st)) {
+            st.scale = horizontal ? 0.7f : 1.0f;
+            st.scale_x *= kw;
+            st.scale_y *= kh;
+            st.color = d.car_message_red ? kRed : kAmber;
+            st.align = text::HAlign::Center;
+            f->draw_game(X(L.big_x, Mid), Y(L.warn_y - 8), d.car_message, st);
+        }
+    }
     // Event display (presentation §D6): the half's own, centred on (320, 75) of the 640 x 224
     // half (horizontal) or (213, 165) of the 426.667 x 448 half, at most 320 / 384 units wide
     // (wider texts are squeezed), the pen on the baseline.
     event_icon_rect_ = {0, 0, 0, 0};
-    const float ex = horizontal ? 320.0f : 213.0f, ey = horizontal ? 75.0f : 165.0f;
-    const float max_w = horizontal ? 320.0f : 384.0f;
+    const HudRow* ev_row = hud_row(horizontal ? HudMode::Battle : HudMode::BattleWide, HudPart::Events, -1, 1);
+    const float ex = ev_row ? float(ev_row->x) : horizontal ? 320.0f : 213.0f, ey = ev_row ? float(ev_row->y) : horizontal ? 75.0f : 165.0f;
+    const float max_w = event_w;
     if (fonts_ok_)
         for (const EventDisplay::Message& m : d.events) {
             text::TextStyle st;
             text::GameFont* f = fonts_.resolve(m.large ? "sw_20" : "sw_16", st);
             if (!f) continue;
             st.scale = horizontal ? 0.7f : 1.0f;
-            const float w = f->measure(m.text, st).x;
+            const float w = f->measure_game(m.text, st).x; // (game text, as the one-player view's)
             st.scale_x *= kw * (w > max_w ? max_w / w : 1.0f);
             st.scale_y *= kh;
             st.color = SDL_Color{m.r, m.g, m.b, 255};
             st.align = text::HAlign::Center;
             st.valign = text::VAlign::Baseline;
-            f->draw(X(ex + m.dx, Mid), Y(ey + m.dy), m.text, st);
+            f->draw_game(X(ex + m.dx, Mid), Y(ey + m.dy), m.text, st);
         }
     if (d.event_icon) {
         const float k = horizontal ? 0.7f : 1.0f; // the picture with the half's text size

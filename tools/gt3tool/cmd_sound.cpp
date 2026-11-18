@@ -99,6 +99,10 @@ int cmd_se(Disc& disc, const Args&) {
 int cmd_se_wav(Disc& disc, const Args& a) {
     for (const SoundEffect& e : parse_se_index(read_vol(disc, "sound/se.inf"))) {
         if (e.name != a[0]) continue;
+        if (!se_bank_path(e.bank)) {
+            std::fprintf(stderr, "%s: unknown bank %u\n", e.name.c_str(), e.bank);
+            return 1;
+        }
         InstBank b = InstBank::parse(read_vol(disc, se_bank_path(e.bank)));
         VoiceMixer mixer;
         mixer.set_reverb(SpuReverb::StudioC, 0x0FFF, 0x0FFF); // the game's menu setting
@@ -193,7 +197,18 @@ int cmd_sound_survey(Disc& disc, const Args&) {
                 regions += b.regions.size();
                 ++inst_ok;
             } else if (has_magic(d, "GTSE")) {
-                std::printf("%s: %zu effects\n", e.path.c_str(), parse_se_index(d).size());
+                // An effect resolves when its bank is on the disc and holds its regions.
+                std::vector<SoundEffect> effects = parse_se_index(d);
+                std::map<u8, size_t> bank_regions;
+                std::string unresolved;
+                for (const SoundEffect& fx : effects) {
+                    const char* path = se_bank_path(fx.bank);
+                    if (path && !bank_regions.count(fx.bank))
+                        bank_regions[fx.bank] = disc.volume().find(path) ? InstBank::parse(read_vol(disc, path)).regions.size() : 0;
+                    if (!path || fx.last >= bank_regions[fx.bank]) unresolved += " " + fx.name;
+                }
+                std::printf("%s: %zu effects\n", e.path.c_str(), effects.size());
+                if (!unresolved.empty()) std::printf("  unresolved:%s\n", unresolved.c_str());
             } else {
                 ++other;
                 std::printf("%s: not a bank (%.4s)\n", e.path.c_str(), reinterpret_cast<const char*>(d.data()));

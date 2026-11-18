@@ -1,5 +1,11 @@
 #include "race/hud_layout.h"
 
+#include "formats/db/gt_db.h"
+
+#include <exception>
+#include <map>
+#include <vector>
+
 namespace gt3r::race {
 
 namespace {
@@ -170,10 +176,61 @@ constexpr HudRow kTimeTrial[] = {
     {P::Title, 0, kAny, 320, 160, 500, 0, 2, 0},
     {P::Tires, 0, kAny, 20, 435, 0, 0, 4, 1},
 };
+// The Analyzer's REPLAY (solo race's logger display): drawn once per track's car (Hud::draw_logger).
+constexpr HudRow kLogger[] = {
+    {P::Steering, 0, kAny, 42, 70, 100, 100, 0, 1},
+    {P::BarTach, 0, kAny, 24, 200, 48, 25, 0, 0},
+    {P::AccelBrake, 0, kAny, 24, 150, 20, 100, 0, 1},
+    {P::Gear, 1, kAny, 44, 180, 0, 0, 0, 0},
+};
 
 } // namespace
 
-std::span<const HudRow> hud_layout(HudMode m) {
+namespace {
+
+// set_hud_tables' rows by mode number.
+std::map<u8, std::vector<HudRow>>& disc_rows() {
+    static std::map<u8, std::vector<HudRow>> rows;
+    return rows;
+}
+
+} // namespace
+
+bool set_hud_tables(ByteSpan racemode, ByteSpan racedetail) {
+    std::map<u8, std::vector<HudRow>> out;
+    try {
+        const db::Table modes = db::Table::parse(racemode), details = db::Table::parse(racedetail);
+        std::map<u64, ByteSpan> by_id;
+        for (size_t i = 0; i < details.size(); ++i) by_id[details.id_of(i)] = details.records[i];
+        const u64 none = db::id_hash("(Null)");
+        for (size_t m = 0; m < modes.size(); ++m) {
+            const ByteSpan rec = modes.records[m];
+            if (rec.size() < 0x10 + 8 * 32) return false;
+            std::vector<HudRow>& rows = out[rec[8]];
+            for (size_t k = 0; k < 32; ++k) {
+                const u64 id = rd64(rec, 0x10 + 8 * k);
+                if (id == none) break;
+                const auto it = by_id.find(id);
+                if (it == by_id.end() || it->second.size() < 0x22) continue;
+                const ByteSpan r = it->second;
+                const u16 part = rd16(r, 8);
+                if (part == 0) continue;
+                rows.push_back({HudPart(part), u8(rd16(r, 10)), u8(s16(rd16(r, 0x18))), s16(rd16(r, 0x1A)), s16(rd16(r, 0x1C)),
+                                s16(rd16(r, 0x1E)), s16(rd16(r, 0x20)), r[0x12], r[0x0C]});
+            }
+        }
+    } catch (const std::exception&) {
+        return false;
+    }
+    disc_rows() = std::move(out);
+    return true;
+}
+
+void clear_hud_tables() { disc_rows().clear(); }
+
+namespace {
+
+std::span<const HudRow> builtin_layout(HudMode m) {
     switch (m) {
     case HudMode::Race: return kRace;
     case HudMode::Endurance: return kEndurance;
@@ -187,15 +244,28 @@ std::span<const HudRow> hud_layout(HudMode m) {
     case HudMode::Demo: return kDemo;
     case HudMode::FreePractice: return kFreePractice;
     case HudMode::TimeTrial: return kTimeTrial;
+    case HudMode::Logger: return kLogger;
     }
     return {};
 }
 
-const HudRow* hud_row(HudMode m, HudPart part, int sub, int view) {
-    for (const HudRow& r : hud_layout(m))
+const HudRow* find_row(std::span<const HudRow> rows, HudPart part, int sub, int view) {
+    for (const HudRow& r : rows)
         if (r.part == part && (sub < 0 || r.sub == sub) && (r.view == kAnyView || r.view == view)) return &r;
     return nullptr;
 }
+
+} // namespace
+
+std::span<const HudRow> hud_layout(HudMode m) {
+    if (!disc_rows().empty())
+        if (const auto it = disc_rows().find(u8(m)); it != disc_rows().end()) return it->second;
+    return builtin_layout(m);
+}
+
+const HudRow* hud_row(HudMode m, HudPart part, int sub, int view) { return find_row(hud_layout(m), part, sub, view); }
+
+const HudRow* hud_builtin_row(HudMode m, HudPart part, int sub, int view) { return find_row(builtin_layout(m), part, sub, view); }
 
 const char* time_line_label(TimeLine t) {
     switch (t) {

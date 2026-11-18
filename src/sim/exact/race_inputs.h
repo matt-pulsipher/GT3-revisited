@@ -27,7 +27,7 @@ AidInputs aid_tunables(const ProgramData& d, u8 course_category);
 // The brake heat constants from the block's +0x7C .. +0x7F.
 BrakeHeatConsts brake_heat_consts(const ProgramData& d);
 // A pedal curve record from its type and parameter bytes.
-PedalCurve pedal_curve_record(u8 type, u8 param);
+PedalCurve pedal_curve_record(u8 type, u8 param, bool toward_zero = false); // (toward_zero: 2002 Tokyo-Geneva's 0.1)
 // The force feedback's parameters from the controller settings +0x34 .. +0x3E.
 SteerFeel steer_feel(const ProgramData& d);
 // The tyre effect curves of surface classes
@@ -37,6 +37,8 @@ EffectTables effect_tables(const ProgramData& d);
 void clamp_effect_block(ProgramData& d);
 // The engine sound scales (the block's +0x1FC .. +0x1FF).
 std::array<F, 4> sound_scales(const ProgramData& d);
+// 2002 Tokyo-Geneva's special kind 7 ride (ProgramData's Kind7Ride; off where the disc has none or its switch is 0).
+Kind7Ride kind7_ride(const ProgramData& d);
 // The controller settings' gearbox bytes +0x14 .. +0x17 (read at run time by the gearbox).
 GearSettings gear_settings(const ProgramData& d);
 // The driver input's constants from the controller settings (and the surface classes).
@@ -54,8 +56,14 @@ enum class Conductor : u8 {
     BattleMP,     // i.LINK battle
     MachineTest,  // (the base conductor's answers)
     FreePractice,
+    // Gran Turismo Concept's licence test with the pace car (training conductor, a subclass of the licence's;
+    // concept §9.2): the licence conductor with no ghost car (the player-record test), the event's rubber band (11), the
+    // whole collision step (12), the single races' control sources (24) and rubber band pass (32).
+    Training,
 };
 const char* conductor_name(Conductor k);
+// The licence test's conductor or its subclass: every answer the two share.
+constexpr bool licence_kind(Conductor k) { return k == Conductor::License || k == Conductor::Training; }
 
 // The race configuration block (conductor + 0xE340, 0x40 bytes) as the program copies it from the event record (database table
 // 32), before the battle conductors' wear setting / rubber-band switch adjust it.
@@ -83,12 +91,15 @@ WearParams wear_params(const RaceConfig& cfg, const ProgramData& d, bool on);
 // machine test; 0: time trial, licence, free run).
 bool has_pits(Conductor k);
 // The wear answer (the program asks it for a car with control source 0): 3 in licences and in time trials off dirt, else 0.
-s32 pit_mode(Conductor k, u8 course_category);
-// The base conductor's course-out rule and its answers 37 / 38, or off.
-CourseOut course_out_rule(Conductor k, u8 course_category);
+// `build`: the program whose licence conductor answers (the race's Rule::LicenceJudge). The later builds' answers 0.
+s32 pit_mode(Conductor k, u8 course_category, Program build = Program::NtscU);
+// The base conductor's course-out rule and its answers 37 / 38, or off. The later builds' licence conductor
+// (`build`: the race's Rule::LicenceJudge) answers 1 / 0 on every course: only the pit stretch is out of the course there,
+// soft ground is not.
+CourseOut course_out_rule(Conductor k, u8 course_category, Program build = Program::NtscU);
 // The same with the course's pit stretch (the AI course's game line 4, the pit stop line, from its point 1's race
 // distance to its point n - 2's; none with fewer than 6 points) and lap length.
-CourseOut course_out_rule(Conductor k, u8 course_category, const AiCourse& ai);
+CourseOut course_out_rule(Conductor k, u8 course_category, const AiCourse& ai, Program build = Program::NtscU);
 // The conductor's hit rule, a hit's course-out (the program asks it for the collision step's hits: kind 0 a wall, 1 a car, 2
 // the other; `j` the impulse): the time trial's and licence's code set F +0x51E bit 0 of the car of index 0 that has not
 // finished for a wall hit whose impulse times P +0x4C (1 / mass) exceeds 10 m/s and for every kind 2 hit; empty elsewhere.
@@ -99,13 +110,15 @@ F pit_box_heading(const AiCourse& ai, int box);
 // The rubber band's parameters from the configuration (+0x20 global %, +0x24 / +0x25 / +0x26 the slow-down's
 // amount %, start gap m, full gap x 10 m, +0x28 / +0x29 / +0x2A the speed-up's) when `on` (the rubber-band switch), else none (scale 1).
 RubberBand rubber_band_params(const RaceConfig& cfg, bool on);
-// Virtual 32, the rubber band's pass: the configuration's +0x22 for single races and battles, else -1 (none).
+// Virtual 32, the rubber band's pass: the configuration's +0x22 for single races, battles and the pace-car test, else -1
+// (none).
 s32 rubber_band_mode(Conductor k, const RaceConfig& cfg);
 // The i.LINK battle's time-scale hook caps the scale (band_scale's cap).
 bool rubber_band_cap(Conductor k);
 
 // The race-level inputs of a race: everything RaceInputs holds but the course's ground query and the course-out stretch.
 // `course_category` is the course record's byte +8 (database table 34; race_course_category).
+// The course-out rule is the disc's program's (ProgramData::program).
 RaceInputs race_inputs(const ProgramData& d, Conductor k, const RaceConfig& cfg, bool wear_on, u8 course_category);
 // The course category byte (the course record's +8).
 u8 race_course_category(ByteSpan course_record);

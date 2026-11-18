@@ -3,6 +3,8 @@
 #include "base/file.h"
 #include "base/game_random.h"
 #include "formats/ps2/memcard.h"
+#include "game/concept_game.h"
+#include "game/ps2_save_parts.h"
 #include "race/race_playlist.h"
 
 #include <SDL3/SDL_error.h>
@@ -119,9 +121,11 @@ std::bitset<88> owned_from_hex(const std::string& s) {
     return b;
 }
 
+} // namespace
+
 // --- PS2 GAMEDATA -----------------------------------------------------------------
 
-u32 crc32(ByteSpan d) {
+u32 ps2save::crc32(ByteSpan d) {
     static u32 table[256];
     static bool init = false;
     if (!init) {
@@ -137,30 +141,7 @@ u32 crc32(ByteSpan d) {
     return c ^ 0xFFFFFFFFu;
 }
 
-constexpr size_t kHeader = 0x40, kBlock = 0x130, kCarRec = 0x204, kWheelRec = 0x44;
-constexpr size_t kLicenses = 0x3FC0, kRaceBest = 0x5F8, kCourseBest = 0xB0, kArcade = 0xB40, kAt = 0x1A68,
-                 kTimeTrial = 0x8400, kMachine = 0x900, kPrizeFlags = 0xC8, kChamp = 0xF2C, kOptions = 0x888;
-constexpr u32 kEmptyTime = 0x157529FF;
-// GAMEDATA version 7.x; the minor is the release's (7.0 NTSC-J, 7.1 NTSC-U, 7.2 PAL) and a load
-// checks only the major.
-constexpr u16 kMajor = 7;
-u16 gamedata_minor(Region r) { return r == Region::Japan ? 0 : r == Region::Europe ? 2 : 1; }
-
-// Car setup record part slots (+0x18 + 8 i) -> paramdb table.
-constexpr int kEqSlotTables[26] = {0, 1, 3, 6, 13, 17, 18, 21, 28, 29, 2, 4, 5,
-                                   7, 8, 9, 10, 11, 12, 14, 15, 16, 20, 19, 23, 22};
-// Car setup record user settings words, record offsets in CarSettings field order (settings_fields()).
-constexpr u32 kEqSettingOffsets[] = {
-    0xF0,  0xF4,  0xF8,  0xFC,  0x100, 0x104, 0x108, 0x10C, // gears (reverse, 1..7)
-    0x110, 0x114, 0x118, 0x11C, 0x120, 0x124, 0x128,        // final, slider, split, brakes, downforce
-    0x12C, 0x130, 0x134, 0x138, 0x13C, 0x140,               // turbo
-    0x144, 0x148, 0x14C, 0x150, 0x154, 0x158, 0x15C, 0x160, 0x164, 0x168, // camber..motion ratio
-    0x16C, 0x170, 0x174, 0x178, 0x17C, 0x180, 0x184, 0x188, // dampers
-    0x18C, 0x190,                                           // anti-roll bars
-    0x194, 0x198, 0x19C, 0x1A0, 0x1A4, 0x1A8,               // LSD
-    0x1B0,                                                  // TCS
-    0x1BC, 0x1C0, 0x1C4, 0x1C8,                             // ASCC
-};
+namespace ps2save {
 
 void wr32(Bytes& b, size_t o, u32 v) { std::memcpy(&b[o], &v, 4); }
 void wr16(Bytes& b, size_t o, u16 v) { std::memcpy(&b[o], &v, 2); }
@@ -182,12 +163,6 @@ std::string label_of(const data::CarDatabase& db, data::TableId t, u64 code) {
     for (ByteSpan r : db.table(t).records)
         if (rd64(r, 0) == code) return db.label(code);
     return db.label(code);
-}
-
-std::string at_code(size_t i) {
-    char b[16];
-    std::snprintf(b, sizeof b, "AT%02u0001", unsigned(i + 1));
-    return b;
 }
 
 // Ranking records (license 0x154, time trial 0x2A4, records 0x300) keep a 32-byte block per
@@ -216,8 +191,6 @@ void put_code(Bytes& p, size_t o, const std::string& code) {
 // at +0x30, u64 car code[12] at +0xF0, u32 stamp[12] at +0x150, the 32-byte blocks at
 // +0x180). Times are ms ("no time" = empty); the top-speed test's speeds int(m/s x 1e5)
 // (0 = empty).
-constexpr size_t kRanking = 0x300;
-static_assert(kTimeTrial == kRanking * size_t(kCourseTimeTrials) && kMachine == kRanking * 3);
 
 std::vector<RankEntry> read_ranking(ByteSpan d, size_t r, bool speed, const data::CarDatabase& db) {
     std::vector<RankEntry> out;
@@ -253,6 +226,66 @@ void write_ranking(Bytes& p, size_t r, const std::vector<RankEntry>* rank, bool 
         put_code(p, r + 0x180 + 32 * k, e.code);
     }
 }
+
+void put_new_music_list(Bytes& o, const GtData& data, u16 seed) {
+    std::vector<u64> ids;
+    for (size_t k = 0; k < data.race_songs.size() && k < race::RacePlaylist::kMaxSongs; ++k)
+        ids.push_back(db::id_hash(data.race_songs[k]));
+    const race::RacePlaylist list = race::RacePlaylist::with_songs(ids, seed);
+    wr32(o, 0x228, u32(list.songs().size()));
+    wr16(o, 0x22C, list.cursor());
+    o[0x22E] = list.shuffle() ? 1 : 0;
+    o[0x22F] = list.has_songs() ? 0 : 1;
+    wr16(o, 0x230, list.seed());
+    for (size_t k = 0; k < race::RacePlaylist::kMaxSongs; ++k) {
+        const size_t e = 0x238 + 16 * k;
+        std::memset(&o[e], 0, 16);
+        o[e + 9] = 1; // every entry of a new list is marked "in the list", used or not
+        if (k >= list.songs().size()) continue;
+        const race::RacePlaylist::Song& song = list.songs()[k];
+        wr64(o, e, song.id);
+        o[e + 8] = song.played ? 1 : 0;
+        wr16(o, e + 10, u16(song.order));
+    }
+}
+
+} // namespace ps2save
+
+namespace {
+
+using namespace ps2save;
+
+constexpr size_t kWheelRec = 0x44;
+constexpr size_t kLicenses = 0x3FC0, kRaceBest = 0x5F8, kCourseBest = 0xB0, kArcade = 0xB40, kAt = 0x1A68,
+                 kTimeTrial = 0x8400, kMachine = 0x900, kPrizeFlags = 0xC8, kChamp = 0xF2C;
+// GAMEDATA version 7.x; the minor is the release's (7.0 NTSC-J, 7.1 NTSC-U, 7.2 PAL) and a load
+// checks only the major.
+constexpr u16 kMajor = 7;
+u16 gamedata_minor(Region r) { return r == Region::Japan ? 0 : r == Region::Europe ? 2 : 1; }
+
+// Car setup record part slots (+0x18 + 8 i) -> paramdb table.
+constexpr int kEqSlotTables[26] = {0, 1, 3, 6, 13, 17, 18, 21, 28, 29, 2, 4, 5,
+                                   7, 8, 9, 10, 11, 12, 14, 15, 16, 20, 19, 23, 22};
+// Car setup record user settings words, record offsets in CarSettings field order (settings_fields()).
+constexpr u32 kEqSettingOffsets[] = {
+    0xF0,  0xF4,  0xF8,  0xFC,  0x100, 0x104, 0x108, 0x10C, // gears (reverse, 1..7)
+    0x110, 0x114, 0x118, 0x11C, 0x120, 0x124, 0x128,        // final, slider, split, brakes, downforce
+    0x12C, 0x130, 0x134, 0x138, 0x13C, 0x140,               // turbo
+    0x144, 0x148, 0x14C, 0x150, 0x154, 0x158, 0x15C, 0x160, 0x164, 0x168, // camber..motion ratio
+    0x16C, 0x170, 0x174, 0x178, 0x17C, 0x180, 0x184, 0x188, // dampers
+    0x18C, 0x190,                                           // anti-roll bars
+    0x194, 0x198, 0x19C, 0x1A0, 0x1A4, 0x1A8,               // LSD
+    0x1B0,                                                  // TCS
+    0x1BC, 0x1C0, 0x1C4, 0x1C8,                             // ASCC
+};
+
+std::string at_code(size_t i) {
+    char b[16];
+    std::snprintf(b, sizeof b, "AT%02u0001", unsigned(i + 1));
+    return b;
+}
+
+static_assert(kTimeTrial == kRanking * size_t(kCourseTimeTrials) && kMachine == kRanking * 3);
 
 // The machine tests' tables follow the 44 course ones: 0-400 m, 0-1000 m, top speed.
 const char* const kMachineTests[3] = {"M400", "M1000", "MMAX"};
@@ -296,25 +329,8 @@ Bytes default_ps2_options(const GtData& data) {
     // bytes {u64 id_hash(file), u8 played, u8 in the list, s16 order}. A new game's list is
     // shuffled from the first integer draw of the shared generator (gt_mode §20.1) in its
     // start-up state; that leaves the seed 0x456, as in a new game saved by the original.
-    std::vector<u64> ids;
-    for (size_t k = 0; k < data.race_songs.size() && k < race::RacePlaylist::kMaxSongs; ++k)
-        ids.push_back(db::id_hash(data.race_songs[k]));
     GameRandom boot;
-    const race::RacePlaylist list = race::RacePlaylist::with_songs(ids, u16(boot.int31()));
-    wr32(o, 0x228, u32(list.songs().size()));
-    wr16(o, 0x22C, list.cursor());
-    o[0x22E] = list.shuffle() ? 1 : 0;
-    o[0x22F] = list.has_songs() ? 0 : 1;
-    wr16(o, 0x230, list.seed());
-    for (size_t k = 0; k < race::RacePlaylist::kMaxSongs; ++k) {
-        const size_t e = 0x238 + 16 * k;
-        o[e + 9] = 1; // every entry of a new list is marked "in the list", used or not
-        if (k >= list.songs().size()) continue;
-        const race::RacePlaylist::Song& song = list.songs()[k];
-        wr64(o, e, song.id);
-        o[e + 8] = song.played ? 1 : 0;
-        wr16(o, e + 10, u16(song.order));
-    }
+    put_new_music_list(o, data, u16(boot.int31()));
     static const u8 kKeys[] = {12, 14, 13, 11, 16, 18, 17, 15, 19, 0,  12, 14, 13, 11, 16, 18, 17, 15, 19, 1,
                                12, 14, 13, 11, 16, 18, 17, 15, 19, 1,  12, 14, 13, 11, 16, 18, 17, 15, 19, 20,
                                27, 28, 26, 25, 24, 21, 22, 29, 23, 20, 27, 28, 26, 25, 24, 21, 22, 29, 23, 20,
@@ -395,6 +411,7 @@ std::string save_to_text(const GameState& s) {
     }
     if (s.ending_short_seen || s.ending_long_seen)
         o << "endings " << int(s.ending_short_seen) << " " << int(s.ending_long_seen) << "\n";
+    if (s.concept_transfer) o << "concepttransfer 1\n";
     for (int i = 0; i < kLicenseCount * kTestsPerLicense; ++i) {
         const LicenseTestRecord& t = s.license_tests[size_t(i)];
         if (t.medal == Medal::None && t.best_time < 0) continue;
@@ -413,6 +430,10 @@ std::string save_to_text(const GameState& s) {
             for (int p : c.paints) o << " " << p;
         o << "\n";
     }
+    // Gran Turismo Concept (concept_state.h): license records, single-race results, presents.
+    for (const auto& [course, l] : s.concept_game.licenses) o << "clicense " << course << " " << l.medal << " " << l.best_time << "\n";
+    for (const auto& [at, place] : s.concept_game.places) o << "cplace " << at.first << " " << at.second << " " << place << "\n";
+    for (const std::string& p : s.concept_game.presents) o << "cpresent " << esc(p) << "\n";
     o << "end\n";
     return o.str();
 }
@@ -556,6 +577,10 @@ GameState load_from_text(const std::string& text) {
             int a, b;
             need(bool(l >> a >> b));
             s.ending_short_seen = a != 0, s.ending_long_seen = b != 0;
+        } else if (key == "concepttransfer") {
+            int a = 0;
+            need(bool(l >> a));
+            s.concept_transfer = a != 0;
         } else if (key == "wheel") {
             std::string w;
             need(bool(l >> w));
@@ -600,6 +625,19 @@ GameState load_from_text(const std::string& text) {
             for (int& p : paints) all = all && bool(l >> p);
             if (all) c.paints = std::move(paints);
             s.championship = std::move(c);
+        } else if (key == "clicense") {
+            int course = -1;
+            ConceptState::License rec;
+            need(bool(l >> course >> rec.medal >> rec.best_time) && course >= 0 && rec.medal >= kConceptNoMedal && rec.medal <= 2);
+            s.concept_game.licenses[course] = rec;
+        } else if (key == "cplace") {
+            int level = -1, course = -1, place = kConceptNoPlace;
+            need(bool(l >> level >> course >> place) && level >= 0 && level < kConceptLevels && course >= 0 && place >= 0);
+            s.concept_game.places[{level, course}] = place;
+        } else if (key == "cpresent") {
+            std::string n;
+            need(bool(l >> n));
+            s.concept_game.presents.insert(unesc(n));
         } else if (key == "end") {
             ended = true;
             break;
@@ -718,19 +756,20 @@ void encode_eq(Bytes& p, size_t o, const std::string& car, const std::array<u64,
 }
 
 // Serialize container (header 0x40, inverted payload, CRC-32).
-ByteSpan open_serialized(ByteSpan file, u16 major, Bytes& payload) {
-    if (file.size() < kHeader) throw FormatError("save file: too short");
+Bytes ps2save::open_payload(ByteSpan file, u16 major, const char* what) {
+    const std::string name = what;
+    if (file.size() < kHeader) throw FormatError(name + ": too short");
     u32 hsize = rd32(file, 0), psize = rd32(file, 4);
-    if (rd16(file, 0x0A) != major) throw FormatError("save file: unsupported version " + std::to_string(rd16(file, 0x0A)));
-    if (size_t(hsize) + psize > file.size()) throw FormatError("save file: truncated");
+    if (rd16(file, 0x0A) != major) throw FormatError(name + ": unsupported version " + std::to_string(rd16(file, 0x0A)));
+    if (size_t(hsize) + psize > file.size()) throw FormatError(name + ": truncated");
     ByteSpan stored = file.subspan(hsize, psize);
-    if (crc32(stored) != rd32(file, 0x0C)) throw FormatError("save file: CRC mismatch");
-    payload.assign(stored.begin(), stored.end());
+    if (crc32(stored) != rd32(file, 0x0C)) throw FormatError(name + ": CRC mismatch");
+    Bytes payload(stored.begin(), stored.end());
     for (u8& b : payload) b = u8(~b);
-    return ByteSpan(payload);
+    return payload;
 }
 
-Bytes close_serialized(Bytes p, u16 major, u16 minor) {
+Bytes ps2save::close_payload(Bytes p, u16 major, u16 minor) {
     for (u8& b : p) b = u8(~b);
     Bytes f((kHeader + p.size() + 0x3F) & ~size_t(0x3F), 0);
     wr32(f, 0, u32(kHeader));
@@ -743,9 +782,56 @@ Bytes close_serialized(Bytes p, u16 major, u16 minor) {
     return f;
 }
 
+GarageCar ps2save::read_garage_car(ByteSpan r, const data::CarDatabase& db) {
+    GarageCar c;
+    c.car = label_of(db, data::TableId::Car, rd64(r, 0));
+    c.color = s32(rd32(r, 0x0C));
+    for (int k = 0; k < 26; ++k) {
+        int slot = part_slot(kEqSlotTables[k]);
+        if (slot >= 0) c.parts[size_t(slot)] = rd64(r, 0x18 + 8 * size_t(k));
+    }
+    c.wheel = rd64(r, 0xE8) ? label_of(db, data::TableId::Wheel, rd64(r, 0xE8)) : std::string();
+    std::vector<int*> f = settings_fields(c.settings);
+    for (size_t k = 0; k < f.size(); ++k) *f[k] = s32(rd32(r, kEqSettingOffsets[k]));
+    c.ref_final = s32(rd32(r, 0x1AC));
+    for (int b = 0; b < 87; ++b)
+        if (r[0x1D0 + size_t(b >> 3)] & (1 << (b & 7))) c.owned.set(size_t(b));
+    c.cond.odometer_m = double(rd32(r, 0x1D0 + 0x0C)) * 2;
+    c.cond.engine_wear_m = rdf(r, 0x1D0 + 0x10);
+    c.cond.oil_m = rdf(r, 0x1D0 + 0x14);
+    c.cond.dirt = rdf(r, 0x1D0 + 0x18);
+    c.serial = rd32(r, 0x200);
+    return c;
+}
+
+void ps2save::write_garage_car(Bytes& p, size_t o, const GarageCar& c, const data::CarDatabase& db) {
+    wr64(p, o, db::id_hash(c.car));
+    wr32(p, o + 0x0C, u32(c.color));
+    if (const data::Car* car = db.car(c.car); car && car->bytes.size() > 0xF1) wr16(p, o + 0x10, car->bytes[0xF1]);
+    for (int k = 0; k < 26; ++k) {
+        int slot = part_slot(kEqSlotTables[k]);
+        if (slot >= 0) wr64(p, o + 0x18 + 8 * size_t(k), c.parts[size_t(slot)]);
+    }
+    wr64(p, o + 0xE8, c.wheel.empty() ? 0 : db::id_hash(c.wheel));
+    sim::CarSettings st = c.settings;
+    std::vector<int*> f = settings_fields(st);
+    for (size_t k = 0; k < f.size(); ++k) wr32(p, o + kEqSettingOffsets[k], u32(*f[k]));
+    wr32(p, o + 0x1AC, u32(c.ref_final));
+    for (int b = 0; b < 87; ++b)
+        if (c.owned.test(size_t(b))) p[o + 0x1D0 + size_t(b >> 3)] |= u8(1 << (b & 7));
+    wr32(p, o + 0x1D0 + 0x0C, u32(c.cond.odometer_m / 2));
+    wrf(p, o + 0x1D0 + 0x10, c.cond.engine_wear_m);
+    wrf(p, o + 0x1D0 + 0x14, c.cond.oil_m);
+    wrf(p, o + 0x1D0 + 0x18, c.cond.dirt);
+    wr32(p, o + 0x1FC, 1);
+    wr32(p, o + 0x200, c.serial);
+}
+
+Bytes ps2save::default_options(const GtData& data) { return default_ps2_options(data); }
+
 SettingFile import_ps2_setting(ByteSpan file, const GtData& data) {
-    Bytes buf;
-    ByteSpan d = open_serialized(file, 1, buf);
+    const Bytes buf = open_payload(file, 1, "setting file");
+    ByteSpan d(buf);
     if (d.size() < 0x1D0) throw FormatError("setting file: payload too small");
     SettingFile f;
     decode_car_equipments(d, data.db, f.car, f.parts, f.settings, f.ref_final);
@@ -755,10 +841,11 @@ SettingFile import_ps2_setting(ByteSpan file, const GtData& data) {
 Bytes export_ps2_setting(const SettingFile& f, const GtData& data) {
     Bytes p(0x1D0, 0);
     encode_eq(p, 0, f.car, f.parts, f.settings, f.ref_final, data.db);
-    return close_serialized(std::move(p), 1, data.region == Region::Japan ? 0x826 : 0x827); // NTSC-J: 1.0x826
+    return close_payload(std::move(p), 1, data.region == Region::Japan ? 0x826 : 0x827); // NTSC-J: 1.0x826
 }
 
 GameState import_ps2_save(ByteSpan file, const GtData& data) {
+    if (data.game == GameKind::Concept) return import_concept_ps2_save(file, data);
     if (file.size() < kHeader) throw FormatError("GAMEDATA: too short");
     u32 hsize = rd32(file, 0), psize = rd32(file, 4);
     u16 major = rd16(file, 0x0A);
@@ -785,6 +872,7 @@ GameState import_ps2_save(ByteSpan file, const GtData& data) {
     s.ending_short_seen = rd32(d, 0xB4) != 0; // the endings already played (gt_mode §10)
     s.ending_long_seen = rd32(d, 0xB8) != 0;
     s.prize_cars = rd32(d, 0xBC);
+    s.concept_transfer = rd32(d, 0x12C) == kConceptTransferMark; // Gran Turismo Concept's transfer was made
     s.rng = rd32(d, 0xCC);
     s.player_name = fixed_str(d, 0x70, kNameField); // the last name entered (the name entry's start)
     // Arcade progression in the scalar block (block +0x3C..).
@@ -799,25 +887,7 @@ GameState import_ps2_save(ByteSpan file, const GtData& data) {
 
     size_t o = kBlock;
     for (u32 i = 0; i < ncars; ++i, o += kCarRec) {
-        ByteSpan r = d.subspan(o, kCarRec);
-        GarageCar c;
-        c.car = label_of(db, data::TableId::Car, rd64(r, 0));
-        c.color = s32(rd32(r, 0x0C));
-        for (int k = 0; k < 26; ++k) {
-            int slot = part_slot(kEqSlotTables[k]);
-            if (slot >= 0) c.parts[size_t(slot)] = rd64(r, 0x18 + 8 * size_t(k));
-        }
-        c.wheel = rd64(r, 0xE8) ? label_of(db, data::TableId::Wheel, rd64(r, 0xE8)) : std::string();
-        std::vector<int*> f = settings_fields(c.settings);
-        for (size_t k = 0; k < f.size(); ++k) *f[k] = s32(rd32(r, kEqSettingOffsets[k]));
-        c.ref_final = s32(rd32(r, 0x1AC));
-        for (int b = 0; b < 87; ++b)
-            if (r[0x1D0 + size_t(b >> 3)] & (1 << (b & 7))) c.owned.set(size_t(b));
-        c.cond.odometer_m = double(rd32(r, 0x1D0 + 0x0C)) * 2;
-        c.cond.engine_wear_m = rdf(r, 0x1D0 + 0x10);
-        c.cond.oil_m = rdf(r, 0x1D0 + 0x14);
-        c.cond.dirt = rdf(r, 0x1D0 + 0x18);
-        c.serial = rd32(r, 0x200);
+        GarageCar c = read_garage_car(d.subspan(o, kCarRec), db);
         s.garage.push_back(std::move(c));
     }
     for (u32 i = 0; i < nwheels; ++i, o += kWheelRec) {
@@ -901,6 +971,7 @@ GameState import_ps2_save(ByteSpan file, const GtData& data) {
 }
 
 Bytes export_ps2_save(const GameState& s, const GtData& data) {
+    if (data.game == GameKind::Concept) return export_concept_ps2_save(s, data);
     const data::CarDatabase& db = data.db;
     size_t nwheels = s.wheels.size() + 1; // + the stock-wheel placeholder
     size_t psize = kBlock + s.garage.size() * kCarRec + nwheels * kWheelRec + kLicenses + kRaceBest + kCourseBest +
@@ -921,6 +992,7 @@ Bytes export_ps2_save(const GameState& s, const GtData& data) {
     wr32(p, 0xB4, s.ending_short_seen ? 1 : 0);
     wr32(p, 0xB8, s.ending_long_seen ? 1 : 0);
     wr32(p, 0xBC, s.prize_cars);
+    if (s.concept_transfer) wr32(p, 0x12C, kConceptTransferMark);
     // The language the game was saved in (NTSC-J never writes it: 0).
     wr32(p, 0xC8, data.region == Region::Japan ? 0 : u32(data.language));
     wr32(p, 0xCC, s.rng);
@@ -931,26 +1003,7 @@ Bytes export_ps2_save(const GameState& s, const GtData& data) {
     wr32(p, 0xC0, s.trophy_flags);
     size_t o = kBlock;
     for (const GarageCar& c : s.garage) {
-        wr64(p, o, db::id_hash(c.car));
-        wr32(p, o + 0x0C, u32(c.color));
-        if (const data::Car* car = db.car(c.car); car && car->bytes.size() > 0xF1) wr16(p, o + 0x10, car->bytes[0xF1]);
-        for (int k = 0; k < 26; ++k) {
-            int slot = part_slot(kEqSlotTables[k]);
-            if (slot >= 0) wr64(p, o + 0x18 + 8 * size_t(k), c.parts[size_t(slot)]);
-        }
-        wr64(p, o + 0xE8, c.wheel.empty() ? 0 : db::id_hash(c.wheel));
-        sim::CarSettings st = c.settings;
-        std::vector<int*> f = settings_fields(st);
-        for (size_t k = 0; k < f.size(); ++k) wr32(p, o + kEqSettingOffsets[k], u32(*f[k]));
-        wr32(p, o + 0x1AC, u32(c.ref_final));
-        for (int b = 0; b < 87; ++b)
-            if (c.owned.test(size_t(b))) p[o + 0x1D0 + size_t(b >> 3)] |= u8(1 << (b & 7));
-        wr32(p, o + 0x1D0 + 0x0C, u32(c.cond.odometer_m / 2));
-        wrf(p, o + 0x1D0 + 0x10, c.cond.engine_wear_m);
-        wrf(p, o + 0x1D0 + 0x14, c.cond.oil_m);
-        wrf(p, o + 0x1D0 + 0x18, c.cond.dirt);
-        wr32(p, o + 0x1FC, 1);
-        wr32(p, o + 0x200, c.serial);
+        write_garage_car(p, o, c, db);
         o += kCarRec;
     }
     for (size_t i = 0; i < nwheels; ++i, o += kWheelRec) {
@@ -1065,6 +1118,7 @@ void set_ps2_replay_pad(Bytes& o, const Ps2ReplayPad& p) {
 }
 
 Bytes ps2_thumbnail(const GameState& s, std::shared_ptr<const GtData> data) {
+    if (data->game == GameKind::Concept) return concept_ps2_thumbnail(s, *data);
     GtMode view(std::move(data));
     view.state() = s;
     Bytes t(0x60, 0);
@@ -1079,17 +1133,23 @@ Bytes ps2_thumbnail(const GameState& s, std::shared_ptr<const GtData> data) {
 
 std::vector<Ps2SaveFile> export_ps2_save_files(const GameState& s, std::shared_ptr<const GtData> data,
                                                const GtData::Reader& read) {
-    std::optional<Bytes> sys = read("menu/icon/icon.sys"), icon = read("menu/icon/ICON_a_spec.ico");
+    // Gran Turismo Concept: the release's own icon and the title of the disc's memory-card texts (concept §11.1).
+    const bool gtc = data->game == GameKind::Concept;
+    const std::string icon_name = gtc ? concept_save_rule(data->game_config).icon : std::string("ICON_a_spec.ico");
+    std::optional<Bytes> sys = read("menu/icon/icon.sys"), icon = read("menu/icon/" + icon_name);
     if (!sys || sys->size() != 964 || std::memcmp(sys->data(), "PS2D", 4) != 0 || !icon)
-        throw FormatError("disc: menu/icon/icon.sys or ICON_a_spec.ico missing");
+        throw FormatError("disc: menu/icon/icon.sys or " + icon_name + " missing");
     // icon.sys as the game fills it: the title "GT3 GAME DATA" (full-width Shift-JIS, one
     // line: the line break offset at +6 is its length) and the icon file names.
     static const u8 kTitle[] = {0x82, 0x66, 0x82, 0x73, 0x82, 0x52, 0x81, 0x40, 0x82, 0x66, 0x82, 0x60, 0x82,
                                 0x6C, 0x82, 0x64, 0x81, 0x40, 0x82, 0x63, 0x82, 0x60, 0x82, 0x73, 0x82, 0x60};
+    Bytes title(kTitle, kTitle + sizeof kTitle);
+    if (gtc) title = concept_save_title_sjis(*data);
+    if (title.size() > 0x42) title.resize(0x42);
     Bytes& y = *sys;
-    wr16(y, 6, u16(sizeof kTitle));
+    wr16(y, 6, u16(title.size()));
     std::memset(&y[0xC0], 0, 0x44);
-    std::memcpy(&y[0xC0], kTitle, sizeof kTitle);
+    if (!title.empty()) std::memcpy(&y[0xC0], title.data(), title.size());
     for (size_t o : {0x104, 0x144, 0x184}) {
         std::memset(&y[o], 0, 0x40);
         std::memcpy(&y[o], "icon0.ico", 9);
@@ -1097,7 +1157,7 @@ std::vector<Ps2SaveFile> export_ps2_save_files(const GameState& s, std::shared_p
     std::vector<Ps2SaveFile> files;
     files.push_back({"icon0.ico", std::move(*icon)});
     files.push_back({"icon.sys", std::move(y)});
-    files.push_back({ps2_game_dir(data->region), export_ps2_save(s, *data)});
+    files.push_back({ps2_save_name(*data), export_ps2_save(s, *data)});
     files.push_back({"thumbnail", ps2_thumbnail(s, data)});
     return files;
 }
@@ -1122,7 +1182,7 @@ ByteSpan game_file_of(const std::vector<ps2::McDir>& dirs, const char* name) {
     for (const ps2::McDir& d : dirs)
         if (d.name == name)
             if (const ps2::McFile* f = find_file(d, name)) return f->data;
-    throw FormatError("no GT3 game save (" + std::string(name) + ") found");
+    throw FormatError("no game save of this disc (" + std::string(name) + ") found");
 }
 
 } // namespace
@@ -1139,19 +1199,20 @@ const char* ps2_game_dir(Region r) {
 GameState import_ps2_save_path(const std::string& path, const GtData& data) {
     // The disc's release reads its own save only (another release's names other cars and,
     // in NTSC-J, sums x100).
-    const std::string dir = ps2_game_dir(data.region);
+    const std::string dir = ps2_save_name(data);
+    const u16 major = data.game == GameKind::Concept ? 100 : kMajor;
     if (host_is_directory(path)) {
         // The save directory itself, or a folder memory card holding it.
         for (const std::string& p : {path + "/" + dir, path + "/" + dir + "/" + dir})
             if (!host_is_directory(p))
                 if (std::optional<Bytes> b = read_host_file(p)) return import_ps2_save(*b, data);
-        throw FormatError("no GT3 game save (" + dir + ") in " + path);
+        throw FormatError("no game save of this disc (" + dir + ") in " + path);
     }
     std::optional<Bytes> b = read_host_file(path);
     if (!b) throw FormatError("cannot read " + path);
     if (ps2::is_card_image(*b)) return import_ps2_save(game_file_of(ps2::read_card(*b), dir.c_str()), data);
-    // The data file itself, by its header (0x40 bytes, version 7), whatever it is called.
-    if (b->size() >= kHeader && rd32(*b, 0) == kHeader && rd16(*b, 0x0A) == kMajor) return import_ps2_save(*b, data);
+    // The data file itself, by its header (0x40 bytes, the game's version), whatever it is called.
+    if (b->size() >= kHeader && rd32(*b, 0) == kHeader && rd16(*b, 0x0A) == major) return import_ps2_save(*b, data);
     // A .psu: by its extension, or by its first entry (the save directory), for paths
     // without one (Android content:// URIs).
     const bool psu_entry = b->size() >= 0x400 && std::memcmp(b->data() + 0x40, dir.c_str(), dir.size() + 1) == 0;
@@ -1164,7 +1225,7 @@ namespace {
 
 ps2::McDir ps2_save_dir(const GameState& s, std::shared_ptr<const GtData> data, const GtData::Reader& read) {
     ps2::McDir dir;
-    dir.name = ps2_game_dir(data->region);
+    dir.name = ps2_save_name(*data);
     for (Ps2SaveFile& f : export_ps2_save_files(s, std::move(data), read))
         dir.files.push_back({f.name, std::move(f.data)});
     return dir;

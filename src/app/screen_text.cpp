@@ -39,7 +39,12 @@ public:
         case Mode::Strings:
             if (table_.size()) sel_ = std::clamp(sel_ + m.vertical() + page, 0, int(table_.size()) - 1);
             if (m.horizontal()) preview_font_ = (preview_font_ + m.horizontal() + 4) % 4;
-            if (m.pressed(PadButton::Cross)) lang_ = (lang_ + 1) % kLanguageCount;
+            if (m.pressed(PadButton::Cross) && table_.language_count()) {
+                // The file's next pool (its languages, in its order: a nine-pool file has KR and TW after SP).
+                const std::vector<Language>& ls = table_.languages();
+                const auto it = std::find(ls.begin(), ls.end(), Language(lang_));
+                lang_ = int(ls[it == ls.end() ? 0 : size_t(it - ls.begin() + 1) % ls.size()]);
+            }
             break;
         case Mode::Fonts: {
             int n = int(fonts_.names().size());
@@ -117,7 +122,8 @@ private:
         TextStyle st;
         st.scale = 18.0f / font->line_height(); // ~18 px per line
         float y = py + 18;
-        for (int l = 0; l < table_.language_count() && l < kLanguageCount; ++l) {
+        for (const Language lang : table_.languages()) {
+            const int l = int(lang);
             const std::string& raw = table_.raw(sel_, Language(l));
             Color c = l == lang_ ? colors::kAccent : colors::kDim;
             ui.text(px + 6, y + 4, language_code(Language(l)), c);

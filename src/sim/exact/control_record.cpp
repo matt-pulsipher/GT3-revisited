@@ -234,9 +234,11 @@ void ControlManager::bind_pool(int p) {
     else bind_store(0);
 }
 
+bool later_store(const Behaviour& b) { return !gt3_program(b.rule(Rule::RecordStore)); }
+
 void ControlManager::bind_store(u32 s) {
     store = s * kRecordStore;
-    rec.bind(store + kStoreSnapshot, kStoreBlock);
+    rec.bind(store + store_snapshot(later), store_block(later));
 }
 
 void ControlManager::restart() {

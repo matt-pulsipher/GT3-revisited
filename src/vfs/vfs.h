@@ -73,7 +73,7 @@ public:
 
     Volume* base() const { return base_; }
     // The disc's regional data set (NTSC-U when there is no disc).
-    RegionData region() const { return {base_ ? base_->region() : Region::America}; }
+    RegionData region() const { return base_ ? base_->region_data() : RegionData{}; }
     // Where the disc keeps its saves, replays and mod choices (DiscInfo::key; "us" when there is no disc).
     std::string disc_key() const { return base_ ? base_->disc_key() : region_key(Region::America); }
     // The config section of this disc's mod choices: "mods.<disc key>".
@@ -91,7 +91,8 @@ public:
     // that read a reference table from it. Not moddable.
     static constexpr const char* kProgramFile = "disc/.core.gt3";
     // Virtual file: the disc's region key ("jp", "us", "eu"; region_key), for loaders that
-    // only get a reader. Not moddable.
+    // only get a reader; a disc whose program names its own files (Gran Turismo Concept) adds
+    // them on further lines (RegionData::to_text). Not moddable.
     static constexpr const char* kRegionFile = "disc/.region";
     // Virtual file: the game's language code ("US", "BR", ...; language()). Not moddable.
     static constexpr const char* kLanguageFile = "disc/.language";
@@ -110,7 +111,7 @@ private:
 
 std::string normalize_vfs_path(std::string_view path);
 
-// The region of a reader's disc (its Vfs::kRegionFile); NTSC-U when it has none.
+// The data set of a reader's disc (its Vfs::kRegionFile); NTSC-U GT3 when it has none.
 RegionData region_data(const std::function<std::optional<Bytes>(const std::string&)>& read);
 // The game's language through a reader (Vfs::kLanguageFile), else the region's own.
 Language language_of(const std::function<std::optional<Bytes>(const std::string&)>& read);

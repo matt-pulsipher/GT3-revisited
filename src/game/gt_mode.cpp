@@ -1,4 +1,6 @@
 #include "game/gt_mode.h"
+
+#include "game/concept_game.h"
 #include "game/language_rules.h"
 #include "sim/engine_condition.h"
 
@@ -64,6 +66,8 @@ constexpr size_t kEvRegulation = 0x190, kEvLaps = 0x199, kEvLicKind = 0x19A, kEv
 
 u32 license_time(ByteSpan r, size_t off) { return u32(r[off]) * 60000 + u32(r[off + 1]) * 1000 + rd16(r, off + 2); }
 
+} // namespace
+
 // Settings groups re-initialised when a part of the table is fitted.
 void refresh_settings(sim::CarSettings& s, const sim::CarSettings& stock, int table) {
     switch (table) {
@@ -85,8 +89,6 @@ void refresh_settings(sim::CarSettings& s, const sim::CarSettings& stock, int ta
     default: break;
     }
 }
-
-} // namespace
 
 const char* license_name(License l) {
     static const char* const n[] = {"B", "A", "IB", "IA", "S", "R"};
@@ -217,6 +219,9 @@ std::string record_date_text(u32 stamp, Language lang) {
 std::string GtData::ArcadeCar::image() const {
     // "arm_tt_00" -> "tt_00"; "nsx_s_zero_97_290" -> "nsx_s_zero_97" (the power suffix).
     if (label.rfind("arm_", 0) == 0) return label.substr(4);
+    // Gran Turismo Concept's entries: "gtcmr_sl500_02" -> "sl500_02" (the car's label; no GT3 label starts "gtc").
+    if (label.rfind("gtc", 0) == 0)
+        if (const size_t u = label.find('_'); u != std::string::npos) return label.substr(u + 1);
     size_t u = label.rfind('_');
     if (u == std::string::npos || u + 1 >= label.size()) return label;
     for (size_t i = u + 1; i < label.size(); ++i)
@@ -262,15 +267,14 @@ std::vector<std::string> find_builtin_names(const CoreImage& img) {
     return out;
 }
 
-// The slots of a realtime text group (text/realtime.dat keys "<group>_<name>") with their
-// built-in default texts, used when the language's value is empty. The program registers
-// each group with its name, an array of slot names, an array of the slots' texts (initially
-// the defaults) and the slot count, all set up just before the call: the name's address built
-// from its two halves, each array's address from its two halves too (DATABASEPARTS, 80 slots)
-// or as an offset from the global pointer (PRIZE_RT_MSG, one slot), the
-// count a small constant. The global pointer is the value the start-up code builds and hands
+} // namespace
+
+// The program registers each realtime text group with its name, an array of slot names, an
+// array of the slots' texts (initially the defaults) and the slot count, all set up just
+// before the call: the name's address built from its two halves, each array's address from
+// its two halves too (DATABASEPARTS, 80 slots) or as an offset from the global
+// pointer (PRIZE_RT_MSG, one slot), the count a small constant. The global pointer is the value the start-up code builds and hands
 // the thread setup.
-// Empty when the program has no such group.
 std::vector<std::pair<std::string, std::string>> find_realtime_group(const CoreImage& img, std::string_view group) {
     const Bytes& p = img.program;
     const u32 base = img.load_address, end = base + u32(p.size());
@@ -314,6 +318,8 @@ std::vector<std::pair<std::string, std::string>> find_realtime_group(const CoreI
     return out;
 }
 
+namespace {
+
 // One slot's built-in default text ("" when the program has no such slot).
 std::string find_realtime_default(const CoreImage& img, std::string_view group, std::string_view name) {
     for (const auto& [n, t] : find_realtime_group(img, group))
@@ -336,6 +342,7 @@ bool GtData::load(const Reader& read) {
         // and game config; the units, money and names.
         const RegionData rd = region_data(read);
         region = rd.region;
+        game = rd.game;
         language = language_of(read);
         units = language_units(language);
         money_scale = gt3r::money_scale(language);
@@ -348,7 +355,9 @@ bool GtData::load(const Reader& read) {
             if (!b) throw FormatError(p + " not found");
             return std::move(*b);
         };
-        gcf = Gcf::parse(need(rd.gcf_path()));
+        game_config = rd.gcf_path();
+        game_config_per_language = rd.gcf_per_language;
+        gcf = Gcf::parse(need(game_config));
         // The game's sums, by name (gcf tag 10; x100 in Japanese). The program reads
         // a missing one through a null pointer, so a game config without them is refused.
         auto sum = [&](const char* name) {
@@ -382,8 +391,8 @@ bool GtData::load(const Reader& read) {
         }
         // From the program (CORE.GT3): its built-in record names and realtime-text defaults.
         builtin_names.clear();
-        std::string prize_default;
-        std::vector<std::pair<std::string, std::string>> parts_slots;
+        std::string prize_default, title_default;
+        std::vector<std::pair<std::string, std::string>> parts_slots, setting_slots;
         if (auto core = read(Vfs::kProgramFile)) {
             try {
                 const CoreImage img = CoreImage::decode(*core);
@@ -392,6 +401,8 @@ bool GtData::load(const Reader& read) {
                 if (prize_default.empty()) LOG_WARN("gt mode: the program's PRIZE_RT_MSG_BONUS_PREFIX was not found");
                 parts_slots = find_realtime_group(img, "DATABASEPARTS");
                 if (parts_slots.empty()) LOG_WARN("gt mode: the program's DATABASEPARTS texts were not found");
+                setting_slots = find_realtime_group(img, "SETTING");
+                if (game == GameKind::Concept) title_default = find_realtime_default(img, "MEMORYCARDTEXT", "GTCGameData");
             } catch (const std::exception& e) {
                 LOG_WARN("gt mode: %s: %s", Vfs::kProgramFile, e.what());
             }
@@ -401,16 +412,21 @@ bool GtData::load(const Reader& read) {
         prize_prefix = prize_default;
         part_texts.clear();
         for (const auto& [name, text] : parts_slots) part_texts[name] = text;
+        setting_texts.clear();
+        for (const auto& [name, text] : setting_slots) setting_texts[name] = text;
+        save_title = title_default;
         if (auto rt = read("text/realtime.dat")) {
             try {
                 const text::StringTable t = text::StringTable::parse(*rt);
                 auto value = [&](std::string_view key) -> std::optional<std::string> {
                     const int k = t.find(key);
-                    if (k < 0 || int(language) >= t.language_count() || t.raw(size_t(k), language).empty())
+                    if (k < 0 || !t.has(language) || t.raw(size_t(k), language).empty())
                         return std::nullopt;
                     return t.raw(size_t(k), language);
                 };
                 if (auto v = value("PRIZE_RT_MSG_BONUS_PREFIX")) prize_prefix = *v;
+                if (game == GameKind::Concept)
+                    if (auto v = value("MEMORYCARDTEXT_GTCGameData")) save_title = *v;
                 const std::string group = "DATABASEPARTS_";
                 if (parts_slots.empty()) {
                     for (size_t i = 0; i < t.size(); ++i)
@@ -418,6 +434,8 @@ bool GtData::load(const Reader& read) {
                 }
                 for (auto& [name, text] : part_texts)
                     if (auto v = value(group + name)) text = *v;
+                for (auto& [name, text] : setting_texts)
+                    if (auto v = value("SETTING_" + name)) text = *v;
             } catch (const std::exception& e) {
                 LOG_WARN("gt mode: text/realtime.dat: %s", e.what());
             }
@@ -505,6 +523,24 @@ bool GtData::load(const Reader& read) {
             c.variant = s32(e.u32_at(se + 0xC));
             arcade_classes[e.name].push_back(std::move(c));
         });
+        // Prizes named by arcade class and place (PrizeCar::arcade_class): the disc's own entry of that class.
+        for (PrizeSet& p : prizes)
+            for (PrizeCar& c : p.cars) {
+                const size_t hash = c.car.find('#');
+                if (hash == std::string::npos || hash + 1 >= c.car.size()) continue;
+                const auto cls = arcade_classes.find(c.car.substr(0, hash));
+                size_t place = 0;
+                bool digits = true;
+                for (size_t i = hash + 1; i < c.car.size(); ++i) {
+                    digits = digits && c.car[i] >= '0' && c.car[i] <= '9';
+                    place = place * 10 + size_t(c.car[i] - '0');
+                }
+                if (cls == arcade_classes.end() || !digits || place >= cls->second.size()) continue;
+                c.arcade_class = cls->first;
+                c.arcade_index = int(place);
+                c.car = cls->second[place].label;
+            }
+        concept_lists = game == GameKind::Concept ? concept_rules(*this) : ConceptRules{};
         // Mod cars join their arcade class after the disc's own (game/data/mod_cars.h [arcade]).
         for (const data::ModCar& m : db.mod_cars()) {
             if (m.arcade_class.empty()) continue;
@@ -712,21 +748,28 @@ s64 GtMode::sell_price(const GarageCar& c) const {
     return s64(s32(car_price(c.car)) / 4);
 }
 
-std::bitset<88> GtMode::stock_ownership(const std::string& label) const {
+std::bitset<88> GtMode::fitted_ownership(const data::Car& car) const {
     std::bitset<88> owned;
-    const data::Car* car = db().car(label);
-    if (!car) return owned;
-    for (size_t i = 0; i < car->parts.size(); ++i)
-        if (int id = stock_goods(db(), *car, i); id >= 0) owned.set(size_t(id));
+    for (size_t i = 0; i < car.parts.size(); ++i)
+        if (int id = stock_goods(db(), car, i); id >= 0) owned.set(size_t(id));
     // Front tire goods also own the matching rear set.
     for (int f = 56; f <= 65; ++f)
         if (owned.test(size_t(f))) owned.set(size_t(f + 11));
+    return owned;
+}
+
+std::bitset<88> GtMode::stock_ownership(const std::string& label) const {
+    const data::Car* car = db().car(label);
+    if (!car) return {};
+    std::bitset<88> owned = fitted_ownership(*car);
     // Rally cars come with dirt tyres.
     if (car_category(label) == 2) owned.set(66), owned.set(77);
     return owned;
 }
 
 void GtMode::own_stock_goods(GameState& s) const {
+    // (Gran Turismo Concept's garage cars are made from arcade rows and own what the game gives them: concept_new_car.)
+    if (data_->game == GameKind::Concept) return;
     for (GarageCar& c : s.garage) c.owned |= stock_ownership(c.car);
 }
 

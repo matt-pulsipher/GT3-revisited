@@ -2,6 +2,8 @@
 
 #include "sim/exact/ai_course.h"
 
+#include "sim/exact/build_math.h"
+
 #include "base/ee_math.h"
 
 namespace gt3r::sim::exact {
@@ -91,13 +93,13 @@ bool AiCourse::evaluate(int line, int hint, F s, F& x, F& y, F& h) const {
         const F ns = -ee::sin(a.heading), c = ee::cos(a.heading);
         F r = a.radius;
         const F cx = a.x - c * r, cy = a.y + ns * r;
-        F a0 = ee::atan2(cx - a.x, a.y - cy);
-        F a1 = ee::atan2(cx - b.x, b.y - cy);
+        F a0 = atan2(behaviour, cx - a.x, a.y - cy);
+        F a1 = atan2(behaviour, cx - b.x, b.y - cy);
         if (kZero < r) {
-            if (a1 < a0) a1 = a1 + kTurnA;
+            if (a1 < a0) a1 = a1 + folded(behaviour, kTurnA.bits, 0x40C90FDA); // (2002 Tokyo-Geneva's: Europe)
         } else {
             r = -r;
-            if (a0 < a1) a0 = a0 + kTurnB;
+            if (a0 < a1) a0 = a0 + folded(behaviour, kTurnB.bits, 0x40C90FDA);
         }
         const F ang = a0 + t * (a1 - a0);
         x = cx - ee::sin(ang) * r;
@@ -105,6 +107,23 @@ bool AiCourse::evaluate(int line, int hint, F s, F& x, F& y, F& h) const {
     }
     h = (t * (b.height - a.height)) + a.height;
     return true;
+}
+
+F ai_line_heading(const AiCourse& k, int line, int hint, F s) {
+    F x0{}, y0{}, h0{}, x1{}, y1{}, h1{}; // (the program's stack words where an evaluation finds no span)
+    auto at = [&](F d, F& x, F& y, F& h) {
+        if (line == 4) k.evaluate_stop(4, d, x, y, h);
+        else k.evaluate(line, hint, d, x, y, h);
+    };
+    at(s, x0, y0, h0);
+    F dx{}, dy{};
+    for (int i = 0; i < 10; ++i) {
+        s = s + kHalf;
+        at(s, x1, y1, h1);
+        dx = x1 - x0, dy = y1 - y0;
+        if (F::raw(0x3E4CCCCC) <= ee::sqrt((dx * dx) + (dy * dy))) break; // 0.2 m (Europe)
+    }
+    return atan2(k.behaviour, -dx, dy);
 }
 
 int AiCourse::evaluate_stop(int line, F s, F& x, F& y, F& h) const {

@@ -5,6 +5,7 @@
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
+#include "game/concept_menu.h"
 #include "sim/exact/race.h"
 
 namespace gt3r::race_screen {
@@ -94,6 +95,13 @@ void RaceScreen::after_run(App& app) {
     o.ranked = record_run();
     const race::PostRun p = race::post_run(kind, o);
     shows = shows || p.name_entry;
+    // A Concept disc's single race or course license that opens a prize: the notice over the race, after the cup and
+    // the name entry (concept §8 step 2).
+    if (concept_menus()) {
+        menu::flow::GameResult res = result_latch_.for_leave(build_result());
+        res.course = courses_[size_t(course_sel_)].label;
+        if (game::queue_concept_notice(res)) shows = true;
+    }
     if (p.replay) {
         replay_pending_ = true; // started once the presentations close, else at once
         if (shows) app.push(make_presentation_screen());
@@ -169,6 +177,7 @@ void RaceScreen::start_auto_replay(App& app) {
     watch_replay();
     replay_to_menu_ = replaying_;
     if (!replaying_) open_quick_menu(app);
+    else if (preset_.rwarp > 0) warp(app, preset_.rwarp); // (tests: GT3R_RACE rwarp= runs the run's replay on too)
 }
 
 // A replay's transition is over: the quick menu cuts in. After the quick menu's demonstration, the menu it was chosen
@@ -199,7 +208,11 @@ void RaceScreen::return_to_menu(App& app) {
 // hold and then the driver's camera, the view the player last drove with.
 void RaceScreen::start_menu_backdrop(bool before_run) {
     if (backdrop_) end_backdrop_race(); // (again: from the start)
-    switch (race::menu_backdrop(run_kind(), before_run)) {
+    race::MenuBackdrop b = race::menu_backdrop(run_kind(), before_run);
+    // Concept's single race menu, before and after a race: the race behind it (its driver's loop restarts the race in
+    // play mode 2 before every menu).
+    if (concept_menus() && run_kind() == race::RunKind::ArcadeRace) b = race::MenuBackdrop::Race;
+    switch (b) {
     case race::MenuBackdrop::None: return;
     case race::MenuBackdrop::Preview: start_preview(); return;
     case race::MenuBackdrop::Race: break;

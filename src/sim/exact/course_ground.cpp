@@ -130,12 +130,13 @@ bool CourseGround::passes(u32 seg, int hint) const {
     return false;
 }
 
-void CourseGround::query(std::array<Ground, 4>& g) const {
+void CourseGround::query(std::array<Ground, 4>& g, const Behaviour& how) const {
+    const F lowest = F::raw(gt3_program(how.rule(Rule::GroundMiss)) ? 0xFF7FFFFF : 0xFFFFFFFF);
     const int hint = g[0].seg;
     const F zero = F::raw(0), one = F::raw(0x3F800000);
     std::array<int, 4> cells;
     for (size_t r = 0; r < 4; ++r) {
-        g[r].height = F::raw(0xFF7FFFFF);
+        g[r].height = lowest;
         g[r].seg = -1;
         cells[r] = cells_.cell(g[r].x, g[r].z);
     }

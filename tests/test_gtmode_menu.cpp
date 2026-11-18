@@ -1092,7 +1092,7 @@ TEST(gtmode_menu_disc_garage_wheel_list) {
     choose(f, "buy3");
     // A row longer than the window (13 buttons, 828 units): left-aligned near the start, the
     // cursor's button centred in the middle, right-aligned at the end; the scroll bar and its
-    // pinch at bar x - offset x bar w / row w, window w x bar w / row w wide (GT3's ScrollBar).
+    // pinch at bar x - offset x bar w / row w, window w x bar w / row w wide (GT3's scroll bar).
     for (const char* w : {"bbw006_s", "bbw007_s", "bbw008_s", "bbw009_s", "bbw010_s", "bbw011_s", "bbw012_s",
                           "bbw013_s", "duw001_s"})
         CHECK(gt.buy_wheel(w));

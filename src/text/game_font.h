@@ -101,8 +101,8 @@ public:
     GameFonts(const GameFonts&) = delete;
     GameFonts& operator=(const GameFonts&) = delete;
 
-    // Loads font/system.fnt, font/menu.fnt, font/system.kf and
-    // font/jis2uni.dat. Returns false if no font could be loaded; missing
+    // Loads font/system.fnt, font/menu.fnt, the language's cell font (font/system.kf;
+    // fnt.h kanji_font_path) and font/jis2uni.dat. Returns false if no font could be loaded; missing
     // optional parts (kanji, JIS table) are logged and tolerated.
     bool load(const Vfs& vfs, SDL_Renderer* renderer);
     void unload();

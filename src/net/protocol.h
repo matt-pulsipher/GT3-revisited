@@ -29,7 +29,8 @@ constexpr u8 kCapTireWear = 1;
 constexpr u8 kCaps = kCapTireWear;
 
 enum class Msg : u8 {
-    Hello = 1,    // C->H  u16 version, str name, str car, u8 paint, str build, u8 n, {str endpoint}, u8 caps
+    Hello = 1,    // C->H  u16 version, str name, str car, u8 paint, str build, u8 n, {str endpoint}, u8 caps,
+                  //       str disc id, str disc name
     Welcome = 2,  // H->C  u8 your id
     Reject = 3,   // H->C  str reason
     Roster = 4,   // H->*  u8 n, {u8 id, str name, str car, u8 paint, u8 flags (1 ready, 2 loaded), u16 ping ms}
@@ -56,6 +57,14 @@ enum class Msg : u8 {
                      //    car's hits go to and come from the host)
     Flag = 22,       // C->H u8 suspect, u8 FlagKind, f32 value (reliable); H->C u8 suspect, u8 kind, f32 value, u8 reporter
     Kick = 23,       // H->C str reason (the host removed us)
+};
+
+// The disc a player races on (docs/dev/ONLINE.md "Discs"): the host lets in only players whose disc matches its own.
+struct OnlineDisc {
+    // "gt3": a Gran Turismo 3 release as it shipped, any region (their cars are matched one by one); any other disc
+    // (a Gran Turismo Concept release, a modified copy, a disc the game does not know) matches only the same files.
+    std::string id = "gt3";
+    std::string name = "a Gran Turismo 3 release"; // what the messages call it
 };
 
 class Writer {

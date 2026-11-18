@@ -90,7 +90,7 @@ void RaceScreen::lap_events(bool timer_updated) {
     } else if (field_) {
         // Races: every car's crossings in race order; the followed players' own messages (in
         // replays the followed car's).
-        const std::string laps_fmt = race_text("RACEDISPLAY_LapDiffInfo", "%d Laps");
+        const std::string laps_fmt = race_text("RACEDISPLAY_LapDiffInfo", "%d Laps", true);
         for (const RaceField::CarCrossing& x : field_->last_crossings()) {
             const LapCrossing& c = x.crossing;
             const int half = event_display_of(x.car, play, followed);

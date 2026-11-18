@@ -109,6 +109,15 @@ void SavePage::open(Mode m, Backend b, std::string title) {
     prev_ = std::numeric_limits<MenuKeys>::max(); // keys held when the page opens do not count
 }
 
+void SavePage::set_transfer_texts(TransferTexts t) {
+    transfer_ = std::move(t);
+    // No save to take the transfer: the page says so.
+    if (mode_ == Mode::Transfer && files_.empty()) {
+        done_ = transfer_.no_file;
+        phase_ = Phase::Done;
+    }
+}
+
 void SavePage::reload(bool to_first) {
     files_ = backend_.list ? backend_.list(mode_) : std::vector<File>{};
     if (to_first) {
@@ -145,7 +154,8 @@ std::vector<SavePage::Op> SavePage::ops() const {
         return o;
     }
     switch (mode_) {
-    case Mode::LoadGuest: return {};
+    case Mode::LoadGuest:
+    case Mode::Transfer: return {};
     case Mode::LoadGame: o.push_back(OpLoad); break;
     case Mode::SaveGame: o.push_back(OpOverwrite); break;
     default: break;
@@ -162,6 +172,14 @@ void SavePage::run(Op op, const std::string& arg) {
     static const File kNone;
     result_ = backend_.run ? backend_.run(mode_, op, f ? *f : kNone, arg) : int(WriteError);
     frames_ = 0;
+    if (op == OpTransfer && (result_ == Ok || result_ == AlreadyDone)) {
+        // Made (the file's panel shows the new credits), or refused because it was made before: a window says which.
+        done_ = result_ == Ok ? transfer_.complete : transfer_.already;
+        result_ = Ok;
+        phase_ = Phase::Done;
+        reload(false);
+        return;
+    }
     if (result_ != Ok) {
         phase_ = Phase::Error;
         return;
@@ -266,6 +284,11 @@ int SavePage::tick(MenuKeys held, std::vector<std::string>& sounds) {
                 show_dialog(FileDialogs::Kind::OpenSave, {});
             } else if (mode_ == Mode::LoadGuest && !f->broken) {
                 run(OpLoad, {});
+            } else if (mode_ == Mode::Transfer) {
+                // The one question before anything is written, starting on CANCEL.
+                chosen_ = OpTransfer;
+                choice_ = 1;
+                phase_ = Phase::Confirm;
             } else {
                 op_ = 0;
                 phase_ = Phase::Operation;
@@ -358,7 +381,7 @@ int SavePage::tick(MenuKeys held, std::vector<std::string>& sounds) {
             }
         } else if (key(MenuKey::Cancel) || (key(MenuKey::Confirm) && choice_ == 1)) {
             sounds.push_back("cancel");
-            phase_ = Phase::Operation;
+            phase_ = chosen_ == OpTransfer ? Phase::List : Phase::Operation;
         } else if (key(MenuKey::Confirm)) {
             sounds.push_back("ok");
             run(chosen_, {});
@@ -375,6 +398,7 @@ int SavePage::tick(MenuKeys held, std::vector<std::string>& sounds) {
         if (key(MenuKey::Confirm) || key(MenuKey::Cancel)) {
             sounds.push_back("ok");
             phase_ = Phase::List;
+            if (mode_ == Mode::Transfer && files_.empty()) return -1; // (no save to take it: the page is left)
         }
         break;
     }
@@ -624,7 +648,8 @@ void SavePage::draw(const MenuSet::PageRef& ref, std::vector<ElementDraw>& out) 
     case Phase::Confirm: {
         const bool save = chosen_ == OpOverwrite;
         layer(save ? "confirm2" : "confirm");
-        put(el(save ? "confirm2_text_overwrite" : "confirm_text_delete"));
+        if (chosen_ == OpTransfer) put(el("confirm_text_delete"), 0, 0, nullptr, &transfer_.confirm); // (the delete window's art)
+        else put(el(save ? "confirm2_text_overwrite" : "confirm_text_delete"));
         put(el(std::string(save ? "confirm2_m_ok" : "confirm_m_ok") + (choice_ == 0 ? "" : "_sel")));
         put(el(std::string(save ? "confirm2_m_cancel" : "confirm_m_cancel") + (choice_ == 1 ? "" : "_sel")));
         if (const Element* face = el("confirm_icon_face")) {

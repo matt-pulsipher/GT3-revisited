@@ -18,6 +18,9 @@
 //   Files        title File Operation: Edit file name / Copy / Delete / Export; Import.
 //   LoadSettings / SaveSettings   the car's setting files in the current game (Load or
 //                Overwrite / Edit file name / Copy / Delete; Save on "New Save").
+//   Transfer     Gran Turismo Concept's Game Status present (concept §7.6): the Gran Turismo 3 saves the
+//                release's transfer takes; a save -> the one question ("OK to transfer money and licenses?", starting
+//                on CANCEL) -> done, or "already been transferred". Nothing is written before the question's OK.
 // The save being played is never deleted (no Delete on it).
 // Ours, in the original's "working" window art: while the platform's file dialog is open the
 // page says so with a CANCEL button (any key, or a tap on it, stops waiting: a dialog the
@@ -64,7 +67,7 @@ const FileDialogs& file_dialogs();
 
 class SavePage {
 public:
-    enum class Mode { LoadGame, SaveGame, LoadGuest, Files, LoadSettings, SaveSettings };
+    enum class Mode { LoadGame, SaveGame, LoadGuest, Files, LoadSettings, SaveSettings, Transfer };
     struct File {
         enum class Kind { New, Game, Setting, Open };
         Kind kind = Kind::Game;
@@ -80,7 +83,7 @@ public:
     // backend runs the format chosen (OpExportPsu / OpExportCard / OpExportRaw).
     enum Op {
         OpLoad, OpSave, OpOverwrite, OpDelete, OpCopy, OpRename, OpExport, OpImport, OpNewGame,
-        OpExportPsu, OpExportCard, OpExportRaw
+        OpExportPsu, OpExportCard, OpExportRaw, OpTransfer
     };
     // Export to PS2's formats, the format window's buttons top first: a .psu, a new PCSX2
     // memory card image holding the save, or the raw save data (the data file alone, which
@@ -101,7 +104,7 @@ public:
     // extension gets the format's (content:// URIs as they are).
     static std::string export_path(const std::string& chosen, Op format);
     // Backend results.
-    enum Result { Ok = 0, ReadError = 1, BadData = 2, WriteError = 3 };
+    enum Result { Ok = 0, ReadError = 1, BadData = 2, WriteError = 3, AlreadyDone = 4 }; // AlreadyDone: OpTransfer
     struct Backend {
         // The left panel's files, "New Save" first where the mode has one.
         std::function<std::vector<File>(Mode m)> list;
@@ -115,6 +118,12 @@ public:
 
     // `title`: the page title ("" = the mode's own).
     void open(Mode m, Backend b, std::string title = {});
+    // Mode::Transfer's messages, the disc's own (memorycard page "transfer_money"): the question, the transfer made,
+    // already made, and no save to take it.
+    struct TransferTexts {
+        std::string confirm, complete, already, no_file;
+    };
+    void set_transfer_texts(TransferTexts t);
     // One frame. 0 running, 1 ended after a load / save / new game, -1 left.
     int tick(MenuKeys held, std::vector<std::string>& sounds);
     // Code-built parts over the page's own layers (panel titles, icons, cursor, info,
@@ -170,6 +179,7 @@ private:
     int choice_ = 0; // confirm: 0 OK, 1 CANCEL
     std::string name_;
     std::string done_;
+    TransferTexts transfer_;
     Phase phase_ = Phase::List;
     int result_ = 0;
     int frames_ = 0;

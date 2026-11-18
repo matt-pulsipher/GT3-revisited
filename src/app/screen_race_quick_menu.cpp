@@ -72,6 +72,12 @@ void RaceScreen::end_free_run(App& app) {
 // free run); the arcade race and 2P battle run first.
 std::string RaceScreen::quick_menu_layout(bool before) const {
     const menu::flow::GameRequest& rq = launch_.request;
+    // A Concept disc's own menus (concept §9.1, §9.5): the course license's, with or without the pace car, and
+    // the single race's, which opens before the race too (its driver's loop starts with the menu).
+    if (concept_menus()) {
+        if (!license_event_.empty()) return rq.lead_car ? "concept_qm_license_lead1.pmb" : "concept_qm_license1.pmb";
+        if (rq.mode == "single_race") return "concept_qm_arc_single1.pmb";
+    }
     if (!license_event_.empty()) return "qm_gt_license1.pmb";
     if (two_player_) return "qm_arc_2p_result1.pmb";
     if (from_menu_ && rq.mode == "go_machine_test")
@@ -87,8 +93,14 @@ std::string RaceScreen::quick_menu_layout(bool before) const {
 // Whether this run opens with its quick menu (quick_menu_layout(true)).
 bool RaceScreen::menu_before_run() const {
     const std::string& m = launch_.request.mode;
+    if (m == "single_race" && concept_menus()) return true;
     return m == "go_race" || m == "go_machine_test" || m == "go_license" || m == "go_free_run" ||
            m == "time_trial" || m == "free_run";
+}
+
+// The race was asked for by a Gran Turismo Concept disc's menus: its drivers' quick menus.
+bool RaceScreen::concept_menus() const {
+    return from_menu_ && !launch_.request.practice && app_->vfs()->region().game == GameKind::Concept;
 }
 
 // Licence quick menu: the test's name, target times and description panel, and the
@@ -98,6 +110,8 @@ void RaceScreen::fill_license_menu(App& app) {
     quick_menu_.set_text("qm_license_name", license_title(license_event_));
     std::string page = license_event_;
     for (char& c : page) c = char(std::tolower(static_cast<unsigned char>(c)));
+    // Concept's briefing pages are lc000000 .. lc000009 in every release, by the test's number (the code's last digit).
+    if (concept_menus() && !page.empty()) page = std::string("lc00000") + page.back();
     quick_menu_.add_page_layout(*app.vfs(), app.renderer(), page, lang_); // the test's description panel
     static const char* const kW[] = {"qm_license_time_gold", "qm_license_time_silver", "qm_license_time_bronz"};
     for (int i = 0; i < 3; ++i)
@@ -333,15 +347,20 @@ void RaceScreen::update_quick_menu(App& app, double dt) {
     if (ghost_ask_ && quick_menu_.on_root() && quick_menu_.open_page("ghost_dlg")) ghost_ask_ = false;
     QuickMenu::Choice choice = quick_menu_.update(menu_keys(app.input().pad(0)), dt);
     for (const std::string& se : quick_menu_.take_sounds()) quick_sounds_.play(app.audio().voices(), se);
-    if (!preset_.qm.empty() && quick_menu_.focus(preset_.qm)) { // scripted (screenshots)
-        if (quick_menu_.item_enabled(preset_.qm)) {
-            choice = {preset_.qm, "root", quick_menu_.action(preset_.qm)};
+    bool scripted_choice = false;
+    // Scripted (screenshots, tests): GT3R_RACE qm=<item>, or items joined by '+', one for each time the menu opens.
+    const size_t plus = preset_.qm.find('+');
+    const std::string qm = preset_.qm.substr(0, plus);
+    preset_.qm = plus == std::string::npos ? std::string() : preset_.qm.substr(plus + 1);
+    if (!qm.empty() && quick_menu_.focus(qm)) {
+        if (quick_menu_.item_enabled(qm)) {
+            choice = {qm, "root", quick_menu_.action(qm)};
+            scripted_choice = true;
         } else { // refused as a confirm on it would be (menus §11)
             quick_sounds_.play(app.audio().voices(), "disable");
-            LOG_INFO("Quick menu: %s is disabled", preset_.qm.c_str());
+            LOG_INFO("Quick menu: %s is disabled", qm.c_str());
         }
     }
-    preset_.qm.clear();
     if (choice.empty()) return;
     const std::string& a = choice.item;
     const QmAction act = quick_menu_action(choice.action);
@@ -364,6 +383,7 @@ void RaceScreen::update_quick_menu(App& app, double dt) {
         quick_ = false;
         prerace_ = false;
         restart();
+        if (scripted_choice && preset_.warp > 0) warp(app, preset_.warp); // (tests: the run the script started)
         break;
     case QmAction::FreeRun: start_free_run(app); break;
     case QmAction::Replay:
@@ -419,6 +439,13 @@ void RaceScreen::update_quick_menu(App& app, double dt) {
             music_.stop(app.audio());
             app.push(make_gt_setting_screen(launch_.request.event.empty() ? launch_.request.race_code
                                                                           : launch_.request.event));
+            setting_pending_ = true;
+            return;
+        }
+        // A Concept disc's single race and free run (concept §10): its settings menu for the garage car in the race.
+        if (concept_menus() && launch_.request.car_parts) {
+            music_.stop(app.audio());
+            app.push(make_gt_setting_screen(launch_.request.race_code));
             setting_pending_ = true;
             return;
         }

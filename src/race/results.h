@@ -234,9 +234,65 @@ public:
     // Medal: the dim (drawn before the model) and the word + time (after it).
     void draw_dim(SDL_Renderer* r, int frame, const SDL_FRect& dst);
     void draw_medal(SDL_Renderer* r, text::GameFonts& fonts, int frame, int medal, double time, const SDL_FRect& dst);
-    // No medal: `text` ("FAIL", "TIME EXPIRED"); `time` < 0 = no time line.
+    // No medal: `text` ("FAIL", "TIME EXPIRED": game text, the realtime text's own bytes); `time` < 0 = no time line.
     void draw_fail(SDL_Renderer* r, text::GameFonts& fonts, int frame, const std::string& text, double time,
                    const SDL_FRect& dst);
+};
+
+// Gran Turismo Concept's examination message: the pod race's disqualification (concept §9.2: simple exam display with
+// its simple exam messages, GT3's time-trial fail display with a byte that keeps the message up). Steps count at 60 a
+// second from the display's stage 1 (step 1: the fail jingle, our first step after the disqualification); the 60 Hz
+// builds' values (2002 Tokyo-Geneva Europe's 50 Hz program holds the same times: 50 steps, a fade of 0.02, 150, 200).
+//   the simple exam display: sub 0 sets a 60-step timer; the message starts once it has run out (step 61, its fade 0).
+//   the simple exam messages (one call a step, then the simple exam messages counts its timer down): state 1 adds the
+//   fade step to the fade (EE singles) until it is 1 or more (61 steps: the last one about 1.0167), then a 180-step
+//   hold; at its end the fade is set to 1 and, with the byte (+0x1C: the two-player halves) set, the message stays,
+//   flagged held (+0x1D); else state 3 takes the step off until the fade is below 0 (61 steps: the EE's subtraction
+//   drops the step's low bits in the alignment), and the message is done (+1, no longer drawn).
+//   the simple exam display sub 3: then 240 steps or a confirm (pad bit 0x40) and the display's stage 3, the next
+//   step event 1: the race ends. So the message is up for 302 steps (5 s) and the race ends 4 s after it has gone.
+//   the simple exam messages draws, while the message is up, the bluish wash (160, 160, 255) with alpha
+//   (int(fade x 128) & 0xFF) >> 1 in the GS's 0x80 units (half at most) over the screen, and the text in `sw_20` at
+//   1.5 x 1.5, (160, 192, 64) with alpha int(fade x 128) & 0xFF, in two copies at y 224 + s and 224 - s,
+//   s = int((1 - fade) x 30) (in doubles, toward zero), centred on x 320: the copies meet as it fades in and part again
+//   as it fades out. In the game's wide mode (16:9) the text's x scale is 0.75 (it keeps its 4:3 shape on the
+//   stretched picture) and the wash runs from x = 320 - (320 x 4 / 3 + 1) for int(2 x (320 x 4 / 3 + 1)): -107 for
+//   855, the frame widened to the 16:9 screen as the HUD's pushed rows (106 a side). Ours: `wide` (a screen wider than
+//   4:3, the HUD's 16:9 rules) draws the text in the 640 x 448 frame kept 4:3 in the middle of the rectangle (as
+//   race::Hud lays out its frame) and the wash over the whole rectangle.
+class ConceptExamMessage {
+public:
+    static constexpr int kDelay = 60; // The simple exam display sub 0 (Geneva Europe 50)
+    static constexpr int kHold = 180; // The simple exam messages state 1 -> 2 (Geneva Europe 150)
+    static constexpr int kWait = 240; // The simple exam display sub 3 (Geneva Europe 200)
+    // The fade's step, 1/60 (Geneva Europe 0.02; the Asian Tokyo-Geneva's one bit lower, as many steps).
+    static constexpr u32 kFadeStepBits = 0x3C888889;
+
+    struct Look {
+        bool shown = false; // the message is drawn (started and not done)
+        bool held = false;  // a staying message's hold has ended (the two-player half is flagged)
+        float fade = 0;     // the message's fade (+0x10, the same as +0x14)
+    };
+    // The message at display step `step` (1 = stage 1); `stay`: the two-player halves' (never fades out).
+    static Look at(int step, bool stay);
+    static int start_step() { return kDelay + 1; }
+    static int fade_in_steps();  // 61
+    static int fade_out_steps(); // 61
+    // The step a staying message is flagged held (302), the step the message is done (363), the first step a confirm
+    // ends the wait (364) and the step event 1 is posted without one (604).
+    static int held_step() { return start_step() + fade_in_steps() + kHold; }
+    static int done_step() { return held_step() + fade_out_steps(); }
+    static int confirm_from() { return done_step() + 1; }
+    static int event_step() { return done_step() + kWait + 1; }
+
+    // Draws the message as `look` (nothing when it is not shown); `text` is game text, `wide` the game's wide mode.
+    static void draw(SDL_Renderer* r, text::GameFonts& fonts, const Look& look, const std::string& text,
+                     const SDL_FRect& dst, bool wide = false);
+    // The frame the text is drawn in: `dst`, or with `wide` the 4:3 box of its height in its middle.
+    static SDL_FRect text_frame(const SDL_FRect& dst, bool wide);
+    // The draw's values: alpha in the GS's 0x80 units (int(fade x 128) & 0xFF; the wash half) and the copies' split.
+    static int alpha128(float fade);
+    static int split(float fade);
 };
 
 // What a quick-menu item does: the item's .mbl action string, as the original's quick-menu
@@ -378,6 +434,8 @@ private:
     std::string set_name_;
     std::optional<menu::MenuScene> inset_;
     std::unique_ptr<menu::MenuRenderer> inset_renderer_;
+    u32 inset_age_ = 0;                  // frames since the inset page was added
+    text::GameFonts* fonts_ = nullptr;   // the fonts the menu was loaded with (the inset's text)
     u16 ignore_ = 0xFFFF; // keys held since the menu opened
     double acc_ = 0;
     std::vector<std::string> sounds_;

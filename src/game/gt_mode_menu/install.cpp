@@ -5,6 +5,8 @@
 #include "game/gt_mode_mods.h"
 #include "game/gt_mode_menu/internal.h"
 
+#include "game/concept_menu.h"
+
 #include "base/log.h"
 
 #include <cstdlib>
@@ -109,6 +111,7 @@ void install_gt_mode_menu() {
     h.presentation = next_presentation;
     h.resume_request = resume_request;
     menu::flow::set_gt_mode_hooks(std::move(h));
+    install_concept_menu();
 }
 
 } // namespace gt3r::game

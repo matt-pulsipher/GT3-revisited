@@ -32,8 +32,9 @@ public:
     // For each record, the highest road triangle that strictly contains its point (x, z) in the grid cell under
     // it, among the segment record 0 holds from the last query (+0x0C), that segment's neighbours, or every segment when it
     // is < 0: its segment, height, interpolated scalars, plane and the triangle's bytes. A record with no triangle keeps
-    // the last plane (renormalised) and bytes, with miss = 1 and height -FLT_MAX.
-    void query(std::array<Ground, 4>& g) const;
+    // the last plane (renormalised) and bytes, with miss = 1 and height -FLT_MAX. `how`: the race's build (Rule::GroundMiss:
+    // the later builds' lowest height, the word at Concept 2001 Tokyo's code, is 0xFFFFFFFF, GT3's code 0xFF7FFFFF).
+    void query(std::array<Ground, 4>& g, const Behaviour& how = {}) const;
 
 private:
     // Each triangle's terms that depend on its vertices alone, computed once in the query's own operations (so with the

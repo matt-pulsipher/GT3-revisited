@@ -136,7 +136,9 @@ void RaceScreen::update(App& app, double dt) {
         pause_exit();
     }
     // Tests: leave for the menus a set time after the finish, as the quick menu's Exit.
-    if (preset_.leave > 0 && from_menu_ && stage_ == Stage::Drive && finished_ && !replaying_) {
+    // (Also from the run's own replay, which follows the finish at once: the latched result goes back.)
+    const bool run_replay = replaying_ && run_replay_ && result_latch_.has() && exit_transition_ < 0;
+    if (preset_.leave > 0 && from_menu_ && stage_ == Stage::Drive && ((finished_ && !replaying_) || run_replay)) {
         leave_clock_ += dt;
         if (leave_clock_ > preset_.leave) {
             leave_clock_ = 0;
@@ -310,6 +312,22 @@ void RaceScreen::init(App& app) {
             for (const CourseEntry& c : courses_) listed = listed || c.label == te->course;
             if (!listed) courses_.push_back({te->course, te->course});
         }
+    // The preset's car= as an arcade or event variant (e.g. a Concept class's "gtcrr_pod_tmv_01"): its base car, run with the
+    // variant's own parts and its racing tires, as the menus' Single Race gives it (resolve_launch).
+    if (!from_menu_ && !online_ && !preset_.car.empty() && find_car(preset_.car) < 0 && !launch_source_) {
+        std::string err;
+        if (std::optional<ArcadeCar> ac = arcade_car(db_, preset_.car, 0, preset_.course, &err)) {
+            launch_source_ = ExactCarSource{ac->label, std::nullopt, std::nullopt, ac->stage};
+            LOG_INFO("Race: preset car %s: base car %s, tyres stage %d", preset_.car.c_str(), ac->car.c_str(), ac->stage);
+            preset_.car = ac->car;
+        } else if (const data::CarVariant* v = db_.variant(preset_.car)) {
+            launch_source_ = ExactCarSource{preset_.car};
+            LOG_INFO("Race: preset car %s: base car %s", preset_.car.c_str(), v->car.c_str());
+            preset_.car = v->car;
+        } else {
+            LOG_WARN("Race: preset car %s is not a car of this disc", preset_.car.c_str());
+        }
+    }
     course_sel_ = std::max(0, find_course(preset_.course.empty() ? "trialmt" : preset_.course));
     car_sel_ = std::max(0, find_car(preset_.car.empty() ? "r34_gtr_v_99" : preset_.car));
     controls_.config().automatic = !preset_.manual;
@@ -339,6 +357,13 @@ void RaceScreen::init(App& app) {
     ghost_on_ = menu::flow::option_value(&app.config(), "ghost") != "off";
     wide_mode_ = menu::flow::option_value(&app.config(), "wide_mode") == "on";
     if (!preset_.event.empty()) race_event_ = preset_.event;
+    // The preset's event= runs its pool's entries as the field; a pool smaller than the race's field (Concept's pod race:
+    // one entry, six cars) is drawn from as the menus' Single Race draws it.
+    if (!from_menu_ && !online_ && !preset_.two_player && race_opponents_.empty())
+        if (const data::Event* pe = preset_.event.empty() ? nullptr : db_.event(preset_.event))
+            if (!pe->entries.empty() && int(pe->entries.size()) < int(pe->cars_in_race) - 1)
+                race_opponents_ = race::draw_opponents(db_, *pe, int(pe->cars_in_race) - 1, race_info_random(),
+                                                       &race_opponent_color_ids_);
     if (!preset_.tt_event.empty())
         if (const data::Event* te = db_.event(preset_.tt_event)) tt_start_ = event_start(*te);
     if (preset_.two_player) two_player_ = true;

@@ -150,6 +150,9 @@ struct Engine {
 // The driveline block (P + 0x1F8 = car + 0x208) [physics §2.4-§2.7].
 struct Driveline {
     u8 layout = 0;                         // +0x00 layout code L (also the TCS's wheels, physics §4.6)
+    u8 unequal = 0;                        // +0x01 the later builds': layout 5 with axles of unequal tyre radii; GT3: unused
+    u8 kind = 0;                           // +0x12 the later builds' gearbox kind (spec +0xE1): 1 / 2 without steps, 3 one
+                                           // gear; GT3: unused
     u8 gears = 0;                          // +0x02 forward gears N
     u8 driven_axle = 0;                    // +0x03 0 front, 1 rear
     F awd_k;                               // +0x04 coupling k
@@ -213,6 +216,7 @@ struct Driver {
     s16 shift_lock = 0;      // +0xAA gearbox lock-out ticks (its low byte goes to F +0x43A when not 0)
     s8 gear_hint = 0;        // +0xAC the gear for the speed the plan aims at (-1 none; the HUD's shift indicator) [ai §16]
     u8 gear_braking = 0;     // +0xAD 1 while braking to that speed (modes 3 / 4)
+    s8 stop = 0;             // +0xAE the later builds' stop state: 1 heading for the stop point, 2 standing on it; GT3: unused
     s8 status = 0;           // +0xAF 0, 1 approaching a braking point, 2 braking, 3 / 4 an arc at full throttle in mode 2 / 1,
                              // 5 an arc at part throttle [ai §5]
     F contact;               // +0xB0 contact intensity c for the AI [ai §8.1] (phase 11)
@@ -243,6 +247,7 @@ struct Params {
     F track;                      // +0x1C mean track
     F rear_weight;                // +0x20 1 - the front weight fraction
     std::array<F, 2> half_track;  // +0x28 per axle
+    u8 special = 0;               // +0x32 the later builds' special car kind (spec +0x11; special.h); GT3: 0
     u8 drive_class = 0;           // +0x31 the AI's driveline class: 0 FR / MR / RR, 1 FF and 4WD system 0, 2 other 4WD, 3 4WD
                                   // system 3 [ai §9.1]
     F lat_transfer, long_transfer; // +0x34 / +0x38 load transfer gains [physics §4.2]
@@ -467,6 +472,12 @@ struct Car {
     u8 rumble = 0;          // +0x16D5 the pad's vibration level (0..127)
     u8 steer_force = 0;     // +0x16D6 the steering wheel's force (0x80 centred)
     F speedo;               // +0x16D8 the speedometer's value
+    // The later builds' own words of the record (Gran Turismo Concept [physics §14.5]): not in GT3's record or the field
+    // table, zero on GT3's discs.
+    struct Later {
+        F ratio;                     // their record's +0x1328: a float the moving start sets to 1
+        std::array<u8, 8> special{}; // their record's +0x149C .. +0x14A3: a special car's state (special.h; layout 7's: hybrid.h)
+    } later;
     // Not in the record: how the race behaves where the releases' routines differ (sim/program.h: whose rules, the step
     // rate). The caller sets it from ProgramData::behaviour() (start_cars does; load_image keeps it).
     Behaviour behaviour;
@@ -481,8 +492,63 @@ struct Proximity {
     std::array<std::array<u8, 8>, 8> code{}; // +0xB8B4: the other car's relative-position code in car's frame [physics §5.1]
 };
 
+// The later builds' AWD system 3 settings (ProgramData's Awd3 table; the two floats as the driveline builder leaves them
+// in the program's data): the coupling gain's lateral fade and its switch [physics §14.5]. Unused under GT3's rules.
+struct Awd3 {
+    F fade_start, fade_floor; // the lateral acceleration (g) the gain starts to fade at, the factor at 1 g and beyond
+    u8 negative_full = 0;     // 1: a negative torque gives minus the full-transfer value
+};
+
+// The later builds' ASCC switches (ProgramData's RaceSwitches table, bytes +3 .. +5; Rule::Ascc) [physics §14.5]: all three
+// are 1 on the discs. Unused under GT3's rules (later 0).
+struct AsccSwitches {
+    u8 later = 0;      // the race's build has them
+    u8 c_status = 0;   // channel C counts for the status byte (on, and acting)
+    u8 c_throttle = 0; // channel C also acts with the throttle applied
+    u8 e_quiet = 0;    // channel E does not count for the status byte; an ASM switched off keeps channel E's wheels
+};
+
+// The later builds' stepless gearbox settings (ProgramData's Stepless table, its bytes x 0.01 as the routine of
+// Concept 2001 Tokyo leaves them): the ratio's rates a second [physics §14.5]. Unused under GT3's rules.
+struct Stepless {
+    F full, none; // kind 1: at full throttle and with the pedal released
+    F down, up;   // kind 2: towards a lower and a higher ratio
+};
+
+// The later builds' layout 7 system (AWD system 5: an engine on the rear axle with a motor of its own, two front motors and a
+// store; ProgramData's Hybrid table): the floats the set-up routine (Concept 2001 Tokyo) makes of the table's bytes,
+// in its globals.. [physics §14.5]. Unused under GT3's rules (on 0).
+struct Hybrid {
+    u8 on = 0;                 // the race's build has the system (its table found, the later builds' rules)
+    F front, rear;             // +0 / +1 the front motors' (each) and the rear motor's ratings (kW)
+    F front_drive, rear_drive; // +2 / +3 x 10 the front motors' torque factor driving, the rear motor's torque cap
+    F front_regen, rear_regen; // +4 / +5 x 10 the same regenerating
+    F front_scale;             // +6 x 0.1 the front motors' torque scale (their cap: x front_drive / front_regen)
+    F capacity;                // +7 x (2 front + rear) the store's capacity
+    F front_charge_cap;        // +8 x 5 a front wheel's braking charge per second, at most
+    F rear_charge_cap;         // +9 x 5 the rear wheels' braking charge per second, at most
+    F idle_rpm;                // +0xA x 100 the open clutch's charging: the rpm below which the throttle rises
+    F idle_gain;               // +0xB / 100000 its throttle per rpm below that
+    F idle_share;              // +0xC / 100 its torque at most this share of the full-throttle torque
+    F idle_power;              // +0xD and at most this power (kW)
+    F low, high;               // +0xE / +0xF % of the capacity: the marks the store's share fades between
+    F reserve;                 // +0x10 / front the front motors' share of the demand with the store at the low mark
+    s8 gear_lo = 0, gear_hi = 0; // +0x11 / +0x12 the gears in which the rear motor's demand can pass 0
+    s8 gear_min = 0;           // +0x13 the rear motor drives only above this gear
+    F front_share;             // +0x14 / 100 the front motors' share of the engine's power
+    F drive_accel, drive_lat;  // +0x15 / +0x16 / 980 driving: the yaw split's gains on the lateral
+                               // acceleration and the wanted lateral acceleration
+    F drive_dead;              // +0x17 / 100 and its dead band
+    F regen_accel, regen_lat;  // +0x18 / +0x19 / 980 the same regenerating
+    F regen_dead;              // +0x1A / 100
+    F flow_scale;              // the flow display's scale: 6000 (2002 Tokyo-Geneva Europe's 5000) / (2 front + rear)
+};
+
 // The program's static physics block (shipped bytes, its tables): the parts phases 5 and 7 read.
 struct Statics {
+    Awd3 awd3;                          // (the later builds')
+    Stepless stepless;                  // (the later builds')
+    Hybrid hybrid;                      // (the later builds')
     std::array<u8, 2> slip_fade{};      // +0x84 the slip ratio's low-speed fade speed (km/h) for slip state < 0 /
                                         // > 0; 0 = no fade
     std::array<u8, 2> slip_gain_on{};   // +0x86 per side (0 braking, 1 driving): 0 the slip gain is 1 (phase 5);

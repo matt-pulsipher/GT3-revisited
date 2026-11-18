@@ -227,13 +227,28 @@ std::vector<PadFrame> get_frames(Reader& r) {
     return decode_pads(r.bytes(len), n);
 }
 
+// Whether a car holds any of the later builds' own words (Car::later).
+bool has_later(const Car& c) {
+    if (c.later.ratio.bits != 0) return true;
+    for (u8 b : c.later.special)
+        if (b != 0) return true;
+    return false;
+}
+
 // A snapshot: its words, the car's record image, the collision body's points and (version 6) the car's electric drive.
 void put_snapshot(Writer& w, const Snapshot& s) {
     w.put<u8>(s.sub), w.put<u8>(s.phase), w.put<u32>(s.frame), w.put<u32>(s.frames), w.put<u32>(s.frac.bits), w.put<u32>(s.time);
     std::vector<u8> image(kCarSize, 0);
     store_image(s.car, image.data());
     w.bytes(ByteSpan(image.data(), image.size()));
-    w.put<u8>(s.has_body ? 1 : 0);
+    // (bit 1: the later builds' own words of the record follow, kept only when they hold something: never on GT3's discs,
+    // whose records stay as they were)
+    const bool later = has_later(s.car);
+    w.put<u8>(u8((s.has_body ? 1 : 0) | (later ? 2 : 0)));
+    if (later) {
+        w.put<u32>(s.car.later.ratio.bits);
+        w.bytes(ByteSpan(s.car.later.special.data(), s.car.later.special.size()));
+    }
     if (s.has_body)
         for (const collide::exact::Point& p : s.body) {
             for (F v : {p.lx, p.ly, p.ux, p.uy, p.sx, p.sy, p.ex, p.ey}) w.put<u32>(v.bits);
@@ -251,7 +266,14 @@ Snapshot get_snapshot(Reader& r, const Behaviour& how, u32 version) {
     s.frac = F::raw(r.get<u32>()), s.time = r.get<u32>();
     s.car.behaviour = how;
     load_image(s.car, r.bytes(kCarSize).data());
-    s.has_body = r.get<u8>() != 0;
+    const u8 flags = r.get<u8>();
+    if (flags > 3) throw FormatError("race record: bad snapshot flags");
+    if (flags & 2) {
+        s.car.later.ratio = F::raw(r.get<u32>());
+        const ByteSpan b = r.bytes(s.car.later.special.size());
+        std::copy(b.begin(), b.end(), s.car.later.special.begin());
+    }
+    s.has_body = (flags & 1) != 0;
     if (s.has_body)
         for (collide::exact::Point& p : s.body) {
             for (F* v : {&p.lx, &p.ly, &p.ux, &p.uy, &p.sx, &p.sy, &p.ex, &p.ey}) *v = F::raw(r.get<u32>());
@@ -307,7 +329,7 @@ void put_recorders(Writer& w, const SoloRecorders& s) {
 
 std::shared_ptr<const SoloRecorders> get_recorders(Reader& r, const Behaviour& how, u32 version) {
     const u8 f = r.get<u8>();
-    auto s = std::make_shared<SoloRecorders>((f & 1) != 0);
+    auto s = std::make_shared<SoloRecorders>((f & 1) != 0, later_store(how)); // (the stores as the record's program lays them out)
     s->ghost_option = (f & 2) != 0, s->ghost_empty = (f & 4) != 0;
     for (Snapshot& h : s->snapshot) h = get_snapshot(r, how, version);
     get_pool(r, s->pool1);
@@ -317,14 +339,15 @@ std::shared_ptr<const SoloRecorders> get_recorders(Reader& r, const Behaviour& h
 
 // Version 2's free run recorders (their frames as lists): recorded on the stores as the program records them.
 std::shared_ptr<const SoloRecorders> get_free_run_v2(Reader& r, const Behaviour& how) {
-    auto s = std::make_shared<SoloRecorders>(true);
+    const bool later = later_store(how);
+    auto s = std::make_shared<SoloRecorders>(true, later);
     for (size_t k : {1u, 2u, 0u}) s->snapshot[k] = get_snapshot(r, how, 2);
     s->ghost_empty = r.get<u8>() == 0;
     r.get<u32>(), r.get<u32>(); // (the lap's frames, the playback's place)
     for (u32 store : {1u, 2u, 0u}) {
         const std::vector<PadFrame> frames = get_frames(r);
         ControlRecorder rec;
-        rec.bind(store * kRecordStore + kStoreSnapshot, kStoreBlock), rec.rewind();
+        rec.bind(store * kRecordStore + store_snapshot(later), store_block(later)), rec.rewind();
         for (const PadFrame& p : frames) rec.write(s->pool1, raw_pad(p));
         rec.close(s->pool1);
     }
@@ -536,7 +559,7 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
     r.course = rd.str();
     r.course_category = rd.get<u8>();
     const u8 kind = rd.get<u8>();
-    if (kind > u8(Conductor::FreePractice)) throw FormatError("race record: unknown race mode");
+    if (kind > u8(Conductor::Training)) throw FormatError("race record: unknown race mode");
     r.kind = Conductor(kind);
     r.config = rd.get<u8>();
     r.laps = rd.get<s32>();
@@ -649,6 +672,7 @@ u64 race_hash(const ExactRace& race) {
         std::fill(image.begin(), image.end(), u8(0));
         store_image(c, image.data());
         mix(image.data(), image.size());
+        if (has_later(c)) word(c.later.ratio.bits), mix(c.later.special.data(), c.later.special.size()); // (never on GT3's discs)
     }
     for (s32 k : race.order()) word(u32(k));
     const RaceFlow& f = race.flow();

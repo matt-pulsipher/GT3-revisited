@@ -137,9 +137,30 @@ struct RunParams {
 // The car callback's values before the race sets any (the menus): flaps 0, steering 0.5.
 inline constexpr std::array<float, 5> kCarCallbackDefaults{0, 0, 0, 0, 0.5f};
 
+// Skinned models (the riders of the bike/ folder on later discs of this engine). Header +0x40
+// points at the skeleton: one 4x4 matrix per bone, model space -> the bone's space in the
+// stored pose (the inverse bind matrices; they run up to the next block). The packets of such
+// a model unpack a GIF tag, strip lengths and S,T only; the vertices follow the VIF data:
+//
+//   u16 vertex count (the strips' total)   u16 0x80 | 0x40: where the normals go (0x80 lit,
+//                                              0x40 the reflection pass's normal in the UV slot)
+//   groups until the count is reached:
+//     u16 vertices in the group | 0x8000 when another group follows
+//     u16 4                      u8 bone[4]
+//     per vertex 40 bytes: f32 position[3], f32 normal[3], f32 weight[4] (one per bone; 1 in sum,
+//     or a little less: a vertex on more than four bones keeps its four largest)
+//
+// Positions and normals are in model space in the stored pose, so the packet decodes to that
+// pose as it is; a pose is the weighted sum over the bones of vertex x inverse bind x bone.
+struct SkinWeights {
+    std::array<u8, 4> bones{};
+    std::array<float, 4> weights{};
+};
+
 // A decoded VIF packet, vertices in strip order.
 struct DecodedPacket {
     std::vector<scene::Vertex> vertices;
+    std::vector<SkinWeights> skin; // skinned packets: one per vertex; empty otherwise
     std::vector<u32> strips;       // vertex count per triangle strip
     ps2::GifTag tag;
     ps2::Prim prim;
@@ -189,6 +210,8 @@ public:
         std::vector<u32> targets;
     };
     std::vector<Animator> animators;
+    // +0x40 skeleton of a skinned model (see SkinWeights): model space -> bone space; empty otherwise.
+    std::vector<Matrix> inverse_bind;
     // Nodes whose programs hold animator targets, ascending.
     std::vector<u32> animated_nodes() const;
 

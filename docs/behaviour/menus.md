@@ -2088,7 +2088,7 @@ Development aids:
 |---|---|
 | `GT3R_LANG` | the game's language, any the disc has menu folders for (`JP` on an NTSC-U disc, say) |
 | `GT3R_GT3MENU_OPEN=<set>:<page>` | opens a page directly |
-| `GT3R_GT3MENU_SCRIPT` | runs keys at start-up, one frame each plus a release frame, after 30 frames to let the first page settle. Example: `down,cross,wait:40` |
+| `GT3R_GT3MENU_SCRIPT` | runs keys at start-up, one frame each plus a release frame, after 30 frames to let the first page settle; `p2:<key>` is player 2's key (the 2 player car pages). Example: `down,cross,wait:40` |
 | `GT3R_GT3MENU_FREEZE` | stops the menu clock after the script |
 
 **`gt3r --screen menu`** (`src/app/screen_menu.cpp`) is a static viewer. It

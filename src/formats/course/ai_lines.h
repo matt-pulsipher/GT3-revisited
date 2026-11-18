@@ -3,9 +3,11 @@
 // AI driving lines (course file slot 31, no magic).
 //
 //   0x00 u32 section size (excluding trailing padding)
-//   0x04 u32 8            0x08 u32 0
+//   0x04 u32 version: 8 (7 in one leftover file of a later disc, see below)
+//   0x08 u32 0
 //   0x0C u32 line_offsets[7]   (0 = line absent; may point at an empty list)
 //   0x28 "build MM/DD/YY hh:mm:ss\n" (tool build stamp), zero padded to 0x48
+//        (version 7 has no stamp: the first line starts at 0x28)
 //   line: u32 count, then count x 40-byte control points:
 //     s32 flags   low byte 0/1; upper bytes carry small packed values
 //     s32 x, z    fixed point 1/4096 m, in the simulation frame (X mirrored

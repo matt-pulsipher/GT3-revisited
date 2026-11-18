@@ -1,5 +1,7 @@
 #include "game/gt_setting.h"
 
+#include "game/concept_game.h"
+
 #include <algorithm>
 #include <climits>
 #include <cstdio>
@@ -194,6 +196,9 @@ std::optional<SliderRange> slider_range(const GtMode& gt, const GarageCar& real,
         if (sr.end - sr.begin < 2) sr.sub_begin = sr.sub_end = 0;
         return sr;
     }
+    // Gran Turismo Concept's tire sliders: three positions, the working copy's tire.
+    if (item == "slider_tire_f" || item == "slider_tire_r")
+        return SliderRange{0, kConceptTirePositions, concept_tire_position(gt, work, item.back() == 'r')};
     return part_slider_range(gt.db(), real.parts, work.settings, item);
 }
 
@@ -202,6 +207,7 @@ bool slider_set(const GtMode& gt, const GarageCar& real, GarageCar& work, const 
     sim::CarSettings& s = work.settings;
     const sim::CarSettings before = s;
     bool gear = starts(item, "slider_gear_");
+    if (item == "slider_tire_f" || item == "slider_tire_r") return concept_set_tire(gt, work, item.back() == 'r', v);
     if (item == "slider_rate_f") s.spring[0] = v;
     else if (item == "slider_rate_r") s.spring[1] = v;
     else if (item == "slider_height_f") s.ride_height[0] = v;

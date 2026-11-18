@@ -2,6 +2,7 @@
 // phase 13; see pit_lane.h.
 
 #include "sim/exact/pit_lane.h"
+#include "sim/exact/build_math.h"
 
 #include "sim/exact/start.h"
 
@@ -69,12 +70,25 @@ bool stop_on_line(Car& c, AiPlan& plan) {
     return true;
 }
 
+bool stop_lap(Car& c, AiPlan& plan) {
+    if (!plan.request_line(c, 6, false)) return false;
+    c.driver_kind = 5;
+    return true;
+}
+
 bool stop_straight(Car& c) {
     c.driver_kind = 7;
     return true;
 }
 
-void slow_down(Driver& d) {
+void slow_down(Driver& d, Program rule) {
+    if (!gt3_program(rule)) { // (Rule::SlowDown, the later builds: the multiplier x 0.8, at least a half)
+        const F k = F::raw(rule >= Program::ConceptGenevaEu ? 0x3F4CCCCC : 0x3F4CCCCD);
+        const F t = d.throttle_scale * k;
+        d.throttle_scale = t < kHalf ? kHalf : t;
+        d.speed_scale = d.speed_scale * k;
+        return;
+    }
     const F s = d.speed_scale * kSlowCorner;
     d.throttle_scale = kHalf;
     d.speed_scale = s;
@@ -99,7 +113,7 @@ void end_of_run_drive(Car& c, int mode, const PitInputs& in, AiPlan& plan) {
     else if (mode < 2) drive_on(c, plan);
     else if (mode == 2) stop_straight(c);
     else {
-        if (mode == 3) slow_down(c.ai);
+        if (mode == 3) slow_down(c.ai, c.behaviour.rule(Rule::SlowDown));
         drive_on(c, plan);
     }
 }
@@ -133,6 +147,8 @@ void pit_lane(Car& c, F s, F old, bool hit, bool hit_43c, const PitInputs& in, A
             return;
         }
         const F v = c.speed, u = c.lat_speed;
+        // (2002 Tokyo-Geneva's +-5 km/h two units smaller: Europe)
+        const F kFast = folded(c.behaviour, sim::exact::kFast.bits, 0x3FB1C71B), kFastNeg = folded(c.behaviour, sim::exact::kFastNeg.bits, 0xBFB1C71B);
         if (!(kFast < v || v < kFastNeg || kFast < u || u < kFastNeg)) return;
         if (hit) return;
         hud_message(c, msg, 2);
@@ -186,7 +202,7 @@ void pit_lane(Car& c, F s, F old, bool hit, bool hit_43c, const PitInputs& in, A
         } else if (service == 0) {
             pit_leave(c, plan);
             hud_message(c, msg, 9);
-        } else if (kStopSpeed <= c.speed) {
+        } else if (folded(c.behaviour, kStopSpeed.bits, 0x41DE38E2) <= c.speed) { // (Europe's 100 km/h)
             pit_leave(c, plan);
             hud_message(c, msg, 7);
         } else {
@@ -246,6 +262,7 @@ void tick_flow(std::span<Car> cars, FlowStep& f, AiPlan& plan) {
     hooks.finish_drive = [&](Car& c, int, int mode) { end_of_run_drive(c, mode, f.pit, plan); };
     hooks.ai_takeover = [&](Car& c, int) { plan.replan(c); };
     hooks.drive_on = [&](Car& c, int) { drive_on(c, plan); };
+    hooks.stop_drive = [&](Car& c, int) { stop_lap(c, plan); };
     hooks.ghost_step = f.ghost_step;
     hooks.save_body = f.save_body, hooks.restore_body = f.restore_body;
     if (f.mode_start) race_mode_start(cars, f.in, *f.events, hooks);

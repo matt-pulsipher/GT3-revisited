@@ -104,6 +104,9 @@ std::string protocol_mismatch(u16 theirs);
 
 // The relay server refused us because this game is older than its min_online
 // (docs/dev/ONLINE.md "Versions and updates").
+// The host's refusal of a player whose disc does not match its own.
+std::string disc_mismatch(const OnlineDisc& host, const OnlineDisc& theirs);
+
 struct UpdateRequired {
     GameVersion latest; // 0.0.0: not told
     std::string url;    // the release page ("" if the server has none)
@@ -172,6 +175,8 @@ public:
     const std::optional<UpdateRequired>& update_required() const { return update_required_; }
     // Tests: play as another game version (default: this build's).
     void set_game_version(const GameVersion& v) { version_ = v; }
+    // This machine's disc (default: a Gran Turismo 3 release); set it before host / join.
+    void set_disc(OnlineDisc d) { disc_ = std::move(d); }
     // Tests: play as a game that supports only `caps` (kCap*; 0 = a game from before them).
     void set_caps(u8 caps) { caps_ = caps; }
     bool via_server() const { return server_.valid(); }
@@ -319,10 +324,12 @@ private:
     bool direct_pair(u8 a, u8 b) const; // host: both report a direct link
     Writer roster_msg() const;
     Writer settings_msg() const;
+    Writer hello_msg(const std::string& name, const std::string& car, u8 paint) const; // a joining client's Hello
     Player* player_mut(u8 id);
 
     UdpSocket sock_;
     GameVersion version_ = this_game_version();
+    OnlineDisc disc_;
     u8 caps_ = kCaps; // sent in Hello
     std::optional<UpdateRequired> update_required_;
     // Receive thread: datagrams are read and timestamped the moment they arrive (not when the

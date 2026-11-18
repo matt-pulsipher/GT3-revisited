@@ -116,7 +116,8 @@ std::string split_text(int number, long long ms);
 int license_split_number(bool line, int lap, int point, int points);
 // '+' and the time for a gap >= 0, the font's dash glyph (0x7F) for < 0.
 std::string gap_text(long long gap_ms);
-// '+' (dash glyph when negative) and `format` ("%d Laps") with |laps|.
+// '+' (dash glyph when negative) and `format` ("%d Laps") with |laps| (a format without "%d", as PAL's texts are: the
+// text alone, as the program's sprintf prints it).
 std::string lap_diff_text(int laps, const std::string& format);
 
 // The event display: eight message slots and two timers, the end of the queue and the start

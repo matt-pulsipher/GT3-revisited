@@ -1701,6 +1701,23 @@ TEST(race_hud_speed_lines) {
     CHECK(Hud::speed_text(1200.0f, false) == "999.9");
 }
 
+TEST(race_hud_layout_logger) {
+    // The Analyzer's REPLAY display (racemode 15, LOGGER): GT3's four rows at the frame's left (the second track's car is
+    // drawn 560 to the right), the pedals' brake gauge at x, the accel gauge its width on, the gear's sub 1 pens.
+    clear_hud_tables();
+    CHECK(hud_layout(HudMode::Logger).size() == 4);
+    const HudRow* st = hud_row(HudMode::Logger, HudPart::Steering, -1, 1);
+    CHECK(st && st->x == 42 && st->y == 70 && st->valign == 1);
+    const HudRow* tach = hud_row(HudMode::Logger, HudPart::BarTach, -1, 0);
+    CHECK(tach && tach->x == 24 && tach->y == 200 && tach->w == 48 && tach->h == 25);
+    const HudRow* ab = hud_row(HudMode::Logger, HudPart::AccelBrake, 0, 1);
+    CHECK(ab && ab->x == 24 && ab->y == 150 && ab->w == 20);
+    CHECK(!hud_row(HudMode::Logger, HudPart::AccelBrake, 1, 1)); // (Concept's store monitor row)
+    const HudRow* g = hud_row(HudMode::Logger, HudPart::Gear, -1, 1);
+    CHECK(g && g->sub == 1 && g->x == 44 && g->y == 180);
+    CHECK(!hud_row(HudMode::Logger, HudPart::DigitalSpeed, -1, 1));
+}
+
 TEST(race_hud_layout_disc) {
     // presentation §D4: our HUD layout table is the disc's (database/racemode.db: a mode
     // number and 32 racedetail ids; racedetail.db: id, part, sub, then valign at +0x0C,
@@ -1716,7 +1733,8 @@ TEST(race_hud_layout_disc) {
     const u64 none = db::id_hash("(Null)");
     const HudMode ours[] = {HudMode::Race,         HudMode::Endurance, HudMode::License, HudMode::MachineTime,
                             HudMode::FreeRun,      HudMode::Battle,    HudMode::BattleWide, HudMode::MachineSpeed,
-                            HudMode::Replay,       HudMode::Demo,      HudMode::FreePractice, HudMode::TimeTrial};
+                            HudMode::Replay,       HudMode::Demo,      HudMode::FreePractice, HudMode::TimeTrial,
+                            HudMode::Logger};
     int matched = 0;
     for (size_t m = 0; m < modes.size(); ++m) {
         ByteSpan rec = modes.records[m];
@@ -1748,7 +1766,7 @@ TEST(race_hud_layout_disc) {
         }
         ++matched;
     }
-    CHECK(matched == 12);
+    CHECK(matched == 13);
 
     // The endurance layout is a races' matter: no licence, time trial, free run or machine
     // test event has 10 laps or more or a time limit.

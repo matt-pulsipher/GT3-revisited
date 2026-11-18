@@ -4,6 +4,8 @@
 
 #include "game/gt_mode_menu/internal.h"
 
+#include "game/concept_menu.h"
+
 #include "base/log.h"
 #include "game/data/weight_class.h"
 #include "sim/car_spec.h"
@@ -31,6 +33,7 @@ const GarageCar* arcade_garage_car(const std::string& entry) {
 std::string arcade_entry_car(const std::string& entry) {
     GtModeSession* s = S();
     if (!s) return {};
+    if (concept_active()) return concept_entry_car(entry);
     if (const GarageCar* gc = arcade_garage_car(entry)) return gc->car;
     const GtMode& gt = s->gt();
     auto base_of = [&](const std::string& label) {
@@ -95,6 +98,7 @@ void on_arcade_result(const GameResult& r) {
     MenuState& ms = menu_state();
     GtModeSession* s = S();
     if (!s) return;
+    if (concept_active()) return concept_on_result(r); // Concept's own records and prize pass
     GtMode& gt = s->gt();
     // A garage car's engine condition back, the run's distance into the total (physics §10.3),
     // finished or not. The time trials' and free runs' records went in from the race screen
@@ -124,6 +128,7 @@ std::vector<std::pair<std::string, std::string>> arcade_parts(const std::string&
     GtModeSession* s = S();
     if (!s) return out;
     const GtMode& gt = s->gt();
+    if (concept_active() && page == "ar/select_course") return concept_course_parts(entry);
     if (page == "ar/select_course") {
         if (int l = gt.arcade_course_level(entry); l >= 0 && l < 6) out.push_back({std::string("area_") + char('a' + l), ""});
         out.push_back({gt.arcade_course_dirt(entry) ? "dirt" : "tarmac", ""});
@@ -256,6 +261,7 @@ std::vector<std::pair<std::string, std::string>> arcade_specs(const std::string&
 void arcade_prepare(GameRequest& r) {
     GtModeSession* s = S();
     if (!s) return;
+    if (concept_active()) return; // (Concept's requests: ConceptHooks::prepare)
     const GtMode& gt = s->gt();
     const GarageCar* g1 = arcade_garage_car(r.car);
     const GarageCar* g2 = arcade_garage_car(r.car2);
@@ -295,7 +301,7 @@ void arcade_prepare(GameRequest& r) {
 // course and a garage class without cars cannot be chosen.
 std::string arcade_disabled(const std::string& page, const std::string& course, const std::string& entry) {
     GtModeSession* s = S();
-    if (!s) return std::string();
+    if (!s || concept_active()) return std::string(); // (Concept: every listed entry can be chosen)
     const GtMode& gt = s->gt();
     // A garage car on a dirt course needs dirt tires (owned-part bit 0x42).
     if (const GarageCar* gc = arcade_garage_car(entry))
@@ -315,6 +321,7 @@ void arcade_entries(const std::string& page, const std::string& game, const std:
                     std::vector<std::string>& entries) {
     GtModeSession* s = S();
     if (!s) return;
+    if (concept_active()) return concept_arcade_entries(page, game, car_class, entries);
     const GtMode& gt = s->gt();
     auto keep_in_order = [&](const std::vector<std::string>& wanted) {
         std::vector<std::string> out;
@@ -363,6 +370,15 @@ void arcade_entries(const std::string& page, const std::string& game, const std:
 bool queue_arcade_trophy(const std::string& race_code) {
     if (!S()) return false;
     std::optional<Show> sh = gt_menu::arcade_trophy_show(race_code);
+    // A Concept disc's races: the cup of the event's class (the code's second letter says nothing there).
+    if (const std::string model = concept_trophy_model(race_code); !model.empty()) {
+        sh = Show{};
+        sh->set = sh->page = "arcade_mini";
+        sh->model = model;
+        sh->rank = ordinal(0);
+    } else if (concept_active()) {
+        sh.reset();
+    }
     if (!sh) return false;
     menu_state().shows.push_back(std::move(*sh));
     return true;

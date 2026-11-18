@@ -1,6 +1,7 @@
 // Phase 6, the steering indicators and the driving aids (TCS, ASCC, ABS, the dirt brake cut); see tick.h.
 
 #include "base/ee_math.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -24,6 +25,7 @@ void steer_indicators(Car& c, const AidInputs& in) {
     F grip = c.understeer;
     for (int i = 0; i < 4; ++i) grip = grip + tire_record(c.p, i, c.w[size_t(i)].surface).grip;
     F delta = c.steer_cmd, r = c.yaw_rate, ra = c.yaw_accel;
+    const Behaviour& h = c.behaviour; // (2002 Tokyo-Geneva's folded constants: Europe)
     const F v = c.speed;
     // Understeer: the yaw rate short of v sin(delta) / L, while the lateral acceleration is more than 0.2 of the grip.
     if (zero <= delta * r) {
@@ -37,7 +39,7 @@ void steer_indicators(Car& c, const AidInputs& in) {
             F lat = c.a_y;
             if (lat < zero) lat = -lat;
             lat = lat / grip;
-            if (F::raw(0x3E4CCCCD) < lat) { // 0.2
+            if (folded(h, 0x3E4CCCCD, 0x3E4CCCCC) < lat) { // 0.2
                 if (zero < ra * r) r = r + ra * F::raw(0x3F000000); // + yaw acceleration / 2
                 if (r < rt) c.understeer = kOne - r / rt;
             }
@@ -46,7 +48,7 @@ void steer_indicators(Car& c, const AidInputs& in) {
     if (u8(c.control - 1) < 2 || c.driver_kind != 0) {
         // The AI's: the yaw rate times the speed beyond the lateral acceleration, when they turn opposite ways.
         const F s = ee::sqrt(v * v + c.lat_speed * c.lat_speed);
-        if (pal_rules(c, Rule::Oversteer) && s < F::raw(0x40DE38E4)) return; // PAL only: none below 25 km/h
+        if (pal_rules(c, Rule::Oversteer) && s < folded(h, 0x40DE38E4, 0x40DE38E2)) return; // PAL only: none below 25 km/h
         F a = s * c.yaw_rate, lat = c.a_y;
         if (zero <= a * lat) return;
         if (a < zero) a = -a;
@@ -63,14 +65,15 @@ void steer_indicators(Car& c, const AidInputs& in) {
         if (b < zero) b = -b;
         if (m < b) m = b;
     }
-    F q = ee::sqrt(v * v + c.lat_speed * c.lat_speed) * F::raw(0x3C9374BC); // 0.018
+    F q = ee::sqrt(v * v + c.lat_speed * c.lat_speed) * folded(h, 0x3C9374BC, 0x3C9374BD); // 0.018
     if (kOne < q) q = kOne;
-    const F a0 = ee::int_to_f(in.over_angle[0]) * kDeg, a1 = ee::int_to_f(in.over_angle[1]) * kDeg;
+    const F deg = folded(h, kDeg.bits, 0x3C8EFA34), tenth = folded(h, kTenth.bits, 0x3DCCCCCC);
+    const F a0 = ee::int_to_f(in.over_angle[0]) * deg, a1 = ee::int_to_f(in.over_angle[1]) * deg;
     const F th = q * (a1 - a0) + a0;
     if (!(th <= m)) return;
     m = m - th;
-    const F g1 = ee::int_to_f(in.over_gain[1]) * kTenth, g0 = ee::int_to_f(in.over_gain[0]) * kTenth;
-    const F span = F::raw(0x3FC90FDB) - th; // pi / 2
+    const F g1 = ee::int_to_f(in.over_gain[1]) * tenth, g0 = ee::int_to_f(in.over_gain[0]) * tenth;
+    const F span = folded(h, 0x3FC90FDB, 0x3FC90FD9) - th; // pi / 2
     F o = (q * (g1 - g0) + g0) * m / span;
     if (kOne < o) o = kOne;
     c.oversteer = o;
@@ -88,7 +91,14 @@ F tcs_lateral(F x, F a, F b) {
 
 u8 tcs_on(const Aids& a) { return a.tcs_gain == F() ? 0 : 1; }
 
-u8 ascc_on(const Aids& a) { return (a.on[0] | a.on[1]) != 0 ? 1 : 0; }
+u8 ascc_on(const Aids& a, const AsccSwitches& sw) {
+    if ((a.on[0] | a.on[1]) != 0) return 1;
+    // (Rule::Ascc, the later builds: channel C counts with its status switch, channel E without its own)
+    if (!sw.later || sw.c_status == 0) return 0;
+    if (a.on[2]) return 1;
+    if (sw.e_quiet != 0) return 0;
+    return a.on[3] != 0 ? 1 : 0;
+}
 
 void tcs(Car& c, const Aids& a) {
     const u8 on = tcs_on(a);
@@ -100,7 +110,7 @@ void tcs(Car& c, const Aids& a) {
     // The most negative slip of the driven wheels with load, and that wheel's target and gain.
     F smin = kOne, target = kOne, g = kOne;
     for (int axle = 0; axle < 2; ++axle) {
-        if (!tcs_reads_axle(c.p.d.layout, axle)) continue;
+        if (!tcs_reads_axle(c.p.d.layout, axle, !gt3_program(c.behaviour.rule(Rule::Layout)))) continue;
         for (int k = 0; k < 2; ++k) {
             const int i = 2 * axle + k;
             const Wheel& w = c.w[size_t(i)];
@@ -122,7 +132,8 @@ void brake_add(Wheel& w, F x) {
     if (kOne < w.brake) w.brake = kOne;
 }
 
-void ascc(Car& c, const Aids& a, std::array<F, 4>& cap, bool on) {
+void ascc(Car& c, const Aids& a, std::array<F, 4>& cap, bool on, const AsccSwitches& sw) {
+    const F kTenth = F::raw(sw.later && c.behaviour.rule(Rule::Ascc) >= Program::ConceptGenevaEu ? 0x3DCCCCCC : 0x3DCCCCCD);
     for (size_t i = 0; i < 4; ++i) cap[i] = cap[i] * c.p.brake_slip_scale[i >> 1];
     if (!on) return;
     const F zero{};
@@ -142,9 +153,10 @@ void ascc(Car& c, const Aids& a, std::array<F, 4>& cap, bool on) {
                 if (a.a_wheels[1]) brake_add(c.w[2 + out], x);
             }
         }
-        if (c.throttle_pedal == zero && a.on[2]) {
+        if (((sw.later && sw.c_throttle != 0) || c.throttle_pedal == zero) && a.on[2]) {
             const F x = (u - a.c_thr) * a.c_gain;
             if (zero < x) {
+                if (sw.later && sw.c_status != 0) acted = true;
                 if (a.c_wheels[0]) brake_add(c.w[in], x);
                 if (a.c_wheels[1]) brake_add(c.w[2 + in], x);
             }
@@ -163,20 +175,21 @@ void ascc(Car& c, const Aids& a, std::array<F, 4>& cap, bool on) {
             F f = kOne - (u - kTenth) * a.e_gain;
             if (f < zero) f = zero;
             if (f < kOne) {
+                if (sw.later && sw.c_status != 0 && sw.e_quiet == 0) acted = true;
                 if (a.e_wheels[0]) release(out, f);
                 if (a.e_wheels[1]) release(2 + out, f);
             }
         }
     }
     if (acted) c.ascc_status = 2;
-    else if (ascc_on(a)) c.ascc_status = 1;
+    else if (ascc_on(a, sw)) c.ascc_status = 1;
 }
 
 void brakes(Car& c, const Aids& a, bool ascc_enabled, const AidInputs& in) {
     const F zero{};
     if (dirt_course(in.course_category) && in.dirt_steer != 0) {
         F d = c.steer_cmd;
-        const F full = ee::int_to_f(in.dirt_steer) * kDeg;
+        const F full = ee::int_to_f(in.dirt_steer) * folded(c.behaviour, kDeg.bits, 0x3C8EFA34); // (2002 Tokyo-Geneva's: Europe)
         if (d < zero) d = -d;
         const F s = full <= d ? kOne : d / full;
         const F rear = kOne - s * (ee::int_to_f(in.dirt_cut[1]) * kHundredth);
@@ -188,7 +201,7 @@ void brakes(Car& c, const Aids& a, bool ascc_enabled, const AidInputs& in) {
     }
     std::array<F, 4> cap;
     for (int i = 0; i < 4; ++i) cap[size_t(i)] = tire_record(c.p, i, c.w[size_t(i)].surface).slip_brake;
-    ascc(c, a, cap, ascc_enabled);
+    ascc(c, a, cap, ascc_enabled, in.ascc);
     // The ABS limit: past the target slip the pressure falls with slope G g; 0 is kept at 0.001.
     for (size_t i = 0; i < 4; ++i) {
         Wheel& w = c.w[i];
@@ -201,13 +214,13 @@ void brakes(Car& c, const Aids& a, bool ascc_enabled, const AidInputs& in) {
             if (kOne < f) f = kOne;
             f = f * p;
         }
-        w.brake = f == zero ? F::raw(0x3A83126F) : f; // 0.001
+        w.brake = f == zero ? folded(c.behaviour, 0x3A83126F, 0x3A83126E) : f; // 0.001 (2002 Tokyo-Geneva's: Europe's)
     }
 }
 
 void driver_aids(Car& c, const AidInputs& in) {
     tcs(c, c.p.aids);
-    brakes(c, c.p.aids, c.handbrake < kTenth, in);
+    brakes(c, c.p.aids, c.handbrake < folded(c.behaviour, kTenth.bits, 0x3DCCCCCC), in); // (2002 Tokyo-Geneva's: Europe)
 }
 
 void scripted_aids(Car& c, const AidInputs& in) {
@@ -220,13 +233,19 @@ void aids(Car& c, const AidInputs& in) {
     c.tcs_status = 0;
     c.ascc_status = 0;
     const s8 control = s8(c.control);
-    if (control == 1 || control == 2) scripted_aids(c, in);
-    else if (control == 0) {
+    if (control == 1 || control == 2) {
+        scripted_aids(c, in);
+        // (Rule::Aids, from 2002 Tokyo-Seoul v2.00 on: a computer's car shows its own block's switches)
+        if (control == 2 && c.behaviour.rule(Rule::Aids) >= Program::ConceptSeoul2) {
+            c.tcs_status = tcs_on(c.p.aids);
+            c.ascc_status = ascc_on(c.p.aids, in.ascc);
+        }
+    } else if (control == 0) {
         if (c.driver_kind == 0 || c.hold != 0) driver_aids(c, in);
         else {
             scripted_aids(c, in);
             c.tcs_status = tcs_on(c.p.aids);
-            c.ascc_status = ascc_on(c.p.aids);
+            c.ascc_status = ascc_on(c.p.aids, in.ascc);
         }
     }
 }

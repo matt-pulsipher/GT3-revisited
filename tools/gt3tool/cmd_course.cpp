@@ -14,6 +14,7 @@
 #include "formats/png_writer.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -272,13 +273,32 @@ int cmd_course_shot(Disc& disc, const Args& a) {
 
 int cmd_course_survey(Disc& disc, const Args& a) {
     std::string prefix = a.empty() ? "courses/" : a[0];
-    size_t files = 0, ok = 0, model_ok = 0;
+    size_t files = 0, ok = 0, model_ok = 0, not_courses = 0;
     std::map<std::string, size_t> errors;
     for (const auto& e : disc.volume().entries()) {
         if (e.path.compare(0, prefix.size(), prefix) != 0 || e.path.find("/.") != std::string::npos) continue;
         if (e.path.find('/', prefix.size()) == std::string::npos && prefix == "courses/") continue;
-        ++files;
         Bytes data = disc.volume().read(e);
+        if (!CourseFile::looks_like_course(data)) {
+            // A course's slot table without a scenery model: leftover data sections, not a course.
+            std::string slots;
+            try {
+                const CourseFile file = CourseFile::parse(data);
+                for (const CourseSection& sec : file.sections())
+                    slots += " " + std::to_string(sec.slot) + (sec.tag.empty() ? "" : ":" + sec.tag);
+                if (ByteSpan ai = file.section(data, kSlotAiLines); !ai.empty()) {
+                    size_t lines = 0;
+                    for (const AiLine& l : AiLines::parse(ai).lines) lines += !l.points.empty();
+                    slots += "; " + std::to_string(lines) + " AI lines";
+                }
+            } catch (const std::exception& ex) {
+                slots += std::string(" (") + ex.what() + ")";
+            }
+            std::printf("%-32s not a course: slots%s\n", e.path.c_str(), slots.c_str());
+            ++not_courses;
+            continue;
+        }
+        ++files;
         try {
             Course c = load_course(data);
             size_t lines = 0;
@@ -291,11 +311,23 @@ int cmd_course_survey(Disc& disc, const Args& a) {
             size_t tris = 0, verts = 0;
             for (const scene::Mesh& mesh : m.meshes) tris += mesh.indices.size() / 3, verts += mesh.vertices.size();
             ++model_ok;
+            // The road triangles per flag bit (bit 5: Gran Turismo Concept's leaves under the wheels).
+            std::array<size_t, 8> bits{};
+            for (const RoadSegment& s : c.road.segments)
+                for (const RoadTriangle& t : s.triangles)
+                    for (size_t b = 0; b < 8; ++b) bits[b] += (t.flags >> b) & 1;
+            std::string flags;
+            for (size_t b = 0; b < 8; ++b)
+                if (bits[b] != 0) {
+                    char buf[32];
+                    std::snprintf(buf, sizeof buf, " 0x%02X:%zu", 1u << b, bits[b]);
+                    flags += buf;
+                }
             std::printf("%-32s len %7.1f seg %4zu rtri %6zu walls %zu cps %4zu grid %zu ai %zu | meshes %4zu verts %7zu "
-                        "tris %7zu\n",
+                        "tris %7zu | flags%s\n",
                         e.path.c_str(), c.road.length, c.road.segments.size(), c.road.triangle_count(),
                         c.road.walls.size(), c.road.checkpoints.size(), c.road.grid.size(), lines, m.meshes.size(),
-                        verts, tris);
+                        verts, tris, flags.empty() ? " none" : flags.c_str());
         } catch (const std::exception& ex) {
             errors[ex.what()]++;
             std::printf("%-32s ERROR %s\n", e.path.c_str(), ex.what());
@@ -303,6 +335,7 @@ int cmd_course_survey(Disc& disc, const Args& a) {
     }
     std::printf("\n%zu files: %zu course data ok, %zu models ok\n", files, ok, model_ok);
     for (auto& [k, n] : errors) std::printf("  %zu x %s\n", n, k.c_str());
+    if (not_courses) std::printf("%zu not courses\n", not_courses);
     return 0;
 }
 

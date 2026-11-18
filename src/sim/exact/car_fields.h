@@ -97,6 +97,7 @@ template <class C, class V> void fields(C& c, V&& v) {
         v("p.e.power_cap_soft", -1, E + 0xA0, e.power_cap_soft), v("p.e.boost_max", -1, E + 0xBC, e.boost_max);
         auto& d = p.d;
         const u32 D = kParams + 0x1F8;
+        v("p.d.unequal", -1, D + 0x01, d.unequal), v("p.d.kind", -1, D + 0x12, d.kind);
         v("p.d.layout", -1, D + 0x00, d.layout), v("p.d.gears", -1, D + 0x02, d.gears), v("p.d.driven_axle", -1, D + 0x03, d.driven_axle);
         v("p.d.awd_k", -1, D + 0x04, d.awd_k), v("p.d.awd_capacity", -1, D + 0x08, d.awd_capacity);
         v("p.d.engine_inertia", -1, D + 0x0C, d.engine_inertia);
@@ -283,7 +284,7 @@ template <class C, class V> void fields(C& c, V&& v) {
             v("ai.prev_line", -1, A + 0x86, d.prev_line), v("ai.arc_ticks", -1, A + 0x88, d.arc_ticks);
         v("ai.v_cur", -1, A + 0x8C, d.v_cur), v("ai.v_next", -1, A + 0x90, d.v_next), v("ai.blend", -1, A + 0x94, d.blend);
         v("ai.trim", -1, A + 0x98, d.trim), v("ai.x99", -1, A + 0x99, d.x99), v("ai.cooldown", -1, A + 0x9A, d.cooldown);
-        v("ai.xa9", -1, A + 0xA9, d.xa9), v("ai.gear_hint", -1, A + 0xAC, d.gear_hint), v("ai.gear_braking", -1, A + 0xAD, d.gear_braking),
+        v("ai.xa9", -1, A + 0xA9, d.xa9), v("ai.gear_hint", -1, A + 0xAC, d.gear_hint), v("ai.gear_braking", -1, A + 0xAD, d.gear_braking), v("ai.stop", -1, A + 0xAE, d.stop),
             v("ai.status", -1, A + 0xAF, d.status);
     }
     v("index", -1, kF + 0x3E8, c.index), v("blip", -1, kF + 0x51F, c.blip);
@@ -293,7 +294,7 @@ template <class C, class V> void fields(C& c, V&& v) {
     for (int a = 0; a < 2; ++a) v("p.cam_offset", a, kParams + 0xE0C + 4 * u32(a), p.cam_offset[size_t(a)]);
     for (int r = 0; r < 6; ++r) v("p.tire.brake_peak", r, kParams + 0x398 + 0x1B4 * u32(r) + 0x148, p.tire[size_t(r)].brake_peak);
     // What the race's start sets up besides the tick's fields.
-    v("p.drive_class", -1, kParams + 0x31, p.drive_class), v("p.cog_height", -1, kParams + 0x3C, p.cog_height),
+    v("p.drive_class", -1, kParams + 0x31, p.drive_class), v("p.special", -1, kParams + 0x32, p.special), v("p.cog_height", -1, kParams + 0x3C, p.cog_height),
         v("p.xe58", -1, kParams + 0xE58, p.xe58);
     for (int a = 0; a < 2; ++a) v("p.ride_height", a, kParams + 0x40 + 4 * u32(a), p.ride_height[size_t(a)]);
     for (int i = 0; i < 4; ++i) {

@@ -68,6 +68,16 @@ public:
         }
         std::string car, wheel;
         int paint = 0;
+        // Concept's prize car page: the car won, over the whole page (the "purchased" showroom: no floor mirror).
+        if (e.widget_class && *e.widget_class == "render_model" && page == "concept_car_get") {
+            if (!game::car_for_widget(page, *e.widget_class, car, paint)) return;
+            const ShowroomCamera& cam = showroom_camera(app, "buycar");
+            const float sx = box.w / std::max(e.w, 1.0f), sy = box.h / std::max(e.h, 1.0f);
+            const SDL_FRect whole{box.x - e.x * sx, box.y - (448 - e.y - e.h) * sy, 640 * sx, 448 * sy};
+            if (const Loaded* m = this->car(app, car, paint, wheel); m && cam.valid)
+                showroom(app, r, placed(whole), *m, "conceptget:" + car + "#" + std::to_string(paint), cam, -1, 0, true, 1.0f, env, 4);
+            return;
+        }
         // Arcade car pickers ("ar/select_car:<entry>"): the entry's car, turning, in the
         // area above the icon strip.
         if (size_t colon = page.find(':'); colon != std::string::npos && page.rfind("ar/", 0) == 0) {

@@ -28,6 +28,7 @@ struct MovieScreenOptions {
     bool loop = false;       // restart at the end (title/attract loops); ends only when skipped
     bool stop_music = true;  // stop the jukebox/BGM stream first
     float volume = -1.0f;    // < 0: use the music volume
+    bool* skipped = nullptr; // set true when the player ended the movie early (the pointer must outlive the screen)
 };
 
 std::unique_ptr<Screen> make_movie_screen(const std::string& vfs_path, std::function<void(App&)> on_done = {},

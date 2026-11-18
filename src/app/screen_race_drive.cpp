@@ -6,6 +6,10 @@
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
+#include "game/concept_menu.h"
+#include "base/ee_math.h"
+#include "race/exact_field.h"
+#include "sim/exact/race.h"
 
 namespace gt3r::race_screen {
 
@@ -31,6 +35,50 @@ sim::ControlInputs RaceScreen::scripted_inputs(double t, bool& reverse) const {
         else if (f == "rev") reverse = v != 0; // the reverse request (the back input)
     }
     in.controller_kind = 2;
+    return in;
+}
+
+// GT3R_RACE line=<km/h>: aims at the car's AI line ahead; full throttle below a speed that falls with the aim's angle, the
+// brake above it. `player` 1: player 2's car in a race of two (its own pod_stops2=).
+sim::ControlInputs RaceScreen::line_inputs(int player) const {
+    namespace ex = sim::exact;
+    sim::ControlInputs in;
+    in.automatic = controls_.config().automatic;
+    in.controller_kind = 2;
+    const RaceField* f = exact_field();
+    const ex::ExactRace* r = f ? exact_race_of(*f) : nullptr;
+    if (!r || int(r->cars().size()) <= player) return in;
+    const ex::Car& c = r->cars()[size_t(player)];
+    const int pod_stops = player == 1 ? preset_.pod_stops2 : preset_.pod_stops;
+    // The steering aims at the line a little ahead; the speed falls with the angle to the line further on (the corner coming).
+    const float kK = 200.0f, kFar = 1.5f; // km/h a radian; seconds ahead
+    const int line = c.ai.line ? c.ai.line : 6;
+    ex::F dx, dy, fx, fy;
+    ex::ai_target(c, r->course().ai, line, c.ai.next, ex::F(12.0f) + ex::F(0.6f) * c.speed, dx, dy);
+    ex::ai_target(c, r->course().ai, line, c.ai.next, ex::F(20.0f) + ex::F(kFar) * c.speed, fx, fy);
+    const ex::F angle = ee::atan2(c.fwd.x * dy - c.fwd.y * dx, c.fwd.x * dx + c.fwd.y * dy);
+    const ex::F ahead = ee::atan2(c.fwd.x * fy - c.fwd.y * fx, c.fwd.x * fx + c.fwd.y * fy);
+    in.steer = -std::clamp(angle.host() * 2.5f, -1.0f, 1.0f);
+    // (at least a crawl: a car standing at an angle to the line, as on a grid slot beside it, turns onto it at walking pace)
+    float want = std::max(preset_.line_pace - kK * std::max(std::fabs(angle.host()), std::fabs(ahead.host())),
+                          std::min(preset_.line_pace, 15.0f));
+    const float kmh = c.speed.host() * 3.6f;
+    // A pod race's stop (pod_stops=): from 80 m before the stop area to its end, on a lap that owes a stop, slow to a point
+    // 10 m in, then hold the brakes and, nearly stopped, the handbrake until the race counts the stop (the pod sits).
+    const ex::StopZone& z = r->flow().zone;
+    if (pod_stops > 0 && z.active == 1 && z.owed(c) > 0 && (pod_stops == 1 || c.laps % 2 == 1)) {
+        const float s = c.f3e4.host(), base = z.base.host(), at = base + 10;
+        if (s > base - 80 && s < base + z.spacing.host()) {
+            if (s >= at - 1) {
+                in.brake = 1;
+                in.handbrake = std::fabs(c.speed.host()) < 0.5f;
+                return in;
+            }
+            want = std::min(want, 3.6f * std::max(1.5f, (at - s) * 0.5f));
+        }
+    }
+    if (kmh < want) in.throttle = 1;
+    else if (kmh > want + 8) in.brake = 1;
     return in;
 }
 
@@ -88,6 +136,11 @@ void RaceScreen::tick(App& app, const PadState& pad) {
             want = scripted_inputs(script_time_, pad_reverse);
             live_pad = nullptr;
         }
+        if (preset_.line_pace > 0 && !ai_drives) {
+            want = line_inputs();
+            pad_reverse = false;
+            live_pad = nullptr;
+        }
         script_time_ += dt;
         // A demonstration: the disc's recorded run (its race record plays it; without one, its inputs).
         if (demo_ && disc_demo_) {
@@ -119,12 +172,15 @@ void RaceScreen::tick(App& app, const PadState& pad) {
             last_in2_ = player_.second_inputs();
         } else {
             const bool ai2 = preset_.autodrive || finished2_;
-            sim::ControlInputs w2 = ai2 ? sim::ControlInputs{} : controls2_.update(app.input().race_pad(1), dt);
-            field_->set_second_pad(ai2 ? nullptr : &app.input().race_pad(1));
-            live_pad2 = !ai2;
+            const bool line2 = !ai2 && preset_.line_pace > 0; // (the test driver drives player 2's car too)
+            sim::ControlInputs w2 = ai2     ? sim::ControlInputs{}
+                                    : line2 ? line_inputs(1)
+                                            : controls2_.update(app.input().race_pad(1), dt);
+            field_->set_second_pad(ai2 || line2 ? nullptr : &app.input().race_pad(1));
+            live_pad2 = !ai2 && !line2;
             const bool pad_reverse2 = !ai2 && controls2_.reverse();
             field_->set_second_reverse(pad_reverse2);
-            w2.controller_kind = u8(ai2 ? 0 : controls2_.kind());
+            if (!line2) w2.controller_kind = u8(ai2 ? 0 : controls2_.kind());
             last_in2_ = recorder_.record_second(w2);
             recorder_.set_second_reverse(pad_reverse2);
         }
@@ -178,6 +234,23 @@ void RaceScreen::tick(App& app, const PadState& pad) {
             post_info(name + " Pitting in...");
             LOG_INFO("Race: %s pitting in (t %.1f)", label.c_str(), race_time_);
         }
+    // The pod race's notes on the players' cars: the race's information note 7 of a stop made (as every information note,
+    // on both halves in a race of two); a car that missed its stops starts the display's examination message (pod_dq_t_;
+    // the display polls the event for its own car only).
+    if (RaceField* f = exact_field())
+        for (const RaceField::PodNote& n : f->take_pod_notes()) {
+            const int player = n.car == -1 ? 0 : n.car == -2 && two_player_ ? 1 : -1;
+            if (player < 0 || replaying_) continue;
+            if (n.disqualified) {
+                if (pod_dq_t_[size_t(player)] < 0) pod_dq_t_[size_t(player)] = 0;
+            } else {
+                post_info(race_text("RACEDISPLAY_PodSitDownOK", "SIT complete!", true));
+            }
+            LOG_INFO("Race: pod race, player %d: %s (t %.1f)", player + 1, n.disqualified ? "disqualified" : "stop made",
+                     race_time_);
+        }
+    for (double& t : pod_dq_t_)
+        if (t >= 0 && !replaying_) t += dt;
     // The turbo sounds read the car's processed throttle (0 through an upshift), sound §7.5.
     if (const sim::VehicleTelemetry* t = vehicle_->telemetry())
         extra_.step(CarExtraSounds::step_inputs(*t, vehicle_->facts().value_or(CarFacts{}).turbo));
@@ -393,13 +466,42 @@ void RaceScreen::flying_start_signal(App& app) {
     if (run_kind() != RunKind::FreeRun) return;
     EventDisplay& ev = event_display_[0];
     EventDisplay::Message ready, help;
-    ready.text = race_text("RACEDISPLAY_FreeRunReady", "Timer starts at start/finish line");
-    help.text = race_text("RACEDISPLAY_FreeRunHelp", "Press START button to end session");
+    ready.text = race_text("RACEDISPLAY_FreeRunReady", "Timer starts at start/finish line", true);
+    help.text = race_text("RACEDISPLAY_FreeRunHelp", "Press START button to end session", true);
     ev.after(std::move(ready), 2.0f);
     ev.queue(std::move(help));
 }
 
+bool RaceScreen::pod_race() const {
+    const data::Event* ev = race_event_.empty() ? nullptr : db_.event(race_event_);
+    return ev && ev->bytes.size() > 0x19A && ev->bytes[0x19A] == 5 && app_ && app_->vfs() &&
+           app_->vfs()->region().game == GameKind::Concept;
+}
+
+// The stop prompt of a player's pod (0 player 1, 1 player 2: each half's own in a race of two): the HUD message the
+// race's rule sets on the car this step (physics §14.5, the later builds' pod race: 0x10 on the stop area's ground and not
+// sat down yet, 0x11 past it); a test preset holds one on screen.
+int RaceScreen::pod_prompt(int player) const {
+    if (!pod_race() || replaying_) return 0;
+    if (preset_.pod_prompt) return preset_.pod_prompt;
+    const RaceField* f = exact_field();
+    return f ? f->car_message(player == 1 ? 2 : 1) : 0;
+}
+
 void RaceScreen::update_drive(App& app, double dt) {
+    // A pod race's three notes (pod race display: with the race live, 3 s each, the first 2 s in, so they run
+    // through the start's countdown; one player's race only, the 2 player display has none).
+    if (!pod_intro_posted_ && !two_player_ && !replaying_ && !backdrop_ && !quick_ && !attract_ && pod_race()) {
+        pod_intro_posted_ = true;
+        EventDisplay::Message a, b, c;
+        a.text = race_text("RACEDISPLAY_PodRaceStart1", "When you reach the STOP AREA before the ramp...", true);
+        b.text = race_text("RACEDISPLAY_PodRaceStart2", "...make sure you come to a complete stop, and", true);
+        c.text = race_text("RACEDISPLAY_PodRaceStart3", "pull the emergency brake to make your pod SIT.", true);
+        EventDisplay& ev = event_display_[0];
+        ev.after(std::move(a), 2.0f);
+        ev.queue(std::move(b));
+        ev.queue(std::move(c));
+    }
     if (editor_) {
         update_camera_editor(app, dt);
         return;
@@ -443,7 +545,19 @@ void RaceScreen::update_drive(App& app, double dt) {
     }
     if (setting_pending_) { // back from GT mode's settings, in the menu SETTING opened from: the ride car as now set up
         setting_pending_ = false;
-        if (game::GtModeSession* gs = game::gt_mode_session())
+        if (concept_menus()) {
+            // A Concept disc's settings (the single-race driver's loop, concept §9.5): when they changed the car is
+            // built again and the menu is the one before a run (no replay of the old run); else nothing happens.
+            if (game::concept_refresh_cars(launch_.request)) {
+                launch_source_ = ExactCarSource{launch_.request.car, launch_.request.car_parts, launch_.request.car_settings};
+                LOG_INFO("Race: the car's settings changed; the car is built again");
+                if (build_vehicle(app)) {
+                    restart();
+                    qm_items_ = {};
+                    open_prerace_menu(app);
+                }
+            }
+        } else if (game::GtModeSession* gs = game::gt_mode_session())
             if (const game::GarageCar* gc = gs->gt().state().ride_car()) {
                 launch_source_ = ExactCarSource{gc->car, gc->parts, gc->settings};
                 // Before the first run the grid takes the car at once (the run state's reset closes the menu: open it
@@ -604,6 +718,25 @@ void RaceScreen::update_drive(App& app, double dt) {
         // The race loop ends: GT3's loader transition, then what follows the run
         // (screen_race_post_run.cpp).
         if (leave) begin_exit_transition(ExitThen::RunEnd);
+    }
+    // A pod race's disqualification (pod_dq_t_): one player, the examination message's timeline (ConceptExamMessage:
+    // 1 s, the message faded in, held and faded out, then 4 s or confirm), then the race ends (event 1) as a run that
+    // did not finish; two players, once both halves hold their message (two-player pod race display's update). Leaving takes 2
+    // more frames, as after a FAIL.
+    if (!replaying_ && !finish_menu_shown_ && exit_transition_ < 0) {
+        bool leave = false;
+        if (pod_disqualified()) {
+            const int f = pod_dq_frame(0);
+            const bool confirm = app.menu().pressed(PadButton::Cross) || app.menu().pressed(PadButton::Circle);
+            leave = f >= ConceptExamMessage::event_step() + 2 || (f >= ConceptExamMessage::confirm_from() && confirm);
+        } else if (two_player_) {
+            leave = pod_dq_t_[0] >= 0 && pod_dq_t_[1] >= 0 && ConceptExamMessage::at(pod_dq_frame(0), true).held &&
+                    ConceptExamMessage::at(pod_dq_frame(1), true).held;
+        }
+        if (leave) {
+            LOG_INFO("Race: pod race over: disqualified (t %.1f)", race_time_);
+            begin_exit_transition(ExitThen::RunEnd);
+        }
     }
     if (replaying_ && replay_to_menu_ && !paused_ && race::replay_over(race::PlayMode::Replay, player_.done())) {
         begin_exit_transition(ExitThen::Menu); // over the replay's last frame, then the quick menu

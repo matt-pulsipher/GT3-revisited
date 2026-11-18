@@ -6,6 +6,7 @@
 #include "sim/collision_exact.h"
 
 #include "base/ee_math.h"
+#include "sim/exact/build_math.h"
 
 namespace gt3r::sim::collide::exact {
 
@@ -75,9 +76,11 @@ void shift(Body& b, F dx, F dy) {
     }
 }
 
-F clamp_yaw(F w) {
-    if (ee::abs(w) < kMaxYaw) return w;
-    return w < kZero ? kMinYaw : kMaxYaw;
+// (2002 Tokyo-Geneva's 20 pi two units lower: Europe)
+F clamp_yaw(F w, const Behaviour& h) {
+    const F hi = sim::exact::folded(h, kMaxYaw.bits, 0x427B53D0), lo = sim::exact::folded(h, kMinYaw.bits, 0xC27B53D0);
+    if (ee::abs(w) < hi) return w;
+    return w < kZero ? lo : hi;
 }
 
 // The body's end points for the wall lines' side tests (dx (ey - ay)) - (dy (ex - ax)) where their signs are certain
@@ -393,7 +396,9 @@ void build(Body& b, F a, F rear, F width, F mass, F iz, int car) {
     const Behaviour behaviour = b.behaviour;
     b = Body{};
     b.behaviour = behaviour;
-    F d1 = width * kChamfer, d2 = width * kChamfer;
+    // (Rule::BodyBuild: 2002 Tokyo-Geneva's constant is one unit lower, Europe, Asia)
+    const F chamfer = behaviour.rule(Rule::BodyBuild) >= Program::ConceptGenevaEu ? F::raw(0x3E4CCCCC) : kChamfer;
+    F d1 = width * chamfer, d2 = width * chamfer;
     F nb = -rear, h = width * kHalf, iz10 = iz * kTen;
     b.im = kOne / mass;
     F nh = -h;
@@ -891,9 +896,17 @@ void pair_response(std::vector<Body>& bd, int ia, Trace* trace) {
 }
 
 // A car nearly at rest whose last hit came early in the step turns by its steering: yaw rate +=
-// steer / 100 x 20 x dt, end pose recomputed.
+// steer / 100 x 20 x dt, end pose recomputed. (Rule::StuckNudge: the later builds', Concept 2001 Tokyo, only for a
+// pad car (control source 0) and only while it touches something: a point or corner hit, a wall hit, a point held on a
+// wall or crossing one this round, an edge's corner crossing.)
 void stuck(Body& b, F last) {
-    if (!(ee::abs(b.vx) < kOne) || !(ee::abs(b.vy) < kOne) || !(last < kEarly)) return;
+    if (!sim::exact::gt3_program(b.behaviour.rule(Rule::StuckNudge))) {
+        if (b.control != 0) return;
+        bool touch = b.wpoint || b.wcorner || b.wall_hit;
+        for (size_t k = 0; k < 8 && !touch; ++k) touch = (b.p[k].flags & 1) || b.p[k].hit || b.e[k].hit;
+        if (!touch) return;
+    }
+    if (!(ee::abs(b.vx) < kOne) || !(ee::abs(b.vy) < kOne) || !(last < sim::exact::folded(b.behaviour, kEarly.bits, 0x3DCCCCCC))) return; // (Europe's)
     b.w = b.w + (((ee::int_to_f(b.steer) / kHundred) * kTwenty) * b.dt);
     end_pose(b);
 }
@@ -928,15 +941,16 @@ void commit(Body& b) {
         b.cw = b.w;
         return;
     }
-    b.ch = wrap_heading(b.eh);
-    b.cw = clamp_yaw(b.w);
+    b.ch = wrap_heading(b.eh, b.behaviour);
+    b.cw = clamp_yaw(b.w, b.behaviour);
 }
 
 // The hit sound's hold (60 steps from a stronger hit, its level decaying by 0.98 a step otherwise), the strength
 // capped at 1, the rumble (24 steps from a stronger hit, then the car's value cleared). Its calls are given
 // kind -1, which does nothing.
 void effects(Body& b) {
-    const s32 rumble_count = b.behaviour.pal_rate() ? 20 : 24; // PAL's 50 steps a second: 20
+    // PAL's 50 steps a second: 20; 2002 Tokyo-Geneva's one step shorter (Europe: 19, Asia: 23)
+    const s32 rumble_count = (b.behaviour.pal_rate() ? 20 : 24) - (sim::exact::toward_zero(b.behaviour) ? 1 : 0);
     F s = b.strength;
     const bool louder = kZero < s && (b.sound_steps == 0 || b.sound_level < s);
     if (louder) {
@@ -945,7 +959,7 @@ void effects(Body& b) {
     } else {
         s32 n = b.sound_steps - 1;
         b.sound_steps = n < 0 ? 0 : n;
-        b.sound_level = b.sound_level * kSoundDecay;
+        b.sound_level = b.sound_level * sim::exact::folded(b.behaviour, kSoundDecay.bits, 0x3F7AE147); // (Europe's)
     }
     s = b.strength;
     if (kOne < s) b.strength = s = kOne;
@@ -965,11 +979,14 @@ void effects(Body& b) {
 }
 
 // The heading less whole turns once it is 8 turns or more from zero.
-F wrap_heading(F h) {
-    s32 n = ee::to_int((ee::abs(h) + kPi) / kTwoPi);
+// (2002 Tokyo-Geneva's pi and 2 pi one unit lower: Europe)
+F wrap_heading(F h, const Behaviour& bh) {
+    const F pi = sim::exact::folded(bh, kPi.bits, 0x40490FDA), two_pi = sim::exact::folded(bh, kTwoPi.bits, 0x40C90FDA);
+    const F minus_two_pi = sim::exact::folded(bh, kMinusTwoPi.bits, 0xC0C90FDA);
+    s32 n = ee::to_int((ee::abs(h) + pi) / two_pi);
     if (n < 8) return h;
     F nf = ee::int_to_f(n);
-    return h < kZero ? h + (nf * kTwoPi) : h + (nf * kMinusTwoPi);
+    return h < kZero ? h + (nf * two_pi) : h + (nf * minus_two_pi);
 }
 
 } // namespace fn

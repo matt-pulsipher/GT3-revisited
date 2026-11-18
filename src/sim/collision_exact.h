@@ -120,10 +120,12 @@ struct Body {
     s32 sound_steps = 0;          // +0x4E8
     F sound_level;                // +0x4EC
     // Car fields the step reads: the step length (car +0xEC0), the steering input in signed percent (car
-    // +0x14A7) and the ghost flag (car +0x136E: no car-car contact).
+    // +0x14A7) and the ghost flag (car +0x136E: no car-car contact); the later builds' stuck nudge also the control source
+    // (car +0x136D).
     F dt_in;
     s8 steer = 0;
     bool ghost = false;
+    s8 control = 0;
     // The car field the step writes: the last wall hit's strength for the rumble (car +0x1474; null: none).
     F* rumble = nullptr;
     // Not in the record (build() keeps it): how the race runs (sim/program.h, the car's Behaviour): NTSC-J's commit, wall
@@ -179,7 +181,7 @@ void stuck(Body& b, F last);
 void push_out(Body& b);
 void commit(Body& b);
 void effects(Body& b);                                      // (its sound and pad calls are empty)
-F wrap_heading(F h);
+F wrap_heading(F h, const Behaviour& bh);                   // (bh: 2002 Tokyo-Geneva's constants)
 } // namespace fn
 
 } // namespace gt3r::sim::collide::exact

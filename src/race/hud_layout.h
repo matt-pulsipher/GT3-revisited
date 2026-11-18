@@ -35,6 +35,7 @@ enum class HudMode : u8 {
     Demo = 12,         // demonstrations
     FreePractice = 13, // the free run before a GT race
     TimeTrial = 14,    // the arcade time trial
+    Logger = 15,       // the Analyzer's REPLAY: the logger display over track A's (and track B's) car
 };
 
 enum class HudPart : u8 {
@@ -74,8 +75,17 @@ struct HudRow {
 };
 
 std::span<const HudRow> hud_layout(HudMode m);
+// Another release's rows in place of the built-in ones (Gran Turismo Concept's discs: the same tables with other rows,
+// concept §9.3): its database/racemode.db and racedetail.db, read as the game reads them (a mode's 32 row ids; a
+// row's part, sub, alignments, view and box), the empty rows left out. A mode the tables do not hold keeps the
+// built-in rows. False (and nothing changes) when a table does not parse. clear_hud_tables(): the built-in rows again.
+bool set_hud_tables(ByteSpan racemode, ByteSpan racedetail);
+void clear_hud_tables();
 // The mode's row for a part (and sub, < 0 any) in a view (0 in-car, 1 outside); null if none.
 const HudRow* hud_row(HudMode m, HudPart part, int sub, int view);
+// The same in the built-in rows (Gran Turismo 3's), whatever tables are set: what a drawing tuned on GT3's rows
+// compares a disc's row with.
+const HudRow* hud_builtin_row(HudMode m, HudPart part, int sub, int view);
 // The label a time line shows ("" for the lap-time list).
 const char* time_line_label(TimeLine t);
 

@@ -195,6 +195,11 @@ Format 1.2.0.0", 1 KB clusters, two-level FAT from cluster 8, allocatable cluste
 41, 512-byte directory entries {mode, length, times in Japan time, first cluster,
 parent entry, name}). Read and written; compressed `.max` / `.cbs` are not supported.
 
+Gran Turismo Concept's game save (`src/game/concept_save.cpp`) is the same container with major version 100 (minor 0
+2001 Tokyo, 3 Tokyo-Seoul, 2 Tokyo-Geneva, 5 its Asian release) and a shorter payload: the scalar block, a garage car
+for every class entry, the ten course license records, the single-race results, the free-run rankings, the present
+flags and the options ([specs/concept.md](specs/concept.md) §11).
+
 ## Demo runs ✅ (`src/race/demo_replay.*`)
 
 `demo/<event>` (the licence tests' and arcade time trials' demonstrations) are the game's
@@ -221,9 +226,11 @@ Each subsystem documents its formats in `docs/formats/`:
   byte, day vs eve/night geometry
 - [database.md](formats/database.md): ✅ `GTAR`/`GTDT`/`STDB`/`IDDB` containers and the
   64-bit id hash, ✅ all 36 paramdb tables (cars, engines, drivetrains, gearboxes, tires,
-  parts, 454 events), `racemode.db` / `racedetail.db` (the race display's layout per mode);
-  also identifies `GTTR` (tire textures), `PRZ0` (trophy models, see prm.md) and `.gcf`
-  (arcade class lists); ❓ `carcolor.db` colour records, `.cdt`
+  parts, 454 events), `racemode.db` / `racedetail.db` (the race display's layout per mode),
+  ✅ Gran Turismo Concept's databases (the last six tables in another order, three longer
+  part records) and which files a disc's program names; also identifies `GTTR` (tire
+  textures), `PRZ0` (trophy models, see prm.md) and `.gcf` (game config: arcade classes,
+  courses, prize keys); ❓ `carcolor.db` colour records, `.cdt`
 - [pss.md](formats/pss.md): ✅ PSS movies 51/51 (MPEG-2 program stream, MPEG-2 video,
   PS-ADPCM `.ads` in private stream 1, field-split frames), ✅ `stream/course.ipic`
   (`ipua`: 42 IPU course preview stills)
@@ -240,6 +247,21 @@ Each subsystem documents its formats in `docs/formats/`:
 Note: `menu/cars/ho0100` is a plain entry whose contents are a gzip of an
 empty file. All 1,705 entries flagged as compressed inflate to their recorded
 sizes.
+
+## Other games on the engine: asset variants
+
+Gran Turismo Concept (2001 Tokyo, 2002 Tokyo-Seoul, 2002 Tokyo-Geneva) uses GT3's formats; its
+files load with the same code. What differs, each told from the data and written up with its
+format:
+
+| Files | Difference | Document |
+|---|---|---|
+| course folders | one leftover file with no scenery model or road (AI lines version 7); development courses carrying another road's AI lines | [formats/course.md](formats/course.md) "Course folders of other games" |
+| `bike/man*.mdl` | skinned GTM1 models: a skeleton at `+0x40` and a vertex block with bone weights after each packet | [formats/car_model.md](formats/car_model.md) "Skinned models" |
+| `text/realtime.dat` | 9 or 11 language pools (KR, TW; PT, KR, CN, TW) | [formats/text.md](formats/text.md) "More pools" |
+| `font/system.hf`, `system.tf` | `KNJI` fonts for Korean (KS X 1001 codes) and Chinese (Big5 renumbered) | [formats/text.md](formats/text.md) "Kanji fonts" |
+| `sound/se.inf`, `gt3pod.ins` | a fourth effect bank | [formats/sound.md](formats/sound.md) "GTSE effect index" |
+| `carcolor.db`, `race/particle.img`, `cameras/replay.cam`, `menu/prem_*.prm`, `demo/*` | larger or new files in GT3's formats; demo saves with a recorder mode 1 are a new stream (not decoded) | [formats/course.md](formats/course.md) "Other files" |
 
 ## Identified but not yet decoded ❓
 

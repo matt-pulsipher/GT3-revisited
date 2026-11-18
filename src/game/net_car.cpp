@@ -8,6 +8,7 @@
 #include "game/gt_state.h"
 #include "base/ps2_float.h"
 #include "base/sha256.h"
+#include "disc/disc.h"
 #include "net/protocol.h"
 #include "race/arcade_car.h"
 #include "race/exact_car.h"
@@ -435,8 +436,7 @@ std::optional<sim::exact::ParamImage> online_car_params(const data::CarDatabase&
     const race::ExactCarSource src = race::exact_online_source(db, c, {}, &cond); // (an arcade car: its road tyres)
     std::optional<ex::Equipment> eq = race::exact_equipment(db, src);
     if (!eq) return std::nullopt;
-    ex::ProgramData rules = d.gt3_tables(); // every online race's tables and rules (docs/dev/ONLINE.md "Model")
-    rules.set_behaviour({sim::Program::NtscU, 60});
+    const ex::ProgramData rules = race::online_program_data(d); // every online race's tables and rules (docs/dev/ONLINE.md "Model")
     ex::ConvertInputs in;
     in.base = ex::kParams; // P's address in a race's record (the record at 0)
     in.condition = race::exact_condition_words(cond);
@@ -487,6 +487,23 @@ CarHere online_car_here(const data::CarDatabase& db, const sim::exact::ProgramDa
     const std::string model = car ? db.model_of(*car) : std::string();
     if (model.empty() || !has_model(model)) return CarHere::NoModel;
     return CarHere::Ok;
+}
+
+net::OnlineDisc online_disc(const DiscInfo* info, GameKind game) {
+    net::OnlineDisc d;
+    if (info && (info->verified || info->reported) && !info->modified && info->data.game == GameKind::Gt3) return d;
+    if (!info) {
+        if (game == GameKind::Gt3) return d;
+        d.id = "game:" + std::string(game_name(game));
+        d.name = game_name(game);
+        return d;
+    }
+    d.id = "files:" + info->digest;
+    const std::string serial = " (" + short_serial(info->serial) + ")";
+    if (info->modified) d.name = "a modified copy of " + info->description + serial;
+    else if (info->data.game == GameKind::Concept) d.name = game_name(GameKind::Concept) + serial;
+    else d.name = "an unrecognized disc" + serial;
+    return d;
 }
 
 const char* car_here_text(CarHere h) {

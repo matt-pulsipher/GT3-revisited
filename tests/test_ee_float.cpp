@@ -288,3 +288,19 @@ TEST(ee_float_platform_hash) {
     CHECK(h[3] == 0x8692188a8ed84c56ull);
 }
 
+
+// expf: GT3's and the later builds' (another routine) near the host's exp over the display's range, exact at 0, a
+// negative argument the reciprocal of its positive one (GT3's) and the later builds' ends of the scale.
+TEST(ee_math_exp) {
+    using gt3r::ee::F;
+    CHECK(gt3r::ee::exp(F(0.0f)).bits == 0x3F800000 && gt3r::ee::exp_later(F(0.0f), false).bits == 0x3F800000);
+    for (float x : {-20.0f, -5.5f, -1.0f, -0.3f, 0.25f, 1.0f, 2.5f, 9.0f, 30.0f})
+        for (int k = 0; k < 3; ++k) {
+            const F e = k == 0 ? gt3r::ee::exp(F(x)) : gt3r::ee::exp_later(F(x), k == 2);
+            CHECK(std::abs(double(e.host()) / std::exp(double(x)) - 1.0) < 1e-5);
+        }
+    CHECK(gt3r::ee::exp_later(F(-100.0f), false).bits == 0 && gt3r::ee::exp_later(F(100.0f), false).bits == 0x7FFFFFFF);
+    CHECK(gt3r::ee::exp_later(F::raw(0x7F800000), true).bits == 0); // (a saturated multiple of ln 2 wraps the scale below 0)
+    CHECK(gt3r::ee::exp(F(1.0f)).bits != gt3r::ee::exp_later(F(1.0f), false).bits ||
+          gt3r::ee::exp(F(2.0f)).bits != gt3r::ee::exp_later(F(2.0f), false).bits); // (two routines)
+}

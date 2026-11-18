@@ -23,6 +23,7 @@
 
 #include "base/bytes.h"
 #include "formats/tex1.h"
+#include "formats/text/mltx.h"
 
 #include <array>
 #include <string>
@@ -95,6 +96,13 @@ struct FontFile {
 //   0x04 u16 glyph stride, 0x08 u16 index[94 * 94] by (row-0x21)*94 + (col-0x21)
 //   (0xFFFF = none), glyph data follows the index; 22x22 cells.
 // Cell pixels are row-major 4bpp, low nibble first, ceil(w/2) bytes per row.
+// The cell font a language's double-byte text draws with: font/system.kf (JIS X 0208 codes),
+// or on later discs of this engine font/system.hf for KR (KS X 1001 codes: EUC-KR text) and
+// font/system.tf for TW (Big5 characters renumbered, charset.h). All three are KNJI files.
+// CN has no font of its own on the discs seen (its menu pages hold Korean text there);
+// system.tf is assumed for it.
+const char* kanji_font_path(Language l);
+
 class KanjiFont {
 public:
     static bool is_kanji_font(ByteSpan d) { return has_magic(d, "KNJI") || has_magic(d, "KFT0"); }

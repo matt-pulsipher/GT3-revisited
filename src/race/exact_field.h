@@ -71,6 +71,19 @@ std::optional<bool> exact_playback_matches(const RaceField& f);
 // last two steps at `alpha` and its geometry; false when the race has none or it is not drawn now (the draw mode: not
 // while the computer drives it, the flying start's run-up).
 bool exact_ghost(const RaceField& f, float alpha, sim::VehicleState& state, const sim::VehicleSetup** setup = nullptr);
+// What the race display shows of a car (the Analyzer's logger display: track A's car 0, track B's car 1 of an analysis
+// race): its state between the last two steps at `alpha`, its steering byte (-1..1, positive right) and pedals; for a
+// car of drive layout 7 on a later build (Gran Turismo Concept's hybrid system) its store's share of the capacity and
+// whether its flow display is at 0 or above. False for another field or no such car.
+struct CarDisplay {
+    float speed_kmh = 0, rpm = 0, rev_limit_rpm = 7000, shift_rpm = 6800;
+    int gear = 1;
+    float steer = 0, throttle = 0, brake = 0;
+    bool hybrid = false;
+    float hybrid_level = 0;
+    bool hybrid_charging = true;
+};
+bool exact_car_display(const RaceField& f, int car, float alpha, CarDisplay& out);
 // The frame the field gives a player's car for a step without a pad (scripts, the test autopilot, replays of inputs):
 // every axis analog (kind 2; kind 3 for the d-pad's ControlInputs::controller_kind 3), the steering +-4096 positive left,
 // throttle / brake 0..4096, the handbrake on the third axis, the shift request; with `reverse` the back axis at 4096.

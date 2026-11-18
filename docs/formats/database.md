@@ -367,7 +367,7 @@ id_hash(model id), u32 colour count, u32 offset} sorted by code (286 match
 |---|---|
 | `tire/n*`, `menu/tire/n*` (`GTTR`) | tire **textures**: 32-byte header (+0x0C size, +0x18 f32 8.0, +0x1C offset 0x20) + one `Tex1` set. No grip data — that is in tables 25–29. |
 | `*.prm` (`PRZ0`, `PRM0`, gzip) | trophy / prize scenes (GTM1 model plus key-framed camera/model matrices and lights), decoded: see [prm.md](prm.md). `race/{gold,silver,bronze}.prm`, `race/[ag]_<difficulty>_<medal>.prm`, `menu/champ_NN.prm`, `menu/lic_*.prm`. |
-| `gameconf/*.gcf` | tagged tree (u32 tag / count / offset nodes with inline NUL-terminated strings): arcade car classes (`CLASS_A`...) listing table-35 labels (`corvette_z06_00_385`, `arm_rx8_01`) [not decoded further] |
+| `gameconf/*.gcf` | tagged tree (u32 tag / count / offset nodes with inline NUL-terminated strings; layout in `src/game/gcf.h`): tag 14 arcade car classes (`CLASS_A`...) listing table-35 labels (`corvette_z06_00_385`, `arm_rx8_01`), tag 8 arcade modes with their courses, tag 15 prize keys, tag 13 tests, tag 4 race codes, tag 12 demos, tag 10 the game's sums |
 | `cars/.list`, `courses/.list` | plain text, one model / course id per line |
 
 ## Open questions
@@ -392,3 +392,82 @@ id_hash(model id), u32 colour count, u32 offset} sorted by code (286 match
   the international releases, 6 hundreds on the Japanese disc (×100 ×100 = 60,000 Cr). The
   PAL and Japanese discs price the RSX concept (`rsx_detroitver_01`) at 300,000, the NTSC-U
   disc at 30,000.
+
+## Gran Turismo Concept [data]
+
+The Concept discs (2001 Tokyo `SCPS_150.10`, 2002 Tokyo-Seoul `SCPS_560.05`, 2002
+Tokyo-Geneva `SCES_508.58` and its Asian release `SCPS_559.02`) use the same containers.
+What differs, and how the loader copes (`src/game/data/car_database.h`,
+`src/disc/region.h`):
+
+**Which files.** Each volume carries several databases, GT3's among them (`paramdb_us.db`,
+`paramdb_eu.db`, `paramdb_tmv.db` are in GT3's format and are not the game's). The game's
+are the ones its program names, so the loader takes the names from the program: the string
+`database/paramdb<suffix>.db` gives the suffix of the database, the two string tables and
+the id index; the strings `gameconf/<name>.gcf` give the game config.
+
+| Disc | Database | Game config the program names |
+|---|---|---|
+| 2001 Tokyo | `paramdb_bs.db` (the same bytes as its `paramdb.db`) | `concept.gcf`, `concept_us.gcf`, `concept_kr.gcf`, `concept_eu.gcf` (by language, as GT3 PAL picks among `product*.gcf`: Japanese the plain one) |
+| 2002 Tokyo-Seoul | `paramdb_kr.db` | `concept_kr.gcf` |
+| 2002 Tokyo-Geneva (Europe) | `paramdb_gtc_eu.db` | `concept_eu.gcf` |
+| 2002 Tokyo-Geneva (Asia) | `paramdb_gtc_tw.db` | `concept_tw.gcf` |
+
+A program whose game configs are named `concept*` is Gran Turismo Concept (`GameKind`).
+
+**Table order.** 36 tables, table version word 0x082D (Tokyo, Tokyo-Seoul) or 0x082E
+(Tokyo-Geneva) against GT3's 0x0827. The 30 part tables keep their places; the last six are
+in another order:
+
+| Place | GT3 | Concept |
+|---|---|---|
+| 30 | car (264) | car variant (272) |
+| 31 | car variant (272) | event (504) |
+| 32 | event (504) | regulation (264) |
+| 33 | regulation (264) | course (16) |
+| 34 | course (16) | arcade car (272) |
+| 35 | arcade car (272) | car (264) |
+
+The file does not say which table is which (a table's header index is its place), so the
+loader tells the six apart from their records, on every disc: the events are the 504-byte
+table, the courses the 16-byte one; of the two 264-byte tables the cars are the one the
+272-byte tables' base car ids (+8) are found in; of the two 272-byte tables the variants are
+the one more of the events' entry slots are found in (events also enter a few arcade cars).
+`gt3tool db` writes the tables under GT3's numbers whatever the file's order.
+
+**Longer records.** Three part records are GT3's with 8 bytes appended; every GT3 field is
+where it was (checked on the 232 chassis, 232 engines and 682 gearboxes both games hold:
+all gearboxes and all but 3 to 5 retuned chassis and engines are byte-identical up to
+GT3's length).
+
+| Table | GT3 | Concept | Appended |
+|---|---|---|---|
+| 3 chassis | 32 | 40 | +0x20 u16, +0x22 u16, +0x24 u16: a length, a height and a weight that repeat +0x14, +0x16 and +0x1A on nearly every record (one car differs by a few mm; the weight, or all three, is 0 on a few show cars); +0x26 u16 0. Probably the figures the menus show; not read |
+| 6 engine | 88 | 96 | +0x58 u8: 1 on most records, 0 on 9 (Tokyo) to 20 (Tokyo-Geneva), nearly all show cars and prototypes; meaning unknown; then 0. Not read |
+| 17 gear | 48 | 56 | +0x30 u8: 0 on most, 1 on the two CVT cars' gearboxes (Fit, Jazz), 2 on a few cars sold with automatic gearboxes; meaning not established; then 0. Not read. The price stays at +0x2C, so it is no longer the record's last word |
+
+Every other table has GT3's record size, and the car, variant, event, course and regulation
+readers are GT3's.
+
+**Game config.** `concept*.gcf` has GT3's eight sections and the same entry layouts; only
+the counts and the contents differ: 11 arcade classes (15 on Tokyo-Geneva Europe, which
+adds `_UK` classes) against 7, 5 arcade modes (`POD_RACE` added) against 4, 12 tests
+against 59, 50 prize keys against 101. Two contents differ in kind: an arcade class car
+names its race (an event label, empty in GT3), and a prize key names its car by arcade
+class and place, `CLASS_S#008` (class, `#`, place from 0), where GT3 names the car. The
+tag-4 race codes are GT3's 364, left in the file. The Tokyo-Geneva configs also keep GT3's
+`CLASS_COMPULSORY`, whose cars are not in the database.
+
+**Loose ends in the data.** On the Tokyo-Geneva discs 28 to 40 event entries (under 2%)
+name a car in neither the variant nor the arcade car table, and one demo event names a
+course the course table lacks; the races run without those cars. The 2001 Tokyo and
+Tokyo-Seoul databases have none.
+
+**Course folders.** Every Concept program reads `courses/<folder>/` by language (JP, US,
+UK, EU), but the Tokyo-Geneva disc has only `UK` and `EU` and its Asian release only `JP`;
+the loader takes the language's folder when the disc has it and otherwise a folder the disc
+has (`course_file_path`).
+
+**Not done.** The PAL medal-time rule (`us_medal_times`) is GT3's only. A disc's languages
+still come from its region (`RegionData::languages`), so a Concept disc starts in Japanese
+or a European language, not yet in Korean, Chinese or Portuguese.

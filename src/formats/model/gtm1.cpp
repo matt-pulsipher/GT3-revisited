@@ -148,6 +148,20 @@ Gtm1 Gtm1::parse(ByteSpan data) {
         g.chunks.push_back(std::move(c));
     }
 
+    // +0x40 skeleton: 4x4 matrices up to the next block of the file.
+    if (u32 bones = data.size() >= 0x44 ? rd32(data, 0x40) : 0; bones && bones < data.size()) {
+        u32 end = u32(data.size());
+        for (u32 o : {node_tab, chunk_tab, mat_tab, texset_tab, sphere_tab, lod_tab, paint_tab, rd32(data, 0x3C)})
+            if (o > bones) end = std::min(end, o);
+        for (const Chunk& c : g.chunks)
+            if (c.offset > bones) end = std::min(end, c.offset);
+        for (u32 o = bones; o + 64 <= end; o += 64) {
+            Matrix m;
+            for (int k = 0; k < 16; ++k) m[size_t(k)] = rdf(data, o + 4 * size_t(k));
+            g.inverse_bind.push_back(m);
+        }
+    }
+
     // +0x3C animation list: u32 count, u32 entry offsets[count].
     if (u32 list = rd32(data, 0x3C); list && list <= data.size() - 4) {
         u32 n = rd32(data, list);
@@ -468,9 +482,34 @@ DecodedPacket Gtm1::decode_packet(const Packet& pk, bool prelit) const {
             out.morph = true;
         }
     }
-    size_t n = pos.size();
     u32 total = 0;
     for (u32 s : out.strips) total += s;
+    // Skinned packets carry no positions: a vertex block follows the VIF data (gtm1.h "Skinned
+    // models"). Its normals go where the header says: 0x80 (lit) or 0x40 (reflection pass).
+    if (pos.empty() && total) {
+        size_t p = size_t(pk.offset) + size_t(pk.qwc) * 16;
+        if (p + 4 <= data.size() && rd16(data, p) == total && (rd16(data, p + 2) == 0x80 || rd16(data, p + 2) == 0x40)) {
+            std::vector<std::array<float, 4>>& normals = rd16(data, p + 2) == 0x80 ? nrm : envn;
+            p += 4;
+            for (bool more = true; more && pos.size() < total;) {
+                if (p + 8 > data.size()) throw FormatError("GTM1 skin block out of range");
+                u32 count = rd16(data, p) & 0x7FFF;
+                more = (rd16(data, p) & 0x8000) != 0;
+                if (rd16(data, p + 2) != 4 || count > total - pos.size() || size_t(count) * 40 > data.size() - p - 8)
+                    throw FormatError("GTM1 skin group out of range");
+                SkinWeights w;
+                for (int k = 0; k < 4; ++k) w.bones[k] = data[p + 4 + k];
+                p += 8;
+                for (u32 i = 0; i < count; ++i, p += 40) {
+                    pos.push_back({rdf(data, p), rdf(data, p + 4), rdf(data, p + 8), 1.0f});
+                    normals.push_back({rdf(data, p + 12), rdf(data, p + 16), rdf(data, p + 20), 0.0f});
+                    for (int k = 0; k < 4; ++k) w.weights[k] = rdf(data, p + 24 + 4 * k);
+                    out.skin.push_back(w);
+                }
+            }
+        }
+    }
+    size_t n = pos.size();
     if (total != n) throw FormatError("GTM1 packet strip lengths do not match vertex count");
     auto check = [&](size_t sz) { if (sz && sz != n) throw FormatError("GTM1 packet attribute count mismatch"); };
     check(nrm.size()), check(col.size()), check(uv.size()), check(envn.size());

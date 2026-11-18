@@ -54,6 +54,8 @@ TEST(race_lap_event_texts) {
     CHECK(gap_text(-456) == "\x7F" "0'00.456"); // the font's dash glyph for a lead
     CHECK(lap_diff_text(1, "%d Laps") == "+1 Laps");
     CHECK(lap_diff_text(3, "%d Laps") == "+3 Laps");
+    CHECK(lap_diff_text(2, "Tours") == "+Tours"); // (PAL's texts have no "%d": the program prints the word alone)
+    CHECK(lap_diff_text(-1, "%d Laps") == "\x7F" "1 Laps");
 }
 
 // A licence test's splits count on over its laps, the line as each lap's last timing point (the licence conductor's

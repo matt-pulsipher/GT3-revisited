@@ -24,6 +24,7 @@ struct DiscInfo {
     bool reported = false; // in the list as reported working by players
     std::string description;
     Region region = Region::America; // the release's data set (disc/region.h)
+    RegionData data;                 // the same with the files the disc's program names, and the game it is
     std::string problem; // a problem with the image for the player (incomplete_image), empty when none
     // The files' fingerprint: 16 hex digits of SHA-256 over CORE.GT3 and the game volumes' tables of contents.
     std::string digest;

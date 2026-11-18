@@ -49,6 +49,12 @@ GameState import_ps2_save(ByteSpan file, const GtData& data);
 // are written as a new game has them).
 Bytes export_ps2_save(const GameState& s, const GtData& data);
 
+// A Gran Turismo Concept disc's game save (concept §11: version 100.x, its own blocks) goes through the same
+// calls: import_ps2_save, export_ps2_save and the file-level ones below read and write the save of the disc's game.
+// The save directory (and data file) of the disc's release: ps2_game_dir(region) for Gran Turismo 3, a Concept
+// release's own (BESCES-50858GAMEDATA for the European Tokyo-Geneva).
+std::string ps2_save_name(const GtData& data);
+
 // The original's memory-card save directory for the game file (gt_mode §12.2):
 // BASCUS-97102GAMEDATA/ {BASCUS-97102GAMEDATA, icon.sys, icon0.ico, thumbnail}. Each release
 // has its own and reads only that one: BESCES-50294GAMEDATA (PAL), BISCPS-15009GAMEDATA (NTSC-J).

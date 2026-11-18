@@ -342,4 +342,25 @@ std::string utf8_encode(std::u32string_view s) {
     return out;
 }
 
+u16 tw_code_to_big5(u16 code) {
+    u32 row = code >> 8, col = code & 0xFF;
+    if (row < 0x21 || row > 0x7E || col < 0x21 || col > 0x7E) return 0;
+    u32 index = (row - 0x21) * 94 + (col - 0x21);
+    u32 lead = 0xA1 + index / 157, t = index % 157;
+    if (lead > 0xFE) return 0;
+    return u16(lead << 8 | (t < 63 ? 0x40 + t : 0xA1 + t - 63));
+}
+
+u16 big5_to_tw_code(u16 big5) {
+    u32 lead = big5 >> 8, trail = big5 & 0xFF;
+    if (lead < 0xA1 || lead > 0xFE) return 0;
+    u32 t;
+    if (trail >= 0x40 && trail <= 0x7E) t = trail - 0x40;
+    else if (trail >= 0xA1 && trail <= 0xFE) t = trail - 0xA1 + 63;
+    else return 0;
+    u32 index = (lead - 0xA1) * 157 + t;
+    if (index >= 94 * 94) return 0;
+    return u16((0x21 + index / 94) << 8 | (0x21 + index % 94));
+}
+
 } // namespace gt3r::text

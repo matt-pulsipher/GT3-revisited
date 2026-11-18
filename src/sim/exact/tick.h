@@ -5,6 +5,7 @@
 
 #include "base/game_random.h"
 #include "sim/exact/car_record.h"
+#include "sim/exact/special.h"
 
 #include <functional>
 #include <span>
@@ -13,6 +14,7 @@ namespace gt3r::sim::exact {
 
 class CourseGround; // course_ground.h
 struct AiCourse;    // ai_course.h
+class CourseQuery;  // course_query.h
 struct FlowStep;    // pit_lane.h
 
 // The race's behaviour (Car::behaviour, sim/program.h): PAL's rate (50 steps a second: its step length and tick counts),
@@ -35,13 +37,16 @@ template <size_t N> F lookup_bisect(const Table<N>& t, F v) { return lookup_bise
 int tire_record_index(const Params& p, int wheel, u8 surface);
 const TireRecord& tire_record(const Params& p, int wheel, u8 surface);
 // Whether the TCS reads an axle's wheels (0 front, 1 rear) under a drive layout [physics §4.6].
-inline bool tcs_reads_axle(u8 layout, int axle) { return axle == 0 ? layout != 0 && layout != 5 && layout != 6 : layout != 1; }
+// (later: Rule::Layout's later builds, whose layout 7 drives the rear axle: its front wheels are not read either)
+inline bool tcs_reads_axle(u8 layout, int axle, bool later = false) {
+    return axle == 0 ? layout != 0 && layout != 5 && layout != 6 && !(later && layout == 7) : layout != 1;
+}
 // An angle into [-pi, pi), and the wrapped difference a - b. The NTSC-J program adds or takes 2 pi until
 // the angle is inside (NTSC-U and PAL take whole turns at once beyond 3 pi).
 F angle_wrap(F a, Program p = Program::NtscU);
 F angle_diff(F a, F b, Program p = Program::NtscU);
 // A slip angle folded into [0, pi/2], with the sign (+-1) that flips beyond 90 degrees.
-F slip_angle_fold(F beta, F& sign);
+F slip_angle_fold(const Behaviour& h, F beta, F& sign);
 // A pedal curve as the program takes it ({s32 type; float a, b, c}): type 1 c (|x| - a)^2 + b, type 2 c sqrt(|x| - a) + b,
 // otherwise |x|; with the sign of x.
 struct PedalCurve {
@@ -74,9 +79,12 @@ struct PrepInput {
     Condition condition;
 };
 // The condition parameters from the static bytes.
-Condition condition_params(const std::array<u8, 9>& b);
+Condition condition_params(const std::array<u8, 9>& b, bool toward_zero = false); // (2002 Tokyo-Geneva's 0.001)
 // The engine condition factor f_E(E) x f_O(O).
 F condition_factor(const Condition& k, F e, F o);
+// ... as the race's build has it (Rule::EngineCondition): the later builds' routine (Concept 2001 Tokyo) returns 1,
+// no engine wear or oil factor.
+F condition_factor(const Behaviour& b, const Condition& k, F e, F o);
 // The full-throttle torque at omega times the condition factor.
 F full_throttle_torque(const Car& c, const Condition& k, F omega);
 // The engine friction torque at omega.
@@ -95,6 +103,9 @@ F load_per_width(const Params& p, int wheel, F load);
 void peak_force(Car& c, const WearParams& cp);
 // The velocity direction atan2(-vy, vx) of a hub velocity and its low-speed fade (0 when the fade is).
 F slip_angle(F vx, F vy, F& fade);
+// ... as the race's build has it (Rule::SlipAngle): the later builds' atan2f (build_math.h); 2002 Tokyo-Geneva's fade speeds
+// and slope are its own constants (Europe).
+F slip_angle(const Behaviour& b, F vx, F vy, F& fade);
 // Each wheel's slip direction and fade from its hub velocity.
 void slip_angles(Car& c);
 // Phase 2: the race hold, the countdowns, dt_car, aero, the engine's torque at omega, peak forces and slip angles.
@@ -159,16 +170,37 @@ void set_brake_pedal(Car& c, F p);
 void ai_outputs(Car& c);
 // the AI paths of phase 3, after the AI's step: ai_outputs; a parked car (driver kind 8) has the handbrake on.
 void ai_controls(Car& c);
+// (Rule::DriverInput) The end of phase 3's paths where the AI drives, in the later builds: the HUD's steering percentage
+// two thirds of the way to the command's (in percent of 15 degrees).
+void ai_steer_pct(Car& c);
 
 // Phase 3, the AI driver [ai §1, §3, §5-§8, §10; physics §4.4]. The decisions call the line evaluation and the speed planning
 // (the course's AI lines, the corner speeds and braking points) through AiPlan: the program's functions there, or another
 // source of their results.
+// The later builds' stop zone (their conductor's +0xE408 .. +0xE47B; Gran Turismo Concept [physics §14.5]): a stretch of
+// the lap where the cars the AI drives stop once a lap, each at its own point. The conductor sets it up (race_flow.h), the
+// AI's braking picks a car's point and stores it, the decision drives to it and holds the car there until the race flow
+// has counted the stop. Unused under GT3's rules.
+struct StopZone {
+    u8 active = 0;               // +0xE408: 1 while the race has a stop zone
+    std::array<u8, 8> stops{};   // +0xE40A + car: the stops it made
+    F base, spacing;             // +0xE414 / +0xE418: the zone's start along the lap and its length (m)
+    std::array<F, 8> x, y, dist; // +0xE41C / +0xE43C / +0xE45C + 4 car: the car's stop point and its race distance
+    int cars = 0;                // (+0xE3E4, the car count)
+    bool has(int i) const { return active == 1 && i >= 0 && i < cars; }
+    // Later: the stops car owes, its laps counted less its stops made (-1 without a zone).
+    s32 owed(const Car& c) const { return active == 1 ? s32(c.laps) - s32(stops[size_t(c.index) & 7]) : -1; }
+};
+
 struct AiPlan {
     virtual ~AiPlan() = default;
+    virtual StopZone* stop_zone() { return nullptr; }                   // the later builds' stop zone (none: no such race)
     virtual F braking(Car& c) = 0;                                      // the point bookkeeping, the braking point and
                                                                         // the status byte; returns the throttle multiplier
     virtual F target(const Car& c, int line, int hint, F look, F& dx, F& dy) = 0; // the aim point on a line
                                                                         // relative to the car; returns the look-ahead it used
+    virtual F line_heading(const Car& c, int line, int hint, F s) = 0;  // 2002 Tokyo-Geneva's (Europe): the line's
+                                                                        // heading at race distance s (ai_line_heading)
     virtual void speed_control(Car& c, F target, F gain) = 0;           // throttle and brake towards a speed
     virtual bool request_line(Car& c, int line, bool at_once) = 0;      // a line change (blended unless at_once)
     virtual void replan(Car& c) = 0;                                    // the segments re-planned (an AI take-over)
@@ -186,6 +218,8 @@ struct AiInputs {
                             // (always 0), +0x434 (B: hit at the front), +0x438 (A: hit at the rear) [ai §7]
     u32 hit_front = 0, hit_rear = 0;
     u8 course_category = 0; // the course category byte (2 dirt, where the wanted slip angle is not clamped)
+    u8 start_speed = 0;     // the race-rule block's byte 0 (conductor + 0xE340), the start speed: 2002 Tokyo-Geneva's long
+                            // start look-ahead is for a standing or slow start only
 };
 // The steering command D +0x9C towards target by at most the steering rate times dt.
 void ai_steer(Car& c, F target);
@@ -238,6 +272,7 @@ struct AidInputs {
     std::array<u8, 2> over_gain{};  // the oversteer gain (x 0.1) at rest / from the full blend
     u8 dirt_steer = 0;              // the steering command (deg) that cuts the dirt brake fully (0: no cut)
     std::array<u8, 2> dirt_cut{};   // the cut (%) of the front / rear brakes
+    AsccSwitches ascc;              // (the later builds' ASCC switches)
 };
 // Phase 6: the steering indicators, then by the control source the car's own aids (a pad car, unless the AI
 // drives it) or its driver's: TCS, the dirt brake cut, ASCC and the ABS limit [physics §4.5, §4.6, §10.4].
@@ -255,11 +290,11 @@ F tcs_lateral(F x, F a, F b);
 // 1 when the block's TCS gain is not 0.
 u8 tcs_on(const Aids& a);
 // 1 when channel A or D is enabled.
-u8 ascc_on(const Aids& a);
+u8 ascc_on(const Aids& a, const AsccSwitches& sw = {});
 // The brake pressures: the dirt cut, ASCC (with the tyres' braking slip targets), the ABS limit.
 void brakes(Car& c, const Aids& a, bool ascc, const AidInputs& in);
 // ASCC: scales the targets cap (wheels 0..3) by the axle's factor, then (when on) the channels; status F +0x520.
-void ascc(Car& c, const Aids& a, std::array<F, 4>& cap, bool on);
+void ascc(Car& c, const Aids& a, std::array<F, 4>& cap, bool on, const AsccSwitches& sw = {});
 // Adds x to a wheel's brake pressure, at most 1.
 void brake_add(Wheel& w, F x);
 // The course category (the byte; 0xFF reads as 0). Whether it is 2, dirt.
@@ -283,19 +318,26 @@ F wheel_side_speed(const Car& c);
 F driven_axle_speed(const Car& c);
 // Each wheel's net torque from its tyre reaction and its brake torque.
 void wheel_net_torque(Car& c);
-// Torque vectoring of the y / t diffs.
-void torque_vectoring(Car& c);
+// Torque vectoring of the y / t diffs. (h: the later builds' layout 7 system, whose front motors come first,
+// Concept 2001 Tokyo calling; unused under GT3's rules)
+void torque_vectoring(Car& c, const Hybrid& h = {});
 // The clutch's transmitted torque (engine speed while slipping), the AWD front torque and centre clutch, and the
 // axle speeds.
-void axle_step(Car& c);
-// The L5 coupling gain, or the full-transfer value 98000.
-F awd5_gain(const Car& c, F tg, F ff, F fr);
+// (k: the later builds' AWD system 3 settings, Rule::AwdGain; unused under GT3's rules)
+// (h: the later builds' layout 7 system: its engine's throttle and the rear motor's torque; unused under GT3's rules)
+void axle_step(Car& c, const Awd3& k = {}, const Stepless& sl = {}, const Hybrid& h = {});
+// The L5 coupling gain, or the full-transfer value 98000. The later builds' (Rule::AwdGain, Concept 2001 Tokyo):
+// the lateral fade from their settings, the torque's sign turned in reverse gear, minus the full value for a
+// negative torque with the settings' switch, and the full-transfer test on the torque plus both axles' terms.
+F awd5_gain(const Car& c, F tg, F ff, F fr, const Awd3& k = {});
 // The slipping clutch's torque factor for the speed difference dw.
-F clutch_slip_factor(F dw);
+F clutch_slip_factor(F dw, bool toward_zero = false); // (toward_zero: 2002 Tokyo-Geneva's constants)
 // The wheel speeds from the axle speeds and the differentials.
 void wheel_speeds(Car& c);
 // Engine speed (free while open, the wheel side while locked), the clutch's lock and release, the rev cap, rpm.
-void engine_speed(Car& c);
+// (h: the later builds' layout 7 system, whose open clutch's torque charges the store, Concept 2001 Tokyo calling;
+// unused under GT3's rules)
+void engine_speed(Car& c, const Hybrid& h = {});
 // The integer rpm from the engine speed, at least idle - 1.
 void engine_rpm(Car& c);
 // Engine torque for the throttle x: turbo load and lag, the turbo sound values, the fuel cut and power cap.
@@ -339,7 +381,7 @@ void tyre_slip_force(Car& c);
 // reactions (0 when the speed would change sign).
 void forward_step(Car& c);
 // A wheel's low-speed hold force, a sideways damper below 5 km/h (0 otherwise).
-F low_speed_hold(const Wheel& w);
+F low_speed_hold(const Wheel& w, bool toward_zero = false); // (toward_zero: 2002 Tokyo-Geneva's constants)
 // Lateral acceleration, yaw acceleration and rate, and the lateral grip ratio; airborne: the lateral acceleration
 // and grip ratio zeroed, the yaw rate kept.
 void lateral_yaw(Car& c, bool airborne);
@@ -348,8 +390,14 @@ void lateral_yaw(Car& c, bool airborne);
 void stop_hold(Car& c, bool airborne);
 // The airborne flag for lateral_yaw and stop_hold: the four wheels' loads sum to 0.
 bool airborne(const Car& c);
+// The race rule block's per-class grip percentages (+0x18 + the driveline class P +0x31, signed; 2002 Tokyo-Geneva's phase 7).
+using ClassGrip = std::array<s8, 4>;
+// 2002 Tokyo-Geneva's addition to phase 7 after tyre_curves (Europe; recognized with the build's soft doubles,
+// toward_zero()): a car the AI drives (control source 1 or 2, or any driver kind) gets its class's percentage on its wheels'
+// slip fade and friction circle, x (1 + percent x 0.01).
+void class_grip_scale(Car& c, const ClassGrip& grip);
 // Phase 7, the whole phase: the calls above in its order, the airborne flag taken after gear_step.
-void dynamics(Car& c, const Statics& s, const GearSettings& g);
+void dynamics(Car& c, const Statics& s, const GearSettings& g, const ClassGrip& grip = {});
 
 // The brake heat constants (set from the static block at race init) [physics §8.5].
 struct BrakeHeatConsts {
@@ -406,15 +454,29 @@ u32 bump_mask(const Car& c, u32 mask);
 void terrain_factor(Car& c);
 // The damper force at speed v (clamped to +-1 m/s).
 F damper_force(const Suspension& s, F v);
-// One wheel's spring and damper step at coordinate x; returns the wheel's body force (spring + damper).
-F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x);
+// 2002 Tokyo-Geneva's special kind 7 ride (ProgramData's Kind7Ride as the race's initialization converts it, Europe
+// the travel and drop x 0.001 m, the lift and shares / 100, the speeds x 1 / 3.6 m/s).
+struct Kind7Ride {
+    bool on = false; // the table's byte +0 (Europe)
+    F travel, lift;
+    std::array<F, 2> share;
+    F drop, v0, v1;
+};
+// One wheel's spring and damper step at coordinate x; returns the wheel's body force (spring + damper); the later
+// builds' special kind 7 with ride (and c, i: its car and wheel) adds kind7_ride_force to its damper force.
+F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x, const Kind7Ride* ride = nullptr, const Car* c = nullptr,
+                   int i = 0);
+// Europe, in wheel_suspension of a car of special kind 7 (on its damper force): from the coordinate x less the
+// static one, lowered by the drop between the speeds v0 and v1, a lift below it (lift / the axle's share x the axle's sprung
+// weight / 2, in full past -travel), less the spring rate x the drop.
+F kind7_ride_force(const Car& c, int i, F x, const Kind7Ride& r);
 // An axle's anti-roll force from its two wheels' clamped coordinates.
 F anti_roll(F x_left, F x_right, const Suspension& s);
 // Wheel i's visual camber and hub half-track at the travel (the program ignores the steer).
 F wheel_camber(const Params& p, int i, F steer, F travel);
-F hub_half_track(const Params& p, int i, F travel);
+F hub_half_track(const Behaviour& b, const Params& p, int i, F travel); // (b: the build's atan2f)
 // Every wheel's suspension step, visual camber and half-track, then the per-wheel body forces.
-void suspension(Car& c);
+void suspension(Car& c, const Kind7Ride* ride = nullptr);
 // The longitudinal tyre forces' pitch acceleration a and heave force b.
 void pitch_terms(const Car& c, F& a, F& b);
 // The spawn hold's height offset for counter n and its mode (0 none, 1 rising, 2 held and turning to the pit
@@ -492,6 +554,9 @@ struct TyreEffect {
     F slip_ratio;   // +0x30 wheel +0x68
     F hub_vx;       // +0x34 wheel +0x4C
     F rim_speed;    // +0x38 wheel +0x20
+    // Not in the request: the wheel's ground record's flags byte (+0x33), which the later builds' emitter reads beside it: a
+    // flag 0x20 asks the leaf maker too (leaves.h).
+    u8 ground_flags = 0;
 };
 // Phase 12's last step: the four wheels' tyre effect requests, in wheel order. The emitter changes only the
 // course's effects (and draws the VU0 random register R, six times per particle), not the car record.
@@ -572,6 +637,7 @@ struct ChassisInputs {
     u32 x70 = 0, ghost_switch = 0;
     Condition condition;
     const CourseOut* course_out = nullptr; // the conductor's course-out rule after the ground contact (null: none)
+    const Kind7Ride* ride = nullptr;       // 2002 Tokyo-Geneva's special kind 7 ride (null: none)
 };
 // What phase 12 hands on: the counts for the conductor's course-out hook, the tyre effect requests for the emitter.
 struct ChassisOutputs {
@@ -620,7 +686,7 @@ bool ai_request_line(Car& c, const AiCourse& k, const WearParams& cp, int line, 
 // in a braking mode the status 2, else the braking distance to the next arc and the braking zone (mode 3 / 4, status 2),
 // the soft zone and status 1 [ai §4.3]. Returns the throttle multiplier: the soft zone's factor times the event's
 // throttle scale (not on the pit lane, line 3; 1 on the stop line).
-F ai_braking(Car& c, const AiCourse& k, const WearParams& cp);
+F ai_braking(Car& c, const AiCourse& k, const WearParams& cp, StopZone* zone = nullptr, const CourseQuery* course = nullptr);
 // The look-ahead distance at forward speed v [ai §3] (the driver's look_min, look_max and look_speed).
 F ai_lookahead(const Driver& d, F v);
 // The target point of line `line` at the car's race distance + look (the stop line 4 by its own evaluation),
@@ -630,16 +696,19 @@ F ai_lookahead(const Driver& d, F v);
 F ai_target(const Car& c, const AiCourse& k, int line, int hint, F look, F& dx, F& dy, bool* missed = nullptr);
 // The speed controller's throttle base + gain (v - vt), the speed difference clamped to +-10 km/h, the result
 // to [0, 1].
-F ai_throttle_for(F v, F vt, F base, F gain);
+F ai_throttle_for(F v, F vt, F base, F gain, bool toward_zero = false); // (2002 Tokyo-Geneva's constants)
 // The throttle towards target speed vt (aiming 2 km/h below it, base 0.75), the brake at 1 when the throttle is 0
 // and the car is faster, the gearbox lock-out (12 ticks) at a part throttle [ai §4.4].
 void ai_speed_control(Car& c, F vt, F gain);
 // The AI's decisions' plan calls (AiPlan) on these ports: the AI course object k and the conductor's wear curve cp.
 class CoursePlan final : public AiPlan {
 public:
-    CoursePlan(const AiCourse& k, const WearParams& cp) : k_(k), cp_(cp) {}
+    CoursePlan(const AiCourse& k, const WearParams& cp, StopZone* zone = nullptr, const CourseQuery* course = nullptr)
+        : k_(k), cp_(cp), zone_(zone), course_(course) {}
+    StopZone* stop_zone() override { return zone_; }
     F braking(Car& c) override;
     F target(const Car& c, int line, int hint, F look, F& dx, F& dy) override;
+    F line_heading(const Car& c, int line, int hint, F s) override;
     void speed_control(Car& c, F target, F gain) override;
     bool request_line(Car& c, int line, bool at_once) override;
     void replan(Car& c) override;
@@ -652,6 +721,8 @@ public:
 private:
     const AiCourse& k_;
     const WearParams& cp_;
+    StopZone* zone_;            // (the later builds')
+    const CourseQuery* course_; // ... and the course, for a stop point's race distance
 };
 
 // The race step's vehicle phases, phase-major over the cars as the step runs them [physics §1.2]: phases 1-9,
@@ -684,7 +755,12 @@ struct RaceInputs {
     std::array<F, 4> sound_scales;
     PadConstants pad;          // phase 3 on the pad path
     CourseOut course_out;      // phase 12 (the conductor's course-out rule)
+    LaterInputs later;         // the later builds' special cars (special.h); unused under GT3's rules
+    ClassGrip class_grip{};    // phase 7 (2002 Tokyo-Geneva's): the rule block's +0x18 .. +0x1B
+    Kind7Ride ride;            // phase 12 (2002 Tokyo-Geneva's special kind 7)
 };
+// Whether the race's build has the later builds' own routines of the race step (Rule::HybridStep and the three after it).
+inline bool later_step(const Car& c) { return !gt3_program(c.behaviour.rule(Rule::HybridStep)); }
 // The part of the step that is not ported, run in its place: `emit` for the tyre effect emitter that the program
 // hands car i's requests to (it draws the VU0 random register).
 using EmitHook = std::function<void(int i, const ChassisOutputs& out, Vu0Random& rng)>;

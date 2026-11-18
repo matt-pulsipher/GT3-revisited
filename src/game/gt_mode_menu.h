@@ -140,6 +140,9 @@ std::vector<std::string> permitted_car_names(const GtMode& gt, const std::string
 // change (settings that would break its rules are refused). False without a
 // GT-mode session or ride car.
 bool begin_setting(const std::string& event);
+// The page that menu opens on: "root"; on a Gran Turismo Concept disc "custom" for a car in its Custom set
+// (setting control concept).
+std::string setting_start_page();
 // Prepares the records menu (menu/records.mbl) for a ranking key: "lic:<test>",
 // "mt:M400" / "mt:M1000" / "mt:MMAX", "at:<arcade time trial code>", "ct:<course>".
 bool begin_records(const std::string& key);
@@ -214,6 +217,7 @@ public:
     // Car settings menu.
     std::optional<GarageCar> setting_work;          // working copy (sliders edit it)
     std::string setting_event;                      // race whose rules apply ("" = none)
+    bool setting_dirt = false;                      // Gran Turismo Concept: the race is on a dirt course (tires fixed)
     std::map<std::string, int> setting_entry;       // slider positions when the page opened (pinch_prev)
     bool setting_committed = false;                 // a commit hides pinch_prev until the page is rebuilt
     std::string records_key;                        // records menu: the ranking shown

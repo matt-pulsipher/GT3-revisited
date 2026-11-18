@@ -303,6 +303,16 @@ public:
     // (-1 / -2: player 1's / 2's car, from a field that drives the players' pit lane itself.)
     virtual std::vector<int> take_pit_entries() = 0;
     virtual bool opponent_in_pits(int i) const = 0;
+    // The HUD message the race shows on a player's car (2: player 2's): the exact core's car message (F +0x51C; the later
+    // builds' pod race prompts 0x10 and 0x11), 0 none.
+    virtual int car_message(int player) const { (void)player; return 0; }
+    // The later builds' pod race (concept §9.2): the stops made that the race noted (its information note 7: a player's car,
+    // every car in a race of two) and the cars disqualified at the line since the last call (as Standing::car).
+    struct PodNote {
+        int car = -1;
+        bool disqualified = false;
+    };
+    virtual std::vector<PodNote> take_pod_notes() { return {}; }
     virtual std::vector<Standing> standings() const = 0;
 
     // Online battle: remote players (opponents with FieldConfig::remote entries). The host's CPU cars (docs/dev/ONLINE.md

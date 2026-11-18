@@ -8,6 +8,8 @@
 
 #include "tool.h"
 
+#include "formats/course/course_file.h"
+
 #include "track/track.h"
 
 #include <chrono>
@@ -79,18 +81,36 @@ LapCheck drive_ai_line(const track::Track& t) {
     return r;
 }
 
+// "2 Vls0, 31 -, 32 Env0": the present slots of a file with a course's offset table.
+std::string describe_sections(ByteSpan data) {
+    std::string out;
+    try {
+        const course::CourseFile file = course::CourseFile::parse(data);
+        for (const course::CourseSection& s : file.sections())
+            out += (out.empty() ? "slots " : ", ") + std::to_string(s.slot) + " " + (s.tag.empty() ? "-" : s.tag);
+    } catch (const std::exception&) {
+    }
+    return out.empty() ? "no course offset table" : out;
+}
+
 int track_survey(Disc& disc, const Args& a) {
-    std::string prefix = !a.empty() && a[0] != "bench" ? a[0] : RegionData{disc.info().region}.course_path("", RegionData{disc.info().region}.default_language());
+    std::string prefix = !a.empty() && a[0] != "bench" ? a[0] : disc.info().data.course_path("", disc.info().data.default_language());
     bool bench = !a.empty() && a.back() == "bench";
-    size_t files = 0, ok_grid = 0, ok_lap = 0, ok_probe = 0, game_index = 0;
+    size_t files = 0, ok_grid = 0, ok_lap = 0, ok_probe = 0, game_index = 0, foreign_lines = 0, not_courses = 0;
     double total_ns = 0;
     size_t total_probes = 0;
     std::printf("%-22s %5s %4s %5s %7s %6s %6s %5s %8s %6s %6s\n", "course", "index", "grid", "on", "minfwd", "laps",
                 "backst", "probe", "ns/probe", "walls", "whits");
     for (const auto& e : disc.volume().entries()) {
-        if (e.path.rfind(prefix, 0) != 0 || e.path.back() == '/') continue;
-        ++files;
+        if (e.path.rfind(prefix, 0) != 0 || e.path.back() == '/' || e.path.find("/.") != std::string::npos) continue;
         Bytes data = disc.volume().read(e);
+        if (!course::CourseFile::looks_like_course(data)) {
+            // A file with a course's slot table but no scenery model (leftover data sections).
+            std::printf("%s: not a course (%s)\n", e.path.c_str(), describe_sections(data).c_str());
+            ++not_courses;
+            continue;
+        }
+        ++files;
         std::unique_ptr<track::Track> t;
         try {
             t = track::Track::from_course_file(data, e.path);
@@ -146,6 +166,13 @@ int track_survey(Disc& disc, const Args& a) {
             }
             std::printf("  %s racing line %zu on road %zu under-road %zu (max %.1f m)\n", t->label().c_str(), rl.size(), onr, under, maxdy);
         }
+        // AI lines that belong to this road have their control points over it. Unfinished
+        // courses carry another course's lines: the lap check cannot hold for them.
+        size_t ai_points = 0, ai_on_road = 0;
+        for (const auto& l : t->ai_lines().lines)
+            for (const auto& p : l.points) ++ai_points, ai_on_road += t->probe(p.pos.x, p.pos.z, 1e30f).hit;
+        bool foreign_ai = ai_points && ai_on_road * 2 < ai_points;
+        foreign_lines += foreign_ai;
         bool lap_ok = lc.one_lap && lc.max_backstep < 1.0f;
         if (!lap_ok && std::getenv("GT3R_TRACK_DEBUG")) {
             const auto& cps = t->checkpoints();
@@ -196,9 +223,13 @@ int track_survey(Disc& disc, const Args& a) {
         std::printf("%-22s %5s %4d %5d %7.3f %6d %6.2f %5d %8.1f %6zu %6zu%s\n", name.c_str(), t->index_source(),
                     t->grid_count(), on, min_fwd, lc.laps, lc.max_backstep, mismatch, ns, t->walls().size(), lc.wall_hits,
                     grid_ok && lap_ok && mismatch == 0 ? "" : "  <--");
+        if (foreign_ai)
+            std::printf("    AI lines of another road: %zu of %zu control points over this one\n", ai_on_road, ai_points);
     }
     std::printf("\n%zu files: grid ok %zu, one lap along AI line %zu, probe == height_at %zu, game index %zu\n", files,
                 ok_grid, ok_lap, ok_probe, game_index);
+    if (foreign_lines) std::printf("%zu with the AI lines of another road\n", foreign_lines);
+    if (not_courses) std::printf("%zu not courses\n", not_courses);
     if (bench && total_probes) std::printf("mean probe time %.1f ns\n", total_ns / double(total_probes));
     return 0;
 }
