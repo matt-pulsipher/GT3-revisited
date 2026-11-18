@@ -695,6 +695,16 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
                                                                             : SDL_GPU_CULLMODE_FRONT;
     info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
     info.rasterizer_state.enable_depth_clip = true;
+    if (key.depth_bias) {
+        // Towards the eye on the reversed depth. A float buffer's unit is 2^-23 of the face's
+        // depth: 64 of them are about 0.5 mm at 60 m, more than the faces' differences and well
+        // under GT3's Z step there (~3 mm). The fixed-point fallbacks' unit is absolute and larger.
+        info.rasterizer_state.enable_depth_bias = true;
+        info.rasterizer_state.depth_bias_constant_factor =
+            depth_format_ == SDL_GPU_TEXTUREFORMAT_D32_FLOAT ? 64.0f
+            : depth_format_ == SDL_GPU_TEXTUREFORMAT_D24_UNORM ? 2.0f : 1.0f;
+        info.rasterizer_state.depth_bias_slope_factor = 1.0f; // (faces seen at a grazing angle)
+    }
     info.multisample_state.sample_count = key.single ? SDL_GPU_SAMPLECOUNT_1 : samples_;
     info.depth_stencil_state.enable_depth_test = !key.single;
     info.depth_stencil_state.enable_depth_write = (key.depth_write || key.depth_reset) && !key.spin_mask;

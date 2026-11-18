@@ -514,6 +514,18 @@ Coordinate conventions:
   a car body stay in front in the replay cameras' telephoto shots (100-150 m, a field of
   view down to 1.4 degrees), where the usual 0..1 mapping resolved only about 1 cm and they
   flickered against the body.
+- That precision also separates course faces GT3's Z buffer merges: a face drawn over an
+  earlier one from other vertices, on its plane to within millimetres (Midfield's grandstand
+  windows: the frames lie 0.1 mm from their glass, issue 349). GT3's 24-bit Z gives both the
+  same depth and GEQUAL lets the later face win; ours sees sub-millimetre differences that
+  change with the camera, and the two fight. `gtm1::mark_coplanar_overlays`
+  (`formats/model/coplanar_overlays.h`, run on every course GTM1 mesh as it loads) marks
+  such later primitives `scene::kCoplanarOverlay`: same facing, every corner within 5 mm of
+  an earlier depth-writing triangle's plane of the same mesh, overlapping it (not just along
+  an edge); passes over a marked primitive's vertices are marked too. Those draw with
+  `PipelineKey::depth_bias`: 64 units of a float depth buffer (2^-23 of the depth each,
+  about 0.5 mm at 60 m, under GT3's Z step there) plus a slope factor of 1. It takes
+  16-75 ms per course on the development Mac (Seattle the most).
 - `scene::Mesh::transform` is column-major and applied as
   `item.transform * mesh.transform`.
 - `Model::compute_bounds` ignores mesh transforms. Decoders with

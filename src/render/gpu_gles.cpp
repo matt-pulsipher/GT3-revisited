@@ -67,6 +67,7 @@ namespace {
     X(PFNGLDELETESHADERPROC, glDeleteShader) \
     X(PFNGLDELETETEXTURESPROC, glDeleteTextures) \
     X(PFNGLDEPTHFUNCPROC, glDepthFunc) \
+    X(PFNGLPOLYGONOFFSETPROC, glPolygonOffset) \
     X(PFNGLDEPTHMASKPROC, glDepthMask) \
     X(PFNGLDISABLEPROC, glDisable) \
     X(PFNGLDISABLEVERTEXATTRIBARRAYPROC, glDisableVertexAttribArray) \
@@ -304,6 +305,8 @@ struct SDL_GPUGraphicsPipeline {
     GLenum cull_face = GL_BACK, front_face = GL_CW;
     bool depth_test = false, depth_write = false;
     GLenum depth_func = GL_LESS;
+    bool offset = false; // polygon offset (SDL_GPURasterizerState::enable_depth_bias)
+    float offset_factor = 0, offset_units = 0;
     bool blend = false;
     GLenum src_rgb = GL_ONE, dst_rgb = GL_ZERO, src_a = GL_ONE, dst_a = GL_ZERO;
     GLenum eq_rgb = GL_FUNC_ADD, eq_a = GL_FUNC_ADD;
@@ -513,6 +516,8 @@ struct ReplayState {
     GLenum cull_face = 0, front_face = 0;
     int depth_test = -1, depth_write = -1;
     GLenum depth_func = 0;
+    int offset = -1;
+    float offset_factor = 0, offset_units = 0;
     int blend = -1;
     GLenum blend_f[4] = {}, blend_eq[2] = {};
     int mask = -1;
@@ -554,6 +559,9 @@ void replay(SDL_GPUDevice* dev, const std::vector<DrawRec>& draws, GLsizei w, GL
         set_cap(GL_DEPTH_TEST, p->depth_test, s.depth_test);
         if (p->depth_test && s.depth_func != p->depth_func) glDepthFunc(s.depth_func = p->depth_func);
         if (s.depth_write != int(p->depth_write)) glDepthMask((s.depth_write = int(p->depth_write)) ? GL_TRUE : GL_FALSE);
+        set_cap(GL_POLYGON_OFFSET_FILL, p->offset, s.offset);
+        if (p->offset && (s.offset_factor != p->offset_factor || s.offset_units != p->offset_units))
+            glPolygonOffset(s.offset_factor = p->offset_factor, s.offset_units = p->offset_units);
         set_cap(GL_BLEND, p->blend, s.blend);
         if (p->blend) {
             if (s.blend_f[0] != p->src_rgb || s.blend_f[1] != p->dst_rgb || s.blend_f[2] != p->src_a ||
@@ -1026,6 +1034,8 @@ SDL_GPUGraphicsPipeline* gt3r_gl_CreateGPUGraphicsPipeline(SDL_GPUDevice* device
     p->cull_face = rs.cull_mode == SDL_GPU_CULLMODE_FRONT ? GL_FRONT : GL_BACK;
     // The shaders flip y (see gpu_gles.h), which reverses the winding GL sees.
     p->front_face = rs.front_face == SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE ? GL_CW : GL_CCW;
+    p->offset = rs.enable_depth_bias;
+    p->offset_factor = rs.depth_bias_slope_factor, p->offset_units = rs.depth_bias_constant_factor;
     const SDL_GPUDepthStencilState& ds = info->depth_stencil_state;
     p->depth_test = ds.enable_depth_test;
     p->depth_write = ds.enable_depth_test && ds.enable_depth_write;
