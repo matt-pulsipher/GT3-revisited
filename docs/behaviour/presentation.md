@@ -2767,7 +2767,9 @@ k = 0, so no glare is drawn.
   modelled rims and finer tyres (`menu/cars`, `menu/wheel`). Ours draws the
   menus' wheels at full detail with `[video] showroom_wheels = on` (the default
   except on phones and tablets). A wheel that has only one kind of model (a
-  modified game's) draws that one in both places, whatever the setting. Ours blurs their spinning modelled rims over
+  modified game's) draws that one in both places, whatever the setting. The brake
+  discs and calipers behind a modelled rim sit far enough in to stay behind its
+  hub and spokes. Ours blurs their spinning modelled rims over
   the same turn GT3 blurs its rims over, by copies of the rim itself, so the
   blur grows smoothly from a standstill. The menus' rims have their light painted
   in (one side of the spokes brighter) and never turn there; ours evens that light

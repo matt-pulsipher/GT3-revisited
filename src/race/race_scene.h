@@ -248,6 +248,10 @@ private:
     std::array<std::unique_ptr<render::GpuModel>, 4> tyres_, rims_;
     std::array<std::unique_ptr<render::GpuModel>, 4> bands_;
     std::array<std::unique_ptr<render::GpuModel>, 4> brakes_, glows_;
+    // Showroom wheels: LOD 0's brake parts, moved in behind the menus' rim (brake_record_behind_rim;
+    // empty where the GTCI place already clears it), and that rim and LOD 0's race rim in the hub frame.
+    std::array<std::unique_ptr<render::GpuModel>, 4> showroom_brakes_, showroom_glows_;
+    std::array<scene::Model, 4> showroom_rim_, race_rim_;
     std::array<render::Vec3, 4> wheel_center_{}; // where the decoder placed each wheel (car frame)
     std::array<BrakeRecord, 2> brake_records_{}; // GTCI +0x14 / +0x28
     // The wheels' sizes (WheelSpec, per axle): the tyre width and the bounding radius sqrt(R^2 + W^2 / 4).

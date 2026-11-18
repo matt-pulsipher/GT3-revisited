@@ -567,6 +567,16 @@ modelled rim with turned copies of it instead (docs/dev/RACE.md). The menus' and
 flags and shininess are the same on every car, so the tread blur reads the
 menus' tyre as it does the race's.
 
+The race's brake parts ("Brake parts") stay with a menus' rim, but GTCI places them
+for the race rim, and a menus' rim can reach further in: the GT40 race car's
+(`fo0007`) hub and spokes by up to 4 cm, through the rotor and caliper. Races (ours,
+`brake_record_behind_rim`) move the parts in by as much as the menus' rim's faces
+across the axle, over the rotor's disc and the caliper's square, need them (3 mm
+behind) further in than LOD 0's race rim's do, no further than 1 cm short of the
+tyre's inner face. Barrels (faces along the axle) don't count; GT3's own rims meet
+their calipers there out of sight. On NTSC-U 1.10, 117 of the 484 front menu rims
+move them.
+
 The menus' rims carry their light in the image: they are drawn with ambient 1,
 diffuse 1 and no specular on nearly flat faces, and most stock rims have one side
 of the spokes painted brighter. The menus never turn a rim, so that light stays
