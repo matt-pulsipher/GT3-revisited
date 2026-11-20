@@ -709,10 +709,13 @@ two-player race is ordinary split screen.
   `RACEDISPLAY_PodSitDownOK` is the note of a stop.
 - **The stop area**: starts 608 m into the lap and is 33 m long. The rule is off when
   either is 0 or the area would cross the start line. Each car's stop count starts at 0.
-- **Sitting**: a pod's sit counter goes up by one a step, to 29 at most, while the car is
+- **Sitting**: a pod's sit counter goes up by one a step, to 34 at most (29 on
+  the 50 Hz Tokyo-Geneva Europe), while the car is
   stopped (the handbrake fully on and the speed, forward and sideways together, at most
-  1 km/h), and down by one a step otherwise. The pod **sits** at 29. The counter also
-  lowers the wheels' travel as it rises. A restart sets it to 0 or 29.
+  1 km/h), and down by one a step otherwise. The pod **sits** at
+  that cap. The counter also
+  lowers the wheels' travel as it rises. A restart sets it to 0 or
+  the cap.
 - **Owed stops**: the car's lap count less its stop count.
 - **Each step**, for every car that owes a stop:
   - the player's car: with all four wheels on stop-area ground a sitting pod **gets its
