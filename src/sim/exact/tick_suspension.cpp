@@ -2,6 +2,7 @@
 // forces; see tick.h.
 
 #include "base/ee_math.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -45,8 +46,9 @@ void hub_offsets(Car& c) {
 }
 
 void speed_ramp(Car& c) {
+    const F gain = folded(c.behaviour, kRampGain.bits, 0x3CA3D70B); // (2002 Tokyo-Geneva's, Europe)
     for (Wheel& w : c.w) {
-        const F v = ee::sqrt(w.hub_vx * w.hub_vx + w.hub_vy * w.hub_vy) * kRampGain;
+        const F v = ee::sqrt(w.hub_vx * w.hub_vx + w.hub_vy * w.hub_vy) * gain;
         w.speed_ramp = kOne < v ? kOne : v;
     }
 }
@@ -83,7 +85,26 @@ F damper_force(const Suspension& s, F v) {
     return -s.reb_o - s.reb_g * r;
 }
 
-F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x) {
+F kind7_ride_force(const Car& c, int i, F x, const Kind7Ride& r) {
+    const size_t a = size_t(i >> 1);
+    const Suspension& s = c.p.susp[a];
+    const F v = c.speed;
+    F d = x - s.x_static, drop = kZero;
+    if (!(r.v1 <= v)) {
+        if (r.v0 < v) drop = (r.drop * (v - r.v0)) / (r.v1 - r.v0);
+    } else drop = r.drop;
+    d = d + drop;
+    F f = kZero;
+    if (d < kZero) {
+        const F lo = -r.travel;
+        F g = r.lift / r.share[a];
+        if (lo < d) g = (g * d) / lo;
+        f = (g * (a ? c.p.xe58 : c.p.xe54)) * kHalf;
+    }
+    return f - s.k * drop;
+}
+
+F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x, const Kind7Ride* ride, const Car* c, int i) {
     if (s.droop < x) { // in the air
         w.susp = s.droop;
         w.load = kZero;
@@ -94,7 +115,8 @@ F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x) {
     }
     const F xc = x < s.bump_limit ? s.bump_limit : x;
     const F e = xc - s.knee;
-    F fs = -xc * s.k;
+    // (Rule::PodSpring, the later builds: the rate is the caller's, later's for special car 1)
+    F fs = -xc * (c ? pod_spring(*c, i, s.k) : s.k);
     if (e < kZero) fs = fs + (e * e) * s.k2;
     F v = inv_dt * (x - w.susp);
     w.damper_v = v;
@@ -103,6 +125,7 @@ F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x) {
         if (v < kMinusOne) v = kMinusOne;
         fd = fd - s.bump_damping * v;
     }
+    if (ride && ride->on && c && c->p.special == 7) fd = fd + kind7_ride_force(*c, i, xc, *ride); // (Europe)
     w.damper_f = fd;
     const F sum = fs + fd;
     w.susp = xc;
@@ -126,21 +149,21 @@ F wheel_camber(const Params& p, int i, F steer, F travel) {
     return i ? r - p.steer_ratio[0] * t : r + p.steer_ratio[1] * t;
 }
 
-F hub_half_track(const Params& p, int i, F travel) {
+F hub_half_track(const Behaviour& b, const Params& p, int i, F travel) {
     const size_t ax = size_t(i >> 1);
     const F arm = p.swing_arm[ax];
     F h = p.half_track[ax];
-    if (!(arm == kZero)) h = h - (kOne - ee::cos(ee::atan2(travel, arm))) * arm;
+    if (!(arm == kZero)) h = h - (kOne - ee::cos(atan2(b, travel, arm))) * arm; // (the build's atan2f)
     return (i & 1) ? h : -h;
 }
 
-void suspension(Car& c) {
+void suspension(Car& c, const Kind7Ride* ride) {
     for (int i = 0; i < 4; ++i) {
         Wheel& w = c.w[size_t(i)];
         const Suspension& s = c.p.susp[size_t(i >> 1)];
-        wheel_suspension(w, s, c.inv_dt, c.susp_x[size_t(i)]);
+        wheel_suspension(w, s, c.inv_dt, c.susp_x[size_t(i)], ride, &c, i);
         const F travel = w.susp - s.x_static;
-        w.half_track = hub_half_track(c.p, i, travel);
+        w.half_track = hub_half_track(c.behaviour, c.p, i, travel);
         w.camber = wheel_camber(c.p, i, c.steer_cmd, travel);
     }
     const F roll_f = anti_roll(c.w[0].susp, c.w[1].susp, c.p.susp[0]);

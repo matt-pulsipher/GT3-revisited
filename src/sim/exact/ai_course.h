@@ -37,6 +37,7 @@ struct AiCourse {
     bool pit_lines = false; // K +0x08: lines 3 and 4 are both present
     // The program's table: per requested line, the lines tried in order, -1 ending the row [ai §2.1].
     std::array<std::array<s8, 6>, 8> fallback{};
+    Behaviour behaviour;    // the program's (its atan2f and, on 2002 Tokyo-Geneva, its folded constants: build_math.h)
 
     // The first line of the request's fallback row that is present (a request outside 0..7 asks for 6), -1 none.
     int resolve(int line) const;
@@ -65,5 +66,10 @@ struct AiCourse {
     int lane_left(int line, int hint, F s) const;
     int lane_right(int line, int hint, F s) const;
 };
+
+// 2002 Tokyo-Geneva's (Europe, Rule::AiDecide): the heading of line `line` at race distance s, from its position
+// there to the first point at least 0.2 m on in 0.5 m steps (at most 10), atan2(-dx, dy); the stop line (4) by its own
+// evaluation.
+F ai_line_heading(const AiCourse& k, int line, int hint, F s);
 
 } // namespace gt3r::sim::exact

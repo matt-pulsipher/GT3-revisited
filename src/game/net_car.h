@@ -20,6 +20,7 @@
 
 #include "base/bytes.h"
 #include "disc/region.h"
+#include "net/protocol.h"
 #include "sim/car_spec.h"
 #include "sim/exact/params_build.h"
 
@@ -28,6 +29,10 @@
 #include <vector>
 #include <optional>
 #include <string>
+
+namespace gt3r {
+struct DiscInfo;
+}
 
 namespace gt3r::data {
 class CarDatabase;
@@ -138,6 +143,11 @@ inline bool car_here_blocks(CarHere h) {
 }
 // "is not on this disc", "is different on this disc", "has no model on this disc", "is not a legal setup" ("" otherwise).
 const char* car_here_text(CarHere h);
+
+// The disc this machine races online (net::OnlineDisc; docs/dev/ONLINE.md "Discs"): a Gran Turismo 3 release in the
+// known list with its own files is "gt3", whatever its region; any other disc is its files' fingerprint. `info` null (no
+// disc image): the game the files are.
+net::OnlineDisc online_disc(const DiscInfo* info, GameKind game);
 
 // --- Arcade classes ---
 // The arcade's road and rally classes (gcf tag 14) in its class page's order: 1 "CLASS_C",

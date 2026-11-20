@@ -1,5 +1,6 @@
 // Phase 7's gearbox: the gear decision by gearbox mode and the gear change; see tick.h.
 
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -37,9 +38,11 @@ void set_gear(Car& c, u8 gear) { c.gear = gear; }
 
 int gear_for_speed(const Car& c, F v) {
     if (v < F()) return 0;
+    // (Rule::Driveline, the later builds: a stepless gearbox of kind 1 is always in first)
+    if (c.p.d.kind == 1 && !gt3_program(c.behaviour.rule(Rule::Driveline))) return 1;
     const int n = c.p.d.gears;
     if (!(1 < n)) return n;
-    const F w = ee::int_to_f(s32(c.p.d.up_rpm) - 500) * kRpmToW;
+    const F w = ee::int_to_f(s32(c.p.d.up_rpm) - 500) * folded(c.behaviour, kRpmToW.bits, 0x3DD6774E); // (Europe's)
     for (int k = 1; k < n; ++k)
         if (v < w / c.p.d.gear_speed[size_t(k)]) return k;
     return n;
@@ -70,6 +73,8 @@ int shift_auto(Car& c, const GearSettings& s, bool kickdown) {
     if (c.shift_lockout != 0) return lockout_tick(c, c.shift_req != 0);
     if (c.reverse_req != 0) return g != 0 ? 0 : -1;
     const F v = c.speed;
+    // (2002 Tokyo-Geneva's constants folded toward zero: Europe)
+    const F kKmh1 = folded(c.behaviour, sim::exact::kKmh1.bits, 0x3E8E38E3), kRpmToW = folded(c.behaviour, sim::exact::kRpmToW.bits, 0x3DD6774E);
     if (kKmh1 < v && g == 0) return 1;
     if (!(c.throttle == F())) {
         if (v < kKmh1) return g != 1 ? 1 : -1;
@@ -109,11 +114,13 @@ int shift_auto(Car& c, const GearSettings& s, bool kickdown) {
     } else {
         up = g < d.gears ? s32(d.up_rpm) : 20000;
         down = d.down_rpm[size_t(g - 2)];
-        if (c.throttle_pedal < F::raw(0x3D4CCCCD)) down += 100 * s32(s.down_lift);
-        if (F::raw(0x3F4CCCCD) < c.brake_pedal) down += 100 * s32(s.down_brake);
+        if (c.throttle_pedal < folded(c.behaviour, 0x3D4CCCCD, 0x3D4CCCCC)) down += 100 * s32(s.down_lift);
+        if (folded(c.behaviour, 0x3F4CCCCD, 0x3F4CCCCC) < c.brake_pedal) down += 100 * s32(s.down_brake);
         if (F::raw(0x3E800000) < c.throttle_pedal) down -= 100 * s32(s.down_throttle);
     }
     bool front = false, rear = false; // the driven wheels the traction veto examines
+    // (Rule::Layout, the later builds: layout 7, AWD system 5, as the rear-driven ones; layout 8, system 7, as GT3's 7)
+    const bool later = !gt3_program(c.behaviour.rule(Rule::Layout));
     switch (d.layout) {
     case 0:
     case 4:
@@ -121,8 +128,9 @@ int shift_auto(Car& c, const GearSettings& s, bool kickdown) {
     case 6: rear = true; break;
     case 1:
     case 2: front = true; break;
-    case 3:
-    case 7: front = rear = true; break;
+    case 3: front = rear = true; break;
+    case 7: front = !later, rear = true; break;
+    case 8: front = rear = later; break;
     default: break;
     }
     if (c.rpm < down) return g - 1;
@@ -179,7 +187,24 @@ int gear_decision(Car& c, const GearSettings& s) {
     }
 }
 
+// The later builds' stepless gearbox of kind 1 (D +0x12; their Rule::Driveline's, 0 on GT3's discs) has no gear step
+// (Concept 2001 Tokyo in its place): forward or reverse alone, the clutch slipping in again after either; the
+// shift lock-out is not counted down.
+void stepless_gear(Car& c) {
+    const F kKmh1 = folded(c.behaviour, sim::exact::kKmh1.bits, 0x3E8E38E3); // (2002 Tokyo-Geneva's)
+    int g = -1;
+    if (c.reverse_req != 0) {
+        if (c.gear != 0) g = 0;
+    } else if (kKmh1 < c.speed || F() < c.throttle) {
+        if (c.gear == 0) g = 1;
+    } else if (c.speed < -kKmh1 && c.gear != 0) g = 0;
+    if (g == -1) return;
+    set_gear(c, u8(g));
+    c.clutch = 2;
+}
+
 void gear_step(Car& c, const GearSettings& s) {
+    if (c.p.d.kind == 1) return stepless_gear(c);
     const int g = gear_decision(c, s);
     c.ev.waiting = 0;
     if (g == -1) return;
@@ -193,7 +218,9 @@ void gear_step(Car& c, const GearSettings& s) {
             return;
         }
     } else if (c.clutch != 0) {
-        c.clutch = g == 0 || c.gear == 0 ? 2 : 3;
+        // (a stepless gearbox of kind 2 changes its ratio with the clutch as it is)
+        if (g == 0 || c.gear == 0) c.clutch = 2;
+        else if (c.p.d.kind != 2) c.clutch = 3;
     }
     set_gear(c, u8(g));
 }

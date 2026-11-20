@@ -343,7 +343,7 @@ bool regulated_rows(const MenuController& ctl, GtModeSession& s, int n, ListRows
 bool records_rows(const MenuController& ctl, GtModeSession& s, int n, ListRows& g);
 // The places of the records page's table.
 int records_places(const GtModeSession& s);
-// A vertical list's scroll bar (the page's "scroll_bar" widget, GT3's ScrollBar): nothing, track
+// A vertical list's scroll bar (the page's "scroll_bar" widget, GT3's scroll bar): nothing, track
 // included, while the list is no longer than the bar; else the track and the hidden "pinch"
 // over the visible share of the list at its offset: top = bar top - offset x bar h / list h,
 // window h x bar h / list h high (top-down).
@@ -360,7 +360,7 @@ struct WheelRow {
     SDL_FRect box(int i) const { return {win->x + off + float(i) * step, win->y + (win->h - tile) * 0.5f, tile, tile}; }
 };
 bool wheel_row(const MenuController& ctl, WheelRow& r);
-// The garage's wheel list (hm/hm_wheel, GT3's WheelButtonList, gt_mode §7): one button per
+// The garage's wheel list (hm/hm_wheel, GT3's wheel button list, gt_mode §7): one button per
 // entry of the wheel inventory, the stock-wheel placeholder first and then the bought wheels in
 // the order they were bought, as a horizontal button row (menu::flow::row_layout) centred in the
 // "menu_wheel" window and scrolling with the cursor (GtModeSession::wheel_cursor /

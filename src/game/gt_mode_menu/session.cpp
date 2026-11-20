@@ -4,6 +4,9 @@
 
 #include "game/gt_mode_menu/internal.h"
 
+#include "game/concept_game.h"
+#include "game/concept_menu.h"
+
 #include "base/file.h"
 #include "base/log.h"
 #include "game/gt_save.h"
@@ -97,7 +100,8 @@ SaveLibrary& save_library() {
             // A disc of its own (a modified copy under another serial, another game on the
             // engine): earlier versions kept its games in its region's library, which its own
             // starts with copies of, once.
-            if (saving_enabled() && key != region_key(region))
+            // (Not a Gran Turismo Concept disc: its games are its own, never Gran Turismo 3's.)
+            if (saving_enabled() && key != region_key(region) && region_data(ms.reader).game == GameKind::Gt3)
                 if (int n = ms.library->copy_library(SaveLibrary::user_dir(region)); n > 0)
                     LOG_INFO("gt mode: %d save(s) copied into %s", n, ms.library->dir().c_str());
         }
@@ -172,6 +176,7 @@ bool begin_race_game_save(const GameResult& r) {
 }
 
 void save_license_run(const std::string& code, int medal, double seconds) {
+    if (concept_save_license_run(code, medal, seconds)) return; // a Concept course license: its own record
     GtModeSession* s = S();
     if (!s || medal < 0 || !saving_enabled()) return;
     // A copy: the live state is recorded when the result reaches the menus.
@@ -199,7 +204,18 @@ bool begin_setting(const std::string& event) {
     s->setting_event = event;
     s->setting_entry.clear();
     s->setting_committed = false;
+    // Gran Turismo Concept: an arcade race's tires are fixed when its course is a dirt course.
+    s->setting_dirt = false;
+    if (concept_active())
+        if (const std::optional<GameRequest>& rq = menu_state().last_request)
+            s->setting_dirt = s->gt().arcade_course_dirt(rq->course);
     return true;
+}
+
+std::string setting_start_page() {
+    GtModeSession* s = S();
+    const GarageCar* c = s ? s->gt().state().ride_car() : nullptr;
+    return c && concept_active() && !concept_car_normal(s->gt(), *c) ? "custom" : "root";
 }
 
 } // namespace gt3r::game

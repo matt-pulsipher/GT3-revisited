@@ -53,14 +53,42 @@ public:
         EffectKinds,      // the tyre effect emitter's: a surface's effect kind (16 words)
         EffectScales,     // ... and the effect scales (8 floats)
         EffectParams,     // the tyre effect parameters every race's initialisation writes into the course (11 x 8 bytes)
-        Count
+        Count,
+        // Tables only the later builds have (Gran Turismo Concept [physics §14.5]): found through their routines on those
+        // discs and served as the disc holds them; on GT3's discs they are absent (later_table(): b() throws).
+        SpecialCars = Count, // later @0x20+0x20: the special cars' labels the spec builder knows, zero-ended, from 32 bytes
+                             // before the first build's first (special.h has each build's places in it)
+        Awd3,                // later: AWD system 3's settings: +0 the gain (%), +1 the capacity (x 10 kgf m), +2 a
+                             // switch, +8 / +0x10 the lateral fade's start and floor (%)
+        PodMoods,            // later: special car 1's moods: per mood its time (16 bytes), its lean (16) and its lamp class (16)
+        Stepless,            // later: the stepless gearboxes' settings: +0 / +1 kind 1's ratio rates at full and no
+                             // throttle (% a second), +0xC / +0xD kind 2's rates down and up
+        RaceSwitches,        // later: +0 the stop zone's start (s16, m) and +2 its length (m); +3 .. +5 the ASCC's
+                             // switches (channel C's status, channel C under throttle, channel E's)
+        Kind7Ride,           // later3: 2002 Tokyo-Geneva's special kind 7 ride (its fourth later build, Europe, on):
+                             // +0 on, +1 the travel (mm), +2 the lift (%), +3 / +4 its share per axle (%), +5 the drop (mm)
+                             // reached between the speeds +6 and +7 (km/h)
+        FlyingStart,         // later-2: the single race's flying start (Concept 2001 Tokyo and 2002 Tokyo-Seoul): +0 the
+                             // lines of cars 0 .. 5 (repeating), +8 the distance from car i to car i + 1 (m) and +0x10 the
+                             // speed added (km/h), five entries each (repeating)
+        Hybrid,              // later: the layout 7 system's settings (AWD system 5 [physics §14.5], 0x1B bytes): +0 / +1
+                             // the front motors' (each) and the rear motor's ratings, the store's capacity, marks and
+                             // regeneration limits and the yaw terms' gains from +2 on (the layout routine makes them floats)
+        PodMessages,         // beside Messages +0x80: the HUD messages 0x10 and 0x11 (the pod race's prompts), 8 bytes each as
+                             // the messages before them (+4 the display time); placed from the HUD messages' table
+        End
     };
-    static constexpr int kTables = int(Table::Count);
+    static constexpr int kTables = int(Table::Count);  // GT3's tables
+    static constexpr int kAllTables = int(Table::End); // ... and the later builds' own
+    static constexpr bool later_table(Table t) { return int(t) >= kTables; }
     static constexpr u32 size(Table t) {
-        constexpr u32 sizes[kTables] = {0x120, 0x210, 0x48, 16, 64, 3 * 32, 8 * 6, 3 * 4, 8, 0x58 * 4,
-                                        0x1E,  0xE,   16,   8,  16 * 8, 4 * 4, 0x100, 16 * 4, 8 * 4, 11 * 8};
+        constexpr u32 sizes[kAllTables] = {0x120, 0x210, 0x48, 16, 64, 3 * 32, 8 * 6, 3 * 4, 8, 0x58 * 4,
+                                        0x1E,  0xE,   16,   8,  16 * 8, 4 * 4, 0x100, 16 * 4, 8 * 4, 11 * 8, 0x80, 0x14, 3 * 16, 0x10, 6, 8, 0x15, 0x1B,
+                                        2 * 8};
         return sizes[size_t(t)];
     }
+    // Whether the disc's program has table t (a later build's own table: found on its disc; GT3's: always served).
+    bool has(Table t) const { return !ranges_[size_t(t)].bytes.empty(); }
 
     // Checks the program `program` (the image loaded at `load_address`, its start-up code at `entry_point`) and serves the
     // tables of its release. Never throws for a build it does not know: what it cannot find or recognise is in issues().
@@ -135,13 +163,15 @@ private:
     };
     Program program_ = Program::NtscU;
     bool known_ = false;
-    Behaviour behaviour_, own_; // own_: the disc's own rules with its routines' variants
-    std::array<Range, kTables> ranges_{};
-    std::array<int, kTables> tiers_{};
-    std::array<Program, kTables> releases_{};
-    std::array<bool, kTables> matched_{};
-    std::array<bool, kTables> changed_{};
-    std::array<Site, kTables> sites_{};
+    // own_: how the disc races by default; rules_: the disc's own rules with its routines' variants (own_ but for a later
+    // build racing on GT3's core).
+    Behaviour behaviour_, own_, rules_;
+    std::array<Range, kAllTables> ranges_{};
+    std::array<int, kAllTables> tiers_{};
+    std::array<Program, kAllTables> releases_{};
+    std::array<bool, kAllTables> matched_{};
+    std::array<bool, kAllTables> changed_{};
+    std::array<Site, kAllTables> sites_{};
     std::array<bool, kRules> recognised_{};
     std::array<u32, kRules> rule_at_{};
     std::vector<std::string> issues_;

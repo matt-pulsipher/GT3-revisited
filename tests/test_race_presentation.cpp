@@ -28,6 +28,7 @@
 #include "race/scenery_fade.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -113,6 +114,51 @@ TEST(race_record_rank) {
     CHECK(record_speed_text(312.47, false) == "312.4km/h");
     CHECK(record_speed_text(200.0, true) == "124.2mph");
     CHECK(record_speed_text(0.0, true) == "\x7F\x7F\x7F.\x7Fmph"); // the font's dashes
+}
+
+// Gran Turismo Concept's examination message (the pod race's disqualification, concept §9.2): the 60-step delay, the
+// fade in EE singles (61 steps up, the last one past 1), the 180-step hold, the fade out (61 steps: the EE's
+// subtraction drops the step's low bits), then 240 steps or a confirm before event 1; the two-player halves' message
+// stays at the hold's end, flagged.
+TEST(race_concept_exam_message) {
+    using M = ConceptExamMessage;
+    CHECK(M::fade_in_steps() == 61);
+    CHECK(M::fade_out_steps() == 61);
+    CHECK(M::start_step() == 61 && M::held_step() == 302 && M::done_step() == 363);
+    CHECK(M::confirm_from() == 364 && M::event_step() == 604);
+    CHECK(!M::at(1, false).shown && !M::at(60, false).shown);
+    M::Look l = M::at(61, false); // started: drawn at 0 (nothing seen), the copies 30 apart
+    CHECK(l.shown && l.fade == 0.0f && M::alpha128(l.fade) == 0 && M::split(l.fade) == 30);
+    CHECK(M::at(62, false).fade == std::bit_cast<float>(M::kFadeStepBits));
+    l = M::at(121, false); // 60 steps: just below 1 (the EE's sums round toward zero)
+    CHECK(l.fade < 1.0f && l.fade > 0.99f && M::alpha128(l.fade) == 127 && M::split(l.fade) == 0);
+    l = M::at(122, false); // the 61st: past 1, the GS alpha above 0x80
+    CHECK(l.fade > 1.0f && M::alpha128(l.fade) == 130 && M::split(l.fade) == 0);
+    CHECK(M::at(301, false).fade == l.fade);
+    l = M::at(302, false); // the hold's end: exactly 1, then the fade out
+    CHECK(l.shown && !l.held && l.fade == 1.0f && M::alpha128(l.fade) == 128);
+    l = M::at(332, false); // halfway out: the copies part again
+    CHECK(l.shown && l.fade > 0.49f && l.fade < 0.51f && M::split(l.fade) >= 14 && M::split(l.fade) <= 15);
+    l = M::at(361, false);
+    CHECK(l.shown && l.fade > 0.0f && M::alpha128(l.fade) == 2 && M::split(l.fade) == 29);
+    l = M::at(362, false); // the last step drawn: just above 0
+    CHECK(l.shown && l.fade > 0.0f && l.fade < 1e-4f && M::alpha128(l.fade) == 0);
+    CHECK(!M::at(363, false).shown && !M::at(5000, false).shown);
+    // Two players: held from the hold's end on, never fading.
+    CHECK(!M::at(301, true).held && M::at(301, true).shown);
+    l = M::at(302, true);
+    CHECK(l.shown && l.held && l.fade == 1.0f);
+    l = M::at(100000, true);
+    CHECK(l.shown && l.held && l.fade == 1.0f);
+    // The game's wide mode: the text at 0.75 x on the 16:9 screen (1.5 x 0.75 frame units across per glyph unit, as
+    // 4:3), in the frame kept 4:3 in the middle; 4:3 and a side-by-side half keep the glyphs' size.
+    const SDL_FRect full{0, 0, 640, 360};
+    CHECK(M::text_frame(full, false).w == 640.0f);
+    SDL_FRect t = M::text_frame(full, true);
+    CHECK(t.x == 80.0f && t.y == 0.0f && t.w == 480.0f && t.h == 360.0f);
+    CHECK(t.w / 640.0f == 0.75f * full.w / 640.0f);
+    t = M::text_frame(SDL_FRect{320, 0, 320, 360}, true); // player 2's half
+    CHECK(t.x == 240.0f && t.w == 480.0f);
 }
 
 TEST(race_retry_lock) {

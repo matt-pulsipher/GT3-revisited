@@ -1,5 +1,6 @@
 // Phase 2, the per-tick preparation; see tick.h.
 
+#include "sim/exact/build_math.h"
 #include "base/ee_double.h"
 #include "base/ee_math.h"
 #include "sim/exact/tick.h"
@@ -12,13 +13,16 @@ constexpr F kOne = F::raw(0x3F800000);
 
 s8 low_byte(s32 v) { return s8(u8(u32(v))); } // sb
 
-// 1 - a - b in the program's double: (double)1 - (double)a, minus (double)b, rounded back to a single.
-F one_minus(F a, F b) { return ee::narrow((ee::D::raw(0x3FF0000000000000ull) - ee::widen(a)) - ee::widen(b)); }
+// 1 - a - b in the program's double: (double)1 - (double)a, minus (double)b, rounded back to a single (the build's soft
+// doubles: build_math.h).
+F one_minus(const Behaviour& h, F a, F b) {
+    return narrow(h, sub(h, sub(h, ee::D::raw(0x3FF0000000000000ull), widen(h, a)), widen(h, b)));
+}
 
 } // namespace
 
-Condition condition_params(const std::array<u8, 9>& b) {
-    const F milli = F::raw(0x3A83126F); // 0.001
+Condition condition_params(const std::array<u8, 9>& b, bool toward_zero) {
+    const F milli = F::raw(toward_zero ? 0x3A83126E : 0x3A83126F); // 0.001
     auto tenk = [](u32 byte) { return ee::int_to_f(s32(byte * 10000)); };
     Condition k;
     k.c1 = ee::int_to_f(b[1]) * milli;
@@ -44,8 +48,12 @@ F condition_factor(const Condition& k, F e, F o) {
     return fe * fo;
 }
 
+F condition_factor(const Behaviour& b, const Condition& k, F e, F o) {
+    return gt3_program(b.rule(Rule::EngineCondition)) ? condition_factor(k, e, o) : kOne;
+}
+
 F full_throttle_torque(const Car& c, const Condition& k, F omega) {
-    return lookup_bisect(c.p.e.torque, omega) * condition_factor(k, c.engine_wear, c.oil);
+    return lookup_bisect(c.p.e.torque, omega) * condition_factor(c.behaviour, k, c.engine_wear, c.oil);
 }
 
 F friction_torque(const Car& c, F omega) { return c.p.e.friction * omega; }
@@ -56,7 +64,8 @@ void step_x51d(Car& c) {
 
 void step_length(Car& c) {
     const bool pal = pal_rate(c); // PAL: 50 steps a second
-    c.dt = c.time_scale * F::raw(pal ? 0x3CA3D70A : 0x3C888889);     // 1/60 (PAL 1/50)
+    // 1/60 (PAL 1/50; 2002 Tokyo-Geneva Asia's 1/60 one unit lower, Asia)
+    c.dt = c.time_scale * (pal ? F::raw(0x3CA3D70A) : folded(c.behaviour, 0x3C888889, 0x3C888888));
     c.inv_dt = F::raw(pal ? 0x42480000 : 0x42700000) / c.time_scale; // 60 (PAL 50)
 }
 
@@ -88,11 +97,11 @@ bool wear_grip(Car& c, const WearParams& cp) {
             w.wear_grip = kOne - cp.max_loss;
         } else if (cp.knee2 <= x) {
             const F t = (x - cp.knee2) / (cp.max - cp.knee2);
-            w.wear_grip = one_minus(cp.loss2, t * (cp.max_loss - cp.loss2));
-            w.wear_level = kOne <= t ? s8(0x7F) : low_byte(ee::to_int(t * F::raw(0x427F999A)) + 0x40); // 63.9
+            w.wear_grip = one_minus(c.behaviour, cp.loss2, t * (cp.max_loss - cp.loss2));
+            w.wear_level = kOne <= t ? s8(0x7F) : low_byte(ee::to_int(t * folded(c.behaviour, 0x427F999A, 0x427F9999)) + 0x40); // 63.9 (Europe's)
         } else if (cp.knee1 <= x) {
             const F t = (x - cp.knee1) / (cp.knee2 - cp.knee1);
-            w.wear_grip = one_minus(cp.loss1, t * (cp.loss2 - cp.loss1));
+            w.wear_grip = one_minus(c.behaviour, cp.loss1, t * (cp.loss2 - cp.loss1));
             w.wear_level = kOne <= t ? s8(0x40) : low_byte(ee::to_int(t * F::raw(0x41FF3333)) + 0x20); // 31.9
         } else if (F() <= x) {
             const F t = x / cp.knee1;
@@ -101,7 +110,7 @@ bool wear_grip(Car& c, const WearParams& cp) {
         } else if (cp.fresh <= x) {
             const F t = -x / -cp.fresh;
             w.wear_grip = kOne - cp.fresh_loss * t;
-            w.wear_level = kOne <= t ? s8(-0x3F) : low_byte(-ee::to_int(t * F::raw(0x427F999A)));
+            w.wear_level = kOne <= t ? s8(-0x3F) : low_byte(-ee::to_int(t * folded(c.behaviour, 0x427F999A, 0x427F9999)));
         } else {
             w.wear_level = s8(-0x80);
             w.wear_grip = kOne;
@@ -141,8 +150,22 @@ F slip_angle(F vx, F vy, F& fade) {
     return ee::atan2(-vy, vx);
 }
 
+F slip_angle(const Behaviour& b, F vx, F vy, F& fade) {
+    const Program p = b.rule(Rule::SlipAngle);
+    if (gt3_program(p)) return slip_angle(vx, vy, fade);
+    // 2002 Tokyo-Geneva's compiler folded 1 / 3.6, 10 / 3.6 and the slope between them in arithmetic that rounds toward zero.
+    const bool geneva = p >= Program::ConceptGenevaEu;
+    const F lo = F::raw(geneva ? 0x3E8E38E3 : 0x3E8E38E4), hi = F::raw(geneva ? 0x4031C71B : 0x4031C71D);
+    const F v = ee::sqrt(vy * vy + vx * vx);
+    if (hi <= v) fade = kOne;
+    else if (v <= lo) fade = F();
+    else fade = (v - lo) * F::raw(geneva ? 0x3ECCCCCF : 0x3ECCCCCD);
+    if (fade == F()) return F();
+    return atan2(b, -vy, vx);
+}
+
 void slip_angles(Car& c) {
-    for (Wheel& w : c.w) w.slip_dir = slip_angle(w.hub_vx, w.hub_vy, w.slip_fade);
+    for (Wheel& w : c.w) w.slip_dir = slip_angle(c.behaviour, w.hub_vx, w.hub_vy, w.slip_fade);
 }
 
 void prep(Car& c, const PrepInput& in) {

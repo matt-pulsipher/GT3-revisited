@@ -18,6 +18,7 @@
 #include "sim/exact/course_query.h"
 #include "sim/exact/program_data.h"
 #include "sim/exact/race_inputs.h"
+#include "sim/exact/special.h"
 #include "sim/exact/start.h"
 #include "sim/exact/tick.h"
 
@@ -100,6 +101,10 @@ struct RaceEvent {
     F speed;
 };
 constexpr bool display_event(s32 type) { return type >= 11 && type <= 18; }
+// The later builds' race event of a car that missed its stops in the pod race (their id 11, before GT3's race display
+// events, which they number one higher; RaceEvent keeps GT3's ids): the car (its word), priority 0. The pod race's display
+// shows "disqualified" for it.
+constexpr s32 kStopsMissedEvent = 0x10B;
 // The queue word of a race display event (car, lap, sector clamped as the event's queue word does), and its bits the event
 // sets (the original takes the others from a pointer); the race flow's events' word is their car.
 u32 display_word(const RaceEvent& e);
@@ -155,14 +160,22 @@ struct SoloRecorders {
     std::vector<u8> pool0, pool1;     // the record memory
     std::array<Snapshot, 4> snapshot; // pool 1's stores' snapshots: 0 the ghost's, 1 the lap's, 2 the best lap's
     ControlManager player, ghost, lap, best;
+    // The stores' layout (ControlManager::later, Rule::RecordStore): the later builds' snapshot is 4 bytes longer, so a lap's
+    // recording closes itself 4 bytes sooner. A race takes the recorders in its program's layout (set_layout).
+    bool later = false;
     bool ghost_empty = true;  // the ghost device's +0x140: no recording to play (its frames are empty)
     bool player_plays = false; // the player's device plays its recording (+0x130 1: the Analyzer's race plays track A)
     bool ghost_option = true; // the Options menu's Ghost (off, a better lap does not become the ghost at once)
     bool free_run = false;
 
-    // The constructors: the managers bound as solo race's (the free run's ghost device in mode 2), the best lap "no
-    // time"; then a run's start (start).
-    explicit SoloRecorders(bool free_run = false);
+    // The constructors: the managers bound as solo race's (the free run's ghost device in mode 2) in the store layout
+    // `later`, the best lap "no time"; then a run's start (start).
+    explicit SoloRecorders(bool free_run = false, bool later = false);
+    // The stores in the layout of a program (later_store), before a run's start: the managers on stores bound anew to it
+    // (their recordings rewound); std::runtime_error for a free run's stores that hold recordings made in the other one.
+    void set_layout(bool later);
+    // Nothing recorded on pool 1's stores (the best lap "no time", no ghost), as the constructors leave them.
+    bool stores_empty() const;
     // A run's start (the solo race, the race free-run, the race's): the lap and best
     // lap's recorders rewound, an empty ghost's device on store 0 (free run), the player's and the ghost's devices restarted.
     void start();
@@ -184,7 +197,8 @@ struct SoloRecorders {
     void run_to_ghost(std::span<const u8> recording);
     // LOAD GHOST (ours: a saved free run in place of a memory card's ghost file): another visit's best lap (its store, the
     // snapshot and the recording) becomes the ghost's, copied as the ghost's taking of the best lap copies it;
-    // false (nothing changes) when it has none.
+    // false (nothing changes) when it has none, or when its stores' layout is not these recorders' and these hold
+    // recordings (empty ones take its layout).
     bool ghost_from_best(const SoloRecorders& from);
     // The best lap's time (ms; "no time" without one).
     u32 best_time() const { return snapshot[best.store / kRecordStore].time; }
@@ -215,6 +229,7 @@ struct RaceFlow {
     // the race flow wrote.
     std::vector<std::map<s32, Snapshot>> logger;
     std::vector<RecorderEvent> recorder; // the free run's, in order (the caller applies and clears them)
+    StopZone zone;                       // the later builds' stop zone (conductor + 0xE408: stop_zone_setup)
 };
 
 // What the race flow reads outside the cars' records.
@@ -229,7 +244,8 @@ struct RaceFlowInputs {
                                               // licence test's type)
     u16 time_limit = 0;                       // the configuration's +0x38: the race's minutes (0 none)
     u8 flow = 0;                              // the race-flow byte
-    std::array<u32, 16> messages{};           // + 8 m + 4: each HUD message's display steps
+    std::array<u32, 18> messages{};           // + 8 m + 4: each HUD message's display steps (16 and 17: the
+                                              // later builds' pod race prompts, ProgramData's PodMessages)
     std::array<F, 4> machine_sectors{};       // the machine test's sector lines (its split line / sector start)
     // The race info's: + 0x6C a replay (no finish is judged), + 0x7C the records are locked, + 0x80 a licence test that is not
     // judged, + 0x70 the data logger plays the run (its marks are timed), + 0x74 its table is recorded (the logger's pass over
@@ -240,6 +256,7 @@ struct RaceFlowInputs {
     // first entry's (+ 0xC8 is 2).
     std::array<u32, 8> logger_frame{};
     std::array<u8, 8> logger_relative{};
+    MoodTables moods;               // special car 1's mood tables (the later builds' pod race: a disqualified car's mood)
     u8 speed_unit = 0;        // the speed display's unit (0 km/h, 1 mph, others m/s): the machine test's speed event
     FreeRunRecorder recorder; // the free run's
     // How the race behaves (ProgramData::behaviour): at PAL's rate the clock counts 60 a step (3000 a second at 50 steps)
@@ -248,7 +265,8 @@ struct RaceFlowInputs {
     Behaviour behaviour;
 };
 // The HUD messages' display steps from the program's table; in NTSC-U behaviour on a PAL disc at 60 steps a second.
-std::array<u32, 16> hud_messages(const ProgramData& d);
+// 16 and 17 the later builds' (PodMessages; 0 where the program has none).
+std::array<u32, 18> hud_messages(const ProgramData& d);
 // The machine test's sector lines (the table).
 std::array<F, 4> machine_sectors(const ProgramData& d);
 // The conductor's lap count, the race's laps: the configuration's +1 (the base conductor's, single races and the licence
@@ -277,6 +295,8 @@ struct RaceFlowHooks {
     // rebuilt from its car, the pair tables, then the snapshot's points).
     std::function<void(int index, Snapshot& s)> save_body;
     std::function<void(int index, const Snapshot& s)> restore_body;
+    // The later builds' pod race at the line (later): car i is given the stop driver (stop_lap, pit_lane.h).
+    std::function<void(Car& c, int i)> stop_drive;
 };
 
 // The conductor's race progress: the lap progress at the car's position (the road segment as the hint); the machine
@@ -345,7 +365,9 @@ bool race_mode_split(std::span<Car> cars, int i, s32 laps, u32 t, u32 lap, const
                      std::vector<RaceEvent>& events, const RaceFlowHooks& hooks);
 // The line crossings between the old progress and the new one (F +0x3E4) of car i: 1 when it crossed the start line
 // backwards. The lap handlers (the conductors' hooks) need the race's order (conductor + 0xE388) and its cars; with
-// the data logger (race info + 0x70) a recorded car's marks are timed.
+// the data logger (race info + 0x70) a recorded car's marks are timed. The later builds' pod race (later, first in
+// the base and split-screen lap handlers): a car that owes two stops is given the stop driver (hooks.stop_drive), its lap is
+// put back, its mood set and kStopsMissedEvent posted; the lap handler does nothing more.
 int line_crossings(std::span<Car> cars, std::span<const s32> order, int i, F old, const RaceFlowInputs& in, RaceFlow& flow,
                    std::vector<RaceEvent>& events, const RaceFlowHooks& hooks);
 // Car i's race flow: the progress (the race progress: car_progress; the machine test's nose_progress), the
@@ -366,10 +388,22 @@ bool race_flow_ported(Conductor k);
 // is over.
 void race_clock(RaceFlow& flow, const RaceFlowInputs& in);
 // The conductor's race clock by race mode: the licence tests first judge every car (out of the course, or stopped
-// in the stop zone in a type 1 test), then at the countdown's last step the data logger's first entries of the
-// recorded cars (the modes of the logger-start test, with race info + 0x74) and the race clock.
+// in the stop zone in a type 1 test), the later builds' single race and split-screen battle the pod race's stops
+// (later: each car that owes a stop gets it, sitting in the zone, and is shown HUD message 0x10 there, 0x11 past it;
+// a stop posts information note 7 for a player's car), then at the countdown's last step the data logger's first entries
+// of the recorded cars (the modes of the logger-start test, with race info + 0x74) and the race clock.
 void race_mode_clock(std::span<Car> cars, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events,
                      const RaceFlowHooks& hooks);
+
+// The later builds' pod race [physics §14.5] (an event of test kind 5: the race configuration's +2): every car stops once a
+// lap in a stretch of the course, the stop zone, and sits there (special car 1's sit count at its cap).
+// Later (the conductor's initialisation): the zone from the program's two constants (`start` m along
+// the lap, wrapped into it, and `length` m; RaceSwitches +0 / +2) for a race of test kind 5 (`kind`) of `cars` cars on a lap
+// of `lap` m: none when either constant is 0, or when the zone would run past the line. Rule::StopZone (GT3's releases:
+// none).
+StopZone stop_zone_setup(const Behaviour& how, u8 kind, s32 start, u32 length, F lap, int cars);
+// The zone of a race from the program's table (StopZone's rule, RaceSwitches).
+StopZone stop_zone_setup(const ProgramData& d, const Behaviour& how, u8 kind, F lap, int cars);
 
 // After the race clock (the step runs these hooks, the hooks, only in its entry mode 0): the gap
 // matrices, then the ranking.

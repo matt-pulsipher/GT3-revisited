@@ -155,7 +155,7 @@ std::optional<Bytes> Vfs::read(const std::string& path) const {
     if (p == kProgramFile) return base_ ? base_->read_program() : std::nullopt;
     if (p == kRegionFile) {
         if (!base_) return std::nullopt;
-        std::string key = region_key(base_->region());
+        std::string key = base_->region_data().to_text();
         return Bytes(key.begin(), key.end());
     }
     if (p == kDiscKeyFile) {
@@ -230,7 +230,7 @@ std::vector<std::string> Vfs::list_dir(const std::string& dir) const {
 
 RegionData region_data(const std::function<std::optional<Bytes>(const std::string&)>& read) {
     if (std::optional<Bytes> b = read ? read(Vfs::kRegionFile) : std::nullopt)
-        if (std::optional<Region> r = region_from_key(std::string(b->begin(), b->end()))) return {*r};
+        if (std::optional<RegionData> r = RegionData::from_text(std::string(b->begin(), b->end()))) return *r;
     return {};
 }
 

@@ -283,7 +283,7 @@ std::string page_frame(MenuController& ctl) {
         }
         // Up / Down move the cursor, held at the ends (no wrap); the list then eases towards the
         // cursor row (not while a hovering pointer holds it). The garage lists play "cursor"
-        // (GarageButtonList), the records the plain button list's "select".
+        // (garage button list), the records the plain button list's "select".
         std::string se;
         ListRows g;
         if (int* cursor = page_list(ctl, *s, g); cursor && d && g.n > 0) {

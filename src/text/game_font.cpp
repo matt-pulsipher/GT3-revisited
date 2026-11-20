@@ -143,7 +143,11 @@ bool GameFonts::load(const Vfs& vfs, SDL_Renderer* renderer) {
         }
     try {
         if (auto d = vfs.read("font/jis2uni.dat")) jis_ = JisTable::parse(*d);
-        if (auto d = vfs.read("font/system.kf")) kanji_ = std::make_unique<KanjiFont>(KanjiFont::parse(*d));
+        // The language's cell font (Korean and Chinese have their own on later discs of this
+        // engine), else the kanji font.
+        auto d = vfs.read(kanji_font_path(vfs.language()));
+        if (!d) d = vfs.read("font/system.kf");
+        if (d) kanji_ = std::make_unique<KanjiFont>(KanjiFont::parse(*d));
     } catch (const std::exception& e) {
         LOG_WARN("fonts: kanji support unavailable: %s", e.what());
     }

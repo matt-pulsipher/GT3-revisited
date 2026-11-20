@@ -60,13 +60,85 @@ demos keep Gran Turismo 3's own values. Changes a mod makes with emulator
 cheat files are not applied: they patch the running game's memory, which GT3
 Revisited does not run.
 
-Other games on the same engine, such as GT Concept, open too. Their races will
-use Gran Turismo 3's physics (Settings > Disc & saves shows "Race physics: Gran
-Turismo 3 (this disc's own physics isn't supported yet)"); their own physics
-is planned. Their car database isn't supported yet either, so most of them
-can't race yet: the game says "This disc's car database isn't supported yet".
-The European GT Concept 2002 Tokyo-Geneva disc also carries a car database in
-Gran Turismo 3's format, which the game reads, so it races.
+Other games on the same engine, such as GT Concept, open too. Gran Turismo
+Concept 2001 Tokyo, 2002 Tokyo-Seoul and 2002 Tokyo-Geneva (both its European
+and its Asian release) race on their own physics. A replay saved while a disc
+raced on Gran Turismo 3's physics doesn't play once that disc races on its own,
+and replays and ghosts saved on a Concept disc before the pod race's stops and
+the free run's lap recordings were matched to the PS2 don't play either.
+
+Gran Turismo Concept discs (2001 Tokyo, 2002 Tokyo-Seoul, 2002 Tokyo-Geneva and
+its Asian release) race with their own cars, courses and events: the game reads
+the car database and game configuration that the disc's own program names
+(for example `database/paramdb_bs.db` and `gameconf/concept.gcf` on 2001
+Tokyo), not the Gran Turismo 3 files those discs also carry. Concept has no GT
+Mode. A few events on the Tokyo-Geneva discs name an opponent their database
+doesn't hold; those races run without that car.
+
+A Concept disc starts in Concept's own menus, in its own language: Japanese
+(2001 Tokyo), Korean (Tokyo-Seoul, both versions), the language chosen on the
+language page of Tokyo-Geneva (English, French, German, Italian, Spanish or
+Portuguese; its Asian release: Traditional Chinese or English). What works
+there:
+
+- The title page with Load Game, Save Game, File Operation, Replay Theater,
+  Options and the credits, and the main menu. Left alone, the title plays the
+  release's demo races and movies.
+- Course License: the ten tests with their medals, target times and test
+  cars, in Concept's own license menu (the course map and tips, the preview
+  box, Records, Save Replay), with or without the pace car. A run with a
+  medal asks for a name and goes into the test's Records page.
+- Single Race at Normal and Professional, and at Ace once L1 and R1 are held
+  on the level page: a course opens once its license test has a medal; the
+  category and car pages offer the cars that are open. The car page asks for
+  the transmission and the driving aids (not on a dirt course); it has no
+  tire choice, as on the PS2. The race opens and ends in Concept's own
+  Single Race menu; a win shows the cup and, when it opens a prize, the "You
+  will receive a prize after this session." notice; the prize cars and, in
+  time, the two movies are shown on the way back to the menus.
+- Vehicle Settings in the Single Race and Free Run menus: Normal or Custom,
+  and on Custom the ride height, springs, dampers, brake balance, downforce,
+  final gear and tires. Triangle leaves the menu, as Return does. A car keeps
+  its settings.
+- Free Run and 2P Battle on every course (in 2P Battle each player chooses
+  their own driving aids).
+- i.LINK Battle opens the online lobby. A Concept disc races online against
+  players on the same disc, on its own physics. CPU cars race at Normal,
+  Professional or Ace, each car as it drives in its own Single Race at that
+  level.
+- Quick race offers the license tests, Single Race on road and dirt courses
+  (at Normal, Professional or Ace, your car's own race when it has one), the
+  pod race, the arcade time trials and the custom race. The custom race's
+  opponents race at Normal, Professional or Ace, as the online CPU cars do.
+- Game Status: the map with each course's license medal and cups, the prize
+  cars won so far, the completion figure, and the show room with the car and
+  its specification table. The directions move over the map.
+- The credit transfer (Game Status, once every course is won): it lists the
+  Gran Turismo 3 Revisited saves it can go to, asks "OK to transfer money and
+  licenses?", and only then adds the credits, the license cards and a bronze
+  on every license test without a medal. A save takes it once. The European
+  Tokyo-Geneva disc adds 10,000,000 Cr., the other Concept discs
+  1,000,000,000 Cr. Any Gran Turismo 3 release's save can take it; the list
+  starts with the release each disc transfers to on the PS2 (the European
+  (PAL) Gran Turismo 3 for the European Tokyo-Geneva disc, the Japanese
+  Gran Turismo 3 for the others).
+- The pod race (Game Status, once all ten licenses have a medal), for one or
+  two players: three laps, six pods. Every pod must stop once a lap in the
+  stop area: pull up on it and hold the handbrake until the pod sits down.
+  On the area the race tells you to stop and pull the handbrake, past it to
+  go back to the stop area; a pod that has missed two stops is disqualified
+  at the line, as on the PS2.
+- Progress (license medals and records, race results, prizes, each car's
+  settings) is saved in the game's own save folder, apart from Gran Turismo
+  3's saves; the save page shows the game's completion figure.
+- Saves from and to the PS2: "FROM A FILE" on the Load Game and File Operation
+  pages imports a Concept memory-card save (a `.psu`, a PCSX2 `.ps2` card
+  image, a folder memory card or the data file), and "Export to PS2" writes
+  one the original game loads. As on the PS2, each release reads its own
+  save: `BESCES-50858GAMEDATA` (Tokyo-Geneva, Europe), `BISCPS-55903GAMEDATA`
+  (Tokyo-Geneva, Asia), `BKSCPS-56005GAMEDATA` (Tokyo-Seoul),
+  `BISCPS-15010GAMEDATA` (2001 Tokyo). Medals, record times and names, race
+  results, prizes, car settings and the options travel both ways.
 
 A disc image that is shorter than the disc says it should be (a dump that
 stopped early) opens with the message "This disc image is incomplete (2.47 of
@@ -110,7 +182,8 @@ The game's language decides the rest, as in the original releases:
 - Each region keeps its own GT Mode saves (`saves/` for NTSC-U, `saves/jp/`,
   `saves/eu/`; a disc with a serial of its own keeps its own too: [The disc
   library](#the-disc-library)), and PS2 saves import and export under the release's own memory
-  card name (`BASCUS-97102`, `BESCES-50294`, `BISCPS-15009`). Versions up to
+  card name (`BASCUS-97102`, `BESCES-50294`, `BISCPS-15009`; a Gran Turismo Concept disc's
+  own, listed above). Versions up to
   0.3 kept every disc's games in `saves/`; the first time a PAL disc opens GT
   Mode, its folder starts with copies of them (the originals stay).
 

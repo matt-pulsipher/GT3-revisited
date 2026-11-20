@@ -2,6 +2,7 @@
 // wheel spin angles, the drawn car's points and the lagging view angles; see tick.h.
 
 #include "base/ee_math.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -9,7 +10,6 @@ namespace gt3r::sim::exact {
 namespace {
 
 const F kZero = F::raw(0), kHalf = F::raw(0x3F000000), kOne = F::raw(0x3F800000);
-const F kTwoPi = F::raw(0x40C90FDB), kMinusTwoPi = F::raw(0xC0C90FDB);
 
 // The odometer, the carry and the distance total from the signed forward speed (car +0x16A8 at this point).
 void odometer(Car& c) {
@@ -26,7 +26,7 @@ void odometer(Car& c) {
 // The speedometer follows |speed| by at most 111.111 m/s per second.
 void speedometer(Car& c) {
     const F s = c.speed_abs, v = c.speedo;
-    const F step = c.dt * F::raw(0x42DE38E4);
+    const F step = c.dt * folded(c.behaviour, 0x42DE38E4, 0x42DE38E2); // (2002 Tokyo-Geneva's: Europe)
     if (v < s) {
         c.speedo = v + step;
         if (s < c.speedo) c.speedo = s;
@@ -95,7 +95,9 @@ void speed_bookkeeping(Car& c, const Condition& cond) {
     c.speed_abs = c.speed;
     odometer(c);
     if (c.speed_abs < kZero) c.speed_abs = -c.speed_abs;
-    const F d = c.speed_abs * c.dt;
+    // The distance of the step. (Rule::EngineCondition: the later builds' routine returns 0, Concept 2001 Tokyo
+    // the wear and oil counters do not advance in a race; their limits below still apply.)
+    const F d = gt3_program(c.behaviour.rule(Rule::EngineCondition)) ? c.speed_abs * c.dt : kZero;
     // Engine wear E += d, at most its limit e3.
     c.engine_wear = c.engine_wear + d;
     if (cond.e3 < c.engine_wear) c.engine_wear = cond.e3;
@@ -111,6 +113,8 @@ void speed_bookkeeping(Car& c, const Condition& cond) {
 
 void wheel_spin(Car& c) {
     const F dt = c.dt;
+    // (2002 Tokyo-Geneva's 2 pi a unit lower: Europe)
+    const F kTwoPi = folded(c.behaviour, 0x40C90FDB, 0x40C90FDA), kMinusTwoPi = folded(c.behaviour, 0xC0C90FDB, 0xC0C90FDA);
     const F h = c.heading;
     if (kTwoPi <= h) {
         c.heading = h - kTwoPi;
@@ -151,7 +155,7 @@ void wheel_spin(Car& c) {
 }
 
 void view_follow(Car& c) {
-    const F step = F::raw(pal_rate(c) ? 0x3CA3D70A : 0x3C888889); // 1/60 (PAL 1/50)
+    const F step = pal_rate(c) ? F::raw(0x3CA3D70A) : folded(c.behaviour, 0x3C888889, 0x3C888888); // 1/60 (PAL 1/50; Asia's)
     const F k10 = F::raw(0x41200000);
     // Heading: acceleration 30 (diff) - 10 rate, integrated with the mean of this and the last acceleration.
     F a = angle_diff(c.heading, c.lag_heading, c.behaviour.rule(Rule::AngleWrap));

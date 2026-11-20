@@ -81,7 +81,13 @@ wl0001, wl0002 / wl0003 (F094/H, F094/S), wl1001 (F686/M), pd0001, pd0010,
 ma0095 (787B), ni0062 (R390 GT1), ty0056, ty0141 / ty2056 (GT-One), mb0010,
 op0003 / op0011, va0003 / va0011, tf0001, cv0024, la0007 / la0008 (Stratos, one
 point). `cars/eve/` has them on the same 24, `cars/night/` on the same but
-ml0001 and pd0001.
+ml0001 and pd0001 (NTSC-U and NTSC-J; PAL's night models keep them all). Where a time of
+day's model has them they are the day model's, value for value, on every GT3 disc and every
+later (Concept) disc, whose eve and night models all keep the day models' points
+(`car_spark_points_disc`, `concept_disc_car_spark_points`). The race sparks from the model it
+draws (the race car model loaded from `cars/day/`, `cars/night/` or `cars/eve/` by the course's
+Env0 flags, presentation §T1), so the only difference the time of day makes is that the night
+F688/S and pd0001 of NTSC-U and NTSC-J make no sparks.
 
 ### GTTR (tyre)
 
@@ -417,6 +423,36 @@ v[i+2]) for even *i* and (v[i+1], v[i], v[i+2]) for odd *i*. These triangles are
 counter-clockwise when seen from the side the vertex normals point to
 (1825 of 1842 triangles agree on `am0006`; the rest are degenerate stitches).
 Each VIF packet stays under about 0x80 vertices, so that it fits in double-buffered VU1 memory.
+
+### Skinned models (`bike/man*.mdl`, Gran Turismo Concept 2002 Tokyo-Geneva)
+
+The `bike/` folder of the later Concept discs holds plain GTM1 models (a bike, tyres, a rider
+shadow, an older rider in rigid parts) and four **skinned** riders (`man`, `man2`, `man3`,
+`man4`). A skinned model has two things GT3's models do not:
+
+- Header `+0x40`: offset of the skeleton, one 4 x 4 matrix (row vectors, like op 0x0C) per
+  bone, 24 or 25 of them, up to the texture set table. Each maps model space to the bone's
+  space in the stored pose (the inverse bind matrix: a bone's joint is at `-t * R^T`).
+- Its packets unpack only the GIF tag, the strip table and S,T. The vertices follow the
+  packet's VIF data inside the chunk (the next packet starts after them):
+
+```
+u16 vertex count        the strip table's total
+u16 0x80 | 0x40         where the normals go: 0x80 lit chunks, 0x40 reflection chunks (kind 2)
+groups until the count is reached:
+  u16 vertices | 0x8000 when another group follows
+  u16 4
+  u8  bone[4]
+  per vertex, 40 bytes: f32 position[3], f32 normal[3], f32 weight[4]
+```
+
+Groups collect the vertices that share a set of four bones. Weights sum to 1, or to 0.9 and up
+where a vertex with more influences kept its four largest. Positions and normals are in model
+space in the stored pose (standing, arms out, Y up), so a packet decodes to that pose as it is:
+`Gtm1::decode_packet` reads the block when a packet has strips and no positions, and returns
+the weights in `DecodedPacket::skin`; `Gtm1::inverse_bind` holds the skeleton. The riding pose
+is not in the model file (the program computes it; `bike/bikeman_e3.bin`, 48 bytes of
+parameters, is not decoded), and nothing here animates the bones.
 
 ## Textures
 

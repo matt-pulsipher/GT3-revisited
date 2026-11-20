@@ -6,6 +6,8 @@
 
 #include "game/gt_mode_menu/internal.h"
 
+#include "game/concept_menu.h"
+
 #include "game/gt_setting.h"
 #include "menu/menu_renderer.h"
 #include "sim/exact/params_build.h"
@@ -304,7 +306,7 @@ bool hide_art(const std::string& page, const Element& el) {
     if (!el.widget_class) return false;
     const std::string& c = *el.widget_class;
     // The prize screen's "render_model" marker: its place shows the 3D car instead.
-    if ((page == "car_get" || page == "license_get" || page == "trophy_get" || is_mini_prize(page)) &&
+    if ((page == "car_get" || page == "concept_car_get" || page == "license_get" || page == "trophy_get" || is_mini_prize(page)) &&
         c == "render_model")
         return true;
     // The car renders' own image is the showroom's reflection map (car_select_env), not
@@ -529,6 +531,7 @@ bool car_for_widget(const std::string& page, const std::string& cls, std::string
     if (!s) return false;
     if (wheel) wheel->clear();
     if (dirt) *dirt = 0;
+    if (concept_car_for_widget(page, cls, car, paint)) return true; // Concept's prize car page
     if (cls == "render_model" && page == "car_get" && ms.show && ms.show->page == "car_get") {
         // The candidate the roulette is on, in its own paint (the car won once it has stopped).
         const auto& c = ms.show->candidates;

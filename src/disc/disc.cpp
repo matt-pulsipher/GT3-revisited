@@ -144,9 +144,13 @@ std::unique_ptr<Disc> Disc::open(const std::string& path) {
     }
 
     // The region: the data set the disc's program loads, else the boot file's name, else the video mode.
+    // The files are the ones the program names (a Gran Turismo Concept disc's own database and game config).
     std::optional<Region> region;
+    ProgramFiles files;
     try {
-        region = region_of_program(CoreImage::decode(program).program);
+        const CoreImage core_image = CoreImage::decode(program);
+        region = region_of_program(core_image.program);
+        files = files_of_program(core_image.program);
     } catch (const std::exception& e) {
         LOG_WARN("CORE.GT3: %s", e.what());
     }
@@ -154,16 +158,21 @@ std::unique_ptr<Disc> Disc::open(const std::string& path) {
     if (!region && info.video == "PAL") region = Region::Europe; // a PAL video mode: a European release
     if (!region) LOG_WARN("Disc %s: region not recognised; using the NTSC-U data set", info.serial.c_str());
     info.region = region.value_or(Region::America);
+    info.data = RegionData::of_program(info.region, files);
+    if (!info.verified && !info.reported && info.data.game == GameKind::Concept) info.description = "Unverified Gran Turismo Concept disc";
     info.key = disc_key(info);
 
     disc->volume_ = std::make_unique<Volume>(*disc->file_, vols[0].offset, vols[0].size);
     for (size_t k = 1; k < vols.size(); ++k) disc->volume_->add_part(vols[k].offset, vols[k].size);
     Disc* d = disc.get();
     disc->volume_->set_program_reader([d] { return d->read_core_gt3(); });
-    disc->volume_->set_region(info.region);
+    disc->volume_->set_region_data(info.data);
     disc->volume_->set_identity(info.key, info.serial);
     LOG_INFO("Opened %s (%s v%s, %s, %s data, files %s, key %s)", path.c_str(), info.serial.c_str(), info.version.c_str(),
              info.video.c_str(), region_name(info.region), info.digest.c_str(), info.key.c_str());
+    if (info.data.program_db_suffix || info.data.program_gcf)
+        LOG_INFO("%s: its program's files: database/paramdb%s.db, %s", game_name(info.data.game), info.data.db_suffix().c_str(),
+                 info.data.gcf_path().c_str());
     return disc;
 }
 

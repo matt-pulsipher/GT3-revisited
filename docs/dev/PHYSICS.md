@@ -198,9 +198,19 @@ keep their recent results (`ee_math.cpp`).
 
 ## Open points
 
-- Other games on the engine (GT Concept) race on GT3's tables and NTSC-U's
-  rules (no piece of their code names a release; Settings > Disc & saves says
-  so); their own physics is not supported yet. A modified GT3 whose program
+- Gran Turismo Concept's five builds are identified by their own code
+  (`sim::Program`, `ProgramData::program()`), and their program tables are
+  found through their routines, so the tables that differ from GT3's serve the
+  disc's values. All five (2001 Tokyo, 2002 Tokyo-Seoul v1.02 and v2.00,
+  2002 Tokyo-Geneva Europe and Asia) race on their own rules
+  (`ProgramData::known()` true; a replay made while one raced on GT3's core has
+  another program fingerprint and is refused). Their rules are `Rule`s after
+  GT3's 24, and a build switches over (`own_core_ready()`, `program_data.cpp`)
+  once its whole race step matches that release (the layout 7 hybrid system,
+  the single race's flying start, the stuck nudge and the pod race's stop zone,
+  prompts and disqualification included). Their races' solo recorders use
+  the later builds' store layout (`SoloRecorders::later`). Any other build no one has
+  mapped races on GT3's tables and NTSC-U's rules. A modified GT3 whose program
   changes a table races with its values (Settings says "with this disc's
   changes"); changes made by emulator cheats are not read.
   A disc whose program cannot be read cannot race: the race screen says so.

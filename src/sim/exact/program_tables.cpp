@@ -644,7 +644,7 @@ bool gt3_table_differs(ProgramData::Table t, Program p) { return t == T::Message
 
 ByteSpan gt3_table(ProgramData::Table t, Program p) {
     const Store& s = store();
-    const std::vector<u8>& b = gt3_table_differs(t, p) ? s.messages_pal : s.ntsc_u[size_t(t)];
+    const std::vector<u8>& b = gt3_table_differs(t, gt3_release(p)) ? s.messages_pal : s.ntsc_u[size_t(t)];
     return ByteSpan(b.data(), b.size());
 }
 

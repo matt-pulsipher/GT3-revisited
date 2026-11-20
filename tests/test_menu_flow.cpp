@@ -689,7 +689,7 @@ TEST(menu_flow_disc_race_page_hooks) {
 // of tiles in its window: the focused tile is inside the window, and a pointer over a
 // tile focuses it (VR / mouse). England and Germany name their window "menu_dealer";
 // the Toyota list keeps four of its cars parked below the screen instead of to the right.
-// A horizontal selector's row and scroll bar (menus §4.6; GT3's button list and ScrollBar): the
+// A horizontal selector's row and scroll bar (menus §4.6; GT3's button list and scroll bar): the
 // buttons 4 units apart, centred while the row fits the window; the scroll bar draws nothing,
 // track included, while the row is no longer than the bar, else the track and the hidden
 // "pinch" at x = bar x - offset x bar w / row w, width = window w x bar w / row w (offset: the

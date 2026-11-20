@@ -37,6 +37,15 @@ std::string license_test_code(const GtMode& gt, int license, int test);
 void set_license_medal(GtMode& gt, int license, int test, Medal m);
 void set_every_license_medal(GtMode& gt, Medal m);
 
+// --- Gran Turismo Concept's credit transfer ---------------------------------------------------
+
+// What Concept's Game Status present TRANSFER does to a Gran Turismo 3 game (concept §7.6; the Concept
+// programs' routine and its table, the same in every release): refused when the game already holds
+// the mark; otherwise the mark is set, `credits` are added, all six license cards count as received (scalar +0xC0 |=
+// 0x3F), the bronze medal's award bit is set (+0xC4 |= 0x80000) and every license test without a medal gets a bronze
+// (its best time stays as it is). False: the transfer was already made, nothing changed.
+bool apply_concept_transfer(GameState& gt3, s64 credits);
+
 // --- Race results --------------------------------------------------------------------------
 
 // A championship's own result slot (its title): the first round's code with round number 00

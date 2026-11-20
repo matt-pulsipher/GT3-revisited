@@ -31,6 +31,13 @@ PadFrame pad_of(const RawPad& r);
 // The game's record memory: pools of 0x20000 bytes, each four stores of 0x8000.
 constexpr u32 kRecordPool = 0x20000, kRecordStore = 0x8000;
 constexpr u32 kStoreSnapshot = 0x1B00, kStoreBlock = 0x64F8; // a store: the snapshot, then the recording's block
+// (Rule::RecordStore: the later builds' store, Concept 2001 Tokyo, holds a snapshot 4 bytes longer, their car
+// record's extra word: the block from 0x1B04, 0x64F4 bytes. ControlManager::later takes it; the races' solo recorders keep
+// GT3's layout on every disc, their snapshots being ours: a lap's recording closes itself 4 bytes later than a later
+// build's would.)
+constexpr u32 store_snapshot(bool later) { return later ? 0x1B04 : kStoreSnapshot; }
+constexpr u32 store_block(bool later) { return later ? 0x64F4 : kStoreBlock; }
+bool later_store(const Behaviour& b); // the later builds' store layout under behaviour b
 
 // Pad recording's recorder on a block of `mem` (offsets into it; the caller keeps the memory).
 struct ControlRecorder {
@@ -74,6 +81,7 @@ struct ControlManager {
     u32 store = 0;        // +0x50: the store's offset in its pool
     u32 index = 0, used = 0; // +0x54 / +0x58 (mode 1)
     ControlRecorder rec;
+    bool later = false; // the later builds' store layout (store_snapshot)
 
     // On pool p (mode 0: the recorder on the whole pool, else store 0 of it).
     void bind_pool(int p);

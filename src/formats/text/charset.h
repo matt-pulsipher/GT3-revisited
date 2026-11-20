@@ -94,4 +94,16 @@ std::u32string utf8_decode(std::string_view s);
 void utf8_append(std::string& out, char32_t c);
 std::string utf8_encode(std::u32string_view s);
 
+// Other double-byte text (later discs of this engine; see mltx.h for the languages). The byte
+// walk is the same: a pair A1..FE, A1..FE is the cell font's code (b0 & 0x7F, b1 & 0x7F).
+//   KR  EUC-KR: the code is the KS X 1001 code (font/system.hf).
+//   TW  Big5's characters in Big5 order, 94 to a row from 0x2121 (font/system.tf):
+//       index = (lead - 0xA1) x 157 + (trail - 0x40, or trail - 0xA1 + 63 from 0xA1 on),
+//       code = (0x21 + index / 94, 0x21 + index % 94).
+// There is no table to Unicode for either on the discs.
+//
+// The Big5 character of a TW cell code, and back; 0 when there is none.
+u16 tw_code_to_big5(u16 code);
+u16 big5_to_tw_code(u16 big5);
+
 } // namespace gt3r::text

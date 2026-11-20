@@ -97,6 +97,39 @@ FR/GR/IT/SP 0 (all zero bytes). Values are printf formats where needed
 (`%s Pitting In...`, `%d MORE LAPS`). All 7 × 193 values decode without
 unmapped characters.
 
+#### More pools (Gran Turismo Concept)
+
+The later games add languages and their files hold more pools; `StringTable` reads every whole
+pool after the pool offset (up to the 11 languages of `text::Language`) and takes the order of
+the ones after SP from the pool count:
+
+| Pools | Order after SP | Seen on |
+|---|---|---|
+| 7 | - | GT3; Concept 2001 Tokyo (which has a `menu/KR/` folder but no Korean pool) |
+| 9 | KR, TW | Concept 2002 Tokyo-Seoul |
+| 11 | PT, KR, CN, TW | Concept 2002 Tokyo-Geneva (both releases) |
+
+The order of 11 is the language table of those games' programs (JP, US, BR, FR, GR, IT, SP, PT,
+KR, CN, TW: the codes of the `menu/<LANG>/` folders), and `text::Language` follows it. The
+9-pool file predates PT: the 2001 program's table ends ..., SP, KR, and the pools' contents
+say which is which (pool 7 is EUC-KR text, pool 8 the same Chinese bytes as the 11-pool file's
+pool 10). The Tokyo-Seoul program's own table is already the order of 11, so by its index it
+would read pool 7 as PT and pool 8 as KR; the keys are GT3's parts shop and race messages, and
+whether that game shows them from this file was not checked.
+
+- **KR** values are EUC-KR: a pair `A1..FE, A1..FE` is the KS X 1001 code with the high bits
+  set, the code `font/system.hf` is indexed by.
+- **TW** values are Big5's characters renumbered, 94 to a row from 0x2121, so that they fit the
+  same pair rule: `index = (lead - 0xA1) * 157 + (trail < 0x7F ? trail - 0x40 : trail - 0xA1 + 63)`,
+  `code = (0x21 + index / 94) << 8 | (0x21 + index % 94)` (`tw_code_to_big5`, `big5_to_tw_code`).
+  `font/system.tf` is indexed by that code. Checked: all 215 values of the 11-pool file turn
+  into valid Big5 this way and read as the Chinese of the other pools' text.
+- **CN** is empty (0 of 215) and **PT** partial (125 of 215, Latin text with the `81` escapes).
+  The `menu/CN/` pages of every disc hold Korean text.
+- The discs have no table from KS X 1001 or Big5 to Unicode, so `gt3tool text` writes these
+  pools' pairs as `{XXXX}` font codes. The later discs' Korean pool uses one code (0x2D50)
+  five times that `system.hf` has no glyph for.
+
 ## FT01 bitmap fonts (`*.fnt`)
 
 ```
@@ -219,6 +252,25 @@ transparent, matching the two Latin texture variants. Codes that JIS X 0208
 leaves undefined (1,501 of them) all point to glyph 108, a "missing"
 placeholder; row 0x7F and 0x2121 point to glyph 0 (blank). 7,335 JIS codes
 have real glyphs (rows 0x21..0x2F incl. NEC row 13, levels 1 and 2 kanji).
+
+#### `font/system.hf` and `font/system.tf` (Gran Turismo Concept)
+
+Both are `KNJI` files with the layout above and `KanjiFont::parse` reads them unchanged: one
+block, codes 0x2121..0x7D7E, 22 x 22 cells, two palettes, name `HANGLE22` in both.
+
+| File | Glyphs | Indexed by | Contents |
+|---|---|---|---|
+| `system.hf` | 8,055 to 8,206 | KS X 1001 code | symbols, Latin, kana, Cyrillic, the 2,350 hangul from 0x3021, hanja |
+| `system.tf` | 8,240 / 8,249 | Big5 renumbered (MLTX "More pools") | Big5's symbols, then its characters in Big5 (stroke count) order from code 0x2622 (Big5 A440) |
+
+Codes without a character share one glyph (index 11 in `system.hf`, 147 in `system.tf`).
+`kanji_font_path(language)` names the file a language's double-byte text draws with
+(KR `system.hf`, TW `system.tf`, everything else `system.kf`); `GameFonts::load` and
+`gt3tool menu-shot` (by the page's `menu/<LANG>/` folder) use it, so a `menu/KR/` or `menu/TW/`
+page renders with its own glyphs. `gt3tool text-render <font> key:<KEY> out.png [scale] --lang=KR`
+draws a string table value in that language; `gt3tool text` also writes both fonts' atlases
+with their code lists. Which file the program uses for CN was not determined (`system.tf` is
+assumed; the CN pages on the discs are Korean).
 
 ### KFT0 (`font/kanji22.kf`, unused by the game)
 

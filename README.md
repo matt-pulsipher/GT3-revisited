@@ -289,8 +289,10 @@ edited one imports like any other save. Home → Trade and the arcade's Load Gar
 friend's save the same way. Each release of the original reads only its own
 save, and saves go to and from your disc's: `BASCUS-97102GAMEDATA` (NTSC-U,
 both discs), `BESCES-50294GAMEDATA` (PAL) or `BISCPS-15009GAMEDATA`
-(NTSC-J). `gt3tool` converts on the command line too (it needs your disc for
-the game data):
+(NTSC-J). A Gran Turismo Concept disc's saves work the same way, under that
+release's own name (`BESCES-50858GAMEDATA` for the European Tokyo-Geneva; the
+others are in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). `gt3tool`
+converts on the command line too (it needs your disc for the game data):
 
 ```text
 gt3tool save-import <iso> <ps2 save> <saves folder>/name.sav
@@ -350,6 +352,11 @@ players, each on their own machine:
   everywhere.
 - Every lobby page works with a mouse, touch or a VR controller's pointer too.
 - Mod cars are offered to the other players as checked downloads.
+- Players on any Gran Turismo 3 release (NTSC-U, PAL or NTSC-J) race together.
+  Any other disc, such as a Gran Turismo Concept release or a modified copy,
+  races only against the same disc: the host turns other players away and
+  names both discs. A Gran Turismo Concept disc races online on its own
+  physics.
 - The other players can see your IP address, as in any peer-to-peer game.
 - **Updates.** At startup the game asks the relay server whether a newer
   version exists. That is one small message with the game's version and

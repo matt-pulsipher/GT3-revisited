@@ -93,6 +93,19 @@ const Element* scroller_window(const Page& p) {
         right = right && (e.x >= 640 || e.y + e.h <= 0);
         above = above && (e.x >= 640 || e.y >= kMenuHeight);
     }
+    // Gran Turismo Concept: the title's items all sit at one place under its "menu_top" window (top button list places
+    // them), and the level page's buttons go in a row in the "menu_difficulty" band (difficulty button list).
+    if (!right && !above)
+        if (const Element* w = find_widget(p, "menu_top")) {
+            bool together = true;
+            for (const Element& e : p.items) together = together && e.x == p.items.front().x && e.y == p.items.front().y;
+            if (together && p.items.size() > 1) return w;
+        }
+    if (right)
+        if (const Element* w = find_widget(p, "menu_difficulty")) return w;
+    // ... and the Course License page's tests in a row in "menu_license" (license button list).
+    if (right)
+        if (const Element* w = find_widget(p, "menu_license")) return w;
     if (!right) return above ? find_widget(p, "menu") : nullptr;
     if (const Element* w = find_widget(p, "menu_top")) return w;
     if (const Element* w = find_widget(p, "menu_car_goods")) return w; // GT mode dealer car lists
@@ -641,6 +654,9 @@ void MenuController::cancel(bool via_ok) {
     const MblPage* fp = lv.page.flow;
     std::string back = fp ? fp->back : std::string();
     std::string back_action = fp ? fp->back_action : std::string();
+    // The later programs' page manager (Gran Turismo Concept's) also takes the back name "exit" for "no back
+    // page": the menu ends. (Its settings menu's Normal and Custom pages; a set with a page of that name keeps it.)
+    if (back == "exit" && !set_.page(back)) back.clear();
     if (back.empty()) {
         if (!via_ok) sound("return");
         if (!back_action.empty()) emit(MenuEvent::Kind::BackAction, back_action);
@@ -690,6 +706,8 @@ bool MenuController::item_box(int index, SDL_FRect& box, SDL_FRect* clip) const 
         float spacing = 32;
         if (lv.items.size() >= 2 && lv.items[0].element && lv.items[1].element)
             spacing = std::fabs(lv.items[0].element->y - lv.items[1].element->y);
+        if (spacing == 0 && lv.items[0].element) spacing = lv.items[0].element->h + 8.0f; // (as draw_list)
+        if (clip && window->name == "menu_difficulty") *clip = SDL_FRect{0, 0, 640, 448};
         const Element* row_win = nullptr;
         std::vector<float> xs;
         float total = 0, target = 0;
@@ -851,7 +869,7 @@ void MenuController::add_level_draws(std::vector<ElementDraw>& out, const Level&
                 if (e.widget_class && *e.widget_class == "blink") a *= blink_alpha(frame_);
                 const bool diag_in = e.widget_class && *e.widget_class == "diagonal_in";
                 const bool diag_out = e.widget_class && *e.widget_class == "diagonal_out";
-                // A horizontal selector's "scroll_bar" (menus §4.6; GT3's ScrollBar): nothing at
+                // A horizontal selector's "scroll_bar" (menus §4.6; GT3's scroll bar): nothing at
                 // all, track included, while the row is no longer than the bar; else the track
                 // and the hidden "pinch" over the visible share of the row at its scroll
                 // position: x = bar x - offset x bar w / row w, width = window w x bar w / row w
@@ -925,6 +943,9 @@ void MenuController::add_level_draws(std::vector<ElementDraw>& out, const Level&
     float spacing = 32;
     if (window && lv.items.size() >= 2)
         spacing = std::fabs(lv.items[0].element->y - lv.items[1].element->y);
+    // Items placed by the list alone (Concept's title: all at one place): a row every item height + 8, as GT3's
+    // title rows are (24 high, 32 apart) (M).
+    if (window && spacing == 0 && !lv.items.empty()) spacing = lv.items[0].element->h + 8.0f;
     const int fb_frame = phase_ == Phase::Feedback && is_top ? feedback_frames(feedback_) - phase_frames_ + 1 : 0;
     // While the controls are taken away the top page's buttons are not drawn.
     const size_t buttons = is_top && ignore_control_ ? 0 : lv.items.size();
@@ -954,6 +975,8 @@ void MenuController::add_level_draws(std::vector<ElementDraw>& out, const Level&
             }
             box_override.has_clip = true;
             box_override.clip = {window->x, window->y, window->w, window->h};
+            // (Concept's level band is lower than its buttons, which show whole.)
+            if (window->name == "menu_difficulty") box_override.clip = {0, 0, kMenuWidth, kMenuHeight};
             // Title list (top button list): items fade with their distance d from the window
             // centre, alpha 1 - d / (1.8 x item height), gone beyond; the focused one stays.
             if (window->name == "menu_top" && !is_focus) {
@@ -982,6 +1005,10 @@ void MenuController::add_level_draws(std::vector<ElementDraw>& out, const Level&
             d.has_box = true;
             d.box = {button.x, button.y, alt.w, alt.h};
             place(d);
+            // In a list's window: a highlight of another size than its button (Concept's title items) keeps its
+            // own size, centred on the button's place.
+            if (window && (alt.w != button.w || alt.h != button.h))
+                d.box = {d.box.x + (d.box.w - alt.w) * 0.5f, d.box.y + (d.box.h - alt.h) * 0.5f, alt.w, alt.h};
             return d;
         };
         bool fb = fb_frame > 0 && i == feedback_item_;

@@ -62,6 +62,17 @@ void set_every_license_medal(GtMode& gt, Medal m) {
         for (int t = 0; t < kTestsPerLicense; ++t) set_license_medal(gt, l, t, m);
 }
 
+bool apply_concept_transfer(GameState& gt3, s64 credits) {
+    if (gt3.concept_transfer) return false;
+    gt3.concept_transfer = true;
+    gt3.credits += credits;
+    gt3.trophy_flags |= 0x3Fu;        // the six license cards (table word +0x28)
+    gt3.arcade.awards |= 0x80000u;    // the bronze medal's award (table word +0x2C: 0x20000 << bronze)
+    for (LicenseTestRecord& t : gt3.license_tests) // 6 x 8 records: a medal word under 0 becomes 2 (table +0x34 .. +0x40)
+        if (t.medal == Medal::None) t.medal = Medal::Bronze;
+    return true;
+}
+
 std::string championship_code(const RaceSeries& s) {
     if (s.races.empty() || s.races.front().size() < 2) return {};
     return s.races.front().substr(0, s.races.front().size() - 2) + "00";

@@ -13,6 +13,9 @@ const F kHandbrakeClutch = F::raw(0x3F4CCCCD); // (0.8)
 // An analog axis: x + c (1 - x) once it moves.
 F analog(const PadConstants& k, F x) { return x + k.analog_jump * (kOne - x); }
 
+// (the later builds' gearbox kinds, D +0x12: 1 and 2 are without steps)
+bool stepless(const Driveline& d) { return u8(d.kind - 1) < 2; }
+
 } // namespace
 
 F pedal_curve(const PedalCurve& k, F x) {
@@ -82,7 +85,16 @@ void pad_clutch(Car& c, const PadFrame& f, u8 style) {
         c.clutch_req = kZero;
         return;
     }
-    if (c.p.d.driven_axle == 1 && kHandbrakeClutch < c.handbrake) {
+    const Program rule = c.behaviour.rule(Rule::PadClutch);
+    const bool later_clutch = !gt3_program(rule), geneva = rule >= Program::ConceptGenevaEu;
+    const F k08 = geneva ? F::raw(0x3F4CCCCC) : kHandbrakeClutch; // (2002 Tokyo-Geneva's constant is its own)
+    if (c.p.d.driven_axle == 1 && k08 < c.handbrake) {
+        c.clutch_req = kZero;
+        return;
+    }
+    // (Rule::PadClutch, the later builds: a stepless gearbox opens the clutch standing on the third axis)
+    if (later_clutch && stepless(c.p.d) && k08 < c.handbrake &&
+        sqrt(c.speed * c.speed + c.lat_speed * c.lat_speed) < F::raw(geneva ? 0x3E8E38E3 : 0x3E8E38E4)) {
         c.clutch_req = kZero;
         return;
     }
@@ -92,6 +104,18 @@ void pad_clutch(Car& c, const PadFrame& f, u8 style) {
     }
     c.clutch_req = s32(c.rpm) < s32(c.p.e.idle) ? kZero : kOne;
 }
+
+namespace {
+
+// The later builds' code (Concept 2001 Tokyo): the steering command in percent of 15 degrees, within +-100.
+s32 hud_steer(F steer, bool geneva) {
+    F x = steer * F::raw(geneva ? 0x43BEFC68 : 0x43BEFC66);
+    if (F::raw(0x42C80000) < x) x = F::raw(0x42C80000);
+    else if (x < F::raw(0xC2C80000)) x = F::raw(0xC2C80000);
+    return ee::to_int(x);
+}
+
+} // namespace
 
 void pad_controls(Car& c, const PadConstants& k, const PadFrame& f, u8 course_kind) {
     F v = c.speed;
@@ -160,6 +184,10 @@ void pad_controls(Car& c, const PadConstants& k, const PadFrame& f, u8 course_ki
         if (c.steer_class == 1) steer_follow(c, k, target, k.rate_out[size_t(rate)], k.rate_back[size_t(rate)]);
         else steer_follow(c, k, target, k.rate[size_t(rate)], k.rate[size_t(rate)]);
     } // other analog kinds leave the command as it is
+    const Program rule = c.behaviour.rule(Rule::PadControls);
+    const bool later = !gt3_program(rule), geneva = rule >= Program::ConceptGenevaEu;
+    // (the later builds: the HUD's steering percentage from the command, for the followed kinds)
+    if (later && (c.steer_class == 1 || c.steer_class == 2)) c.steer_pct = s8(hud_steer(c.steer_cmd, geneva));
     const F ext = c.countersteer;
     if (!(ext == kZero)) {
         const F q = c.steer_cmd / ext;
@@ -260,6 +288,23 @@ void pad_controls(Car& c, const PadConstants& k, const PadFrame& f, u8 course_ki
         c.handbrake = h == kZero ? h : analog(k, h);
     }
     pad_clutch(c, f, style);
+    // (the later builds: a stepless gearbox creeps: the pedal is at least what holds the engine 500 rpm above idle; from
+    // 2002 Tokyo-Seoul on not while it stands on the third axis)
+    if (later && stepless(c.p.d)) {
+        if (rule != Program::ConceptTokyo && !(c.handbrake < F::raw(geneva ? 0x3F4CCCCC : 0x3F4CCCCD)) &&
+            !(F::raw(geneva ? 0x3E8E38E3 : 0x3E8E38E4) <= sqrt(c.speed * c.speed + c.lat_speed * c.lat_speed)))
+            return;
+        F a = ee::int_to_f(c.p.e.idle) + F::raw(0x43FA0000);
+        const F b = c.torque_wot + c.torque_friction;
+        a = a - ee::int_to_f(s16(c.rpm));
+        const F q = c.torque_friction / b;
+        a = a * F::raw(geneva ? 0x3A03126E : 0x3A03126F);
+        F floor = a + q;
+        if (floor < kZero) floor = kZero;
+        else if (kOne < floor) floor = kOne;
+        if (c.throttle_pedal < floor) c.throttle_pedal = floor;
+        if (s16(f.throttle) == 0 && s16(f.back) == 0 && c.gear == 0) c.reverse_req = 1;
+    }
 }
 
 void set_brake(Car& c, F p) {
@@ -317,7 +362,19 @@ void ai_outputs(Car& c) {
     set_brake_pedal(c, d.brake);
     c.reverse_req = s8(d.reverse);
     if (d.shift_lock != 0) c.shift_lockout = u8(d.shift_lock);
+    // (Rule::AiOutputs, the later builds: no steering percentage here (driver_input filters it); the handbrake while the
+    // car stands on its stop point)
+    if (!gt3_program(c.behaviour.rule(Rule::AiOutputs))) {
+        if (d.stop == 2) c.handbrake = kOne;
+        return;
+    }
     c.steer_pct = s8(ee::to_int(d.steer * F::raw(0x42C80000) / c.p.max_lock));
+}
+
+void ai_steer_pct(Car& c) {
+    const Program rule = c.behaviour.rule(Rule::DriverInput);
+    if (gt3_program(rule)) return;
+    c.steer_pct = s8((s32(c.steer_pct) + 2 * hud_steer(c.steer_cmd, rule >= Program::ConceptGenevaEu)) / 3);
 }
 
 void ai_controls(Car& c) {

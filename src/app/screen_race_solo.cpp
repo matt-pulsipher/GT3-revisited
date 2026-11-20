@@ -16,7 +16,7 @@ std::optional<sim::exact::Conductor> RaceScreen::solo_conductor() const {
     // licence tests (L...) under the licence conductor, the arcade time attacks (AT..., ranked by their times too) under
     // the time trial's; the machine tests; a time trial of no set laps the free run (its lap ghost).
     if (free_run_) return K::FreePractice;
-    if (!license_event_.empty()) return race::demo_conductor(license_event_);
+    if (!license_event_.empty()) return pace_car_ ? K::Training : race::demo_conductor(license_event_);
     if (machine_) return K::MachineTest;
     return race_laps_ > 0 ? K::TimeTrial : K::FreeRun;
 }
@@ -39,6 +39,12 @@ bool RaceScreen::build_exact_solo(App& app) {
         cfg.grid_hp = app.vfs() && language_units(app.vfs()->language()).power_hp;
         cfg.grid_slots = practice_grid_;
         cfg.entry_best = practice_entry_best_;
+    }
+    // Concept's test with the pace car: the player and the pace car, in the program's entry order.
+    if (*kind == sim::exact::Conductor::Training) {
+        cfg.opponents = race_opponents_;
+        cfg.max_opponents = 1;
+        cfg.player_slot = 0;
     }
     // What every race takes from the screen (the program, rules, course, the player, playback and ghost).
     ExactFieldOptions o = exact_options(app);
@@ -165,6 +171,7 @@ void RaceScreen::exact_solo_step() {
         }
         return;
     }
+    case K::Training:
     case K::License: { // the licence's judging (the race clock) and its display (race info + 0x40
                        // 0, slower than bronze, shows TIME EXPIRED with + 0x44's time; -1, out of the course, FAIL)
         bool failed_event = false;

@@ -53,6 +53,12 @@ Args take_language(Vfs& vfs, const Args& a) {
 }
 
 void summary(const char* what, const game::GameState& s, const game::GtData& data) {
+    if (data.game == GameKind::Concept) {
+        std::printf("%s (%s): %zu course licenses, %zu race results, %zu presents, %zu cars with their own settings\n", what,
+                    game::ps2_save_name(data).c_str(), s.concept_game.licenses.size(), s.concept_game.places.size(),
+                    s.concept_game.presents.size(), s.garage.size());
+        return;
+    }
     std::printf("%s (%s): day %u, %lld Cr, %zu cars, %zu race results\n", what, game::ps2_game_dir(data.region), s.day,
                 (long long)s.credits, s.garage.size(), s.race_best.size());
 }
@@ -60,7 +66,7 @@ void summary(const char* what, const game::GameState& s, const game::GtData& dat
 } // namespace
 
 GT3TOOL_COMMAND(save_import, "save-import", "<ps2 save> <out.sav>",
-                "convert an original GT3 save (data file / .raw, save folder, PCSX2 folder card, .psu, .ps2 card) to a GT3 Revisited save",
+                "convert the disc's original game save (data file / .raw, save folder, PCSX2 folder card, .psu, .ps2 card) to a GT3 Revisited save",
                 2, [](Disc& disc, const Args& a) {
                     Vfs vfs(&disc.volume());
                     auto data = load_gt_data(vfs);
@@ -72,7 +78,7 @@ GT3TOOL_COMMAND(save_import, "save-import", "<ps2 save> <out.sav>",
                 });
 
 GT3TOOL_COMMAND(save_export, "save-export", "<save.sav> <out.psu | out.ps2 | out.raw | out folder> [--lang=XX]",
-                "write a GT3 Revisited save as an original GT3 memory-card save (.raw: the data file alone, "
+                "write a GT3 Revisited save as the disc's original memory-card game save (.raw: the data file alone, "
                 "for save editors; --lang: the language a PAL save starts the game in, BR (the default), FR, GR, IT or SP)",
                 2, [](Disc& disc, const Args& args) {
                     Vfs vfs(&disc.volume());

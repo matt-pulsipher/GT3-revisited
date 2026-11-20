@@ -7,9 +7,16 @@
 
 namespace gt3r {
 
-const char* OpponentGrid::skill_name(int skill) {
+const char* OpponentGrid::skill_name(int skill, bool concept_levels) {
     static const char* const kNames[kSkills] = {"Easy", "Normal", "Hard", "Professional"};
+    static const char* const kConcept[kConceptSkills] = {"Normal", "Professional", "Ace"};
+    if (concept_levels) return kConcept[std::clamp(skill, 0, kConceptSkills - 1)];
     return kNames[std::clamp(skill, 0, kSkills - 1)];
+}
+
+void OpponentGrid::set_concept_levels(bool on) {
+    concept_ = on;
+    for (Car& c : cars_) c.skill = std::clamp(c.skill, 0, skills() - 1);
 }
 
 std::string OpponentGrid::skill_race(int skill, bool dirt) {
@@ -86,6 +93,7 @@ void OpponentGrid::fill(App& app, const std::vector<std::string>& entries, int f
 
 void OpponentGrid::set_place(int k, Car c) {
     c.car = c.label.empty() ? -1 : find_(c.label);
+    c.skill = std::clamp(c.skill, 0, skills() - 1);
     cars_[size_t(k)] = std::move(c);
 }
 
@@ -122,13 +130,13 @@ int OpponentGrid::action(int row, int h, bool cross) {
         return kNobody;
     }
     if (row == kSkillRow) {
-        const int skill = (cars_[0].skill + step + kSkills) % kSkills;
+        const int skill = (cars_[0].skill + step + skills()) % skills();
         for (Car& c : cars_) c.skill = skill;
         return kNobody;
     }
     const int k = who(row);
     if (cross) return k;
-    if (k != kPlayer) cars_[size_t(k)].skill = (cars_[size_t(k)].skill + step + kSkills) % kSkills;
+    if (k != kPlayer) cars_[size_t(k)].skill = (cars_[size_t(k)].skill + step + skills()) % skills();
     return kNobody;
 }
 
@@ -148,7 +156,7 @@ void OpponentGrid::render_row(App& app, Ui& ui, int row, const UiRect& r, bool f
         if (row == kSkillRow) {
             const int skill = cars_[0].skill;
             const bool same = std::all_of(cars_.begin(), cars_.begin() + n, [&](const Car& c) { return c.skill == skill; });
-            label = "Skill for all", value = same ? skill_name(skill) : "Mixed";
+            label = "Skill for all", value = same ? skill_name(skill, concept_) : "Mixed";
         }
         ui.text(r.x + 6, r.y + (r.h - 2 - Ui::kChar) / 2, label, focused ? colors::kAccent : colors::kText);
         if (read_only_) ui.text_right(r.right() - 10, r.y + (r.h - 2 - Ui::kChar) / 2, value, colors::kText);
@@ -166,7 +174,7 @@ void OpponentGrid::render_row(App& app, Ui& ui, int row, const UiRect& r, bool f
     const int car = you ? player_car_ : cars_[size_t(k)].car, paint = you ? player_paint_ : cars_[size_t(k)].paint;
     auto skill_value = [&] {
         if (you) return;
-        const char* v = skill_name(cars_[size_t(k)].skill);
+        const char* v = skill_name(cars_[size_t(k)].skill, concept_);
         if (read_only_) ui.text_right(r.right() - 10, r.y + 12, v, colors::kText);
         else value_arrows(ui, {r.right() - 156, r.y + 4, 152, r.h - 10}, v, colors::kText, h.hits, h.left, h.right, h.arg, h.pointer);
     };

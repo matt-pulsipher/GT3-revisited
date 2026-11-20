@@ -12,12 +12,15 @@
 //
 // A race frame (step) is that step and what race's frame does after it that the race's later frames depend on: each car's
 // spark bursts and the sparks' update (sparks.h), which draw the VU0 random register after the step's tyre effects and flaps.
+// The later builds' emitter also makes leaves inside the step (a wheel on ground with flag 0x20: leaves.h), in the sparks'
+// pool, updated with them.
 //
 // The race flow's outputs for the game (race_flow.h): the race display's events among the queue posts, the entries' and the
 // session's time records, the data logger's tables (race info + 0x70 / + 0x74), the free run's recorder events (its lap
-// recordings and ghost car: the ghost's extra step, the race step in its second entry mode, runs inside). Not modelled
-// (outputs the game makes itself): the sounds' pass-by state (on conductor + 0xBA34), the pad's vibration output,
-// the tyre effect particles' ageing and drawing (their pool: the race's frame update / drawing).
+// recordings and ghost car: the ghost's extra step, the race step in its second entry mode, runs inside), the pass-by states
+// (on conductor + 0xBA34: the race's sounds'; the later builds' special car 1 reads them). Not modelled (outputs
+// the game makes itself): the pad's vibration output, the tyre effect particles' ageing and drawing (their pool:
+// the race's frame update / drawing).
 
 #include "base/game_random.h"
 #include "formats/course/ai_lines.h"
@@ -226,12 +229,14 @@ public:
     const RaceFlow& flow() const { return flow_; }       // the race clock, end countdown, result words, records, the logger's
                                                          // tables, the last frame's recorder events
     const GapMatrix& gaps() const { return gaps_; }
+    const PassByState& pass_by() const { return pass_; } // the (conductor + 0xBA34), as the last step left them
     const Proximity& proximity() const { return prox_; }
     const std::vector<collide::exact::Body>& bodies() const { return bodies_; }
     std::vector<collide::exact::Body>& bodies() { return bodies_; }
     const Vu0Random& random() const { return rng_; }
-    // The sparks (RaceSetup::sparks; none in a race without spark points): as the last frame left them.
-    bool has_sparks() const { return sparks_on_; }
+    // The sparks (RaceSetup::sparks; none in a race without spark points) and the later builds' leaves in their pool: as the
+    // last frame left them.
+    bool has_sparks() const { return sparks_on_ || sparks_.leaves_on(); }
     const Sparks& sparks() const { return sparks_; }
     // The random register as the last frame's race step left it, before its sparks drew from it.
     const Vu0Random& random_before_sparks() const { return rng_step_; }
@@ -290,6 +295,7 @@ private:
     void run(std::span<const PadFrame> pads, int mode); // conductor, mode: 1 the free run ghost's extra step
     void collide(size_t first);      // phase 10 (mode 1: for the cars from `first`)
     void emit(int i, const ChassisOutputs& out); // phase 12's emitter calls
+    void smoke(int i, const TyreEffect& q);      // ... one request's smoke
     void spark_frame();              // The race's frame's bursts (per car), then the race's frame update's update
     void flow_after(AiPlan& plan, std::span<const PadFrame> pads, int mode); // after phase 13
     void copy_in();
@@ -322,6 +328,7 @@ private:
     RaceFlow flow_;
     GapMatrix gaps_;
     Proximity prox_;
+    PassByState pass_;
     Vu0Random rng_, rng_step_;
 
     std::function<void(std::span<PadFrame>)> nested_pads_;

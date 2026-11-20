@@ -1,6 +1,8 @@
 // The AI's lines and speed plan; see tick.h. (with the
 // point helpers).
 
+#include "sim/exact/course_query.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 #include "base/ee_double.h"
@@ -16,7 +18,7 @@ const F kKmh = F::raw(0x3E8E38E4);       // 1 / 3.6
 const F kCornerMin = F::raw(0x40B1C71D); // 20 km/h
 const F kG = F::raw(0x411CCCCD);         // 9.8
 const F kBrakeMin = F::raw(0x3DCCCCCD);  // 0.1
-const F kSpeedLo = F::raw(0xC031C71D), kSpeedHi = F::raw(0x4031C71D); // -+10 km/h
+// -+10 km/h (ai_throttle_for)
 const F kSpeedBelow = F::raw(0x3F0E38E4); // 2 km/h
 
 const std::vector<AiPoint>& line_points(const AiCourse& k, const Driver& d) { return k.lines[d.line]; }
@@ -76,11 +78,13 @@ F ai_corner_speed(const Car& c, const AiCourse& k, const WearParams& cp, int i) 
     }
     const s32 trim = s32(d.trim) * 10;
     const F scaled = d.speed_scale * v;
-    F off = d.speed_offset + ee::int_to_f(trim) * kKmh;
-    off = off + ee::int_to_f(pt.speed_adjust) * kKmh;
+    // (2002 Tokyo-Geneva's 1 / 3.6 and 20 km/h one and two units lower: Europe)
+    const F kmh = folded(c.behaviour, kKmh.bits, 0x3E8E38E3), corner_min = folded(c.behaviour, kCornerMin.bits, 0x40B1C71B);
+    F off = d.speed_offset + ee::int_to_f(trim) * kmh;
+    off = off + ee::int_to_f(pt.speed_adjust) * kmh;
     F out = scaled + off;
     if (c.p.top_speed < out) out = c.p.top_speed;
-    else if (out < kCornerMin) out = kCornerMin;
+    else if (out < corner_min) out = corner_min;
     return out;
 }
 
@@ -139,8 +143,9 @@ bool ai_request_line(Car& c, const AiCourse& k, const WearParams& cp, int line, 
     return true;
 }
 
-F ai_braking(Car& c, const AiCourse& k, const WearParams& cp) {
+F ai_braking(Car& c, const AiCourse& k, const WearParams& cp, StopZone* zone, const CourseQuery* course) {
     Driver& d = c.ai;
+    const bool later = !gt3_program(c.behaviour.rule(Rule::AiBraking));
     F mult = kOne;
     d.status = 0;
     if (d.line == 4) return mult;
@@ -166,8 +171,32 @@ F ai_braking(Car& c, const AiCourse& k, const WearParams& cp) {
     if (changed) ai_next_segment(c, k, cp);
     if (u8(d.mode - 3) < 2) { // braking already
         d.status = 2;
-    } else if (d.next_kind != 0 && d.v_next < c.speed) {
-        const F v = c.speed, vn = d.v_next;
+    } else {
+    // (Rule::AiBraking, the later builds: a car that owes a stop brakes to its point in the stop zone, a quarter of the
+    // zone further on for every two places, when the point lies in the segment driven and ahead of the car)
+    u8 kind = d.next_kind;
+    F vn = d.v_next;
+    bool stop = false;
+    if (later && zone && course && zone->active == 1 && d.stop == 0 && (u8(u8(c.control) - 1) < 2 || c.driver_kind != 0) &&
+        zone->owed(c) > 0 && count > 0) {
+        static constexpr u32 kRow[4] = {0x3F400000, 0x3F000000, 0x3E800000, 0};
+        const F at = zone->base + (zone->spacing * F::raw(kRow[size_t((s32(c.rank) - 1) / 2) & 3]));
+        const F s = c.f3e4;
+        const int m = d.next;
+        if (m == count) stop = (p[size_t(count - 1)].dist < at && s < at) || at < p[0].dist;
+        else if (m == 0) stop = at < p[0].dist && s < at;
+        else stop = p[size_t(m - 1)].dist < at && at < p[size_t(m)].dist && s < at;
+        if (stop) {
+            vn = kZero;
+            kind = 1;
+            F x, y, h;
+            k.evaluate(d.line, d.next, at, x, y, h);
+            const F g = course->progress(x, h, -y, c.road_seg);
+            if (zone->has(c.index)) zone->x[c.index] = x, zone->y[c.index] = y, zone->dist[c.index] = g;
+        }
+    }
+    if (kind != 0 && vn < c.speed) {
+        const F v = c.speed;
         const F dv = v - vn, sv = v + vn;
         const F v2 = sv * dv;
         const int at = braking_point(d.next, count);
@@ -182,19 +211,22 @@ F ai_braking(Car& c, const AiCourse& k, const WearParams& cp) {
         if (c.x535 & 0x10) grip = mu;
         else grip = (mu * (c.w[0].wear_grip + c.w[1].wear_grip)) * kHalf;
         F coef = c.p.brake_coef;
-        const F floor = kOne / ((grip + grip) * kG);
+        const F floor = kOne / ((grip + grip) * folded(c.behaviour, kG.bits, 0x411CCCCC)); // (Europe's)
         if (coef < floor) coef = floor;
         coef = coef * (kOne - ee::sin(p[size_t(braking_point(d.next, count))].slope));
         const s8 adj = p[size_t(braking_point(d.next, count))].brake_adjust;
         F dist = v2 * coef;
-        F adjust = ee::narrow((ee::widen(ee::int_to_f(adj)) * ee::D::raw(0x3F847AE147AE147Bull)) + ee::D::raw(0x3FF0000000000000ull));
-        if (adjust < kBrakeMin) adjust = kBrakeMin;
+        const Behaviour& h = c.behaviour; // (the build's soft doubles: build_math.h)
+        F adjust = narrow(h, add(h, mul(h, widen(h, ee::int_to_f(adj)), ee::D::raw(0x3F847AE147AE147Bull)), ee::D::raw(0x3FF0000000000000ull)));
+        if (const F lo = folded(c.behaviour, kBrakeMin.bits, 0x3DCCCCCC); adjust < lo) adjust = lo;
         const F kb = d.brake_factor;
         dist = dist * adjust;
         if (kb < kOne) dist = dist * kb;
         if (d.cooldown == 0 && kZero < d.contact) dist = dist + d.contact * F::raw(0x41A00000); // 20
         const AiPoint& q = p[size_t(braking_point(d.next, count))];
-        const F ex = q.x - c.pos.x, ey = q.y - c.pos.y;
+        F qx = q.x, qy = q.y;
+        if (stop && zone->has(c.index)) qx = zone->x[c.index], qy = zone->y[c.index];
+        const F ex = qx - c.pos.x, ey = qy - c.pos.y;
         const F to = sqrt((ex * ex) + (ey * ey));
         if (dist < to) {
             F soft = kZero;
@@ -205,9 +237,19 @@ F ai_braking(Car& c, const AiCourse& k, const WearParams& cp) {
         } else {
             d.mode = d.mode != 0 ? 4 : 3;
             d.status = 2;
+            if (stop) d.stop = 1;
         }
     }
-    if (d.line != 3) mult = mult * d.throttle_scale;
+    }
+    if (d.line != 3) {
+        // (the later builds: a throttle scale below 1 scales the full-throttle torque's share of the engine's torque)
+        const F ts = d.throttle_scale;
+        if (later && ts < kOne) {
+            const F sum = c.torque_wot + c.torque_friction;
+            if (sum == kZero) mult = mult * ts;
+            else mult = mult * (((ts * c.torque_wot) + c.torque_friction) / sum);
+        } else mult = mult * ts;
+    }
     return mult;
 }
 
@@ -233,7 +275,9 @@ F ai_target(const Car& c, const AiCourse& k, int line, int hint, F look, F& dx, 
     return look;
 }
 
-F ai_throttle_for(F v, F vt, F base, F gain) {
+F ai_throttle_for(F v, F vt, F base, F gain, bool toward_zero) {
+    // (2002 Tokyo-Geneva's -+10 km/h two units smaller: Europe)
+    const F kSpeedLo = F::raw(toward_zero ? 0xC031C71B : 0xC031C71D), kSpeedHi = F::raw(toward_zero ? 0x4031C71B : 0x4031C71D);
     F dv = v - vt;
     if (dv < kSpeedLo) dv = kSpeedLo;
     else if (kSpeedHi < dv) dv = kSpeedHi;
@@ -245,7 +289,9 @@ F ai_throttle_for(F v, F vt, F base, F gain) {
 
 void ai_speed_control(Car& c, F vt, F gain) {
     Driver& d = c.ai;
-    const F t = ai_throttle_for(c.speed, vt - kSpeedBelow, F::raw(0x3F400000), gain); // base 0.75
+    const bool z = toward_zero(c.behaviour);
+    const F below = z ? F::raw(0x3F0E38E3) : kSpeedBelow; // (2002 Tokyo-Geneva's: Europe)
+    const F t = ai_throttle_for(c.speed, vt - below, F::raw(0x3F400000), gain, z); // base 0.75
     d.throttle = t;
     if (t == kZero && vt < c.speed) d.brake = kOne;
     if (d.throttle == kOne) return;

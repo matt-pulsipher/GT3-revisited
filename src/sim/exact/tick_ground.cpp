@@ -2,6 +2,7 @@
 
 #include "base/ee_math.h"
 #include "sim/exact/course_ground.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -36,7 +37,7 @@ GroundCounts ground_contact(Car& c, const CourseGround& course, const SurfaceBum
         g.h = c.pos.z + w.hub.z;
         g.z = -y;
     }
-    course.query(c.g);
+    course.query(c.g, c.behaviour);
     for (size_t i = 0; i < 4; ++i) {
         Wheel& w = c.w[i];
         const Ground& g = c.g[i];
@@ -108,11 +109,12 @@ std::array<TyreEffect, 4> tyre_effect_requests(const Car& c) {
         e.yaw = c.heading + w.steer;
         e.attr_a = g.attr_a;
         e.normal = g.normal;
-        e.plane_d = g.plane_d - (g.normal.y * F::raw(0x3D4CCCCD));
+        e.plane_d = g.plane_d - (g.normal.y * folded(c.behaviour, 0x3D4CCCCD, 0x3D4CCCCC)); // 0.05 (2002 Tokyo-Geneva's: Europe)
         e.smoke_emit = w.smoke_emit;
         e.slip_ratio = w.slip_ratio;
         e.hub_vx = w.hub_vx;
         e.rim_speed = w.rim_speed;
+        e.ground_flags = g.flags;
     }
     return out;
 }

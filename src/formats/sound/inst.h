@@ -75,7 +75,8 @@ struct InstBank {
 //   0x00 "GTSE", 0x04 u32 1, 0x08 u32 0, 0x0C u32 count
 //   0x10 { u32 name_offset; u32 value }[count], then NUL-terminated names
 //   value = bank << 24 | first_region << 12 | last_region
-// Banks: 0 sound/gt3sys.ins, 1 sound/gt3se01.ins, 2 sound/gt3se02.ins.
+// Banks: 0 sound/gt3sys.ins, 1 sound/gt3se01.ins, 2 sound/gt3se02.ins; later discs of this
+// engine add 3 sound/gt3pod.ins (the "pod_*" effects), which GT3's se.inf never names.
 // All regions in the range are keyed on together (stereo pairs).
 struct SoundEffect {
     std::string name;

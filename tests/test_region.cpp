@@ -3,6 +3,7 @@
 
 #include "test_framework.h"
 
+#include "disc/core_image.h"
 #include "disc/disc.h"
 #include "disc/region.h"
 #include "formats/db/gt_db.h"
@@ -10,6 +11,7 @@
 #include "game/gt_mode.h"
 #include "vfs/vfs.h"
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 
@@ -310,4 +312,31 @@ TEST(region_us_medal_times) {
                 has_us ? "" : " (no US set on this disc)");
     CHECK(checked > 400 && differ == 0);
     CHECK(retuned == (pal ? 39 : 0));
+}
+
+// Any region's disc: the race display's built-in texts (the program's realtime group RACEDISPLAY), what the race shows
+// for a slot the language's file leaves out. NTSC-J's file has no RACEDISPLAY group, so the free run's notes and the FAIL
+// words are its program's Japanese (game text, EUC), and its program has no LapDiffInfo slot (its lap-down note prints a
+// fixed "%d Laps"); the other programs have the slot.
+TEST(region_disc_race_display_defaults) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    const bool jp = vfs.region().region == Region::Japan;
+    std::optional<Bytes> core = disc->volume().read_program();
+    CHECK(core.has_value());
+    if (!core) return;
+    const std::vector<std::pair<std::string, std::string>> slots =
+        game::find_realtime_group(CoreImage::decode(*core), "RACEDISPLAY");
+    auto slot = [&](const char* name) -> const std::string* {
+        for (const auto& [n, t] : slots)
+            if (n == name) return &t;
+        return nullptr;
+    };
+    for (const char* name : {"FreeRunReady", "FreeRunHelp", "TimeTrialFail", "ExamFail", "ExamTimeOver"}) {
+        const std::string* t = slot(name);
+        CHECK(t && !t->empty());
+        if (t && jp) CHECK(std::any_of(t->begin(), t->end(), [](char c) { return u8(c) >= 0x80; })); // Japanese
+    }
+    CHECK((slot("LapDiffInfo") != nullptr) == !jp);
 }

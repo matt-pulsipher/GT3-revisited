@@ -1,12 +1,15 @@
 // The race's sparks (sim/exact/sparks.h, presentation §L7): the pool's lists, a burst's six random draws per particle and its
 // ranges, the update's drag, gravity, kick window and bounce, the VU0 sine and cosine, the emission's gates (speed, road
 // material, a point below the road, a hidden ghost), their colour keys, the race record's spark points; on the disc the 24
-// car models with spark points and an F090/S race that sparks (and replays to the same race).
+// car models with spark points (the eve and night models' the day models', on GT3's and the later discs) and an F090/S race
+// that sparks (and replays to the same race).
 
 #include "test_framework.h"
 #include "exact_drive.h"
 
+#include "concept_discs.h"
 #include "disc/core_image.h"
+#include "disc/disc.h"
 #include "disc/volume.h"
 #include "formats/model/car_model.h"
 #include "game/data/car_database.h"
@@ -22,6 +25,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 
@@ -250,41 +255,92 @@ TEST(race_record_spark_points_round_trip) {
     CHECK(back.sparks[0][1] == r.sparks[0][1]);
 }
 
-TEST(car_spark_points_disc) {
-    Disc* d = test::any_region_disc();
-    if (!d) SKIP("needs GT3R_DISC");
-    Vfs vfs(&d->volume());
+namespace {
+
+// Every car model of `vfs` (cars/.list) and its spark points in cars/day/, cars/eve/ and cars/night/ (no entry: the
+// folder has not got the model; an empty list: it has, without points).
+struct TimeOfDayPoints {
+    int models = 0;
+    std::map<std::string, std::vector<std::array<u32, 3>>> day, eve, night;
+};
+
+TimeOfDayPoints time_of_day_points(Vfs& vfs) {
+    TimeOfDayPoints out;
     std::optional<Bytes> list = vfs.read("cars/.list");
     CHECK(list.has_value());
-    if (!list) return;
+    if (!list) return out;
     std::istringstream in(std::string(list->begin(), list->end()));
-    std::set<std::string> day, eve, night;
-    int models = 0;
     for (std::string id; std::getline(in, id);) {
         while (!id.empty() && (id.back() == '\r' || id.back() == ' ')) id.pop_back();
         if (id.empty()) continue;
         for (int pass = 0; pass < 3; ++pass) {
             std::optional<Bytes> f = vfs.read((pass == 2 ? "cars/night/" : pass ? "cars/eve/" : "cars/day/") + id);
             if (!f || !CarFile::is_car(*f)) continue;
-            if (pass == 0) ++models;
-            const std::vector<std::array<u32, 3>> p = car_spark_points(CarFile::parse(*f).info);
-            if (p.empty()) continue;
-            (pass == 2 ? night : pass ? eve : day).insert(id);
-            for (const std::array<u32, 3>& w : p) { // at the body's lowest point, behind the origin
-                float y, z;
+            if (pass == 0) ++out.models;
+            std::vector<std::array<u32, 3>> p = car_spark_points(CarFile::parse(*f).info);
+            for (const std::array<u32, 3>& w : p) { // at the body's lowest point, behind the origin (2002 Tokyo-Geneva's
+                float y, z;                       // au0008: one in front, z -1.24)
                 std::memcpy(&y, &w[1], 4), std::memcpy(&z, &w[2], 4);
-                CHECK(std::fabs(y) < 0.1f && z > 0.8f && z < 2.0f);
+                CHECK(std::fabs(y) < 0.1f && std::fabs(z) > 0.8f && std::fabs(z) < 2.0f);
             }
+            (pass == 2 ? out.night : pass ? out.eve : out.day)[id] = std::move(p);
         }
     }
-    std::printf("  %d car models: %zu with spark points (day), %zu (eve), %zu (night)\n", models, day.size(), eve.size(),
-                night.size());
-    CHECK(!day.empty());
-    for (const std::string& id : night) CHECK(day.count(id) == 1);
+    return out;
+}
+
+size_t with_points(const std::map<std::string, std::vector<std::array<u32, 3>>>& m) {
+    size_t n = 0;
+    for (const auto& [id, p] : m) n += !p.empty();
+    return n;
+}
+
+// The race draws (and sparks from: the spark points are the drawn model's) the course's time of day's models: eve and night
+// models keep the day model's points, value for value, but where `none` (night models without them) lists them.
+void check_time_of_day_points(const TimeOfDayPoints& t, const std::set<std::string>& none) {
+    for (const auto* m : {&t.eve, &t.night})
+        for (const auto& [id, p] : *m) {
+            const auto d = t.day.find(id);
+            if (d == t.day.end()) continue; // (an eve-only model: US 1.10's ty1084)
+            if (m == &t.night && none.count(id)) CHECK(p.empty() && !d->second.empty());
+            else CHECK(p == d->second);
+        }
+}
+
+} // namespace
+
+TEST(car_spark_points_disc) {
+    Disc* d = test::any_region_disc();
+    if (!d) SKIP("needs GT3R_DISC");
+    Vfs vfs(&d->volume());
+    const TimeOfDayPoints t = time_of_day_points(vfs);
+    std::printf("  %d car models: %zu with spark points (day), %zu (eve), %zu (night)\n", t.models, with_points(t.day),
+                with_points(t.eve), with_points(t.night));
+    CHECK(with_points(t.day) > 0);
+    // NTSC-U and NTSC-J: the night F688/S (ml0001) and pd0001 have none; PAL's night models keep them all.
+    std::set<std::string> none;
+    for (const char* id : {"ml0001", "pd0001"})
+        if (const auto n = t.night.find(id); n != t.night.end() && n->second.empty()) none.insert(id);
+    check_time_of_day_points(t, none);
     if (!test::test_disc()) return; // (PAL: 14 models, NTSC-J: 22; their car lists differ)
-    CHECK(models == 286 && day.size() == 24 && eve == day && night.size() == 22);
-    for (const char* id : {"ml0003", "ty0141", "ty2056", "ni0062", "la0007", "cv0024"}) CHECK(day.count(id) == 1);
-    CHECK(day.count("ml0001") == 1 && night.count("ml0001") == 0 && night.count("pd0001") == 0);
+    CHECK(t.models == 286 && with_points(t.day) == 24 && with_points(t.eve) == 24 && with_points(t.night) == 22);
+    for (const char* id : {"ml0003", "ty0141", "ty2056", "ni0062", "la0007", "cv0024"}) CHECK(!t.day.at(id).empty());
+    CHECK(none.size() == 2);
+}
+
+TEST(concept_disc_car_spark_points) {
+    const std::vector<std::string> discs = test::concept_discs();
+    if (discs.empty()) SKIP("needs GT3R_DISC_CONCEPT");
+    for (const std::string& path : discs) {
+        std::unique_ptr<Disc> disc = Disc::open(path);
+        Vfs vfs(&disc->volume());
+        const TimeOfDayPoints t = time_of_day_points(vfs);
+        std::printf("  %d car models: %zu with spark points (day), %zu (eve), %zu (night)\n", t.models, with_points(t.day),
+                    with_points(t.eve), with_points(t.night));
+        CHECK(t.models > 0 && with_points(t.day) > 0);
+        CHECK(with_points(t.eve) == with_points(t.day) && with_points(t.night) == with_points(t.day));
+        check_time_of_day_points(t, {}); // every later disc's eve and night models keep every point
+    }
 }
 
 namespace {

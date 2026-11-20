@@ -43,6 +43,8 @@ void RaceScreen::music_cues(App& app) {
     // race::license_fail_jingle), a voided time trial.
     c.failed = tt_failed_ || (!license_event_.empty() && license_.state() != LicenseRun::State::Running &&
                               race::license_fail_jingle(license_.state(), shown_medal_));
+    // A pod race's disqualification (one player: the display posts the fail jingle at once; two players none).
+    if (pod_disqualified() && !replaying_) c.finished = c.failed = true;
     c.medal = license_event_.empty() ? -1 : shown_medal_;
     if (lic_replay) { // the replayed / demo run's own end: as its race ends it (demo) or the live run's end time (replay)
         const sim::exact::ExactRace* er = demo_ && exact_field() ? exact_race_of(*exact_field()) : nullptr;
@@ -51,7 +53,7 @@ void RaceScreen::music_cues(App& app) {
         c.finished = demo_end || replay_end;
         // A demonstration: its run's judged result (2..4 a medal; 0 slower than bronze, -1 out of the course: failed);
         // a replay: what its live run played.
-        c.failed = demo_end ? er->kind() == sim::exact::Conductor::License &&
+        c.failed = demo_end ? sim::exact::licence_kind(er->kind()) &&
                                   race::license_fail_jingle(race::license_outcome(er->flow().result, er->flow().result_time, true, -1))
                             : music_license_failed_;
     }

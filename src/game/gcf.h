@@ -15,6 +15,10 @@
 // value = u32 at entry +4, in the disc's money units: the Japanese game shows them x100),
 // 4 GT-mode race codes, 6 courses, 13 license / challenge tests, 15 prize keys (prize cars),
 // 14 arcade classes, 8 arcade modes, 12 demo races.
+//
+// Gran Turismo Concept's gameconf/concept*.gcf has the same sections and entry layouts (only
+// counts and contents differ, docs/formats/database.md "Gran Turismo Concept"): its prize keys
+// name a car by arcade class and place ("CLASS_S#008"), its arcade class cars name their race.
 
 #include "base/bytes.h"
 

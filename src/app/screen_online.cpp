@@ -25,7 +25,7 @@
 // `aspiration=na|turbo`, `maxps=300`, `stock=1`, `mods=0`, `allowtires=0+1+7` (the tire types
 // allowed, game::kTireTypes), `stocksettings=1`, `wear=1` (tire wear). `car=` also takes an arcade car label
 // ("arm_tt_00"); `tires=7` puts it on that tire type. The host's CPU cars: `cpu=3` (how many),
-// `skill=easy|normal|hard|pro` (all of them), `cpuplace=0` (how many start ahead of the players);
+// `skill=easy|normal|hard|pro` (all of them; a Gran Turismo Concept disc's levels normal|pro|ace), `cpuplace=0` (how many start ahead of the players);
 // `page=cpu` opens their page.
 
 #include "app/screen_online.h"
@@ -41,7 +41,9 @@
 #include "base/log.h"
 #include "game/data/car_database.h"
 #include "game/gt_mode.h"
+#include "game/concept_game.h"
 #include "game/gt_mode_menu.h"
+#include "disc/disc.h"
 #include "game/gt_setting.h"
 #include "game/gt_state.h"
 #include "game/net_car.h"
@@ -132,7 +134,7 @@ Script read_script() {
         else if (k == "stock") s.stock = v != "0";
         else if (k == "mods") s.mods = v != "0";
         else if (k == "cpu") s.cpu = std::clamp(std::atoi(v.c_str()), 0, net::kMaxCpuCars);
-        else if (k == "skill") s.cpu_skill = index_of(v, {"easy", "normal", "hard", "pro"});
+        else if (k == "skill") s.cpu_skill = index_of(v, {"easy", "normal", "hard", "pro", "ace"});
         else if (k == "cpuplace") s.cpu_place = std::max(0, std::atoi(v.c_str()));
         else if (k == "wear") s.wear = v != "0";
         else if (k == "stocksettings") s.stock_settings = v != "0";
@@ -363,6 +365,11 @@ private:
         program_ = app.vfs() ? race::exact_program_data(*app.vfs(), &err) : nullptr;
         if (!program_)
             core_problem_ = "This disc cannot race online yet (GT3's own physics: " + (err.empty() ? std::string("no program") : err) + ")";
+        // Players race together only on matching discs: the host turns the others away.
+        const net::OnlineDisc disc = game::online_disc(app.disc() ? &app.disc()->info() : nullptr,
+                                                       app.vfs() ? app.vfs()->region().game : GameKind::Gt3);
+        LOG_INFO("Online: this disc races as %s (%s)", disc.name.c_str(), disc.id.c_str());
+        net::online().set_disc(disc);
         // Too old for the relay: say so at once (every time Online battle opens).
         if (updates().required() && !script_.have) updates().open_dialog(net::UpdatePrompt::Required);
         app_ = &app;
@@ -426,6 +433,8 @@ private:
             g->set_texts("CPU cars", "Players start", "The players");
         }
         cpu_view_.set_read_only(true);
+        // A Gran Turismo Concept disc: the CPU cars' skills are its single-race levels (game::concept_cpu_driver).
+        for (OpponentGrid* g : {&cpu_grid_, &cpu_view_}) g->set_concept_levels(concept_disc());
         cpu_grid_.read(cfg, "online_cpu");
         if (!cars_.empty()) {
             const int saved = cpu_grid_.count();
@@ -461,7 +470,9 @@ private:
             if (script_.cpu_skill >= 0)
                 for (int k = 0; k < OpponentGrid::kMaxCars; ++k) {
                     OpponentGrid::Car c = cpu_grid_.car(k);
-                    c.skill = script_.cpu_skill;
+                    // (a Concept disc's levels: easy and normal Normal, hard and pro Professional, ace Ace)
+                    static constexpr int kConceptLevel[] = {0, 0, 1, 1, 2};
+                    c.skill = concept_disc() ? kConceptLevel[script_.cpu_skill] : std::min(script_.cpu_skill, OpponentGrid::kSkills - 1);
                     cpu_grid_.set_place(k, c);
                 }
             if (script_.allow_tires >= 0) rules_.tires = u16(script_.allow_tires);
@@ -1487,7 +1498,7 @@ private:
             ui.text(24, y, "CPU " + std::to_string(c.k + 1), colors::kDim);
             if (c.rgb) draw_paint_chip(ui, 140, y, 8, 8, *c.rgb, false);
             ui.text(152, y, Ui::clip(c.car, 130), c.blocked ? colors::kBad : colors::kDim);
-            ui.text(290, y, OpponentGrid::skill_name(c.skill), colors::kDim);
+            ui.text(290, y, OpponentGrid::skill_name(c.skill, concept_disc()), colors::kDim);
             y += 14;
         }
         if (!ns.joined()) ui.text(24, y, "Connecting...", colors::kDim);
@@ -2118,6 +2129,11 @@ private:
         const int cars = std::min(net::kMaxPlayers, slots > 0 ? slots : net::kMaxPlayers);
         return std::clamp(cars - int(ns.players().size()), 0, net::kMaxCpuCars);
     }
+    // A Gran Turismo Concept disc: CPU skills are its single-race levels.
+    static bool concept_disc() {
+        const game::GtData* gd = gt_data();
+        return gd && gd->game == GameKind::Concept;
+    }
     // Host: the lineup as the lobby sends it (as many CPU cars as fit), each car's descriptor out to everyone.
     void cpu_settings(net::Settings& st) {
         net::Session& ns = net::online();
@@ -2129,9 +2145,15 @@ private:
             if (!cpu_car_ok(c.car)) break; // (a car not on this disc's list: none from here on)
             net::Settings::CpuCar cc;
             cc.paint = u8(c.paint), cc.skill = u8(c.skill);
-            cc.driver = OpponentGrid::skill_driver(db_, c.skill, dirt).value_or(std::array<u8, 16>{});
-            st.cpu.push_back(cc);
             game::OnlineCar oc = car_at(c.car, c.paint);
+            // GT3: the arcade race of the skill's difficulty; a Concept disc: the car's own single race at the level.
+            const game::GtData* gd = gt_data();
+            const std::optional<std::array<u8, 16>> driver =
+                concept_disc() && gd ? game::concept_cpu_driver(*gd, oc.kind == game::OnlineCar::Kind::Arcade ? oc.arcade : std::string(),
+                                                                oc.car, c.skill, dirt)
+                                     : OpponentGrid::skill_driver(db_, c.skill, dirt);
+            cc.driver = driver.value_or(std::array<u8, 16>{});
+            st.cpu.push_back(cc);
             if (program_) oc.digest = game::online_car_digest(db_, *program_, oc);
             ns.set_cpu_car_info(k, game::encode_online_car(oc));
         }
@@ -2157,7 +2179,7 @@ private:
             if (const Bytes* info = ns.car_info(u8(net::kCpuId + k)))
                 if (std::optional<game::OnlineCar> oc = game::decode_online_car(*info))
                     c.label = oc->kind == game::OnlineCar::Kind::Arcade ? oc->arcade : oc->car;
-            c.paint = st.cpu[k].paint, c.skill = std::clamp(int(st.cpu[k].skill), 0, OpponentGrid::kSkills - 1);
+            c.paint = st.cpu[k].paint, c.skill = std::clamp(int(st.cpu[k].skill), 0, cpu_view_.skills() - 1);
             cpu_view_.set_place(int(k), c);
         }
     }
@@ -2194,7 +2216,7 @@ private:
         const std::vector<net::Settings::CpuCar>& cpu = ns.settings().cpu;
         if (cpu.empty()) return ns.is_host() && cpu_limit(ns) == 0 ? "None (the grid is full)" : "None";
         const bool same = std::all_of(cpu.begin(), cpu.end(), [&](const net::Settings::CpuCar& c) { return c.skill == cpu[0].skill; });
-        return std::to_string(cpu.size()) + " - " + (same ? OpponentGrid::skill_name(cpu[0].skill) : "mixed skills");
+        return std::to_string(cpu.size()) + " - " + (same ? OpponentGrid::skill_name(cpu[0].skill, concept_disc()) : "mixed skills");
     }
     // Host: a CPU car against the lobby's car rules ("" = all allowed).
     std::string cpu_rules_problem(const net::Session& ns) const {

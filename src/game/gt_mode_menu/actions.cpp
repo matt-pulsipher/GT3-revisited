@@ -4,6 +4,7 @@
 
 #include "game/gt_mode_menu/internal.h"
 
+#include "game/concept_game.h"
 #include "game/gt_setting.h"
 
 #include <algorithm>
@@ -32,7 +33,7 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
             e.page == "records_free_tt")
             ms.list_off = {}, ms.list_pin = {};
         // The garage's wheel list starts on the entry the car wears (the stock-wheel button for a
-        // car on its own wheels), else on its first button (gt_mode §7; WheelButtonList).
+        // car on its own wheels), else on its first button (gt_mode §7; wheel button list).
         if (starts(e.page, "at/ws/ws_")) ms.shop_row = {}; // a brand page's row is placed at once
         if (e.page == "hm/hm_wheel") {
             const GarageCar* car = wheel_page_car(*s);
@@ -58,7 +59,7 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
                                          "slider_gear_ratio_6", "slider_gear_ratio_7", "slider_gear_ratio_final",
                                          "slider_gear_auto_level", "slider_aero_f", "slider_aero_r",
                                          "slider_elec_aycc", "slider_elec_ascc", "slider_elec_tcsc",
-                                         "slider_elec_vcdc"})
+                                         "slider_elec_vcdc", "slider_tire_f", "slider_tire_r"})
                     if (auto r = slider_range(s->gt(), *setting_real(), *work, item)) s->setting_entry[item] = r->value;
         }
         return false;
@@ -79,6 +80,19 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
     if (e.kind == K::BackAction && e.action == "retrieve_slider") {
         // Back from a slider page: every uncommitted change is discarded.
         if (GarageCar* real = setting_real()) s->setting_work = *real;
+        return false;
+    }
+    // Gran Turismo Concept's settings (concept §10): Normal and Custom fit their set of parts on the car at once,
+    // the Custom page's Reset puts every setting back.
+    if (e.kind == K::Action && (e.action == "set_concept_normal" || e.action == "set_concept_custom" || e.action == "retrieve_all")) {
+        if (GarageCar* real = setting_real()) {
+            if (e.action == "set_concept_normal") concept_fit_normal(gt, *real);
+            else if (e.action == "set_concept_custom") concept_fit_custom(gt, *real);
+            else concept_reset_custom(gt, *real);
+            real->range_ref_final = 0;
+            s->setting_work = *real;
+            autosave(&log);
+        }
         return false;
     }
     if (e.kind == K::Action && e.action == "commit_slider") {

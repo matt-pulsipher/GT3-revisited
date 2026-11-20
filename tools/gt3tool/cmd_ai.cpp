@@ -18,7 +18,7 @@ namespace gt3r::tool {
 namespace {
 
 int ai_survey(Disc& disc, const Args& a) {
-    std::string prefix = !a.empty() ? a[0] : RegionData{disc.info().region}.course_path("", RegionData{disc.info().region}.default_language());
+    std::string prefix = !a.empty() ? a[0] : disc.info().data.course_path("", disc.info().data.default_language());
     std::map<int, size_t> hist[4], kinds_by_radius[2], hi16;
     size_t files = 0;
     for (const auto& e : disc.volume().entries()) {

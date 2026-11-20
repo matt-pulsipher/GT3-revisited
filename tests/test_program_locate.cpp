@@ -10,6 +10,7 @@
 #include "disc/core_image.h"
 #include "disc/disc.h"
 #include "disc/region.h"
+#include "formats/db/gt_db.h"
 #include "game/data/car_database.h"
 #include "game/gt_mode.h"
 #include "race/exact_setup.h"
@@ -17,6 +18,7 @@
 #include "vfs/vfs.h"
 #include "sim/exact/program_data.h"
 #include "sim/exact/program_locate.h"
+#include "sim/exact/special.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -230,8 +232,8 @@ TEST(program_locate_unknown_rule) {
 }
 
 // Other builds of the engine (GT3R_DISC_CONCEPT: disc images separated by ';', e.g. GT Concept): the disc opens, the program
-// decodes and ProgramData loads without an exception; each table's tier and each rule are reported, every table not like
-// GT3's is an issue and serves GT3's values; the game races on GT3's physics, not the disc's own (race_physics). Whether the
+// decodes and ProgramData loads without an exception; each table's tier and each rule are reported; a later build of the
+// engine (Gran Turismo Concept) is known and races on its own physics (race_physics), its changed tables the disc's. Whether the
 // disc's car database and course files can be read is reported (a disc whose data cannot build a race is reported, not
 // chased).
 TEST(program_locate_other_builds) {
@@ -245,7 +247,107 @@ TEST(program_locate_other_builds) {
         try {
             std::unique_ptr<Disc> disc = Disc::open(path);
             const ex::ProgramData d = load(CoreImage::decode(disc->read_core_gt3()));
-            std::printf("    %s program (nearest), %s\n", ex::program_name(d.program()), d.known() ? "known" : "not known");
+            std::printf("    %s program, %s\n", ex::program_name(d.program()), d.known() ? "known" : "not known (GT3's core)");
+            // A later build of the engine is told by its own code: every table through the routine that addresses it, the
+            // routines whose changes are ported recognised; it races on GT3's core (NTSC-U's rules) until its own is
+            // complete, and its own rules are there for the asking.
+            if (ex::concept_program(d.program())) {
+                for (int i = 0; i < ex::ProgramData::kTables; ++i) CHECK(d.tier(T(i)) == 1);
+                for (const ex::Rule r : {ex::Rule::Atan2, ex::Rule::FloatToDouble, ex::Rule::EngineCondition, ex::Rule::SlipAngle,
+                                         ex::Rule::SpecBuild})
+                    CHECK(d.recognised(r));
+                // Every later build races on its own physics (its whole race step is proven on the disc): the disc reports
+                // its own rules, every routine recognized (at 60 steps a second, as a PAL disc of GT3; 2002 Tokyo-Geneva
+                // Europe's own 50 is its release behaviour's).
+                if (ex::concept_program(d.program())) {
+                    CHECK(d.known());
+                    for (const std::string& issue : d.issues()) CHECK(issue.find("changed on this disc") != std::string::npos);
+                    CHECK(d.behaviour().rules == d.program() && d.behaviour().rate == 60);
+                    CHECK(ex::release_behaviour(d.program()).rate == (d.program() == ex::Program::ConceptGenevaEu ? 50 : 60));
+                    CHECK(!ex::gt3_program(d.behaviour().rule(ex::Rule::AxleStep)) && d.behaviour().rule(ex::Rule::LapTime) == ex::Program::Pal);
+                    for (int r = 0; r < ex::kRules; ++r) CHECK(d.recognised(ex::Rule(r)));
+                    CHECK(race::race_physics(d).own);
+                }
+                ex::ProgramData own = d;
+                const ex::Behaviour release = ex::release_behaviour(d.program());
+                CHECK(own.can_behave(release) && own.can_behave({d.program(), 60}));
+                own.set_behaviour({d.program(), 60});
+                CHECK(own.behaviour().rule(ex::Rule::Atan2) == d.program() && own.behaviour().rule(ex::Rule::SpecBuild) == d.program());
+                // The later builds' own routines and tables (special.h, the AWD system 3 settings): found on the disc.
+                for (const ex::Rule r : {ex::Rule::GearSpec, ex::Rule::Layout, ex::Rule::Driveline, ex::Rule::AwdGain, ex::Rule::DriveClass,
+                                         ex::Rule::HybridStep, ex::Rule::PodMood, ex::Rule::PodStop, ex::Rule::ActiveWing,
+                                         ex::Rule::StopZone, ex::Rule::PodRule, ex::Rule::PodLine, ex::Rule::PodSpring,
+                                         ex::Rule::HitReport, ex::Rule::LicenceJudge})
+                    CHECK(d.recognised(r) && own.behaviour().rule(r) == d.program());
+                // (the pass-by states: NTSC-U's routine, 2002 Tokyo-Geneva Europe's PAL's 50 Hz counts; the pod race's HUD
+                // messages beside GT3's, display time 0)
+                CHECK(d.recognised(ex::Rule::PassBy) &&
+                      own.behaviour().rule(ex::Rule::PassBy) == (d.program() == ex::Program::ConceptGenevaEu ? ex::Program::Pal : ex::Program::NtscU));
+                CHECK(d.has(T::PodMessages) && d.tier(T::PodMessages) == 2 && d.table_start(T::PodMessages) == d.table_start(T::Messages) + 0x80);
+                CHECK(d.w(T::PodMessages, 0) == 0x10 && d.w(T::PodMessages, 8) == 0x11 && d.w(T::PodMessages, 4) == 0 && d.w(T::PodMessages, 12) == 0);
+                for (const T t : {T::SpecialCars, T::Awd3, T::PodMoods, T::Stepless, T::RaceSwitches}) CHECK(d.has(t) && d.tier(t) == 1);
+                // (2002 Tokyo-Geneva's special kind 7 ride settings: only those two builds have them, switched on)
+                if (d.program() >= ex::Program::ConceptGenevaEu) CHECK(d.has(T::Kind7Ride) && d.tier(T::Kind7Ride) == 1 && d.b(T::Kind7Ride, 0) == 1);
+                else CHECK(!d.has(T::Kind7Ride));
+                // (the single race's flying start grid: only the builds before 2002 Tokyo-Geneva, whose conductor is GT3's again;
+                // its lines 0 .. 7, its steps and speed steps set; the layout 7 system's settings on every build, both ratings set)
+                const bool grid = d.program() <= ex::Program::ConceptSeoul2;
+                CHECK(d.has(T::FlyingStart) == grid);
+                CHECK(ex::gt3_program(own.behaviour().rule(ex::Rule::FlyingGrid)) == !grid && d.recognised(ex::Rule::FlyingGrid));
+                if (grid) {
+                    CHECK(d.tier(T::FlyingStart) == 1);
+                    for (u32 k = 0; k < 6; ++k) CHECK(d.b(T::FlyingStart, k) <= 7);
+                    for (u32 k = 0; k < 5; ++k) CHECK(d.b(T::FlyingStart, 8 + k) != 0 && d.b(T::FlyingStart, 0x10 + k) != 0);
+                }
+                CHECK(d.has(T::Hybrid) && d.tier(T::Hybrid) == 1 && d.b(T::Hybrid, 0) != 0 && d.b(T::Hybrid, 1) != 0);
+                CHECK(d.recognised(ex::Rule::StuckNudge) && own.behaviour().rule(ex::Rule::StuckNudge) == d.program());
+                // (the routines of the race step ported in the later passes, each by its own code on every build)
+                for (const ex::Rule r : {ex::Rule::AxleStep, ex::Rule::PadClutch, ex::Rule::PadControls, ex::Rule::DriverInput,
+                                         ex::Rule::AiOutputs, ex::Rule::AiDecide, ex::Rule::AiTraffic, ex::Rule::AiBraking, ex::Rule::Ascc,
+                                         ex::Rule::TyreEffects, ex::Rule::GapClosing, ex::Rule::ContactIntensity, ex::Rule::SlowDown,
+                                         ex::Rule::ParamsBuild})
+                    CHECK(d.recognised(r) && own.behaviour().rule(r) == d.program());
+                // (the stop zone: 608 m on, 33 m long; the ASCC's three switches set; the stepless rates)
+                CHECK(d.h(T::RaceSwitches, 0) == 608 && d.b(T::RaceSwitches, 2) == 33);
+                CHECK(d.b(T::RaceSwitches, 3) == 1 && d.b(T::RaceSwitches, 4) == 1 && d.b(T::RaceSwitches, 5) == 1);
+                CHECK(d.b(T::Stepless, 0) > d.b(T::Stepless, 1) && d.b(T::Stepless, 0xC) != 0 && d.b(T::Stepless, 0xD) != 0);
+                // (the special cars: kind 1 and kind 2 by their labels in the program, no other car)
+                {
+                    const sim::exact::MoodTables moods = sim::exact::mood_tables(d);
+                    CHECK(moods.time[1] != 0 && moods.lamp[1] != moods.lamp[0]);
+                    int kinds[3] = {};
+                    data::CarDatabase cars;
+                    if (cars.load(disc->volume()))
+                        for (const data::Car& c : cars.cars())
+                            if (const u8 k = sim::exact::special_kind(own, db::id_hash(c.label)); k == 1 || k == 2) ++kinds[k];
+                    CHECK(kinds[1] == 1 && kinds[2] == 1);
+                }
+                // (the routines of GT3's releases' rules, each as the build has it: PAL's rubber band cap and ghost rules,
+                // NTSC-U's licence stop but for 2002 Tokyo-Geneva's own constants)
+                CHECK(own.behaviour().rule(ex::Rule::RubberBand) == ex::Program::Pal && own.behaviour().rule(ex::Rule::BattleCap) == ex::Program::Pal);
+                CHECK(own.behaviour().rule(ex::Rule::SectorTime) == ex::Program::Pal && own.behaviour().rule(ex::Rule::LapUsable) == ex::Program::NtscU);
+                CHECK(own.behaviour().rule(ex::Rule::LicenceStop) ==
+                      (d.program() >= ex::Program::ConceptGenevaEu ? d.program() : ex::Program::NtscU));
+                // Online races and GT3's demos: NTSC-U's rules on GT3's tables.
+                ex::ProgramData online = d.gt3_tables();
+                online.set_behaviour({ex::Program::NtscU, 60});
+                CHECK(!online.changed() && online.behaviour().rule(ex::Rule::Atan2) == ex::Program::NtscU);
+            }
+            // GT3's releases have none of the later builds' tables or routines (their lack is how they are told).
+            if (ex::gt3_program(d.program())) {
+                for (const T t : {T::SpecialCars, T::Awd3, T::PodMoods, T::Stepless, T::RaceSwitches, T::Kind7Ride, T::FlyingStart, T::Hybrid,
+                                  T::PodMessages})
+                    CHECK(!d.has(t));
+                for (const ex::Rule r : {ex::Rule::HitReport, ex::Rule::PassBy, ex::Rule::LicenceJudge})
+                    CHECK(d.recognised(r) && d.behaviour().rule(r) == d.program());
+                CHECK(d.recognised(ex::Rule::StuckNudge) && ex::gt3_program(d.behaviour().rule(ex::Rule::StuckNudge)));
+                for (const ex::Rule r : {ex::Rule::AxleStep, ex::Rule::PadControls, ex::Rule::AiDecide, ex::Rule::AiTraffic, ex::Rule::Ascc,
+                                         ex::Rule::SlowDown, ex::Rule::ParamsBuild})
+                    CHECK(d.recognised(r) && ex::gt3_program(d.behaviour().rule(r)));
+                for (const ex::Rule r : {ex::Rule::HybridStep, ex::Rule::PodMood, ex::Rule::PodStop, ex::Rule::ActiveWing, ex::Rule::FlyingGrid,
+                                         ex::Rule::StopZone, ex::Rule::PodRule, ex::Rule::PodLine, ex::Rule::PodSpring})
+                    CHECK(d.rule_site(r) == 0 && d.behaviour().rule(r) == d.program());
+            }
             int tiers[3] = {}, matched = 0;
             for (int i = 0; i < ex::ProgramData::kTables; ++i) {
                 const T t = T(i);

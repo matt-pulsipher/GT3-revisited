@@ -16,7 +16,8 @@
 //
 // Scripted screenshots:
 //   GT3R_GT3MENU_SCRIPT="down,cross,wait:40,down"  keys run at start-up, one
-//       60 Hz frame each (plus a release frame); wait:N idles N frames
+//       60 Hz frame each (plus a release frame); wait:N idles N frames; p2:<key>
+//       is player 2's key (the 2 player car page)
 //   GT3R_GT3MENU_FREEZE=1   stop the menu clock after the script (so --shot
 //       captures exactly the scripted frame, e.g. mid-transition)
 //   GT3R_LANG=FR            menu language folder
@@ -158,7 +159,10 @@ public:
     bool follows_aspect() const override { return true; }
 
     void update(App& app, double dt) override {
-        if (!flow_ && !init_tried_) init_tried_ = true, init(app); // once: a failure shows its error (no retry every frame)
+        if (!flow_ && !init_tried_) {
+            init_tried_ = true, init(app); // once: a failure shows its error (no retry every frame)
+            if (flow_ && in_game_) return;  // (a script that started a race at once: back here when it ends)
+        }
         if (!flow_) {
             if (app.menu().pressed(PadButton::Triangle)) app.pop();
             return;
@@ -176,6 +180,13 @@ public:
         if (in_game_) {
             // Back from gameplay (the pushed screen was popped).
             in_game_ = false;
+            if (attract_movie_ && !movie_skipped_) {
+                menu::flow::GameResult done;
+                done.mode = "movie";
+                done.finished = true;
+                menu::flow::post_game_result(std::move(done));
+            }
+            attract_movie_ = false;
             flow_->game_finished();
             if (!script_.empty()) run_script(app);
         }
@@ -308,8 +319,7 @@ private:
     }
 
     bool on_title() const {
-        return !language_page_ && flow_ && flow_->controller() && !flow_->switching() &&
-               flow_->controller()->page_name() == "root" && !flow_->controller()->busy();
+        return !language_page_ && flow_ && flow_->on_title_page(); // (Concept: its title page ar/push_start)
     }
 
     // The title's GT3R menu button (the game's own items take A as Cross after a hover).
@@ -323,7 +333,8 @@ private:
             return true;
         }
         const std::string& c = flow_->control();
-        if (c == "gt_mode" && flow_->controller()->page_name() == "root") t.details = "Title menu";
+        if (flow_->on_title_page() || (c == "gt_mode" && flow_->controller()->page_name() == "root")) t.details = "Title menu";
+        else if (c == "concept") t.details = "In the menus";
         else if (c == "gt_mode") {
             t.details = "GT Mode";
             if (game::GtModeSession* s = game::gt_mode_session()) t.state = "Day " + std::to_string(s->gt().state().day);
@@ -351,13 +362,14 @@ private:
         // GT mode: 3D car renders on top of the widget's own art.
         renderer_->set_widget_overlay_drawer([this, &app](SDL_Renderer* r, const Element& e, const SDL_FRect& box,
                                                           float alpha) {
-            if (flow_ && flow_->gt_active())
+            // (Concept's control too: the Game Status show room's car.)
+            if (flow_ && (flow_->gt_active() || flow_->control() == "concept"))
                 if (const GtModeWidgetDrawer& d = gt_mode_widget_drawer(); d && flow_->controller())
                     d(app, r, e, box, alpha, flow_->controller()->page_name(), element_image(renderer_->drawing_scene(), e),
                       &canvas_);
             // 2 Player car page: each player's car ("ar/select_car_2p:<entry>#paint@age%player");
             // player 2's draw comes one page width to the right.
-            if (flow_ && flow_->control() == "arcade" && flow_->two_player(0) && e.name == "car") {
+            if (flow_ && flow_->arcade_pages() && flow_->two_player(0) && e.name == "car") {
                 if (const GtModeWidgetDrawer& d = gt_mode_widget_drawer(); d) {
                     const float page_w = box.w;
                     const int p = box.x >= page_w * 0.5f ? 1 : 0;
@@ -374,7 +386,7 @@ private:
                 return;
             }
             // Arcade car pickers: the focused car in 3D ("<page>:<entry>").
-            if (flow_ && flow_->control() == "arcade" && flow_->carousel() && e.name == "car")
+            if (flow_ && flow_->arcade_pages() && flow_->carousel() && e.name == "car")
                 if (const GtModeWidgetDrawer& d = gt_mode_widget_drawer(); d && flow_->controller()) {
                     const GameFlow::Carousel& c = *flow_->carousel();
                     d(app, r, e, box, alpha,
@@ -425,7 +437,7 @@ private:
             connect_options(app);
             game::install_replay_theater(app.save_folder(), app.vfs()); // Replay Theater files
             install_save_dialogs(app);                                // the save page's file dialogs
-            if (language_page_) flow_->start("language", "root");
+            if (language_page_) flow_->start("language", app.vfs()->region().language_page());
             else flow_->start();
         } catch (const std::exception& e) {
             error_ = e.what();
@@ -446,10 +458,13 @@ private:
                 size_t c = s.find(',', start);
                 std::string tok = s.substr(start, c == std::string::npos ? c : c - start);
                 if (tok.rfind("wait:", 0) == 0) {
-                    for (int i = std::atoi(tok.c_str() + 5); i > 0; --i) script_.push_back(0);
+                    for (int i = std::atoi(tok.c_str() + 5); i > 0; --i) script_.push_back({0, 0});
+                } else if (MenuKeys k2 = tok.rfind("p2:", 0) == 0 ? key_from_name(tok.substr(3)) : 0) {
+                    script_.push_back({0, k2});
+                    script_.push_back({0, 0});
                 } else if (MenuKeys k = key_from_name(tok)) {
-                    script_.push_back(k);
-                    script_.push_back(0);
+                    script_.push_back({k, 0});
+                    script_.push_back({0, 0});
                 } else if (!tok.empty()) {
                     LOG_WARN("gt3menu: unknown script token '%s'", tok.c_str());
                 }
@@ -457,7 +472,7 @@ private:
                 start = c + 1;
             }
             // Let the first page settle before the scripted keys.
-            for (int i = 0; i < 30; ++i) script_.push_front(0);
+            for (int i = 0; i < 30; ++i) script_.push_front({0, 0});
             run_script(app);
             const char* fr = std::getenv("GT3R_GT3MENU_FREEZE");
             frozen_ = fr && *fr && *fr != '0';
@@ -468,8 +483,9 @@ private:
     // (with GT3R_GTMODE_FAKE_RACE the rest then drives the result pages, e.g. the name entry).
     void run_script(App& app) {
         while (!script_.empty() && !flow_->waiting_for_game()) {
-            MenuKeys k = script_.front();
+            const auto [k, k2] = script_.front();
             script_.pop_front();
+            flow_->set_player2_keys(k2);
             step(app, k);
         }
     }
@@ -560,6 +576,12 @@ private:
         movie_path_ = path;
         movie_.stop();
         if (path.empty()) return;
+        // A page's movie that this disc does not have: none, quietly (GT3's names on a Concept disc, a release
+        // without a file its page table names).
+        if (!app.vfs()->exists(path)) {
+            movie_path_.clear();
+            return;
+        }
         try {
             movie_.set_audio_device(app.audio().output_device_id());
             movie_.start(video::open_movie(*app.vfs(), path), app.audio().music_volume());
@@ -587,7 +609,12 @@ private:
         transition_.stop();
         if (r.kind == GameRequest::Kind::PlayMovie) {
             // GT-mode endings: the movie screen pops itself; the menu then resumes.
-            play_movie(app, r.course);
+            // (An attract movie that played to its end counts as finished: the sequence goes on; a skipped one ends it.)
+            MovieScreenOptions mo;
+            movie_skipped_ = false;
+            mo.skipped = &movie_skipped_;
+            attract_movie_ = flow_->attract();
+            play_movie(app, r.course, {}, mo);
             in_game_ = true;
             return;
         }
@@ -717,8 +744,9 @@ private:
     std::vector<std::pair<SDL_FPoint, SDL_FPoint>> drags_;
     std::vector<std::pair<SDL_FPoint, float>> wheels_;
     bool in_game_ = false;
+    bool movie_skipped_ = false, attract_movie_ = false; // the flow's movie on screen: ended by a button; an attract step
     bool frozen_ = false;
-    std::deque<MenuKeys> script_;
+    std::deque<std::pair<MenuKeys, MenuKeys>> script_; // GT3R_GT3MENU_SCRIPT: player 1's and player 2's keys a frame
     std::vector<Message> messages_;
     std::string lang_ = "US";
     std::vector<std::string> languages_;

@@ -281,6 +281,7 @@ public:
         const MenuInput& m = app.menu();
         bool skip = opt_.skippable &&
                     (m.pressed(PadButton::Cross) || m.pressed(PadButton::Start) || m.pressed(PadButton::Circle));
+        if (skip && opt_.skipped) *opt_.skipped = true;
         if (skip || (!opt_.loop && player_.finished())) finish(app);
     }
 

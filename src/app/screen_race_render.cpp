@@ -373,6 +373,16 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
                 sparks_.add_items(items_, r->sparks(), spark_view_, step_.alpha(), spark_shot_ && !(*spark_shot_ == shot));
                 spark_shot_ = shot;
             }
+    // A later build's leaves, drawn in the sparks' pass (the particle manager draws both) with the sparks' view, lit by
+    // the course's Env0 car light 0 as the file has it (race/leaves.h).
+    if (spark_pass_ && !mirror && leaves_.loaded())
+        if (const RaceField* f = exact_field())
+            if (const sim::exact::ExactRace* r = exact_race_of(*f); r && r->sparks().leaves_on()) {
+                LeafLight light;
+                if (const SunParams& e = sun_.params(); e.has_env)
+                    light.dir = e.light_dir, light.ambient = e.light_ambient, light.diffuse = e.light_diffuse;
+                leaves_.add_items(items_, r->sparks(), step_.alpha(), spark_view_, light);
+            }
     if (smoke_.loaded()) {
         render::Vec3 r = render::normalize(cam_r);
         // Camera-facing about the vertical: up is world up made orthogonal to the camera's right.
@@ -494,12 +504,20 @@ HudData RaceScreen::hud_data(int player) {
     d.mode = hud_mode(sel);
     if (preset_.hud_mode >= 0 && !hud_layout(HudMode(preset_.hud_mode)).empty()) d.mode = HudMode(preset_.hud_mode);
     d.live = !replaying_ && !attract_;
+    // A pod race's stop prompts, in the car message's place (the display's message draw: 0x10 "stop and pull
+    // the handbrake" in amber, 0x11 "go back to the stop area" in red). The disc's texts; where its text file has none
+    // (2001 Tokyo, whose program holds Japanese defaults), the English release's (Tokyo-Geneva's American English).
+    if (const int prompt = pod_prompt(p2 ? 1 : 0); prompt == 0x10 || prompt == 0x11) {
+        d.car_message = prompt == 0x10 ? race_text("RACEDISPLAY_PodSitDown", "Stop and pull your emergency brake", true)
+                                       : race_text("RACEDISPLAY_PodOverrun", "Return to STOP AREA", true);
+        d.car_message_red = prompt == 0x11;
+    }
     const LapList& laps = lap_lists_[p2 ? 1 : 0];
     d.lap_times.assign(laps.recent.begin(), laps.recent.end());
     d.laps_recorded = laps.count;
     // Total / Time: the recorded laps and the current one, the recorded ones alone once the
     // car has finished (a time trial's FAIL is no finish).
-    d.finished = p2 ? finished2_ : finished_ && !tt_failed_;
+    d.finished = p2 ? finished2_ : finished_ && !tt_failed_ && !pod_disqualified();
     d.total_time = d.finished ? laps.sum : laps.sum + std::max(0.0, d.lap_time);
     if (d.lap_time < 0 && !d.finished) d.total_time = laps.count > 0 ? laps.sum : -1;
     // Record Lap / P.P. / Fastest: the session's fastest lap driven (every car's in races, the
@@ -751,6 +769,10 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
             float sx = menu_dst.w / 640.0f, sy = menu_dst.h / 448.0f;
             SDL_FRect box = licence_box ? SDL_FRect{menu_dst.x + 32 * sx, menu_dst.y + 58 * sy, 280 * sx, 210 * sy}
                                         : menu_dst;
+            // Concept's course license menu (without the pace car): its box on the right, (332, 62, 280, 242) of the
+            // Tokyo-Geneva program's 512-line frame (shortmenu concept license render).
+            if (licence_box && concept_menus())
+                box = {menu_dst.x + 332 * sx, menu_dst.y + 62.0f * 448.0f / 512.0f * sy, 280 * sx, 242.0f * 448.0f / 512.0f * sy};
             render::Vec3 eye = camera_.eye();
             const WheelView wv{camera_.view(), camera_.projection(box.w / box.h), eye, true, wheel_env_};
             wheel_view_ = &wv;
@@ -890,12 +912,18 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
 
     if (logger_mode_) { // the Analyzer over the replay (or its graph over everything)
         SDL_FRect dst = original_res_ ? frame_rect_ : menu_dst;
+        const float k = dst.h / 448.0f;
         if (analyzer_.view() == Analyzer::View::Graph) {
             ui.fill(0, 0, W, H, Color{0, 0, 0, 255});
-        } else { // the bottom band (bg 0..212, indicator_back 0..148) across a wide screen too
-            float k = dst.h / 448.0f;
+        } else if (analyzer_.has_band()) { // the bottom band (bg 0..212, indicator_back 0..148) across a wide screen too
+            draw_logger_display(app, ui);
             ui.fill(0, dst.y + dst.h - 212 * k, W, 64 * k, Color{51, 51, 51, 255});
             ui.fill(0, dst.y + dst.h - 148 * k, W, 148 * k, Color{0, 0, 0, 255});
+        } else {
+            // Gran Turismo Concept's page has no band: the race's view ends 13 + 256 lines down (the viewport), the
+            // frame below it stays clear, the logger display is drawn over it and the page's windows over that.
+            ui.fill(0, dst.y + 269 * k, W, H - (dst.y + 269 * k), Color{0, 0, 0, 255});
+            draw_logger_display(app, ui);
         }
         analyzer_.draw(ui.renderer(), dst);
         return;
@@ -933,6 +961,28 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
                           ds.meshes_drawn + ds.meshes_culled, ds.triangles / 1000, vehicle_->backend_name(),
                           track_->backend_name());
             ui.text(10, 52, line, Color{200, 205, 215, 200});
+        }
+    }
+    // A pod race's disqualification (the pod display's examination message, simple exam messages: the disc's
+    // RACEDISPLAY_Disqualification fading in and out, ConceptExamMessage): over the whole race with one player, in each
+    // disqualified player's half with two (held there; the race ends once both are).
+    // The game's wide mode (the text's 0.75 x scale): our screen wider than 4:3, as the HUD's 16:9 rules.
+    if (!replaying_ && preset_.hud && (pod_dq_t_[0] >= 0 || pod_dq_t_[1] >= 0)) {
+        const std::string dq = race_text("RACEDISPLAY_Disqualification", "FAIL", true);
+        const bool wide = W > pic.w + 0.5f;
+        if (!two_player_) {
+            ConceptExamMessage::draw(ui.renderer(), hud_.fonts(), ConceptExamMessage::at(pod_dq_frame(0), false), dq,
+                                     SDL_FRect{0, 0, W, H}, wide);
+        } else if (split) {
+            for (int h = 0; h < 2; ++h) {
+                if (pod_dq_t_[size_t(h)] < 0) continue;
+                const SDL_FRect& hf = h == 0 ? half1 : half2;
+                SDL_Rect clip{int(hf.x), int(hf.y), int(hf.w), int(hf.h)};
+                SDL_SetRenderClipRect(ui.renderer(), &clip);
+                ConceptExamMessage::draw(ui.renderer(), hud_.fonts(), ConceptExamMessage::at(pod_dq_frame(h), true), dq,
+                                         hf, wide);
+                SDL_SetRenderClipRect(ui.renderer(), nullptr);
+            }
         }
     }
     // Results overlay over the running race after the finish.
@@ -981,14 +1031,14 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
                 bool failed = license_.state() == LicenseRun::State::Failed;
                 license_overlay_.draw_fail(ui.renderer(), hud_.fonts(), f,
                                            race_text(failed ? "RACEDISPLAY_ExamFail" : "RACEDISPLAY_ExamTimeOver",
-                                                     failed ? "FAIL" : "TIME EXPIRED"),
+                                                     failed ? "FAIL" : "TIME EXPIRED", true),
                                            failed ? -1.0 : license_.time(), full);
             }
         } else if (!preset_.hud) {
             // Display off (hud=0): no time-trial FAIL / record overlays over the scene.
         } else if (tt_failed_) {
             license_overlay_.draw_fail(ui.renderer(), hud_.fonts(), result_frame(),
-                                       race_text("RACEDISPLAY_TimeTrialFail", "FAIL"), -1.0,
+                                       race_text("RACEDISPLAY_TimeTrialFail", "FAIL", true), -1.0,
                                        SDL_FRect{0, 0, W, H});
         } else {
             // Time trials: the best lap; machine tests: the time to the mark or the top speed.
@@ -1074,6 +1124,36 @@ bool RaceScreen::glow_blocked(const GlowCars& cars, const render::Vec3& a, const
     for (const auto& [body, to_body] : cars.bodies)
         if (body->segment_blocked(to_body.transform_point(a), to_body.transform_point(b))) return true;
     return course_scene_ && course_scene_->occluder().segment_blocked(a, b);
+}
+
+// The Analyzer's REPLAY: the logger display (racedetail mode LOGGER) over the race's cars, as the race draws it while the
+// data logger plays (race info + 0x70). Gran Turismo 3 (the solo race): the display twice, track A's car
+// (car 0) on the whole frame and track B's (car 1, when there is one) 560 to the right; Gran Turismo Concept
+// (the solo race): track A's car alone, its rows under the Analyzer's page.
+void RaceScreen::draw_logger_display(App& app, Ui& ui) {
+    const UiRect pic = ui.picture43();
+    const SDL_FRect frame = original_res_ ? frame_rect_ : SDL_FRect{pic.x, pic.y, pic.w, pic.h};
+    const bool concept_disc = app.vfs() && app.vfs()->region().game == GameKind::Concept;
+    const HudData base = hud_data(0);
+    for (int car = 0; car < (concept_disc ? 1 : 2); ++car) {
+        HudData d = base;
+        d.four_three = true;
+        d.hint_gear = -1;
+        race::CarDisplay c;
+        const RaceField* f = exact_field();
+        if (f && race::exact_car_display(*f, car, step_.alpha(), c)) {
+            d.speed_kmh = c.speed_kmh, d.rpm = c.rpm, d.gear = c.gear;
+            d.rev_limit_rpm = c.rev_limit_rpm, d.shift_rpm = c.shift_rpm;
+            d.steer = c.steer, d.throttle = c.throttle, d.brake = c.brake;
+            d.hybrid = c.hybrid, d.hybrid_level = c.hybrid_level, d.hybrid_charging = c.hybrid_charging;
+        } else if (car > 0) {
+            continue; // (no track B: the display's second car is none)
+        }
+        float(&prev)[2] = logger_pedals_[car];
+        d.throttle_prev = prev[0], d.brake_prev = prev[1];
+        prev[0] = d.throttle, prev[1] = d.brake;
+        hud_.draw_logger(ui.renderer(), d, car == 0 ? 0.0f : 560.0f, &frame);
+    }
 }
 
 } // namespace gt3r::race_screen

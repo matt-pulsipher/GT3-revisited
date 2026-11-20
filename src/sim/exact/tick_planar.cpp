@@ -1,6 +1,7 @@
 // Phase 7's planar motion: the forward step, the low-speed hold, lateral force and yaw, the stop hold; see tick.h.
 
 #include "base/ee_math.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -52,15 +53,17 @@ void forward_step(Car& c) {
     }
 }
 
-F low_speed_hold(const Wheel& w) {
+F low_speed_hold(const Wheel& w, bool z) {
     if (w.peak_force == F()) return F();
+    // (z: 2002 Tokyo-Geneva's speeds, folded toward zero: Europe)
+    auto v = [z](u32 x, u32 y) { return F::raw(z ? y : x); };
     const F ws = w.rim_speed, slip = w.hub_vx - ws;
-    if (ws < F::raw(0xBFB1C71D) || F::raw(0x3FB1C71D) < ws) return F();     // |w| > 5 km/h
-    if (slip < F::raw(0xBF0E38E4) || F::raw(0x3F0E38E4) < slip) return F(); // |u_h - w| > 2 km/h
+    if (ws < v(0xBFB1C71D, 0xBFB1C71B) || v(0x3FB1C71D, 0x3FB1C71B) < ws) return F();     // |w| > 5 km/h
+    if (slip < v(0xBF0E38E4, 0xBF0E38E3) || v(0x3F0E38E4, 0x3F0E38E3) < slip) return F(); // |u_h - w| > 2 km/h
     // The hub speed across the wheel plane.
     F across = ee::cos(w.steer) * w.hub_vy;
     across = across + ee::sin(w.steer) * w.hub_vx;
-    if (F::raw(0x3F8E38E4) < across || across < F::raw(0xBF8E38E4)) return F(); // > 4 km/h
+    if (v(0x3F8E38E4, 0x3F8E38E3) < across || across < v(0xBF8E38E4, 0xBF8E38E3)) return F(); // > 4 km/h
     const F s = ee::sin(across * F::raw(0x4034F4AB));                           // 0.9 pi
     return s * ee::cos(ws * F::raw(0x3F90C3BC)) * w.peak_force;                       // 0.36 pi
 }
@@ -84,7 +87,7 @@ void lateral_yaw(Car& c, bool airborne) {
         // Fa across the car, Fb along it: the slip-angle forces, the hold force and the longitudinal force.
         F fb = -sn * w.force_a + -cs * w.force_b;
         F fa = -cs * w.force_a + sn * w.force_b;
-        const F hold = low_speed_hold(w);
+        const F hold = low_speed_hold(w, toward_zero(c.behaviour));
         fa = fa - t.steer_cos * hold;
         fb = fb - t.steer_sin * hold;
         fb = fb + t.steer_cos * g;
@@ -94,7 +97,8 @@ void lateral_yaw(Car& c, bool airborne) {
     }
     c.yaw_accel = torque * p.inv_yaw_inertia;
     const F r = c.yaw_rate + c.yaw_accel * dt;
-    c.yaw_rate = k2Pi < r ? k2Pi : r < kNeg2Pi ? kNeg2Pi : r;
+    const F hi = folded(c.behaviour, k2Pi.bits, 0x40C90FDA), lo = folded(c.behaviour, kNeg2Pi.bits, 0xC0C90FDA); // (Europe's)
+    c.yaw_rate = hi < r ? hi : r < lo ? lo : r;
     c.a_y = (lat - c.x4d4) * p.inv_mass;
     F grip{};
     for (int i = 0; i < 4; ++i) {
@@ -117,7 +121,7 @@ void stop_hold(Car& c, bool airborne) {
     if (airborne) return;
     // Near standstill (|u| < 1 km/h) with no fade weight on any wheel and a braked wheel.
     auto braked_stop = [&] {
-        if (!(F::raw(0xBE8E38E4) < c.speed && c.speed < F::raw(0x3E8E38E4))) return false;
+        if (!(folded(c.behaviour, 0xBE8E38E4, 0xBE8E38E3) < c.speed && c.speed < folded(c.behaviour, 0x3E8E38E4, 0x3E8E38E3))) return false; // (Europe's)
         for (const Wheel& w : c.w)
             if (!(w.slip_fade == F())) return false;
         for (const Wheel& w : c.w)

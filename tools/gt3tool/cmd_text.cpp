@@ -24,11 +24,11 @@ struct FontData {
     JisTable jis;
     std::unique_ptr<KanjiFont> kanji;
 
-    explicit FontData(Volume& vol) {
+    explicit FontData(Volume& vol, Language lang = Language::JP) {
         for (const char* p : {"font/system.fnt", "font/menu.fnt"})
             files.emplace_back(p, FontFile::parse(vol.read(need(vol, p))));
         jis = JisTable::parse(vol.read(need(vol, "font/jis2uni.dat")));
-        kanji = std::make_unique<KanjiFont>(KanjiFont::parse(vol.read(need(vol, "font/system.kf"))));
+        kanji = std::make_unique<KanjiFont>(KanjiFont::parse(vol.read(need(vol, kanji_font_path(lang)))));
     }
     const LatinFont* find(const std::string& name) const {
         for (auto& f : files)
@@ -88,6 +88,24 @@ std::string sanitize(std::string s) {
     return s;
 }
 
+// Game text with its double-byte pairs as "{XXXX}" (the cell font's code); the rest as UTF-8.
+std::string cell_codes(const std::string& raw) {
+    std::string out;
+    for (size_t i = 0; i < raw.size(); ++i) {
+        u8 b = u8(raw[i]);
+        if (b < 0x80 || i + 1 >= raw.size()) {
+            out += raw[i];
+        } else if (b >= 0xA1) {
+            char buf[8];
+            std::snprintf(buf, sizeof buf, "{%02X%02X}", b & 0x7F, u8(raw[i + 1]) & 0x7F);
+            out += buf, ++i;
+        } else {
+            out += game_text_to_utf8(ByteSpan(reinterpret_cast<const u8*>(raw.data()) + i, 2), nullptr), ++i;
+        }
+    }
+    return out;
+}
+
 int cmd_text(Disc& disc, const Args& a) {
     Volume& vol = disc.volume();
     const std::string& out = a[0];
@@ -96,12 +114,13 @@ int cmd_text(Disc& disc, const Args& a) {
     // String table, one UTF-8 file per language.
     StringTable st = StringTable::parse(vol.read(need(vol, "text/realtime.dat")));
     std::printf("text/realtime.dat: %zu keys, %d languages\n", st.size(), st.language_count());
-    for (int l = 0; l < st.language_count(); ++l) {
-        Language lang = Language(l);
+    for (Language lang : st.languages()) {
         std::string body;
         size_t bad = 0;
+        // KR and TW text has no table to Unicode on the disc: its pairs are written as {cell font code}.
+        const bool coded = lang == Language::KR || lang == Language::CN || lang == Language::TW;
         for (size_t i = 0; i < st.size(); ++i) {
-            std::string v = st.utf8(i, lang, &fd.jis);
+            std::string v = coded ? cell_codes(st.raw(i, lang)) : st.utf8(i, lang, &fd.jis);
             if (v.find("\xEF\xBF\xBD") != std::string::npos) ++bad;
             body += st.key(i) + "\t" + sanitize(v) + "\n";
         }
@@ -140,7 +159,9 @@ int cmd_text(Disc& disc, const Args& a) {
         return 1;
 
     // Kanji fonts as grids of cells, 64 per row.
-    for (const char* p : {"font/system.kf", "font/kanji22.kf"}) {
+    // system.hf (Korean) and system.tf (Chinese) are on later discs of this engine only.
+    for (const char* p : {"font/system.kf", "font/kanji22.kf", "font/system.hf", "font/system.tf"}) {
+        if (!vol.find(p)) continue;
         KanjiFont k = KanjiFont::parse(vol.read(need(vol, p)));
         std::vector<u16> codes = k.codes();
         u32 cw = k.cell_width(), ch = k.cell_height(), cols = 64, rows = u32((codes.size() + cols - 1) / cols);
@@ -157,6 +178,15 @@ int cmd_text(Disc& disc, const Args& a) {
         std::string name = std::string(p).substr(5);
         name[name.find('.')] = '_';
         if (!save(out + "/fonts/" + name + ".png", encode_png(cols * cw, rows * ch, img))) return 1;
+        // The codes in atlas order, 64 per line (row major), to find a cell's code.
+        std::string list;
+        for (size_t i = 0; i < codes.size(); ++i) {
+            char b[8];
+            std::snprintf(b, sizeof b, "%04X%c", codes[i], i % cols == cols - 1 ? '\n' : ' ');
+            list += b;
+        }
+        if (!save(out + "/fonts/" + name + "_codes.txt", ByteSpan(reinterpret_cast<const u8*>(list.data()), list.size())))
+            return 1;
     }
     std::printf("jis2uni.dat: %zu JIS codes\n", fd.jis.size());
     return 0;
@@ -164,7 +194,12 @@ int cmd_text(Disc& disc, const Args& a) {
 
 // text-render <font> <utf8 text> <out.png> [scale]
 int cmd_text_render(Disc& disc, const Args& a) {
-    FontData fd(disc.volume());
+    // --lang=KR | TW: the text is drawn with that language's cell font. It is then given as
+    // "key:<realtime.dat key>" (that language's value) or as hex bytes of game text ("hex:B0A1...").
+    Language lang = Language::JP;
+    for (size_t i = 3; i < a.size(); ++i)
+        if (a[i].rfind("--lang=", 0) == 0) lang = language_from_code(a[i].substr(7)).value_or(Language::JP);
+    FontData fd(disc.volume(), lang);
     const LatinFont* font = fd.find(a[0]);
     if (!font) {
         std::fprintf(stderr, "unknown font %s\n", a[0].c_str());
@@ -179,8 +214,24 @@ int cmd_text_render(Disc& disc, const Args& a) {
             text += a[1][i];
         }
     LayoutOptions opt;
-    opt.scale_x = opt.scale_y = a.size() > 3 ? std::stof(a[3]) : 1.0f;
-    auto refs = map_unicode(utf8_decode(text), *font, fd.kanji.get(), &fd.jis);
+    opt.scale_x = opt.scale_y = a.size() > 3 && a[3].rfind("--", 0) != 0 ? std::stof(a[3]) : 1.0f;
+    std::vector<GlyphRef> refs;
+    if (text.rfind("key:", 0) == 0) {
+        StringTable st = StringTable::parse(disc.volume().read(need(disc.volume(), "text/realtime.dat")));
+        int k = st.find(text.substr(4));
+        if (k < 0 || st.raw(size_t(k), lang).empty()) {
+            std::fprintf(stderr, "no %s text for %s\n", language_code(lang), text.c_str() + 4);
+            return 1;
+        }
+        const std::string& raw = st.raw(size_t(k), lang);
+        refs = map_game_text(ByteSpan(reinterpret_cast<const u8*>(raw.data()), raw.size()));
+    } else if (text.rfind("hex:", 0) == 0) {
+        Bytes raw;
+        for (size_t i = 4; i + 1 < text.size(); i += 2) raw.push_back(u8(std::stoul(text.substr(i, 2), nullptr, 16)));
+        refs = map_game_text(raw);
+    } else {
+        refs = map_unicode(utf8_decode(text), *font, fd.kanji.get(), &fd.jis);
+    }
     TextLayout lay = layout_text(refs, *font, fd.kanji.get(), 8, 8, opt);
     u32 w = u32(std::ceil(lay.width)) + 16, h = u32(std::ceil(lay.height)) + 16;
     std::vector<u32> img(size_t(w) * 2 * h, 0xFF603020u);
@@ -194,7 +245,7 @@ int cmd_text_render(Disc& disc, const Args& a) {
 } // namespace
 
 GT3TOOL_COMMAND(text, "text", "<outdir>", "dump string tables (UTF-8) and font atlases (PNG)", 1, cmd_text);
-GT3TOOL_COMMAND(text_render, "text-render", "<font> <utf8> <out.png> [scale]",
+GT3TOOL_COMMAND(text_render, "text-render", "<font> <utf8 | key:KEY | hex:BYTES> <out.png> [scale] [--lang=XX]",
                 "render a string with a game font (outlined and plain variants)", 3, cmd_text_render);
 
 } // namespace gt3r::tool

@@ -54,6 +54,7 @@ struct StartRace {
     // The addresses in the record's pointer words: the race info (car + 0), the conductor (car + 4, the driver object's + 0;
     // its + 0xBBA8, the AI course object, at the driver object's + 8) and the course (car + 8).
     u32 info = 0, conductor = 0, course_addr = 0;
+    u32 ai_course_at = 0xBBA8; // the AI course object's place in the conductor (the later builds': 0xBC08 [physics §14])
     // The course's road block in memory: a grid slot past the course's table reads the block's words that follow the table,
     // some of them the loader's pointers into the block (CourseQuery::slot).
     u32 road = 0;
@@ -76,8 +77,9 @@ struct StartEntry {
     std::optional<DriverOverrides> driver;
 };
 
-// The per-car part for entry i of the race: the whole record.
-Record start_car(const StartRace& race, const StartEntry& e, int i);
+// The per-car part for entry i of the race: the whole record. `later`: the later builds' own words of the
+// record as the start leaves them (Car::later, not in the record image; zero on GT3's discs).
+Record start_car(const StartRace& race, const StartEntry& e, int i, Car::Later* later = nullptr);
 // The drive of an entry's car outside its record (Car::ev): on for an electric mod car on its own motor, with its regen.
 // (A race recorded while electric cars raced on their donor's engine has that engine in its equipment, and keeps it.)
 ElectricDrive electric_drive(const data::CarDatabase* db, const Equipment& eq);
@@ -92,6 +94,7 @@ void rank(std::span<Car> cars, RaceOrder& order);
 // with (the ranking set-up: the rank reset and the ranking; nothing else it does changes a car's record).
 struct StartResult {
     std::vector<Record> records;
+    std::vector<Car::Later> later; // each car's own words of a later build's record (not in the image)
     RaceOrder order{};
 };
 StartResult start_cars(const StartRace& race, std::span<const StartEntry> entries);
@@ -115,6 +118,10 @@ void clear_course_out(Car& c);
 // The moving start at speed v (m/s): the velocity along the heading, every wheel and axle at road speed, the gear
 // for the speed, the engine at v times the gear's ratio (idle to the rev limit), the clutch locked, the turbo spooled
 // [physics §9.3].
+// The later builds' code (Concept 2001 Tokyo's): a gearbox of kind 1 (without steps) holds the engine at its hold
+// speed (the driveline's first down-shift word): above it the ratio word falls, down to the last gear's relative ratio,
+// and the engine speed with it. False (nothing done) for any other gearbox.
+bool stepless_ratio(const Driveline& d, F& omega, F& ratio, bool toward_zero = false); // (2002 Tokyo-Geneva's 2 pi / 60)
 void moving_start(Car& c, F v);
 
 } // namespace gt3r::sim::exact

@@ -18,8 +18,9 @@ struct Parts {
 
 constexpr u64 kImplicit1 = u64(1) << 60, kImplicit2 = u64(1) << 61, kFracHigh = u64(1) << 63;
 
-// unpack_d.
-Parts unpack_d(u64 v) {
+// unpack_d. The later builds' (2002 Tokyo-Geneva Europe): an Inf's fraction is the implicit bit, the
+// exponent field of either 0x3FF.
+Parts unpack_d(u64 v, Fp fp = Fp::Gt3) {
     Parts p;
     p.sign = u32(v >> 63);
     const u32 e = u32(v >> 52) & 0x7FF;
@@ -31,6 +32,10 @@ Parts unpack_d(u64 v) {
     if (e == 0x7FF) {
         p.frac = f;
         p.cls = f == 0 ? kInf : (f & (u64(1) << 51)) ? kQnan : kSnan;
+        if (fp != Fp::Gt3) {
+            p.exp = 0x3FF;
+            if (f == 0) p.frac = kImplicit1;
+        }
         return p;
     }
     p.frac = (f << 8) | kImplicit1;
@@ -39,8 +44,9 @@ Parts unpack_d(u64 v) {
     return p;
 }
 
-// pack_d.
-u64 pack_d(const Parts& p) {
+// pack_d. The later builds' (Concept 2001 Tokyo, 2002 Tokyo-Geneva Europe): a result below
+// the smallest normal is a signed zero; 2002 Tokyo-Geneva's cuts the guard bits off.
+u64 pack_d(const Parts& p, Fp fp = Fp::Gt3) {
     u64 f = p.frac;
     u32 e = 0;
     if (p.cls < 2) {
@@ -53,10 +59,13 @@ u64 pack_d(const Parts& p) {
         f = 0;
     } else if (p.exp < -0x3FE) {
         const s32 shift = -0x3FE - p.exp;
-        f = shift < 0x39 ? (f >> shift) >> 8 : 0;
+        f = fp != Fp::Gt3 ? 0 : shift < 0x39 ? (f >> shift) >> 8 : 0;
     } else if (p.exp >= 0x400) {
         e = 0x7FF;
         f = 0;
+    } else if (fp == Fp::LaterTowardZero) {
+        e = u32(p.exp + 0x3FF);
+        f >>= 8;
     } else {
         e = u32(p.exp + 0x3FF);
         if ((f & 0xFF) != 0x80) f += 0x7F;
@@ -117,8 +126,8 @@ Parts add_parts(const Parts& a, const Parts& b) {
     return t;
 }
 
-// _fpmul_parts inside __muldf3.
-Parts mul_parts(Parts a, Parts b) {
+// _fpmul_parts inside __muldf3; 2002 Tokyo-Geneva's (Europe) has no rounding step.
+Parts mul_parts(Parts a, Parts b, Fp fp = Fp::Gt3) {
     const u32 sign = a.sign != b.sign;
     if (a.cls < 2) return a.sign = sign, a;
     if (b.cls < 2) return b.sign = sign, b;
@@ -154,7 +163,7 @@ Parts mul_parts(Parts a, Parts b) {
         if (low & kFracHigh) high |= 1;
         low <<= 1;
     }
-    if ((high & 0xFF) == 0x80 && ((high & 0x100) || low)) high += 0x80;
+    if (fp != Fp::LaterTowardZero && (high & 0xFF) == 0x80 && ((high & 0x100) || low)) high += 0x80;
     t.frac = high;
     t.cls = kNumber;
     return t;
@@ -220,6 +229,50 @@ F narrow(D x) {
             ++e;
         }
         f >>= 7;
+    }
+    return F::raw((p.sign << 31) | ((e & 0xFF) << 23) | (f & 0x7FFFFF));
+}
+
+D add(D a, D b, Fp fp) { return D::raw(pack_d(add_parts(unpack_d(a.bits, fp), unpack_d(b.bits, fp)), fp)); }
+
+D sub(D a, D b, Fp fp) {
+    Parts nb = unpack_d(b.bits, fp);
+    nb.sign ^= 1;
+    return D::raw(pack_d(add_parts(unpack_d(a.bits, fp), nb), fp));
+}
+
+D mul(D a, D b, Fp fp) { return D::raw(pack_d(mul_parts(unpack_d(a.bits, fp), unpack_d(b.bits, fp), fp), fp)); }
+
+// The later builds' __truncdfsf2 (Concept 2001 Tokyo's pack_f, 2002 Tokyo-Geneva Europe): only the zero
+// class is told apart; below the smallest normal a signed zero, exponent 128 an ordinary one, above it Inf; 2002
+// Tokyo-Geneva's cuts the guard bits off.
+F narrow(D x, Fp fp) {
+    if (fp == Fp::Gt3) return narrow(x);
+    const Parts p = unpack_d(x.bits, fp);
+    u32 f = u32(s32(s64(p.frac << 2) >> 32));
+    if (p.frac & 0x3FFFFFFF) f |= 1;
+    u32 e = 0;
+    if (p.cls == kClassZero || f == 0) {
+        f = 0;
+    } else if (p.exp < -0x7E) {
+        f = 0;
+    } else if (p.exp > 0x80) {
+        e = 0xFF;
+        f = 0;
+    } else {
+        e = u32(p.exp + 0x7F);
+        if (fp == Fp::LaterTowardZero) {
+            if (s32(f) < 0) e = 0xFF, f = 0; // (cannot happen: the implicit bit is bit 30)
+            f >>= 7;
+        } else {
+            if ((f & 0x7F) != 0x40) f += 0x3F;
+            else if (f & 0x80) f += 0x40;
+            if (s32(f) < 0) {
+                f >>= 1;
+                ++e;
+            }
+            f >>= 7;
+        }
     }
     return F::raw((p.sign << 31) | ((e & 0xFF) << 23) | (f & 0x7FFFFF));
 }

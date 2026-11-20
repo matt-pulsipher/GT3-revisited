@@ -106,6 +106,17 @@ std::string first_difference(const Car& ours, const Car& theirs) {
             else std::snprintf(buf, sizeof buf, " %u vs %u", a, b);
             return label(s) + buf;
         }
+    // the later builds' own words (zero on GT3's discs)
+    char buf[96];
+    if (ours.later.ratio.bits != theirs.later.ratio.bits) {
+        std::snprintf(buf, sizeof buf, "later.ratio 0x%08X vs 0x%08X", ours.later.ratio.bits, theirs.later.ratio.bits);
+        return buf;
+    }
+    for (size_t i = 0; i < ours.later.special.size(); ++i)
+        if (ours.later.special[i] != theirs.later.special[i]) {
+            std::snprintf(buf, sizeof buf, "later.special[%zu] %u vs %u", i, ours.later.special[i], theirs.later.special[i]);
+            return buf;
+        }
     return {};
 }
 

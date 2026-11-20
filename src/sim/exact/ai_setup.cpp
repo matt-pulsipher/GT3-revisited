@@ -3,6 +3,8 @@
 
 #include "sim/exact/ai_setup.h"
 
+#include "sim/exact/build_math.h"
+
 #include "base/ee_math.h"
 #include "sim/exact/tick.h"
 
@@ -27,7 +29,7 @@ F height_at(const CourseQuery& q, s32& seg, bool& miss, F x, F y, F h) { return 
 
 // Point i's segment, traced from point i - 1's segment along the segment between them (straights every 10 m, arcs
 // every 10 degrees); an arc's kind byte becomes 1 (left, radius > 0) or 2 (right), 1 on the side map (line 5).
-s32 trace(const CourseQuery& q, std::vector<AiPoint>& p, int i, s32 seg, int line) {
+s32 trace(const Behaviour& bh, const CourseQuery& q, std::vector<AiPoint>& p, int i, s32 seg, int line) {
     AiPoint& a = p[size_t(i - 1)];
     const AiPoint& b = p[size_t(i)];
     const F ax = a.x, ay = a.y, by = b.y;
@@ -47,18 +49,19 @@ s32 trace(const CourseQuery& q, std::vector<AiPoint>& p, int i, s32 seg, int lin
     const F c = ee::cos(heading);
     F r = a.radius;
     const F cx = ax - c * r, cy = ay + s * r;
-    F a0 = ee::atan2(cx - ax, ay - cy);
-    F a1 = ee::atan2(cx - b.x, by - cy);
+    F a0 = atan2(bh, cx - ax, ay - cy);
+    F a1 = atan2(bh, cx - b.x, by - cy);
+    const F two_pi = folded(bh, kTwoPi.bits, 0x40C90FDA), ten_deg = folded(bh, kTenDeg.bits, 0x3E32B8C1); // (Europe)
     F steps;
     if (k0 < r) {
         a.kind = 1;
-        if (a1 < a0) a1 = a1 + kTwoPi;
-        steps = (a1 - a0) / kTenDeg;
+        if (a1 < a0) a1 = a1 + two_pi;
+        steps = (a1 - a0) / ten_deg;
     } else {
         a.kind = 2;
         r = -r;
-        if (a0 < a1) a0 = a0 + kTwoPi;
-        steps = (a0 - a1) / kTenDeg;
+        if (a0 < a1) a0 = a0 + two_pi;
+        steps = (a0 - a1) / ten_deg;
     }
     s32 n = ee::to_int(steps);
     if (n == 0) n = 1;
@@ -97,7 +100,7 @@ struct RoadFrame {
     F height, slope, bank;
     s32 surface = 0, x32 = 0, flags = 0;
 };
-bool road_frame(const CourseQuery& q, F x, F y, F heading, s32 seg, RoadFrame& out) {
+bool road_frame(const Behaviour& bh, const CourseQuery& q, F x, F y, F heading, s32 seg, RoadFrame& out) {
     Ground g;
     g.x = x, g.h = k100, g.z = -y, g.seg = seg;
     q.ground(g);
@@ -120,12 +123,12 @@ bool road_frame(const CourseQuery& q, F x, F y, F heading, s32 seg, RoadFrame& o
     const F h3 = height_at(q, hint, m3, x - c, y - s, k100);
     const F h4 = height_at(q, hint, m4, x + c, y + s, k100);
     if ((m1 && m2) || (m3 && m4)) return false;
-    if (m1) out.slope = ee::atan2(centre - h2, kHalf);
-    else if (!m2) out.slope = ee::atan2(h1 - h2, k1);
-    else out.slope = ee::atan2(h1 - centre, kHalf);
-    if (m3) out.bank = ee::atan2(centre - h4, kHalf);
-    else if (!m4) out.bank = ee::atan2(h3 - h4, k1);
-    else out.bank = ee::atan2(h3 - centre, kHalf);
+    if (m1) out.slope = atan2(bh, centre - h2, kHalf);
+    else if (!m2) out.slope = atan2(bh, h1 - h2, k1);
+    else out.slope = atan2(bh, h1 - centre, kHalf);
+    if (m3) out.bank = atan2(bh, centre - h4, kHalf);
+    else if (!m4) out.bank = atan2(bh, h3 - h4, k1);
+    else out.bank = atan2(bh, h3 - centre, kHalf);
     return true;
 }
 
@@ -143,6 +146,7 @@ F road_height(const CourseQuery& q, s32& seg, bool& miss, F x, F y, F h) {
 
 AiCourse ai_course_setup(const CourseQuery& q, const course::AiLines* lines, const ProgramData& d) {
     AiCourse k;
+    k.behaviour = d.behaviour();
     k.lap_length = q.lap_length();
     for (u32 l = 0; l < 8; ++l)
         for (u32 j = 0; j < 6; ++j) k.fallback[l][j] = s8(d.b(ProgramData::Table::LineFallback, 6 * l + j));
@@ -157,7 +161,8 @@ AiCourse ai_course_setup(const CourseQuery& q, const course::AiLines* lines, con
         for (const course::AiPoint& f : lines->lines[g - 1].points) {
             AiPoint p;
             p.kind = u8(f.flags), p.brake_adjust = s8(f.flags >> 8), p.speed_adjust = s8(f.flags >> 16), p.x03 = u8(f.flags >> 24);
-            p.heading = ((ee::int_to_f(s32(f.packed)) * kTwoPi) * kFixed) + kPi;
+            p.heading = ((ee::int_to_f(s32(f.packed)) * folded(k.behaviour, kTwoPi.bits, 0x40C90FDA)) * kFixed) +
+                        folded(k.behaviour, kPi.bits, 0x40490FDA); // (2002 Tokyo-Geneva's: Europe)
             p.x = (-ee::int_to_f(f.raw_x)) * kFixed;
             p.radius = ee::int_to_f(f.raw_radius) * kFixed;
             p.y = (-ee::int_to_f(f.raw_z)) * kFixed;
@@ -190,13 +195,13 @@ AiCourse ai_course_setup(const CourseQuery& q, const course::AiLines* lines, con
                     if (stop_line_segment(q, k, s, x, y)) seg = s;
                 } else seg = segment_at(q, seg, x, y);
             } else if (i == 0) seg = segment_at(q, seg, x, y);
-            else seg = trace(q, p, int(i), seg, g);
+            else seg = trace(k.behaviour, q, p, int(i), seg, g);
             a.seg = s16(seg);
             a.dist = q.progress(x, k100, -y, seg);
             a.height = k0, a.slope = k0, a.bank = k0, a.surface = 0, a.x13 = 0;
             if (g != 5) {
                 RoadFrame r;
-                if (road_frame(q, x, y, a.heading, seg, r)) {
+                if (road_frame(k.behaviour, q, x, y, a.heading, seg, r)) {
                     a.height = r.height, a.slope = r.slope, a.bank = r.bank;
                     a.surface = s8(r.surface), a.x13 = u8(r.x32);
                 }

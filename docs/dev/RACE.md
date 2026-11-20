@@ -1033,7 +1033,11 @@ original's pages: theater, DEMONSTRATION list, Analyzer top, REPLAY OPTIONS):
   A (red) and B (blue) in a window round the cursor, the LGM0 picture with both cars, Left /
   Right move the cursor, L1 / R1 (L2 / R2) jump sectors, Circle / Cross open EXPRESSION (SPEED /
   ACCEL / BRAKE on/off, DISPLAY A/B/AB). REPLAY: track A's lap plays (looping) with B as the
-  translucent ghost (drawn with A's model), START / STOP / SLOW (x0.25) / CAMERA. Triangle back to
+  translucent ghost (drawn with A's model), START / STOP / SLOW (x0.25) / CAMERA; over it the race display's
+  LOGGER rows (racemode 15, `HudMode::Logger`; `Hud::draw_logger` from `RaceScreen::draw_logger_display`): steering,
+  accel / brake, bar tachometer and gear for track A's car at the frame's left and track B's 560 to the right, as GT3's
+  solo race draws its display twice; a Gran Turismo Concept disc's rows (a bottom dashboard with a digital
+  speed and the hybrid car's store monitor) for track A's car, under the page (concept §9.3). Triangle back to
   the top page. The input details and the drawing of traces, dots and the sector bar are ours
   (they are not specified; no captures with data, the PS2 cards were
   empty). `GT3R_RACE="lcursor=<m>"` places the cursor for screenshots.
@@ -1640,7 +1644,7 @@ GT3R_RACE="course=trialmt,car=r34_gtr_v_99,cam=0,auto=1,warp=20" \
 
 | Key | Effect |
 |---|---|
-| `course`, `car` | course label / car label or model id; skips the selection |
+| `course`, `car` | course label / car label or model id; skips the selection. An arcade or event variant label (a Concept class's `gtcmr_pod_tmv_01`) runs its base car with the variant's parts and racing tires, as the menus' Single Race does |
 | `cam` | 0 chase, 1 far chase, 2 bumper, 3 roof, 4 free orbit (`oyaw`, `opitch`, `odist`), 5 replay (TV) |
 | `auto=1` | autopilot: the race's own AI drives the player's car (the race's configuration 3: the same driver as the CPU cars, its line, pit stops and gearbox) |
 | `warp=N` | simulate N seconds before the first frame |
@@ -1649,11 +1653,14 @@ GT3R_RACE="course=trialmt,car=r34_gtr_v_99,cam=0,auto=1,warp=20" \
 | `hud=0`, `perf=1` | hide HUD / show the performance line |
 | `sheen=0` | disable the road sheen passes |
 | `quit=N` | exit after N seconds (frame-time logging) |
-| `watch=1`, `rwarp=N` | after `warp`, play the run back (and skip N s into it) |
+| `watch=1`, `rwarp=N` | after `warp`, play the run back (and skip N s into it); `rwarp` also skips into the replay that follows a run |
 | `save=1` | save the run's replay after `warp` |
 | `replay=<file>|last` | watch a saved replay |
 | `ghost=0`, `music=0` | no ghost / no race music |
-| `event=<label>` | race against the event's field (start type, laps, cars, time limit from the record) |
+| `event=<label>` | race against the event's field (start type, laps, cars, time limit from the record); a pool with fewer entries than the race's opponents (Concept's pod race: one entry, six cars) is drawn from as Single Race draws it |
+| `line=<km/h>` | a driver on the player's pad (player 2's too in a race of two) that follows the car's AI line at up to this speed, at least 15 km/h; the run is judged as the player's own |
+| `pod_stops=<n>`, `pod_stops2=<n>` | with `line=`, a Concept pod race's stops for player 1 / 2: 0 none (missed: disqualified at the line), 1 every lap, 2 the odd laps; the driver stops 10 m into the stop area and holds the brakes and handbrake until the stop counts |
+| `pod_prompt=16\|17` | hold a pod race's stop prompt (0x10 / 0x11) on screen |
 | `p2=1`, `car2=<label>`, `split=h\|v` | 2P battle, player 2's car, split layout |
 | `laps=N`, `quick=1`, `qm=<item>` | time trial lap count; open the quick menu after the finish; choose an item |
 | `exit_laps=N` | the live run ends as the pause menu's Exit once it has N laps (screenshots of a free run's record and name entry) |

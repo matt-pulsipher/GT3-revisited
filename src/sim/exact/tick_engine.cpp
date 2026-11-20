@@ -1,5 +1,7 @@
 // Phase 7's engine and clutch: torque, turbo, the clutch link and the engine speed; see tick.h.
 
+#include "sim/exact/build_math.h"
+#include "sim/exact/hybrid.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -100,19 +102,28 @@ F driven_axle_speed(const Car& c) {
     case 1:
     case 2: return wf;
     case 3: return (wf + wr) * kHalf;
-    case 7: return wr + c.p.d.awd_k * (wf - wr);
+    // (Rule::Layout, the later builds: AWD system 7 is layout 8 and layout 7, system 5, takes the rear axle's speed)
+    case 7: return gt3_program(c.behaviour.rule(Rule::Layout)) ? wr + c.p.d.awd_k * (wf - wr) : wr;
+    case 8: return gt3_program(c.behaviour.rule(Rule::Layout)) ? F() : wr + c.p.d.awd_k * (wf - wr);
     default: return F();
     }
 }
 
+// A stepless gearbox (the later builds' kinds 1 and 2: D +0x12).
+static bool stepless(const Driveline& d) { return u8(d.kind - 1) < 2; }
+// The gear whose ratio stands between the engine and the wheels: a stepless gearbox of kind 2 (the later builds'; the
+// kind is their Rule::Driveline's, 0 on GT3's discs) keeps its second ratio from the second gear on, the ratio word doing
+// the rest.
+static size_t ratio_gear(const Car& c) { return c.p.d.kind == 2 && !(c.gear < 2) ? 1 : c.gear; }
+
 F wheel_side_speed(const Car& c) {
-    F w = driven_axle_speed(c) * c.p.d.ratio[c.gear];
+    F w = driven_axle_speed(c) * c.p.d.ratio[ratio_gear(c)];
     if (w <= F()) w = F();
     return w;
 }
 
 void engine_rpm(Car& c) {
-    s32 n = ee::to_int((c.omega * F::raw(0x42700000)) / F::raw(0x40C90FDB));
+    s32 n = ee::to_int((c.omega * F::raw(0x42700000)) / folded(c.behaviour, 0x40C90FDB, 0x40C90FDA)); // (2002 Tokyo-Geneva's 2 pi: Europe)
     const s32 floor = s32(c.p.e.idle) - 1;
     if (n < floor) n = floor;
     c.rpm = s16(n);
@@ -126,6 +137,7 @@ void clutch_engage(Car& c) {
     if (c.clutch == 0) {
         if (!(c.clutch_req == F())) {
             const F v = c.speed;
+            const F kKmh10 = folded(c.behaviour, sim::exact::kKmh10.bits, 0x4031C71B); // (2002 Tokyo-Geneva's: Europe)
             const bool moving = (kKmh10 < v && c.gear != 0) || (v < -kKmh10 && c.gear == 0);
             if (moving) {
                 if (F::raw(0x3E800000) < c.throttle) c.clutch = 2;
@@ -134,6 +146,7 @@ void clutch_engage(Car& c) {
         }
     } else if (c.clutch == 1) {
         if (c.clutch_req == F()) c.clutch = 0;
+        else if (stepless(c.p.d)) c.clutch_wheel = wheel_side_speed(c); // (the later builds': the stepless torque reads it)
     }
     if (u32(c.clutch) - 2u >= 2u) return;
     const u8 style = style_of(c);
@@ -248,7 +261,7 @@ F engine_torque(Car& c, F x) {
     c.intake = (c.intake + (load + (kOne - x) * k)) * kHalf;
     if (c.blowoff_state == 0) {
         if (x < F::raw(0x3F400000)) {
-            F l = c.turbo_load - F::raw(0x3F4CCCCD);
+            F l = c.turbo_load - folded(c.behaviour, 0x3F4CCCCD, 0x3F4CCCCC); // (2002 Tokyo-Geneva's: Europe)
             if (l < c.blowoff) l = c.blowoff;
             c.blowoff_state = 1;
             c.blowoff = l * F::raw(0x3B800000);
@@ -268,7 +281,7 @@ F engine_torque(Car& c, F x) {
         c.turbo_spool = 1;
         return t;
     }
-    F q = F::raw(0x44130000) <= t ? l : (l * t) * F::raw(0x3ADEE95C); // 588 N m, 1 / 588
+    F q = folded(c.behaviour, 0x44130000, 0x4412FFFF) <= t ? l : (l * t) * folded(c.behaviour, 0x3ADEE95C, 0x3ADEE95D); // 588 N m, 1 / 588
     q = q * q;
     s32 n = ee::to_int(q * F::raw(0x43000000));
     if (!(n < 128)) n = 127;
@@ -277,12 +290,15 @@ F engine_torque(Car& c, F x) {
     return t;
 }
 
-void engine_speed(Car& c) {
+void engine_speed(Car& c, const Hybrid& h) {
     const Engine& e = c.p.e;
     const F dt = c.dt;
+    // (2002 Tokyo-Geneva's 2 pi / 60 and 10 km/h, folded toward zero: Europe)
+    const F kRpmToW = folded(c.behaviour, sim::exact::kRpmToW.bits, 0x3DD6774E), kKmh10 = folded(c.behaviour, sim::exact::kKmh10.bits, 0x4031C71B);
     if (c.clutch == 0) {
         const F idle = ee::int_to_f(e.idle) * kRpmToW;
-        const F t = engine_torque(c, c.throttle);
+        // (the later builds' layout 7 car: the engine charges the store, Concept 2001 Tokyo)
+        const F t = hybrid_car(c, h) ? hybrid_open_clutch_torque(c, h) : engine_torque(c, c.throttle);
         const F w = c.omega + (t * c.p.d.inv_engine_inertia) * dt;
         c.omega = w;
         if (w < idle) c.omega = idle;
@@ -293,13 +309,13 @@ void engine_speed(Car& c) {
     F w;
     u8 s = c.clutch;
     if (s == 1) {
-        w = ws;
-        c.omega = ws;
+        w = stepless(c.p.d) ? c.later.ratio * ws : ws; // (a stepless gearbox, the later builds': through its ratio word)
+        c.omega = w;
     } else if (u32(s) - 2u < 2u) {
         const u8 style = style_of(c);
         if ((style == 3 || style == 6) && c.clutch_req == kOne) {
             // the pedal clutch pressed home: both axles to the engine's speed
-            const F q = c.omega / c.p.d.ratio[c.gear];
+            const F q = c.omega / c.p.d.ratio[ratio_gear(c)];
             for (size_t a = 0; a < 2; ++a) {
                 c.axle_speed[a] = q;
                 const F v = c.p.tire_radius[a] * q;

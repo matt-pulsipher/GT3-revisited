@@ -1,9 +1,11 @@
-// GT3's sparks; see sparks.h. Each line is one EE (or VU0) operation in the program's order; the constants are the tuning
-// block as the static constructor fills it (and immediates) [presentation §L7].
+// GT3's sparks and the later builds'; see sparks.h. Each line is one EE (or VU0) operation in the program's order; the
+// constants are the tuning block as the static constructor fills it (and
+// immediates) and the routines' own (spark_rules) [presentation §L7, physics §14.3].
 
 #include "sim/exact/sparks.h"
 
 #include "base/ee_math.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/course_query.h"
 #include "sim/exact/tick.h"
 
@@ -13,33 +15,10 @@ namespace {
 
 const F kZero = F::raw(0), kHalf = F::raw(0x3F000000), kOne = F::raw(0x3F800000);
 
-// The tuning block (P).
-const F kDrag = F::raw(0x3EB33312);        // P +0x00 0.349999
-const F kGravity = F::raw(0x411CF5C3);     // P +0x04 9.81
-const F kBounce = F::raw(0x3EFFFFBD);      // P +0x08 / +0x0C 0.499998: restitution e and friction mu
-const F kSpread = F::raw(0x41200000);      // P +0x10 10 (degrees)
-const F kSpeedMin = F::raw(0x3E999956);    // P +0x14 0.299998
-const F kSpeedMax = F::raw(0x3F333312);    // P +0x18 0.699998
-const F kRise = F::raw(0x3E4CCC8A);        // P +0x1C 0.199999
-const F kSizeMin = F::raw(0x3C23CEA7);     // P +0x20 0.009998
-const F kSizeMax = F::raw(0x3CF5BE5E);     // P +0x24 0.029998
-const F kDensity = F::raw(0x43FA0000);     // P +0x28 500: mass = 500 w^3
-const F kLifeMin = F::raw(0x3F199989);     // P +0x2C 0.599999
-const F kLifeMax = F::raw(0x3FFFFFE7);     // P +0x30 1.999997
-const F kBounceLife = F::raw(0x3F199989);  // P +0x34 0.599999
-const F kKickFrom = F::raw(0x3DB850DF);    // P +0x88 0.089998 s of age
-const F kKickTo = F::raw(0x3DE14728);      // P +0x8C 0.109999
-const F kKickChance = F::raw(0x3F666656);  // P +0x90 0.899999
-const F kKick = F::raw(0x3CCCCAB4);        // P +0x94 0.024999
-const F kMinSpeed = F::raw(0x42C80000);    // P +0x98 100 (km/h)
-constexpr s32 kMinCount = 5, kMaxCount = 20; // P +0x9C / +0xA0
-const F kPerMetre = F::raw(0x43480000);    // P +0xA4 200 particles per metre below the road
-// P +0xA8 (0) is the emitter's "a point above the road sparks too" switch: off.
-
-const F kDegToRad = F::raw(0x3C8EFA35);    // pi / 180
-const F kKmhSq = F::raw(0x3D9E0652);       // 1 / 3.6^2
-const F kRadToDeg = F::raw(0x42652EE1);    // 180 / pi
-const F kLift = F::raw(0x3D4CCCCD);        // 0.05 m: a burst's height above the road
+// The tuning block's scalars P and the routines' constants: GT3's, every later build's but 2002 Tokyo-Geneva's,
+// whose compiler folded them toward zero (theirs second; Europe's block). P +0x28 500, +0x10 10,
+// +0x98 100 and +0xA4 200 are exact everywhere, and so are +0x14 and +0x88 on Tokyo-Geneva.
+// P +0xA8 (0) is the emitter's "a point above the road sparks too" switch: off on every build.
 const F kSpeedScale = F::raw(0x44800000);  // 1024
 const F kInvSpeedScale = F::raw(0x3A800000); // 1 / 1024
 
@@ -55,7 +34,8 @@ bool sparking_material(u16 m) { return m == 0 || m == 1 || m == 7 || m == 9; }
 } // namespace
 
 void vu0_sin_cos(F a, F& s, F& c) {
-    const F k90 = F::raw(0x42B40000), kInv180 = F::raw(0x3BB60B61), kPi = F::raw(0x40490FDB);
+    // (the routine's immediates: the same on every build)
+    const F k90 = F::raw(0x42B40000), kInv180 = F::raw(0x3BB60B61), kPi = F::raw(0x40490FDB), kDegToRad = F::raw(0x3C8EFA35);
     // Both lanes reduced into [-pi/2, pi/2]: x from a - 90 (its sine is a's), y from a (its sine is a's cosine).
     const F b = a - k90;
     const F qa = a * kInv180, qb = b * kInv180;
@@ -142,10 +122,65 @@ void Vu0Matrix::rotate_z(F deg) {
     turn(c[0], c[1], s, cs, false);
 }
 
+F particle_dt(const Behaviour& b) {
+    if (gt3_program(b.rule(Rule::Leaves))) return F::raw(0x3C888889);
+    if (b.pal_rate()) return F::raw(0x3CA3D70A);       // (2002 Tokyo-Geneva Europe) 1/50
+    return folded(b, 0x3C888889, 0x3C888888);           // (2001 Tokyo, 2002 Tokyo-Geneva Asia) 1/60
+}
+
+SparkRules spark_rules(const Behaviour& b) {
+    auto f = [&b](u32 x, u32 z) { return folded(b, x, z); };
+    SparkRules r;
+    r.drag = f(0x3EB33312, 0x3EB33311);        // P +0x00 0.349999
+    r.gravity = f(0x411CF5C3, 0x411CF5C2);     // P +0x04 9.81
+    r.bounce = f(0x3EFFFFBD, 0x3EFFFFBC);      // P +0x08 / +0x0C 0.499998: restitution e and friction mu
+    r.spread = F::raw(0x41200000);             // P +0x10 10 (degrees)
+    r.speed_min = F::raw(0x3E999956);          // P +0x14 0.299998
+    r.speed_max = f(0x3F333312, 0x3F333311);   // P +0x18 0.699998
+    r.rise = f(0x3E4CCC8A, 0x3E4CCC89);        // P +0x1C 0.199999
+    r.size_min = f(0x3C23CEA7, 0x3C23CEA6);    // P +0x20 0.009998
+    r.size_max = f(0x3CF5BE5E, 0x3CF5BE5D);    // P +0x24 0.029998
+    r.density = F::raw(0x43FA0000);            // P +0x28 500: mass = 500 w^3
+    r.life_min = f(0x3F199989, 0x3F199988);    // P +0x2C 0.599999
+    r.life_max = f(0x3FFFFFE7, 0x3FFFFFE6);    // P +0x30 1.999997
+    r.bounce_life = r.life_min;                // P +0x34 0.599999
+    r.kick_from = F::raw(0x3DB850DF);          // P +0x88 0.089998 s of age
+    r.kick_to = f(0x3DE14728, 0x3DE14727);     // P +0x8C 0.109999
+    r.kick_chance = f(0x3F666656, 0x3F666655); // P +0x90 0.899999
+    r.kick = f(0x3CCCCAB4, 0x3CCCCAB3);        // P +0x94 0.024999
+    r.min_speed = F::raw(0x42C80000);          // P +0x98 100 (km/h)
+    r.min_count = 5, r.max_count = 20;         // P +0x9C / +0xA0
+    r.per_metre = F::raw(0x43480000);          // P +0xA4 200 particles per metre below the road
+    r.deg_to_rad = f(0x3C8EFA35, 0x3C8EFA34);  // pi / 180 (the burst's)
+    r.kmh_sq = F::raw(0x3D9E0652);             // 1 / 3.6^2 (the same on every build)
+    r.rad_to_deg = f(0x42652EE1, 0x42652EE0);  // 180 / pi (the emission's and the body plane's)
+    r.lift = f(0x3D4CCCCD, 0x3D4CCCCC);        // 0.05 m: a burst's height above the road
+    // (2002 Tokyo-Seoul v2.00's emission and later: its own rule)
+    r.body_plane = concept_program(b.rule(Rule::SparkEmit));
+    return r;
+}
+
 void Sparks::reset() {
     for (int i = 0; i < kPool; ++i) pool_[size_t(i)].next = s16(i + 1 < kPool ? i + 1 : -1);
     free_ = 0, active_ = -1;
     frames_ = 0;
+    leaf_.fill(0);
+}
+
+void Sparks::set_leaves(const Behaviour& b) {
+    leaves_on_ = !gt3_program(b.rule(Rule::Leaves));
+    if (leaves_on_) rules_ = exact::leaf_rules(b);
+}
+
+void Sparks::leaf(const TyreEffect& q, const Vec3& vel, Vu0Random& rng) {
+    if (!leaves_on_) return;
+    F amount;
+    if (!leaf_amount(q, rng, amount)) return;
+    const int k = alloc(); // (the record's constructor: the pool's next free one, onto the active list)
+    if (k < 0) return;
+    leaf_[size_t(k)] = 1;
+    leaf_serial_[size_t(k)] = ++serial_;
+    leaf_throw(q, vel, amount, rules_, rng, leaves_[size_t(k)]);
 }
 
 int Sparks::alloc() {
@@ -179,18 +214,37 @@ void Sparks::emit(const Car& c, std::span<const SparkPoint> points, const Course
     F sq = v.x * v.x;
     const F sh = v.y * v.y, sz = v.z * v.z;
     sq = sq + sh;
-    F lim = kMinSpeed * kMinSpeed;
-    lim = lim * kKmhSq;
+    F lim = sr_.min_speed * sr_.min_speed;
+    lim = lim * sr_.kmh_sq;
     sq = sq + sz;
     if (sq < lim) return;
+    // From 2002 Tokyo-Seoul v2.00 on (Seoul v2.00's; Rule::SparkEmit): the plane of the car body's drawn ground point
+    // whose normal is the drawn body's up (its heading, the ground's pitch and roll under it), where the bursts start and
+    // bounce instead of the road's.
+    Vec3 bn;
+    F bd;
+    if (sr_.body_plane) {
+        Vu0Matrix b = Vu0Matrix::identity();
+        b.rotate_y(drawn(c.prev.heading, c.heading, c.flow) * sr_.rad_to_deg);
+        b.rotate_x(drawn(c.prev.ground_pitch, c.ground_pitch, c.flow) * sr_.rad_to_deg);
+        b.rotate_z(-(drawn(c.prev.ground_roll, c.ground_roll, c.flow) * sr_.rad_to_deg));
+        bn = b.c[1];
+        const F gx = drawn(c.draw_ground_prev.x, c.draw_ground.x, c.flow), gy = drawn(c.draw_ground_prev.y, c.draw_ground.y, c.flow),
+                gz = drawn(c.draw_ground_prev.z, c.draw_ground.z, c.flow);
+        F e = bn.x * gx;
+        const F ey = bn.y * gy, ez = bn.z * gz;
+        e = e + ey;
+        e = e + ez;
+        bd = -e;
+    }
     // The car's matrix as its body is drawn: the drawn body point, then the drawn heading, pitch and roll.
     Vu0Matrix m = Vu0Matrix::identity();
     m.translate(drawn(c.draw_pos_prev.x, c.draw_pos.x, c.flow), drawn(c.draw_pos_prev.y, c.draw_pos.y, c.flow),
                 drawn(c.draw_pos_prev.z, c.draw_pos.z, c.flow));
     const Vec3 at = m.c[3];
-    m.rotate_y(drawn(c.prev.heading, c.heading, c.flow) * kRadToDeg);
-    m.rotate_x(drawn(c.prev.pitch, c.pitch, c.flow) * kRadToDeg);
-    m.rotate_z(-(drawn(c.prev.roll, c.roll, c.flow) * kRadToDeg));
+    m.rotate_y(drawn(c.prev.heading, c.heading, c.flow) * sr_.rad_to_deg);
+    m.rotate_x(drawn(c.prev.pitch, c.pitch, c.flow) * sr_.rad_to_deg);
+    m.rotate_z(-(drawn(c.prev.roll, c.roll, c.flow) * sr_.rad_to_deg));
     // The road at the body point, from the car's road segment hint; off the road, none; the triangle's material.
     Ground g;
     g.x = at.x, g.h = at.y, g.z = at.z, g.seg = c.road_seg;
@@ -200,22 +254,27 @@ void Sparks::emit(const Car& c, std::span<const SparkPoint> points, const Course
     if (!sparking_material(material)) return;
     const Vec3 n = g.normal;
     const F d = g.plane_d;
+    // A plane's height under a point: -(nx x + nz z + d) / ny.
+    auto height = [](const Vec3& pn, F pd, const Vec3& p) {
+        F h = pn.x * p.x;
+        const F hz = pn.z * p.z;
+        h = h + hz;
+        h = h + pd;
+        h = -h;
+        return h / pn.y;
+    };
     for (const SparkPoint& sp : points) {
         const Vec3 p = m.point(sp.x, sp.y, sp.z);
-        // The road's height under the point: -(nx x + nz z + d) / ny; a point below it bursts, 200 particles a metre down
-        // (5 .. 20), from 0.05 m above the road.
-        F h = n.x * p.x;
-        const F hz = n.z * p.z;
-        h = h + hz;
-        h = h + d;
-        h = -h;
-        h = h / n.y;
+        // A point below the road bursts, 200 particles a metre down (5 .. 20), from 0.05 m above the road (from v2.00 on:
+        // above the body's plane, bouncing on it).
+        const F h = height(n, d, p);
         if (!(p.y < h)) continue;
         const F depth = h - p.y;
-        s32 count = ee::to_int(depth * kPerMetre);
-        if (count < kMinCount) count = kMinCount;
-        if (kMaxCount < count) count = kMaxCount;
-        burst({p.x, h + kLift, p.z}, v, n, d, count, rng);
+        s32 count = ee::to_int(depth * sr_.per_metre);
+        if (count < sr_.min_count) count = sr_.min_count;
+        if (sr_.max_count < count) count = sr_.max_count;
+        if (sr_.body_plane) burst({p.x, height(bn, bd, p) + sr_.lift, p.z}, v, bn, bd, count, rng);
+        else burst({p.x, h + sr_.lift, p.z}, v, n, d, count, rng);
     }
 }
 
@@ -230,11 +289,11 @@ void Sparks::burst(const Vec3& pos, const Vec3& vel, const Vec3& n, F d, s32 cou
         ++made;
         // A turn of +-5 degrees about the vertical, the speed scaled by 0.3 .. 0.7.
         F a = vu0_random(rng) - kHalf;
-        a = a * kDegToRad;
-        a = a * kSpread;
+        a = a * sr_.deg_to_rad;
+        a = a * sr_.spread;
         F r = vu0_random(rng);
-        F sc = r * (kSpeedMax - kSpeedMin);
-        sc = sc + kSpeedMin;
+        F sc = r * (sr_.speed_max - sr_.speed_min);
+        sc = sc + sr_.speed_min;
         const F sn = ee::sin(a) * sc;
         const F cs = ee::cos(a) * sc;
         Vec3 v;
@@ -247,18 +306,19 @@ void Sparks::burst(const Vec3& pos, const Vec3& vel, const Vec3& n, F d, s32 cou
         t = t - kHalf;
         v.z = sxv + czv;
         t = t * h;
-        t = t * kRise;
+        t = t * sr_.rise;
         v.y = vel.y + t;
         // The size w (0.01 .. 0.03 m), the mass 500 w^3, the life (0.6 .. 2 s).
         r = vu0_random(rng);
-        F w = r * (kSizeMax - kSizeMin);
-        w = w + kSizeMin;
+        F w = r * (sr_.size_max - sr_.size_min);
+        w = w + sr_.size_min;
         F mass = w * w;
         mass = mass * w;
-        mass = mass * kDensity;
+        mass = mass * sr_.density;
         r = vu0_random(rng);
-        F life = r * (kLifeMax - kLifeMin);
-        life = life + kLifeMin;
+        F life = r * (sr_.life_max - sr_.life_min);
+        life = life + sr_.life_min;
+        leaf_[size_t(k)] = 0;
         Spark& p = pool_[size_t(k)];
         p.pos = pos, p.last = pos;
         p.inv_mass = kOne / mass;
@@ -289,7 +349,7 @@ bool Sparks::step(Spark& p, F dt, Vu0Random& rng) {
     F k = mw * p.size;
     const F mz = vz * dt;
     p.pos.x = p.pos.x + mx;
-    k = k * kDrag;
+    k = k * sr_.drag;
     const F my = vy * dt;
     k = k * idt;
     p.pos.y = p.pos.y + my;
@@ -297,15 +357,15 @@ bool Sparks::step(Spark& p, F dt, Vu0Random& rng) {
     const F age = p.total - life;
     F dx = (k * vx) * vx;
     if (vx < kZero) dx = -dx;
-    const F g = kGravity * dt;
+    const F g = sr_.gravity * dt;
     F dy = (k * vy) * vy;
     if (vy < kZero) dy = -dy;
     dy = dy - g;
     F dz = (k * vz) * vz;
     if (vz < kZero) dz = -dz;
     // The kick: once (or twice) in the age window 0.09 .. 0.11 s, nine times in ten a lift from its first speed.
-    if (kKickFrom < age && age < kKickTo && vu0_random(rng) < kKickChance) {
-        F kick = kKick * ee::int_to_f(p.speed0);
+    if (sr_.kick_from < age && age < sr_.kick_to && vu0_random(rng) < sr_.kick_chance) {
+        F kick = sr_.kick * ee::int_to_f(p.speed0);
         kick = kick * kInvSpeedScale;
         kick = kick * idt;
         dy = dy + kick;
@@ -324,18 +384,18 @@ bool Sparks::step(Spark& p, F dt, Vu0Random& rng) {
     const F vyn = nvy * n.y, vzn = nvz * n.z;
     vn = vn + vyn;
     vn = vn + vzn;
-    p.life = life * kBounceLife;
+    p.life = life * sr_.bounce_life;
     p.pos.x = p.pos.x - (dist * n.x);
     p.pos.y = p.pos.y - (dist * n.y);
     p.pos.z = p.pos.z - (dist * n.z);
     const F tx = nvx - (vn * n.x), ty = nvy - (vn * n.y), tz = nvz - (vn * n.z);
-    F f = kBounce + kBounce;
+    F f = sr_.bounce + sr_.bounce;
     const F ty2 = ty * ty;
     F t2 = tx * tx;
-    f = f * kBounce;
+    f = f * sr_.bounce;
     const F tz2 = tz * tz;
     t2 = t2 + ty2;
-    const F me = -kBounce;
+    const F me = -sr_.bounce;
     f = f * vn;
     t2 = t2 + tz2;
     const F rz = me * nvz, rx = me * nvx, ry = me * nvy;
@@ -354,7 +414,9 @@ void Sparks::update(F dt, Vu0Random& rng) {
     int prev = -1;
     for (int p = active_; p >= 0;) {
         const int next = pool_[size_t(p)].next;
-        if (step(pool_[size_t(p)], dt, rng)) prev = p;
+        const bool alive = leaf_[size_t(p)] ? leaf_step(leaves_[size_t(p)], rules_.shapes[leaves_[size_t(p)].shape], rules_, dt)
+                                            : step(pool_[size_t(p)], dt, rng);
+        if (alive) prev = p;
         else remove(p, prev);
         p = next;
     }

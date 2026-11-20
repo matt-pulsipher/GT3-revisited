@@ -1,6 +1,7 @@
 // Phase 12's effects: tyre smoke and sound, engine sound levels, pad vibration and steering force; see tick.h.
 
 #include "base/ee_math.h"
+#include "sim/exact/build_math.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::sim::exact {
@@ -36,17 +37,18 @@ void pad_rumble(Car& c) {
         c.x16d4 = 0, c.rumble = 0;
         return;
     }
-    const F cap = F::raw(0x3EAA7EFA); // 0.333
-    const F fx_scale = F::raw(0x46992000); // 19600
+    // (2002 Tokyo-Geneva's constants one unit lower: Europe)
+    const F cap = folded(c.behaviour, 0x3EAA7EFA, 0x3EAA7EF9);      // 0.333
+    const F fx_scale = folded(c.behaviour, 0x46992000, 0x46991FFF); // 19600
     F a = c.w[0].slip_ratio * c.w[0].slip_ratio;
     F b = c.w[1].slip_ratio * c.w[1].slip_ratio;
     const F drive = c.w[0].fx_drive + c.w[1].fx_drive;
     a = a + b;
     a = a * kHalf;
-    F d = a + F::raw(0x3DCCCCCD); // 0.1
+    F d = a + folded(c.behaviour, 0x3DCCCCCD, 0x3DCCCCCC); // 0.1
     d = d * drive;
     if (d < kZero) d = -d;
-    d = d * F::raw(0x3A2A7EFA);
+    d = d * folded(c.behaviour, 0x3A2A7EFA, 0x3A2A7EF9);
     if (cap < d) d = cap;
     F br = c.w[0].fx_brake + c.w[1].fx_brake;
     br = br / fx_scale;
@@ -65,7 +67,7 @@ void pad_rumble(Car& c) {
             bump = bump + (kOne < x ? kOne : x);
         }
         if (i < 2 && w.surface == 1) {
-            F k = w.load / F::raw(0x4537C000); // 2940
+            F k = w.load / folded(c.behaviour, 0x4537C000, 0x4537BFFF); // 2940
             const F v = c.speed * F::raw(0x3C800000);
             k = k * v;
             if (k < kZero) k = -k;
@@ -174,8 +176,9 @@ void steer_force(Car& c, const SteerFeel& s) {
         for (size_t k = 0; k < 3; ++k) dot = dot + d[k] * n[k];
         align = align + dot * c.w[i].load;
     }
-    F k = c.p.susp[0].k + F::raw(0x473F6800); // 49000
-    k = k / F::raw(0x483F6800);              // 196000
+    // (2002 Tokyo-Geneva's constants: Europe)
+    F k = c.p.susp[0].k + folded(c.behaviour, 0x473F6800, 0x473F67FF); // 49000
+    k = k / folded(c.behaviour, 0x483F6800, 0x483F67FF);              // 196000
     F h = c.vel.x * c.vel.x;
     h = h + c.vel.y * c.vel.y;
     align = align * k;
@@ -183,11 +186,12 @@ void steer_force(Car& c, const SteerFeel& s) {
     t = t / c.p.xe54;
     out = out + t;
     h = ee::sqrt(h);
-    if (h < F::raw(0x3F0E38E4)) { // 2 km/h
+    if (h < folded(c.behaviour, 0x3F0E38E4, 0x3F0E38E3)) { // 2 km/h
         F st2 = c.steer_cmd;
-        if (F::raw(0x3DB2B8C2) < st2) st2 = F::raw(0x3DB2B8C2);       // 5 degrees
-        else if (st2 < F::raw(0xBDB2B8C2)) st2 = F::raw(0xBDB2B8C2);
-        out = st2 * F::raw(0x40B758B4);                               // 1 / 10 degrees
+        const F hi = folded(c.behaviour, 0x3DB2B8C2, 0x3DB2B8C1), lo = folded(c.behaviour, 0xBDB2B8C2, 0xBDB2B8C1);
+        if (hi < st2) st2 = hi;                                        // 5 degrees
+        else if (st2 < lo) st2 = lo;
+        out = st2 * folded(c.behaviour, 0x40B758B4, 0x40B758B5);       // 1 / 10 degrees
     }
     if (kOne < out) out = kOne;
     else if (out < kMinusOne) out = kMinusOne;
@@ -238,14 +242,14 @@ void tyre_effects(Car& c, const EffectTables& t, u8 course_kind) {
             if (kZero < ramp) p = p + ramp * e1.g;
             w.skid_pitch = p;
         } else {
-            F k = w.load / F::raw(0x45192000); // 2450
+            F k = w.load / folded(c.behaviour, 0x45192000, 0x45191FFF); // 2450 (Europe's)
             k = k - kQuarter;
             if (k < kZero) k = kZero;
             else if (kOne < k) k = kOne;
             F rim = w.rim_speed;
             if (rim < kZero) rim = -w.rim_speed;
-            F e = rim - F::raw(0x3FB1C71D); // 5 km/h
-            e = e * F::raw(0x3E1374BC);
+            F e = rim - folded(c.behaviour, 0x3FB1C71D, 0x3FB1C71B); // 5 km/h
+            e = e * folded(c.behaviour, 0x3E1374BC, 0x3E1374BD);
             if (e < kZero) e = kZero;
             else if (kOne < e) e = kOne;
             e = e * k;
@@ -260,6 +264,7 @@ void tyre_effects(Car& c, const EffectTables& t, u8 course_kind) {
         F ramp;
         F m = magnitude(2, ramp);
         if (kZero < ramp) m = m + ramp * e2.g;
+        if (!gt3_program(c.behaviour.rule(Rule::TyreEffects)) && w.surface == 8) m = kZero; // (the later builds)
         if (!(m == kZero)) m = m + e2.base;
         if (kOne < m) m = kOne;
         w.smoke_emit = m;
@@ -267,11 +272,11 @@ void tyre_effects(Car& c, const EffectTables& t, u8 course_kind) {
     }
     const u8 kind = course_kind == 0xFF ? 0 : course_kind;
     if (kind == 0) dirt = dirt * kEight;
-    F add = dirt * F::raw(0x3A83126F); // 0.001
+    F add = dirt * folded(c.behaviour, 0x3A83126F, 0x3A83126E); // 0.001
     add = add * c.dt;
     // Condition word 3 += add, at most 0.8.
     c.dirt = c.dirt + add;
-    if (F::raw(0x3F4CCCCD) < c.dirt) c.dirt = F::raw(0x3F4CCCCD);
+    if (const F cap = folded(c.behaviour, 0x3F4CCCCD, 0x3F4CCCCC); cap < c.dirt) c.dirt = cap; // (Europe's)
 }
 
 void phase12_stub(Car&) {}

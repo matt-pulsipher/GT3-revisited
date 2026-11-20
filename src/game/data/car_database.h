@@ -8,7 +8,13 @@
 // u64 id code (db::id_hash of its label). Purchasable part records share a
 // common prefix: u64 id, u64 car (label of the car the part fits),
 // u8 stage at +0x10 (0 = stock), and a u32 price in credits in the last
-// four bytes of the record.
+// four bytes of the record (GT3's; Gran Turismo Concept's gear records append
+// 8 bytes after it).
+//
+// Gran Turismo Concept's databases are the same container with the last six
+// tables in another order (table_layout below) and three longer part records
+// (chassis, engine, gear: GT3's record with bytes appended), which the readers
+// here take as they are.
 
 #include "disc/region.h"
 #include "formats/db/gt_db.h"
@@ -19,6 +25,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -72,6 +79,25 @@ enum class TableId : int {
 };
 
 const char* table_name(TableId t);
+
+// Which table each of a paramdb's 36 holds, by its place in the archive: layout[place] = TableId.
+//
+// The 30 part tables keep their places in every database seen. The last six do not: GT3's are
+// car, variant, event, regulation, course, arcade car (TableId's order); Gran Turismo
+// Concept's (table version 0x082D / 0x082E against GT3's 0x0827) are variant, event,
+// regulation, course, arcade car, car. A program reads each by a built-in number, which is not
+// in the file (a table's header index is only its place), so the six are told apart from their
+// records, whatever the disc:
+//   - by record size: the events are the table of 504-byte records, the courses the one of 16;
+//   - the cars and the regulations both have 264-byte records: the cars are the table the two
+//     272-byte tables' base car ids (+8) are found in;
+//   - the variants and the arcade cars both have 272-byte records: the variants are the table
+//     more of the events' 32 entry slots are found in (events enter variants; a few enter
+//     arcade cars).
+// Where the records decide nothing (empty tables), or the six sizes are not those, the places
+// are GT3's.
+constexpr u16 kCarRecordSize = 264, kVariantRecordSize = 272, kEventRecordSize = 504, kCourseRecordSize = 16;
+std::array<TableId, size_t(TableId::Count)> table_layout(std::span<const db::Table> tables);
 
 // Whether a car is offered in the game's language, by its region byte (car +0xF7): 0 in every
 // language; 1 / 2 only / not in British English; 3 / 4 only / not in US English; 5 / 6 only /
@@ -333,8 +359,10 @@ public:
     // set's own (JP for "", US for "_us", BR for "_eu"): the region byte filters compare its index.
     Language language() const { return language_; }
 
-    // Generic access.
+    // Generic access. Tables are held by what they are, wherever the file keeps them
+    // (table_layout; place_of: a table's place in the file).
     const db::Table& table(TableId t) const { return tables_[size_t(t)]; }
+    size_t place_of(TableId t) const;
     std::string label(u64 code) const { return names_.name(code); }
     const ByteSpan* record(TableId t, u64 id) const;
     const ByteSpan* record(TableId t, const std::string& label) const { return record(t, db::id_hash(label)); }
@@ -430,13 +458,14 @@ private:
     std::map<u16, std::string> maker_countries_;
     void decode();
     void us_medal_times(const Reader& read); // a PAL disc: the US database's medal times
-    PartInfo part_info(ByteSpan r, bool tire = false) const;
+    PartInfo part_info(ByteSpan r, bool tire = false, size_t price_at = 0) const;
     std::string pu(ByteSpan r, size_t off) const { return unistr_.at(rd16(r, off)); }
     std::string ps(ByteSpan r, size_t off) const { return paramstr_.at(rd16(r, off)); }
     std::string id_label(ByteSpan r, size_t off) const { return label(rd64(r, off)); }
 
     Bytes paramdb_;
     std::array<db::Table, size_t(TableId::Count)> tables_;
+    std::array<TableId, size_t(TableId::Count)> layout_{}; // file place -> TableId
     std::array<std::map<u64, size_t>, size_t(TableId::Count)> by_id_;
     db::StringTable paramstr_, unistr_;
     db::IdNames names_;

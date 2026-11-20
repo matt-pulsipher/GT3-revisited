@@ -117,7 +117,7 @@ std::string fmt(const char* f, double v) {
 }
 
 int cmd_db(Disc& disc, const Args& a) {
-    std::string out = a[0], suffix = a.size() > 1 ? (a[1] == "jp" ? "" : a[1]) : std::string(RegionData{disc.info().region}.db_suffix());
+    std::string out = a[0], suffix = a.size() > 1 ? (a[1] == "jp" ? "" : a[1]) : disc.info().data.db_suffix();
     CarDatabase d;
     if (!d.load(disc.volume(), suffix)) {
         std::fprintf(stderr, "error: %s\n", d.error().c_str());
@@ -208,7 +208,7 @@ int cmd_db(Disc& disc, const Args& a) {
 
 int cmd_car(Disc& disc, const Args& a) {
     CarDatabase d;
-    if (!d.load(disc.volume(), a.size() > 1 ? (a[1] == "jp" ? "" : a[1]) : std::string(RegionData{disc.info().region}.db_suffix()))) {
+    if (!d.load(disc.volume(), a.size() > 1 ? (a[1] == "jp" ? "" : a[1]) : disc.info().data.db_suffix())) {
         std::fprintf(stderr, "error: %s\n", d.error().c_str());
         return 1;
     }

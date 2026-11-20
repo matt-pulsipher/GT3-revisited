@@ -6,6 +6,7 @@
 // format in gt_save.h.
 
 #include "base/bytes.h"
+#include "game/concept_state.h"
 #include "sim/car_spec.h"
 
 #include <array>
@@ -155,6 +156,9 @@ struct ArcadeProgress {
     }
 };
 
+// The mark Gran Turismo Concept's credit transfer leaves in a Gran Turismo 3 save (scalar +0x12C; program constant).
+constexpr u32 kConceptTransferMark = 0x12345678;
+
 struct GameState {
     s64 credits = 0;
     u32 day = 1;              // advances by 1 for every race / test entered
@@ -177,12 +181,18 @@ struct GameState {
     std::vector<SettingFile> setting_files; // oldest first
     MachineRecords machine;
     bool ending_short_seen = false, ending_long_seen = false;
+    // Gran Turismo Concept's credit transfer was made into this game (scalar +0x12C holds 0x12345678; concept §7.6):
+    // a second one is refused.
+    bool concept_transfer = false;
     // Records rankings: "lic:<test>" (6, fastest first), "mt:M400" / "mt:M1000" (12,
     // fastest first), "mt:MMAX" (12, top speed first), "at:<time trial code>" (12).
     std::map<std::string, std::vector<RankEntry>> rankings;
     std::string player_name; // last name entered (the name entry's starting text; empty in a new game, as the original)
     std::string file_comment;           // the game file's name (memory-card File Operation, Edit file name)
     ArcadeProgress arcade;
+    // Gran Turismo Concept's progress (concept_state.h): course licenses, single-race results, presents. Empty in a
+    // Gran Turismo 3 game.
+    ConceptState concept_game;
     // The options block (0x888 bytes) of an imported PS2 save, kept as it is so that an
     // export back to the PS2 restores the player's options, music list and key layout
     // (empty: never imported).

@@ -8,6 +8,10 @@
 // (course / class / car selection) are reproduced as simple carousels over
 // the pages' own "hidden" art.
 //
+// A Gran Turismo Concept disc starts in that game's front end instead (menu/concept.mbl: its
+// title, main menu and set-up pages; concept_flow.cpp, the Concept spec), which shares the
+// arcade pickers.
+//
 // SDL-free and frame based like MenuController.
 
 #include "menu/flow/game_hooks.h"
@@ -62,10 +66,19 @@ int race_page_focus(RacePageHook hook, std::string_view code, int race_type);
 
 class GameFlow {
 public:
+    // The disc says which game it is (disc/region.h, GameKind, through the reader).
     GameFlow(FileReader reader, std::string lang);
 
-    // Boot: the title menu, focus on the first item.
+    // Boot: the title menu, focus on the first item (Concept: its title page ar/push_start).
     void start();
+    // Gran Turismo Concept's front end runs (the disc is one).
+    bool concept_game() const { return concept_; }
+    // The course chosen on the arcade set-up pages so far ("" before the course page).
+    const std::string& chosen_course() const { return course_; }
+    // The title page is up and takes input (GT3's "root", Concept's "ar/push_start").
+    bool on_title_page() const;
+    // The arcade set-up pages' control is open (GT3's arcade, Concept's own): the car pages' 3D car.
+    bool arcade_pages() const { return control_ == "arcade" || control_ == "concept"; }
     // Starts directly in another control (e.g. "setting" / "root": the car
     // settings menu opened from a race's quick menu). exited() turns true when
     // that control is left from its top page.
@@ -176,8 +189,9 @@ public:
         int age = 0;             // frames since the current entry's art appeared (24-frame fade-in)
         int rest = 0;            // frames since the last move (background movie after 6)
         int frames = 0;          // frames since the page opened (breadcrumb slide-in)
-        // Car page steps: 1 car and paint, 2 AUTOMATIC / MANUAL, 3 RACING / DRIFT. The page
-        // springs up (oy, screen px) so the step's button row sits in the cross band.
+        // Car page steps: 1 car and paint, 2 AUTOMATIC / MANUAL, 3 RACING / DRIFT, 4 (Concept)
+        // the driving assist. The page springs up (oy, screen px) so the step's button row sits
+        // in the cross band.
         int step = 1;
         float oy = 0, oy_v = 0;
         float strip_alpha = 1;
@@ -197,16 +211,20 @@ public:
     // The Options music list page (option page "music/music"), while it is open.
     const MusicListPage* music_list() const { return music_page_.is_open() ? &music_page_ : nullptr; }
     int car_paint() const { return car_paint_; }
+    // Concept (concept_flow.cpp): the level page's Ace button is shown (L1 + R1 were held on it
+    // since the game started), the level and category chosen last, the lead-car choice.
+    bool concept_ace_shown() const { return concept_ace_; }
+    int concept_level() const { return difficulty_; }
     // Player 2's pad (2 Player Battle car page), set before tick().
     void set_player2_keys(MenuKeys held) { held2_ = held; }
     // 2 Player car page (ar/select_car_2p): each player's selection, run on its own pad.
     // States: 2 class row, 4 car + paint, 6 AT / MT,
-    // 8 RACING / DRIFT, 9 ready.
+    // 8 RACING / DRIFT, 9 ready; 10 Concept's driving assist (in place of 8).
     struct TwoPlayer {
         int state = 2;
         int cls = 0;                      // index into `classes`
         std::vector<std::string> cars;    // the chosen class's open cars
-        int car = 0, paint = 0, transmission = 0, tire_mode = 0;
+        int car = 0, paint = 0, transmission = 0, tire_mode = 0, assist = 0;
         int age = 0;                      // frames since the current car / class appeared
         float scroll = 0, pulse = 1;      // the row's mini cursor
         float paint_pos = 0;
@@ -220,6 +238,10 @@ public:
     void debug_open(const std::string& set, const std::string& page) { open_control(set, page, -1); }
 
 private:
+    struct Target {
+        std::string set, page;
+        int focus = -1;
+    };
     std::vector<ElementDraw> draw_list_impl() const;
     MenuSet& load_set(const std::string& name);
     void switch_control(const std::string& set, const std::string& page, int focus);
@@ -232,6 +254,44 @@ private:
     void handle_arcade(const MenuEvent& e);
     void handle_option(const MenuEvent& e);
     void handle_language(const MenuEvent& e);
+    // The arcade pickers' Confirm (the car page's steps, a refused entry, the choice kept): true
+    // when the page is done and the sequence goes on. Their Cancel: true when it only stepped
+    // back on the page.
+    bool picker_confirm(const std::string& page);
+    bool picker_cancel(const std::string& page);
+    // The car page's steps after the car (Carousel::step values), in order.
+    std::vector<int> car_steps() const;
+    void car_step_draws(std::vector<ElementDraw>& out, const MenuSet::PageRef& ref, const Layer* hidden) const;
+    void car_gauge_draws(std::vector<ElementDraw>& out, const Layer* hidden, const std::string& id) const;
+    // The title page (and where its commands come back to), the Replay Theater page.
+    Target title_target() const;
+    Target theater_target(int focus) const;
+    int title_focus_for(std::string_view command) const;
+    const char* arcade_set() const { return concept_ ? "concept" : "arcade"; }
+    // --- Concept (concept_flow.cpp) ---
+    void handle_concept(const MenuEvent& e);
+    void concept_choose_game(const MenuEvent& e);
+    void concept_start_race();
+    void concept_tick();
+    void concept_draws(std::vector<ElementDraw>& out) const;
+    std::string concept_page(const char* base) const; // "<base>2" when the release's set has it
+    std::string concept_movie(const std::string& page) const;
+    bool concept_ = false;
+    bool concept_ace_ = false;   // the Ace level is shown (not saved; cleared with every start)
+    bool concept_lead_ = false;  // Course License: with the pace car (the status member starts clear, M)
+    int concept_test_ = 0;       // the license test chosen last
+    int concept_category_ = 0;   // the category chosen last (the category page's item index)
+    int concept_pod_ = 0;        // the pod race is being set up: 1 one player, 2 two (0: not)
+    // Game Status (concept §5.9): the map's scroll (the focused button's centre from the screen's centre, smoothed), the
+    // prize key the show room shows, the item the page opens on, the page's frames.
+    float concept_map_x_ = 0, concept_map_y_ = 0;
+    bool concept_map_set_ = false;
+    std::string concept_show_key_, concept_status_item_;
+    u32 concept_status_frames_ = 0;
+    bool concept_map_target(float& x, float& y) const;
+    MenuKeys concept_map_input(MenuKeys held);
+    MenuKeys concept_map_prev_ = 0;
+    int assist_ = 0;             // the car page's driving assist choice (0..2)
     void arcade_step(int step);
     void arcade_back();
     void arcade_start_race();
@@ -248,10 +308,6 @@ private:
     void request_race(GameRequest r);
     // The save page (control "memorycard", page file_operation; save_page.h): when it
     // ends the flow switches to `ok` after a load / save, else to `back`.
-    struct Target {
-        std::string set, page;
-        int focus = -1;
-    };
     void open_save_page(SavePage::Mode m, Target back, Target ok, bool transition, std::string title = {});
     void switch_control_now(const Target& t);
     void log(std::string msg);
@@ -386,6 +442,9 @@ private:
     int idle_frames_ = 0;
     bool in_attract_ = false;
     int attract_demos_ = 0;
+    std::vector<std::string> attract_steps_; // Concept's sequence ("" = a demo race, else a movie), and the step running
+    size_t attract_step_ = 0;
+    void run_attract_step();
     bool attract_movie_ = false;
     void start_attract_demo();
     bool show_presentation();  // opens the next one; false when none

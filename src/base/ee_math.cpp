@@ -1,4 +1,4 @@
-// GT3's sinf / cosf / sincosf / atanf / atan2f; see ee_math.h. Each line is one EE operation in GT3's order (the
+// GT3's sinf / cosf / sincosf / atanf / atan2f / tanf; see ee_math.h. Each line is one EE operation in GT3's order (the
 // multiply-adds chop the product first), with GT3's constants.
 
 #include "base/ee_math.h"
@@ -133,6 +133,72 @@ F atan(F x) {
     if (range < 0) r = F::raw(0x3F490FDB) - r;
     else if (range > 0) r = kHalfPi - r;
     return (x.bits & 0x80000000u) ? -r : r; // the argument's sign bit (also for -0 and negative denormals)
+}
+
+F exp(F x) {
+    const F a = abs(x);
+    const s32 k = to_int(F::raw(0x3FB8AA3B) * a); // 1 / ln 2
+    const F r = a - int_to_f(k) * F::raw(0x3F317218); // ln 2
+    const F r2 = r * r, r3 = r2 * r, r4 = r2 * r2, r5 = r3 * r2, r7 = r4 * r3, r6 = r3 * r3;
+    F acc = F::raw(0x3F000000) * r; // the odd series on the accumulator
+    acc = madd(acc, F::raw(0x3C834835), r3);
+    acc = madd(acc, F::raw(0x38B75147), r5);
+    acc = madd(acc, F::raw(0x33784D94), r7);
+    const F odd = madd(acc, F{}, F{});
+    acc = madd(acc, F::raw(0x3DEC4EC5), r2); // and the even one on top
+    acc = madd(acc, F::raw(0x3ABEF4A9), r4);
+    acc = madd(acc, F::raw(0x365943E2), r6);
+    const F twice = odd + odd;
+    F p = madd(acc, F::raw(0x3F800000), F::raw(0x3F800000));
+    const F q = p - twice;
+    p = p * F::raw((u32(k) + 0x7F) << 23); // (a 32-bit add: it wraps)
+    return s32(x.bits) >= 0 ? p / q : q / p;
+}
+
+F exp_later(F x, bool folded) {
+    static constexpr u32 kFirst[7] = {0x3F317218, 0x3E2AAAAB, 0x3D2AAAAB, 0x3C088889, 0x3AB60B61, 0x39500D01, 0x37D00D01};
+    static constexpr u32 kFolded[7] = {0x3F317217, 0x3E2AAAAA, 0x3D2AAAAA, 0x3C088888, 0x3AB60B60, 0x39500D00, 0x37D00D00};
+    const u32* c = folded ? kFolded : kFirst; // ln 2, then 1 / 3! .. 1 / 8!
+    const s32 k = to_int(x * F::raw(0x3FB8AA3B));
+    const F r = x - int_to_f(k) * F::raw(c[0]);
+    const F r2 = r * r, r3 = r * r2, r4 = r2 * r2;
+    F s = r + F::raw(0x3F800000);
+    s = s + r2 * F::raw(0x3F000000);
+    const F t3 = r3 * F::raw(c[1]), t4 = r4 * F::raw(c[2]);
+    const F r5 = r2 * r3, r6 = r3 * r3, r7 = r3 * r4;
+    s = s + t3;
+    const F t5 = r5 * F::raw(c[3]), t6 = r6 * F::raw(c[4]);
+    s = s + t4;
+    const F t7 = r7 * F::raw(c[5]), r8 = r4 * r4;
+    s = s + t5;
+    const F t8 = r8 * F::raw(c[6]);
+    s = (((s + t6) + t7) + t8);
+    const s32 e = s32(u32(k) + 0x7F); // (a 32-bit add: a saturated k wraps below 0)
+    if (e < 0) return F{};
+    if (e >= 0x100) return F::raw(0x7FFFFFFF);
+    return s * F::raw(u32(e) << 23);
+}
+
+F tan(F x) {
+    // |x| above pi / 4 is reduced by the nearest whole number k of quarter turns (k odd: the cotangent); a rational function
+    // on what is left.
+    int odd = 0;
+    if (F::raw(0x3F490FDB) < abs(x)) {
+        const F half = F::raw((x.bits & 0x80000000u) ? 0xBF000000u : 0x3F000000u); // the argument's sign bit
+        const s32 k = to_int(x * F::raw(0x3F22F983) + half);
+        odd = k & 1;
+        x = x - int_to_f(k) * kHalfPi;
+    }
+    const F z = x * x;
+    F acc = F::raw(kOne); // adda.s one + 0
+    const F z2 = z * z, x3 = z * x;
+    acc = madd(acc, F::raw(0xBEE38E39), z);
+    const F x5 = z2 * x;
+    const F den = madd(acc, F::raw(0x3C820821), z2);
+    acc = plus_zero(x); // adda.s
+    acc = madd(acc, F::raw(0xBDE38E39), x3);
+    const F num = madd(acc, F::raw(0x3A8AB356), x5);
+    return odd ? -den / num : num / den;
 }
 
 F atan2(F y, F x) {

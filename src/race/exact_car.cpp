@@ -164,7 +164,7 @@ void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTel
         t.smoke_emit[i] = h(w.smoke_emit);
         t.skid_pitch[i] = h(w.skid_pitch);
         t.brake_heat[i] = h(w.brake_heat);
-        if (throttle > 0.05f && h(w.load) > 0 && ex::tcs_reads_axle(c.p.d.layout, int(i >> 1)))
+        if (throttle > 0.05f && h(w.load) > 0 && ex::tcs_reads_axle(c.p.d.layout, int(i >> 1), !sim::gt3_program(c.behaviour.rule(sim::Rule::Layout))))
             t.traction_level = std::max(t.traction_level, traction_at(c, i));
         // The ABS (ex::brakes' limit) on a braked wheel on the ground: nearing the tyre's best braking slip (its
         // target, before ASCC's own cut) up to 0.4, then the share of the pressure the ABS takes off past it.

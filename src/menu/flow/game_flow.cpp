@@ -3,7 +3,10 @@
 #include "base/log.h"
 #include "formats/db/gt_db.h"
 #include "formats/sound/mads.h"
+#include "formats/text/mltx.h"
+#include "menu/flow/concept_hooks.h"
 #include "menu/flow/gt_mode_hooks.h"
+#include "vfs/vfs.h"
 
 #include <algorithm>
 #include <cctype>
@@ -44,10 +47,13 @@ bool starts(const std::string& s, const char* p) { return s.rfind(p, 0) == 0; }
 
 bool is_code_page(const std::string& p) {
     return p == "ar/select_course" || p == "ar/select_class" || p == "ar/select_car" || p == "ar/select_car_2p" ||
-           p == "ar/select_compulsory";
+           p == "ar/select_car_2p2" || p == "ar/select_compulsory";
 }
 
-bool is_car_page(const std::string& p) { return p == "ar/select_car" || p == "ar/select_car_2p"; }
+// (ar/select_car_2p2: Concept Tokyo-Geneva's 2 player car page.)
+bool is_two_player_page(const std::string& p) { return p == "ar/select_car_2p" || p == "ar/select_car_2p2"; }
+
+bool is_car_page(const std::string& p) { return p == "ar/select_car" || is_two_player_page(p); }
 
 // Ours: the Key Configuration page shows a "Controller Settings" button, in the middle of its
 // panel (bace_7: 64, 28, 512 x 324), in place of the original's DualShock 2 table: these
@@ -70,6 +76,12 @@ std::string page_music(const std::string& set, const std::string& p) {
     // The option pages match none of the prefixes: no BGM (menus §10; the music list's
     // previews are the only music there).
     if (set == "option") return "";
+    // Concept's control: its title pages are silent like GT3's title, the others take the arcade pages' music
+    // (M: the page rule below is the engine's; the Concept spec lists what was not read). Its Replay Theater page is
+    // "ar/replay_theater": the rule's "replay_theater" test is a prefix test, so the page is one of the
+    // "ar/" pages to it, not GT3's Replay Theater with its own stream (which the Concept discs do not carry); ours keeps
+    // it with the title it is opened from.
+    if (set == "concept" && (p == "ar/push_start" || p == "ar/credit" || p == "ar/replay_theater")) return "";
     // A GT-mode page that matches none of the tests stops the BGM (the rule's default, music
     // §5): the dealer's "purchased" page (00cmn/cd_bought, reached by a go-to from "Purchase?")
     // silences the dealer music until the next dealer page starts it again. Other sets keep
@@ -102,6 +114,24 @@ int title_focus_after(std::string_view command) {
     if (command == "go_file_operation") return kTitleFile;
     if (command == "go_option") return kTitleOption;
     return kTitleArcade;
+}
+
+int GameFlow::title_focus_for(std::string_view command) const {
+    if (!concept_) return title_focus_after(command);
+    // Concept's title (ar/push_start): the item of the command, by name (the releases' pages differ by an item).
+    const char* item = command == "go_replay_theater" ? "replay_theater"
+                       : command == "go_load_game"    ? "load_game"
+                       : command == "go_save_game"    ? "save_game"
+                       : command == "go_file_operation" ? "file_operation"
+                       : command == "go_option"       ? "option"
+                       : command == "go_aspec_demo"   ? "aspec_demo"
+                                                      : "game_start";
+    auto it = sets_.find("concept");
+    if (it != sets_.end() && it->second)
+        if (const MenuSet::PageRef p = it->second->page("ar/push_start"); p.flow)
+            for (size_t i = 0; i < p.flow->items.size(); ++i)
+                if (p.flow->items[i].name == item) return int(i);
+    return 0;
 }
 
 RacePageHook race_page_hook(std::string_view page, const std::vector<MblItem>& items) {
@@ -142,7 +172,22 @@ int race_page_focus(RacePageHook hook, std::string_view code, int race_type) {
     }
 }
 
-GameFlow::GameFlow(FileReader reader, std::string lang) : reader_(std::move(reader)), lang_(std::move(lang)) {}
+GameFlow::GameFlow(FileReader reader, std::string lang) : reader_(std::move(reader)), lang_(std::move(lang)) {
+    concept_ = region_data(reader_).game == GameKind::Concept;
+}
+
+GameFlow::Target GameFlow::title_target() const {
+    return concept_ ? Target{"concept", "ar/push_start", title_focus_} : Target{"gt_mode", "root", title_focus_};
+}
+
+GameFlow::Target GameFlow::theater_target(int focus) const {
+    return concept_ ? Target{"concept", "ar/replay_theater", focus} : Target{"gt_mode", "replay_theater", focus};
+}
+
+bool GameFlow::on_title_page() const {
+    const Target t = title_target();
+    return ctl_ && !switching() && control_ == t.set && ctl_->has_page() && ctl_->page_name() == t.page && !ctl_->busy();
+}
 
 MenuSet& GameFlow::load_set(const std::string& name) {
     auto& s = sets_[name];
@@ -156,8 +201,9 @@ void GameFlow::log(std::string msg) {
 }
 
 void GameFlow::start() {
-    title_focus_ = title_focus_after({}); // boot: Arcade
-    open_control("gt_mode", "root", title_focus_);
+    title_focus_ = title_focus_for({}); // boot: Arcade (Concept: Game Start)
+    const Target t = title_target();
+    open_control(t.set, t.page, t.focus);
 }
 
 bool GameFlow::start_presentations() {
@@ -191,15 +237,61 @@ void GameFlow::open_control(const std::string& set, const std::string& page, int
     // The race series and licence pages open on the item of the stored race code (menus §4.2).
     std::string fpage = page;
     const MenuSet* gt = set == "gt_mode" ? &s : nullptr;
-    ctl_->initial_focus = [this, gt, fpage, focus](const std::string& p) -> int {
+    const bool concept_set = set == "concept";
+    ctl_->initial_focus = [this, gt, concept_set, fpage, focus](const std::string& p) -> int {
         if (p == "ar/top") return arcade_game_;
         if (p == "ar/level") return std::min(difficulty_, 2);
         if (gt && p == "root") return title_focus_;
+        if (concept_set && p == "ar/status") {
+            // Game Status opens on the present granted last (the session record's name, concept §8 step 4), else on
+            // the button it was left on, else on Back.
+            const ConceptHooks& ch = concept_hooks();
+            std::string want = ch.last_grant ? ch.last_grant() : std::string();
+            if (want.empty()) want = concept_status_item_.empty() ? std::string("game_status") : concept_status_item_;
+            if (auto it = sets_.find("concept"); it != sets_.end() && it->second)
+                if (const MenuSet::PageRef ref = it->second->page(p); ref.flow)
+                    for (size_t i = 0; i < ref.flow->items.size(); ++i)
+                        if (ref.flow->items[i].name == want) return int(i);
+        }
+        if (concept_set) {
+            // Concept's focus hooks (concept §5): the title on its focus, the category and license pages on
+            // the choice made last, the pace car page on the lead flag's item.
+            if (p == "ar/push_start") return title_focus_;
+            if (p == "ar/select_category" || p == "ar/select_category2") return concept_category_;
+            if (p == "ar/select_license") return concept_test_;
+            if (p == "ar/lead_car") return concept_lead_ ? 0 : 1;
+        }
         if (gt)
             if (int f = race_page_focus_now(*gt, p); f >= 0) return f;
         return p == fpage ? focus : -1;
     };
-    if (set == "gt_mode" || set == "setting" || set == "records" || presenting_) {
+    if (set == "concept") {
+        // Concept's control: the game data opens with it; the game decides which items are listed and enabled
+        // (the level page's Ace button, the category page's empty categories).
+        const GtModeHooks& h = gt_mode_hooks();
+        if (h.attach && !gt_attached_) {
+            gt_attached_ = true;
+            h.attach(reader_, lang_);
+        }
+        ctl_->enabled = [this, &s](const std::string& p, const MblItem& item) {
+            const ConceptHooks& ch = concept_hooks();
+            // Game Status: an item answers once what it stands for is reached (M: the Concept spec open question 4);
+            // its Back button always.
+            if (p == "ar/status") return item.name == "game_status" || !ch.status_reached || ch.status_reached(item.name);
+            // The category page: a category without a car for the course cannot be chosen (concept §5.6).
+            if (p != "ar/select_category" && p != "ar/select_category2") return true;
+            const MenuSet::PageRef ref = s.page(p);
+            if (!ch.category_cars || !ref.flow) return true;
+            for (size_t i = 0; i < ref.flow->items.size(); ++i)
+                if (ref.flow->items[i].name == item.name) return ch.category_cars(int(i), course_) > 0;
+            return true;
+        };
+        ctl_->listed = [this, listed = h.listed](const std::string& p, const MblItem& item) {
+            // The level page leaves its last item (Ace) out until L1 + R1 were held on it (concept §5.4).
+            if (p == "ar/level" && item.name == "ace") return concept_ace_;
+            return !listed || listed(p, item);
+        };
+    } else if (set == "gt_mode" || set == "setting" || set == "records" || presenting_) {
         const GtModeHooks& h = gt_mode_hooks();
         if (h.attach && !gt_attached_ && set == "gt_mode") {
             gt_attached_ = true;
@@ -223,7 +315,7 @@ void GameFlow::open_control(const std::string& set, const std::string& page, int
     ++generation_;
     ctl_->open(page);
     if (is_code_page(page)) build_carousel(page);
-    two_page_ = set == "arcade" && page == "ar/select_car_2p";
+    two_page_ = (set == "arcade" || set == "concept") && is_two_player_page(page);
     if (two_page_) two_player_open();
 }
 
@@ -271,7 +363,7 @@ void GameFlow::open_save_page(SavePage::Mode m, Target back, Target ok, bool tra
 }
 
 void GameFlow::switch_control_now(const Target& t) {
-    if (t.set == "gt_mode" && t.page == "root") {
+    if (const Target title = title_target(); t.set == title.set && t.page == title.page) {
         switch_control(t.set, t.page, t.focus);
         return;
     }
@@ -287,11 +379,39 @@ void GameFlow::start_attract_demo() {
         in_attract_ = false;
         return;
     }
+    if (concept_) { // (its title opens again on Game Start)
+        const Target t = title_target();
+        resume_set_ = t.set, resume_page_ = t.page, resume_focus_ = -1;
+        r->page = t.page;
+        request_race(std::move(*r));
+        return;
+    }
     title_focus_ = title_focus_after({}); // the title idled without a command: back on Arcade
     resume_set_ = "gt_mode";
     resume_page_ = "root";
     resume_focus_ = title_focus_;
     request_race(std::move(*r));
+}
+
+// Gran Turismo Concept's attract sequence (concept §3.3): the release's steps one after another; a demo race that does
+// not start ends it.
+void GameFlow::run_attract_step() {
+    if (attract_step_ >= attract_steps_.size()) {
+        in_attract_ = false;
+        return;
+    }
+    const std::string& step = attract_steps_[attract_step_];
+    if (step.empty()) {
+        start_attract_demo();
+        return;
+    }
+    const Target t = title_target();
+    resume_set_ = t.set, resume_page_ = t.page, resume_focus_ = -1;
+    GameRequest m;
+    m.kind = GameRequest::Kind::PlayMovie;
+    m.mode = "movie";
+    m.course = step;
+    request_race(std::move(m));
 }
 
 void GameFlow::game_finished() {
@@ -302,6 +422,19 @@ void GameFlow::game_finished() {
         // Replay Theater / Analyzer: back to the page (no results, nothing to award).
         theater_resume_ = false;
         open_control(resume_set_, resume_page_, resume_focus_);
+        return;
+    }
+    if (in_attract_ && concept_) {
+        // Concept's sequence: each step goes back to the title as soon as it is interrupted (a demo race ended by a
+        // button or by its own finish, a movie skipped: no finished result).
+        ++attract_step_;
+        if (result && result->finished && attract_step_ < attract_steps_.size()) {
+            run_attract_step();
+            if (in_attract_) return;
+        }
+        in_attract_ = false;
+        const Target t = title_target();
+        open_control(t.set, t.page, -1);
         return;
     }
     if (in_attract_) {
@@ -328,7 +461,7 @@ void GameFlow::game_finished() {
         open_control("gt_mode", "root", title_focus_);
         return;
     }
-    if (resume_set_ == "arcade" && result)
+    if ((resume_set_ == "arcade" || resume_set_ == "concept") && result)
         if (const GtModeHooks& h = gt_mode_hooks(); h.on_arcade_result) {
             GameResult r = *result;
             if (r.course.empty()) r.course = course_;
@@ -575,6 +708,8 @@ void GameFlow::tick(MenuKeys held) {
             if (!ctl_->busy()) h.map_input(*ctl_, held);
             held &= MenuKeys(~dirs);
         }
+    // Concept's Game Status map: the directions move the pointer between the buttons (concept_flow.cpp).
+    if (control_ == "concept" || control_ == "setting") held = concept_map_input(held);
     // Record name entry (presentation page): Triangle / Square = Back Space only, Start
     // jumps to the OK row (the original's controls; only OK ends the page). L1 / R1 move the
     // text box's cursor (the GT-mode bindings' page frame).
@@ -636,6 +771,18 @@ void GameFlow::tick(MenuKeys held) {
             start_attract_demo();
             return;
         }
+    } else if (control_ == "concept" && on_title_page() && ctl_->depth() == 0) {
+        // Concept's title (its session's idle limit, concept §3.3): the release's attract sequence.
+        const ConceptHooks& h = concept_hooks();
+        idle_frames_ = held ? 0 : idle_frames_ + 1;
+        if (idle_frames_ > kConceptTitleIdleFrames && h.attract_steps) {
+            idle_frames_ = 0;
+            attract_steps_ = h.attract_steps();
+            attract_step_ = 0;
+            in_attract_ = !attract_steps_.empty();
+            if (in_attract_) run_attract_step();
+            if (in_attract_) return;
+        }
     } else {
         idle_frames_ = 0;
     }
@@ -656,10 +803,10 @@ void GameFlow::tick(MenuKeys held) {
             int n = int(carousel_.entries.size());
             int d = (f & key_bit(MenuKey::Right)) ? 1 : (f & key_bit(MenuKey::Left)) ? -1 : 0;
             if (d && carousel_.step > 1) {
-                // AUTOMATIC / MANUAL or RACING / DRIFT (clamped).
-                int& v = carousel_.step == 2 ? transmission_ : tire_mode_;
+                // AUTOMATIC / MANUAL or RACING / DRIFT, Concept's three assist choices (clamped).
+                int& v = carousel_.step == 2 ? transmission_ : carousel_.step == 3 ? tire_mode_ : assist_;
                 int next = v + d;
-                if (next < 0 || next > 1) sounds_.push_back("disable");
+                if (next < 0 || next > (carousel_.step == 4 ? 2 : 1)) sounds_.push_back("disable");
                 else {
                     v = next;
                     sounds_.push_back("cursor");
@@ -704,6 +851,7 @@ void GameFlow::tick(MenuKeys held) {
             }
         animate_carousel(move, jumped_from);
     }
+    if (control_ == "concept") concept_tick();
     const u32 gen = generation_;
     for (const MenuEvent& e : ctl_->take_events()) {
         handle(e);
@@ -736,6 +884,7 @@ void GameFlow::handle(const MenuEvent& e) {
                          : control_ == "arcade" && e.page == "ar/top"   ? "stream/arcade_menu_full.pss"
                          : control_ == "arcade" && e.page == "ar/level" ? "stream/level_menu_full.pss"
                          : control_ == "arcade" && is_car_page(e.page)  ? "stream/menu_bg2.pss"
+                         : control_ == "concept"                        ? concept_movie(e.page)
                                                                         : "";
         if (mv != movie_) {
             movie_ = mv;
@@ -761,6 +910,8 @@ void GameFlow::handle(const MenuEvent& e) {
             }
         const bool consumed = gt_hook_event(e);
         if (e.kind == MenuEvent::Kind::Exit) exited_ = true;
+        // (Gran Turismo Concept's settings pages: their Return button ends the menu with no action.)
+        else if (control_ == "setting" && e.kind == MenuEvent::Kind::Finish && e.action.empty()) exited_ = true;
         else if (e.kind == MenuEvent::Kind::Finish && !consumed) {
             log("not implemented: " + e.action + " (page " + e.page + ")");
             open_control(control_, e.page, e.child);
@@ -770,17 +921,18 @@ void GameFlow::handle(const MenuEvent& e) {
                 if (std::string p = h.take_popup(); !p.empty()) ctl_->popup(p);
         }
     } else if (control_ == "arcade") handle_arcade(e);
+    else if (control_ == "concept") handle_concept(e);
     else if (control_ == "option") handle_option(e);
     else if (control_ == "language") handle_language(e);
 }
 
-// The language page: each item ("br", "fr", "it", "gr", "sp") sets its language; an unknown
-// one sets British English.
+// The language page: each item ("br", "fr", "it", "gr", "sp"; Concept adds "pt", its Asian release offers "tw" and
+// "us") sets its language; an unknown one sets British English.
 void GameFlow::handle_language(const MenuEvent& e) {
     if (e.kind != MenuEvent::Kind::Finish || e.action != "set_lang") return;
     std::string code = e.item;
     for (char& c : code) c = char(std::toupper(static_cast<unsigned char>(c)));
-    if (code != "BR" && code != "FR" && code != "GR" && code != "IT" && code != "SP") code = "BR";
+    if (!text::language_from_code(code)) code = "BR";
     language_choice_ = code;
     exited_ = true;
 }
@@ -1169,8 +1321,9 @@ void GameFlow::handle_option(const MenuEvent& e) {
         return;
     }
     if (e.kind == K::Exit) {
-        title_focus_ = title_focus_after("go_option");
-        switch_control("gt_mode", "root", title_focus_);
+        title_focus_ = title_focus_for("go_option");
+        const Target t = title_target();
+        switch_control(t.set, t.page, t.focus);
     } else if (e.kind == K::Choice) {
         const GameOption* o = find_game_option_by_item(e.page, e.item);
         if (o && options_) {
@@ -1283,46 +1436,11 @@ void GameFlow::handle_arcade(const MenuEvent& e) {
         arcade_step(arcade_pos_ + 1);
         break;
     case K::Confirm:
-        // Car page: OK goes through AUTOMATIC / MANUAL and RACING / DRIFT (the latter
-        // skipped on a dirt course and for garage cars) before the race.
-        if (page == "ar/select_car" && !carousel_.entries.empty() && carousel_disabled().empty() &&
-            carousel_.step < 3) {
-            bool skip_tires = carousel_.step == 2 && (car_class_ == "home_garage" || car_class_ == "guest_garage" ||
-                                                      (gt_mode_hooks().arcade_disabled &&
-                                                       !gt_mode_hooks().arcade_disabled("ar/select_class", course_,
-                                                                                        "class_c").empty()));
-            if (!skip_tires) {
-                ++carousel_.step;
-                sounds_.push_back("next");
-                break;
-            }
-        }
-        if (!carousel_.entries.empty() && !carousel_disabled().empty()) {
-            sounds_.push_back("disable");
-            break;
-        }
-        if (!carousel_.entries.empty()) {
-            const std::string& v = carousel_.entries[size_t(carousel_.index)];
-            if (page == "ar/select_course") course_ = v;
-            else if (page == "ar/select_class") car_class_ = v;
-            else if (page == "ar/select_compulsory") course_ = v;
-            else car_ = v;
-            sounds_.push_back("next");
-        }
-        arcade_step(arcade_pos_ + 1);
+        if (picker_confirm(page)) arcade_step(arcade_pos_ + 1);
         break;
     case K::Exit:
     case K::Cancel:
-        if (page == "ar/select_car" && carousel_.step > 1) {
-            // Back from AUTOMATIC / MANUAL or RACING / DRIFT: one step back on the same page.
-            // The page's cancel (flag 0x100, no back page) ended the controller: resume it, or
-            // no further input is taken (the reported freeze).
-            --carousel_.step;
-            ctl_->resume();
-            sounds_.push_back("cancel");
-            break;
-        }
-        arcade_back();
+        if (!picker_cancel(page)) arcade_back();
         break;
     case K::Action:
         if (e.action.rfind("i_link", 0) == 0) log("not implemented: " + e.action);
@@ -1331,21 +1449,82 @@ void GameFlow::handle_arcade(const MenuEvent& e) {
     }
 }
 
+std::vector<int> GameFlow::car_steps() const {
+    // AUTOMATIC / MANUAL, then RACING / DRIFT (skipped on a dirt course and for garage cars), then Concept's driving
+    // assist (concept §5.7).
+    const GtModeHooks& h = gt_mode_hooks();
+    const ConceptHooks& ch = concept_hooks();
+    const bool dirt = concept_ ? ch.course_dirt && ch.course_dirt(course_)
+                               : h.arcade_disabled && !h.arcade_disabled("ar/select_class", course_, "class_c").empty();
+    // Concept (its car pages' step machine, Tokyo-Geneva): the tire step's test answers "skip" in every
+    // Concept program (a constant where GT3 tests the course), so the page never asks RACING / DRIFT; the
+    // assist step is skipped on a dirt course (GT3's tire test).
+    if (concept_) return dirt ? std::vector<int>{2} : std::vector<int>{2, 4};
+    const bool no_tires = car_class_ == "home_garage" || car_class_ == "guest_garage" || dirt;
+    std::vector<int> steps{2};
+    if (!no_tires) steps.push_back(3);
+    return steps;
+}
+
+bool GameFlow::picker_confirm(const std::string& page) {
+    // A picker with nothing to choose (Concept's Single Race course page before a course license): refused.
+    if (carousel_.entries.empty() && is_code_page(page)) {
+        sounds_.push_back("disable");
+        return false;
+    }
+    // Car page: OK goes through its steps before the race.
+    if (page == "ar/select_car" && !carousel_.entries.empty() && carousel_disabled().empty()) {
+        const std::vector<int> steps = car_steps();
+        const auto next = std::upper_bound(steps.begin(), steps.end(), carousel_.step);
+        if (next != steps.end()) {
+            carousel_.step = *next;
+            sounds_.push_back("next");
+            return false;
+        }
+    }
+    if (!carousel_.entries.empty() && !carousel_disabled().empty()) {
+        sounds_.push_back("disable");
+        return false;
+    }
+    if (!carousel_.entries.empty()) {
+        const std::string& v = carousel_.entries[size_t(carousel_.index)];
+        if (page == "ar/select_course") course_ = v;
+        else if (page == "ar/select_class") car_class_ = v;
+        else if (page == "ar/select_compulsory") course_ = v;
+        else car_ = v;
+        sounds_.push_back("next");
+    }
+    return true;
+}
+
+bool GameFlow::picker_cancel(const std::string& page) {
+    if (page != "ar/select_car" || carousel_.step <= 1) return false;
+    // Back from a step: one step back on the same page. The page's cancel (flag 0x100, no back
+    // page) ended the controller: resume it, or no further input is taken (the reported freeze).
+    const std::vector<int> steps = car_steps();
+    const auto at = std::lower_bound(steps.begin(), steps.end(), carousel_.step);
+    carousel_.step = at == steps.begin() ? 1 : *(at - 1);
+    ctl_->resume();
+    sounds_.push_back("cancel");
+    return true;
+}
+
 void GameFlow::arcade_step(int step) {
     if (step >= int(arcade_steps_.size())) {
-        if (arcade_action_ == "goodies" || arcade_action_ == "i_link_battle") open_control("arcade", "ar/top", -1);
+        if (concept_) concept_start_race();
+        else if (arcade_action_ == "goodies" || arcade_action_ == "i_link_battle") open_control("arcade", "ar/top", -1);
         else arcade_start_race();
         return;
     }
     arcade_pos_ = step;
-    open_control("arcade", arcade_steps_[size_t(step)], -1);
+    open_control(arcade_set(), arcade_steps_[size_t(step)], -1);
 }
 
 void GameFlow::arcade_back() {
     sounds_.push_back("cancel");
     if (arcade_pos_ <= 0) {
         arcade_pos_ = -1;
-        open_control("arcade", "ar/top", -1);
+        open_control(arcade_set(), "ar/top", -1);
     } else {
         arcade_step(arcade_pos_ - 1);
     }
@@ -1447,9 +1626,19 @@ void GameFlow::build_carousel(const std::string& page) {
             if (has(id + "_doc")) carousel_.entries.push_back(id);
         }
     }
-    if (page == "ar/select_car_2p") raw_cars_ = carousel_.entries;
+    if (is_two_player_page(page)) raw_cars_ = carousel_.entries;
     if (const GtModeHooks& h = gt_mode_hooks(); h.arcade_entries)
         h.arcade_entries(page, arcade_action_, car_class_, carousel_.entries);
+    // Concept's car page: the chosen category's open cars for the course (the pictures the page has, in the
+    // game's order; a picture is named "_<label>" when the label starts with a digit).
+    if (const ConceptHooks& ch = concept_hooks(); concept_ && page == "ar/select_car" && ch.cars) {
+        std::vector<std::string> open;
+        for (const std::string& w : ch.cars(car_class_, course_))
+            for (const std::string& n : {w, "_" + w})
+                if (std::find(carousel_.entries.begin(), carousel_.entries.end(), n) != carousel_.entries.end()) open.push_back(n);
+        carousel_.entries = std::move(open);
+    }
+    if (carousel_.entries.empty()) return; // (nothing open, e.g. Concept's Single Race before a course license)
     // Remember the previous choice.
     const std::string& prev = page == "ar/select_course" || page == "ar/select_compulsory" ? course_
                               : page == "ar/select_class"                                 ? car_class_
@@ -1602,6 +1791,113 @@ void GameFlow::animate_carousel(int move, int prev_index) {
         if (mv != movie_) {
             movie_ = mv;
             movie_request_ = mv;
+        }
+    }
+}
+
+// Car page steps: AUTOMATIC / MANUAL (step 2) and RACING / DRIFT (step 3) buttons, centred at x 220 / 420,
+// arriving with the page in the cross band (screen y ~214). Concept's driving assist (step 4): three buttons,
+// centred at 160 / 320 / 480 (M: its row was not measured; the Concept spec open question 6).
+void GameFlow::car_step_draws(std::vector<ElementDraw>& out, const MenuSet::PageRef& ref, const Layer* hidden) const {
+    const Carousel& c = carousel_;
+    struct Row {
+        int step, value;
+        std::vector<const char*> names;
+        const char* title; // the row's heading element, when the page has one
+    };
+    std::vector<Row> rows = {{2, transmission_, {"auto", "manu"}, "gear_title"}, {3, tire_mode_, {"racing", "dri"}, nullptr}};
+    // (assist_0: ASM and TCS lit on the button; assist_1: TCS only; assist_2: neither.)
+    if (concept_) rows.push_back({4, assist_, {"assist_0", "assist_1", "assist_2"}, "assist_title"});
+    for (const Row& row : rows) {
+        float ys = 214.0f + (488.0f * float(row.step - 1) + 134.4f - c.oy);
+        if (ys < -60 || ys > 508) continue;
+        const int n = int(row.names.size());
+        // Concept's row titles ("Transmission", "Driving Assist"), centred above the buttons (M: 46 units up).
+        if (const Element* t = row.title ? find_element(hidden, row.title) : nullptr) {
+            ElementDraw d;
+            d.scene = ref.scene;
+            d.element = t;
+            d.has_box = true;
+            d.box = {320.0f - t->w * 0.5f, 448.0f - ys + 46.0f - t->h * 0.5f, t->w, t->h};
+            d.z = 80.0f;
+            out.push_back(d);
+        }
+        for (int side = 0; side < n; ++side) {
+            std::string name = std::string(row.names[size_t(side)]) + ((side == row.value) ? "_yes" : "_no");
+            if (const Element* b = find_element(hidden, name)) {
+                ElementDraw d;
+                d.scene = ref.scene;
+                d.element = b;
+                d.has_box = true;
+                float cxb = n == 2 ? (side == 0 ? 220.0f : 420.0f) : 160.0f + 160.0f * float(side);
+                d.box = {cxb - b->w * 0.5f, 448.0f - ys - b->h * 0.5f, b->w, b->h};
+                d.z = 80.0f; // over the 3D car
+                out.push_back(d);
+            }
+        }
+    }
+}
+
+void GameFlow::car_gauge_draws(std::vector<ElementDraw>& out, const Layer* hidden, const std::string& id) const {
+    const Carousel& c = carousel_;
+    const GtModeHooks& h = gt_mode_hooks();
+    if (!h.arcade_gauges) return;
+    static const char* const kGauge[3] = {"handling_gauge", "speed_gauge", "acceleration_gauge"};
+    if (concept_) {
+        // Concept's BarGauges (concept §5.7): each bar's art shown up to its value, with the CircleGauge's
+        // sweep to full and back (M: the bars' own motion was not read).
+        std::array<float, 3> v = h.arcade_gauges(id);
+        float rise = std::min(1.0f, 0.04f * float(c.age));
+        for (int g = 0; g < 3; ++g) {
+            const Element* ge = find_element(hidden, kGauge[g]);
+            if (!ge) continue;
+            float f = c.age <= 25 ? rise : std::max(v[size_t(g)], 1.0f - 0.02f * float(c.age - 25));
+            ElementDraw d;
+            d.scene = ctl_->page().scene;
+            d.element = ge;
+            d.dx = c.cross_x + c.art_offset;
+            d.dy = c.oy;
+            d.alpha = std::min(1.0f, float(c.age) / 24.0f);
+            d.has_clip = true;
+            d.clip = {ge->x + d.dx, ge->y + d.dy, ge->w * std::clamp(f, 0.0f, 1.0f), ge->h};
+            d.z = ge->z;
+            out.push_back(d);
+        }
+        return;
+    }
+    // The three circle gauges (riding on the cross with the car's art): a ring 22..238 degrees in the background
+    // colour and the value arc from 230 degrees clockwise, orange up to 80 % and red beyond; each new car sweeps to
+    // full (+0.04 per frame) and settles back (-0.02 per frame).
+    std::array<float, 3> v = h.arcade_gauges(id);
+    float rise = std::min(1.0f, 0.04f * float(c.age));
+    for (int g = 0; g < 3; ++g) {
+        const Element* ge = find_element(hidden, kGauge[g]);
+        if (!ge) continue;
+        float f = c.age <= 25 ? rise : std::max(v[size_t(g)], 1.0f - 0.02f * float(c.age - 25));
+        float gx = ge->x + ge->w * 0.5f + c.cross_x + c.art_offset, gy = ge->y + ge->h * 0.5f + c.oy;
+        float alpha = std::min(1.0f, float(c.age) / 24.0f);
+        auto arc = [&](float rx, float ry, float a0, float a1, float t, SDL_FColor col) {
+            ElementDraw d;
+            d.kind = ElementDraw::Kind::Arc;
+            d.has_box = true;
+            d.box = {gx - rx, gy - ry, 2 * rx, 2 * ry};
+            d.level = a0;
+            d.level2 = a1;
+            d.arc_thickness = t;
+            d.fill = col;
+            d.alpha = alpha;
+            d.z = ge->z;
+            out.push_back(d);
+        };
+        const SDL_FColor bg{0.2f, 0.2f, 0.2f, 1}, orange{1, 0.6f, 0, 1}, red{1, 0, 0, 1};
+        arc(ge->w + 4, ge->h + 4, 22, 238, 0.5f, bg);
+        if (f > 0) {
+            float end = 230.0f - 200.0f * f;
+            if (f < 0.8f) arc(ge->w, ge->h, end, 230, 0.3f, orange);
+            else {
+                arc(ge->w, ge->h, 70, 230, 0.3f, orange);
+                arc(ge->w, ge->h, end, 70, 0.3f, red);
+            }
         }
     }
 }
@@ -1764,7 +2060,9 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
         }
     }
     // The arcade Clear Status page's widgets are filled by the game too.
-    if (gt_active() || (control_ == "arcade" && ctl_->page_name() == "ar/goodies"))
+    // (... and Concept's show room: its table and color boxes are GT3's dealer widgets.)
+    if (gt_active() || (control_ == "arcade" && ctl_->page_name() == "ar/goodies") ||
+        (control_ == "concept" && ctl_->page_name() == "ar/show_room"))
         if (const GtModeHooks& h = gt_mode_hooks(); h.widget_text) {
             const std::string& page = ctl_->page_name();
             for (ElementDraw& d : out) {
@@ -1836,6 +2134,10 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
                                                 (n.size() > 6 && n.compare(n.size() - 6, 6, "_value") == 0))
                                    ? 22.0f
                                    : 0.0f;
+                    // Concept's course page: the length's label ends and its value starts at nearly the same x;
+                    // each sits half its font size in from its anchor (the menus' text inset).
+                    if (concept_ && n == "total_length") vx = -8.0f;
+                    if (concept_ && n == "length") vx = 8.0f;
                     put(find_element(hidden, n), c.cross_x + offset + vx, alpha, &text);
                 }
         };
@@ -1900,30 +2202,7 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
                 out.push_back(xd);
             }
         }
-        // Car page steps: AUTOMATIC / MANUAL (step 2) and RACING / DRIFT (step 3) buttons,
-        // centred at x 220 / 420, arriving with the page in the cross band (screen y ~214).
-        if (c.page == "ar/select_car") {
-            for (int k = 1; k <= 2; ++k) {
-                float ys = 214.0f + (488.0f * float(k) + 134.4f - c.oy);
-                if (ys < -60 || ys > 508) continue;
-                int v = k == 1 ? transmission_ : tire_mode_;
-                const char* left = k == 1 ? "auto" : "racing";
-                const char* right = k == 1 ? "manu" : "dri";
-                for (int side = 0; side < 2; ++side) {
-                    std::string n = std::string(side == 0 ? left : right) + ((side == v) ? "_yes" : "_no");
-                    if (const Element* b = find_element(hidden, n)) {
-                        ElementDraw d;
-                        d.scene = ref.scene;
-                        d.element = b;
-                        d.has_box = true;
-                        float cxb = side == 0 ? 220.0f : 420.0f;
-                        d.box = {cxb - b->w * 0.5f, 448.0f - ys - b->h * 0.5f, b->w, b->h};
-                        d.z = 80.0f; // over the 3D car
-                        out.push_back(d);
-                    }
-                }
-            }
-        }
+        if (c.page == "ar/select_car") car_step_draws(out, ref, hidden);
         // Car pages: the 3D car (slot element "car"), drawn by the app's model renderer
         // (overlay); recreated on each move, without a slide.
         if (is_car_page(c.page) || c.page == "ar/select_compulsory")
@@ -1942,45 +2221,7 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
                 d.z = slot->z;
                 out.push_back(d);
             }
-        // Car page: the three circle gauges (riding on the cross with the car's art): a ring
-        // 22..238 degrees in the background colour and the value arc from 230 degrees
-        // clockwise, orange up to 80 % and red beyond; each new car sweeps to full (+0.04
-        // per frame) and settles back (-0.02 per frame).
-        if (is_car_page(c.page) && h.arcade_gauges) {
-            std::array<float, 3> v = h.arcade_gauges(id);
-            static const char* const kGauge[3] = {"handling_gauge", "speed_gauge", "acceleration_gauge"};
-            float rise = std::min(1.0f, 0.04f * float(c.age));
-            for (int g = 0; g < 3; ++g) {
-                const Element* ge = find_element(hidden, kGauge[g]);
-                if (!ge) continue;
-                float f = c.age <= 25 ? rise : std::max(v[size_t(g)], 1.0f - 0.02f * float(c.age - 25));
-                float gx = ge->x + ge->w * 0.5f + c.cross_x + c.art_offset, gy = ge->y + ge->h * 0.5f + c.oy;
-                float alpha = std::min(1.0f, float(c.age) / 24.0f);
-                auto arc = [&](float rx, float ry, float a0, float a1, float t, SDL_FColor col) {
-                    ElementDraw d;
-                    d.kind = ElementDraw::Kind::Arc;
-                    d.has_box = true;
-                    d.box = {gx - rx, gy - ry, 2 * rx, 2 * ry};
-                    d.level = a0;
-                    d.level2 = a1;
-                    d.arc_thickness = t;
-                    d.fill = col;
-                    d.alpha = alpha;
-                    d.z = ge->z;
-                    out.push_back(d);
-                };
-                const SDL_FColor bg{0.2f, 0.2f, 0.2f, 1}, orange{1, 0.6f, 0, 1}, red{1, 0, 0, 1};
-                arc(ge->w + 4, ge->h + 4, 22, 238, 0.5f, bg);
-                if (f > 0) {
-                    float end = 230.0f - 200.0f * f;
-                    if (f < 0.8f) arc(ge->w, ge->h, end, 230, 0.3f, orange);
-                    else {
-                        arc(ge->w, ge->h, 70, 230, 0.3f, orange);
-                        arc(ge->w, ge->h, end, 70, 0.3f, red);
-                    }
-                }
-            }
-        }
+        if (is_car_page(c.page)) car_gauge_draws(out, hidden, id);
         // Car page: the colour column (the current paint filled, outlines for one above and
         // five below, arrows when there is more) and the paint's name.
         if (is_car_page(c.page) && h.arcade_colors) {
@@ -2099,6 +2340,7 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
             put(find_element(hidden, "arrow_r"), 0, 1, nullptr, false);
         std::stable_sort(out.begin(), out.end(), [](const ElementDraw& a, const ElementDraw& b) { return a.z < b.z; });
     }
+    if (control_ == "concept") concept_draws(out);
     return out;
 }
 
@@ -2117,8 +2359,13 @@ void GameFlow::two_player_open() {
         t = TwoPlayer{};
         t.cls = cls;
         t.transmission = transmission_; // the Options menu's AT / MT
+        t.assist = assist_;             // ... and its driving aids (Concept's assist step)
         // On entering the class row: a dirt course forces Dirt, a road course moves off Dirt.
         bool dirt = h.arcade_disabled && !h.arcade_disabled("ar/select_class", course_, "class_c").empty();
+        if (concept_) { // every class has road and dirt entries: any class on any course
+            t.cls = std::min(t.cls, 4);
+            continue;
+        }
         if (dirt && t.cls < 4) t.cls = 4;
         if (!dirt && t.cls == 4) t.cls = 0;
     }
@@ -2167,15 +2414,35 @@ bool GameFlow::two_player_step(int p, MenuKeys f) {
         sounds_.push_back("select");
         return true;
     };
-    const bool dirt = h.arcade_disabled && !h.arcade_disabled("ar/select_class", course_, "class_c").empty();
+    const ConceptHooks& ch = concept_hooks();
+    const bool dirt = concept_ ? ch.course_dirt && ch.course_dirt(course_)
+                               : h.arcade_disabled && !h.arcade_disabled("ar/select_class", course_, "class_c").empty();
     ++t.age;
     t.pulse -= 1.0f / 15.0f;
     if (t.pulse < 0.25f) t.pulse = 1.0f;
     t.paint_pos += (float(t.paint) - t.paint_pos) * 0.3f;
+    // Concept's pod race: no class to pick; each player's car row is the pod's class (its one car).
+    if (concept_ && concept_pod_ && t.state == 2) {
+        t.cars.clear();
+        if (ch.cars)
+            for (const std::string& w : ch.cars(car_class_, course_))
+                for (const std::string& n : {w, "_" + w})
+                    if (std::find(raw_cars_.begin(), raw_cars_.end(), n) != raw_cars_.end()) t.cars.push_back(n);
+        if (t.cars.empty()) { // (the page has no picture of it: back to the pod race's page)
+            concept_pod_ = 0;
+            arcade_pos_ = -1;
+            open_control("concept", "ar/podrace", -1);
+            return true;
+        }
+        t.car = 0, t.paint = 0, t.age = 0, t.scroll = 0, t.pulse = 1;
+        t.state = 4;
+    }
     switch (t.state) {
     case 2: // class row (wraps)
         if (lr) {
-            t.cls = (t.cls + lr + int(classes.size())) % int(classes.size());
+            // (Concept's page has the five car classes, no garages.)
+            const int n = concept_ ? 5 : int(classes.size());
+            t.cls = (t.cls + lr + n) % n;
             t.age = 0;
             t.pulse = 1;
             sounds_.push_back("select");
@@ -2186,7 +2453,15 @@ bool GameFlow::two_player_step(int p, MenuKeys f) {
             } else {
                 sounds_.push_back("next");
                 t.cars = raw_cars_;
-                if (h.arcade_entries) h.arcade_entries("ar/select_car", arcade_action_, c, t.cars);
+                if (concept_ && ch.cars && ch.category_class) {
+                    // Concept: the class's open cars for the course (the pictures the page has).
+                    std::vector<std::string> open;
+                    for (const std::string& w : ch.cars(ch.category_class(t.cls), course_))
+                        for (const std::string& n : {w, "_" + w})
+                            if (std::find(raw_cars_.begin(), raw_cars_.end(), n) != raw_cars_.end()) open.push_back(n);
+                    t.cars = std::move(open);
+                    if (t.cars.empty()) sounds_.back() = "disable";
+                } else if (h.arcade_entries) h.arcade_entries("ar/select_car", arcade_action_, c, t.cars);
                 t.car = 0, t.paint = 0, t.age = 0, t.scroll = 0, t.pulse = 1;
                 t.state = t.cars.empty() ? 2 : 4;
             }
@@ -2210,6 +2485,13 @@ bool GameFlow::two_player_step(int p, MenuKeys f) {
         } else if (ok) {
             sounds_.push_back("next");
             t.state = 6;
+        } else if (cancel && concept_ && concept_pod_) {
+            // (Either player's cancel on the car row leaves the page, as on the class row.)
+            sounds_.push_back("cancel");
+            concept_pod_ = 0;
+            arcade_pos_ = -1;
+            open_control("concept", "ar/podrace", -1);
+            return true;
         } else if (cancel) {
             sounds_.push_back("cancel");
             t.state = 2;
@@ -2222,7 +2504,9 @@ bool GameFlow::two_player_step(int p, MenuKeys f) {
             sounds_.push_back("next");
             // As the original: the garage test reads player 1's class for both players.
             const std::string& c1 = classes[size_t(two_[0].cls)];
-            t.state = dirt || c1 == "home_garage" || c1 == "guest_garage" ? 9 : 8;
+            // (Concept: no tire step; the driving assist instead, but on a dirt course: car_steps().)
+            if (concept_) t.state = dirt ? 9 : 10;
+            else t.state = dirt || c1 == "home_garage" || c1 == "guest_garage" ? 9 : 8;
         } else if (cancel) {
             sounds_.push_back("cancel");
             t.state = 4;
@@ -2238,12 +2522,23 @@ bool GameFlow::two_player_step(int p, MenuKeys f) {
             t.state = 6;
         }
         break;
+    case 10: // Concept's driving assist: three choices
+        if (lr) clamp_move(t.assist, 3);
+        else if (ok) {
+            sounds_.push_back("next");
+            t.state = 9;
+        } else if (cancel) {
+            sounds_.push_back("cancel");
+            t.state = 6;
+        }
+        break;
     case 9: // ready: both ready starts the race
         if (cancel) {
             sounds_.push_back("cancel");
-            t.state = dirt ? 6 : 8;
+            t.state = concept_ ? (dirt ? 6 : 10) : dirt ? 6 : 8;
         } else if (other.state == 9) {
-            arcade_start_race();
+            if (concept_) concept_start_race();
+            else arcade_start_race();
             return true;
         }
         break;
@@ -2286,7 +2581,8 @@ void GameFlow::two_player_draw(std::vector<ElementDraw>& out) const {
         // The row: class icons on the class row, then the car icons.
         const Element* strip = el("mini_cars" + sfx);
         const bool class_row = t.state == 2;
-        const std::vector<std::string>& row = class_row ? classes : t.cars;
+        const std::vector<std::string> concept_classes(classes.begin(), classes.begin() + 5);
+        const std::vector<std::string>& row = class_row ? (concept_ ? concept_classes : classes) : t.cars;
         const int focus = class_row ? t.cls : t.car;
         if (strip && (class_row || t.state == 4)) {
             auto image = [&](const std::string& id) { return class_row ? id : entry_image(id); };
@@ -2410,6 +2706,16 @@ void GameFlow::two_player_draw(std::vector<ElementDraw>& out) const {
                     if (t.paint + 1 < int(cols.size())) arrow("arrow_down", cy - 18.0f);
                 }
         }
+        // Concept's driving assist: the layout's three buttons with the row's title, "yes" on the choice.
+        if (t.state == 10) {
+            for (int k = 0; k < 3; ++k) {
+                const std::string n = "assist_" + std::to_string(k) + (k == t.assist ? "_yes" : "_no") + sfx;
+                if (const Element* b = el(n)) put_box(b, {b->x, b->y, b->w, b->h}, 1, 80.0f);
+            }
+            if (const Element* title = el("assist_title" + sfx)) put_box(title, {title->x, title->y, title->w, title->h}, 1, 80.0f);
+        }
+        if (concept_ && t.state == 6)
+            if (const Element* title = el("gear_title" + sfx)) put_box(title, {title->x, title->y, title->w, title->h}, 1, 80.0f);
         // AUTOMATIC / MANUAL, RACING / DRIFT: the layout's buttons, "yes" on the choice.
         if (t.state == 6 || t.state == 8) {
             int v = t.state == 6 ? t.transmission : t.tire_mode;
@@ -2464,7 +2770,10 @@ void GameFlow::theater_tick(MenuKeys held) {
     if (r < 0) {
         theater_mode_ = false;
         if (from_logger) open_control("logger", "top", -1);
-        else switch_control("gt_mode", "replay_theater", theater_.mode() == TheaterPage::Mode::Demonstration ? 1 : 0);
+        else {
+            const Target t = theater_target(theater_.mode() == TheaterPage::Mode::Demonstration ? 1 : 0);
+            switch_control(t.set, t.page, t.focus);
+        }
         return;
     }
     const TheaterEntry* e = theater_.chosen();
@@ -2481,7 +2790,8 @@ void GameFlow::theater_tick(MenuKeys held) {
     // Play: the replay (or the disc's demonstration) once, then the theater page again
     // (the original returns to the menu session at replay_theater, focus on its first item).
     GameRequest rq;
-    rq.page = "replay_theater";
+    const Target back = theater_target(0);
+    rq.page = back.page;
     if (theater_.mode() == TheaterPage::Mode::Demonstration) {
         rq.mode = "theater_demo";
         rq.race_code = rq.event = e->id;
@@ -2491,8 +2801,8 @@ void GameFlow::theater_tick(MenuKeys held) {
     }
     theater_mode_ = false;
     theater_resume_ = true;
-    resume_set_ = "gt_mode";
-    resume_page_ = "replay_theater";
+    resume_set_ = back.set;
+    resume_page_ = back.page;
     resume_focus_ = 0;
     request_race(std::move(rq));
 }
@@ -2511,7 +2821,8 @@ void GameFlow::logger_tick(MenuKeys held) {
     const bool exit = key(MenuKey::Cancel) || (key(MenuKey::Confirm) && logger_focus_ == 4);
     if (exit) {
         sounds_.push_back(key(MenuKey::Cancel) ? "cancel" : "ok");
-        switch_control("gt_mode", "replay_theater", 2);
+        const Target t = theater_target(2);
+        switch_control(t.set, t.page, t.focus);
         return;
     }
     if (!key(MenuKey::Confirm)) return;

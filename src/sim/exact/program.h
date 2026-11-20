@@ -8,6 +8,12 @@ namespace gt3r::sim::exact {
 
 using sim::Behaviour;
 using sim::kPrograms;
+using sim::kGt3Programs;
+using sim::kGt3Rules;
+using sim::gt3_program;
+using sim::concept_program;
+using sim::gt3_release;
+using sim::release_rate;
 using sim::Program;
 using sim::Rule;
 using sim::kRules;

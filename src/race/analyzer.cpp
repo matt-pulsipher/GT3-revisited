@@ -439,6 +439,8 @@ bool Analyzer::tick(u16 held) {
     return true;
 }
 
+bool Analyzer::has_band() const { return scene_ && find(*scene_, "bg"); }
+
 void Analyzer::draw(SDL_Renderer* r, const SDL_FRect& dst) {
     if (!scene_ || !renderer_) return;
     const Frame f{dst};
@@ -459,6 +461,7 @@ void Analyzer::draw(SDL_Renderer* r, const SDL_FRect& dst) {
     add(find(*scene_, "bg"));
     add(find(*scene_, "indicator_back"));
     if (view_ == View::Graph) add(find(*scene_, "jump"));
+    if (view_ == View::Replay) add(find(*scene_, "RawWindow_SectorBoxBG")); // (Gran Turismo Concept's page)
     // REPLAY controls: the focused one lit, the active state (playing / stopped / slow) bright.
     if (view_ == View::Replay) {
         static const char* const kCtl[4] = {"RawListItemFixed_ReplayStart", "RawListItemFixed_ReplayStop",

@@ -7,7 +7,11 @@
 #include "base/file.h"
 #include "base/log.h"
 #include "game/gt_save.h"
+#include "game/concept_game.h"
 #include "game/gt_setting.h"
+#include "game/save_edit.h"
+#include "game/save_library.h"
+#include "vfs/vfs.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -48,7 +52,11 @@ Texts game_file_texts(const GtMode& gt, const std::string& path) {
     int lic = gt.highest_license();
     t.push_back({"g_pt_license", lic >= 0 && lic < 5 ? kLic[lic] : ""});
     t.push_back({"g_pt_cars", format_credits(s64(st.garage.size()))});
-    t.push_back({"g_pt_g_achievement", GtMode::completion_file_text(gt.completion_percent())});
+    // A Concept disc's game: its own completion figure (concept §7.7; the save's thumbnail holds it x 100).
+    const float percent = gt.data().game == GameKind::Concept
+                              ? concept_completion(gt.data().concept_lists, st.concept_game) * 100.0f
+                              : gt.completion_percent();
+    t.push_back({"g_pt_g_achievement", GtMode::completion_file_text(percent)});
     // The native file's size in KB (rounded up; the original shows its card file's).
     if (std::optional<Bytes> b = read_host_file(path)) t.push_back({"g_pt_size", std::to_string((b->size() + 1023) / 1024) + "KB"});
     s64 mtime = 0;
@@ -61,6 +69,53 @@ Texts game_file_texts(const GtMode& gt, const std::string& path) {
 
 int read_result(const std::string& err) {
     return err.find("version") != std::string::npos ? SavePage::BadData : SavePage::ReadError;
+}
+
+// Gran Turismo Concept's credit transfer (concept §7.6): the Gran Turismo 3 games it can go to, the saves of
+// every GT3 release's library (the release the Concept program names first; each save's name followed by its
+// release); each with what its file says without that disc's data (credits, days, cars, date, size).
+std::vector<SavePage::File> concept_transfer_files() {
+    std::vector<SavePage::File> out;
+    GtModeSession* s = S();
+    if (!s || s->gt().data().game != GameKind::Concept) return out;
+    for (Region gt3 : concept_transfer_regions(region_data(menu_state().reader))) {
+        for (SaveInfo& info : SaveLibrary(SaveLibrary::user_dir(gt3), false).list()) {
+            SavePage::File f;
+            f.id = info.path;
+            f.name = info.name + " (" + region_name(gt3) + ")";
+            f.broken = !info.state;
+            if (info.state) {
+                const GameState& st = *info.state;
+                f.texts.push_back({"g_pt_cars", format_credits(s64(st.garage.size()))});
+                if (std::optional<Bytes> b = read_host_file(info.path))
+                    f.texts.push_back({"g_pt_size", std::to_string((b->size() + 1023) / 1024) + "KB"});
+                f.texts.push_back({"g_pt_date", date_text(info.mtime)});
+                f.texts.push_back({"g_pt_day", std::to_string(st.day)});
+                f.texts.push_back({"g_pt_money", format_credits(st.credits)});
+            }
+            out.push_back(std::move(f));
+        }
+    }
+    return out;
+}
+
+// The transfer into the save at `path`, asked for and confirmed on the save page: the file is read, changed
+// (apply_concept_transfer) and written back; one that already took a transfer is left as it is.
+int concept_transfer_run(const std::string& path) {
+    GtModeSession* s = S();
+    if (!s || s->gt().data().game != GameKind::Concept || path.empty()) return SavePage::ReadError;
+    std::string err;
+    std::optional<GameState> st = read_save(path, &err);
+    if (!st) return read_result(err);
+    const ConceptTransferRule rule = concept_transfer_rule(region_data(menu_state().reader));
+    if (!apply_concept_transfer(*st, rule.credits)) return SavePage::AlreadyDone;
+    if (!saving_enabled()) return SavePage::Ok; // (GT3R_GTMODE_NOSAVE: nothing is written)
+    if (!write_save(path, *st, &err)) {
+        LOG_WARN("concept: transfer: %s", err.c_str());
+        return SavePage::WriteError;
+    }
+    LOG_INFO("concept: Cr. %lld and the licenses transferred to %s", static_cast<long long>(rule.credits), path.c_str());
+    return SavePage::Ok;
 }
 
 } // namespace
@@ -93,6 +148,7 @@ std::vector<SavePage::File> save_page_files(SavePage::Mode m) {
         }
         return out;
     }
+    if (m == SavePage::Mode::Transfer) return concept_transfer_files();
     SaveLibrary& lib = save_library();
     if (m == SavePage::Mode::LoadGame || m == SavePage::Mode::SaveGame) {
         SavePage::File n;
@@ -125,6 +181,7 @@ int save_page_run(SavePage::Mode m, SavePage::Op op, const SavePage::File& f, co
     MenuState& ms = menu_state();
     GtModeSession* s = S();
     if (!s) return SavePage::ReadError;
+    if (m == SavePage::Mode::Transfer) return op == SavePage::OpTransfer ? concept_transfer_run(f.id) : int(SavePage::ReadError);
     GameState& live = s->gt().state();
     const bool write = saving_enabled();
     // --- Setting files of the current game.
@@ -272,6 +329,7 @@ int save_page_run(SavePage::Mode m, SavePage::Op op, const SavePage::File& f, co
         if (!write) return SavePage::Ok;
         return lib.remove(f.id) ? SavePage::Ok : SavePage::WriteError;
     case SavePage::OpExport: return SavePage::WriteError; // (the page runs the format chosen)
+    case SavePage::OpTransfer: return SavePage::ReadError; // (Mode::Transfer's alone, handled above)
     case SavePage::OpExportPsu:
     case SavePage::OpExportCard:
     case SavePage::OpExportRaw: {
@@ -312,7 +370,7 @@ int save_page_run(SavePage::Mode m, SavePage::Op op, const SavePage::File& f, co
             if (arg.rfind("content://", 0) != 0) base = arg.substr(sl == std::string::npos ? 0 : sl + 1);
             else if (d.name) base = d.name(arg); // (its display name)
             if (size_t dot = base.rfind('.'); dot != std::string::npos && dot > 0) base.resize(dot);
-            if (base.empty() || base == kPs2GameDir) base = "PS2 GAME";
+            if (base.empty() || base == ps2_save_name(s->gt().data())) base = "PS2 GAME";
         }
         if (!write) return SavePage::Ok;
         std::string np;

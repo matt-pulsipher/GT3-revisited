@@ -43,6 +43,10 @@ online lobby (`src/app/screen_online.cpp`; also `gt3r --screen online`).
   prediction.
 - A machine whose disc program the exact core does not know (`ProgramData::load`
   refuses it) cannot race online: its lobby refuses Ready and Start with the reason.
+- **Whose rules.** Every disc of Gran Turismo 3's code races online on NTSC-U's rules and GT3's
+  own tables (`race::online_rules`, `online_program_data`), so its releases share lobbies. A
+  Gran Turismo Concept disc races on its own release's rules and tables, as its offline races
+  do: its lobby holds players on that same disc alone ("Discs" below).
 
 Why owner authority and not lockstep (yet)? Online play was built on a physics that was
 deterministic only on the same build (float results differ between compilers and CPUs), so a
@@ -179,6 +183,18 @@ Each player's car travels as a `game::OnlineCar` descriptor (`src/game/net_car.*
   course (stage 10 "racing"; dirt courses stage 12). Road cars' arcade tyres
   (`arc_normal`) equal their stock `normal` ones; race cars' `arc_racing` grip more
   than their stock tyres (GT-One: μ 1.70 against 1.59).
+
+### Discs
+
+The host lets in only players whose disc matches its own (`net::OnlineDisc`, sent at the end
+of Hello, after the capabilities; `game::online_disc`). Every Gran Turismo 3 release in the known list, with its own
+files, is one disc, `gt3`, whatever its region. Any other disc matches only the same files
+(`files:<DiscInfo::digest>`): a Gran Turismo Concept release, a modified copy of a release,
+a disc the game does not know (a mod under its own serial). Courses
+and the program's own changes are not compared one by one, so different files never race
+together. The refusal names both discs ("the host plays a Gran Turismo 3 release, you an
+unrecognized disc (SCEF-50294); discs must match"). An older game sends no disc and counts
+as `gt3`; an older host ignores it.
 
 ### Tires and settings
 GT3's own i.LINK battle races each car as its menu chose it. Here the lobby also lets each
@@ -346,6 +362,13 @@ Everyone else sees the page read-only, and the CPU cars in the player list. The 
 - **Driver overrides, not skills.** A skill is the arcade race of that difficulty's driver overrides
   (A{E,N,H,P}ST0001, dirt A?AD0001), whose values differ between releases (NTSC-J's Hard is 100/100/100). The
   host sends the bytes its own disc gives, so the host's car and every machine's prediction drive alike.
+  A Gran Turismo Concept disc has no such races: it tunes its opponents per car and level. There the skills
+  are its single-race levels, Normal, Professional and Ace, and a CPU car takes the overrides of its own
+  class entry's single race at that level (`game::concept_cpu_driver`: the entry's code with its last
+  character raised by the level, as Single Race does; its entry of the course's kind, dirt or road, else
+  its other one; a car no class lists, its race under Tokyo-Geneva's names `A_<car>_000n` where the disc
+  holds one). No original mode has CPU cars online, so this is our rule. Quick race's custom race does the
+  same on a Concept disc, and runs on the player's car's own race at Normal.
 - **The host runs them**, as opponents of its own race (`FieldConfig::opponents`, `opponent_sources`: as every
   machine builds the car, `exact_online_source`; `opponent_drivers`). Every other machine poses them as it poses a
   player's car (`FieldConfig::Remote::driver`). Running them on every machine instead would not stay together: each

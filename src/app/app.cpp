@@ -323,7 +323,10 @@ void App::open_saved_disc(const std::string& saved) {
 }
 
 bool App::has_menus(Language l) const {
-    return vfs_ && vfs_->exists(std::string("menu/") + text::language_code(l) + "/gt_mode3.pmb");
+    // The title page's layout: GT3's (gt_mode.mbl), Concept's (concept.mbl; its Portuguese folder has no GT3 pages).
+    if (!vfs_) return false;
+    const char* title = vfs_->region().game == GameKind::Concept ? "/concept2.pmb" : "/gt_mode3.pmb";
+    return vfs_->exists(std::string("menu/") + text::language_code(l) + title);
 }
 
 std::vector<Language> App::playable() const {

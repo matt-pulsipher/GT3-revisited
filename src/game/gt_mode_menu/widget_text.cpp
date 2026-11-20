@@ -4,9 +4,14 @@
 
 #include "game/gt_mode_menu/internal.h"
 
+#include "game/concept_game.h"
+#include "game/concept_menu.h"
+
 #include "base/ee_float.h"
 #include "game/gt_setting.h"
 #include "sim/car_spec.h"
+#include "sim/exact/params_build.h"
+#include "sim/exact/params_build.h"
 
 #include <cmath>
 #include <cstdio>
@@ -18,6 +23,11 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
     const MenuState& ms = menu_state();
     GtModeSession* s = S();
     if (!s || !e.widget_class) return std::nullopt;
+    if (concept_active()) { // Concept's presentation pages; its show room's table reads the car as GT3's dealers do
+        if (std::optional<std::string> t = concept_widget_text(page, e)) return t;
+        // (... and its settings menu the car as GT3's does.)
+        if (page != "ar/show_room" && page != "root" && page != "custom" && !is_setting_page(page)) return std::nullopt;
+    }
     const std::string& c = *e.widget_class;
     const GtMode& gt = s->gt();
     const GameState& st = gt.state();
@@ -28,10 +38,33 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         s->garage_focus >= 0 && s->garage_focus < int(lst.garage.size()) ? &lst.garage[size_t(s->garage_focus)] : nullptr;
     char buf[96];
 
-    if (is_setting_page(page) || page == "root" || page == "change_parts" || page == "parts_setting") {
+    if (is_setting_page(page) || page == "root" || page == "custom" || page == "change_parts" || page == "parts_setting") {
         GarageCar* real = setting_real();
         GarageCar* work = setting_work();
         if (real && work) {
+            // Gran Turismo Concept's Custom page: the tire of each axle by its slider's position
+            // (the SETTING texts TIRE_SOFT, TIRE_NORMAL, TIRE_HARD; TIRE_DIRT on a dirt course, "----" for another tire).
+            if (c == "parts_tir_f_concept" || c == "parts_tir_r_concept") {
+                static const char* const kSlot[kConceptTirePositions] = {"TIRE_SOFT", "TIRE_NORMAL", "TIRE_HARD"};
+                const int pos = concept_tire_position(gt, *work, c[10] == 'r');
+                const char* slot = s->setting_dirt ? "TIRE_DIRT" : pos >= 0 && pos < kConceptTirePositions ? kSlot[pos] : nullptr;
+                const auto it = slot ? gt.data().setting_texts.find(slot) : gt.data().setting_texts.end();
+                return it != gt.data().setting_texts.end() ? it->second : std::string("----");
+            }
+            // The top gear's speed at the rev limit (the gear chart's last line, in the speed unit, "%.2t%s";
+            // "----" for a continuously variable gearbox, whose final cannot be set either).
+            if (c == "gear_max_speed") {
+                if (concept_cvt(gt, *work)) return std::string("----");
+                const sim::exact::GearChart g =
+                    sim::exact::gear_chart(gt.db(), sim::exact::make_equipment(gt.db(), work->car, work->parts, work->settings));
+                const int top = std::clamp(int(g.n), 0, 7);
+                // m/s x 3.6, and x 0.62139 in miles per hour, x 100, cut to a whole number.
+                ee::F v = g.speed_hi[size_t(top)] * ee::F(3.6f);
+                if (gt.data().imperial()) v = v * ee::F(0.62139f);
+                const int hundredths = ee::to_int(v * ee::F(100.0f));
+                std::snprintf(buf, sizeof buf, "%d.%02d%s", hundredths / 100, hundredths % 100, gt.data().imperial() ? "mph" : "km/h");
+                return std::string(buf);
+            }
             if (auto t = setting_text(gt, *real, *work, c)) return t;
             // "%d %s": the setting car's computed power (parts, condition), truncated.
             if (c == "car_current_power") return gt.power_text(gt.power_ps(*work), " ");

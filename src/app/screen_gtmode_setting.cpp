@@ -190,7 +190,7 @@ private:
             flow_->measure_text = font_measure(fonts_);
             if (shows) flow_->start_presentations();
             else if (round_) flow_->start_save_game();
-            else flow_->start(set_, page_);
+            else flow_->start(set_, set_ == "setting" ? game::setting_start_page() : page_);
         } catch (const std::exception& e) {
             error_ = e.what();
             flow_.reset();

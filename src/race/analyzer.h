@@ -140,6 +140,8 @@ public:
     void set_tracks(AnalyzerTrack a, AnalyzerTrack b);
     void open(View v);
     View view() const { return view_; }
+    // The page has Gran Turismo 3's bottom band (its "bg" element); Gran Turismo Concept's page has none.
+    bool has_band() const;
     bool imperial = true;
 
     // One 60 Hz frame (menu keys, menu::flow::MenuKeys bits). False: the analyzer was left.

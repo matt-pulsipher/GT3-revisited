@@ -7,11 +7,15 @@
 namespace gt3r::course {
 
 AiLines AiLines::parse(ByteSpan d) {
-    if (d.size() < 0x48) throw FormatError("AI lines: section too small");
-    u32 size = rd32(d, 0);
-    if (rd32(d, 4) != 8 || size > d.size()) throw FormatError("AI lines: bad header");
+    if (d.size() < 0x28) throw FormatError("AI lines: section too small");
+    u32 size = rd32(d, 0), version = rd32(d, 4);
+    if ((version != 7 && version != 8) || size > d.size() || size < 0x28) throw FormatError("AI lines: bad header");
     AiLines out;
-    for (size_t i = 0x28; i < 0x48 && d[i] >= 0x20; ++i) out.build.push_back(char(d[i]));
+    // Version 8 has the tool's build stamp after the offsets; version 7's first line starts there.
+    if (version == 8) {
+        if (size < 0x48) throw FormatError("AI lines: section too small");
+        for (size_t i = 0x28; i < 0x48 && d[i] >= 0x20; ++i) out.build.push_back(char(d[i]));
+    }
     for (int li = 0; li < 7; ++li) {
         AiLine line;
         u32 off = rd32(d, 0x0C + 4 * li);
