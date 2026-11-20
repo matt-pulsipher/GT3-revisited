@@ -300,6 +300,11 @@ private:
     // neighbour behind the move).
     void animate_carousel(int move, int prev = -1);
     int carousel_icon_at(float x, float y) const; // the strip icon under a point, or -1
+    // The strip's window when its icons are wider than it (they scroll and are cut at its ends), else false.
+    bool carousel_strip_window(SDL_FRect& window) const;
+    // A strip entry's icon: "<image>_mini"; Concept's course page outside Single Race has the small "<image>_mini1"
+    // (no place badge), as the original's Free Run and 2P Battle.
+    std::string strip_icon(const std::string& id) const;
     std::vector<std::string> carousel_parts(const std::string& id) const; // the entry's art (moves with the cross)
     // The hidden picture of a car page entry (GtModeHooks::arcade_image; a label that
     // starts with a digit is named "_<label>" in the layout), else the id itself.

@@ -1711,14 +1711,36 @@ int GameFlow::carousel_icon_at(float x, float y) const {
     const Layer* hidden = find_layer(ctl_->page().layout(), "hidden");
     const Element* strip = find_element(hidden, strip_name(c.page));
     if (!strip) return -1;
-    // As drawn (draw_list): icon k at scroll + k (width + 4), centred on the strip.
+    // As drawn (draw_list): icon k at scroll + k (width + 4), centred on the strip, cut at its window.
+    SDL_FRect window;
+    if (carousel_strip_window(window) && (x < window.x || x > window.x + window.w)) return -1;
     for (size_t k = 0; k < c.entries.size(); ++k) {
-        const Element* icon = find_element(hidden, entry_image(c.entries[k]) + "_mini");
+        const Element* icon = find_element(hidden, strip_icon(c.entries[k]));
         if (!icon) continue;
         float ix = c.scroll + float(k) * (icon->w + 4.0f), cy = strip->y + strip->h * 0.5f;
         if (x >= ix && x <= ix + icon->w && y >= cy - icon->h * 0.5f && y <= cy + icon->h * 0.5f) return int(k);
     }
     return -1;
+}
+
+std::string GameFlow::strip_icon(const std::string& id) const {
+    const std::string image = entry_image(id);
+    if (concept_ && carousel_.page == "ar/select_course" && arcade_action_ != "single_race" && ctl_ && ctl_->page())
+        if (find_element(find_layer(ctl_->page().layout(), "hidden"), image + "_mini1")) return image + "_mini1";
+    return image + "_mini";
+}
+
+bool GameFlow::carousel_strip_window(SDL_FRect& window) const {
+    const Carousel& c = carousel_;
+    if (c.entries.empty() || !ctl_ || !ctl_->page()) return false;
+    const Layer* hidden = find_layer(ctl_->page().layout(), "hidden");
+    const Element* strip = find_element(hidden, strip_name(c.page));
+    const Element* icon = find_element(hidden, strip_icon(c.entries.front()));
+    if (!strip || !icon) return false;
+    // (Concept's course icons, 100 px with their badge, run past the strip with ten courses; GT3's fit.)
+    if (float(c.entries.size()) * (icon->w + 4.0f) - 4.0f <= strip->w) return false;
+    window = {(640.0f - strip->w) * 0.5f, 0, strip->w, 448};
+    return true;
 }
 
 void GameFlow::animate_carousel(int move, int prev_index) {
@@ -1750,7 +1772,7 @@ void GameFlow::animate_carousel(int move, int prev_index) {
     if (ctl_ && ctl_->page()) {
         const Layer* hidden = find_layer(ctl_->page().layout(), "hidden");
         const Element* strip = find_element(hidden, strip_name(c.page));
-        const Element* icon = find_element(hidden, entry_image(c.entries.front()) + "_mini");
+        const Element* icon = find_element(hidden, strip_icon(c.entries.front()));
         if (strip && icon) {
             float W = strip->w, step = icon->w + 4.0f, n = float(c.entries.size()), r = float(c.index);
             float total = n * step - 4.0f, left = r * step, right = (n - r - 1) * step;
@@ -2113,6 +2135,8 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
             d.alpha = alpha;
             d.z = e->z;
             if (text && !text->empty()) d.text = std::make_shared<const std::string>(*text);
+            // A marquee text (Concept's course descriptions) scrolls through its box and is cut at its ends.
+            if (e->text && (e->text->align & 0x10)) text_effects(d, *e, c.age);
             // Car page texts the game draws smaller than their style's font (M, from the
             // reference: the power / torque lines and the gauge labels).
             if (is_car_page(c.page)) {
@@ -2165,8 +2189,10 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
         // The strip of icons: every entry, the focused one pulsing; disabled ones crossed out.
         const Element* strip = find_element(hidden, strip_name(c.page));
         const Element* xmark = find_element(hidden, "x");
+        SDL_FRect window;
+        const bool cut = carousel_strip_window(window);
         for (size_t k = 0; strip && k < c.entries.size(); ++k) {
-            const Element* icon = find_element(hidden, entry_image(c.entries[k]) + "_mini");
+            const Element* icon = find_element(hidden, strip_icon(c.entries[k]));
             if (!icon) continue;
             float step = icon->w + 4.0f, x = c.scroll + float(k) * step;
             if (x > 640 || x + icon->w < 0) continue;
@@ -2176,6 +2202,8 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
             d.element = icon;
             d.has_box = true;
             d.box = {x, cy - icon->h * 0.5f, icon->w, icon->h};
+            d.has_clip = cut;
+            if (cut) d.clip = window;
             d.alpha = c.strip_alpha;
             d.z = icon->z;
             out.push_back(d);
