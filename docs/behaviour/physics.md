@@ -8,7 +8,8 @@ demonstrations. It covers the car's state, the fixed step and the order of its p
 driveline, the tires, the suspension and body motion, the driver aids, and the contact
 between cars and with walls (§0–§5), then the car's parameters from the database and the
 player's settings, tire wear, pit stops, the visual flap pendulums, race starts,
-ground-frame details and leaving the road (§6–§11). Code comments cite its sections as
+ground-frame details and leaving the road (§6–§11), and the Gran Turismo Concept builds'
+differences (§14). Code comments cite its sections as
 `physics §n`. The CPU drivers are described in [ai.md](ai.md).
 
 | Code | Role |
@@ -2435,6 +2436,162 @@ machine tests, free runs and free practice have no course-out.
 **No respawn.** As in GT3, nothing puts a car back on the track: the player has no respawn
 control, and CPU cars are not put back either (ai §12). A car that leaves the road stays
 where it ends up until its driver gets it back.
+
+## §14 Gran Turismo Concept: the later builds
+
+(§12 and §13 are not used.)
+
+The Gran Turismo Concept discs (2001 Tokyo, 2002 Tokyo-Seoul v1.02 and v2.00, 2002
+Tokyo-Geneva for Europe and for Asia; [concept.md](concept.md)) run GT3's engine in later
+builds, made from the PAL release's line. Each disc's races run its own build's rules:
+GT3's step (§1–§11) with the differences below. A race record holds the build it was made
+on, so a replay or ghost made under other rules is refused. Online races and GT3's demos
+take GT3's values, as on a modified GT3.
+
+### §14.1 The builds' tables
+
+Most of the game's small built-in tables are GT3's on every build. The ones that differ:
+the static block (+0x07 50 → 100, +0xAE 20 → 7, +0xB0 140 → 60), the last gear kind (0;
+GT3 24), the controller settings on Tokyo-Seoul v2.00 and Tokyo-Geneva Asia (+0x34
+200 → 250) and three tire-effect scales on Tokyo-Geneva (one unit in the last place off).
+Tokyo-Geneva Europe's HUD message times are GT3 PAL's.
+
+Tables only the later builds have: the special cars' labels (§14.5), AWD system 3's
+settings, the pod's mood tables, the stepless gearboxes' settings (kind 1's ratio rates at
+full and no throttle, 40 and 15 % a second; kind 2's rates down and up, 150 %), the race
+switches (the stop zone's start 608 m and length 33 m, the ASCC's three switches, all on),
+the layout 7 system's settings (§14.5), the HUD messages 0x10 and 0x11 (the pod race's
+prompts, display time 0), on 2001 Tokyo and Tokyo-Seoul the single race's flying-start grid
+(§14.4), and on Tokyo-Geneva special kind 7's ride (on, travel 25 mm, lift 50 %, 75 % per
+axle, a drop of 15 mm reached between 125 and 150 km/h).
+
+Tokyo-Geneva Europe is a 50 Hz build: its counts are the PAL ones (five sixths of the
+60 Hz counts). Like every disc it races at 60 steps a second (§1.1). Tokyo-Geneva Asia
+steps at 60, its 1/60 one unit in the last place lower.
+
+### §14.2 Arithmetic of the later builds
+
+- **Folded constants (2002 Tokyo-Geneva).** Where GT3 has a decimal constant or a constant
+  expression, Tokyo-Geneva's value can be one or two units in the last place off in either
+  direction: its constants were folded in arithmetic that rounds toward zero (pi is
+  0x40490FDA for GT3's 0x40490FDB; 10 / 3.6 two units lower). The differences do not follow
+  from the decimal value, so the engine keeps each such constant as that build's own
+  (`sim/exact/build_math.h`: `toward_zero()`, `folded()`; `params_build.cpp`). It applies to
+  the parameter converter, the AI, the tire forces and effects, the steering, the aids, the
+  driveline, the collision step and the sparks.
+- **Doubles toward zero (2002 Tokyo-Geneva).** Its double-precision arithmetic rounds toward
+  zero where GT3's and the earlier Concept builds' round to nearest (`ee::Fp::LaterTowardZero`).
+- **Every later build's doubles** (`ee::Fp::Later`): the float-to-double conversion treats
+  exponent 255 as an ordinary exponent (no infinity or NaN), a result below the smallest
+  normal is a signed zero where GT3 keeps a denormal, and narrowing a double tells only the
+  zero class apart.
+
+### §14.3 Rules that differ from GT3's
+
+Each is a rule of `sim/program.h`, chosen by the disc's build:
+
+| Rule | What differs |
+|---|---|
+| `Atan2` | GT3 returns 0 whenever x + y == 0; the later builds only when both are 0 |
+| `FloatToDouble` | §14.2 |
+| `EngineCondition` | no engine wear or oil factor on the torque, and the wear counters do not advance in a race |
+| `SlipAngle` | the later atan2; Tokyo-Geneva's own fade speeds and slope |
+| `SpecBuild` | spec byte +0x113's default is 90 (GT3 100); a special kind for the cars the game names (§14.5) |
+| `BodyBuild` | Tokyo-Geneva's chamfer constant |
+| `DriverSpread` | the event's driver overrides spread the computer's drivers by their car's index in every race (GT3: only in configuration 2); Tokyo-Geneva's event has no speed offset: those bytes are its classes' grip percentages (`class grip` below) |
+| `MovingStart` | a car on a straight starts with pedal and throttle at 1; a stepless gearbox's ratio starts at 1; the gear for a speed is first for a stepless gearbox of kind 1 |
+| `GroundMiss` | a wheel off the road reads height 0xFFFFFFFF (GT3 0xFF7FFFFF) |
+| `Oversteer`, `PadRumble`, `SteerForce` | PAL's variants |
+| `GearSpec`, `Driveline` | the gearbox kind (1 and 2 stepless, 3 one gear, at most 7 gears); unequal tire radii on layout 5; for a stepless box the launch speed is the idle speed |
+| `Layout`, `DriveClass` | AWD system 5 is layout 7 (the hybrid, §14.5; AI class 0) and system 7 is layout 8 (GT3: 7); AWD system 3 scales its gain and capacity by its settings; the showroom adds layout 7's motors to the peak power |
+| `AwdGain` | the lateral fade from the settings (start 25 %, floor 15 %), the torque's sign turned in reverse |
+| `AxleStep` | a stepless box's torque through its ratio (§14.5); unequal axles; the centre clutch stays locked while the torque difference is within the requested front torque (GT3: the capacity) |
+| `FlyingGrid` | §14.4 |
+| `RecordStore` | the pad recorder's snapshot is 4 bytes longer (the later car record's extra word) |
+| `StuckNudge` | the collision step's stuck nudge turns only a pad car, and only while it touches something |
+| `HybridStep`, `PodMood`, `PodStop`, `ActiveWing`, `PodSpring`, `HitReport` | the special cars (§14.5) |
+| `StopZone`, `PodRule`, `PodLine` | the pod race (§14.5) |
+| `PassBy` | the pass-by states at the race step's end (each pair's slipstream timer and passing state), which give the pod its rival |
+| `LicenceJudge` | the license test clears a hit and goes on, judges no computer's car; soft ground is not out of the course and the pit mode is 0 (concept §9.2) |
+| `SoftDouble` | §14.2 |
+| class grip (Tokyo-Geneva) | a car the AI drives gets the rule block's grip percentage of its driveline class on each wheel's slip fade and friction circle, × (1 + percent × 0.01) |
+| special kind 7's ride (Tokyo-Geneva) | a car of kind 7 adds a ride force to its damper: lowered by the drop with speed, lifted below 0 (`kind7_ride_force`) |
+| `Aids` | from Tokyo-Seoul v2.00 on a computer's car shows its own aid switches in its TCS and ASCC status |
+| `ParamsBuild` | a layout 7 car's mass adds the static block's byte +3; a stepless box of kind 1 gets its hold speed; from Tokyo-Seoul v1.02 on the rear ride height reads its own spec byte |
+| `PadClutch`, `PadControls` | a stepless box opens the clutch on the third axis below 1 km/h and creeps; the HUD's steering percentage is written from the command |
+| `DriverInput`, `AiOutputs` | the steering percentage two thirds of the way to the command's; the handbrake on while the AI's stop state is 2 |
+| `AiTraffic` | the cooldown only takes the contact away; no lane pick while a line change blends; a lane pick sets the cooldown to 180 steps (GT3 30) |
+| `AiBraking` | a throttle scale below 1 scales only the full-throttle torque's share; a car that owes a stop brakes to its stop point (§14.5) |
+| `AiDecide` | the stop point's speeds (§14.5); Tokyo-Geneva looks further ahead at a slow start and turns out of recovery when the line runs more than 60 degrees off the car's heading |
+| `Ascc` | the race switches: channel C also acts with the throttle applied; an ASM switched off keeps channel E's wheel flags |
+| `TyreEffects` | channel 2 is silent on surface 8 |
+| `GapClosing`, `ContactIntensity` | a pair's gap is given for cars drawing apart too; the intensity's speeds 5 and 0.1 km/h, time 5 s, gap 4 m |
+| `SlowDown` | the run-on after a finish scales the throttle by 0.8, a half at least (GT3: a half) |
+| `Leaves` | §14.5 |
+| `SparkEmit` | the sparks are GT3's (presentation §L7); from Tokyo-Seoul v2.00 on a burst starts 0.05 above, and bounces on, the plane of the car's drawn body under the point, not the road |
+| `LicenceStop` | 1 km/h; Tokyo-Geneva Europe 1.5 km/h |
+| the other GT3 rules | NTSC-U's variant, PAL's for the rubber band, battle cap, lap records and records |
+
+### §14.4 Starts
+
+- **The single race's flying grid** (2001 Tokyo and Tokyo-Seoul): an event with a start
+  distance and speed puts car *i* at the distance plus the first *i* of the grid's steps
+  (20, 8, 20, 15, 8 m, by *i* mod 5) and the speed plus the first *i* speed steps (5, 2, 5,
+  1, 3 km/h), then on the grid's line for car *i* mod 6 (6, 2, 1, 1, 2, 6). Tokyo-Geneva
+  starts as GT3 does.
+- **The special cars' start**: the pod's stop count 0 and its mood cleared (time 60 steps);
+  a car with a wing starts with it in.
+
+### §14.5 The later car record and the new parts
+
+**The car record** has one word more: a stepless gearbox's ratio. With the clutch locked in
+a forward gear the ratio is the engine's speed over the wheel side's, between the last
+gear's relative ratio and 1. Its target is, for kind 1, the hold speed × (0.4 × pedal + 0.6)
+over the wheel side's speed, at a rate between the settings' two by the pedal; for kind 2
+the selected gear's relative ratio. The ratio moves by rate × dt × ratio a step; the torque
+is the engine's times it. Kind 1 has no gear step: reverse on request, first above 1 km/h or
+under throttle.
+
+**The special cars**: the game gives a kind to the cars it names, and four per-car steps of
+the race act on them (`sim/exact/special.h`):
+
+- **Kind 1, the pod**: a mood (one of 16) with a time, a lamp fade, a nod and a lean, drawn on
+  the model. Each step asks for a mood: finished (2 in first place, else 7), on the pit lane
+  (3), a rival alongside (1), sliding (2), all four wheels on soft ground (10), else rest; a
+  hit asks for a wall's 9 or a car's 5, 8 or 4. A sit counter goes up to its cap while the
+  car stands (under 1 km/h) with the handbrake fully on, and down otherwise; the pod sits at
+  the cap, and its wheels lose their spring one after another as the counter rises.
+- **Kind 2** (and from Tokyo-Seoul v2.00 on kinds 8, 9, 10): a wing that comes out at about
+  80 km/h and goes in below 60 km/h; only the drawing reads it.
+- **Layout 7** (the hybrid): below.
+
+**The pod race's stop zone** (an event of test kind 5): from 608 m into the lap, 33 m long;
+off if either is 0 or the zone would cross the line. A car **owes** its laps counted less
+its stops made. Each step, for a car that owes a stop: the player's car on the zone with all
+four wheels and sitting gets its stop; on it and not sitting shows message 0x10; past the
+zone's end, 0x11. A computer's car brakes to a stop point in the zone (spread by its rank),
+stops there with the handbrake and gets its stop once sitting. At the line a car that owes
+two stops is disqualified: the computer stops it, its lap is not counted and race event 11
+is posted. The display's side is concept §9.2.
+
+**The layout 7 system** (`sim/exact/hybrid.h`): an engine driving the rear axle with a motor
+of its own there, a motor on each front wheel and a store of energy, full at the start.
+From the settings table: front motors 20 kW each, rear motor 35 kW; capacity 1125 kW s;
+braking charges the store (at most 100 a second per front wheel, 175 for the rear pair); the
+engine charges it with the clutch open below 2000 rpm, up to 70 kW; the store's level runs
+from 0 to 1 between 1 % and 50 % of the capacity. In the axle step the engine's throttle
+is the throttle over the engine's share of the power, the rear motor adds its torque by the
+demand and the store's level, and the front motors add theirs, split between the front
+wheels by the yaw the steering asks for. The showroom's peak power adds the motors' ratings
+(over 0.7355 PS per kW). The race display shows the store and the flow (concept §9.2).
+
+**Leaves** (`sim/exact/leaves.h`): a wheel on ground whose flag has bit 0x20 (Autumn Ring's
+verges) throws up leaves: at a slip of 2 m/s or more, with room in the sparks' pool of 128,
+one leaf, thrown 75 to 85 degrees off the ground's slope at 0.85 of the car's velocity. A
+leaf is a 1 g plate of one of eight shapes (squares of 0.12, 0.13, 0.14 m and five of
+0.1 m), moved by gravity, the air's force and torque on the plate and its spin (× 0.999 a
+step), and gone below the ground. Drawn as presentation §L7's sparks are, lit by the course's
+car light (concept §9.2).
 
 ## Verification
 
