@@ -46,6 +46,9 @@ using Language = text::Language;
 enum class GameKind : int { Gt3 = 0, Concept = 1 };
 // "Gran Turismo 3", "Gran Turismo Concept".
 const char* game_name(GameKind g);
+// A Gran Turismo Concept release by its serial (SYSTEM.CNF's, "SCES_508.58"): "2001 Tokyo", "Tokyo-Seoul",
+// "Tokyo-Geneva" (Europe), "Tokyo-Geneva Asia"; null for any other serial.
+const char* concept_release(std::string_view serial);
 
 // "jp", "us", "eu": folder and config names.
 const char* region_key(Region r);

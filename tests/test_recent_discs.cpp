@@ -67,6 +67,11 @@ TEST(recent_discs_records) {
     CHECK(!b->known && !b->modified && b->description == "Unverified | odd disc" && b->key == "SCEF-50294");
     CHECK(disc_record_label(*a) == "PAL v1.00, modified");
     CHECK(disc_record_label(*b) == "SCEF-50294 v1.00");
+    // Gran Turismo Concept discs: by release, whatever the record's other fields.
+    DiscRecord geneva{"SCES_508.58", "1.00", "eu", "8d5d67d9bdd40790", "SCES-50858", "Gran Turismo Concept Tokyo-Geneva", false, false};
+    CHECK(disc_record_label(geneva) == "Concept Tokyo-Geneva v1.00");
+    DiscRecord seoul{"SCPS_560.05", "2.00", "jp", "", "SCPS-56005", "Unverified Gran Turismo Concept disc", false, false};
+    CHECK(disc_record_label(seoul) == "Concept Tokyo-Seoul v2.00");
     // Leaving the library drops the record.
     save_recent_discs(back, {"/isos/gt3c.iso"});
     CHECK(!load_disc_record(back, "D:\\ISO\\GT3 = PAL.iso") && load_disc_record(back, "/isos/gt3c.iso"));

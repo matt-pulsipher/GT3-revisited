@@ -126,27 +126,32 @@ TEST(concept_disc_flow) {
         game::ConceptState& st = session->gt().state().concept_game;
         CHECK(rules.course_count() == 10 && rules.license_codes.size() == 10 && rules.keys.size() == 50 && st.empty());
 
-        // A new game: Single Race has no course yet (none has a license medal); the page refuses Confirm.
+        // A new game: Single Race has no course yet (none has a license medal); the main menu refuses it (the
+        // original takes no Confirm on the item).
         CHECK(focus_item(f, "single_race"));
         press(f, MenuKey::Confirm);
-        CHECK(page(f) == "ar/level" && f.controller()->items().size() == 2); // Normal, Professional
-        press(f, MenuKey::Confirm);
-        CHECK(page(f) == "ar/select_course" && !f.carousel());
-        press(f, MenuKey::Confirm);
-        CHECK(page(f) == "ar/select_course" && !f.waiting_for_game());
-        press(f, MenuKey::Cancel);
-        CHECK(page(f) == "ar/level");
-        // L1 + R1 held on the level page add the Ace button, for the rest of the run.
-        f.tick(key_bit(MenuKey::L1) | key_bit(MenuKey::R1));
-        settle(f);
-        CHECK(page(f) == "ar/level" && f.controller()->items().size() == 3 && f.concept_ace_shown());
-        press(f, MenuKey::Cancel);
-        CHECK(page(f) == "ar/top" && f.controller()->focused()->flow->action == "single_race");
+        CHECK(page(f) == "ar/top" && f.controller()->focused() && f.controller()->focused()->flow->action == "single_race");
+        CHECK(!f.waiting_for_game());
 
         // Free Run offers every course from the start.
         CHECK(focus_item(f, "time_attack"));
         press(f, MenuKey::Confirm);
         CHECK(page(f) == "ar/select_course" && f.carousel() && f.carousel()->entries == rules.courses);
+        {
+            // Free Run's strip: the small icons ("_mini1", no place badge), all ten fitting, so none is cut; the
+            // description scrolls in its box (the original's page).
+            int small = 0, wide = 0, cut = 0, doc_cut = 0;
+            for (const ElementDraw& d : f.draw_list()) {
+                if (!d.element) continue;
+                const std::string& n = d.element->name;
+                const bool is_small = n.size() > 6 && n.compare(n.size() - 6, 6, "_mini1") == 0;
+                const bool is_wide = n.size() > 5 && n.compare(n.size() - 5, 5, "_mini") == 0;
+                small += is_small, wide += is_wide, cut += (is_small || is_wide) && d.has_clip;
+                if (n.size() > 4 && n.compare(n.size() - 4, 4, "_doc") == 0 && d.text_clip) ++doc_cut;
+            }
+            CHECK(small == int(rules.courses.size()) && wide == 0 && cut == 0);
+            CHECK(doc_cut > 0);
+        }
         press(f, MenuKey::Cancel);
         CHECK(page(f) == "ar/top");
 
@@ -155,6 +160,11 @@ TEST(concept_disc_flow) {
         st.record_license(3, 0, 90);
         CHECK(focus_item(f, "single_race"));
         press(f, MenuKey::Confirm);
+        CHECK(page(f) == "ar/level" && f.controller()->items().size() == 2); // Normal, Professional
+        // L1 + R1 held on the level page add the Ace button, for the rest of the run.
+        f.tick(key_bit(MenuKey::L1) | key_bit(MenuKey::R1));
+        settle(f);
+        CHECK(page(f) == "ar/level" && f.controller()->items().size() == 3 && f.concept_ace_shown());
         press(f, MenuKey::Confirm); // Normal
         CHECK(page(f) == "ar/select_course" && f.carousel() && f.carousel()->entries.size() == 2);
         CHECK(f.carousel()->entries[0] == rules.courses[0] && f.carousel()->entries[1] == rules.courses[3]);
@@ -373,6 +383,27 @@ TEST(concept_disc_flow) {
         CHECK(focus_item(f, "", "game_status"));
         press(f, MenuKey::Confirm);
         CHECK(page(f) == "ar/top");
+        {
+            // Single Race with every license: ten wide icons (with their place badge) run past the strip, each cut at
+            // the strip's window between its arrows (as the original's).
+            for (int c = 0; c < 10; ++c) st.record_license(c, 0, 100);
+            CHECK(focus_item(f, "single_race"));
+            press(f, MenuKey::Confirm);
+            press(f, MenuKey::Confirm); // Normal
+            CHECK(page(f) == "ar/select_course" && f.carousel() && f.carousel()->entries.size() == rules.courses.size());
+            int icons = 0, cut = 0;
+            for (const ElementDraw& d : f.draw_list()) {
+                const std::string n = d.element ? d.element->name : std::string();
+                if (n.size() > 5 && n.compare(n.size() - 5, 5, "_mini") == 0) {
+                    ++icons;
+                    cut += d.has_clip && d.clip.x >= 30 && d.clip.x + d.clip.w <= 610;
+                }
+            }
+            CHECK(icons > 0 && cut == icons);
+            press(f, MenuKey::Cancel);
+            press(f, MenuKey::Cancel);
+            CHECK(page(f) == "ar/top");
+        }
         press(f, MenuKey::Cancel);
         CHECK(page(f) == "ar/push_start" && f.on_title_page() && f.controller()->focused()->flow->name == "game_start");
     }

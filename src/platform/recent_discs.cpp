@@ -123,6 +123,8 @@ void save_disc_record(IniDocument& cfg, std::string_view path, const DiscRecord&
 std::string disc_record_label(const DiscRecord& r) {
     const std::optional<Region> region = region_from_key(r.region);
     std::string out = r.known && region ? region_name(*region) : r.key;
+    // A Gran Turismo Concept release by name (its serial says which).
+    if (const char* release = concept_release(r.serial)) out = std::string("Concept ") + release;
     if (!r.version.empty()) out += " v" + r.version;
     if (r.modified) out += ", modified";
     return out;

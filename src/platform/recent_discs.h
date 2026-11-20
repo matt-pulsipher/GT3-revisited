@@ -54,9 +54,10 @@ struct DiscRecord {
     bool modified = false; // DiscInfo::modified
 };
 // [disc_library] <digest of the path> = serial|version|region|digest|key|flags|description
+// (flags: k known, m modified)
 std::optional<DiscRecord> load_disc_record(const IniDocument& cfg, std::string_view path);
 void save_disc_record(IniDocument& cfg, std::string_view path, const DiscRecord& r);
-// For the list: "NTSC-U v1.10", "PAL v1.00, modified", "SCEF-50294 v1.00".
+// For the list: "NTSC-U v1.10", "PAL v1.00, modified", "SCEF-50294 v1.00", "Concept Tokyo-Geneva v1.00".
 std::string disc_record_label(const DiscRecord& r);
 
 // Where to look for a saved disc path, in order. Absolute paths and URIs are

@@ -159,7 +159,10 @@ std::unique_ptr<Disc> Disc::open(const std::string& path) {
     if (!region) LOG_WARN("Disc %s: region not recognised; using the NTSC-U data set", info.serial.c_str());
     info.region = region.value_or(Region::America);
     info.data = RegionData::of_program(info.region, files);
-    if (!info.verified && !info.reported && info.data.game == GameKind::Concept) info.description = "Unverified Gran Turismo Concept disc";
+    if (!info.verified && !info.reported && info.data.game == GameKind::Concept) {
+        const char* release = concept_release(info.serial);
+        info.description = release ? std::string("Gran Turismo Concept ") + release : "Unverified Gran Turismo Concept disc";
+    }
     info.key = disc_key(info);
 
     disc->volume_ = std::make_unique<Volume>(*disc->file_, vols[0].offset, vols[0].size);

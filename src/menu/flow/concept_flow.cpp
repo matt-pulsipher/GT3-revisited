@@ -367,6 +367,19 @@ void GameFlow::handle_concept(const MenuEvent& e) {
 
 // The main menu's actions store the game (concept §4.2); each game runs its sequence of pages.
 void GameFlow::concept_choose_game(const MenuEvent& e) {
+    // Single Race offers only courses whose license has a medal (concept §5.5); with none, the main menu refuses it
+    // (the original, on a new game: the item takes no Confirm).
+    if (e.action == "single_race")
+        if (const ConceptHooks& h = concept_hooks(); h.license_medal) {
+            bool any = false;
+            for (int c = 0; c < 10 && !any; ++c) any = h.license_medal(c) >= 0;
+            if (!any) {
+                sounds_.push_back("disable");
+                arcade_game_ = std::max(0, e.child);
+                open_control("concept", "ar/top", -1);
+                return;
+            }
+        }
     concept_pod_ = 0;
     arcade_game_ = std::max(0, e.child);
     arcade_action_ = e.action;
@@ -659,6 +672,7 @@ void GameFlow::concept_draws(std::vector<ElementDraw>& out) const {
             d.has_box = true;
             d.box = {x + (icon->w - badge->w) * 0.5f, cy - badge->h * 0.5f, badge->w, badge->h};
             d.alpha = carousel_.strip_alpha;
+            d.has_clip = carousel_strip_window(d.clip);
             d.z = icon->z + 0.6f;
             out.push_back(d);
         }

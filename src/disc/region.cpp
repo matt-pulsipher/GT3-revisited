@@ -52,6 +52,14 @@ std::optional<Region> region_of_program(ByteSpan program) {
 
 const char* game_name(GameKind g) { return g == GameKind::Concept ? "Gran Turismo Concept" : "Gran Turismo 3"; }
 
+const char* concept_release(std::string_view serial) {
+    if (serial == "SCPS_150.10") return "2001 Tokyo";
+    if (serial == "SCPS_560.05") return "Tokyo-Seoul"; // v1.02 and v2.00
+    if (serial == "SCES_508.58") return "Tokyo-Geneva";
+    if (serial == "SCPS_559.02" || serial == "SCPS_559.03") return "Tokyo-Geneva Asia";
+    return nullptr;
+}
+
 namespace {
 
 // Every whole string of the program that starts with `prefix` and ends with `suffix`, in the
