@@ -29,6 +29,7 @@
 
 #include "base/bytes.h"
 #include "base/game_random.h"
+#include "race/course_camera_aim.h"
 #include "render/math3d.h"
 
 #include <algorithm>
@@ -254,6 +255,9 @@ public:
 
     // Mode 2: whether the followed car has a battle partner now (its on-board cuts need one).
     void set_pair(bool on) { pair_ = on; }
+    // The aim's move from the last target (presentation §G4e): 1 - frames left / its frames, 1
+    // once over or with a pair; it scales the zoom spring's pull inwards.
+    void set_aim_progress(float p) { aim_progress_ = std::clamp(p, 0.0f, 1.0f); }
     // Mode 2's on-board cut on the partner's car, in its first 3 s (180 frames).
     bool onboard_cut() const { return onboard_ && on_partner_ && onboard_time_ < kOnboardCutSeconds - 1e-6; }
     // The course camera's shot (or turn on board) is under 3 s (180 frames) old: mode 2's
@@ -326,7 +330,7 @@ public:
     // One cut (presentation §G2), the original's draws in order. `followed` indexes `cars`;
     // `pick_other` (TARGET AUTO in a field): a random other car first. Then the first car from
     // there with a free course shot (find_free_shot, lasting `x` s), with a roll of -10 .. 10
-    // degrees, a wide zoom (p 0.17), a yaw seed (p 0.3, no effect) and a roll swing from
+    // degrees, a wide zoom (p 0.17), a yaw seed (p 0.3: the first frame's swing, presentation §H6a) and a roll swing from
     // +-100 degrees (p 0.1); with p 0.25, or when no car has one, a procedural camera
     // (procedural_kind; the standing-start `hold`: always the car mount). Then the look
     // (roll_look; the orbit camera raises the trail's odds to 0.6, request 3 lowers the
@@ -383,12 +387,18 @@ private:
     bool runs_out(float D, int k, float s, double seconds) const;
     int state() const;
     Shot evaluate(const GtrcRecord& r, float D, const render::Vec3& car, double dt, const Pair* pair = nullptr);
+    Shot update_shot(float s, int lap, const render::Vec3& car, double dt, float aspect, const Pair* pair);
 
     const GtrcScript* s_;
     int mode_ = 0;
     GameRandom rng_;
     int cur_ = -1, k_ = 0;     // the course camera's record (kept by mode 1's procedural cuts); mode 1's variant
-    float zoom_ = 0;
+    CourseCameraAim aim_;      // the course shot's aim and zoom (the camera operator)
+    double aim_acc_ = 0;       // time into the aim's next 60 Hz frame
+    bool aim_restart_ = true;  // the next course-shot frame is a shot's first
+    bool yaw_seeded_ = false;  // mode 1's yaw seed (A5A) for this shot
+    float yaw_seed_ = 0;       // (A64, degrees)
+    float aim_progress_ = 1;   // the aim's move between cars (the zoom spring's inward pull)
     float offset_ = 0;         // mode 1: added to k * L + s (line crossings during a shot)
     int serial_ = 0;
     double shot_time_ = 0;     // seconds since the cut (or re-arm)
