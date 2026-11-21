@@ -515,6 +515,34 @@ TEST(car_morph_draws_disc) {
     CHECK(draws["ty0032"] == 4 && draws["la0011"] == 2 && draws["ml0003"] == 1); // (LOD 1 has as many)
 }
 
+// Issue 379: the RX-8's (ma0100) brake branch draws its round lamps' glow, a red ring on black, with
+// GS ALPHA 0x48 (Cs*As + Cd). It adds to the lens under it; blended over it, the black covered the lens.
+TEST(car_brake_lamp_glow_adds_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const Volume::Entry* e = disc->volume().find("cars/day/ma0100");
+    CHECK(e != nullptr);
+    if (!e) return;
+    const Bytes data = disc->volume().read(*e);
+    auto added = [&](bool brake) {
+        CarModelOptions o;
+        o.lod = 0;
+        o.wheels = false;
+        o.brake = brake;
+        size_t n = 0;
+        for (const scene::Mesh& mesh : load_car_model(data, o).meshes)
+            for (const scene::Primitive& p : mesh.primitives)
+                if ((p.flags & scene::kAdditive) && !(p.flags & scene::kEnvironmentMap) && p.texture >= 0) {
+                    CHECK(!(p.flags & scene::kAlphaBlend));
+                    ++n;
+                }
+        return n;
+    };
+    size_t off = added(false), on = added(true);
+    std::printf("  ma0100: %zu added textured passes, %zu braking\n", off, on);
+    CHECK(on == off + 2); // the glow of each of the two lamp chunks the brake branch adds
+}
+
 TEST(wheel_model_disc) {
     Disc* disc = test::test_disc();
     if (!disc) SKIP("needs GT3R_DISC");

@@ -2045,7 +2045,8 @@ by the course area):
   Lamp materials (GTM1 material flag bit 0) add their emission x k/4
   (`Material::lamp_emission`, `DrawItem::lamp`), and the node programs' op 0x06 switch
   with selector id 0 takes its "brake pressed now" branch (lit lens chunks;
-  `gtm1::RunParams::brake`, a second body model `CarVisual::body_brake_`). Car model time
+  `gtm1::RunParams::brake`, a second body model `CarVisual::body_brake_`). Lens glow passes drawn
+  with ALPHA 0x48 (Cs As + Cd: the RX-8's ring on black) add to the lens under them (issue 379). Car model time
   of day from Env0: flag 0x80000 `cars/eve/`, else 0x8000 `cars/night/`, else
   `cars/day/`. On Env0 flag 0x8000 courses (night and dusk: route5 / route11 families,
   L_circle*, seattle, laguna, smtnorth, r_deepforest, r_grandvalley, r_smtsouth ...) the
