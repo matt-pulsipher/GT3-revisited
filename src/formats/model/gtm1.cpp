@@ -721,7 +721,26 @@ struct Written {
     // what lay there before) stays in them (scene::Primitive::under_ref). < 0: none.
     float under_ref = -1;
     u32 under = 0;
+    int pass = -1;          // the draw that wrote it (its index in the run)
+    bool masked = false;    // a pass with the alpha write-masked: the frame alpha is not its own
+    bool reflection = false; // a reflection pass (which leaves the frame alpha at 0x80)
 };
+
+// Ray t from `o` along `d` into triangle k (Moller-Trumbore), its barycentrics in `bary`; < -1 = none.
+float ray_triangle(const float* o, const float* d, const std::array<std::array<float, 3>, 3>& k, float* bary) {
+    float a[3], b[3], p[3], t[3], q[3];
+    for (int j = 0; j < 3; ++j) a[j] = k[1][j] - k[0][j], b[j] = k[2][j] - k[0][j], t[j] = o[j] - k[0][j];
+    p[0] = d[1] * b[2] - d[2] * b[1], p[1] = d[2] * b[0] - d[0] * b[2], p[2] = d[0] * b[1] - d[1] * b[0];
+    float det = a[0] * p[0] + a[1] * p[1] + a[2] * p[2];
+    if (std::fabs(det) < 1e-12f) return -2;
+    float u = (t[0] * p[0] + t[1] * p[1] + t[2] * p[2]) / det;
+    if (u < 0 || u > 1) return -2;
+    q[0] = t[1] * a[2] - t[2] * a[1], q[1] = t[2] * a[0] - t[0] * a[2], q[2] = t[0] * a[1] - t[1] * a[0];
+    float v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) / det;
+    if (v < 0 || u + v > 1) return -2;
+    bary[0] = 1 - u - v, bary[1] = u, bary[2] = v;
+    return (b[0] * q[0] + b[1] * q[1] + b[2] * q[2]) / det;
+}
 
 // v' = v M (row vectors) for the position, M's rotation part for the (renormalised) normal.
 void place_vertex(const Matrix& m, scene::Vertex& v) {
@@ -808,6 +827,32 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         cutouts.emplace(key, idx);
         return idx;
     };
+    // Whether cut-out texture `cut` (cutout_for) has a hole in the texels the UVs `uv` x 3 span (their
+    // box; true when it wraps): a summed-area table of the holes per texture.
+    std::map<int, std::vector<u32>> hole_sums;
+    auto has_holes = [&](int cut, const std::array<std::array<float, 2>, 3>& uv) {
+        const scene::Texture& t = model.textures[size_t(cut)];
+        if (t.width == 0 || t.height == 0) return false;
+        float lo[2] = {uv[0][0], uv[0][1]}, hi[2] = {uv[0][0], uv[0][1]};
+        for (const auto& q : uv)
+            for (int j = 0; j < 2; ++j) lo[j] = std::min(lo[j], q[size_t(j)]), hi[j] = std::max(hi[j], q[size_t(j)]);
+        const u32 w = t.width, h = t.height;
+        const float fx0 = std::floor(lo[0] * float(w)), fx1 = std::floor(hi[0] * float(w));
+        const float fy0 = std::floor(lo[1] * float(h)), fy1 = std::floor(hi[1] * float(h));
+        if (fx0 < 0 || fy0 < 0 || fx1 >= float(w) || fy1 >= float(h)) return true; // wraps: assume so
+        auto it = hole_sums.find(cut);
+        if (it == hole_sums.end()) {
+            std::vector<u32> s(size_t(w + 1) * (h + 1), 0);
+            for (u32 y = 0; y < h; ++y)
+                for (u32 x = 0; x < w; ++x)
+                    s[size_t(y + 1) * (w + 1) + x + 1] = (t.rgba[size_t(y) * w + x] >> 24 ? 0u : 1u) + s[size_t(y) * (w + 1) + x + 1] +
+                                                         s[size_t(y + 1) * (w + 1) + x] - s[size_t(y) * (w + 1) + x];
+            it = hole_sums.emplace(cut, std::move(s)).first;
+        }
+        const std::vector<u32>& s = it->second;
+        const size_t x0 = size_t(fx0), x1 = size_t(fx1) + 1, y0 = size_t(fy0), y1 = size_t(fy1) + 1;
+        return s[y1 * (w + 1) + x1] - s[y0 * (w + 1) + x1] - s[y1 * (w + 1) + x0] + s[y0 * (w + 1) + x0] > 0;
+    };
 
     // Reflection pass (ALPHA Cs*Ad + Cd) over vertices that earlier passes wrote: the
     // triangles whose three corners come from the same textured pass become a primitive
@@ -822,12 +867,17 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     // match a triangle spanning a hole the pass never drew (glass reflected on the alpha-only shell,
     // whose corners the window frame's body pass shares: the frame's UVs stretched over the window
     // read its cut-out texels, so the glass lost its reflection).
+    // Every triangle drawn leaves the frame alpha at 0x80 (the reflection's vertex alpha) in
+    // `written_tris`, written by draw `pass`: a later reflection over it adds at full weight. A pass
+    // with the alpha write-masked (the glass tint) keeps that alpha: a reflection over it with an
+    // earlier reflection's triangle right behind it (`behind(corners)` >= 0) adds at full weight
+    // too (the Celica GT-FOUR's rear glass: its second reflection pass, 5 mm inside the first's).
     using Corners = std::array<std::array<float, 3>, 3>;
     using TriWritten = std::array<Written, 3>;
     auto emit_weighted_reflection = [](scene::Mesh& mesh, const scene::Primitive& prim,
                                        const std::map<std::array<float, 3>, Written>& written,
-                                       const std::map<Corners, TriWritten>& written_tris,
-                                       std::set<Corners>& reflected) {
+                                       std::map<Corners, TriWritten>& written_tris,
+                                       std::set<Corners>& reflected, int pass, const auto& behind) {
         constexpr u32 kFlags = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit | scene::kNoDepthWrite;
         std::vector<u32> tris(mesh.indices.begin() + prim.first_index,
                               mesh.indices.begin() + prim.first_index + prim.index_count);
@@ -850,6 +900,12 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     for (int j = 0; j < 3; ++j)
                         if (std::equal(c[size_t(j)].begin(), c[size_t(j)].end(), mesh.vertices[tris[t + size_t(k)]].pos))
                             w[k] = &it->second[size_t(j)];
+            Written over_reflection;
+            if ((w[0] && w[0]->masked) || (w[1] && w[1]->masked) || (w[2] && w[2]->masked))
+                if (float a = behind(c); a >= 0) {
+                    over_reflection.weight = u32(a + 0.5f);
+                    for (const Written*& x : w) x = &over_reflection;
+                }
             bool same = w[0] && w[1] && w[2] && w[0]->texture >= 0 && w[1]->texture == w[0]->texture &&
                         w[2]->texture == w[0]->texture;
             std::vector<u32>& out = groups[same ? std::tuple<int, float, u32>{w[0]->texture, w[0]->under_ref, w[0]->under}
@@ -868,6 +924,11 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 out.push_back(u32(mesh.vertices.size()));
                 mesh.vertices.push_back(v);
             }
+            Written full;
+            full.weight = full.vertex_alpha = 255;
+            full.pass = pass;
+            full.reflection = true;
+            written_tris[c] = {full, full, full};
         }
         for (auto& [key, idx] : groups) {
             scene::Primitive p;
@@ -898,6 +959,90 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         // reflectivity that later Cs*Ad+Cd reflection passes are weighted with.
         std::map<std::array<float, 3>, Written> written_alpha;
         std::map<Corners, TriWritten> written_tris;
+        float box_lo[3] = {1e30f, 1e30f, 1e30f}, box_hi[3] = {-1e30f, -1e30f, -1e30f}; // of written_tris
+        // The frame alpha an earlier pass left at point q of triangle k (as the renderer weights it).
+        auto alpha_at = [&](const TriWritten& k, const float* bary) {
+            float va = 0, uv[2] = {0, 0};
+            for (int j = 0; j < 3; ++j) {
+                va += bary[j] * float(k[size_t(j)].vertex_alpha);
+                uv[0] += bary[j] * k[size_t(j)].uv[0], uv[1] += bary[j] * k[size_t(j)].uv[1];
+            }
+            float ta = 255;
+            if (k[0].texture >= 0) {
+                ta = float(texel_alpha(model.textures[size_t(k[0].texture)], uv[0], uv[1]));
+                if (k[0].under_ref >= 0 && ta <= k[0].under_ref * 255.0f) ta = float(k[0].under);
+            }
+            return std::min(255.0f, va * ta / 255.0f);
+        };
+        // written_tris flat, with each triangle's box (map nodes stay put; a written triangle is
+        // only ever replaced in place), rebuilt when the pass looking changes: what the pass itself
+        // adds meanwhile is never behind it.
+        struct Behind {
+            float lo[3], hi[3];
+            const Corners* k;
+            const TriWritten* tw;
+        };
+        std::vector<Behind> behind_list;
+        int behind_pass = -1;
+        // What lies behind triangle c where its pass draws nothing (alpha-tested holes): the alpha
+        // of the nearest triangle an earlier pass wrote within 0.6 m, looking from c into the car
+        // (towards the middle of what has been drawn) at its centre and halfway to each corner. On
+        // the GS the hole keeps that per pixel (the Celica GT-FOUR's rear window frame: the cabin
+        // 5-33 cm behind it). `shell`: only an earlier reflection's triangles within 1 cm on either
+        // side (a layer over the same pixels: the Celica's glass, 5 mm inside the first reflection's
+        // triangles). < 0: nothing there.
+        auto alpha_behind = [&](const Corners& c, int pass, bool shell = false) -> float {
+            const float near = shell ? -0.01f : -0.002f, reach = shell ? 0.01f : 0.6f;
+            if (behind_pass != pass) {
+                behind_pass = pass;
+                behind_list.clear();
+                for (const auto& [k, tw] : written_tris) {
+                    Behind b{{k[0][0], k[0][1], k[0][2]}, {k[0][0], k[0][1], k[0][2]}, &k, &tw};
+                    for (const auto& p : k)
+                        for (int j = 0; j < 3; ++j) b.lo[j] = std::min(b.lo[j], p[size_t(j)]), b.hi[j] = std::max(b.hi[j], p[size_t(j)]);
+                    behind_list.push_back(b);
+                }
+            }
+            float e1[3], e2[3], n[3], mid[3], to_centre = 0;
+            for (int j = 0; j < 3; ++j) {
+                e1[j] = c[1][j] - c[0][j], e2[j] = c[2][j] - c[0][j];
+                mid[j] = (c[0][j] + c[1][j] + c[2][j]) / 3;
+            }
+            n[0] = e1[1] * e2[2] - e1[2] * e2[1], n[1] = e1[2] * e2[0] - e1[0] * e2[2], n[2] = e1[0] * e2[1] - e1[1] * e2[0];
+            const float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            if (len == 0 || box_lo[0] > box_hi[0]) return -1;
+            for (int j = 0; j < 3; ++j) to_centre += n[j] * ((box_lo[j] + box_hi[j]) * 0.5f - mid[j]);
+            for (float& x : n) x /= to_centre < 0 ? -len : len;
+            float q[4][3], best[4], alpha[4] = {0, 0, 0, 0};
+            for (int s = 0; s < 4; ++s) {
+                best[s] = 1e30f;
+                for (int j = 0; j < 3; ++j) q[s][j] = s == 0 ? mid[j] : (mid[j] + c[size_t(s - 1)][size_t(j)]) * 0.5f;
+            }
+            float lo[3], hi[3]; // the box of the four rays
+            for (int j = 0; j < 3; ++j) {
+                lo[j] = hi[j] = q[0][j];
+                for (int s = 0; s < 4; ++s)
+                    for (float t : {near, reach})
+                        lo[j] = std::min(lo[j], q[s][j] + t * n[j]), hi[j] = std::max(hi[j], q[s][j] + t * n[j]);
+            }
+            for (const Behind& b : behind_list) {
+                if (b.hi[0] < lo[0] || b.lo[0] > hi[0] || b.hi[1] < lo[1] || b.lo[1] > hi[1] || b.hi[2] < lo[2] || b.lo[2] > hi[2])
+                    continue;
+                const TriWritten& tw = *b.tw;
+                if (tw[0].masked || tw[0].pass == pass || (shell && !tw[0].reflection)) continue;
+                for (int s = 0; s < 4; ++s) {
+                    float bary[3];
+                    float t = ray_triangle(q[s], n, *b.k, bary);
+                    // (from just in front of the plane: a shell under the same surface)
+                    if (t >= near && t <= reach && std::fabs(t) < std::fabs(best[s])) best[s] = t, alpha[s] = alpha_at(tw, bary);
+                }
+            }
+            float sum = 0;
+            int hits = 0;
+            for (int s = 0; s < 4; ++s)
+                if (best[s] < 1e30f) sum += alpha[s], ++hits;
+            return hits ? sum / float(hits) : -1.0f;
+        };
         // Records triangle (p, w) x 3 in written_tris; `keep`: a pass with the alpha write-masked
         // only fills a triangle nothing wrote before. `tested`: the pass's GS alpha test (an opaque
         // textured pass), whose failing texels keep the alpha this triangle held before.
@@ -912,24 +1057,37 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             for (size_t k = 0; k < 3; ++k) {
                 std::copy_n(p[size_t(o[k])], 3, c[k].begin());
                 tw[k] = w[size_t(o[k])];
+                tw[k].masked = keep;
             }
             // GS ATST 5 GEQUAL / 6 GREATER AREF (0x80 = 1.0): the texels failing it have alpha <= ref.
             const u8 method = tested ? tested->alpha_test_method : 0;
             const float ref = tested ? (float(tested->alpha_test_ref) + (method == 6 ? 0.5f : -0.5f)) / 128.0f : -1.0f;
             // (cutout_for keeps the texture itself when no texel fails: then there is nothing under it)
-            if (tested && tw[0].texture >= 0 && (method == 5 || method == 6) && ref >= 0 &&
-                cutout_for(tw[0].texture, method, tested->alpha_test_ref) != tw[0].texture) {
-                // No pass drew exactly this triangle: the corners' alpha before this pass (`before`).
+            const int cut = tested && tw[0].texture >= 0 && (method == 5 || method == 6) && ref >= 0
+                                ? cutout_for(tw[0].texture, method, tested->alpha_test_ref)
+                                : -1;
+            if (cut >= 0 && cut != tw[0].texture) {
+                // The pass that last drew exactly this triangle; else what lies behind its holes;
+                // else the corners' alpha before this pass (`before`).
                 u32 under = (before[0] + before[1] + before[2]) / 3;
-                if (auto it = written_tris.find(c); it != written_tris.end())
+                if (auto it = written_tris.find(c); it != written_tris.end() && !it->second[0].masked)
                     under = (it->second[0].weight + it->second[1].weight + it->second[2].weight) / 3;
+                else if (float a = has_holes(cut, {{{tw[0].uv[0], tw[0].uv[1]}, {tw[1].uv[0], tw[1].uv[1]}, {tw[2].uv[0], tw[2].uv[1]}}})
+                                       ? alpha_behind(c, tw[0].pass)
+                                       : -1.0f;
+                         a >= 0)
+                    under = u32(a + 0.5f);
                 under = std::min<u32>(255, (under + 32) / 64 * 64); // five values: few extra primitives
                 for (Written& x : tw) x.under_ref = ref, x.under = under;
             }
+            for (const auto& corner : c)
+                for (int j = 0; j < 3; ++j)
+                    box_lo[j] = std::min(box_lo[j], corner[size_t(j)]), box_hi[j] = std::max(box_hi[j], corner[size_t(j)]);
             if (keep) written_tris.emplace(c, tw);
             else written_tris[c] = tw;
         };
         std::set<Corners> reflected; // the triangles reflection passes drew (frame alpha 0x80)
+        int pass = -1;               // the draw being emitted (Written::pass)
         // Base-pass vertex alpha by position, for the road sheen mask.
         std::map<std::array<float, 3>, u32> base_alpha;
         if (opt.road_sheen)
@@ -970,6 +1128,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             for (int j = 0; j < 3; ++j) p[j] = q[j];
         };
         for (const Draw& d : draws) {
+            ++pass;
             if (ranges) ranges->push_back({mesh.vertices.size(), mesh.indices.size(), mesh.primitives.size()});
             // Cars: FBMSK 0xFFFFFFFF writes only the depth (glass drawn without depth writes leaves
             // its depth so, after its reflection): scene::kDepthOnly.
@@ -990,6 +1149,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     for (scene::Vertex v : dp.vertices) {
                         if (d.has_matrix) place_vertex(d.matrix, v);
                         Written w;
+                        w.pass = pass;
                         w.vertex_alpha = v.color >> 24;
                         w.weight = w.vertex_alpha;
                         w.texture = t;
@@ -1197,6 +1357,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     for (u32 vi = base; vi < mesh.vertices.size(); ++vi) {
                         const scene::Vertex& v = mesh.vertices[vi];
                         Written w;
+                        w.pass = pass;
                         w.vertex_alpha = v.color >> 24;
                         w.weight = w.vertex_alpha;
                         w.texture = prim.texture;
@@ -1292,7 +1453,8 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 if (weighted) {
                     // TEST.DATE (op 0x1D): GT3 draws these passes with DATM 0, where the frame alpha < 0x80.
                     if (d.dest_alpha_test) prim.flags |= scene::kDestAlphaTest;
-                    emit_weighted_reflection(mesh, prim, written_alpha, written_tris, reflected);
+                    emit_weighted_reflection(mesh, prim, written_alpha, written_tris, reflected, pass,
+                                             [&](const Corners& c) { return alpha_behind(c, pass, true); });
                     continue;
                 }
                 if (prim.index_count) mesh.primitives.push_back(prim);
