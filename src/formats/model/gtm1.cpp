@@ -1004,6 +1004,10 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 // headlamp lenses, the Escudo's grilles, the 787B's decks). Not reflection passes.
                 const bool car_glint =
                     opt.weighted_reflection && !dp.env_normals && d.alpha_mode == 0x58 && dp.prim.abe;
+                // Cars: ALPHA 0x48 (Cs*As + Cd) adds to what is behind. Lamp glows drawn so: the RX-8's lit
+                // brake-lamp rings (a red ring on black, issue 379), the dusk and night cars' lamp lenses.
+                const bool car_add =
+                    opt.weighted_reflection && !dp.env_normals && d.alpha_mode == 0x48 && dp.prim.abe;
                 // Reflection passes carry a normal in the UV slot; the VU derives the env-map coordinates.
                 bool env = dp.env_normals;
                 if (env && !opt.reflection) continue;
@@ -1224,6 +1228,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                                            scene::kNoDepthWrite;
                 if (sheen) prim.flags &= ~u32(scene::kUnlit);
                 if (car_glint) prim.flags = (prim.flags & ~u32(scene::kAlphaBlend)) | scene::kAdditive | scene::kNoDepthWrite;
+                if (car_add) prim.flags = (prim.flags & ~u32(scene::kAlphaBlend)) | scene::kAdditive;
                 if (opt.frame_alpha) {
                     if (alpha_only) { // writes only the frame alpha (texel x vertex alpha)
                         // (an alpha test only when the node program enables one: not the generic
