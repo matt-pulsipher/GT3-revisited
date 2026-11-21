@@ -2,6 +2,8 @@
 
 #include "race/music_markers.h"
 
+#include "base/game_random.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -124,7 +126,9 @@ std::optional<std::pair<int, int>> GtrcScript::other_variant(int k, float s) con
 }
 
 void ReplayDirector::setup() {
-    k_ = 0, zoom_ = 0, offset_ = 0;
+    k_ = 0, offset_ = 0;
+    aim_restart_ = true, yaw_seeded_ = false;
+    aim_.forget_last_aim();
     shot_time_ = 0;
     proc_ = {};
     last_record_ = -1, roll_ = 0;
@@ -149,6 +153,7 @@ void ReplayDirector::reset() {
 
 void ReplayDirector::car_changed(double manual_seconds, bool search_first) {
     reset_flag_ = true, target_set_ = true;
+    aim_.forget_last_aim(); // (another car: target state +0x92 cleared)
     if (manual_seconds > 0) manual_ = manual_seconds;
     attract_change_ = attract_change_ || search_first;
 }
@@ -202,7 +207,7 @@ void ReplayDirector::cut_to(int record, int variant, int k) {
     cur_ = record, variant_ = variant, k0_ = k;
     onboard_ = on_partner_ = false;
     hold_on_ = false;
-    zoom_ = 0;
+    aim_restart_ = true, yaw_seeded_ = false;
     shot_time_ = armed_time_ = 0;
     ++serial_;
 }
@@ -212,6 +217,7 @@ void ReplayDirector::rearm(int k) {
     if (onboard_) ++serial_;
     onboard_ = on_partner_ = false;
     hold_on_ = false;
+    aim_restart_ = true, yaw_seeded_ = false; // (the record set again: the designer camera)
     shot_time_ = armed_time_ = 0;
 }
 
@@ -319,16 +325,47 @@ ReplayDirector::Shot ReplayDirector::evaluate(const GtrcRecord& r, float D, cons
     // shot: zoom(0) is 0 there, a telephoto from 22.9); min > max gives min.
     want = std::max(std::min(want, r.zoom_max), r.zoom_min);
     want = std::max(want, 0.2f);
-    if (mode_ == 1 && wide_) want = 1.0f; // mode 1's wide shot: 90 degrees across
-    // Smoothed like the game (exact rate not decoded); snap on a cut.
-    zoom_ = zoom_ <= 0 ? want : zoom_ + (want - zoom_) * float(1 - std::exp(-4.0 * dt));
-    shot.fovy = zoom_fovy(zoom_);
+    // The camera operator (presentation §H6a): the aim of a record looking at the car follows it
+    // late and unsteadily, the zoom moves on a spring (mode 1's wide shot only starts at 1.0).
+    // Stepped at 60 Hz, blended between the last two frames.
+    CourseCameraAim::In in;
+    in.eye = shot.eye, in.aim = shot.target;
+    in.zoom = want;
+    in.at_car = r.looks_at_car();
+    in.kind_400 = (r.kind & 0x400) != 0;
+    if (mode_ == 1 && wide_) in.wide = 1.0f; // mode 1's wide shot: 90 degrees across
+    if (mode_ == 1 && yaw_seeded_) in.yaw_offset = yaw_seed_;
+    in.progress = aim_progress_;
+    if (aim_restart_) {
+        aim_restart_ = false;
+        for (u32& seed : in.seeds) seed = hardware_random(); // (each filter's noise: a clock value)
+        aim_.restart();
+        aim_.step(in);
+        aim_acc_ = 0;
+    } else {
+        aim_acc_ += dt;
+        for (int n = 0; aim_acc_ >= 1.0 / 60.0 && n < 12; ++n) {
+            aim_acc_ -= 1.0 / 60.0;
+            aim_.step(in);
+        }
+        if (aim_acc_ > 1.0 / 60.0) aim_acc_ = 0;
+    }
+    const CourseCameraAim::Out o = aim_.blend(float(aim_acc_ * 60.0));
+    shot.target = shot.eye + aim_direction(o.yaw, o.pitch) * render::length(in.aim - shot.eye);
+    shot.fovy = zoom_fovy(o.zoom);
     shot.valid = true;
     return shot;
 }
 
 ReplayDirector::Shot ReplayDirector::update(float s, int lap, const render::Vec3& car, double dt, float aspect,
                                             const Pair* pair) {
+    Shot shot = update_shot(s, lap, car, dt, aspect, pair);
+    aim_.remember(car); // the target state's aim point, after the cameras
+    return shot;
+}
+
+ReplayDirector::Shot ReplayDirector::update_shot(float s, int lap, const render::Vec3& car, double dt, float aspect,
+                                                 const Pair* pair) {
     (void)aspect;
     Shot shot;
     if (!s_ || s_->records.empty() || s_->lap_length <= 0) return shot;
@@ -568,14 +605,17 @@ ReplayDirector::Cut ReplayDirector::avant_garde_cut(const std::vector<FieldCar>&
     cut.pair = !(request == 1 && found && tries == 1);
     proc_ = {};
     onboard_ = on_partner_ = false; // (the course camera keeps its record for a procedural camera)
-    wide_ = false, swing_ = swing_v_ = 0, swing_acc_ = 0;
+    wide_ = yaw_seeded_ = false, swing_ = swing_v_ = 0, swing_acc_ = 0;
     if (found) {
         roll_ = draw() * 20.0f - 10.0f;
         cur_ = found->first, k_ = found->second, offset_ = 0;
         variant_ = found->second, k0_ = s_->lap_variant(cars[size_t(followed)].lap);
         last_record_ = found->first;
         wide_ = draw() < 0.17f;
-        if (draw() < 0.3f) rng_.rand01(); // a yaw seed for the aim's damper (no visible effect)
+        // A yaw seed (A64): the first frame's yaw target -90 .. -30 degrees off, so the camera
+        // starts by swinging (presentation §H6a).
+        yaw_seeded_ = draw() < 0.3f;
+        if (yaw_seeded_) yaw_seed_ = rng_.rand01() * 60.0f - 90.0f;
         if (draw() < 0.1f) swing_ = draw() * 200.0f - 100.0f;
     }
     // With p 0.25 (and always without a course shot) one of the procedural cameras instead.
@@ -591,7 +631,7 @@ ReplayDirector::Cut ReplayDirector::avant_garde_cut(const std::vector<FieldCar>&
         }
     }
     cut.dissolve = roll_look(trail_bias, request == 3 ? -0.3f : 0.0f) ? 0.5f : 0.0f;
-    zoom_ = 0;
+    aim_restart_ = true;
     shot_time_ = 0;
     ++serial_;
     return cut;

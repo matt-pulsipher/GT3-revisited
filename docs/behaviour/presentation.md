@@ -2434,8 +2434,8 @@ attract demo.
   - Eye and target come from the curves (or the car, see the kind bits).
   - The zoom is clamped to the record's limits (when max > min) and kept at 0.2
     or more.
-  - The zoom is smoothed towards that value at 4 per second, snapping on a cut.
-    The rate is approximate: the game's is not known.
+  - The zoom moves towards that value on a spring (§H6a), set on a shot's first
+    frame.
 - **Field of view.** The zoom is 1 / tan of the horizontal half-angle across the
   640-pixel frame; on the 448-line frame that gives vertical FOV
   = 2 atan(0.7 / zoom) (`ReplayDirector::zoom_fovy`), as for the player views
@@ -2457,6 +2457,43 @@ point midway between the two, with the shot widened (§G3). Mode 1's procedural
 cameras follow the cut's car alone (§G15). The test reports 197 shots over a
 Trial Mountain lap (lap 1) sampled every 20 m, 190 of them within 160 m of the
 car.
+
+### §H6a The camera operator
+
+A course shot does not hold the car dead centre. Every 60 Hz frame of a course shot
+(any view mode; `race::CourseCameraAim`, `ReplayDirector::evaluate`, test
+`course_camera_aim_*`), angles in degrees, yaw = 180 - atan2(x, z) and pitch =
+-atan2(y, |xz|) (positive looks down) of the direction to the aim point:
+
+- **The shot's first frame** (a cut, or the record set again): the zoom is set to the
+  record's (mode 1's wide shot: 1.0) and each angle's filter is reset to the angle of
+  the aim point now, turning at (now - target) degrees per second, where the target is
+  the angle of last frame's aim point (without its 0.4 m lift) while the cameras follow
+  the same car, else the angle now; mode 1's yaw seed (§G2) adds -90 .. -30 degrees to
+  the yaw target, so the camera starts by swinging off and back. The pitch filter of a
+  record looking at the car aims 0.4 k cos(pitch) degrees higher, k = 30 / zoom: the
+  car sits about a quarter of the half-height below the middle of the picture.
+- **Records looking at the car**, every later frame, for each angle θ (the pitch less
+  0.4 k cos θ):
+  - the lead: θ + 5 Δ, Δ its change since the last frame, led on by
+    k (2u - u²), u = min(5 |Δ| / 3k, 1), in Δ's direction;
+  - the error: (lead - shown), the difference brought into -180 .. 180;
+  - the gain g = (n + 1) / 2 + 0.2, n a random spring's value (below), 0.2 .. 1.2;
+  - the speed v (degrees per second) changes by 2 (300 g e - 30 v) / 60, at most 25
+    either way, and stays within ±250; the angle shown moves by v / 60 (0 .. 360).
+  - The random spring chases targets in -76.8 .. 128 (shown / 128): every third frame
+    a new target with p 1 - (0.99333 - 0.1575 |a|) (a = 1: 16.4 %); the value moves by
+    v' += (60 (target - x) - 10 v') / 60, x += v' / 60. Each filter has its own, seeded
+    from a clock value at the shot's first frame.
+  - The bob: a third spring, its odds raised by a = the yaw's speed / 30 (clamped to
+    ±1), tips the pitch shown by (n / 3) min(k, 5) a degrees: up to 1.7 degrees while the
+    camera pans.
+- **Records aiming at their target curves**: the angles straight at the target.
+- **The zoom** springs towards the record's: v += (30 (want - zoom) p - 10 v) / 60
+  (p = 1 zooming out; zooming in, the aim's move between cars, 1 - frames left / its
+  frames, or 1 with a pair), v within -30 .. 10 per second, zoom += v / 60.
+- Ours steps at 60 Hz and blends the last two frames between them; the raw angles use
+  the host's atan2 (the program's code is not ported), the rest the EE's arithmetic.
 
 ### §H7 Fallback TV cameras
 
