@@ -301,8 +301,12 @@ void shade() {
         // base pass's texel alpha (bound texture; white when none) x vertex alpha.
         // Texels at or below params.x (scene::Primitive::under_ref) failed that pass's alpha test
         // and wrote nothing: the alpha under it (env_c1.w) stays there.
+        // params.x >= 2: only those failing texels (ref = params.x - 2), the pass's hole, which
+        // View3D draws before the items after the car body (its wheels).
         float ta = wheel_texture(v_uv).a;
-        if (u.params.x >= 0.0 && ta <= u.params.x) ta = u.env_c1.w;
+        float under_ref = u.params.x >= 2.0 ? u.params.x - 2.0 : u.params.x;
+        if (under_ref >= 0.0 && ta <= under_ref) ta = u.env_c1.w;
+        else if (u.params.x >= 2.0) discard;
         float ad = v_color.a * ta;
         // GS TEST.DATE with DATM 0: only where Ad < 0x80 (0x80 = 1.0 here), not on texels at full
         // reflectivity. (The 0x80 an earlier reflection pass leaves: the decoder drops the
