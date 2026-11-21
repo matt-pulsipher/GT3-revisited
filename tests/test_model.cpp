@@ -759,6 +759,48 @@ TEST(car_reflection_hood_reads_its_pass_disc) {
     CHECK(flat == 0);
 }
 
+// Issue 378. The Celica GT-FOUR's rear window: the frame pass is alpha-tested with the window cut
+// out and the cabin, drawn before it, lies 5-33 cm behind, so the GS keeps the cabin's full alpha
+// (0x80) in the holes. The first reflection pass (destination alpha test: only where the alpha is
+// below 0x80) draws nothing there; the second, over the glass 5 mm inside the first one's
+// triangles, adds at full weight (each reflection leaves 0x80). Measured in the original's frame.
+// The corners alone (nothing written at most of them) gave the holes 0 and the glass the tint's
+// own alpha: a dark patch under the spoiler.
+TEST(car_reflection_rear_window_reads_the_cabin_disc) {
+    Disc* disc = test::test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const auto* e = disc->volume().find("cars/day/ty0028"); // CELICA GT-FOUR (ST205)
+    if (!e) SKIP("no cars/day/ty0028 on this disc");
+    Bytes data = disc->volume().read(*e);
+    CarModelOptions o;
+    o.wheels = false;
+    scene::Model m = load_car_model(data, o, "ty0028");
+    const scene::Mesh& body = m.meshes.empty() ? scene::Mesh{} : m.meshes[0];
+    size_t holes = 0, glass = 0;
+    for (const scene::Primitive* p : reflection_prims(m))
+        for (u32 i = p->first_index; i + 2 < p->first_index + p->index_count; i += 3) {
+            float c[3] = {0, 0, 0};
+            u32 alpha = 0;
+            for (u32 j = 0; j < 3; ++j) {
+                const scene::Vertex& v = body.vertices[body.indices[i + j]];
+                for (int k = 0; k < 3; ++k) c[k] += v.pos[k] / 3;
+                alpha += v.color >> 24;
+            }
+            if (std::fabs(c[0]) > 0.6f || c[1] < 0.78f || c[2] < -0.8f || c[2] > -0.3f) continue; // the rear glass
+            if (p->flags & scene::kDestAlphaTest) {
+                if (p->under_ref < 0) continue;
+                ++holes;
+                CHECK(p->under_alpha == 1.0f);
+            } else {
+                ++glass;
+                CHECK(p->texture < 0);
+                CHECK(alpha == 3 * 255);
+            }
+        }
+    CHECK(holes > 0);
+    CHECK(glass > 0);
+}
+
 namespace {
 
 float radial(const scene::Vertex& v) { return std::sqrt(v.pos[1] * v.pos[1] + v.pos[2] * v.pos[2]); }
@@ -1137,3 +1179,4 @@ TEST(wheel_stand_ins_disc) {
     ms.stand_in_rim = [&] { return asked = true, std::optional<Bytes>(); };
     CHECK(rim_verts(load_car_model(menu_file, ms, "mb0007"), 0) == rim_verts(menu, 0) && !asked);
 }
+

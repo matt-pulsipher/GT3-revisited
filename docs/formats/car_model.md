@@ -265,11 +265,15 @@ the renderer weights the reflection per pixel by its texel alpha. Where that pas
 is alpha-tested, its failing texels write nothing on the GS, so the alpha that lay
 there before stays: the primitive carries the test's reference and that earlier
 alpha (`scene::Primitive::under_ref` / `under_alpha`; the triangle's own under it,
-else the mean of its corners', in five steps), and the renderer weights texels at or
+else, where the triangle's texels include cut-out ones, the alpha of the nearest
+triangle an earlier pass wrote within 60 cm behind it (looking into the car), else
+the mean of its corners', in five steps), and the renderer weights texels at or
 below the reference with it. In the wheel arches that is
 usually 0, so the reflection doesn't haze over the wheels; in the windows the roof
 and pillar passes cut out, it is the alpha-only shell's 0x80 (the Alto Works,
-`sz0004`: issue 278). Otherwise, triangles whose three corners come from the same
+`sz0004`: issue 278) or the cabin's (the Celica GT-FOUR's rear window, `ty0028`:
+issue 378, where most of the frame's corners had nothing written and the glass went
+dark). Otherwise, triangles whose three corners come from the same
 textured pass get that pass's texture and UVs; the remaining triangles are
 untextured with a per-vertex weight. Matching corners alone took a triangle that
 spans two overlapping packets (the MR2 G-Limited's hood, `ty0076`) or a window cut
@@ -279,7 +283,15 @@ its windows draws on the frame alpha the shell wrote. Glass is a nearly uniform 
 with GS alpha ≈ 0x73, drawn with normal blending and the alpha channel
 write-masked, so it is ~90 % dark plus the reflection on top. The glass's own
 texture is used as its reflectivity because the real Ad (whatever lies
-behind it) is unknown, unless an alpha-only pass sets it.
+behind it) is unknown, unless an alpha-only pass sets it or an earlier reflection
+pass drew within 1 cm of it. Each reflection pass leaves Ad = 0x80 where it draws
+(its vertex alpha), so a later one over it adds at full weight. Checked in a GS dump
+of the original's race (Celica GT-FOUR, Super Speedway): after the window frame the
+alpha in its cut-out is the cabin's 0x80, the first reflection pass (DATE) draws
+nothing there, and the second one, over the glass 5 mm inside the first's triangles,
+adds at full weight. The Lancer Evolution VII's rear window (`mi0093`) shows the
+same rule the other way: with only the first pass over it, the glass shows the
+cabin with no reflection.
 
 Alpha-only passes (FBMSK 0x00FFFFFF; 69 draws on 62 models in `cars/day/`) are
 drawn over the glass before its reflection: the frame alpha they write (texel ×
