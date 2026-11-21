@@ -404,11 +404,11 @@ void RaceScreen::step_dissolve() { dissolve_.step(); }
 // The pad during a replay (presentation §G3; the original's race input maps only Up, Down,
 // Left, Right, Cross, Circle, L1 and R1 there). View modes 0, 3 and 2 with TARGET MANUAL: Up /
 // Down the next / previous car; modes 0, 2 and 3: Cross the driver's view on / off (the view
-// the player last drove with, on the followed car); mode 1: Cross, Circle, L1 and R1 a new cut,
-// Up / Down the level of the music's marked sections, Right / Left the music-timed cuts on /
-// off (§G3). Nothing changes the view mode: REPLAY OPTIONS does. The buttons are the pad's
-// own (the menu pad, a DualShock 2's), not the race layout's actions: a trigger bound to
-// accelerate is still R2 here.
+// the player last drove with, on the followed car; demonstrations too, play mode 2); mode 1:
+// Cross, Circle, L1 and R1 a new cut, Up / Down the level of the music's marked sections,
+// Right / Left the music-timed cuts on / off (§G3). Nothing changes the view mode: REPLAY
+// OPTIONS does. The buttons are the pad's own (the menu pad, a DualShock 2's), not the race
+// layout's actions: a trigger bound to accelerate is still R2 here.
 void RaceScreen::replay_pad(const MenuInput& m) {
     const ReplaySettings& vs = view_settings();
     if (vs.mode == 1) {
@@ -425,7 +425,7 @@ void RaceScreen::replay_pad(const MenuInput& m) {
         if (m.pressed(PadButton::Up)) focus_step_ = 1;
         else if (m.pressed(PadButton::Down)) focus_step_ = -1;
     }
-    if (m.pressed(PadButton::Cross) && (replaying_ || race_preview_)) {
+    if (m.pressed(PadButton::Cross) && (replaying_ || demo_replay() || race_preview_)) {
         driver_view_ = !driver_view_;
         camera_.set_mode(driver_view_ ? drive_camera_ : CameraMode::Tv);
         if (!driver_view_) { // back to the replay cameras: a new shot
@@ -554,7 +554,7 @@ void RaceScreen::update_replay_focus(double dt) {
         }
         if (focus_acc_ > 1.0) focus_acc_ = 0;
     }
-    if (driver_view_ && (replaying_ || race_preview_)) { // (view mode 1 keeps its own cameras)
+    if (driver_view_ && (replaying_ || demo_replay() || race_preview_)) { // (view mode 1 keeps its own cameras)
         const CameraMode want = view_settings().mode != 1 ? drive_camera_ : CameraMode::Tv;
         if (camera_.mode() != want) camera_.set_mode(want);
     }

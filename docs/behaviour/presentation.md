@@ -1667,6 +1667,7 @@ opens the pause, §E2):
   points (its in-car eye, its chase point: `CameraRig::set_car_mounts`, bound
   with the camera's car), and in the in-car view that car is not drawn. Back on the replay cameras the view's
   reset re-arms the shot (§H8). A new or restarted replay starts on the replay cameras.
+  Licence and time-trial demonstrations take Cross the same way.
 - **Cross, Circle, L1, R1** (mode 1): a new cut (§G2).
 - **Up / Down** (mode 1): the race-sound level inside the sections the music
   marks, +0.1 / -0.1, kept in 0 .. 1 (`CutClock::step_level`). Outside such
@@ -2324,7 +2325,7 @@ the view does not judder.
   - Look back takes over while held. No mirror while the view is turned more
     than 0.35 rad (20°) to the side.
   - On phones a drag on the open screen, away from the controls, does the same.
-- **Rear-view mirror** (in-car views, not in replays, not while looking back or
+- **Rear-view mirror** (in-car views, not in replays or demonstrations, not while looking back or
   turned to the side):
   - **Placement.** A 240 x 64 rectangle at (200, 20) of the frame (pushed by
     106.667 in 16:9) with a 1-unit black outline. On a 4:3 2P half it is
