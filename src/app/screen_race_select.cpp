@@ -49,6 +49,12 @@ bool RaceScreen::select_entries(const std::string& course, const std::string& ca
         if (courses_[i].label == course) ci = int(i);
     for (size_t i = 0; i < cars_.size(); ++i)
         if (cars_[i].label == car) ki = int(i);
+    // A replay of a course the list leaves out: arcade Time Trial 06 runs on a licence layout (L_apricot2), which the
+    // live run added to the list from its event (resolve_launch) and a replay has to add the same way.
+    if (ci < 0 && app_ && app_->vfs() && !course_path(*app_->vfs(), course).empty()) {
+        ci = int(courses_.size());
+        courses_.push_back({course, course});
+    }
     if (ci < 0 || ki < 0) return false;
     course_sel_ = ci, car_sel_ = ki;
     return true;
