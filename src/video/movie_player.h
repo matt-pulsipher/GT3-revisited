@@ -62,8 +62,8 @@ public:
     SDL_Texture* texture() const { return texture_; }
     // Source and destination rectangles for drawing the current picture into
     // `display`: the whole frame, or for field-split movies (field_layout.h)
-    // the half holding the field that is due, positioned with the half-line
-    // offset of its field so the picture does not bob up and down.
+    // the full picture rebuilt for the field that is due (deinterlace_fields;
+    // else the field line-doubled, at its half-line offset so it does not bob).
     void picture_rects(const SDL_FRect& display, SDL_FRect& src, SDL_FRect& dst) const;
     // Draws the current picture into `display` (no-op before the first frame).
     void draw(SDL_Renderer* renderer, const SDL_FRect& display) const;
@@ -112,6 +112,10 @@ private:
     double audio_clock() const;
 
     void begin(std::unique_ptr<Movie> movie, float volume, double start_seconds);
+    // Worker thread: a frame from the free pool (or a new one), and queueing the picture made
+    // from `cur` (deinterlaced with its neighbours when field-split); `t0` is when its decode began.
+    Frame take_free();
+    void emit(const Frame& prev, const Frame& cur, const Frame& next, u64 t0);
 
     std::unique_ptr<Movie> movie_;
     std::function<std::unique_ptr<Movie>()> loop_open_;
@@ -137,6 +141,7 @@ private:
 
     SDL_Texture* texture_ = nullptr;
     int tex_w_ = 0, tex_h_ = 0;
+    bool tex_stacked_ = false; // the texture holds deinterlace_fields() output
     double clock_ = 0;
     double shown_time_ = 0; // presentation time of the frame in the texture
     u64 last_ticks_ = 0;
