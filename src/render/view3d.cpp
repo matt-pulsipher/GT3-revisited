@@ -1738,7 +1738,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             textured = true;
         } else if (p.texture >= 0) {
             const GpuModel::TextureInfo& t = model->textures()[size_t(p.texture)];
-            if (t.texture) sb = {t.texture, ctx_.sampler(t.clamp_u, t.clamp_v, t.no_mips)};
+            if (t.texture)
+                sb = {t.texture, ctx_.sampler(t.clamp_u || (p.flags & scene::kClampU), t.clamp_v || (p.flags & scene::kClampV),
+                                              t.no_mips)};
             textured = t.texture != nullptr;
         }
         SDL_GPUTextureSamplerBinding sbs[3] = {sb, {env_tex, ctx_.sampler(true, true)}, sphere_sb};

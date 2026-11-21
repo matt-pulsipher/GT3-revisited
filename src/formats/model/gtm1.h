@@ -447,4 +447,11 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
 // surrounds are keyed in pure red. Alpha is unchanged; no kept texel: no change.
 void colour_cut_texels(scene::Texture& t);
 
+// Marks the textured primitives of `mesh` whose UVs all lie inside the texture on an axis
+// (scene::kClampU / kClampV): they never repeat it there, so sampling them clamped changes
+// nothing the GS shows, and keeps our filtering (MSAA samples past the triangle's edge, coarse
+// mip levels) from blending in the texture's far side. Environment passes (UVs made per frame)
+// are left alone. Returns how many it marked.
+int mark_inside_uvs(scene::Mesh& mesh);
+
 } // namespace gt3r::gtm1

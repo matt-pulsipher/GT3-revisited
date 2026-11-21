@@ -66,6 +66,12 @@ enum PrimitiveFlags : u32 {
     // makes such faces equal and its GEQUAL test lets the later one win; a float depth buffer
     // sees their sub-millimetre differences and the two fight (mark_coplanar_overlays).
     kCoplanarOverlay = 1u << 17,
+    // Every UV of the primitive lies inside the texture on that axis (mark_inside_uvs): sampled
+    // clamped there even when its texture repeats. Pictures packed side by side in one texture
+    // (Midfield's pines) start their UVs a texel or two inside the edge, so the GS never filters
+    // in the far side; our MSAA (shaded at pixel centres past the triangle) and mip levels would.
+    kClampU = 1u << 18,
+    kClampV = 1u << 19,
 };
 
 // Fixed-function lighting material of a lit primitive (GT3 cars: GTM1 material
