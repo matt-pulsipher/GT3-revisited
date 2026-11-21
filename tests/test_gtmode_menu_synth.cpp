@@ -2408,6 +2408,11 @@ TEST(gtmode_synth_arcade_single_race) {
     press(f, MenuKey::Cancel);
     settle(f);
     CHECK(f.control() == "gt_mode" && page(f) == "root" && f.controller()->focus() == 0);
+    // Time Trial drives its car in the car's first paint, not the one picked for the race above (public issue 364).
+    CHECK(f.car_paint() == 1);
+    enter_arcade(f);
+    choose(f, "time_trial");
+    CHECK(f.car_paint() == 0);
 }
 
 // 2 Player Battle: the course on pad 1, then both players choose class, car, AT / MT and

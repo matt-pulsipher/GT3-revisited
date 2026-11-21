@@ -1374,8 +1374,12 @@ void GameFlow::handle_arcade(const MenuEvent& e) {
             arcade_action_ = e.action;
             const std::string& a = e.action;
             if (a == "single_race") arcade_steps_ = {"ar/level", "ar/select_course", "ar/select_class", "ar/select_car"};
-            else if (a == "compulsory") arcade_steps_ = {"ar/select_compulsory"};
-            else if (a == "time_attack") arcade_steps_ = {"ar/select_course", "ar/select_class", "ar/select_car"};
+            else if (a == "compulsory") {
+                // The time trial's page resets the paint picker to the car's first paint, so the
+                // car is never in a paint chosen earlier on another mode's car page.
+                arcade_steps_ = {"ar/select_compulsory"};
+                car_paint_ = 0;
+            } else if (a == "time_attack") arcade_steps_ = {"ar/select_course", "ar/select_class", "ar/select_car"};
             else if (a == "two_player_battle") arcade_steps_ = {"ar/select_course", "ar/select_car_2p"};
             else if (a == "goodies") arcade_steps_ = {"ar/goodies"};
             else if (a == "i_link_battle") {
