@@ -1679,7 +1679,8 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     };
     // half: kAlphaFailBlend primitives are drawn in two halves: 1 = fragments passing the
     // alpha test (with depth write, in the opaque phase), 2 = the failing ones (blended,
-    // no depth write, in the blended phase). 0 = whole primitive.
+    // no depth write, in the blended phase). 0 = whole primitive. Car reflections over a
+    // cut-out (hole_split) too: 3 = the cut-out's hole, in the opaque phase, 4 = the rest.
     // Per-vertex lighting off until a primitive needs it (slot 1 of the vertex uniforms).
     push_lighting(VertexLighting{});
     bool vl_on = false;
@@ -1821,7 +1822,11 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         for (int i = 0; i < 3; ++i) fu.env_c0[i] = p.env_c0[i], fu.env_c1[i] = p.env_c1[i];
         // Car reflections over an alpha-tested pass: its failing texels keep the alpha under it.
         fu.env_c1[3] = 0;
-        if (reflection) fu.params[0] = p.under_ref, fu.env_c1[3] = p.under_alpha;
+        if (reflection) {
+            fu.params[0] = p.under_ref, fu.env_c1[3] = p.under_alpha;
+            if (half == 3) fu.params[0] += 2.0f; // the failing texels only
+            if (half == 4) fu.env_c1[3] = 0;     // the passing ones only (the failing ones add nothing)
+        }
         const scene::Material& mt = p.material;
         fu.mat_ambient[3] = mt.valid ? 1.0f : 0.0f;
         if (mt.valid) {
@@ -1952,6 +1957,14 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
     auto split = [](const scene::Primitive& p) {
         return (p.flags & (scene::kAlphaFailBlend | scene::kAlphaTest)) == (scene::kAlphaFailBlend | scene::kAlphaTest);
     };
+    // A car reflection over an alpha-tested pass, weighted where that pass's texels failed (a
+    // wheel arch cut out of a side panel). GT3 draws the body's passes before the wheels: the
+    // hole wrote no depth, so the wheels behind it cover what the reflection put there (public
+    // issue 364). The hole is drawn with the item's opaque passes, before the items after it.
+    auto hole_split = [](const scene::Primitive& p) {
+        constexpr u32 kReflection = scene::kAdditive | scene::kEnvironmentMap | scene::kUnlit;
+        return (p.flags & kReflection) == kReflection && p.under_ref >= 0 && p.under_alpha > 0;
+    };
     bool solid = opt.wire != WireMode::Only;
 
     // Background (sky, backdrop): everything in model order, no depth writes.
@@ -1960,7 +1973,8 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             for (const scene::Primitive& p : v.mesh->primitives) draw_prim(v, p);
     auto draw_blended = [&](const Visible& v) {
         for (const scene::Primitive& p : v.mesh->primitives)
-            if (prim_blended(p) || v.item->alpha < 1.0f) draw_prim(v, p, split(p) && v.item->alpha >= 1.0f ? 2 : 0);
+            if (prim_blended(p) || v.item->alpha < 1.0f)
+                draw_prim(v, p, v.item->alpha < 1.0f ? 0 : split(p) ? 2 : hole_split(p) ? 4 : 0);
     };
     // Opaque and alpha-tested, item by item; an in-order item's blended primitives follow its
     // opaque ones, in model order, before the next item's opaque ones (DrawItem::in_order_join
@@ -2003,6 +2017,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             if (v.item->alpha < 1.0f) continue;
             if (!prim_blended(p)) draw_prim(v, p);
             else if (split(p)) draw_prim(v, p, 1);
+            else if (hole_split(p)) draw_prim(v, p, 3);
         }
         if (v.item->in_order && (i + 1 == vis.size() || !same_run(i + 1))) {
             for (size_t k = run; k <= i; ++k) draw_blended(vis[k]);
