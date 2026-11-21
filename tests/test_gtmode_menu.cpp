@@ -372,9 +372,11 @@ TEST(gtmode_menu_disc_car_specs) {
     CHECK(f.controller()->page_name() == "hm/hm_car_spec");
     CHECK(widget_text(f, "spec_weight") == "1560 kg");
     const std::string pw = widget_text(f, "spec_p_w_ratio_real"), tw = widget_text(f, "spec_t_w_ratio_real");
-    // The built torque, run in (97 %): 45.6 kgf.m through the power's HP factor, with the ft.lb label on NTSC-U.
+    // The built torque, run in (97 %): 45.6 kgf.m in the torque's unit, ft.lb (x 7.2329) on NTSC-U. GT3 printed the
+    // kgf.m figure through the power's HP factor under the ft.lb label ("45.0ft.lb", issue 377).
     const std::string torque = widget_text(f, "spec_max_torque_real");
-    CHECK(lang != Language::US || torque == "45.0ft.lb/4500rpm");
+    CHECK(lang != Language::US || torque == "330.3ft.lb/4500rpm");
+    CHECK(lang == Language::US || torque.find("kgf.m/4500rpm") != std::string::npos);
     std::string last_pw = pw, last_tw = tw;
     const char* const kStage[3] = {"1450 kg", "1388 kg", "1326 kg"};
     for (int k = 0; k < 3; ++k) {

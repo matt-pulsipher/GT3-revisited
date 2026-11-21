@@ -311,13 +311,16 @@ with the weight-reduction and body parts, without the 120 kg the race adds: an R
 1,560 kg is 1,450, 1,388 and 1,326 kg with stages 1, 2 and 3.
 
 The built torque T is the peak torque (kgf·m, from the same samples as the power) × 10,
-converted with the power's factor (× 0.98619 where the power is in HP, BHP or CV, whatever
-the torque's unit) and truncated. The garage page shows T × 0.1 with one decimal, the
-torque's unit and the torque peak's rpm: a new R34's 45.6 kgf·m is "45.0ft.lb/4500rpm" on
-NTSC-U. The dealer page shows the catalog torque instead: the engine's kgf·m × 100 in the
-language's unit (ft.lb: × 7.2329), truncated, with two decimals and the catalog rpm
-("489.66ft.lb/3700rpm" for a Viper GTS); a car without one shows nothing. Both pages show
-the fitted engine's displacement text ("2568cc").
+converted with the power's factor (× 0.98619 where the power is in HP, BHP or CV,
+whatever the torque's unit) and truncated; the torque-to-weight ratio uses it. The garage
+page shows the peak torque × 10 converted to the torque's unit (ft.lb: × 7.2329),
+truncated, then × 0.1 with one decimal, the torque's unit and the torque peak's rpm: a
+new R34's 45.6 kgf·m is "330.3ft.lb/4500rpm" on NTSC-U. GT3 prints T × 0.1 there instead,
+so NTSC-U shows the kgf·m figure labeled ft.lb ("45.0ft.lb/4500rpm"); this engine shows
+the torque in the unit its label names. The dealer page shows the catalog torque instead:
+the engine's kgf·m × 100 in the language's unit (ft.lb: × 7.2329), truncated, with two
+decimals and the catalog rpm ("489.66ft.lb/3700rpm" for a Viper GTS); a car without one
+shows nothing. Both pages show the fitted engine's displacement text ("2568cc").
 
 The ratios are computed in single precision, truncated to whole numbers and shown with three
 decimals and no unit:
