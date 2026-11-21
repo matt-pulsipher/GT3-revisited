@@ -249,7 +249,12 @@ in their alpha (texel alpha 0 = hole, otherwise 0x21..0x80). The opaque body
 passes run with the alpha test (alpha > 0x20), which cuts the wheel arches,
 grilles and so on out of flat side panels; without it the wheels are hidden
 behind dark panels (the R34 front wheels, for example). The decoder applies the test as a binary-alpha copy of
-the texture plus `kAlphaTest` (`Options::program_alpha_test`). The opaque
+the texture plus `kAlphaTest` (`Options::program_alpha_test`). Many of these
+textures are sampled point-filtered (their Tex1 record's TEX1 has MMAG NEAREST, and
+the game sends it to the GS as stored), so the colour of a cut texel never shows, and
+some are keyed in a loud colour there (the Astra Touring Car's headlamp surrounds:
+pure red). We filter bilinearly, so the copy of such a texture gives its cut texels
+the colour of their nearest kept ones (`gtm1::colour_cut_texels`). The opaque
 passes also write the texel alpha to the frame buffer, and the
 reflection passes (normal in the UV slot, env map from a runtime slot) are
 blended Cs·Ad + Cd: reflection weighted by that alpha.
