@@ -276,7 +276,8 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
             return std::string("-");
         }
         // The built torque as the program gives it: the peak kgf.m x 10 through the power's unit conversion (x 0.98619
-        // where the power is in HP, BHP or CV, whatever the torque's unit), truncated.
+        // where the power is in HP, BHP or CV, whatever the torque's unit), truncated. The torque-to-weight ratio reads
+        // it; the garage's torque row converts with the torque's own unit instead (below).
         auto shown_torque = [&](const PowerPeak& p) {
             return display_power((ee::F(p.kgfm) * ee::F::raw(0x41200000)).host(), gt.data().units); // x 10
         };
@@ -292,10 +293,16 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
             if (!spec) return std::string("-");
             if (c == "spec_weight") return num("%.0f kg", spec->weight_kg);
             const PowerPeak peak = built_peak(*spec);
-            // The shown torque x 0.1, "%.1f%s/%drpm" with the torque's unit and the torque peak's rpm
-            // ("38.2ft.lb/4400rpm" on NTSC-U).
+            // A tenth of the torque, "%.1f%s/%drpm" with the torque's unit and the torque peak's rpm. GT3
+            // takes the tenths from shown_torque, which converts with the power's factor, so NTSC-U printed the
+            // kgf.m figure as ft.lb ("45.0ft.lb" for 45.6 kgf.m; issue 377). Ours converts the peak x 10 with
+            // the torque's own factor, as the dealer's catalog torque does (ft.lb: x 7.2329, else kgf.m as is),
+            // truncated: "330.3ft.lb/4500rpm" on NTSC-U.
             if (c == "spec_max_torque_real") {
-                const ee::F t = ee::int_to_f(shown_torque(peak)) * ee::F::raw(0x3DCCCCCD); // 0.1
+                const ee::F x10 = ee::F(peak.kgfm) * ee::F::raw(0x41200000); // x 10
+                const bool ftlb = gt.data().units.torque_ftlb;
+                const s32 tenths = ee::to_int(ftlb ? x10 * ee::F::raw(0x40E773EB) : x10); // 7.2329
+                const ee::F t = ee::int_to_f(tenths) * ee::F::raw(0x3DCCCCCD); // 0.1
                 std::snprintf(buf, sizeof buf, "%.1f%s/%drpm", double(t.host()), torque_unit(gt.data().units),
                               peak.torque_rpm);
                 return std::string(buf);
