@@ -309,7 +309,12 @@ template <class F> void with_whole_window(SDL_Renderer* r, const WindowSpace& w,
         SDL_SetRenderScale(r, w.k, w.k);
     }
     clip_to_whole_window(r);
+    // The controls are translucent: draw them blended whatever the screen under them left set.
+    SDL_BlendMode prev_blend = SDL_BLENDMODE_BLEND;
+    SDL_GetRenderDrawBlendMode(r, &prev_blend);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     draw(w.ox, w.oy);
+    SDL_SetRenderDrawBlendMode(r, prev_blend);
     SDL_SetRenderClipRect(r, nullptr);
     if (w.logical) {
         SDL_SetRenderScale(r, 1, 1);

@@ -609,10 +609,13 @@ private:
         if (!t.tex) t.tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
         if (!t.tex) return;
         SDL_Texture* prev = SDL_GetRenderTarget(r);
+        SDL_BlendMode prev_blend = SDL_BLENDMODE_BLEND;
+        SDL_GetRenderDrawBlendMode(r, &prev_blend);
         SDL_SetRenderTarget(r, t.tex);
         paint(w, h);
         SDL_FlushRenderer(r);
         SDL_SetRenderTarget(r, prev);
+        SDL_SetRenderDrawBlendMode(r, prev_blend);
         static const SDL_BlendMode kAdd = SDL_ComposeCustomBlendMode(
             SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD, SDL_BLENDFACTOR_ZERO,
             SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
@@ -637,11 +640,14 @@ private:
         if (!t.tex) t.tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, w, h);
         if (!t.tex) return;
         SDL_Texture* prev = SDL_GetRenderTarget(r);
+        SDL_BlendMode prev_blend = SDL_BLENDMODE_BLEND;
+        SDL_GetRenderDrawBlendMode(r, &prev_blend); // clear_picture and accumulate change it
         SDL_SetRenderTarget(r, t.tex);
         clear_picture(r);
         paint(t.tex, w, h);
         SDL_FlushRenderer(r);
         SDL_SetRenderTarget(r, prev);
+        SDL_SetRenderDrawBlendMode(r, prev_blend);
         const float o = std::clamp(opacity, 0.0f, 1.0f);
         SDL_SetTextureBlendMode(t.tex, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
         SDL_SetTextureColorModFloat(t.tex, o, o, o);
