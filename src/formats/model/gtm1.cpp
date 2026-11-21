@@ -614,6 +614,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
                                    : gs.decode_rgba(t0, st.width, st.height);
         st.clamp_u = tx.clamp.wms == 1 || tx.clamp.wms == 2;
         st.clamp_v = tx.clamp.wmt == 1 || tx.clamp.wmt == 2;
+        st.nearest = ((tx.tex1 >> 5) & 1) == 0; // TEX1.MMAG
         out.push_back(std::move(st));
     }
     // CLUT animations: the textures they feed show the animations' state (at their reset here).
@@ -631,11 +632,57 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
             scene::Texture& st = out[i];
             std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(st.width, st.height, st.rgba.data());
             if (!r) continue;
-            st.width = r->width, st.height = r->height, st.rgba = r->rgba;
+            st.width = r->width, st.height = r->height, st.rgba = r->rgba, st.nearest = false;
             c.erase(u32(i - size_t(first)));
         }
     if (clut && !c.empty()) *clut = std::move(c);
     return first;
+}
+
+void colour_cut_texels(scene::Texture& t) {
+    const s32 w = s32(t.width), h = s32(t.height);
+    if (w <= 0 || h <= 0 || t.rgba.size() != size_t(w) * size_t(h)) return;
+    std::vector<u8> done(t.rgba.size());
+    std::vector<size_t> todo;
+    for (size_t i = 0; i < t.rgba.size(); ++i)
+        if (t.rgba[i] >> 24) done[i] = 1;
+        else todo.push_back(i);
+    if (todo.size() == t.rgba.size()) return;
+    std::vector<std::pair<size_t, u32>> ring;
+    while (!todo.empty()) {
+        ring.clear();
+        std::vector<size_t> rest;
+        for (size_t i : todo) {
+            const s32 x = s32(i % size_t(w)), y = s32(i / size_t(w));
+            u32 sum[3] = {0, 0, 0}, n = 0;
+            for (s32 dy = -1; dy <= 1; ++dy)
+                for (s32 dx = -1; dx <= 1; ++dx) {
+                    s32 nx = x + dx, ny = y + dy;
+                    if (nx < 0 || nx >= w) {
+                        if (t.clamp_u) continue;
+                        nx = (nx + w) % w;
+                    }
+                    if (ny < 0 || ny >= h) {
+                        if (t.clamp_v) continue;
+                        ny = (ny + h) % h;
+                    }
+                    const size_t j = size_t(ny) * size_t(w) + size_t(nx);
+                    if (!done[j]) continue;
+                    for (int k = 0; k < 3; ++k) sum[k] += (t.rgba[j] >> (8 * k)) & 0xFF;
+                    ++n;
+                }
+            if (!n) {
+                rest.push_back(i);
+                continue;
+            }
+            u32 rgb = 0;
+            for (int k = 0; k < 3; ++k) rgb |= ((sum[k] + n / 2) / n) << (8 * k);
+            ring.emplace_back(i, rgb);
+        }
+        if (ring.empty()) break; // cut texels no kept one reaches (a clamped corner): left as they are
+        for (const auto& [i, rgb] : ring) t.rgba[i] = (t.rgba[i] & 0xFF000000u) | rgb, done[i] = 1;
+        todo = std::move(rest);
+    }
 }
 
 namespace {
@@ -753,6 +800,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         }
         int idx = tex; // nothing cut away: keep the original
         if (!all_pass) {
+            if (t.nearest) colour_cut_texels(t);
             t.name += "_cut";
             model.textures.push_back(std::move(t));
             idx = int(model.textures.size() - 1);

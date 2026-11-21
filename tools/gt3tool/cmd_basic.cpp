@@ -80,8 +80,10 @@ int cmd_tex(Disc& disc, const Args& a) {
             Tex1::Image img = tex.decode(gs, i);
             char name[64];
             std::snprintf(name, sizeof(name), "/set%02zu_tex%02zu.png", s, i);
-            std::printf("  set %zu @0x%zx tex %zu: %ux%u %s tbp=%u tbw=%u cbp=%u -> %ux%u\n", s, sets[s], i,
-                        t.width(), t.height(), psm_name(t.psm), t.tbp, t.tbw, t.cbp, img.width, img.height);
+            const bool nearest = ((tex.textures[i].tex1 >> 5) & 1) == 0; // TEX1.MMAG
+            std::printf("  set %zu @0x%zx tex %zu: %ux%u %s tbp=%u tbw=%u cbp=%u %s -> %ux%u\n", s, sets[s], i,
+                        t.width(), t.height(), psm_name(t.psm), t.tbp, t.tbw, t.cbp, nearest ? "nearest" : "bilinear",
+                        img.width, img.height);
             if (!save(a[1] + name, encode_png(img.width, img.height, img.rgba))) return 1;
         }
     }

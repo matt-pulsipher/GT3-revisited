@@ -139,6 +139,9 @@ struct Texture {
     std::vector<u32> rgba; // RGBA8 row-major
     bool clamp_u = false, clamp_v = false;
     bool no_mips = false; // sampled from the full-size image only (GS MXL 0), e.g. the tyres
+    // The game samples it point-filtered (its Tex1 record's TEX1: MMAG NEAREST): no texel's colour
+    // spreads into its neighbours there (gtm1 cut-out copies rely on it). Texture pack pictures: false.
+    bool nearest = false;
 };
 
 struct Model {

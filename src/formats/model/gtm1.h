@@ -440,4 +440,11 @@ std::vector<PaintVariant> paint_variants(ByteSpan tex1);
 int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const std::string& prefix, int paint = 0,
                        ClutTextures* clut = nullptr, bool use_pack = true);
 
+// A cut-out copy (alpha 0 = cut away, else kept) of a texture the game samples point-filtered:
+// gives every cut texel the mean colour of its nearest kept texels (ring by ring; across the
+// edges unless the texture clamps). The GS never shows a cut texel's colour there, but filtering
+// it (bilinear, mipmaps) would spread it over the kept edge: the Astra Touring Car's headlamp
+// surrounds are keyed in pure red. Alpha is unchanged; no kept texel: no change.
+void colour_cut_texels(scene::Texture& t);
+
 } // namespace gt3r::gtm1

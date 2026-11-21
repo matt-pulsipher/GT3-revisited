@@ -641,6 +641,59 @@ TEST(car_alpha_test_and_reflection_disc) {
     CHECK(per_pixel > 0);
 }
 
+// Issue 368. A cut-out copy of a texture the game samples point-filtered: the cut texels take their
+// nearest kept texels' mean colour, ring by ring, so filtering never brings in the hidden key
+// colour; alpha stays as cut.
+TEST(gtm1_cut_texels_take_their_kept_neighbours_colour) {
+    auto texel = [](u32 r, u32 g, u32 b, u32 a) { return r | g << 8 | b << 16 | a << 24; };
+    const u32 key = texel(255, 0, 0, 0);
+    scene::Texture row;
+    row.width = 5, row.height = 1, row.clamp_u = row.clamp_v = true;
+    row.rgba = {texel(0, 0, 0, 255), key, key, key, texel(200, 100, 50, 255)};
+    gtm1::colour_cut_texels(row);
+    CHECK(row.rgba[1] == texel(0, 0, 0, 0));
+    CHECK(row.rgba[2] == texel(100, 50, 25, 0)); // the second ring: the mean of the first
+    CHECK(row.rgba[3] == texel(200, 100, 50, 0));
+    CHECK(row.rgba[0] == texel(0, 0, 0, 255) && row.rgba[4] == texel(200, 100, 50, 255));
+    // A repeating texture's edges meet: the left texel takes the right edge's colour too.
+    scene::Texture wrap = row;
+    wrap.clamp_u = false;
+    wrap.rgba = {key, texel(10, 20, 30, 255), key, key};
+    wrap.width = 4;
+    gtm1::colour_cut_texels(wrap);
+    CHECK(wrap.rgba[0] == texel(10, 20, 30, 0) && wrap.rgba[3] == texel(10, 20, 30, 0));
+    // Nothing kept: nothing to take a colour from.
+    scene::Texture empty = row;
+    empty.rgba = {key, key, key, key, key};
+    gtm1::colour_cut_texels(empty);
+    CHECK(empty.rgba == std::vector<u32>(5, key));
+}
+
+// Issue 368. The Astra Touring Car's headlamp surround (point-filtered in the game) is keyed in pure
+// red where the lamps show through; its cut-out copy no longer holds that red to filter in.
+TEST(car_cut_outs_hide_their_key_colour_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const auto* e = disc->volume().find("cars/day/op0011"); // Astra Touring Car
+    if (!e) SKIP("no cars/day/op0011 on this disc");
+    CarModelOptions o;
+    o.wheels = false;
+    scene::Model m = load_car_model(disc->volume().read(*e), o, "op0011");
+    const u32 red = 0x0000FFu;
+    size_t point_filtered = 0, keyed = 0;
+    for (const scene::Primitive& p : m.meshes.empty() ? std::vector<scene::Primitive>{} : m.meshes[0].primitives) {
+        if (!(p.flags & scene::kAlphaTest) || p.texture < 0) continue;
+        const scene::Texture& t = m.textures[size_t(p.texture)];
+        if (!t.nearest) continue;
+        ++point_filtered;
+        bool kept_red = false, cut_red = false;
+        for (u32 c : t.rgba) ((c >> 24) ? kept_red : cut_red) |= (c & 0xFFFFFFu) == red;
+        keyed += !kept_red;
+        if (!kept_red) CHECK(!cut_red);
+    }
+    CHECK(point_filtered > 0 && keyed > 0);
+}
+
 namespace {
 
 // The reflection primitives (kAdditive | kEnvironmentMap | kUnlit | kNoDepthWrite) of a model's body.
