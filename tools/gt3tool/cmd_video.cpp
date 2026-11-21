@@ -110,6 +110,45 @@ int cmd_video_frames(Disc& disc, const Args& a) {
     return 0;
 }
 
+// video-fields <vol-path> <outdir> [first] [count]: the full pictures the movie player shows for
+// each field of a field-split movie (video::deinterlace_fields), two PNGs per frame.
+int cmd_video_fields(Disc& disc, const Args& a) {
+    auto movie = open(disc.volume(), a[0]);
+    movie->set_audio_enabled(false);
+    u32 first = a.size() > 2 ? u32(std::atoi(a[2].c_str())) : 0;
+    u32 count = a.size() > 3 ? u32(std::atoi(a[3].c_str())) : 10;
+    Frame prev, cur, next, out;
+    u32 written = 0;
+    bool more = movie->next_frame(cur);
+    while (more && written < count) {
+        more = movie->next_frame(next);
+        if (cur.index >= first) {
+            if (!video::can_deinterlace(cur)) {
+                std::fprintf(stderr, "frame %u: %dx%d cannot be deinterlaced\n", cur.index, cur.width, cur.height);
+                return 1;
+            }
+            video::deinterlace_fields(prev.width ? prev : cur, cur, more ? next : cur, out);
+            for (int field = 0; field < 2; ++field) {
+                Frame pic = out;
+                pic.height = cur.height;
+                const size_t ny = size_t(pic.width) * size_t(pic.height), nc = size_t(pic.chroma_width()) * size_t(pic.chroma_height());
+                pic.y.assign(out.y.begin() + ptrdiff_t(field * ny), out.y.begin() + ptrdiff_t((field + 1) * ny));
+                pic.u.assign(out.u.begin() + ptrdiff_t(field * nc), out.u.begin() + ptrdiff_t((field + 1) * nc));
+                pic.v.assign(out.v.begin() + ptrdiff_t(field * nc), out.v.begin() + ptrdiff_t((field + 1) * nc));
+                char name[64];
+                std::snprintf(name, sizeof(name), "/field%05u_%c.png", cur.index, field ? 'b' : 'a');
+                if (!save(a[1] + name, encode_png(pic.width, pic.height, video::frame_to_rgba(pic)))) return 1;
+            }
+            ++written;
+        }
+        prev = std::move(cur);
+        cur = std::move(next);
+        next = Frame{};
+    }
+    std::printf("%u frames, %u pictures\n", written, written * 2);
+    return 0;
+}
+
 // video-yuv <vol-path> <out.yuv> [count]: raw yuv420p in display order.
 int cmd_video_yuv(Disc& disc, const Args& a) {
     auto movie = open(disc.volume(), a[0]);
@@ -334,6 +373,8 @@ GT3TOOL_COMMAND(video_info, "video-info", "<vol-path>", "describe a .pss movie (
                 cmd_video_info);
 GT3TOOL_COMMAND(video_frames, "video-frames", "<vol-path> <outdir> [first] [count] [step]",
                 "decode movie frames to PNGs (scratch only)", 2, cmd_video_frames);
+GT3TOOL_COMMAND(video_fields, "video-fields", "<vol-path> <outdir> [first] [count]",
+                "write the deinterlaced picture the player shows for each field (scratch only)", 2, cmd_video_fields);
 GT3TOOL_COMMAND(video_yuv, "video-yuv", "<vol-path> <out.yuv> [count]",
                 "decode movie frames to raw yuv420p (for comparison with other decoders)", 2, cmd_video_yuv);
 GT3TOOL_COMMAND(video_psnr, "video-psnr", "<vol-path> <ref.yuv|-> [quiet]",

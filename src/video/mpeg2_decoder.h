@@ -28,6 +28,7 @@ struct Frame {
     s64 pts = -1;            // 90 kHz presentation time
     char type = '?';         // 'I', 'P' or 'B'
     u32 index = 0;           // display order index from 0
+    bool fields_stacked = false; // deinterlace_fields() output: two full pictures, one per field
 
     int chroma_width() const { return (width + 1) / 2; }
     int chroma_height() const { return (height + 1) / 2; }

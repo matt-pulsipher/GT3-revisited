@@ -119,6 +119,7 @@ void MoviePlayer::run() {
     const u32 ch = std::max<u32>(1, info_.audio_channels);
     std::vector<s16> pcm(kAudioChunk * ch);
     u64 audio_skip = info_.has_audio ? u64(start_seconds_ * info_.audio_rate) : 0;
+    Frame prev, pending; // decoded frames: the one before the next picture out, and that picture
     while (!quit_) {
         bool worked = false;
         try {
@@ -146,29 +147,23 @@ void MoviePlayer::run() {
                 want_video = ready_.size() < kMaxQueuedFrames;
             }
             if (!worked && !video_done_ && want_video) {
-                Frame f;
-                {
-                    std::lock_guard lock(mutex_);
-                    if (!free_.empty()) {
-                        f = std::move(free_.back());
-                        free_.pop_back();
-                    }
-                }
+                Frame f = take_free();
                 u64 t0 = SDL_GetTicksNS();
                 bool got = movie_->next_frame(f);
-                double ms = double(SDL_GetTicksNS() - t0) / 1e6;
-                if (!got) {
-                    video_done_ = true;
-                } else {
+                // Pictures go out one frame behind the decoder: deinterlacing a frame needs the
+                // next one's fields. The last frame goes out once the stream has ended.
+                if (got) {
                     layout_.add(f);
                     field_split_ = layout_.field_split();
-                    double t = info_.start_pts >= 0 ? double(f.pts - info_.start_pts) / 90000.0 : 0.0;
+                }
+                if (pending.width > 0) emit(prev, pending, got ? f : pending, t0);
+                if (got) {
                     std::lock_guard lock(mutex_);
-                    ++stats_.decoded;
-                    stats_.decode_ms_avg += (ms - stats_.decode_ms_avg) / double(std::min<u64>(stats_.decoded, 120));
-                    stats_.decode_ms_max = std::max(stats_.decode_ms_max, ms);
-                    if (t + 0.5 / std::max(1.0, info_.frame_rate) < start_seconds_) free_.push_back(std::move(f));
-                    else ready_.push_back(std::move(f));
+                    free_.push_back(std::move(prev));
+                    prev = std::move(pending);
+                    pending = std::move(f);
+                } else {
+                    video_done_ = true;
                 }
                 worked = true;
             }
@@ -180,6 +175,28 @@ void MoviePlayer::run() {
         if (video_done_ && audio_done_) break;
         if (!worked) std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
+}
+
+Frame MoviePlayer::take_free() {
+    std::lock_guard lock(mutex_);
+    if (free_.empty()) return {};
+    Frame f = std::move(free_.back());
+    free_.pop_back();
+    return f;
+}
+
+void MoviePlayer::emit(const Frame& prev, const Frame& cur, const Frame& next, u64 t0) {
+    Frame out = take_free();
+    if (field_split_ && can_deinterlace(cur)) deinterlace_fields(prev.width > 0 ? prev : cur, cur, next, out);
+    else out = cur;
+    double ms = double(SDL_GetTicksNS() - t0) / 1e6;
+    double t = info_.start_pts >= 0 ? double(out.pts - info_.start_pts) / 90000.0 : 0.0;
+    std::lock_guard lock(mutex_);
+    ++stats_.decoded;
+    stats_.decode_ms_avg += (ms - stats_.decode_ms_avg) / double(std::min<u64>(stats_.decoded, 120));
+    stats_.decode_ms_max = std::max(stats_.decode_ms_max, ms);
+    if (t + 0.5 / std::max(1.0, info_.frame_rate) < start_seconds_) free_.push_back(std::move(out));
+    else ready_.push_back(std::move(out));
 }
 
 bool MoviePlayer::wait_for_frame(double timeout_seconds) {
@@ -229,7 +246,11 @@ void MoviePlayer::picture_rects(const SDL_FRect& display, SDL_FRect& src, SDL_FR
     src = {0, 0, w, h};
     dst = display;
     if (!field_split_ || tex_h_ < 4) return;
-    // First field (top half, even frame lines) for the first half of the frame
+    if (tex_stacked_) { // deinterlaced: a full picture per field, stacked
+        src = {0, second_field() ? h / 2 : 0, w, h / 2};
+        return;
+    }
+    // Not deinterlaced (field_layout.h's can_deinterlace): the field itself, line-doubled. First field (top half, even frame lines) for the first half of the frame
     // period, then the second field (bottom half, odd lines). Frame line Y of
     // field line k is 2k (+1 for the second field), so mapping frame row
     // centre y to field coordinates gives y/2 + 1/4 (first) or y/2 - 1/4
@@ -346,6 +367,7 @@ bool MoviePlayer::update(SDL_Renderer* renderer) {
         tex_w_ = frame.width;
         tex_h_ = frame.height;
     }
+    tex_stacked_ = frame.fields_stacked;
     if (texture_)
         SDL_UpdateYUVTexture(texture_, nullptr, frame.y.data(), frame.width, frame.u.data(), frame.chroma_width(),
                              frame.v.data(), frame.chroma_width());

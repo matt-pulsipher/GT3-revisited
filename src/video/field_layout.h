@@ -36,4 +36,20 @@ private:
     int split_ = 0, total_ = 0;
 };
 
+// Motion-adaptive deinterlacing of a field-split frame. Showing each field
+// line-doubled ("bob") makes fine horizontal detail (text, thin edges) flicker
+// between the two fields 60 times a second, which a CRT hid but a sharp
+// progressive display shows as shaking. This rebuilds each field as a full
+// picture: where the picture is still, the missing lines come from the
+// neighbouring fields (as sharp as a woven frame); where it moves, from the
+// field's own lines (as bob), so motion keeps its 60 pictures per second.
+// The rule is the usual one of the "yadif" filter, without its edge search.
+//
+// `cur` is field-split (height a multiple of 4); `prev` and `next` are the
+// frames around it (pass `cur` itself at the ends of a movie). `out` gets
+// the two pictures stacked: rows [0, H) the first field's, [H, 2H) the
+// second's, each the full frame size (chroma likewise).
+void deinterlace_fields(const Frame& prev, const Frame& cur, const Frame& next, Frame& out);
+bool can_deinterlace(const Frame& f);
+
 } // namespace gt3r::video
