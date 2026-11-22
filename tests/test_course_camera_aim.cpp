@@ -6,7 +6,9 @@
 #include "race/course_camera_aim.h"
 #include "race/replay_cameras.h"
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 using namespace gt3r;
 using namespace gt3r::race;
@@ -142,6 +144,79 @@ TEST(course_camera_aim_zoom_spring) {
     float zoom = 1.0f;
     for (int i = 0; i < 120; ++i) zoom = aim.step(in).zoom;
     CHECK(zoom > 3.5f && zoom < 4.5f);
+}
+
+// Issue 402 (replays shaking on an uneven ~60 fps phone): real time steps the operator on the car
+// where it was at each 60 Hz frame, so frames shown unevenly see the same camera as frames at an
+// even 60 Hz. Before, a frame with no step followed by one with two fed the filter the same car
+// twice, and its lead (5 times the last change) swung the camera to and fro.
+TEST(course_camera_aim_uneven_frames) {
+    const render::Vec3 eye{0, 5, 0};
+    auto car_at = [](double t) { return render::Vec3{-60.0f + 45.0f * float(t), 0.4f, 25.0f}; };
+    constexpr double kFrame = 1.0 / 60.0;
+    // The reference: one step per 60 Hz frame on the car at that frame.
+    CourseCameraAim ref;
+    std::vector<CourseCameraAim::Out> steps;
+    for (int k = 0; k <= 200; ++k) steps.push_back(ref.step(car_shot(eye, car_at(k * kFrame), 4.0f)));
+    // Shown frames: (lowest, highest) frame time in 60 Hz frames, and the refresh a late frame
+    // adds (0: none).
+    struct Pace {
+        double lo, hi, late;
+    };
+    const Pace paces[] = {
+        {0.85, 1.25, 1.0},        // 48..70 fps, some a refresh late (the reporter's phone)
+        {0.5, 0.833, 0.5},        // 72..120 Hz, some a 120 Hz refresh late
+        {0.75, 0.75, 0},          // an even 80 Hz
+        {0.5, 0.5, 0},            // an even 120 Hz
+        {2.0 / 3.0, 2.0 / 3.0, 0.5}, // 90 Hz, some a refresh of a 120 Hz panel late
+        {0.12, 0.84, 0},          // vsync off: 70..500 fps
+    };
+    for (const Pace& p : paces) {
+        CourseCameraAim aim;
+        aim.advance(car_shot(eye, car_at(0), 4.0f), 0);
+        u32 r = 12345;
+        double t = 0, acc = 0;
+        size_t k = 0;
+        float worst = 0;
+        while (k + 1 < steps.size()) {
+            r = r * 1103515245u + 12345u;
+            double dt = kFrame * (p.lo + (p.hi - p.lo) * double((r >> 16) & 0x7FFF) / 32767.0);
+            if (((r >> 8) & 7) == 0) dt += kFrame * p.late;
+            t += dt;
+            acc += dt;
+            for (int n = 0; acc >= kFrame && n < 12; ++n) acc -= kFrame, ++k; // (advance's own count)
+            if (k + 1 >= steps.size()) break;
+            const CourseCameraAim::Out o = aim.advance(car_shot(eye, car_at(t), 4.0f), dt);
+            const CourseCameraAim::Out& a = steps[k > 0 ? k - 1 : 0];
+            const float f = float(acc * 60.0);
+            const float want_yaw = a.yaw + angle_diff(steps[k].yaw, a.yaw) * f;
+            const float want_pitch = a.pitch + angle_diff(steps[k].pitch, a.pitch) * f;
+            worst = std::max({worst, std::fabs(angle_diff(o.yaw, want_yaw)), std::fabs(angle_diff(o.pitch, want_pitch))});
+        }
+        CHECK(worst < 0.05f); // degrees
+    }
+}
+
+// Issue 402's one-frame flashes of sky or road: the pitch is 359.x one frame and -0.x the next
+// as the camera aims across level; the blend between frames goes the short way, as the yaw's.
+TEST(course_camera_aim_pitch_wrap) {
+    CourseCameraAim aim;
+    const render::Vec3 eye{0, 5, 0};
+    bool crossed = false;
+    for (int i = 0; i < 240; ++i) { // the car climbs from below the camera to above it
+        const CourseCameraAim::In in = car_shot(eye, {0, -5.0f + 0.1f * float(i), 30.0f}, 4.0f);
+        const CourseCameraAim::Out prev = i ? aim.blend(1.0f) : CourseCameraAim::Out{};
+        const CourseCameraAim::Out cur = aim.step(in);
+        if (!i) continue;
+        const float step = std::fabs(angle_diff(cur.pitch, prev.pitch));
+        crossed = crossed || std::fabs(cur.pitch - prev.pitch) > 180.0f;
+        for (float f : {0.25f, 0.5f, 0.75f}) {
+            const float mid = aim.blend(f).pitch;
+            CHECK(std::fabs(angle_diff(mid, prev.pitch)) <= step + 1e-3f);
+            CHECK(std::fabs(angle_diff(mid, cur.pitch)) <= step + 1e-3f);
+        }
+    }
+    CHECK(crossed); // (the test reaches the wrap)
 }
 
 // The director: a course shot looking at the car aims through the operator (the car below the

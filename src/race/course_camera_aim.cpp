@@ -252,11 +252,38 @@ CourseCameraAim::Out CourseCameraAim::step(const In& in) {
     return o;
 }
 
+CourseCameraAim::Out CourseCameraAim::advance(const In& in, double dt) {
+    constexpr double kFrame = 1.0 / 60.0;
+    if (!started_) {
+        step(in);
+        acc_ = 0;
+    } else {
+        acc_ += dt;
+        for (int n = 0; acc_ >= kFrame && n < 12; ++n) {
+            acc_ -= kFrame;
+            // This frame's moment: acc_ seconds before now, within the last dt.
+            const float t = dt > 0 ? float(std::clamp(1.0 - acc_ / dt, 0.0, 1.0)) : 1.0f;
+            In at = in;
+            at.eye = last_in_.eye + (in.eye - last_in_.eye) * t;
+            at.aim = last_in_.aim + (in.aim - last_in_.aim) * t;
+            at.zoom = last_in_.zoom + (in.zoom - last_in_.zoom) * t;
+            at.progress = last_in_.progress + (in.progress - last_in_.progress) * t;
+            step(at);
+        }
+        if (acc_ > kFrame) acc_ = 0;
+    }
+    last_in_ = in;
+    return blend(float(acc_ * 60.0));
+}
+
 CourseCameraAim::Out CourseCameraAim::blend(float frac) const {
     const float t = std::clamp(frac, 0.0f, 1.0f);
     Out o = cur_;
     o.yaw = prev_.yaw + angle_diff(cur_.yaw, prev_.yaw) * t;
-    o.pitch = prev_.pitch + (cur_.pitch - prev_.pitch) * t;
+    // The pitch wraps too: just above level it is 359.x one frame and -0.x the next (the
+    // filter's angle is kept in 0 .. 360, the bob's tip is added after). Blended straight, it
+    // swung through 180 degrees for a frame (issue 402's flashes of sky or road).
+    o.pitch = prev_.pitch + angle_diff(cur_.pitch, prev_.pitch) * t;
     o.zoom = prev_.zoom + (cur_.zoom - prev_.zoom) * t;
     return o;
 }

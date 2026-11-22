@@ -2493,7 +2493,12 @@ A course shot does not hold the car dead centre. Every 60 Hz frame of a course s
 - **The zoom** springs towards the record's: v += (30 (want - zoom) p - 10 v) / 60
   (p = 1 zooming out; zooming in, the aim's move between cars, 1 - frames left / its
   frames, or 1 with a pair), v within -30 .. 10 per second, zoom += v / 60.
-- Ours steps at 60 Hz and blends the last two frames between them; the raw angles use
+- Ours steps at 60 Hz, each frame on the aim point and camera where they were at that
+  frame's moment (between the two shown frames around it), and blends the last two
+  frames between them, both angles the short way round (the pitch is 359.x one frame and
+  -0.x the next as the camera aims across level): shown frames at another rate or
+  unevenly paced (a phone missing refreshes) see the same camera as an even 60 Hz
+  (issue 402); the raw angles use
   the host's atan2 (the program's code is not ported), the rest the EE's arithmetic.
 
 ### §H7 Fallback TV cameras

@@ -98,6 +98,12 @@ public:
     };
     // One 60 Hz frame.
     Out step(const In& in);
+    // `dt` seconds of real time: the 60 Hz frames due in it, each on the input as it was at that
+    // frame's moment (between the last call's input and this one: frames shown unevenly, or at
+    // another rate, must not step the filters on a target sampled early or twice, which its
+    // lead turns into a shake), then the result blended to now. A shot's first call is its
+    // first frame.
+    Out advance(const In& in, double dt);
     // The last two frames' result blended by `frac` (0 .. 1) of the next frame.
     Out blend(float frac) const;
 
@@ -108,6 +114,8 @@ private:
     bool started_ = false;
     std::optional<render::Vec3> last_aim_;
     Out prev_, cur_;
+    In last_in_;       // the last call's input (advance)
+    double acc_ = 0;   // time into the next 60 Hz frame (advance)
 };
 
 } // namespace gt3r::race
