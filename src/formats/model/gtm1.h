@@ -480,12 +480,24 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
 // it (bilinear, mipmaps) would spread it over the kept edge: the Astra Touring Car's headlamp
 // surrounds are keyed in pure red. Alpha is unchanged; no kept texel: no change.
 void colour_cut_texels(scene::Texture& t);
+// The same, across the edges on the axes given (build_model: where a face repeats the texture
+// there). A texture its faces sample clamped takes no colour from its far side: the Astra Touring
+// Car's grille, whose mirrored halves meet on its edge, took the far edge's chrome at the seam
+// (issue 409).
+void colour_cut_texels(scene::Texture& t, bool wrap_u, bool wrap_v);
 
 // Marks the textured primitives of `mesh` whose UVs all lie inside the texture on an axis
 // (scene::kClampU / kClampV): they never repeat it there, so sampling them clamped changes
-// nothing the GS shows, and keeps our filtering (MSAA samples past the triangle's edge, coarse
-// mip levels) from blending in the texture's far side. Environment passes (UVs made per frame)
-// are left alone. Returns how many it marked.
-int mark_inside_uvs(scene::Mesh& mesh);
+// nothing the GS shows, and keeps our filtering (bilinear at the edge texels, MSAA samples past
+// the triangle's edge, coarse mip levels) from blending in the texture's far side: Midfield's
+// pines packed beside other pictures, the Astra Touring Car's grille drawn as two mirrored
+// halves that meet on the texture's edge (issue 409). Environment passes (UVs made per frame)
+// are left alone. With `textures` (the model's), a primitive whose UVs stop inside its texture
+// beside different texels (a picture packed beside another, not the rest of a continuous one)
+// also gets its region (scene::Primitive::uv_region). `key1`: a morph's second key frame,
+// parallel to mesh.vertices. build_model marks every mesh and part it makes. Returns how many
+// it marked.
+int mark_inside_uvs(scene::Mesh& mesh, const std::vector<scene::Vertex>* key1 = nullptr,
+                    const std::vector<scene::Texture>* textures = nullptr);
 
 } // namespace gt3r::gtm1

@@ -78,7 +78,26 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
     // four angles. The SPIN_COPIES variant: w the copies' cells (DrawItem::spin_turn).
     vec4 wheel_blur;
     vec4 wheel_steps; // DrawItem::gs_bilinear: xy the texture's size
+    // scene::Primitive::uv_region: the part of the texture the primitive shows (min u, min v,
+    // max u, max v); an axis with max <= min: none (region_uv).
+    vec4 uv_region;
 } u;
+
+// The texture coordinates kept inside the primitive's region of its texture (u.uv_region), half a
+// texel of the mip level in use (the larger footprint, so anisotropic taps too) in from its
+// edges: filtering never takes in a picture packed beside it. A region narrower than that: its
+// middle.
+vec2 region_uv(vec2 uv) {
+    vec4 r = u.uv_region;
+    bvec2 on = greaterThan(r.zw, r.xy);
+    if (!any(on)) return uv;
+    vec2 size = vec2(textureSize(u_tex, 0));
+    vec2 texels = max(abs(dFdx(uv)), abs(dFdy(uv))) * size;
+    float level = exp2(ceil(log2(max(max(texels.x, texels.y), 1.0))));
+    vec2 inset = 0.5 * level / size, mid = 0.5 * (r.xy + r.zw);
+    vec2 c = clamp(uv, min(r.xy + inset, mid), max(r.zw - inset, mid));
+    return vec2(on.x ? c.x : uv.x, on.y ? c.y : uv.y);
+}
 
 // GT3's per-vertex reflection weight (VU kernel): C0 + C1 min(V.N, 0), V the unit vector
 // from the eye. Without decoded rows: 1 + C1 min(V.N, 0) with the scalar C1 in env_sky.w.
@@ -344,7 +363,7 @@ void shade() {
         return;
     }
 #endif // PLAIN
-    vec4 t = wheel_texture(v_uv);
+    vec4 t = wheel_texture(region_uv(v_uv));
     vec4 c = vec4(gs_texel(t.rgb), t.a) * v_color;
     if (u.params.w > 1.5) {
         // Road sheen: the texel modulated by its VU program's lit colour (model.vert), fogged
