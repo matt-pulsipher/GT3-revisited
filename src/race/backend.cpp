@@ -106,7 +106,7 @@ CarSetup car_setup_from_database(const data::CarDatabase& db, const std::string&
         if (gb->final_drive > 0) s.final_drive = gb->final_drive;
     }
     if (auto ws = wheel_spec_for_car(db, label)) s.wheels = *ws;
-    s.body_mod = body_mod_for_car(db, label);
+    s.body_mod = body_mod_for_car(db, label, 0, data::CarScene::Day);
     data::CarDatabase::EngineSound es = db.engine_sound(*car);
     s.sound_id = es.id;
     s.sound_variant = es.variant;

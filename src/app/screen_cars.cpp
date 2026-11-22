@@ -78,7 +78,7 @@ public:
                 CarModelOptions opt;
                 opt.lod = 0;
                 opt.wheel_spec = wheel_spec_for_car(*db, label);
-                opt.body_mod = body_mod_for_car(*db, label, pe ? std::atoi(pe) : 0);
+                opt.body_mod = body_mod_for_car(*db, label, pe ? std::atoi(pe) : 0, data::CarScene::Day);
                 static std::optional<Bytes> rim;
                 rim = opt.body_mod.wheel.empty() ? std::nullopt : a.vfs()->read("wheel/" + opt.body_mod.wheel);
                 if (rim) opt.wheel_override = *rim;

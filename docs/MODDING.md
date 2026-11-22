@@ -498,6 +498,25 @@ Pearl White = #E9E9E6
 Ultra Red = #9B1B22
 ```
 
+GT3 keeps two kinds of model for each car: the menus' (dealers, garage, arcade
+car select) with an empty cockpit, and the races' with the driver in, one for
+each time of day. A mod car can do the same:
+
+```ini
+[model]
+menu = models/my_car_menu.glb  ; dealers, garage, car select: no driver
+race = models/my_car_race.glb  ; races: with the driver in
+night = models/my_car_night.glb ; optional: a race at night (also day, eve)
+```
+
+Every key is optional and any one is enough: `file` is the model for
+everything, and the others fall back to it. A race takes its time of day's
+model (`day`, `eve` or `night`), else `race`, else `file`, else another time of
+day's, else `menu`. The menus take `menu`, else `file`, else the race's. So a
+car with only `file` (or only `menu`, or only `race`) uses that one model
+everywhere, and a `menu` + `race` pair covers both. The time of day is the
+course's, as for the disc's cars.
+
 The glTF loader is `src/formats/model/gltf.*`. Use glTF's own conventions:
 metres, +Y up, the car facing +Z. Put the origin at the wheelbase midpoint on
 the ground, like GT3's own car models. The loader handles triangle meshes,

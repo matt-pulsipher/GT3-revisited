@@ -6,7 +6,7 @@
 // A car exported from a disc (data::ModCar::exported) has no package: its files are that disc's.
 //
 // A package is the car's definition file (cars/<label>.ini) and the files it references
-// (its glTF body and pictures), with paths relative to the mod folder, as one blob. The
+// (the glTF bodies its menus and races draw, and its pictures), with paths relative to the mod folder, as one blob. The
 // SHA-256 of the blob is the package's identity: the lobby advertises it, the download is
 // checked against it, and the install folder is named after it.
 //
@@ -18,8 +18,8 @@
 // - only cars/<label>.ini (exactly one), .glb and .png files: a package can only add a
 //   car, never replace a game file (ordinary mods can, a download cannot);
 // - the definition parses, names the advertised label, its donor car is on this disc, its
-//   values are in plausible ranges, and the files it references are exactly the package's
-//   other files;
+//   values are in plausible ranges, and the files it draws (its bodies by scene,
+//   data::resolve_model_files, and pictures) are exactly the package's other files;
 // - pictures: PNG, at most 2048 x 2048 (checked before decoding), decode cleanly;
 // - the body: a GLB that loads with embedded textures of at most 2048 x 2048 and at most
 //   500,000 vertices.

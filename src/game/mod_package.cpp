@@ -104,7 +104,9 @@ std::optional<Bytes> build_mod_package(const data::CarDatabase& db, const Vfs& v
         p.files.push_back({rel, std::move(*data)});
         return true;
     };
-    if (!add(m->file) || !add(m->model_file) || !add(m->picture) || !add(m->thumb) || !add(m->logo)) return std::nullopt;
+    if (!add(m->file) || !add(m->picture) || !add(m->thumb) || !add(m->logo)) return std::nullopt;
+    for (const std::string& body : m->model_files)
+        if (!add(body)) return std::nullopt;
     return serialize_mod_package(p);
 }
 
@@ -223,8 +225,15 @@ bool validate_mod_package(const ModPackage& p, const data::CarDatabase& db, cons
     for (const auto& [rpm, nm] : def->curve)
         if (!(rpm >= 0 && rpm <= 25000 && nm >= 0 && nm <= 3000)) return fail(error, "implausible torque curve");
     // The files it references are exactly the package's other files.
+    // (Bodies: the ones its scenes draw, at most one per scene, as build_mod_package packs them;
+    // a key every scene overrides names nothing.)
     std::set<std::string> refs;
-    for (const std::string* s : {&def->model_file, &def->picture, &def->thumb, &def->logo})
+    for (const std::string& b : data::model_files_of(*def))
+        if (!safe_package_path(b)) return fail(error, "unsafe reference '" + b + "'");
+    const std::array<std::string, data::kCarScenes> bodies = data::resolve_model_files(*def);
+    std::vector<const std::string*> named = {&def->picture, &def->thumb, &def->logo};
+    for (const std::string& b : bodies) named.push_back(&b);
+    for (const std::string* s : named)
         if (!s->empty()) {
             if (!safe_package_path(*s)) return fail(error, "unsafe reference '" + *s + "'");
             refs.insert(*s);
@@ -233,7 +242,8 @@ bool validate_mod_package(const ModPackage& p, const data::CarDatabase& db, cons
     for (const ModPackage::File& f : p.files)
         if (&f != ini) others.insert(f.path);
     if (refs != others) return fail(error, "the package's files do not match what the definition references");
-    if (!def->model_file.empty() && ext_of(def->model_file) != "glb") return fail(error, "the body must be a .glb file");
+    for (const std::string& b : bodies)
+        if (!b.empty() && ext_of(b) != "glb") return fail(error, "the body must be a .glb file");
     for (const std::string* s : {&def->picture, &def->thumb, &def->logo})
         if (!s->empty() && ext_of(*s) != "png") return fail(error, "pictures must be .png files");
     // Contents.

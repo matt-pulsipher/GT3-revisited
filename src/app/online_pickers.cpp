@@ -529,7 +529,7 @@ void CarTurntable::draw(App& app, const SDL_FRect& dst, const data::CarDatabase&
                 opt.menu_tyres = true;
                 opt.paint = paint;
                 opt.wheel_spec = race::car_setup_from_database(db, car.label).wheels;
-                opt.body_mod = body_mod_for_car(db, car.label, paint);
+                opt.body_mod = body_mod_for_car(db, car.label, paint, data::CarScene::Menu);
                 std::optional<Bytes> wheel_file;
                 if (!car.wheel.empty()) wheel_file = app.vfs()->read("wheel/" + car.wheel);
                 else if (!opt.body_mod.wheel.empty()) wheel_file = app.vfs()->read("wheel/" + opt.body_mod.wheel);

@@ -21,6 +21,7 @@ namespace gt3r {
 
 namespace data {
 class CarDatabase;
+enum class CarScene : u8;
 }
 
 // Spec for the first car in the database that uses `model` (e.g. "am0006").
@@ -29,7 +30,9 @@ std::optional<WheelSpec> wheel_spec_from_database(const data::CarDatabase& db, c
 std::optional<WheelSpec> wheel_spec_for_car(const data::CarDatabase& db, const std::string& car_label);
 // How a mod car's body differs from its car file: the stretch of a borrowed
 // shell, or a glTF body of its own (read from the mod) with the paint
-// colour for `paint` (an index into the mod's paint list, wrapped).
-CarBodyMod body_mod_for_car(const data::CarDatabase& db, const std::string& car_label, int paint = 0);
+// colour for `paint` (an index into the mod's paint list, wrapped). `scene` picks the glTF
+// body a mod with several draws (the menus' or a race's time of day; ModCar::model_files).
+CarBodyMod body_mod_for_car(const data::CarDatabase& db, const std::string& car_label, int paint,
+                            data::CarScene scene);
 
 } // namespace gt3r

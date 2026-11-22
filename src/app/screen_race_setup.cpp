@@ -698,7 +698,7 @@ bool RaceScreen::build_vehicle(App& app) {
                     std::optional<Bytes> f2 = read_car(app, m2);
                     WheelSpec ws2;
                     if (auto w = wheel_spec_for_car(db_, car2)) ws2 = *w;
-                    CarBodyMod bm2 = body_mod_for_car(db_, car2, paint2);
+                    CarBodyMod bm2 = body_mod_for_car(db_, car2, paint2, car_scene());
                     if (!wheel2.empty()) bm2.wheel = wheel2;
                     std::optional<Bytes> w2 = bm2.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm2.wheel);
                     if (f2 && !f2->empty()) {
@@ -733,7 +733,7 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
                 if (!rq.car_wheel.empty())
                     wheel_file = app.vfs()->read("wheel/" + rq.car_wheel), wheel_label = rq.car_wheel;
         }(launch_.request);
-    CarBodyMod body_mod = body_mod_for_car(db_, car_.label, preset_.paint);
+    CarBodyMod body_mod = body_mod_for_car(db_, car_.label, preset_.paint, car_scene());
     if (!wheel_file && !body_mod.wheel.empty())
         wheel_file = app.vfs()->read("wheel/" + body_mod.wheel), wheel_label = body_mod.wheel;
     const ShowroomFiles showroom = read_showroom(app, model, wheel_file ? wheel_label : "");
@@ -828,7 +828,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         std::string l = f.opponent_label(i), base = db_.car(l) ? l : "";
         if (base.empty())
             if (const data::CarVariant* cv = db_.variant(l)) base = cv->car;
-        CarBodyMod bm = db_.mod_car(base) ? body_mod_for_car(db_, base, paint) : CarBodyMod{};
+        CarBodyMod bm = db_.mod_car(base) ? body_mod_for_car(db_, base, paint, car_scene()) : CarBodyMod{};
         std::shared_ptr<CarVisual>& v = by_model[{bm.active() ? base : model, paint}];
         if (!v) {
             std::optional<Bytes> f = read_car(app, model);
