@@ -181,6 +181,32 @@ void mood_step(Car& c, const MoodTables& k, int rival, bool all_soft) {
     if (++s[4] >= n.period) s[4] = 0;
 }
 
+sim::VehicleState::Special special_look(const Car& c, const MoodTables& k) {
+    sim::VehicleState::Special out;
+    const u8 kind = c.p.special;
+    const auto& s = c.later.special;
+    if (kind == 2 || (kind >= 8 && kind <= 10)) {
+        u32 bits;
+        std::memcpy(&bits, s.data(), 4);
+        out.wing = F::raw(bits).host();
+    }
+    if (kind != 1) return out;
+    const MoodSteps& n = mood_steps(c);
+    const int fade = s8(s[3]);
+    if (fade <= n.fade) { // the new class fading in
+        out.lamp = k.lamp[s[1] & 0xF];
+        out.lamp_weight = float(n.fade - fade) / float(n.fade);
+    } else { // the class before fading out
+        out.lamp = k.lamp[s[1] >> 4];
+        out.lamp_weight = float(fade - n.fade) / float(n.fade_x - n.fade);
+    }
+    out.lean = 0.5f - float(s8(s[5])) / float(2 * n.lean);
+    out.nod = 0.5f + float(nod(n, s[4])) / (float(n.period) * 0.5f);
+    out.mood = s[1] & 0xF;
+    out.mood_new = s[6];
+    return out;
+}
+
 bool sitting(const Car& c) { return c.later.special[0] == (pal_rate(c) ? 0x1D : 0x22); }
 
 F pod_spring(const Car& c, int i, F k) {

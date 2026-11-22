@@ -315,7 +315,8 @@ Banks: 0 `sound/gt3sys.ins` (buy, cancel, cursor, ok, ...), 1
 rain_noiz, ...), 2 `sound/gt3se02.ins` (air, city, crowds, sea, tunnel).
 Gran Turismo Concept's index has 53 effects: GT3's 42 and eleven `pod_*` in bank 3,
 `sound/gt3pod.ins` (an `INST` bank of 11 regions, one per effect; the program lists the four
-bank files in this order). `se_bank_path(3)` names it, so `gt3tool se` and `se-wav` resolve
+bank files in this order; the race loads it with the others and a pod's new mood plays one of them: specs/concept.md
+§9.2). `se_bank_path(3)` names it, so `gt3tool se` and `se-wav` resolve
 them, and `sound-survey` lists any effect whose bank or region is missing.
 How the game plays an effect (the generic sound effect, used by every menu
 with volume 1.0 and pan 0x40): if first == last the region is keyed twice,

@@ -42,7 +42,18 @@ VoiceParams LoopEffect::params(const sound::InstBank& b, int region, s16 l, s16 
     return p;
 }
 
-void LoopEffect::update(VoiceMixer& mixer, float l, float r, float pitch, int priority) {
+void LoopEffect::update(VoiceMixer& mixer, float l, float r, float pitch, int priority) { send(mixer, l, r, pitch, priority, true); }
+
+void LoopEffect::restart(VoiceMixer& mixer, float l, float r, float pitch, int priority) {
+    stop(mixer);
+    send(mixer, l, r, pitch, priority, true);
+}
+
+void LoopEffect::follow(VoiceMixer& mixer, float l, float r, float pitch, int priority) {
+    if (voice_.valid()) send(mixer, l, r, pitch, priority, false);
+}
+
+void LoopEffect::send(VoiceMixer& mixer, float l, float r, float pitch, int priority, bool key) {
     if (!valid()) return;
     const sound::InstRegion& reg = bank_->regions[size_t(region_)];
     s16 vl = side_volume(l, reg), vr = side_volume(r, reg);
@@ -54,6 +65,10 @@ void LoopEffect::update(VoiceMixer& mixer, float l, float r, float pitch, int pr
         if (priority >= 0) mixer.set_priority(voice_, u8(std::min(priority, 255)));
         mixer.set_pitch(voice_, scaled_pitch(reg, pitch));
         mixer.set_volume(voice_, vl, vr);
+        return;
+    }
+    if (!key) {
+        voice_ = {};
         return;
     }
     voice_ = mixer.key_on(params(*bank_, region_, vl, vr, pitch, priority, bank_->adpcm));

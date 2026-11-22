@@ -210,6 +210,7 @@ int RaceScreen::car_lamp_index(const sim::VehicleState& s, size_t slot) const {
 // weakened by the car's dirt (the player's garage car; others are clean).
 CarLook RaceScreen::car_look(const sim::VehicleState& s, bool player, size_t slot) const {
     CarLook look;
+    look.slot = int(slot);
     const SunParams& e = sun_.params();
     const track::Track* rt = track_ ? track_->runtime() : nullptr;
     if (rt && e.has_env && point_lights_.active()) {

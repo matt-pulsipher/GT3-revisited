@@ -178,7 +178,7 @@ TEST(gtm1_car_morph_draws_synthetic) {
     auto x1 = [](const scene::Mesh& m) { return m.vertices.size() > 1 ? m.vertices[1].pos[0] : -1.0f; };
     // Car programs read the callback: the steering's default 0.5 x 2 chunks -> chunk 1 (x + 10).
     gtm1::Options o;
-    o.run.callback = gtm1::kCarCallbackDefaults.data();
+    o.run.callback = &gtm1::kCarCallbackDefaults;
     scene::Model m = gtm1::build_model(g, o);
     CHECK(m.meshes.size() == 2 && x1(m.meshes[0]) == 11 && x1(m.meshes[1]) == 1);
     // With Options::morphs that draw is left out and kept with both chunks.
@@ -188,8 +188,8 @@ TEST(gtm1_car_morph_draws_synthetic) {
     CHECK(m.meshes.size() == 1 && m.meshes[0].name == "node1");
     CHECK(md.size() == 1 && md.ids() == std::vector<int>{5});
     auto at = [&](float steer) {
-        std::array<float, 5> v = gtm1::kCarCallbackDefaults;
-        v[4] = steer;
+        gtm1::CarCallback v = gtm1::kCarCallbackDefaults;
+        v.phase[5] = steer;
         std::vector<scene::Mesh> ms = md.meshes(v);
         return ms.size() == 1 ? x1(ms[0]) : -1.0f;
     };
@@ -467,6 +467,48 @@ TEST(car_model_disc) {
     CHECK(tris > 2000 && tris < 6000);
 }
 
+// As the later builds' pod lamps: node 0 = op 0x06 callback id 8 with two branches, chunk 0 or chunk 1, meeting again past
+// them (the out-of-range jump past the table); node 1 = a plain draw of chunk 0.
+Bytes make_branch_callback_gtm1() {
+    Bytes g = make_callback_gtm1();
+    std::fill(g.begin() + 0xA0, g.begin() + 0xB4, u8(0));
+    // A0: 06 u16 8, n 2, rel AA, rel AF | A8: 08 -> B2 | AA: 05 u16 0, 08 -> B2 | AF: 05 u16 1 | B2: 00
+    const u8 p0[] = {0x06, 8, 0, 2, 6, 0, 9, 0, 0x08, 9, 0x05, 0, 0, 0x08, 4, 0x05, 1, 0, 0x00};
+    std::memcpy(&g[0xA0], p0, sizeof(p0));
+    return g;
+}
+
+TEST(gtm1_car_callback_branches_synthetic) {
+    Bytes data = make_branch_callback_gtm1();
+    gtm1::Gtm1 g = gtm1::Gtm1::parse(data);
+    auto x1 = [](const scene::Mesh& m) { return m.vertices.size() > 1 ? m.vertices[1].pos[0] : -1.0f; };
+    // The values pick the branch: 0 chunk 0, 1 chunk 1 (x + 10), out of range nothing.
+    gtm1::CarCallback v = gtm1::kCarCallbackDefaults;
+    gtm1::Options o;
+    o.run.callback = &v;
+    auto node0 = [&](int branch) {
+        v.branch[8] = branch;
+        scene::Model m = gtm1::build_model(g, o);
+        return m.meshes.size() == 2 ? x1(m.meshes[0]) : m.meshes.size() == 1 ? 0.0f : -1.0f;
+    };
+    CHECK(node0(0) == 1 && node0(1) == 11 && node0(2) == 0);
+    // Every branch with Options::morphs: both draws left out, each under its branch, drawn as the values pick.
+    gtm1::MorphDraws md;
+    o.morphs = &md;
+    o.run.every_branch = true;
+    v.branch[8] = 0;
+    scene::Model m = gtm1::build_model(g, o);
+    CHECK(m.meshes.size() == 1 && m.meshes[0].name == "node1");
+    CHECK(md.size() == 2 && md.ids().empty() && md.branch_ids() == std::vector<int>{8});
+    auto drawn = [&](int branch) {
+        gtm1::CarCallback w = gtm1::kCarCallbackDefaults;
+        w.branch[8] = branch;
+        std::vector<scene::Mesh> ms = md.meshes(w);
+        return ms.size() == 1 && ms[0].vertices.size() == 4 ? x1(ms[0]) : ms.empty() ? 0.0f : -1.0f;
+    };
+    CHECK(drawn(0) == 1 && drawn(1) == 11 && drawn(2) == 0);
+}
+
 // The cars whose node programs morph parts by the car's callback (op 0x06 ids 1-5, op 0x35): the rally
 // cars' mud flaps and two race cars' aerials (ids 1-4, the wheels' pendulums), the formula cars'
 // driver's arms and steering wheel (id 5).
@@ -492,7 +534,8 @@ TEST(car_morph_draws_disc) {
         found[id] = morphs[0].ids();
         draws[id] = morphs[0].size();
         // The parts move with their value, and the body leaves them out.
-        std::array<float, 5> lo{}, hi{1, 1, 1, 1, 1};
+        gtm1::CarCallback lo = gtm1::kCarCallbackDefaults, hi = lo;
+        for (int i = 1; i <= 5; ++i) lo.phase[size_t(i)] = 0, hi.phase[size_t(i)] = 1;
         std::vector<scene::Mesh> a = morphs[0].meshes(lo), b = morphs[0].meshes(hi);
         bool moved = a.size() == 1 && b.size() == 1 && a[0].vertices.size() == b[0].vertices.size();
         float most = 0;

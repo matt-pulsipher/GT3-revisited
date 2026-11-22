@@ -141,6 +141,12 @@ TEST(build_rules_special_cars) {
         ex::mood_step(c, k, 5, false);
         CHECK((c.later.special[1] & 0xF) == 1 && c.later.special[2] == (pal ? 99 : 119) && c.later.special[3] == (pal ? 19 : 23));
         CHECK(c.later.special[6] == 1 && c.later.special[4] == 1);
+        // What its model shows: mood 1 asked for this step, its lamps' class 4 fading in (one step of 24; 20), the lean
+        // level and the nod one step up (of half its period, 24; 20).
+        const sim::VehicleState::Special look = ex::special_look(c, k);
+        const float steps24 = pal ? 20.0f : 24.0f;
+        CHECK(look.mood == 1 && look.mood_new == 1 && look.lamp == 4 && look.lamp_weight == 1 / steps24);
+        CHECK(look.lean == 0.5f && look.nod == 0.5f + 1 / steps24 && look.wing == 0);
         int steps = 0;
         while ((c.later.special[1] & 0xF) == 1 && steps < 400) ex::mood_step(c, k, 0, false), ++steps;
         CHECK(steps == (pal ? 99 : 119) && c.later.special[1] == 0x10);
@@ -169,6 +175,7 @@ TEST(build_rules_special_cars) {
         for (int i = 0; i < 200; ++i) ex::wing_step(c);
         std::memcpy(&v.bits, c.later.special.data(), 4);
         CHECK(v.bits == one.bits);
+        CHECK(ex::special_look(c, ex::MoodTables{}).wing == 1.0f && ex::special_look(c, ex::MoodTables{}).mood == 0);
         c.speed = F(17.0f); // between the two speeds: stays out
         ex::wing_step(c);
         CHECK(c.later.special[4] == 1);

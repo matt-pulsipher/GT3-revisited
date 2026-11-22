@@ -464,6 +464,8 @@ private:
     void draw_song(Ui& ui, bool controls);
     void update_course_ambience(App& app);
     // Every car's tyre loops and the followed cars' collision one-shots, each physics step (sound §7.6).
+    // One race step of every car's look that runs with the race (CarVisual::step_look: the pod's face animations).
+    void step_car_looks(float seconds);
     void update_tyre_sounds(App& app, const sim::VehicleState& s);
     // The race sounds' listener on camera_ (sound §6-§8): its eye and axes, the eye's velocity (the
     // listener's motion for the Doppler), the camera's sound kind and its target, the car it

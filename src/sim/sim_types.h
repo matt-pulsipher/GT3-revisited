@@ -102,6 +102,17 @@ struct VehicleState {
     float speed_kmh = 0;
     bool rev_limiter = false;
     float steer = 0;         // steering command (rad, + = right) before Ackermann and toe [physics §4.4]
+    // The later builds' special cars (Gran Turismo Concept: the pod's moods, the active wings), as the race hands them to
+    // the car model's callback every frame (sim/exact/special.h special_look; docs/formats/car_model.md "Callback
+    // morphs"). GT3's cars keep these values.
+    struct Special {
+        float wing = 0;               // id 6: the wing out, 0..1
+        float lean = 0.5f, nod = 0.5f; // id 7: the tail's lean and nod, 0..1 (0.5 level)
+        int lamp = 0;                  // id 8: the lamps' class (the branch), and the fade's weight (the phase)
+        float lamp_weight = 0;
+        int mood = 0;                  // ids 9, 10: the mood (0 at rest)
+        int mood_new = 0;              // the mood the step asked for (its sound), 0 none
+    } special;
 };
 
 // A car's static geometry for the renderer and the camera, in the car frame (+X right, +Y up,

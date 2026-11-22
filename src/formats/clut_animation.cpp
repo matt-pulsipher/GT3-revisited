@@ -8,10 +8,14 @@ namespace gt3r {
 
 ClutPlayer::ClutPlayer(std::vector<Tex1::ClutAnimation> animations) : anims_(std::move(animations)) { reset(); }
 
-void ClutPlayer::reset() {
-    state_.assign(anims_.size(), State{});
+void ClutPlayer::reset() { reset(-1); }
+
+void ClutPlayer::reset(int group) {
+    state_.resize(anims_.size());
     for (size_t i = 0; i < anims_.size(); ++i) {
+        if (group >= 0 && anims_[i].group != group) continue;
         State& s = state_[i];
+        s = State{};
         s.next = anims_[i].frames.size() > 1 ? 1 : 0;
         s.hold = anims_[i].frames[0].seconds < 0 ? 1 : 0;
     }

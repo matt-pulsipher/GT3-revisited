@@ -144,12 +144,14 @@ void merge(scene::Model& dst, scene::Model&& src) {
 }
 
 scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOptions& opt, int lod,
-                     const std::string& name, gtm1::MorphDraws* morphs) {
+                     const std::string& name, gtm1::MorphDraws* morphs, std::vector<gtm1::ClutSet>* clut_sets) {
     gtm1::Options o;
     o.run.lod = lod;
     o.run.brake = opt.brake;
-    o.run.callback = gtm1::kCarCallbackDefaults.data();
+    o.run.callback = &gtm1::kCarCallbackDefaults;
+    o.run.every_branch = morphs != nullptr; // (the draws under the callback's branches go with the morphs)
     o.morphs = morphs;
+    o.clut_sets = clut_sets;
     o.reflection = opt.reflection;
     // The menus' brake discs and calipers: nodes 2 (front) and 3 (rear) of a menu car's
     // body, drawn with the wheels. Race car files leave both empty.
@@ -520,9 +522,10 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std
     // (Mod bodies keep the morph draws in place: their parts would not follow the new body.)
     const bool morphs = opt.morphs && !opt.body_mod.active();
     if (morphs) opt.morphs->clear();
+    if (opt.clut_sets) opt.clut_sets->clear();
     if (opt.lod >= 0) {
         gtm1::MorphDraws md;
-        scene::Model m = car_lod(f, g, opt, opt.lod, name, morphs ? &md : nullptr);
+        scene::Model m = car_lod(f, g, opt, opt.lod, name, morphs ? &md : nullptr, opt.clut_sets);
         mark_car_glass(m);
         if (opt.body_mod.active()) apply_body_mod(m, opt.body_mod, name);
         m.compute_bounds();
@@ -535,9 +538,14 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std
     for (int lod = 0; lod < n; ++lod) {
         gtm1::MorphDraws md;
         const int base = int(all.textures.size());
-        scene::Model m = car_lod(f, g, opt, lod, name, morphs ? &md : nullptr);
+        std::vector<gtm1::ClutSet> cluts;
+        scene::Model m = car_lod(f, g, opt, lod, name, morphs ? &md : nullptr, opt.clut_sets ? &cluts : nullptr);
         mark_car_glass(m);
         merge(all, std::move(m));
+        for (gtm1::ClutSet& c : cluts) {
+            c.first += base;
+            opt.clut_sets->push_back(std::move(c));
+        }
         if (!md.empty()) {
             md.rebase_textures(base);
             opt.morphs->push_back(std::move(md));

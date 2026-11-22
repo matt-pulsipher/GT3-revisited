@@ -61,6 +61,35 @@ struct Chunk {
     std::vector<Packet> packets;
 };
 
+// A car model's callback (the game's car model callback: the values the car code sets every frame, read by op 0x06 ids
+// 1-10; id 0 is the brake pedal, RunParams::brake). Ids 1-8 set the phase of the next op 0x35 (clamped to 0..1); every
+// id takes a branch (out of range: none). GT3's ids: 1-4 the wheels' flap pendulums (FL, FR, RL, RR: rally cars' mud
+// flaps, race cars' aerials), 5 the steering (formula cars' driver's arms and wheel), each with branch 0. The later builds'
+// (Gran Turismo Concept): 6 the active wing (branch 0); 7 the pod's tail, branch 0 with its lean as the phase, or, while
+// the lean is level (0.5), branch 1 with its nod; 8 the pod's lamps, the branch their class and the phase their fade's
+// weight; 9 and 10 the pod's mood, as the branch (10 also picks the model's CLUT animations of that group).
+inline constexpr u32 kCallbackIds = 11;
+struct CarCallback {
+    std::array<float, kCallbackIds> phase{};
+    std::array<int, kCallbackIds> branch{};
+    bool operator==(const CarCallback&) const = default;
+};
+constexpr bool callback_sets_phase(u32 id) { return id >= 1 && id <= 8; }
+// The ids whose branch the values pick (the others take branch 0).
+constexpr bool callback_branches(u32 id) { return id >= 7 && id < kCallbackIds; }
+// The values before the race sets any (the menus): flaps 0, steering 0.5, wing in, tail level (branch 1, nod 0.5), lamps
+// class 0, mood 0.
+constexpr CarCallback car_callback_defaults() {
+    CarCallback c;
+    c.phase[5] = 0.5f;
+    c.phase[7] = 0.5f, c.branch[7] = 1;
+    return c;
+}
+inline constexpr CarCallback kCarCallbackDefaults = car_callback_defaults();
+// Per callback id the branch a draw is under (RunParams::every_branch), -1 none.
+using CallbackBranches = std::array<s8, kCallbackIds>;
+inline constexpr CallbackBranches kNoBranches{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+
 // One draw issued by a node program.
 struct Draw {
     u32 chunk = 0;
@@ -73,9 +102,11 @@ struct Draw {
     // second key frame, phase x count - that index (morph chunks: (1 - w) key 0 + w key 1).
     u32 range_base = 0, range_count = 0;
     float morph = 0;
-    // Car models: the op 0x06 callback id (1-5, RunParams::callback) that set that phase; 0 = op 0x34
+    // Car models: the op 0x06 callback id (1-8, RunParams::callback) that set that phase; 0 = op 0x34
     // (or nothing).
     u8 phase_id = 0;
+    // RunParams::every_branch: the branch of each callback id (7-10) the draw is under, -1 none.
+    CallbackBranches when = kNoBranches;
     // Render state at the time of the draw (node program ops):
     //   op 0x20 u8 mode, u8 fix: GS ALPHA register (A|B<<2|C<<4|D<<6, FIX).
     //     0x44 = (Cs-Cd)*As+Cd (normal), 0x58 = Cs*Ad+Cd (additive, weighted by
@@ -127,15 +158,13 @@ struct RunParams {
     // Operand values written by the +0x3C animators (AnimatedNodes), by operand offset in the
     // block, as raw bits: f32 for ops 0x14 / 0x15 / 0x16 / 0x34, u16 for op 0x05.
     const std::map<u32, u32>* operands = nullptr;
-    // Car models: the car's callback values for op 0x06 ids 1-5, which set the phase of the next
-    // op 0x35 (clamped to 0..1) and take branch 0: ids 1-4 the wheels' flap pendulums (FL, FR, RL,
-    // RR: rally cars' mud flaps, race cars' aerials), id 5 the steering (formula cars' driver's arms
-    // and wheel). nullptr: ids 1-5 are plain switches (selector).
-    const float* callback = nullptr;
+    // Car models: the car's callback values for op 0x06 ids 1-10 (CarCallback). nullptr: they are
+    // plain switches (selector).
+    const CarCallback* callback = nullptr;
+    // With `callback`: every branch of ids 7-10 is run, each draw knowing the branches it is under (Draw::when), instead
+    // of the one the values pick (Options::morphs keeps those draws apart).
+    bool every_branch = false;
 };
-
-// The car callback's values before the race sets any (the menus): flaps 0, steering 0.5.
-inline constexpr std::array<float, 5> kCarCallbackDefaults{0, 0, 0, 0, 0.5f};
 
 // Skinned models (the riders of the bike/ folder on later discs of this engine). Header +0x40
 // points at the skeleton: one 4x4 matrix per bone, model space -> the bone's space in the
@@ -227,7 +256,7 @@ public:
 
 private:
     void run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std::vector<Draw>& out, int depth,
-                Draw* state) const;
+                Draw* state, const CallbackBranches& when) const;
 };
 
 // A texture set with CLUT animations that a built model uses: its textures start in the
@@ -309,8 +338,9 @@ struct Options {
     // this instead (texture indices: the model's).
     AnimatedNodes* animated = nullptr;
     // When set, the draws whose phase a car callback id sets (Draw::phase_id, op 0x35 after op
-    // 0x06 ids 1-5) are left out of the model and built into this instead (texture indices: the
-    // model's). Needs run.callback.
+    // 0x06 ids 1-8) and, with run.every_branch, the draws under the branches of ids 7-10 (Draw::when)
+    // are left out of the model and built into this instead (texture indices: the model's). Needs
+    // run.callback.
     MorphDraws* morphs = nullptr;
     // Courses drawn with the PS2's frame-buffer alpha (render::DrawItem::frame_alpha): alpha-only
     // passes (FBMSK 0x00FFFFFF, the shadow masks that switch the road sheen off) are kept as
@@ -369,19 +399,21 @@ private:
 };
 
 // A car model's morph draws (Options::morphs): the op 0x35 draws whose phase comes from the car's
-// callback (mud flaps, aerials, formula cars' steering). Car programs take the same branches
-// whatever those values are, so each draw keeps its matrix and every chunk of its range, in the
-// chunk's own space with key frames 0 and 1; meshes() draws the chunk the values pick, morphed.
+// callback (mud flaps, aerials, formula cars' steering, the later builds' wings and pod tails), and the
+// draws under the branches the callback picks (the pod's lamps and faces: RunParams::every_branch).
+// Each draw keeps its matrix, the branches it is under and every chunk of its range, in the chunk's
+// own space with key frames 0 and 1; meshes() draws those the values pick, morphed.
 class MorphDraws {
 public:
     bool empty() const { return draws_.empty(); }
     size_t size() const { return draws_.size(); }
-    // The callback ids (1-5) the draws read, ascending.
+    // The callback ids (1-8) whose phases the draws read, ascending; and the ids (7-10) whose branches they are under.
     std::vector<int> ids() const;
+    std::vector<int> branch_ids() const;
 
-    // The draws for the callback values `values` (ids 1-5): one mesh ("morph", Mesh::lod = the
-    // LOD built), in model space.
-    std::vector<scene::Mesh> meshes(const std::array<float, 5>& values) const;
+    // The draws for the callback values `values`: those under the branches the values take, one mesh ("morph",
+    // Mesh::lod = the LOD built), in model space.
+    std::vector<scene::Mesh> meshes(const CarCallback& values) const;
     // Adds `base` to the parts' texture indices (their model's textures appended to others).
     void rebase_textures(int base);
     // The texture indices the parts use, ascending; and renumbering them (t -> map[t]).
@@ -396,10 +428,12 @@ private:
         std::vector<scene::Primitive> primitives; // first_index into indices
     };
     struct Entry {
-        u8 id = 0;
+        u8 id = 0;                       // the callback id whose phase picks the chunk (0: the draw's own chunk)
+        CallbackBranches when = kNoBranches;
+        float morph = 0;                 // id 0: the draw's own morph weight
         Matrix matrix{};
         bool has_matrix = false;
-        std::vector<Part> chunks; // range_base + k
+        std::vector<Part> chunks; // range_base + k (id 0: the one chunk)
     };
     std::vector<Entry> draws_;
     int lod_ = 0;

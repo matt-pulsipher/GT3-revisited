@@ -12,6 +12,7 @@
 
 #include "sim/exact/car_record.h"
 #include "sim/exact/program_data.h"
+#include "sim/sim_types.h"
 
 #include <span>
 
@@ -101,6 +102,14 @@ F pod_spring(const Car& c, int i, F k);
 // mood 9; 2: 5) and, for a car (1), by the part hit: 1, 2 mood 5; 5, 6 mood 8; 0, 3, 4, 7 mood 4, each for its own time; 8 to
 // 10 mood 5, 11 and 15 mood 4, the others 8, each for 210 steps (175 at 50 steps a second).
 void hit_mood(Car& c, const MoodTables& k, s32 kind, s32 part);
+// What the car model shows of a special car (race's frame: the getters,
+// read every frame into the car model's callback; the sound's): kinds 2 and 8 .. 10 their wing
+// (the float special[0..3]); kind 1 its tail, lean 0.5 - special[5] / (2 x the lean's limit) and nod 0.5 + its position
+// / (half the nod's period), its lamps' class and fade (the fade's last steps: the class of the mood, weight (fade steps -
+// special[3]) / fade steps; before them the class of the mood before, weight (special[3] - fade steps) / the rest), its
+// mood (special[1] & 15) and the step's new mood (special[6]). Other cars: VehicleState::Special's defaults.
+sim::VehicleState::Special special_look(const Car& c, const MoodTables& k);
+
 // Rule::ActiveWing (later), before phase 12: special car 2's wing, the float special[0..3] towards 1 at half a
 // unit a second once the speed reaches 80 km/h and towards 0 once it falls below 60 km/h (special[4]: out). From
 // Tokyo-Seoul v2.00 on also kinds 8 and 10 (their own two speeds) and kind 9, whose wing follows the speed between two
