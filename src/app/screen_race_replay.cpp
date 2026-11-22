@@ -376,7 +376,10 @@ void RaceScreen::avant_garde_frame() {
     const bool field = field_ && !two_player_ && (replaying_ || attract_);
     std::vector<ReplayDirector::FieldCar> cars;
     const int own_mounts = car_visual_ ? int(car_visual_->mounts().size()) : 0;
-    cars.push_back({track_->distance_of(render_state_.position), lap_count(), render_state_.speed_kmh / 3.6f, own_mounts});
+    // Distance and lap from the same physics step, as the opponents' (the drawn car's distance and the
+    // counter disagree for a frame at the line).
+    const sim::VehicleState& own = vehicle_->state();
+    cars.push_back({track_->distance_of(own.position), lap_count(), own.speed_kmh / 3.6f, own_mounts});
     if (field)
         for (int i = 0; i < field_->opponents(); ++i) {
             const sim::VehicleState& o = field_->opponent_state(i);

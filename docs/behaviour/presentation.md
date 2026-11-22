@@ -2409,7 +2409,13 @@ attract demo.
   start on, cover the start and run on across the line; then
   k = ((lap - 1) mod nvar) + 1 (`GtrcScript::lap_variant`). This gives
   consecutive laps different cuts. Trial Mountain has 66 records and 3 variants
-  (test `race_replay_cameras`).
+  (test `race_replay_cameras`). Ours draws the car between physics steps, so its
+  drawn s and its lap counter (stepped on the physics step that crosses the line)
+  disagree for a frame at the line; the lap the cameras use steps as the drawn s
+  wraps (`ReplayDirector::seam_lap`, test `replay_director_seam_lap`), and mode 1's
+  cuts take the player's s from the same physics step as its lap. Otherwise that
+  frame put the shot a lap off: a stray cut for a frame or two, then on board
+  (issue 402).
 - **The records at D** (`GtrcScript::records_at`, test `race_replay_lap_variants`).
   Only the last record starting at or before D counts, when D is before its end
   (an earlier record that also contains D is not found). When that is the list's

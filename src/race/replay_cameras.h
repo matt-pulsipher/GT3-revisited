@@ -300,6 +300,10 @@ public:
     // `dt` = frame time (zoom smoothing, time-based records), `aspect` = viewport width /
     // height, `pair` = the pair's cars.
     Shot update(float s, int lap, const render::Vec3& car, double dt, float aspect, const Pair* pair = nullptr);
+    // The lap update() uses with the drawn distance s: the counter steps on the physics step that
+    // crosses the line, s on the drawn frame between steps, so at the line they disagree for a
+    // frame and the shot would be placed a lap off (a one-frame flicker). The lap steps as s wraps.
+    int seam_lap(float s, int lap);
     // The view's horizontal angle (radians) widened to keep a pair in view from `eye`: 1.1 x the
     // cars' angle apart plus the angle of 5 m at the partner's distance (when the partner is the
     // nearer car: that distance less 60 x the difference, at least 1 m), at most 70 degrees.
@@ -399,6 +403,9 @@ private:
     float yaw_seed_ = 0;       // (A64, degrees)
     float aim_progress_ = 1;   // the aim's move between cars (the zoom spring's inward pull)
     float offset_ = 0;         // mode 1: added to k * L + s (line crossings during a shot)
+    int seam_lap_ = 0;         // seam_lap's last lap and distance (none after a set-up or another car)
+    float seam_s_ = 0;
+    bool seam_known_ = false;
     int serial_ = 0;
     double shot_time_ = 0;     // seconds since the cut (or re-arm)
     // Modes 0, 2, 3 (the course camera's state).
