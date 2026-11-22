@@ -33,6 +33,7 @@
 
 #include <SDL3/SDL_render.h>
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <optional>
@@ -138,9 +139,11 @@ public:
               std::vector<SDL_FRect>* icons = nullptr) {
         draw(r, fonts, rows, ResultPanelView{ResultPage::Results, t}, dst, icons);
     }
+    // The most rows the panel shows (a bigger field than GT3's: the first 7 and the player's, draw()).
+    static constexpr size_t kShownRows = 8;
     // The window is fully shown (its last bar's fade done; the ready time) at this clock.
     static double fully_shown_time(size_t rows, double delay = ResultPanelFlow::kResultsDelay) {
-        return delay + 2.0 + 0.12 * double(rows);
+        return delay + 2.0 + 0.12 * double(std::min(rows, kShownRows));
     }
 
 private:

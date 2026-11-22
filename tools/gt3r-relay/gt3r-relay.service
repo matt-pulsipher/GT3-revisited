@@ -14,7 +14,7 @@ Wants=network-online.target
 # gt3r-relay` re-reads it (and the country list) without dropping sessions.
 # The log names players by daily tags, not IPs (add --log-ips for the IPs), with their country
 # from /var/lib/gt3r-relay/country.csv (gt3r-relay-geoip.timer refreshes it monthly).
-ExecStart=/usr/local/bin/gt3r-relay --port 47631 --relay-links 300 --sessions-per-ip 8 --ip-rate 10 --versions-file /etc/gt3r-relay/versions.conf --geoip /var/lib/gt3r-relay/country.csv
+ExecStart=/usr/local/bin/gt3r-relay --port 47631 --relay-links 1200 --sessions-per-ip 8 --ip-rate 10 --versions-file /etc/gt3r-relay/versions.conf --geoip /var/lib/gt3r-relay/country.csv
 # Its own journal with its own size cap (journald@gt3r-relay.conf): journalctl --namespace=gt3r-relay
 LogNamespace=gt3r-relay
 ExecReload=/bin/kill -HUP $MAINPID

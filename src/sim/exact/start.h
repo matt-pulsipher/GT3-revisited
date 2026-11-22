@@ -58,6 +58,9 @@ struct StartRace {
     // The course's road block in memory: a grid slot past the course's table reads the block's words that follow the table,
     // some of them the loader's pointers into the block (CourseQuery::slot).
     u32 road = 0;
+    // Not GT3's: a grid slot at or past the course's grid table is made along the course's main line (made_grid_slot) instead
+    // of read from what follows the table. Our own bigger fields only (RaceSetup::made_grid); GT3's races read the table.
+    bool made_grid = false;
 };
 
 // A race entry (the race info's entry list, i).
@@ -87,7 +90,7 @@ ElectricDrive electric_drive(const data::CarDatabase* db, const Equipment& eq);
 // cars in index order (rank = index + 1); the ranking sorts the order (an insertion sort: more laps
 // ahead, then a car not finished ahead of a finished one, then the greater race progress, or for two finished cars the
 // smaller F +0x530) and sets each car's rank to its position + 1.
-using RaceOrder = std::array<s32, 8>;
+using RaceOrder = std::array<s32, kMaxCars>;
 void rank_reset(std::span<Car> cars, RaceOrder& order);
 void rank(std::span<Car> cars, RaceOrder& order);
 // The race start for all of the race's entries: each car's record (start_car), then the ranking the initialisation ends

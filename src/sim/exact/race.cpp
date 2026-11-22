@@ -124,7 +124,7 @@ std::shared_ptr<const RaceCourse> RaceCourse::load(ByteSpan file, const ProgramD
 ExactRace::ExactRace(const RaceSetup& s) {
     if (!s.data || !s.db || !s.course) throw std::runtime_error("ExactRace: the setup needs the program's tables, the cars and the course");
     const size_t n = s.entries.size();
-    if (n == 0 || n > 8) throw std::runtime_error("ExactRace: a race has 1 to 8 cars");
+    if (n == 0 || n > kMaxCars) throw std::runtime_error("ExactRace: a race has 1 to 32 cars");
     course_ = s.course;
     data_ = std::make_shared<const ProgramData>(*s.data);
     const ProgramData& d = *data_;
@@ -191,6 +191,7 @@ ExactRace::ExactRace(const RaceSetup& s) {
     r.rules = cfg_, r.wear = race_.prep.wear, r.category = category_, r.config = s.config;
     r.start_type = s.start_type, r.kind = kind_, r.handicap = s.handicap, r.mark_pit = has_pits(kind_);
     r.info = s.info, r.conductor = s.conductor, r.course_addr = s.course_addr, r.road = s.road_addr;
+    r.made_grid = s.made_grid;
     const StartResult sr = start_cars(r, s.entries);
     cars_.resize(n);
     for (size_t i = 0; i < n; ++i) {
@@ -242,7 +243,7 @@ void ExactRace::set_start_type(s32 t) { info_.start_type = t, flow_in_.start_typ
 void ExactRace::set_flow_byte(u8 b) { flow_byte_ = b, flow_in_.flow = b, pit_in_.config = b; }
 
 void ExactRace::set_logger_input(int i, u32 frame, bool relative) {
-    if (u32(i) >= 8) return;
+    if (u32(i) >= kMaxCars) return;
     flow_in_.logger_frame[size_t(i)] = frame, flow_in_.logger_relative[size_t(i)] = relative;
 }
 
@@ -439,8 +440,8 @@ void ExactRace::flow_after(AiPlan& plan, std::span<const PadFrame> pads, int mod
     f.pit = pit_in_;
     f.events = &events_, f.pit_events = &pit_events_;
     f.ghost_step = [this, pads] {
-        std::array<PadFrame, 8> p{};
-        for (size_t i = 0; i < pads.size() && i < 8; ++i) p[i] = pads[i];
+        std::array<PadFrame, kMaxCars> p{};
+        for (size_t i = 0; i < pads.size() && i < kMaxCars; ++i) p[i] = pads[i];
         const std::span<PadFrame> frames(p.data(), cars_.size());
         if (nested_pads_) nested_pads_(frames);
         apply_recorder_events(); // (the ghost's restart before the step runs for it)
@@ -513,7 +514,8 @@ void ExactRace::run(std::span<const PadFrame> pads, int mode) {
     if (mode == 0) ran_ = ran;
     if (ran) {
         const size_t n = cars_.size(), first = mode != 0 ? 1 : 0;
-        std::array<CarInputs, 8> in{};
+        std::vector<CarInputs>& in = inputs_;
+        in.assign(n, CarInputs{}); // (one per car, kept from step to step: a big field's do not fit on the stack)
         const bool pits = has_pits(kind_);
         const s32 pmode = pit_mode(kind_, category_, flow_in_.behaviour.rule(Rule::LicenceJudge));
         for (size_t i = 0; i < n; ++i) {

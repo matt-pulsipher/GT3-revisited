@@ -35,7 +35,7 @@ namespace gt3r::race {
 
 class ReplayFocus {
 public:
-    static constexpr int kMaxCars = 7;
+    static constexpr int kMaxCars = 32; // (GT3: 7; a field of our own has up to 32 cars, ranks past 6th as the 6th)
     static constexpr int kStartHold = 40; // frames every car is held at a replay's start
     enum Target { Manual = 0, Top = 1, Auto = 2 };
     enum Battle { None = 0, Candidate = 1, Fight = 2, After = 3 };

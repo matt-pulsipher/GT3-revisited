@@ -19,6 +19,13 @@ namespace gt3r::sim::exact {
 
 using ee::F;
 
+// The most cars a race holds. GT3's conductor keeps 8 places (its races use 6 at most); our own races (Quick race's custom
+// race, mod events, online) take up to 32. Every table indexed by a car is this long; a race of 8 cars or fewer reads and
+// writes only the places GT3 has, as GT3 does.
+constexpr size_t kMaxCars = 32;
+// The places GT3's conductor has (its tables' size in the program's memory).
+constexpr size_t kGt3Cars = 8;
+
 struct Vec3 {
     F x, y, z;
 };
@@ -488,8 +495,8 @@ struct Car {
 
 // The conductor's per-pair state the proximity phase writes (conductor + 0xB7B4 / + 0xB8B4), [car][other car].
 struct Proximity {
-    std::array<std::array<F, 8>, 8> slip;  // +0xB7B4: car's slipstream factor behind the other car [physics §5.2]
-    std::array<std::array<u8, 8>, 8> code{}; // +0xB8B4: the other car's relative-position code in car's frame [physics §5.1]
+    std::array<std::array<F, kMaxCars>, kMaxCars> slip;  // +0xB7B4: car's slipstream factor behind the other car [physics §5.2]
+    std::array<std::array<u8, kMaxCars>, kMaxCars> code{}; // +0xB8B4: the other car's relative-position code in car's frame [physics §5.1]
 };
 
 // The later builds' AWD system 3 settings (ProgramData's Awd3 table; the two floats as the driveline builder leaves them

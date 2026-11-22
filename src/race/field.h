@@ -133,6 +133,10 @@ struct FieldConfig {
     std::string event;                  // event label (opponents, AI parameters, rubber band); may be empty
     std::vector<std::string> opponents; // car (variant) labels; empty = the event's entries
     int max_opponents = 5;
+    // Not GT3's: a field bigger than the course's grid (Quick race's custom race, mod events, online; up to
+    // sim::exact::kMaxCars cars): the places past the course's grid table made along its main line (RaceSetup::made_grid).
+    // Off: never more cars than the course's grid slots, as GT3.
+    bool made_grid = false;
     // GT-mode grid: opponents ranked by whole kg per whole power (gt_grid_places), the power in HP (BHP, CV) when `grid_hp`
     // (the language's Units::power_hp, as its menus show it), else PS; otherwise they take the slots in the given order
     // (arcade: the random draw).

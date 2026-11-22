@@ -53,7 +53,7 @@ void set_mood(Car& c, const MoodTables& k, int mood, int time);
 
 // The pass-by state bytes the race's sounds keep per pair of cars (conductor + 0xBA34 + 0x84 + 8 i + j; the
 // later builds' conductor + 0xBB18): 2 and 3 are a car passing.
-using PassBy = std::array<std::array<u8, 8>, 8>;
+using PassBy = std::array<std::array<u8, kMaxCars>, kMaxCars>;
 // The race's pass-by states (at the end of every race step, both entry modes: conductor + 0xBA34, the later builds'
 // + 0xBA94), kept for the race's sounds and read by the later builds' special car 1: per ordered pair of cars (i, j) a timer
 // (+4 + 16 i + 2 j) of the steps car i has had car j's slipstream (the proximity's slip factor above 0: up by one to 300,
@@ -62,7 +62,7 @@ using PassBy = std::array<std::array<u8, 8>, 8>;
 // roles swapped when it is behind again (codes 1, 2). At 50 steps a second (PAL's and 2002 Tokyo-Geneva Europe's own
 // routines, Rule::PassBy) 250 and 51.
 struct PassByState {
-    std::array<std::array<s16, 8>, 8> timer{};
+    std::array<std::array<s16, kMaxCars>, kMaxCars> timer{};
     PassBy state{};
 };
 // For the first `n` cars (the conductor's car count) on the step's proximity matrices; `pal_rate`: 50 steps a second.

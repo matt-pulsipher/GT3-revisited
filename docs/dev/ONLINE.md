@@ -77,15 +77,15 @@ same pad frames compute the same race. That would allow, later:
 
 Not built.
 
-## State (protocol 5)
+## State (protocol 6)
 
 A car's state is 113 bytes on the wire with three frames of history when one repeats,
 116 while steering (every frame different), at most 125. A race datagram carrying it is
 about 132 bytes while steering (144 through the relay, plus 28 bytes of IP/UDP header),
 sent 60 times a second: about 69 kbit/s per stream, 70 kbit/s at the busiest second; a host still
 forwarding four other players' states sends up to 0.30 Mbit/s on one channel (measured in
-`net_relay_traffic_per_link`, with pings and contacts; the relay's racing guard is
-0.5 Mbit/s).
+`net_relay_traffic_per_link`, with pings and contacts). A full field forwarded on one channel (31 other cars) is
+about 2.2 Mbit/s; the relay's racing guard is 3 Mbit/s.
 
 | field | encoding |
 |---|---|
@@ -350,12 +350,13 @@ Quick race's custom race has it: how many, where the players start among them, a
 Everyone else sees the page read-only, and the CPU cars in the player list. The host's lineup is kept in
 `[online_cpu]`.
 
-- **Room.** At most six cars in all, as GT3's races and its i.LINK battle, and no more than the course's grid
-  holds (`course_grid_size`, the road's grid slots): Smokey Mountain's North layout has five. The lineup
+- **Room.** Up to 16 players (`net::kMaxPlayers`) and 32 cars in all (`net::kMaxRaceCars`), no more than the
+  course's field holds (`course_field_size`: 32 where the course has racing lines, the places past its own grid
+  made along its main line, `race::FieldConfig::made_grid`; else its grid slots). The lineup
   shrinks as players join (the host resends it on every roster change). The host refuses the start when the
   players alone are more than the grid holds ("This course's grid has room for 5 cars"); before, every machine
   but one refused the race.
-- **Ids and wire.** CPU car k races as id `net::kCpuId + k` (0x80..0x84), never a player's. Settings carry the
+- **Ids and wire.** CPU car k races as id `net::kCpuId + k` (0x80..0x9E), never a player's. Settings carry the
   lineup (`Settings::cpu`: paint, skill and the 16 bytes of driver overrides, `cpu_place`: how many start
   ahead of the players); each car's descriptor travels as a `CarInfo` for its id, so every machine checks it as
   it checks a player's car ("Regional discs"). The Load's grid holds their ids around the players.
@@ -839,7 +840,7 @@ game datagram.
 The relay's capacity is counted in **links**. A link is one relay channel that
 carries a race between two players: a player's join channel to the host, or
 the channel of a player pair that could not punch. The server carries at most
-`--relay-links` (default 300) racing links at once. Pairs that connect directly
+`--relay-links` (default 1200) racing links at once. Pairs that connect directly
 never use one.
 
 - **Only while racing.** Channels are still bound in the lobby (a player who
@@ -856,8 +857,8 @@ never use one.
   are granted, usually one round trip later.
 - **Which channels.** After the grant, each of the session's channels takes a
   slot when it first carries data, up to the granted number, and gets the
-  racing flood guard (0.5 Mbit/s each way, about twice the busiest legitimate
-  channel: a host still forwarding four players' states, 0.26 Mbit/s). A
+  racing flood guard (3 Mbit/s each way: a host forwarding a full 32-car field's
+  states to one player, about 2.2 Mbit/s, with room). A
   channel beyond the reservation (a pair that lost its direct link mid-race)
   keeps the lobby rate, which still carries a race link.
 - **Release.** The host sends Release when the race ends (back to the lobby).
@@ -918,9 +919,9 @@ no table may grow without bound.
   | Joins (Incoming to the host) per session | burst 10, then 1 per 2 s | |
   | Pending joins (nonces): per session / total | 16 / 8192 | `--max-pending` |
   | Sessions: total / per source IP | 4000 / 8 | `--max-sessions`, `--sessions-per-ip` |
-  | Relay channels: total / per session | 20000 / 15 pairs + its joins | `--max-channels` |
-  | Racing links (link slots) / lobbies waiting for them | 300 / 100 | `--relay-links`, `--max-queue` |
-  | Racing channel, per direction (a flood guard) | 0.5 Mbit/s | `--channel-mbit` |
+  | Relay channels: total / per session | 20000 / 120 pairs + its joins | `--max-channels` |
+  | Racing links (link slots) / lobbies waiting for them | 1200 / 100 | `--relay-links`, `--max-queue` |
+  | Racing channel, per direction (a flood guard) | 3 Mbit/s | `--channel-mbit` |
   | Lobby channel, per direction / all lobby channels | 256 kbit/s / 20 Mbit/s | `--idle-channel-kbit`, `--idle-mbit` |
 
   `--bench` (load testing only) lets loopback sources (127.0.0.0/8, ::1) past

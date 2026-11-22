@@ -5,6 +5,7 @@
 
 #include "app/screen_race_impl.h"
 
+#include "game/data/mod_event_def.h"
 #include "sim/exact/race_flow.h"
 #include "sim/exact/race_record.h"
 
@@ -604,8 +605,13 @@ bool RaceScreen::build_vehicle(App& app) {
             music_start_type_ = es.type;
             // Demo races (start type 0 with a speed): every car starts moving, no countdown.
             demo_start_kmh_ = es.type == 0 && es.initial_kmh > 0 ? es.initial_kmh : 0.0f;
-            if (es.cars > 1) cfg.max_opponents = std::min(es.cars - 1, 5);
-            if (!race_opponent_paints_.empty()) cfg.max_opponents = 5; // (a custom race: its own field, not the event's)
+            // Ours (Quick race's custom race, a mod event: data::kModEventPrefix): the field as big as the player or the mod
+            // made it, up to 32 cars; GT3's races: six at most.
+            const bool ours = race_big_field_ || (!race_event_.empty() && race_event_[0] == data::kModEventPrefix);
+            const int most = ours ? int(sim::exact::kMaxCars) - 1 : 5;
+            if (es.cars > 1) cfg.max_opponents = std::min(es.cars - 1, most);
+            if (!race_opponent_paints_.empty()) cfg.max_opponents = race_big_field_ ? int(race_opponents_.size()) : most;
+            cfg.made_grid = ours;
             if (es.laps == 0 && es.time_limit_s > 0) time_limit_ = es.time_limit_s;
             rolling_ = es.rolling();
             LOG_INFO("Race: event %s start type %d (%s), countdown %.0f s, %d cars, %d laps, time limit %.0f min",

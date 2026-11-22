@@ -218,7 +218,13 @@ public:
             return false;
         }
         if (opts_.playback) return build_playback(db, error);
-        const int slots = std::min(int(course_->query->grid().size()), 8); // (a race has at most 8 cars)
+        // The course's grid slots (GT3's races: at most 8 cars). A bigger field of our own (FieldConfig::made_grid) has up to
+        // kMaxCars, the places past the course's table made along its main line (sim/exact/start.h made_grid_slot).
+        const int table = std::min(int(course_->query->grid().size()), int(ex::kGt3Cars));
+        const int main_line = course_->ai.resolve(6);
+        const bool made = cfg_.made_grid && table > 0 && main_line >= 0 && !course_->ai.lines[size_t(main_line)].empty() &&
+                          opts_.kind == ex::Conductor::SinglePlayer;
+        const int slots = made ? int(ex::kMaxCars) : table;
         if (slots < humans_) {
             if (error) *error = "the course has no start grid for the race";
             return false;
@@ -307,6 +313,7 @@ public:
         rs.data = data_.get();
         rs.db = &db;
         rs.course = course_;
+        rs.made_grid = made;
         static const std::vector<u8> kNoEvent(0x200, 0);
         rs.event = ev && ev->bytes.size() >= 0x1F4 ? ev->bytes : ByteSpan(kNoEvent.data(), kNoEvent.size());
         ex::RaceConfig own_rules{};

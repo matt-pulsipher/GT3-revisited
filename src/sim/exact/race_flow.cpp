@@ -181,15 +181,15 @@ void logger_end(std::span<Car> cars, int i, s32 k, u32 time, const RaceFlowInput
     if (!in.logger_record) return;
     Snapshot& e = logger_table(flow, i)[k];
     e.time = time;
-    e.frames = in.logger_frame[size_t(i) & 7] - e.frame;
+    e.frames = in.logger_frame[size_t(i) % kMaxCars] - e.frame;
 }
 // The start of car i's logger entry k: the car, the crossing's remainder and fraction, the clock's phase
 // and the car's input frame (less the table's first entry's when its input object counts so).
 void logger_start(std::span<Car> cars, int i, s32 k, u32 sub, F frac, const RaceFlowInputs& in, RaceFlow& flow,
                   const RaceFlowHooks& hooks) {
     std::map<s32, Snapshot>& table = logger_table(flow, i);
-    u32 frame = in.logger_frame[size_t(i) & 7];
-    if (in.logger_relative[size_t(i) & 7] && k != 0)
+    u32 frame = in.logger_frame[size_t(i) % kMaxCars];
+    if (in.logger_relative[size_t(i) % kMaxCars] && k != 0)
         if (const auto first = table.find(0); first != table.end()) frame -= first->second.frame;
     Snapshot& e = table[k];
     e.car = snapshot_car(cars, i);
@@ -328,7 +328,7 @@ namespace {
 
 // Later: the stops car i owes, its laps counted less its stops made (-1 without a zone).
 s32 owed(std::span<const Car> cars, int i, const StopZone& z) {
-    return z.active == 1 ? s32(cars[size_t(i)].laps) - s32(z.stops[size_t(i) & 7]) : -1;
+    return z.active == 1 ? s32(cars[size_t(i)].laps) - s32(z.stops[size_t(i) % kMaxCars]) : -1;
 }
 
 // Later: car i's stop counted (255 at most); information note 7 for a car the player drives (control source 0, no
@@ -340,7 +340,7 @@ void stop_made(std::span<const Car> cars, int i, StopZone& z, std::vector<RaceEv
         e.value = 7;
         events.push_back(e);
     }
-    u8& n = z.stops[size_t(i) & 7];
+    u8& n = z.stops[size_t(i) % kMaxCars];
     n = u8(n + (n < 0xFF ? 1 : 0));
 }
 

@@ -525,8 +525,8 @@ TEST(net_old_protocol_told_to_update) {
         while (size_t n = old.recv_from(from, buf, sizeof buf)) reply.append(reinterpret_cast<const char*>(buf), n);
         return reply.find("update") != std::string::npos;
     }));
-    CHECK(reply.find("update required: the host has a newer version of the game (online protocol 5, yours 3)") !=
-          std::string::npos);
+    CHECK(reply.find("update required: the host has a newer version of the game (online protocol " +
+                     std::to_string(net::kProtocolVersion) + ", yours 3)") != std::string::npos);
     CHECK(host.players().size() == 1); // not let in
     // The other way round: a newer game is told the host must update.
     CHECK(net::protocol_mismatch(net::kProtocolVersion + 1).find("the host needs to update") != std::string::npos);
@@ -1991,12 +1991,14 @@ static double relayed_race(bool pair_channels) {
 TEST(net_relay_traffic_per_link) {
     // Every pair on its own channel (a race once punching settled): one stream each way.
     double link = relayed_race(true);
-    // The busiest legitimate channel: the host still forwarding four other players' states to a
-    // player (their pair channels not up yet). The racing guard sits at about twice that.
+    // The busiest legitimate channel here: the host still forwarding four other players' states to a
+    // player (their pair channels not up yet), five cars' in all. The racing guard holds a full field's
+    // (net::kMaxRaceCars: every other car's states on one channel) with room, under twice that.
     double busiest = relayed_race(false);
     double guard = net::RelayServer::Limits{}.channel_bytes_per_s;
     CHECK(busiest > link * 3);
-    CHECK(busiest * 1.6 < guard && busiest * 2.5 > guard);
+    const double full_field = busiest / 5 * (net::kMaxRaceCars - 1);
+    CHECK(full_field * 1.1 < guard && full_field * 2 > guard);
 }
 
 namespace {

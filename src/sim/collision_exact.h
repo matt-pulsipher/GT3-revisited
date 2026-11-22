@@ -71,7 +71,9 @@ struct Edge {
     int wall = -1;     // +0x28 the corner's wall record
 };
 
-constexpr int kMaxBodies = 8;
+// The bodies a race holds (sim::exact::kMaxCars); GT3's body record has the pair tables of 8 (kGt3Bodies).
+constexpr int kMaxBodies = 32;
+constexpr int kGt3Bodies = 8;
 
 // The body record (0x4F0 bytes). The committed state, `hint`, `dt_in`, `steer` and `ghost` are the inputs of a
 // step; the committed state holds its results. Everything else carries over between steps as in the original.

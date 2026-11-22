@@ -22,8 +22,8 @@ disk or redistributed.
 |---|---|
 | **The game** | GT Mode, Arcade, licenses, 2P battle, Replay Theater, Options: the game's own menus, text (every language on the disc), fonts, movies and soundtrack |
 | **Faithful racing** | physics, AI, cameras, HUD, replays, lighting, reflections, smoke and sounds reimplemented from the original's behaviour and compared side by side with it |
-| **Online battle** | the arcade's i.LINK Battle rebuilt for the internet and LANs: up to 6 players, session codes, no port forwarding |
-| **Quick race** | any of the game's events with any car, nothing to unlock; custom races: any course and laps, your own lineup of opponents (any car, color and skill) and your place on the grid, saved by name |
+| **Online battle** | the arcade's i.LINK Battle rebuilt for the internet and LANs: up to 16 players and 32 cars with CPU cars, session codes, no port forwarding |
+| **Quick race** | any of the game's events with any car, nothing to unlock; custom races: any course and laps, your own lineup of up to 31 opponents (any car, color and skill) and your place on the grid, saved by name |
 | **Saves** | any number of named saves; import from and export to the PS2 original |
 | **Modern display** | any resolution and aspect ratio, widescreen, high refresh rates (or a 60 fps limit), MSAA, dynamic resolution, or the original 640×448 look |
 | **VR** | Meta Quest: the menus on a large virtual screen, races in stereo from the driver's seat, Touch controllers (sticks and analog triggers, or grab a steering wheel) |
@@ -322,8 +322,8 @@ writing to it. Details: [GT_MODE](docs/dev/GT_MODE.md#saves).
 
 ### Online
 
-**Online battle** (main menu, or Arcade → i.LINK Battle) races up to six
-players, each on their own machine:
+**Online battle** (main menu, or Arcade → i.LINK Battle) races up to 16
+players, each on their own machine, with CPU cars up to 32 cars in all:
 
 - **Create a session** shows a code such as `ABCD-EFGH`; the others choose
   **Join with a code** and type it. No port forwarding is needed: players
