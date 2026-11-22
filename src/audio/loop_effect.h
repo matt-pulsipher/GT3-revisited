@@ -25,6 +25,10 @@ public:
     // l, r: side gains (1 = the region's full volume, negative inverts); pitch: multiplier;
     // priority: stealing priority 0..255 (-1 = the region's own, kept while playing).
     void update(VoiceMixer& mixer, float l, float r, float pitch = 1.0f, int priority = -1);
+    // A one-shot on the handle (the game's SE channel given a new effect): restart() stops the voice and keys the region
+    // on again; follow() only updates it while it plays (keyed off at 0, never keyed again).
+    void restart(VoiceMixer& mixer, float l, float r, float pitch = 1.0f, int priority = -1);
+    void follow(VoiceMixer& mixer, float l, float r, float pitch = 1.0f, int priority = -1);
     void stop(VoiceMixer& mixer);
     bool playing(const VoiceMixer& mixer) const { return mixer.playing(voice_); }
 
@@ -37,6 +41,7 @@ public:
                         int& region);
 
 private:
+    void send(VoiceMixer& mixer, float l, float r, float pitch, int priority, bool key);
     static VoiceParams params(const sound::InstBank& b, int region, s16 l, s16 r, float pitch, int priority,
                               std::shared_ptr<const Bytes> data);
     std::shared_ptr<const sound::InstBank> bank_;

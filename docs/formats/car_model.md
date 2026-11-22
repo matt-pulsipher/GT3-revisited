@@ -736,7 +736,7 @@ their turn over part of the last frame:
   0x20, so a ring the spokes cover a quarter of turns solid). The other cars' rims show the
   wheel's spinning image (texture-LOD table entry 2) when |d| passes 3 degrees.
 
-## Callback morphs (mud flaps, aerials, steering)
+## Callback morphs (mud flaps, aerials, steering; the later builds' wings and pods)
 
 Seven cars draw parts with op 0x06 ids 1-5 followed by op 0x35 `base, count`: that id's value,
 clamped to 0..1, is the phase: chunk base + min(phase x count, count - 1), morphed towards its
@@ -762,10 +762,29 @@ second key frame by the fraction. The game's car code sets the values every fram
 
 Car models' +0x3C animators (type 7, mostly without targets) are never advanced by the game.
 
-Ours: `gtm1::RunParams::callback` (op 0x06 ids 1-5), `gtm1::MorphDraws` (`Options::morphs`,
-`CarModelOptions::morphs`: the draws left out of the body), the race's flap pendulums
-(physics §8.8) as `sim::WheelState::flap` / `VehicleState::steer`, `race::car_callback_values` and
-`race::CarVisual`'s morph models (one per drawing of the car, rebuilt when the values change).
+Gran Turismo Concept's car model callback (11 ids in every build) adds ids 6-10, each read with a
+branch (ids 1-6 always take branch 0):
+
+| id | value (the callback's field) | branch | phase |
+|---|---|---|---|
+| 6 | the active wing (+0x24) | 0 | the wing, 0 in .. 1 out |
+| 7 | the pod's tail: lean (+0x28), nod (+0x2C) | 0, or 1 while the lean is exactly 0.5 | the lean, or the nod in branch 1 |
+| 8 | the pod's lamps (+0x30 class, +0x34 fade) | the class | the fade's weight |
+| 9 | the pod's mood (+0x38) | the mood | - |
+| 10 | the pod's mood (+0x3C) | the mood | - (a new value restarts the model's CLUT animations of that group) |
+
+Before a race sets them: wing 0, lean and nod 0.5, class 0, ids 9 and 10 0 (the menus set id 10 to 1, then 0).
+The pod (ty0150) uses ids 0, 7, 8 and 10: its tail (chunks morphed by id 7, one per lamp class under id 8), the lamps'
+colour chunks (additive, ALPHA 0x48) under id 8 and its faces under id 10 (nothing for mood 0); every switch of these ids
+ends where its out-of-range jump goes, so all branches meet there. Its texture set 4 (drawn only under these branches)
+has 27 CLUT animations in groups 1-10.
+
+Ours: `gtm1::RunParams::callback` (`gtm1::CarCallback`, op 0x06 ids 1-10) and `every_branch` (each draw under ids
+7-10's branches tagged with them, `Draw::when`), `gtm1::MorphDraws` (`Options::morphs`, `CarModelOptions::morphs`: the
+draws left out of the body), `CarModelOptions::clut_sets`, the race's flap pendulums (physics §8.8) as
+`sim::WheelState::flap` / `VehicleState::steer` and the special cars' look as `VehicleState::special`,
+`race::car_callback_values` and `race::CarVisual`'s morph models (one per drawing of each car of the race, rebuilt when
+the values change, with their own copies of the animated textures: `CarVisual::step_look`).
 
 ## Open questions
 

@@ -587,7 +587,7 @@ public:
             if (c.ev.on) LOG_INFO("Race (exact): %s is an electric mod car: the electric drive", v.label.c_str());
             v.setup = exact_setup(c);
             v.facts = exact_facts(c);
-            exact_state(c, v.setup, v.state);
+            exact_state(c, v.setup, v.state, &race_->inputs().later.moods);
             exact_telemetry(c, wear_on_, 0, v.tel);
             v.prev = v.state;
         }
@@ -695,7 +695,7 @@ public:
         for (size_t i = 0; i < cars_.size(); ++i) {
             CarView& v = cars_[i];
             const ex::Car& c = race_->cars()[i];
-            exact_state(c, v.setup, v.state);
+            exact_state(c, v.setup, v.state, &race_->inputs().later.moods);
             exact_telemetry(c, wear_on_, v.wall, v.tel);
             v.impact = std::max(v.wall, v.car) * c.p.inv_mass.host();
         }

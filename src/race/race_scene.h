@@ -21,6 +21,7 @@
 #include "sim/sim_types.h"
 
 #include <array>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -152,8 +153,10 @@ struct CarLook {
     float shadow = 1;
     float lamp = 0; // brake-lamp factor k/4 (lamp materials' emission)
     bool brake_now = false; // the brake pedal is pressed this frame (the lit-lens geometry)
-    // Which drawing of the car this is, 0 the car, 1 its ghost: each has its own morph geometry.
+    // Which drawing of the car this is, 0 the car, 1 its ghost, and which car of the race (cars of one model share their
+    // CarVisual): each has its own morph geometry and callback textures (CarVisual::step_look).
     int instance = 0;
+    int slot = 0;
     // Point-light courses: the car's own lights, and one node 1 shadow per lamp (world shear,
     // alpha) instead of the sun shadow.
     const render::ItemLights* lights = nullptr;
@@ -182,6 +185,10 @@ public:
     // camera distance (car_lod).
     void add_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s, const sim::VehicleSetup& setup,
                    const render::Vec3& eye, const CarLook& look = {}) const;
+    // One race step of the car on `slot` (CarLook::slot; its drawing 0): the CLUT animations of its callback textures,
+    // as race's frame plays them (the callback's id 10, on Tokyo-Geneva Europe): a new value
+    // of id 10 (the pod's mood) starts the animations of that group again, and that group plays for `seconds`.
+    void step_look(int slot, const sim::VehicleState& s, float seconds) const;
     // The wet-road reflection's mirrored car (docs/dev/RACE.md "Wet-road reflection"): body and wheels only, reflected about
     // the road plane under the car (the four wheel contacts). False when the plane is unusable.
     bool add_mirror_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s,
@@ -227,16 +234,26 @@ private:
     WheelLook wheel_look(int i, const render::Mat4& at, const render::Mat4& hub, const sim::WheelState& w,
                          const CarLook& look) const;
     std::unique_ptr<render::GpuModel> body_, body_brake_;
-    // The draws the car's callback morphs (mud flaps, aerials, steering), per LOD, drawn from
-    // models sharing morph_base_'s textures, one per CarLook::instance, rebuilt when the values
-    // change.
+    // The draws the car's callback morphs (mud flaps, aerials, steering, wings) and the draws under its branches (the
+    // pod's tail, lamps and faces), per LOD, drawn from models of morph_model_ (its textures, then its meshes at the
+    // defaults), one per drawing of a car (CarLook::slot, instance), rebuilt when the values change. The CLUT animations
+    // of the textures they use (the pod's faces: the group of its mood plays) run per car on that model's own copies.
     std::vector<gtm1::MorphDraws> morphs_;
-    std::unique_ptr<render::GpuModel> morph_base_;
+    scene::Model morph_model_;
+    struct MorphClut {
+        gtm1::ClutSet set;
+        std::vector<int> texture; // per record of the set: its morph_model_ texture (-1: none)
+    };
+    std::vector<MorphClut> morph_cluts_;
     struct Morph {
         std::unique_ptr<render::GpuModel> gpu;
-        std::array<float, 5> values{};
+        gtm1::CarCallback values{};
+        bool built = false;
+        std::vector<MorphClut> cluts; // (morph_cluts_ playing)
+        int group = -1;               // the CLUT group playing (id 10's value)
     };
-    mutable std::array<Morph, 2> morph_;
+    mutable std::map<std::pair<int, int>, Morph> morph_; // by (slot, instance)
+    Morph& morph_of(int slot, int instance) const;
     CarLampSet lamps_;
     Occluder occluder_;
     HoodCameraProfile hood_profile_;
@@ -287,8 +304,10 @@ render::Mat4 car_matrix(const sim::VehicleState& s);
 // 80 m, else 2, at most lods - 1; 0 at any distance with `full_detail` ([video] full_car_detail = on).
 int car_lod(float dist, int lods, bool full_detail = false);
 
-// The car callback's morph values for a state (gtm1::RunParams::callback): ids 1-4 the flaps,
-// 0.5 + 0.5 x (physics §8.8); id 5 the steering, 0.5 + 0.5 steer / lock (0.5 straight ahead).
-std::array<float, 5> car_callback_values(const sim::VehicleState& s, const sim::VehicleSetup& setup);
+// The car callback's values for a state (gtm1::RunParams::callback; race's frame, on Tokyo-Geneva
+// Europe): ids 1-4 the flaps, 0.5 + 0.5 x (physics §8.8); id 5 the steering, 0.5 + 0.5 steer / lock (0.5 straight
+// ahead); the later builds' special cars (VehicleState::Special): id 6 the wing, id 7 the tail (its lean, or at level its
+// nod in branch 1), id 8 the lamps' class and fade, ids 9 and 10 the mood.
+gtm1::CarCallback car_callback_values(const sim::VehicleState& s, const sim::VehicleSetup& setup);
 
 } // namespace gt3r::race

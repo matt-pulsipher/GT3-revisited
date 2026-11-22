@@ -127,6 +127,11 @@ sim::VehicleState interpolate(const sim::VehicleState& a, const sim::VehicleStat
     r.throttle = lerp(a.throttle, b.throttle, t);
     r.speed_kmh = lerp(a.speed_kmh, b.speed_kmh, t);
     r.steer = lerp(a.steer, b.steer, t);
+    // A special car's look: its wing and tail between the steps, its lamps' fade within one class; the rest is b's.
+    r.special.wing = lerp(a.special.wing, b.special.wing, t);
+    r.special.lean = lerp(a.special.lean, b.special.lean, t);
+    r.special.nod = lerp(a.special.nod, b.special.nod, t);
+    if (a.special.lamp == b.special.lamp) r.special.lamp_weight = lerp(a.special.lamp_weight, b.special.lamp_weight, t);
     for (size_t i = 0; i < r.wheels.size(); ++i) {
         const sim::WheelState &wa = a.wheels[i], &wb = b.wheels[i];
         sim::WheelState& w = r.wheels[i];

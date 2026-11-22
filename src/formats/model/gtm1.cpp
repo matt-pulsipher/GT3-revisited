@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <set>
@@ -217,12 +219,12 @@ Gtm1 Gtm1::parse(ByteSpan data) {
 std::vector<Draw> Gtm1::run(u32 node, const RunParams& params, Draw* state) const {
     std::vector<Matrix> stack{kIdentity};
     std::vector<Draw> out;
-    run_at(node, params, stack, out, 0, state);
+    run_at(node, params, stack, out, 0, state, kNoBranches);
     return out;
 }
 
 void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std::vector<Draw>& out, int depth,
-                  Draw* state) const {
+                  Draw* state, const CallbackBranches& entered) const {
     if (node >= nodes.size()) throw FormatError("GTM1 node index out of range");
     if (depth > 16) throw FormatError("GTM1 node call depth exceeded");
     const std::vector<u32>& sets = texset_tables[std::clamp<size_t>(size_t(std::max(p.texture_lod, 0)), 0,
@@ -249,6 +251,7 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
     std::array<float, 3> pano{0, 0, 0}; // op 0x31; see Draw
     float phase = 0;                                              // op 0x34 (or a car callback id)
     u8 phase_id = 0;                                              // the callback id that set it
+    CallbackBranches when = entered;                              // RunParams::every_branch: the branches taken
     // Operands the +0x3C animators rewrite: their current value when given.
     auto operand32 = [&](size_t o) {
         if (p.operands)
@@ -292,6 +295,7 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         d.env_c1 = env_c1;
         d.pano_set = pano_set;
         d.pano = pano;
+        d.when = when;
         out.push_back(d);
         return out.back();
     };
@@ -305,28 +309,56 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         state->alpha_test_method = atst, state->alpha_test_ref = aref, state->alpha_fail = afail;
         state->env_c0 = env_c0, state->env_c1 = env_c1;
     };
-    for (int steps = 0; steps < 100000; ++steps) {
+    // Runs the program from `from` until it reaches `until` (true) or its end (false).
+    int steps = 0;
+    std::function<bool(size_t, size_t)> exec = [&](size_t from, size_t until) -> bool {
+    pc = from;
+    for (; steps < 100000; ++steps) {
+        if (pc == until) return true;
         if (pc >= data.size()) throw FormatError("GTM1 program ran off the end");
         u8 op = data[pc];
         size_t a = pc + 1; // operand address
         switch (op) {
-        case 0x00: leave(); return;
-        case 0x02: if (data[a] < nodes.size()) run_at(data[a], p, stack, out, depth + 1, nullptr); pc = a + 1; continue;
-        case 0x03: if (rd16(data, a) < nodes.size()) run_at(rd16(data, a), p, stack, out, depth + 1, nullptr); pc = a + 2; continue;
+        case 0x00: leave(); return false;
+        case 0x02: if (data[a] < nodes.size()) run_at(data[a], p, stack, out, depth + 1, nullptr, when); pc = a + 1; continue;
+        case 0x03: if (rd16(data, a) < nodes.size()) run_at(rd16(data, a), p, stack, out, depth + 1, nullptr, when); pc = a + 2; continue;
         case 0x04: draw(data[a], pc); pc = a + 1; continue;
         case 0x05: draw(operand16(a), pc); pc = a + 2; continue;
         case 0x06: { // u16 callback id, u8 n, s16 rel[n]; rel relative to its own field
             u32 n = data[a + 2];
             size_t tab = a + 3;
             const u32 id = rd16(data, a);
+            auto target = [&](u32 k) { return tab + 2 * k + s16_at(tab + 2 * k); };
+            const size_t past = tab + 2 * n; // (out of range)
             int sel = id == 0 ? (p.brake ? 1 : 0) : p.selector; // id 0: brake now
-            if (p.callback && id >= 1 && id <= 5) { // a car's morph phase; the callback returns 0
-                phase = std::clamp(p.callback[id - 1], 0.0f, 1.0f);
-                phase_id = u8(id);
-                sel = 0;
+            if (p.callback && id >= 1 && id < kCallbackIds) { // a car's callback (CarCallback)
+                const CarCallback& cb = *p.callback;
+                // Every branch, each up to where they meet again: the jump past the table that the out-of-range value
+                // takes (the car models' every switch of these ids has one).
+                size_t join = SIZE_MAX;
+                if (p.every_branch && callback_branches(id) && past + 1 < data.size()) {
+                    if (data[past] == 0x09 && past + 2 < data.size()) join = past + 1 + size_t(s16_at(past + 1));
+                    else if (data[past] == 0x08) join = past + 1 + size_t(s32(std::int8_t(data[past + 1])));
+                }
+                if (join != SIZE_MAX) {
+                    const s8 before = when[id];
+                    const auto saved = std::make_tuple(texset, matrix_used, alpha_mode, fb_mask, ate, date, zwrite, ztest, cull,
+                                                       atst, aref, afail, env_c0, env_c1, pano_set, pano, stack);
+                    for (u32 k = 0; k < n; ++k) {
+                        std::tie(texset, matrix_used, alpha_mode, fb_mask, ate, date, zwrite, ztest, cull, atst, aref, afail,
+                                 env_c0, env_c1, pano_set, pano, stack) = saved;
+                        when[id] = s8(k);
+                        if (callback_sets_phase(id)) phase = std::clamp(cb.phase[id], 0.0f, 1.0f), phase_id = u8(id);
+                        exec(target(k), join);
+                    }
+                    when[id] = before;
+                    pc = join;
+                    continue;
+                }
+                if (callback_sets_phase(id)) phase = std::clamp(cb.phase[id], 0.0f, 1.0f), phase_id = u8(id);
+                sel = cb.branch[id];
             }
-            if (sel >= 0 && u32(sel) < n) pc = tab + 2 * sel + s16_at(tab + 2 * sel);
-            else pc = tab + 2 * n;
+            pc = sel >= 0 && u32(sel) < n ? target(u32(sel)) : past;
             continue;
         }
         case 0x07: { // 16-byte bounding sphere, u8 n, s16 rel[n]
@@ -420,13 +452,18 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         case 0x31: pano_set = true, pano = {rdf(data, a), rdf(data, a + 4), rdf(data, a + 8)}; pc = a + 12; continue;
         default: {
             int n = fixed_operand_bytes(op);
-            if (n < 0) return leave();
+            if (n < 0) {
+                leave();
+                return false;
+            }
             pc = a + n; // render-state ops: not needed for geometry
             continue;
         }
         }
     }
     throw FormatError("GTM1 program does not terminate");
+    };
+    exec(nodes[node], SIZE_MAX);
 }
 
 std::vector<u32> Gtm1::animated_nodes() const {
@@ -1499,8 +1536,11 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     // `opt.morphs`.
     const std::vector<u32> animated = opt.animated ? g.animated_nodes() : std::vector<u32>{};
     std::vector<Draw> morph_draws;
+    auto morphed = [&](const Draw& d) {
+        return d.phase_id != 0 && d.range_count != 0 && d.range_base + d.range_count <= g.chunks.size();
+    };
     auto moving = [&](const Draw& d) {
-        return opt.morphs && d.phase_id != 0 && d.range_count != 0 && d.range_base + d.range_count <= g.chunks.size();
+        return opt.morphs && (morphed(d) || std::any_of(d.when.begin(), d.when.end(), [](s8 b) { return b >= 0; }));
     };
     Draw carried; // Options::carry_state: the render state the previous node left
     for (u32 node = 0; node < g.nodes.size(); ++node) {
@@ -1596,15 +1636,18 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         MorphDraws& md = *opt.morphs;
         md = MorphDraws{};
         md.lod_ = opt.run.lod;
-        // Every chunk of each draw's range, in its own space with the draw's state.
+        // Every chunk of each draw's range (a draw whose phase is not the callback's: its own chunk), in its own space
+        // with the draw's state.
         std::vector<Draw> parts;
-        for (const Draw& d : morph_draws)
-            for (u32 k = 0; k < d.range_count; ++k) {
+        for (const Draw& d : morph_draws) {
+            const u32 n = morphed(d) ? d.range_count : 1;
+            for (u32 k = 0; k < n; ++k) {
                 Draw p = d;
-                p.chunk = d.range_base + k;
+                if (morphed(d)) p.chunk = d.range_base + k;
                 p.matrix = kIdentity, p.has_matrix = false, p.morph = 0;
                 parts.push_back(p);
             }
+        }
         scene::Mesh mesh;
         std::vector<Range> ranges;
         std::vector<scene::Vertex> key1;
@@ -1613,9 +1656,11 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         size_t r = 0;
         for (const Draw& d : morph_draws) {
             MorphDraws::Entry e;
-            e.id = d.phase_id;
+            e.id = morphed(d) ? d.phase_id : 0;
+            e.when = d.when;
+            e.morph = morphed(d) ? 0.0f : d.morph;
             e.matrix = d.matrix, e.has_matrix = d.has_matrix;
-            e.chunks.resize(d.range_count);
+            e.chunks.resize(morphed(d) ? d.range_count : 1);
             for (MorphDraws::Part& part : e.chunks) split(part, mesh, key1, ranges[r], ranges[r + 1]), ++r;
             md.draws_.push_back(std::move(e));
         }
@@ -1741,19 +1786,38 @@ void AnimatedNodes::rebase_textures(int base) {
 
 std::vector<int> MorphDraws::ids() const {
     std::vector<int> out;
-    for (const Entry& e : draws_) out.push_back(e.id);
+    for (const Entry& e : draws_)
+        if (e.id) out.push_back(e.id);
     std::sort(out.begin(), out.end());
     out.erase(std::unique(out.begin(), out.end()), out.end());
     return out;
 }
 
-std::vector<scene::Mesh> MorphDraws::meshes(const std::array<float, 5>& values) const {
+std::vector<int> MorphDraws::branch_ids() const {
+    std::vector<int> out;
+    for (const Entry& e : draws_)
+        for (u32 i = 0; i < kCallbackIds; ++i)
+            if (e.when[i] >= 0) out.push_back(int(i));
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+std::vector<scene::Mesh> MorphDraws::meshes(const CarCallback& values) const {
     scene::Mesh mesh;
     mesh.name = "morph";
     mesh.lod = lod_;
     for (const Entry& e : draws_) {
+        bool taken = true;
+        for (u32 i = 0; i < kCallbackIds; ++i)
+            if (e.when[i] >= 0 && e.when[i] != values.branch[i]) taken = false;
+        if (!taken) continue;
+        if (e.id == 0) { // the draw's own chunk
+            append_part(mesh, e.chunks[0], e.morph, e.matrix, e.has_matrix);
+            continue;
+        }
         // As op 0x35: chunk min(phase x count, count - 1) (truncated), morphed by the rest.
-        const float phase = std::clamp(values[size_t(e.id - 1)], 0.0f, 1.0f);
+        const float phase = std::clamp(values.phase[e.id], 0.0f, 1.0f);
         const s32 count = s32(e.chunks.size());
         const float f = phase * float(count);
         s32 k = s32(f);

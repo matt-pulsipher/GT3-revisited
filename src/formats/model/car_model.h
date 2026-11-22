@@ -103,11 +103,15 @@ struct CarModelOptions {
     std::optional<WheelSpec> wheel_spec; // placement; estimated from the body when absent
     bool brake = false;        // the brake-lamp branch of the node programs (lit lenses)
     CarBodyMod body_mod;       // mod cars: stretched or replaced body
-    // When set, the draws the car's callback morphs (mud flaps, aerials, steering) are left
-    // out of the body and built into these, one per LOD that has any (texture indices: the
-    // returned model's). Without it they are drawn with the callback's defaults
+    // When set, the draws the car's callback morphs (mud flaps, aerials, steering, the later
+    // builds' wings) and the draws under the callback's branches (the pod's tail, lamps and faces)
+    // are left out of the body and built into these, one per LOD that has any (texture indices:
+    // the returned model's). Without it they are drawn with the callback's defaults
     // (gtm1::kCarCallbackDefaults). Not for mod bodies.
     std::vector<gtm1::MorphDraws>* morphs = nullptr;
+    // When set, receives the texture sets with CLUT animations the model uses (the pod's faces: the
+    // callback's id 10 plays the group of its mood), `first` the returned model's texture index.
+    std::vector<gtm1::ClutSet>* clut_sets = nullptr;
 };
 
 // Flags a car body's windows scene::kGlass, for a view from inside without them. GT3 glass is a

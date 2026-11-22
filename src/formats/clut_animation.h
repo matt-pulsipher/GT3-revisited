@@ -26,6 +26,8 @@ public:
     // Every animation on its first frame, fading to the second, weight 1; held when the first
     // frame holds.
     void reset();
+    // reset() for the animations of `group` only (every group when < 0); the others keep their state.
+    void reset(int group);
     // Advances (seconds > 0) or rewinds (seconds < 0) the animations of `group` (every group when
     // < 0) that are not held.
     void update(float seconds, int group = -1);

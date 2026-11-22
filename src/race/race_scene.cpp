@@ -332,7 +332,10 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
     opt.wheel_spec = ws;
     opt.paint = paint;
     opt.morphs = &morphs_;
+    std::vector<gtm1::ClutSet> cluts;
+    opt.clut_sets = &cluts;
     scene::Model car = load_car_model(car_file, opt, model);
+    opt.clut_sets = nullptr; // (the other builds below: none)
     for (const scene::Mesh& m : car.meshes) lods_ = std::max(lods_, m.lod + 1);
     scene::Model body = scene::extract(car, [](const scene::Mesh& m) {
         return m.name.rfind("wheel_", 0) != 0 && m.name.rfind("node", 0) != 0;
@@ -371,8 +374,28 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
             draws += md.size();
             for (scene::Mesh& m : md.meshes(gtm1::kCarCallbackDefaults)) mm.meshes.push_back(std::move(m));
         }
-        morph_base_ = std::make_unique<render::GpuModel>(ctx, mm);
-        LOG_INFO("Car %s: %zu morph draws (%zu LODs)", model.c_str(), draws, morphs_.size());
+        // The CLUT animations of the textures the morph parts use.
+        for (gtm1::ClutSet& c : cluts) {
+            MorphClut mc;
+            bool used = false;
+            for (u32 r : c.textures.records()) {
+                const size_t t = size_t(c.first) + r;
+                if (mc.texture.size() <= r) mc.texture.resize(r + 1, -1);
+                if (t < map.size() && map[t] >= 0) mc.texture[r] = map[t], used = true;
+            }
+            if (!used) continue;
+            mc.set = std::move(c);
+            morph_cluts_.push_back(std::move(mc));
+        }
+        morph_model_ = std::move(mm);
+        LOG_INFO("Car %s: %zu morph draws (%zu LODs, ids %s), %zu animated texture sets", model.c_str(), draws, morphs_.size(),
+                 [&] {
+                     std::string ids;
+                     for (int i : morphs_[0].ids()) ids += (ids.empty() ? "" : " ") + std::to_string(i);
+                     for (int i : morphs_[0].branch_ids()) ids += (ids.empty() ? "b" : " b") + std::to_string(i);
+                     return ids;
+                 }().c_str(),
+                 morph_cluts_.size());
     }
     try {
         lamps_ = CarLampSet::parse(CarFile::parse(car_file).info);
@@ -486,11 +509,38 @@ void CarVisual::set_brake_parts(const BrakeParts& bin) {
     }
 }
 
-std::array<float, 5> car_callback_values(const sim::VehicleState& s, const sim::VehicleSetup& setup) {
-    std::array<float, 5> v;
-    for (size_t i = 0; i < 4; ++i) v[i] = 0.5f + 0.5f * s.wheels[i].flap;
-    v[4] = setup.steer_lock > 0 ? 0.5f + 0.5f * s.steer / setup.steer_lock : 0.5f;
+gtm1::CarCallback car_callback_values(const sim::VehicleState& s, const sim::VehicleSetup& setup) {
+    gtm1::CarCallback v = gtm1::kCarCallbackDefaults;
+    for (size_t i = 0; i < 4; ++i) v.phase[i + 1] = 0.5f + 0.5f * s.wheels[i].flap;
+    v.phase[5] = setup.steer_lock > 0 ? 0.5f + 0.5f * s.steer / setup.steer_lock : 0.5f;
+    const sim::VehicleState::Special& k = s.special;
+    v.phase[6] = k.wing;
+    // (the callback's id 7: the nod while the lean is level)
+    v.branch[7] = k.lean == 0.5f ? 1 : 0;
+    v.phase[7] = k.lean == 0.5f ? k.nod : k.lean;
+    v.branch[8] = k.lamp, v.phase[8] = k.lamp_weight;
+    v.branch[9] = v.branch[10] = k.mood;
     return v;
+}
+
+CarVisual::Morph& CarVisual::morph_of(int slot, int instance) const {
+    Morph& mo = morph_[{slot, instance}];
+    if (!mo.gpu) {
+        mo.gpu = std::make_unique<render::GpuModel>(*ctx_, morph_model_);
+        mo.cluts = morph_cluts_;
+    }
+    return mo;
+}
+
+void CarVisual::step_look(int slot, const sim::VehicleState& s, float seconds) const {
+    if (morph_cluts_.empty()) return;
+    Morph& mo = morph_of(slot, 0);
+    const int group = car_callback_values(s, sim::VehicleSetup{}).branch[10];
+    for (MorphClut& c : mo.cluts) {
+        if (group != mo.group) c.set.textures.player().reset(group);
+        c.set.textures.player().update(seconds, group);
+    }
+    mo.group = group;
 }
 
 render::Mat4 CarVisual::body_matrix(const sim::VehicleState& s, const sim::VehicleSetup& setup) const {
@@ -667,20 +717,21 @@ void CarVisual::add_body_items(std::vector<render::DrawItem>& items, const sim::
     };
     const render::GpuModel* body = look.brake_now && body_brake_ ? body_brake_.get() : body_.get();
     items.push_back(styled({body, world * render::translate({0, body_lift(setup), 0}), lod}));
-    if (morph_base_) {
-        Morph& mo = morph_[size_t(std::clamp(look.instance, 0, int(morph_.size()) - 1))];
-        const std::array<float, 5> v = car_callback_values(s, setup);
-        if (!mo.gpu) {
-            mo.gpu = std::make_unique<render::GpuModel>(*ctx_, *morph_base_);
-            mo.values.fill(-1);
-        }
-        if (v != mo.values) {
+    if (!morphs_.empty()) {
+        Morph& mo = morph_of(look.slot, look.instance);
+        const gtm1::CarCallback v = car_callback_values(s, setup);
+        if (!mo.built || v != mo.values) {
             std::vector<scene::Mesh> meshes;
             for (const gtm1::MorphDraws& md : morphs_)
                 for (scene::Mesh& m : md.meshes(v)) meshes.push_back(std::move(m));
             mo.gpu->update_geometry(meshes);
-            mo.values = v;
+            mo.values = v, mo.built = true;
         }
+        std::vector<render::GpuModel::TextureUpdate> updates;
+        for (MorphClut& c : mo.cluts)
+            for (u32 r : c.set.textures.refresh())
+                if (r < c.texture.size() && c.texture[r] >= 0) updates.push_back({size_t(c.texture[r]), c.set.textures.rgba(r)});
+        if (!updates.empty()) mo.gpu->update_textures(updates);
         items.push_back(styled({mo.gpu.get(), world * render::translate({0, body_lift(setup), 0}), lod}));
     }
     for (int i = 0; i < 4; ++i) {

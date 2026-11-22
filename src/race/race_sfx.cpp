@@ -13,7 +13,7 @@ bool RaceSfx::load(const Vfs& vfs) {
     banks_.clear();
     effects_.clear();
     index_.clear();
-    for (u8 b = 0; b < 3; ++b) {
+    for (u8 b = 0; b < 4; ++b) { // (bank 3: the later discs' pod effects)
         std::shared_ptr<sound::InstBank> bank;
         if (const char* path = sound::se_bank_path(b))
             if (std::optional<Bytes> bytes = vfs.read(path)) {

@@ -1,7 +1,7 @@
 #pragma once
 
 // Race sound effects (volume 0..4 x the region's own volume, 14-bit cap): the named effects of sound/se.inf (banks gt3sys,
-// gt3se01, gt3se02), played through the VoiceMixer. One-shots (collisions,
+// gt3se01, gt3se02; the later discs' gt3pod), played through the VoiceMixer. One-shots (collisions,
 // shifts) and held loops (tyre skids) whose volume and pitch follow the car
 // each frame.
 
@@ -34,7 +34,7 @@ public:
               float pan = 0);
     void stop_all(VoiceMixer& mixer);
 
-    // The three se.inf banks (index = bank number; null when missing) and the index,
+    // The se.inf banks (index = bank number; null when missing) and the index,
     // for players that drive effects themselves (course ambience).
     std::vector<std::shared_ptr<const sound::InstBank>> banks() const {
         return {banks_.begin(), banks_.end()};

@@ -238,7 +238,7 @@ RemoteCar::Pose RemoteCar::shadow_pose(double t) {
         c = moved_.get();
     }
     Pose p;
-    exact_state(*c, *setup_, p.state);
+    exact_state(*c, *setup_, p.state, &shadow_->inputs().later.moods);
     p.body_x = c->pos.x.host(), p.body_z = -c->pos.y.host();
     p.heading = c->heading.host(), p.yaw_rate = c->yaw_rate.host();
     p.brake = c->brake_pedal.host();

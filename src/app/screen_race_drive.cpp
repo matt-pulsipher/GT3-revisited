@@ -409,6 +409,7 @@ void RaceScreen::tick(App& app, const PadState& pad) {
     }
     {
         if (se_on()) update_tyre_sounds(app, s);
+        step_car_looks(float(dt));
         // Force feedback is sent once per frame: keep the strongest hits of the frame's steps.
         ffb_wall_ = std::max(ffb_wall_, std::fabs(vehicle_->wall_impulse()));
         ffb_car_ = std::max(ffb_car_, std::fabs(vehicle_->car_impulse()));
@@ -440,6 +441,15 @@ void RaceScreen::tick(App& app, const PadState& pad) {
 // GT3R_RACE_TRACE=<file>: one line per race step with the player's car after it, for comparing a
 // run with its replay ("L" live, "R" replay; the ticks simulated so far, the driver kind the step
 // ran with, position and orientation as exact hex floats, the speed).
+void RaceScreen::step_car_looks(float seconds) {
+    if (car_visual_) car_visual_->step_look(0, vehicle_->state(), seconds);
+    if (field_ && field_->has_second())
+        if (const CarVisual* v2 = car2_visual_ ? car2_visual_.get() : car_visual_.get()) v2->step_look(1, field_->second_state(), seconds);
+    if (const RaceField* f = exact_field())
+        for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
+            if (opp_visuals_[size_t(i)]) opp_visuals_[size_t(i)]->step_look(2 + i, f->opponent_state(i), seconds);
+}
+
 void RaceScreen::trace_tick() {
     static FILE* f = [] {
         const char* p = SDL_getenv("GT3R_RACE_TRACE");

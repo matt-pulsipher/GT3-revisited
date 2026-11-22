@@ -74,7 +74,7 @@ sim::VehicleSetup exact_setup(const ex::Car& c) {
     return s;
 }
 
-void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleState& out) {
+void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleState& out, const ex::MoodTables* moods) {
     const sim::Vec3 fwd = exact_to_world(c.fwd), lat = exact_to_world(c.lat), up = exact_to_world(c.up);
     const sim::Vec3 cog = exact_to_world(c.pos), cl = setup.cog_offset;
     out.orientation = axes_quat(lat, up, fwd);
@@ -87,6 +87,7 @@ void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleS
     out.speed_kmh = h(c.speedo) * 3.6f;
     out.rev_limiter = c.rev_limiter != 0;
     out.steer = -h(c.steer_cmd);
+    out.special = moods ? ex::special_look(c, *moods) : sim::VehicleState::Special{};
     for (size_t i = 0; i < 4; ++i) {
         const ex::Wheel& w = c.w[i];
         const ex::Ground& g = c.g[i];

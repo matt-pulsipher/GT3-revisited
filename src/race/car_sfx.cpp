@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace gt3r::race {
 
@@ -100,6 +101,12 @@ Placement place_voice(float x, float z, float vol) {
     return p;
 }
 
+const char* mood_effect(int mood) {
+    static constexpr const char* kNames[] = {nullptr,      "pod_wink",     "pod_genki",  "pod_kyoro", "pod_okoru", "pod_odoroku",
+                                             "pod_iya",    "pod_sabishii", "pod_kowai1", "pod_naku",  "pod_nemui"};
+    return mood > 0 && mood < int(std::size(kNames)) ? kNames[mood] : nullptr;
+}
+
 float distance_gain(float x, float z) { return std::min(1.0f, 32.0f / std::max(std::hypot(x, z), 0.25f)); }
 
 bool CarSfx::bind(const std::vector<std::shared_ptr<const sound::InstBank>>& banks,
@@ -150,6 +157,29 @@ void CarSfx::update(RaceSfx& sfx, VoiceMixer& mixer, const Step& st) {
         }
     }
 
+    // A special car's mood (the later builds' pod, on Tokyo-Geneva Europe): a new mood gives the car's mood voice
+    // its effect (the one playing stops), keyed at once; the voice stays at the car, placed from the camera as the tyres'
+    // loops are (min(1, 32/d), no channel gain), while it plays.
+    {
+        sim::Vec3 o = s.position - st.eye;
+        Placement p = place_voice(o.dot(st.right), o.dot(st.forward), 1.0f);
+        float left = p.left, right = p.right;
+        if (mixer.surround_cue()) {
+            mood_cue_.update(p.x_over_d, p.z_over_d);
+            if (mood_cue_.invert_l) left = -left;
+            if (mood_cue_.invert_r) right = -right;
+        }
+        int bank = -1, region = -1;
+        if (const char* name = mood_effect(st.state->special.mood_new); name && LoopEffect::resolve(sfx.index(), name, 0, bank, region)) {
+            mood_.stop(mixer);
+            const auto banks = sfx.banks();
+            mood_.set(bank >= 0 && size_t(bank) < banks.size() ? banks[size_t(bank)] : nullptr, region);
+            mood_.restart(mixer, left, right, 1.0f, p.priority);
+        } else {
+            mood_.follow(mixer, left, right, 1.0f, p.priority);
+        }
+    }
+
     // Collisions: the strongest impact of the step, wall `clash` or car `clash2`, keyed again on
     // every step with a hit of strength 0.2 or more (no cooldown), centred. Only the followed car's
     // hits are heard; GT3 reads no other car's collisions.
@@ -162,6 +192,8 @@ void CarSfx::update(RaceSfx& sfx, VoiceMixer& mixer, const Step& st) {
 }
 
 void CarSfx::stop(VoiceMixer& mixer) {
+    mood_.stop(mixer);
+    mood_cue_.reset();
     for (auto& wheel : loops_)
         for (LoopEffect& l : wheel) l.stop(mixer);
     for (auto& wheel : cues_)

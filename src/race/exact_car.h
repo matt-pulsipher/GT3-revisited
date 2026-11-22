@@ -7,6 +7,7 @@
 
 #include "race/backend.h"
 #include "sim/exact/car_record.h"
+#include "sim/exact/special.h"
 #include "sim/exact/tick.h"
 
 namespace gt3r::race {
@@ -21,8 +22,9 @@ inline sim::Vec3 exact_to_world(const ex::Vec3& v) { return {v.x.host(), v.z.hos
 sim::VehicleSetup exact_setup(const ex::Car& c);
 // The drawn state after a step: the car-frame origin and orientation from the CoG and the body axes, the velocities, each
 // wheel's contact point (the ground under its hub), steer, spin, suspension (compression positive, as VehicleSetup's
-// static_suspension), slip, load and surface (the raw GTRW value: the triangle's material | flags << 8); the speedometer.
-void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleState& out);
+// static_suspension), slip, load and surface (the raw GTRW value: the triangle's material | flags << 8); the speedometer;
+// with `moods` (the race's special car 1 tables, RaceInputs::later) what a special car's model shows (ex::special_look).
+void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleState& out, const ex::MoodTables* moods = nullptr);
 // The last step's telemetry as the game's sounds, smoke, dirt, HUD lamps and force feedback read it. wear_on: the race has
 // tyre wear; wall: the collision step's wall impulse on the car this step.
 void exact_telemetry(const ex::Car& c, bool wear_on, float wall, sim::VehicleTelemetry& out);
