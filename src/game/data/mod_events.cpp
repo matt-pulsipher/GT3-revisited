@@ -188,6 +188,7 @@ std::optional<ModEventDef> parse_mod_event(std::string_view text, const std::str
     d.title = get("event", "title");
     d.description = get("event", "description");
     d.picture = get("event", "picture");
+    d.icon = get("event", "icon");
     d.league = get("event", "league");
     d.base = get("event", "base");
     d.championship = yes(get("event", "championship"));
@@ -251,6 +252,7 @@ std::string format_mod_event(const ModEventDef& d) {
     ini.set("event", "title", d.title);
     if (!d.description.empty()) ini.set("event", "description", d.description);
     if (!d.picture.empty()) ini.set("event", "picture", d.picture);
+    if (!d.icon.empty()) ini.set("event", "icon", d.icon);
     if (!d.league.empty()) ini.set("event", "league", d.league);
     if (!d.base.empty()) ini.set("event", "base", d.base);
     ini.set("event", "championship", d.championship ? "yes" : "no");
@@ -464,6 +466,7 @@ void load_mod_event_files(CarDatabase& db, const std::vector<std::string>& files
             def->mod = mod;
             def->file = f;
             def->picture = mod_path(f, def->picture);
+            def->icon = mod_path(f, def->icon);
         }
         if (!def || !add_mod_event(db, *def, &err)) {
             LOG_WARN("Mod event %s: %s", f.c_str(), err.c_str());

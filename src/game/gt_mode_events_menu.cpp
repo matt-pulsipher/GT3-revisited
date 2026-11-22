@@ -12,8 +12,9 @@
 // championship; the league's own series first, so the page's header is the league's), with the
 // race items renamed to the event's codes and the rest dropped. Everything the disc's pages draw
 // from the race records (course logos and names, results, race information) works on the
-// event's own records (game/data/mod_events.h). Pictures are the mod's own (PNG); without one
-// the event's title is drawn in the menu font.
+// event's own records (game/data/mod_events.h). Pictures are the mod's own (PNG): the full-screen
+// picture, and the strip icon (the picture when the event has none); without a picture the
+// event's title is drawn in the menu font.
 
 #include "game/gt_mode_mods.h"
 
@@ -338,8 +339,8 @@ void patch_series_pages(MenuScene& scene, const EventAdd& a, const MblFile& mbl)
     (void)mbl;
 }
 
-// The event's item on its league page: the strip icon, the flyer (m_ layer) and the title and
-// result marks (s_ layer), copied from the page's first series.
+// The event's item on its league page: the strip icon (its icon, else its picture), the flyer
+// (m_ layer) and the title and result marks (s_ layer), copied from the page's first series.
 void add_league_item(MenuScene& scene, Page& pg, const Page& from, const MblPage& from_flow, const EventAdd& a) {
     const data::ModEvent& ev = *a.ev;
     if (find_item(pg, ev.item())) return;
@@ -356,7 +357,8 @@ void add_league_item(MenuScene& scene, Page& pg, const Page& from, const MblPage
         Element e = *item;
         e.name = ev.item();
         for (Element& alt : e.alt) alt.name = e.name + "_a";
-        set_picture(e, image);
+        const int icon = ev.def.icon.empty() ? -1 : add_picture(scene, ev.def.icon);
+        set_picture(e, icon >= 0 ? icon : image);
         pg.items.push_back(std::move(e));
     }
     if (m) {

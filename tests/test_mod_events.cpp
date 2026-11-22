@@ -8,6 +8,7 @@
 #include "base/game_random.h"
 #include "disc/volume.h"
 #include "formats/menu/mbl.h"
+#include "formats/png_writer.h"
 #include "game/data/car_database.h"
 #include "game/data/mod_events.h"
 #include "game/gt_mode.h"
@@ -34,6 +35,7 @@ const char* kChampionship = R"(
 title = Hot Hatch Cup      ; a comment
 description = Three rounds for front-wheel-drive hatchbacks.
 picture = pictures/hatch.png
+icon = pictures/hatch_icon.png
 league = r/beginner/beginner
 championship = yes
 prizes = 5000, 3000, 2000, 1000, 500, 250
@@ -110,7 +112,7 @@ TEST(mod_event_parse) {
     auto d = data::parse_mod_event(champ, "hatch", &err, &warns);
     CHECK(d.has_value());
     if (!d) return;
-    CHECK(d->id == "hatch" && d->title == "Hot Hatch Cup" && d->picture == "pictures/hatch.png");
+    CHECK(d->id == "hatch" && d->title == "Hot Hatch Cup" && d->picture == "pictures/hatch.png" && d->icon == "pictures/hatch_icon.png");
     CHECK(d->league == "r/beginner/beginner" && d->championship);
     CHECK(d->prizes[0] == 5000 && d->prizes[5] == 250 && d->bonus == 10000 && d->prize_car == "r34_gtr_v_99");
     CHECK(d->license == 3 && d->drivetrain == 1 && d->aspiration == 1 && d->car_class == 3);
@@ -125,6 +127,7 @@ TEST(mod_event_parse) {
     CHECK(again.has_value());
     if (again) {
         CHECK(again->title == d->title && again->description == d->description && again->league == d->league);
+        CHECK(again->picture == d->picture && again->icon == d->icon);
         CHECK(again->prizes == d->prizes && again->bonus == d->bonus && again->prize_car == d->prize_car);
         CHECK(again->license == d->license && again->drivetrain == d->drivetrain && again->car_class == d->car_class);
         CHECK(again->allowed == d->allowed);
@@ -135,6 +138,7 @@ TEST(mod_event_parse) {
     // A race of its own lineup, its place "last" by default.
     auto s = data::parse_mod_event(singles, "sprint", &err);
     CHECK(s && !s->championship && s->races[1].opponents.size() == 2 && s->races[1].opponents[0].color == 77);
+    CHECK(s && s->picture.empty() && s->icon.empty() && data::format_mod_event(*s).find("icon") == std::string::npos);
     // Unknown words are warnings; no race is an error.
     warns.clear();
     CHECK(data::parse_mod_event("[event]\ntitle = x\n[entry]\nlicense = q\n[race1]\ncourse = rome\n", "x", &err, &warns));
@@ -190,6 +194,7 @@ namespace {
 struct EventWorld {
     std::shared_ptr<game::GtData> data;
     menu::MblFile flow;
+    menu::flow::FileReader read;
     std::string error;
 };
 
@@ -211,6 +216,10 @@ EventWorld event_world(Disc& disc) {
     const std::filesystem::path mod = temp_dir("mod_events_disc") / "my_events";
     write_text(mod / "events" / "hatch.ini", with_colors(kChampionship, g_vitz2, g_r34_1));
     write_text(mod / "events" / "sprint.ini", with_colors(kSingles, g_vitz2, g_r34_1));
+    // The championship's pictures (the sprint has none): a full-screen picture and a strip icon.
+    std::filesystem::create_directories(mod / "pictures");
+    write_host_file((mod / "pictures" / "hatch.png").generic_string(), encode_png(640, 448, std::vector<u32>(640 * 448, 0xFF0000FFu)));
+    write_host_file((mod / "pictures" / "hatch_icon.png").generic_string(), encode_png(204, 108, std::vector<u32>(204 * 108, 0xFF00FF00u)));
     const std::string list = "my_events\t" + (mod / "events" / "hatch.ini").generic_string() + "\nmy_events\t" +
                              (mod / "events" / "sprint.ini").generic_string() + "\n";
     menu::flow::FileReader read = [&vol, list](const std::string& p) -> std::optional<Bytes> {
@@ -228,6 +237,7 @@ EventWorld event_world(Disc& disc) {
         w.flow = menu::MblFile::parse(*mb);
         menu::flow::menu_patches().flow("gt_mode", read, w.flow);
     }
+    w.read = read;
     return w;
 }
 
@@ -313,6 +323,44 @@ TEST(mod_event_disc_menus) {
     // GT Mode's catalog sees the championship (start_championship needs it).
     const game::RaceSeries* rs = w.data->catalog.series_for("Xmy_events_hatch_0501");
     CHECK(rs && rs->championship() && rs->races.size() == 3);
+}
+
+// The league page's strip shows an event's icon and its flyer the picture; an event without
+// either shows neither.
+TEST(mod_event_disc_icon) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    EventWorld w = event_world(*disc);
+    menu::flow::MenuSet set(w.read, "gt_mode", "US");
+    auto size_of = [](const menu::MenuScene& sc, const menu::Element& e) {
+        return e.image && e.image->image < sc.images().size() ? std::make_pair(sc.images()[e.image->image].width, sc.images()[e.image->image].height)
+                                                               : std::make_pair(0u, 0u);
+    };
+    const menu::flow::MenuSet::PageRef lg = set.page("r/beginner/beginner");
+    CHECK(lg && lg.flow);
+    if (!lg || !lg.flow) return;
+    const menu::Element* strip = nullptr;
+    for (const menu::Element& e : lg.layout().items)
+        if (e.name == "Xmy_events_hatch_0500") strip = &e;
+    CHECK(strip && size_of(*lg.scene, *strip) == std::make_pair(204u, 108u));
+    if (strip)
+        for (const menu::Element& a : strip->alt) CHECK(size_of(*lg.scene, a) == std::make_pair(204u, 108u)); // (its focused look too)
+    std::string m;
+    for (const menu::MblItem& it : lg.flow->items)
+        if (it.name == "Xmy_events_hatch_0500") m = it.str40;
+    bool flyer = false;
+    for (const menu::Layer& l : lg.layout().layers)
+        if (l.name == m)
+            for (const std::vector<menu::Element>* v : {&l.elements, &l.widgets})
+                for (const menu::Element& e : *v)
+                    if (e.image && e.w >= 600 && e.h >= 400) flyer = size_of(*lg.scene, e) == std::make_pair(640u, 448u);
+    CHECK(!m.empty() && flyer);
+    // The sprint (Custom Events): no picture, no icon.
+    const menu::flow::MenuSet::PageRef cu = set.page("r/custom/custom");
+    CHECK(cu);
+    if (cu)
+        for (const menu::Element& e : cu.layout().items)
+            if (e.name == "Xmy_events_sprint_0001") CHECK(!e.image);
 }
 
 TEST(mod_event_disc_results) {
