@@ -254,7 +254,13 @@ textures are sampled point-filtered (their Tex1 record's TEX1 has MMAG NEAREST, 
 the game sends it to the GS as stored), so the colour of a cut texel never shows, and
 some are keyed in a loud colour there (the Astra Touring Car's headlamp surrounds:
 pure red). We filter bilinearly, so the copy of such a texture gives its cut texels
-the colour of their nearest kept ones (`gtm1::colour_cut_texels`). The opaque
+the colour of their nearest kept ones (`gtm1::colour_cut_texels`), across the
+texture's edge only where some face repeats it there. Faces whose UVs stay inside
+their texture on an axis (within a float step) sample it clamped on that axis
+(`gtm1::mark_inside_uvs`, `scene::kClampU` / `kClampV`, on every GTM1 model): the
+Astra's grille is two mirrored halves meeting on the texture's right edge, and
+repeating it there brought in the left edge's chrome as a white line down the
+middle (issue 409). The opaque
 passes also write the texel alpha to the frame buffer, and the
 reflection passes (normal in the UV slot, env map from a runtime slot) are
 blended Cs·Ad + Cd: reflection weighted by that alpha.

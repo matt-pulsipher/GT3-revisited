@@ -707,6 +707,13 @@ TEST(gtm1_cut_texels_take_their_kept_neighbours_colour) {
     wrap.width = 4;
     gtm1::colour_cut_texels(wrap);
     CHECK(wrap.rgba[0] == texel(10, 20, 30, 0) && wrap.rgba[3] == texel(10, 20, 30, 0));
+    // Unless no face repeats it there (issue 409): the edge texel takes only what is inside.
+    scene::Texture across = wrap, inside = wrap;
+    across.rgba = inside.rgba = {key, texel(10, 20, 30, 255), key, texel(50, 60, 70, 255)};
+    gtm1::colour_cut_texels(across, true, false);
+    gtm1::colour_cut_texels(inside, false, false);
+    CHECK(across.rgba[0] == texel(30, 40, 50, 0));
+    CHECK(inside.rgba[0] == texel(10, 20, 30, 0));
     // Nothing kept: nothing to take a colour from.
     scene::Texture empty = row;
     empty.rgba = {key, key, key, key, key};
@@ -745,6 +752,43 @@ TEST(inside_uvs_clamp_their_axis) {
     CHECK(flags(tiled_u) == scene::kClampV);
     CHECK(flags(tiled_v) == scene::kClampU);
     CHECK(flags(untextured) == 0 && flags(env) == 0);
+    // A float step past the edge is on it (the Astra Touring Car's grille, issue 409); a texel is not.
+    scene::Mesh near;
+    std::swap(mesh, near);
+    const size_t float_step = prim({{-5.96e-8f, 0}, {0.99999988f, 0}, {0, 1.0000001f}});
+    const size_t texel_out = prim({{-1.0f / 64, 0}, {1, 0}, {1, 1}});
+    gtm1::mark_inside_uvs(mesh);
+    CHECK(flags(float_step) == (scene::kClampU | scene::kClampV));
+    CHECK(flags(texel_out) == scene::kClampV);
+    // A morph's second key frame counts too: its parts blend between the two.
+    scene::Mesh morph;
+    std::swap(mesh, morph);
+    const size_t morphed = prim({{0, 0}, {1, 0}, {1, 1}});
+    std::vector<scene::Vertex> key1 = mesh.vertices;
+    key1[1].uv[0] = 1.5f;
+    gtm1::mark_inside_uvs(mesh, &key1);
+    CHECK(flags(morphed) == scene::kClampV);
+    // With the textures: a face that stops on a texel edge beside different texels (a picture packed
+    // beside another) gets its region; one that stops inside a continuous picture, or off a texel
+    // edge, does not.
+    scene::Mesh packed;
+    std::swap(mesh, packed);
+    scene::Texture t;
+    t.width = 8, t.height = 2;
+    for (u32 y = 0; y < 2; ++y)
+        for (u32 x = 0; x < 8; ++x) t.rgba.push_back(x < 6 ? 0xFF303030u : 0xFF2020C0u); // grey, then red
+    const std::vector<scene::Texture> textures{t};
+    const size_t beside = prim({{0, 0}, {0.75f, 0}, {0.75f, 1}});      // to texel 6: the red starts
+    const size_t within = prim({{0, 0}, {0.5f, 0}, {0.5f, 1}});        // to texel 4: grey goes on
+    const size_t off_edge = prim({{0, 0}, {0.7f, 0}, {0.7f, 1}});      // inside texel 5
+    const size_t whole = prim({{0, 0}, {1, 0}, {1, 1}});
+    gtm1::mark_inside_uvs(mesh, nullptr, &textures);
+    auto region = [&](size_t i) { return std::array<float, 4>{mesh.primitives[i].uv_region[0], mesh.primitives[i].uv_region[1],
+                                                              mesh.primitives[i].uv_region[2], mesh.primitives[i].uv_region[3]}; };
+    CHECK((region(beside) == std::array<float, 4>{0, 0, 0.75f, 0}));
+    CHECK((region(within) == std::array<float, 4>{0, 0, 0, 0}));
+    CHECK((region(off_edge) == std::array<float, 4>{0, 0, 0, 0}));
+    CHECK((region(whole) == std::array<float, 4>{0, 0, 0, 0}));
 }
 
 // Midfield's pines share a repeating texture with other pictures and start their UVs 1.5 texels
@@ -768,7 +812,7 @@ TEST(course_packed_pictures_sample_clamped_disc) {
             float lo = 1, hi = 0;
             for (u32 i = p.first_index; i < p.first_index + p.index_count; ++i)
                 lo = std::min(lo, mesh.vertices[mesh.indices[i]].uv[0]), hi = std::max(hi, mesh.vertices[mesh.indices[i]].uv[0]);
-            if (hi > 1.0f || lo < 0.0f) {
+            if (hi > 1.0001f || lo < -1e-4f) { // (past a float step outside the edge)
                 ++tiled;
                 tiled_marked += (p.flags & scene::kClampU) != 0;
             } else if ((p.flags & scene::kAlphaTest) && !t.clamp_u && lo > 0.0f) {
@@ -778,6 +822,42 @@ TEST(course_packed_pictures_sample_clamped_disc) {
         }
     CHECK(cut_outs > 0 && clamped == cut_outs);
     CHECK(tiled > 0 && tiled_marked == 0);
+}
+
+// Trial Mountain's GRAN TURISMO billboards use the left three quarters of a texture whose last
+// quarter holds another picture, from u = -4.5e-8: a float step outside its edge. They sample it
+// clamped like faces exactly on the edge, so that picture never shows as a line down their left
+// side (as the Astra Touring Car's grille, issue 409), and keep to their region on the right,
+// where it starts inside the texture.
+TEST(course_float_step_outside_samples_clamped_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const Volume::Entry* e = disc->volume().find("courses/US/trialmt");
+    if (!e) e = disc->volume().find("courses/trialmt"); // (NTSC-J)
+    if (!e) SKIP("no Trial Mountain on this disc");
+    course::CourseModelOptions o;
+    o.backdrop = o.course_line = false;
+    o.reflections = o.frame_alpha = true; // (as the race builds it)
+    scene::Model m = course::build_course_model(disc->volume().read(*e), o, "trialmt");
+    size_t outside = 0, clamped = 0, billboards = 0, regions = 0;
+    for (const scene::Mesh& mesh : m.meshes)
+        for (const scene::Primitive& p : mesh.primitives) {
+            if (p.texture < 0 || p.env_kind != 0 || (p.flags & scene::kEnvironmentMap)) continue;
+            float lo = 1, hi = 0;
+            for (u32 i = p.first_index; i < p.first_index + p.index_count; ++i)
+                lo = std::min(lo, mesh.vertices[mesh.indices[i]].uv[0]), hi = std::max(hi, mesh.vertices[mesh.indices[i]].uv[0]);
+            if (lo >= 0.0f || lo < -1e-4f || hi > 1.0001f) continue;
+            ++outside;
+            clamped += (p.flags & scene::kClampU) != 0;
+            const scene::Texture& t = m.textures[size_t(p.texture)];
+            const bool billboard = t.width == 256 && t.height == 64 && std::fabs(hi - 0.75f) < 1e-4f;
+            billboards += billboard;
+            // Their right edge meets the other picture inside the texture: they sample only their own part.
+            regions += billboard && p.uv_region[0] == 0.0f && std::fabs(p.uv_region[2] - hi) < 1e-6f;
+        }
+    std::printf("  %zu faces a float step left of their texture, %zu clamped, %zu billboards\n", outside, clamped, billboards);
+    CHECK(outside > 0 && clamped == outside);
+    CHECK(billboards > 0 && regions == billboards);
 }
 
 // Issue 368. The Astra Touring Car's headlamp surround (point-filtered in the game) is keyed in pure
@@ -803,6 +883,59 @@ TEST(car_cut_outs_hide_their_key_colour_disc) {
         if (!kept_red) CHECK(!cut_red);
     }
     CHECK(point_filtered > 0 && keyed > 0);
+}
+
+// Issue 409. The Astra Touring Car's grille is two mirrored halves whose UVs meet on the texture's
+// right edge (u = 1) at the car's centre line. The GS never samples past that edge; repeating the
+// texture there blended its left edge (the light chrome rim) into a white line down the centre of
+// the grille and badge. Faces that stay inside their texture sample it clamped, on cars too, and
+// the cut texels on that edge (the gaps between the bars) take their colour from inside it.
+TEST(car_mirrored_halves_sample_clamped_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    size_t models = 0;
+    for (const char* path : {"cars/day/op0011", "menu/cars/op0011"}) { // Astra Touring Car: race, showroom
+        const auto* e = disc->volume().find(path);
+        if (!e) continue;
+        ++models;
+        CarModelOptions o;
+        o.wheels = false;
+        scene::Model m = load_car_model(disc->volume().read(*e), o, "op0011");
+        CHECK(!m.meshes.empty());
+        if (m.meshes.empty()) continue;
+        const scene::Mesh& body = m.meshes[0];
+        size_t seams = 0, clamped = 0, cut_edges = 0;
+        for (const scene::Primitive& p : body.primitives) {
+            if (p.texture < 0 || p.env_kind != 0 || (p.flags & scene::kEnvironmentMap)) continue;
+            bool inside = true, centre_edge = false;
+            for (u32 i = p.first_index; i < p.first_index + p.index_count; ++i) {
+                const scene::Vertex& v = body.vertices[body.indices[i]];
+                inside &= v.uv[0] >= -1e-4f && v.uv[0] <= 1.0001f; // (its UVs: 0 and 1 give or take a float step)
+                centre_edge |= std::fabs(v.pos[0]) < 1e-3f && v.uv[0] > 0.9999f;
+            }
+            if (!inside || !centre_edge) continue;
+            ++seams;
+            clamped += (p.flags & scene::kClampU) != 0;
+            const scene::Texture& t = m.textures[size_t(p.texture)];
+            if (!t.nearest || !(p.flags & scene::kAlphaTest)) continue;
+            // A cut-out copy: its cut texels coloured as they would be from inside the texture alone.
+            scene::Texture inside_only = t;
+            size_t edge_cuts = 0;
+            for (size_t i = 0; i < inside_only.rgba.size(); ++i)
+                if (!(inside_only.rgba[i] >> 24)) {
+                    inside_only.rgba[i] = 0x00FF00FFu;
+                    edge_cuts += i % t.width == t.width - 1;
+                }
+            gtm1::colour_cut_texels(inside_only, false, false);
+            cut_edges += edge_cuts > 0;
+            CHECK(inside_only.rgba == t.rgba);
+        }
+        std::printf("  %s: %zu faces meet on their texture's edge at the centre line, %zu clamped\n", path, seams, clamped);
+        CHECK(seams > 0);
+        CHECK(clamped == seams);
+        CHECK(cut_edges > 0);
+    }
+    if (!models) SKIP("no op0011 on this disc");
 }
 
 namespace {

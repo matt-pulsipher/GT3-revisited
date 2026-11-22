@@ -125,6 +125,13 @@ struct Primitive {
     // the texel. under_ref < 0: every texel is the weight.
     float under_ref = -1;
     float under_alpha = 0;
+    // The part of its texture the primitive shows, where it stops inside the texture (its UVs'
+    // box: min u, min v, max u, max v; an axis with max <= min: none). Pictures packed side by
+    // side (Trial Mountain's GRAN TURISMO billboards: the left three quarters of a texture whose
+    // last quarter is another picture) sample only inside it: the renderer keeps the sample half
+    // a texel of the mip level in use inside, so filtering never takes in the neighbour, where the
+    // GS's bilinear filter shows it on a sub-pixel strip at its resolution (mark_inside_uvs).
+    float uv_region[4] = {0, 0, 0, 0};
 };
 
 struct Mesh {

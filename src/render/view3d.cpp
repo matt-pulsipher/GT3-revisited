@@ -90,6 +90,7 @@ struct FragmentUniforms {
                      // w = 1: a car reflection drawn only below full reflectivity (kDestAlphaTest)
     float wheel_blur[4];  // DrawItem::wheel_blur: x mode, y the rim's mip level; z DrawItem::fade (0 = none); w spin copies' cells
     float wheel_steps[4]; // DrawItem::wheel_steps
+    float uv_region[4];   // scene::Primitive::uv_region (the model's textures; zero: none)
 };
 
 // Frustum planes of `vp` (clip depth 0..w, far..near): w+x, w-x, w+y, w-y, z, w-z, normalised.
@@ -1859,6 +1860,8 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         fu.output[1] = guard ? 1.0f : 0.0f; // model.vert sends the colour times w
         fu.output[2] = v.item->texture && v.item->gs_bilinear ? 1.0f : 0.0f;
         fu.output[3] = (p.flags & scene::kDestAlphaTest) ? 1.0f : 0.0f;
+        const bool region = textured && !v.item->texture && !v.item->wheel_blur; // (the spin blurs sample around the wheel)
+        for (int i = 0; i < 4; ++i) fu.uv_region[i] = region ? p.uv_region[i] : 0.0f;
         // GT3's lighting runs per vertex (the VU), with the infinite viewer: the lights and
         // material go to the vertex shader. The sheen's program has a local viewer instead:
         // GT3's light model viewer (0, 2, 0) in eye space, 2 m along the camera's up axis.

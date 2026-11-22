@@ -676,7 +676,9 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
     return first;
 }
 
-void colour_cut_texels(scene::Texture& t) {
+void colour_cut_texels(scene::Texture& t) { colour_cut_texels(t, !t.clamp_u, !t.clamp_v); }
+
+void colour_cut_texels(scene::Texture& t, bool wrap_u, bool wrap_v) {
     const s32 w = s32(t.width), h = s32(t.height);
     if (w <= 0 || h <= 0 || t.rgba.size() != size_t(w) * size_t(h)) return;
     std::vector<u8> done(t.rgba.size());
@@ -696,11 +698,11 @@ void colour_cut_texels(scene::Texture& t) {
                 for (s32 dx = -1; dx <= 1; ++dx) {
                     s32 nx = x + dx, ny = y + dy;
                     if (nx < 0 || nx >= w) {
-                        if (t.clamp_u) continue;
+                        if (!wrap_u) continue;
                         nx = (nx + w) % w;
                     }
                     if (ny < 0 || ny >= h) {
-                        if (t.clamp_v) continue;
+                        if (!wrap_v) continue;
                         ny = (ny + h) % h;
                     }
                     const size_t j = size_t(ny) * size_t(w) + size_t(nx);
@@ -722,20 +724,70 @@ void colour_cut_texels(scene::Texture& t) {
     }
 }
 
-int mark_inside_uvs(scene::Mesh& mesh) {
+namespace {
+
+// Whether the texels just past a primitive's edge at UV `bound` on `axis` (upper: its max) differ
+// from the ones just inside, over the rows / columns `other_lo`..`other_hi` of the other axis: a
+// different picture packed beside it, not the rest of a continuous one (mean RGBA difference).
+bool edge_differs(const scene::Texture& t, int axis, float bound, bool upper, float other_lo, float other_hi) {
+    const s32 w = s32(t.width), h = s32(t.height);
+    if (w <= 0 || h <= 0 || t.rgba.size() != size_t(w) * size_t(h)) return false;
+    const s32 n = axis == 0 ? w : h, m = axis == 0 ? h : w;
+    const float e = bound * float(n);
+    // Pictures packed into a texture start and stop on whole texels (the billboards: texel 192 of
+    // 256); a face that ends inside a continuous picture ends anywhere.
+    if (std::fabs(e - std::round(e)) > 1.0f / 16.0f) return false;
+    const s32 in = std::clamp(upper ? s32(std::ceil(e - 1e-3f)) - 1 : s32(std::floor(e + 1e-3f)), 0, n - 1);
+    const s32 out = upper ? in + 1 : in - 1;
+    if (out < 0 || out >= n) return false;
+    s32 r0 = 0, r1 = m - 1;
+    if (other_lo >= 0.0f && other_hi <= 1.0f)
+        r0 = std::clamp(s32(std::floor(other_lo * float(m))), 0, m - 1),
+        r1 = std::clamp(s32(std::ceil(other_hi * float(m))) - 1, r0, m - 1);
+    auto texel = [&](s32 a, s32 b) { return axis == 0 ? t.rgba[size_t(b) * size_t(w) + size_t(a)] : t.rgba[size_t(a) * size_t(w) + size_t(b)]; };
+    u64 sum = 0;
+    for (s32 r = r0; r <= r1; ++r) {
+        const u32 a = texel(in, r), b = texel(out, r);
+        for (int k = 0; k < 32; k += 8) sum += u32(std::abs(s32((a >> k) & 0xFF) - s32((b >> k) & 0xFF)));
+    }
+    return sum > u64(24) * u64(r1 - r0 + 1);
+}
+
+} // namespace
+
+int mark_inside_uvs(scene::Mesh& mesh, const std::vector<scene::Vertex>* key1, const std::vector<scene::Texture>* textures) {
     int marked = 0;
     for (scene::Primitive& p : mesh.primitives) {
         if (p.texture < 0 || p.env_kind != 0 || (p.flags & scene::kEnvironmentMap) || p.index_count == 0) continue;
         float lo[2] = {1, 1}, hi[2] = {0, 0};
+        auto take = [&](const scene::Vertex& v) {
+            for (int k = 0; k < 2; ++k) lo[k] = std::min(lo[k], v.uv[k]), hi[k] = std::max(hi[k], v.uv[k]);
+        };
         for (u32 i = p.first_index; i < p.first_index + p.index_count && i < mesh.indices.size(); ++i) {
             const u32 v = mesh.indices[i];
-            if (v >= mesh.vertices.size()) continue;
-            for (int k = 0; k < 2; ++k)
-                lo[k] = std::min(lo[k], mesh.vertices[v].uv[k]), hi[k] = std::max(hi[k], mesh.vertices[v].uv[k]);
+            if (v < mesh.vertices.size()) take(mesh.vertices[v]);
+            if (key1 && v < key1->size()) take((*key1)[v]); // (morphs blend between the two)
         }
+        // (A float step past an edge counts as on it: the Astra Touring Car's grille spans
+        // -6e-8..0.99999988. Well under 1/16 of a texel, the GS's UV step, for 512 texels.)
+        constexpr float kSlack = 1e-4f;
         const u32 before = p.flags;
-        if (lo[0] >= 0.0f && hi[0] <= 1.0f) p.flags |= scene::kClampU;
-        if (lo[1] >= 0.0f && hi[1] <= 1.0f) p.flags |= scene::kClampV;
+        for (int k = 0; k < 2; ++k) {
+            if (lo[k] < -kSlack || hi[k] > 1.0f + kSlack) continue;
+            p.flags |= k == 0 ? scene::kClampU : scene::kClampV;
+        }
+        // Stopping inside the texture beside a different picture: the region (both axes, as the
+        // UVs' box; an axis that spans the texture or repeats gets none).
+        const scene::Texture* t = textures && size_t(p.texture) < textures->size() ? &(*textures)[size_t(p.texture)] : nullptr;
+        bool region = false;
+        for (int k = 0; k < 2 && t; ++k) {
+            if (!(p.flags & (k == 0 ? scene::kClampU : scene::kClampV)) || hi[k] <= lo[k]) continue;
+            region |= (lo[k] > kSlack && edge_differs(*t, k, lo[k], false, lo[1 - k], hi[1 - k])) ||
+                      (hi[k] < 1.0f - kSlack && edge_differs(*t, k, hi[k], true, lo[1 - k], hi[1 - k]));
+        }
+        for (int k = 0; k < 2 && region; ++k)
+            if ((p.flags & (k == 0 ? scene::kClampU : scene::kClampV)) && hi[k] > lo[k] && (lo[k] > kSlack || hi[k] < 1.0f - kSlack))
+                p.uv_region[k] = std::max(lo[k], 0.0f), p.uv_region[k + 2] = std::min(hi[k], 1.0f);
         marked += p.flags != before;
     }
     return marked;
@@ -862,6 +914,11 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     };
     // Alpha-tested copies of textures: (texture, method, ref) -> texture with binary alpha.
     std::map<std::array<int, 3>, int> cutouts;
+    // The copies of point-filtered textures: their cut texels are coloured once every face is made
+    // (colour_cut_texels), across an edge only where some face repeats the texture (`repeats`: per
+    // texture, whether a face samples it repeating on U / V).
+    std::vector<int> nearest_cuts;
+    std::map<int, std::array<bool, 2>> repeats;
     auto cutout_for = [&](int tex, u8 method, u8 ref) -> int {
         std::array<int, 3> key{tex, method, ref};
         auto it = cutouts.find(key);
@@ -875,10 +932,10 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         }
         int idx = tex; // nothing cut away: keep the original
         if (!all_pass) {
-            if (t.nearest) colour_cut_texels(t);
             t.name += "_cut";
             model.textures.push_back(std::move(t));
             idx = int(model.textures.size() - 1);
+            if (model.textures.back().nearest) nearest_cuts.push_back(idx);
         }
         cutouts.emplace(key, idx);
         return idx;
@@ -1516,6 +1573,12 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 if (prim.index_count) mesh.primitives.push_back(prim);
             }
         }
+        mark_inside_uvs(mesh, key1, &model.textures);
+        for (const scene::Primitive& p : mesh.primitives)
+            if (p.texture >= 0 && p.env_kind == 0 && !(p.flags & scene::kEnvironmentMap)) { // (reflections: alpha only)
+                std::array<bool, 2>& r = repeats[p.texture];
+                r[0] |= !(p.flags & scene::kClampU), r[1] |= !(p.flags & scene::kClampV);
+            }
     };
 
     // A part: one draw's vertices, indices and primitives of an emit() into `mesh` / `key1`,
@@ -1664,6 +1727,11 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             for (MorphDraws::Part& part : e.chunks) split(part, mesh, key1, ranges[r], ranges[r + 1]), ++r;
             md.draws_.push_back(std::move(e));
         }
+    }
+    for (int i : nearest_cuts) {
+        scene::Texture& t = model.textures[size_t(i)];
+        const std::array<bool, 2> r = repeats.count(i) ? repeats[i] : std::array<bool, 2>{false, false};
+        colour_cut_texels(t, r[0] && !t.clamp_u, r[1] && !t.clamp_v);
     }
     model.compute_bounds();
     return model;

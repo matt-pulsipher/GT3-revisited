@@ -55,7 +55,6 @@ scene::Model gtm1_model(ByteSpan block, const CourseModelOptions& opt, const std
     for (scene::Mesh& mesh : m.meshes) {
         mesh.name = name + "/" + mesh.name;
         gtm1::mark_coplanar_overlays(mesh); // (GT3's Z merges them; ours must bias them)
-        gtm1::mark_inside_uvs(mesh);
     }
     return m;
 }
