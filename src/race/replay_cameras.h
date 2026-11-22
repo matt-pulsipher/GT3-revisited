@@ -394,7 +394,6 @@ private:
     GameRandom rng_;
     int cur_ = -1, k_ = 0;     // the course camera's record (kept by mode 1's procedural cuts); mode 1's variant
     CourseCameraAim aim_;      // the course shot's aim and zoom (the camera operator)
-    double aim_acc_ = 0;       // time into the aim's next 60 Hz frame
     bool aim_restart_ = true;  // the next course-shot frame is a shot's first
     bool yaw_seeded_ = false;  // mode 1's yaw seed (A5A) for this shot
     float yaw_seed_ = 0;       // (A64, degrees)
