@@ -240,3 +240,25 @@ TEST(replay_director_course_aim) {
     CHECK(aim_pitch(s.target - s.eye) < aim_pitch(lifted - s.eye) - 3.0f); // aims above the car
     CHECK(near(render::length(s.target - s.eye), render::length(lifted - s.eye), 1e-2f));
 }
+
+// Issue 402's flicker at the line: the lap counter steps on the physics step that crosses it,
+// the drawn distance a frame later (or the other way round); the director's lap steps with the
+// drawn distance.
+TEST(replay_director_seam_lap) {
+    GtrcScript g;
+    g.lap_length = 1000, g.script_end = 3000;
+    ReplayDirector d(&g);
+    CHECK(d.seam_lap(990, 1) == 1);
+    CHECK(d.seam_lap(998, 2) == 1);  // counted, not yet drawn across
+    CHECK(d.seam_lap(999.5f, 2) == 1);
+    CHECK(d.seam_lap(1.0f, 2) == 2); // drawn across
+    CHECK(d.seam_lap(5.0f, 2) == 2);
+    CHECK(d.seam_lap(995, 2) == 2);  // a counter that is late:
+    CHECK(d.seam_lap(2.0f, 2) == 3); // drawn across, not yet counted
+    CHECK(d.seam_lap(6.0f, 2) == 3);
+    CHECK(d.seam_lap(10.0f, 3) == 3);
+    CHECK(d.seam_lap(900, 3) == 3);  // backwards over the line: the counter's own lap
+    CHECK(d.seam_lap(500, 7) == 7);  // a jump (a warp): taken as it is
+    d.car_changed(0, false);
+    CHECK(d.seam_lap(999, 4) == 4);  // another car: taken as it is
+}
