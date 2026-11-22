@@ -293,7 +293,9 @@ struct ModCar {
     std::string label;  // table 30 label
     std::string mod;    // providing mod id (empty when loaded directly)
     std::string file;   // host path of the definition file
-    std::string donor;  // disc car whose records fill everything not defined
+    std::string donor;  // disc car whose records fill everything not defined (empty: an exported car)
+    bool exported = false; // exported from a disc (game/data/car_export.h): its own records, model files and sounds
+    std::string sound_dir; // host folder of its own engine sound banks (engine/<id>, normal0/<id>...); empty = the disc's
     bool electric = false;
     float regen_torque_nm = 0; // electric: lift-off regenerative torque at the motor shaft
     float regen_kw = 0;        // electric: regenerative power limit
@@ -426,6 +428,7 @@ public:
     struct EngineSound {
         u16 id = 0;
         u8 variant = 0;
+        std::string dir; // a mod car's own banks (ModCar::sound_dir); empty = the disc's sound/ folders
     };
     EngineSound engine_sound(u64 engine, u64 muffler, u64 turbo) const;
     EngineSound engine_sound(const Car& c) const { return engine_sound(c.parts[6], c.parts[21], c.parts[12]); }

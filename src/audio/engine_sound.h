@@ -63,8 +63,10 @@ public:
     EngineSound() = default;
     ~EngineSound();
 
-    // Loads sound/engine/<id> and sound/<variant>/<id>. Variant 0..7.
-    bool load(Vfs& vfs, int sound_id, int variant, std::string* error = nullptr);
+    // Loads sound/engine/<id> and sound/<variant>/<id>. Variant 0..7. `dir`: a host folder holding the
+    // banks in the same layout (engine/<id>, normal0/<id>...; an exported mod car's own, ModCar::sound_dir)
+    // to read them from instead.
+    bool load(Vfs& vfs, int sound_id, int variant, std::string* error = nullptr, const std::string& dir = {});
     void set_banks(std::shared_ptr<const sound::EngineBank> engine, std::shared_ptr<const sound::EngineBank> exhaust);
     bool loaded() const { return engine_ || exhaust_; }
     const sound::EngineBank* engine_bank() const { return engine_.get(); }

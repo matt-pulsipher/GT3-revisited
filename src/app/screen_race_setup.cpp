@@ -232,7 +232,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     }
     engine_.stop(app.audio().voices());
     std::string err;
-    if (car_.sound_id && !engine_.load(*app.vfs(), car_.sound_id, car_.sound_variant, &err))
+    if (car_.sound_id && !engine_.load(*app.vfs(), car_.sound_id, car_.sound_variant, &err, car_.sound_dir))
         LOG_WARN("Race: engine sound %u/%u: %s", car_.sound_id, car_.sound_variant, err.c_str());
     if (const data::ModCar* mc = db_.mod_car(car_.label); mc && mc->electric) {
         motor_ = make_motor_banks({mc->whine_order, mc->whine_level, mc->inverter_level});
@@ -265,7 +265,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
              sound_car_.whine ? "on" : "off", crss_ok_ ? "on" : "none");
     if (!results_loaded_) results_loaded_ = results_.load(*app.vfs(), app.renderer(), lang_) || true;
     engine2_.stop(app.audio().voices());
-    if (two_player_ && car_.sound_id) engine2_.load(*app.vfs(), car_.sound_id, car_.sound_variant);
+    if (two_player_ && car_.sound_id) engine2_.load(*app.vfs(), car_.sound_id, car_.sound_variant, nullptr, car_.sound_dir);
     if (two_player_ && motor_.whine) engine2_.set_banks(motor_.whine, motor_.inverter);
     if (engine_.loaded()) LOG_INFO("Race: engine sound %05u variant %u (%s)", car_.sound_id, car_.sound_variant,
                                    EngineSound::variant_dir(car_.sound_variant).c_str());
@@ -862,7 +862,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         c.cd = o.car.cd;
         if (const data::Car* dc = db_.car(car)) {
             data::CarDatabase::EngineSound es = db_.engine_sound(*dc);
-            c.sound_id = es.id, c.variant = es.variant;
+            c.sound_id = es.id, c.variant = es.variant, c.sound_dir = es.dir;
         }
         sounds.push_back(c);
     }

@@ -426,10 +426,10 @@ private:
         cars_loaded_ = false;
     }
 
-    // mod.ini's discs, as written.
+    // mod.ini's discs, as written ("not <disc>" for a disc it excludes).
     static std::string discs_text(const ModInfo& mod) {
         std::string out;
-        for (const std::string& d : mod.discs) out += (out.empty() ? "" : ", ") + d;
+        for (const std::string& d : mod.discs) out += (out.empty() ? "" : ", ") + (d.rfind('!', 0) == 0 ? "not " + d.substr(1) : d);
         return out;
     }
 

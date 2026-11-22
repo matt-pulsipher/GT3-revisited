@@ -33,6 +33,8 @@ namespace gt3r::data {
 // One parsed definition file. Unset optional values keep the donor's.
 struct ModCarDef {
     std::string label, name, maker, donor, model;
+    std::string records;    // [car] records: an exported car's records file (relative to the mod folder); no donor then
+    std::string sound_bank; // [sound] bank: a folder of engine sound banks (engine/<id>, normal0/<id>...), mod-relative
     std::string mod; // providing mod id (filled by the loader)
     std::string file; // host path (filled by the loader)
     std::optional<u16> year;
@@ -107,6 +109,31 @@ struct ModCarDef {
     };
     std::vector<Poke> pokes;
 };
+
+// An exported car's records file (`[car] records`): each record as its table keeps it, with its
+// label, and the texts it refers to (engine layout, displacement...) as game text, since a text
+// field is an index into the disc's string tables; and the labels of the ids it holds that name no
+// record (its body's model), which the loader adds to the database's names.
+struct CarRecordFile {
+    struct Text {
+        enum Kind : u8 { String = 0, Unistring = 1, Label = 2 };
+        u16 offset = 0;
+        Kind kind = Unistring; // String: a u16 index into paramstr; Unistring: into paramunistr (display names);
+                               // Label: the u64 id of this label
+        std::string text;      // game text, or the label
+    };
+    struct Record {
+        TableId table = TableId::Car;
+        std::string label;
+        Bytes bytes;
+        std::vector<Text> texts;
+    };
+    std::vector<Record> records;
+};
+Bytes serialize_car_records(const CarRecordFile& f);
+std::optional<CarRecordFile> parse_car_records(ByteSpan data, std::string* error = nullptr);
+// The fields of a record that are string indexes: offset, and whether into paramunistr.
+std::vector<std::pair<u16, bool>> record_text_fields(TableId t);
 
 // Parses a definition. Returns nullopt with *error on a hard error;
 // warnings (unknown keys) go to *warnings.

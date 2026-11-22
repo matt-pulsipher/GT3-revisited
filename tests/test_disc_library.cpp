@@ -61,6 +61,11 @@ TEST(disc_library_mod_discs) {
     CHECK(!mod_for_disc({"PBPX-95503"}, "us", "SCUS_971.02")); // a serial names one release
     CHECK(!mod_for_disc({"eu"}, "SCEF-50294", "SCEF_502.94")); // "eu": the PAL releases, not discs of their own
     CHECK(!mod_for_disc({"us"}, "eu", ""));
+    // "!": every disc but that one.
+    CHECK(!mod_for_disc({"!SCES-50858"}, "SCES-50858", "SCES_508.58"));
+    CHECK(mod_for_disc({"!SCES-50858"}, "us", "PBPX_955.03"));
+    CHECK(!mod_for_disc({"us", "!PBPX-95503"}, "us", "PBPX_955.03"));
+    CHECK(mod_for_disc({"us", "!PBPX-95503"}, "us", "SCUS_971.02"));
 }
 
 // Without a disc the key is "us": [mods.us] holds the choices, [mods] (before discs had their

@@ -488,7 +488,10 @@ owner).
 
 **What is offered.** Only a mod car (`cars/<label>.ini`) has a package. A disc
 car never travels as one, whatever disc it comes from: a garage car from a disc
-this machine does not have is "not on this disc", with nothing to download. A
+this machine does not have is "not on this disc", with nothing to download. Nor
+does a car exported from a disc (docs/MODDING.md "Exporting cars"): its files are that disc's, so
+it has no package: its owner is told so, and the others see a stand-in, as for any car that cannot
+be shared. A
 package holds only the mod's own files, and the mod is built over its donor
 car from the receiver's disc, so the descriptor names the donor
 (`data::ModCar::donor`) and the lobby offers the download only when the donor

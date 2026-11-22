@@ -118,6 +118,7 @@ struct CarSetup {
     CarBodyMod body_mod;       // mod cars: stretched shell or a body of their own (paint 0)
     u16 sound_id = 0;          // engine sound bank
     u8 sound_variant = 0;
+    std::string sound_dir;     // an exported mod car's own banks (CarDatabase::EngineSound::dir)
 };
 
 // Fills a CarSetup from the database (defaults where something is missing).

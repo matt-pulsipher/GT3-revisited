@@ -295,8 +295,12 @@ int cmd_modcar(Disc& disc, const Args& a) {
         db.rebuild();
         const data::Car* c = db.car(def->label);
         auto s = db.summarize(*c);
-        std::printf("   %s %s (%u) [%s], %u Cr, donor %s, shell %s\n", s.maker.c_str(), s.name.c_str(), s.year,
-                    def->label.c_str(), s.price, def->donor.c_str(), s.model.c_str());
+        if (def->records.empty())
+            std::printf("   %s %s (%u) [%s], %u Cr, donor %s, shell %s\n", s.maker.c_str(), s.name.c_str(), s.year,
+                        def->label.c_str(), s.price, def->donor.c_str(), s.model.c_str());
+        else // an exported car: its own records and model
+            std::printf("   %s %s (%u) [%s], %u Cr, exported, model %s\n", s.maker.c_str(), s.name.c_str(), s.year,
+                        def->label.c_str(), s.price, s.model.c_str());
         std::printf("   %s %s, %u PS (%.0f kW), %.1f kgfm, %u kg, %u x %u x %u mm, wb %u, front %u%%\n", s.drive.c_str(),
                     s.aspiration.c_str(), s.power_ps, s.power_ps / 1.35962f, s.torque_kgfm, s.weight_kg, s.length_mm,
                     s.width_mm, s.height_mm, s.wheelbase_mm, s.front_weight_pct);

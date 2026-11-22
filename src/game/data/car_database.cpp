@@ -641,7 +641,10 @@ std::optional<Tire> CarDatabase::tire(TableId t, u64 id) const {
 
 CarDatabase::EngineSound CarDatabase::engine_sound(u64 engine, u64 muffler, u64 turbo) const {
     EngineSound s;
-    if (const ByteSpan* e = record(TableId::Engine, engine)) s.id = rd16(*e, 0x16);
+    if (const ByteSpan* e = record(TableId::Engine, engine)) {
+        s.id = rd16(*e, 0x16);
+        if (const ModCar* mc = mod_car(label(rd64(*e, 8)))) s.dir = mc->sound_dir; // (an exported car's own banks)
+    }
     if (const ByteSpan* m = record(TableId::Muffler, muffler)) s.variant = (*m)[0x10];
     if (const ByteSpan* t = record(TableId::TurbineKit, turbo); t && (*t)[0x11]) s.variant += 4;
     return s;

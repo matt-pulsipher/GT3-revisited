@@ -1,10 +1,12 @@
 // Car database browser: GT3's car catalogue (the disc region's database/paramdb*.db), with
-// specs, the engine torque curve, upgrade parts and the race events.
+// specs, the engine torque curve, upgrade parts and the race events. R2 / L2 export the car / every
+// car as a mod for the player's other discs (game/data/car_export.h).
 
 #include "app/app.h"
 #include "app/screen_registry.h"
 #include "formats/text/charset.h"
 #include "game/data/car_database.h"
+#include "game/data/car_export.h"
 #include "game/gt_mode.h"
 #include "menu/flow/menu_set.h"
 #include "vfs/vfs.h"
@@ -67,6 +69,14 @@ public:
         if (mode_ == Mode::Cars && m.pressed(PadButton::Circle)) {
             sort_by_power_ = !sort_by_power_;
             sort();
+        }
+        if (mode_ == Mode::Cars && !order_.empty() && m.pressed(PadButton::R2))
+            export_cars(app, {db().cars()[order_[size_t(car_sel_)]].label});
+        if (mode_ == Mode::Cars && m.pressed(PadButton::L2)) {
+            std::vector<std::string> all;
+            for (size_t i : order_)
+                if (!db().mod_car(db().cars()[i].label)) all.push_back(db().cars()[i].label);
+            export_cars(app, all);
         }
     }
 
@@ -175,7 +185,9 @@ private:
         if (page_ == 0) render_specs(ui, x, c, s);
         else if (page_ == 1) render_curve(ui, x, c);
         else render_parts(ui, x, c);
-        ui.footer("{Up/Down}: car  {Left/Right}: page  {Circle}: sort  {Square}: events  {Triangle}: back");
+        if (!status_.empty()) ui.text(x, Ui::kHeight - 36, clip(status_, 60), status_bad_ ? colors::kBad : colors::kGood);
+        ui.footer("{Up/Down}: car  {Left/Right}: page  {Circle}: sort  {R2}: export car as mod  {L2}: export all  "
+                  "{Square}: events  {Triangle}: back");
     }
 
     void render_specs(Ui& ui, float x, const data::Car& c, const CarDatabase::Summary& s) {
@@ -326,6 +338,30 @@ private:
 
     const CarDatabase& db() const { return gt_->db(); }
 
+    // Writes cars as a mod (game/data/car_export.h) into the mods folder: mods/cars_<disc>/, for the player's other
+    // discs (it stays off on this one).
+    void export_cars(App& app, const std::vector<std::string>& labels) {
+        const std::string key = app.vfs()->disc_key();
+        const std::string mod = data::export_mod_id(key);
+        const Disc* d = app.disc();
+        const std::string source = d && !d->info().description.empty() ? d->info().description : d ? d->info().serial : key;
+        const auto read = menu::flow::vfs_reader(*app.vfs());
+        size_t done = 0;
+        std::string err;
+        for (const std::string& l : labels) {
+            if (db().mod_car(l)) {
+                err = "a mod car can't be exported";
+                continue;
+            }
+            if (data::export_car(db(), read, l, app.mods_dir() + "/" + mod, key, source, &err)) ++done;
+        }
+        status_bad_ = done < labels.size();
+        status_ = status_bad_ ? "Export failed: " + err
+                              : done == 1 ? "Exported to mods/" + mod + " (for your other discs)"
+                                          : fmt("%zu cars exported to mods/%s", done, mod.c_str());
+        app.rescan_mods();
+    }
+
     std::unique_ptr<game::GtMode> gt_;
     text::JisTable jis_;
     std::vector<size_t> order_;
@@ -333,6 +369,8 @@ private:
     std::string error_;
     bool loaded_ = false;
     bool sort_by_power_ = false;
+    std::string status_;
+    bool status_bad_ = false;
     Mode mode_ = Mode::Cars;
     int car_sel_ = 0, event_sel_ = 0, page_ = 0;
     XrList xr_list_;

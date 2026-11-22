@@ -1,5 +1,6 @@
 #include "audio/engine_sound.h"
 
+#include "base/file.h"
 #include "base/log.h"
 #include "vfs/vfs.h"
 
@@ -57,14 +58,14 @@ std::string EngineSound::variant_dir(int variant) {
 
 EngineSound::~EngineSound() = default;
 
-bool EngineSound::load(Vfs& vfs, int sound_id, int variant, std::string* error) {
+bool EngineSound::load(Vfs& vfs, int sound_id, int variant, std::string* error, const std::string& dir) {
     char id[16];
     std::snprintf(id, sizeof(id), "%05d", sound_id);
     std::shared_ptr<const sound::EngineBank> banks[2];
     std::string paths[2] = {std::string("sound/engine/") + id, "sound/" + variant_dir(variant) + "/" + id};
     for (int i = 0; i < 2; ++i) {
         try { // (an unreadable file is an error, as a bad one is)
-            auto bytes = vfs.read(paths[i]);
+            auto bytes = dir.empty() ? vfs.read(paths[i]) : read_host_file(dir + "/" + paths[i].substr(6)); // (past "sound/")
             if (!bytes) continue; // a car may lack one bank (e.g. engine-only ids)
             banks[i] = std::make_shared<const sound::EngineBank>(sound::EngineBank::parse(*bytes));
         } catch (const std::exception& e) {

@@ -110,6 +110,7 @@ CarSetup car_setup_from_database(const data::CarDatabase& db, const std::string&
     data::CarDatabase::EngineSound es = db.engine_sound(*car);
     s.sound_id = es.id;
     s.sound_variant = es.variant;
+    s.sound_dir = es.dir;
     return s;
 }
 
