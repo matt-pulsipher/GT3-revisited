@@ -598,11 +598,11 @@ std::vector<u32> decode_indexed_csa(const GsMemory& gs, const Tex0& t, u32 width
         palette[i] = clut_rgba(gs.read_texel(t.cbp, 1, u32(Psm::CT32), x, y), t.cpsm);
     }
     std::vector<u32> out(size_t(width) * height);
-    for (u32 y = 0; y < height; ++y)
-        for (u32 x = 0; x < width; ++x) {
-            u32 c = palette[gs.read_texel(t.tbp, t.tbw, t.psm, x, y) & (n - 1)];
-            out[size_t(y) * width + x] = t.tcc ? c : (c | 0xFF000000u);
-        }
+    gs.read_texels(t.tbp, t.tbw, t.psm, 0, 0, width, height, out.data()); // the indices, then their colours in place
+    for (u32& v : out) {
+        u32 c = palette[v & (n - 1)];
+        v = t.tcc ? c : (c | 0xFF000000u);
+    }
     return out;
 }
 

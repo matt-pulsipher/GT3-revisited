@@ -168,10 +168,10 @@ ClutTextures::ClutTextures(ByteSpan tex1, bool region_crop) {
         if (region_crop && c.wms == 2 && c.maxu >= c.minu) x0 = c.minu, r.width = c.maxu - c.minu + 1;
         if (region_crop && c.wmt == 2 && c.maxv >= c.minv) y0 = c.minv, r.height = c.maxv - c.minv + 1;
         r.tcc = t0.tcc, r.cpsm = t0.cpsm;
-        r.texels.resize(size_t(r.width) * r.height);
-        for (u32 y = 0; y < r.height; ++y)
-            for (u32 x = 0; x < r.width; ++x)
-                r.texels[size_t(y) * r.width + x] = u8(gs.read_texel(t0.tbp, t0.tbw, t0.psm, x0 + x, y0 + y) & (n - 1));
+        std::vector<u32> raw(size_t(r.width) * r.height);
+        gs.read_texels(t0.tbp, t0.tbw, t0.psm, x0, y0, r.width, r.height, raw.data());
+        r.texels.resize(raw.size());
+        for (size_t i = 0; i < raw.size(); ++i) r.texels[i] = u8(raw[i] & (n - 1));
         records_.push_back(std::move(r));
     }
     colours_.assign(anims.size(), {});
