@@ -13,12 +13,17 @@ namespace gt3r::video {
 // stream, so the layout is detected from the picture content. Survey of all
 // 51 files (gt3tool video-survey): 48 field-split (>= 94% of frames have a
 // seam ratio > 3; the rest are busy or flat frames), 3 progressive
-// (ending_long_full, ending_short_full, menu_bg2; <= 1.6% above 3).
+// (ending_long_full, ending_short_full, menu_bg2; <= 1.6% above 3). Concept
+// discs: the openings (opening.pss, opening_GTCJP.pss) and car_gtc /
+// status_gtc are progressive (<= 2.3% above 3); the rest are field-split.
 
-// Discontinuity at the half-height seam: mean |row h/2-1 - row h/2| divided
-// by the mean difference of the neighbouring row pairs. Field-split frames
-// join the bottom of one picture to the top of the next (large ratio);
-// progressive frames are continuous there (~1). Returns 0 for flat rows.
+// Discontinuity at the half-height seam: the mean difference of the rows
+// across it divided by the mean difference of the neighbouring row pairs.
+// Field-split frames join the bottom of one picture to the top of the next
+// (large ratio); progressive frames are continuous there (~1). A one-line
+// horizontal stripe lying on the seam row (the grid that opens the Concept
+// openings) is skipped over: the smallest of the jumps row h/2-1 -> h/2,
+// h/2-1 -> h/2+1 and h/2-2 -> h/2 is used. Returns 0 for flat rows.
 double seam_ratio(const Frame& f);
 
 // Decides once per movie: majority of the first kVotes non-flat frames, by

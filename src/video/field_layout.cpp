@@ -16,7 +16,10 @@ double seam_ratio(const Frame& f) {
         for (int x = 0; x < f.width; ++x) s += std::abs(int(p[x]) - int(q[x]));
         return s / f.width;
     };
-    double seam = row_diff(h - 1, h);
+    // A thin horizontal line lying on the seam row differs from the rows on both sides of
+    // it, while those rows match each other; a real seam keeps the jump across it however
+    // far apart the rows compared are. So take the smallest jump across the seam.
+    const double seam = std::min({row_diff(h - 1, h), row_diff(h - 1, h + 1), row_diff(h - 2, h)});
     double around = (row_diff(h - 3, h - 2) + row_diff(h - 2, h - 1) + row_diff(h, h + 1) + row_diff(h + 1, h + 2)) / 4;
     if (seam < 1.0 && around < 1.0) return 0.0;
     return seam / std::max(around, 0.5);

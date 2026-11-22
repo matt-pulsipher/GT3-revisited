@@ -128,7 +128,14 @@ first 16 non-flat frames: the luma rows on either side of the middle seam
 are discontinuous in field-split frames (ratio of seam difference to
 neighbouring row differences > 3). Survey: the 48 field-split movies have
 ≥ 94% of frames above the threshold, the 3 progressive ones (`ending_long_full`,
-`ending_short_full`, `menu_bg2`) ≤ 1.6% (PAL: ≥ 97% and ≤ 0.4%). The player
+`ending_short_full`, `menu_bg2`) ≤ 1.6% (PAL: ≥ 97% and ≤ 0.4%). The seam
+difference is the smallest of three row pairs across it (h/2-1 to h/2,
+h/2-1 to h/2+1, h/2-2 to h/2), so a one-line stripe lying on the seam row is
+not taken for a seam: the Concept openings (`opening.pss`,
+`opening_GTCJP.pss`) are progressive pictures that open on a grid with a
+line there, which once made the whole opening play as fields (issue 404).
+On Concept discs the openings, `car_gtc` and `status_gtc` are progressive,
+the other movies field-split. The player
 shows a full picture per field, 60 pictures/s (50 on PAL): the decoder thread
 rebuilds each field with `deinterlace_fields()` (motion-adaptive, the "yadif"
 rule without its edge search), one frame behind the decoder since a field's
