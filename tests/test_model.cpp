@@ -2,6 +2,7 @@
 
 #include "test_framework.h"
 
+#include "disc/disc.h"
 #include "formats/course/course_model.h"
 #include "formats/model/car_model.h"
 #include "formats/model/gtm1.h"
@@ -11,6 +12,7 @@
 #include "formats/ps2/vif.h"
 #include "game/data/car_database.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -667,6 +669,72 @@ TEST(gtm1_cut_texels_take_their_kept_neighbours_colour) {
     empty.rgba = {key, key, key, key, key};
     gtm1::colour_cut_texels(empty);
     CHECK(empty.rgba == std::vector<u32>(5, key));
+}
+
+// Primitives that never repeat their texture on an axis sample it clamped there (gtm1::mark_inside_uvs).
+TEST(inside_uvs_clamp_their_axis) {
+    scene::Mesh mesh;
+    auto prim = [&](std::initializer_list<std::array<float, 2>> uvs, int texture = 0, u8 env_kind = 0) {
+        scene::Primitive p;
+        p.first_index = u32(mesh.indices.size());
+        for (const std::array<float, 2>& uv : uvs) {
+            scene::Vertex v;
+            v.uv[0] = uv[0], v.uv[1] = uv[1];
+            mesh.indices.push_back(u32(mesh.vertices.size()));
+            mesh.vertices.push_back(v);
+        }
+        p.index_count = u32(uvs.size());
+        p.texture = texture;
+        p.env_kind = env_kind;
+        mesh.primitives.push_back(p);
+        return mesh.primitives.size() - 1;
+    };
+    const size_t inside = prim({{0.0059f, 0.0089f}, {0.5859f, 0.0089f}, {0.0059f, 0.9922f}}); // a packed picture
+    const size_t edges = prim({{0, 0}, {1, 0}, {1, 1}});
+    const size_t tiled_u = prim({{0, 0}, {2, 0}, {2, 1}});
+    const size_t tiled_v = prim({{0, -0.5f}, {1, -0.5f}, {1, 1}});
+    const size_t untextured = prim({{0.5f, 0.5f}, {0.6f, 0.5f}, {0.6f, 0.6f}}, -1);
+    const size_t env = prim({{0.5f, 0.5f}, {0.6f, 0.5f}, {0.6f, 0.6f}}, 0, 3); // UVs made per frame
+    CHECK(gtm1::mark_inside_uvs(mesh) == 4);
+    auto flags = [&](size_t i) { return mesh.primitives[i].flags & (scene::kClampU | scene::kClampV); };
+    CHECK(flags(inside) == (scene::kClampU | scene::kClampV));
+    CHECK(flags(edges) == (scene::kClampU | scene::kClampV));
+    CHECK(flags(tiled_u) == scene::kClampV);
+    CHECK(flags(tiled_v) == scene::kClampU);
+    CHECK(flags(untextured) == 0 && flags(env) == 0);
+}
+
+// Midfield's pines share a repeating texture with other pictures and start their UVs 1.5 texels
+// inside its edge; they sample it clamped, so the picture on its far side never shows as a line
+// down their sides. Tiled faces keep repeating.
+TEST(course_packed_pictures_sample_clamped_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const Volume::Entry* e = disc->volume().find("courses/US/midfield");
+    if (!e) e = disc->volume().find("courses/midfield"); // (NTSC-J)
+    if (!e) SKIP("no Midfield on this disc");
+    course::CourseModelOptions o;
+    o.backdrop = o.course_line = false;
+    o.reflections = o.frame_alpha = true; // (as the race builds it)
+    scene::Model m = course::build_course_model(disc->volume().read(*e), o, "midfield");
+    size_t cut_outs = 0, clamped = 0, tiled = 0, tiled_marked = 0;
+    for (const scene::Mesh& mesh : m.meshes)
+        for (const scene::Primitive& p : mesh.primitives) {
+            if (p.texture < 0 || p.env_kind != 0) continue;
+            const scene::Texture& t = m.textures[size_t(p.texture)];
+            float lo = 1, hi = 0;
+            for (u32 i = p.first_index; i < p.first_index + p.index_count; ++i)
+                lo = std::min(lo, mesh.vertices[mesh.indices[i]].uv[0]), hi = std::max(hi, mesh.vertices[mesh.indices[i]].uv[0]);
+            if (hi > 1.0f || lo < 0.0f) {
+                ++tiled;
+                tiled_marked += (p.flags & scene::kClampU) != 0;
+            } else if ((p.flags & scene::kAlphaTest) && !t.clamp_u && lo > 0.0f) {
+                ++cut_outs;
+                clamped += (p.flags & scene::kClampU) != 0;
+            }
+        }
+    CHECK(cut_outs > 0 && clamped == cut_outs);
+    CHECK(tiled > 0 && tiled_marked == 0);
 }
 
 // Issue 368. The Astra Touring Car's headlamp surround (point-filtered in the game) is keyed in pure

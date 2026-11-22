@@ -685,6 +685,25 @@ void colour_cut_texels(scene::Texture& t) {
     }
 }
 
+int mark_inside_uvs(scene::Mesh& mesh) {
+    int marked = 0;
+    for (scene::Primitive& p : mesh.primitives) {
+        if (p.texture < 0 || p.env_kind != 0 || (p.flags & scene::kEnvironmentMap) || p.index_count == 0) continue;
+        float lo[2] = {1, 1}, hi[2] = {0, 0};
+        for (u32 i = p.first_index; i < p.first_index + p.index_count && i < mesh.indices.size(); ++i) {
+            const u32 v = mesh.indices[i];
+            if (v >= mesh.vertices.size()) continue;
+            for (int k = 0; k < 2; ++k)
+                lo[k] = std::min(lo[k], mesh.vertices[v].uv[k]), hi[k] = std::max(hi[k], mesh.vertices[v].uv[k]);
+        }
+        const u32 before = p.flags;
+        if (lo[0] >= 0.0f && hi[0] <= 1.0f) p.flags |= scene::kClampU;
+        if (lo[1] >= 0.0f && hi[1] <= 1.0f) p.flags |= scene::kClampV;
+        marked += p.flags != before;
+    }
+    return marked;
+}
+
 namespace {
 
 // GS alpha test of one texel (alpha expanded to 0..255; GS units are 0x80 = 1.0).
