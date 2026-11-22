@@ -1399,6 +1399,25 @@ TEST(net_mod_package_validation_disc) {
         p.files[0].data.assign(ini.begin(), ini.end());
         refuses(p, "online_test_ev", "donor not on this disc");
     }
+    // A menu model and a race model (issue 412): both bodies go, and a key that no scene draws
+    // (`file`, overridden by both) names no file.
+    {
+        game::ModPackage p = ev_package("[model]\nrace = models/race.glb\n");
+        p.files.push_back({"models/race.glb", tiny_glb()});
+        ok = game::validate_mod_package(p, db, "online_test_ev", &err);
+        if (!ok) std::printf("  file + race package refused: %s\n", err.c_str());
+        CHECK(ok);
+        p.files.pop_back();
+        refuses(p, "online_test_ev", "race body missing");
+        p = ev_package("[model]\nmenu = models/menu.glb\nrace = models/race.glb\n");
+        p.files[1].path = "models/menu.glb";
+        p.files.push_back({"models/race.glb", tiny_glb()});
+        ok = game::validate_mod_package(p, db, "online_test_ev", &err);
+        if (!ok) std::printf("  menu + race package refused: %s\n", err.c_str());
+        CHECK(ok);
+        p.files.push_back({"models/body.glb", tiny_glb()});
+        refuses(p, "online_test_ev", "body no scene draws");
+    }
     // Install: the files land in mods/dl-<hash>/ and nowhere else.
     std::string dir = test::temp_path("mods").string();
     std::string hash = sha256_hex(game::serialize_mod_package(good));

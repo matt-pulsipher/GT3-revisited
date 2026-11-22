@@ -124,6 +124,11 @@ CarNameFields car_name_fields(Language lang);
 // the MX-5 the US release calls a Miata is one model on every disc.) A maker with no dealer on
 // the map (the cars with no maker, a few prize cars) has no country: Unknown.
 enum class DriverSide : u8 { Left, Right, Unknown };
+// Which of a car's models a scene draws, as GT3 keeps them: the menus' (menu/cars: an empty
+// cockpit) or a race's, for the course's time of day (cars/day, cars/eve, cars/night: with the
+// driver in).
+enum class CarScene : u8 { Menu, Day, Eve, Night };
+inline constexpr size_t kCarScenes = 4;
 // A dealer map country whose traffic keeps left: "jp", "uk", "aus".
 bool country_drives_on_left(std::string_view country);
 // The side for a maker's country; Unknown for none.
@@ -304,9 +309,11 @@ struct ModCar {
     // hiss under load.
     float whine_order = 0;
     float whine_level = 1, inverter_level = 1;
-    // A body of its own: host path of a binary glTF (empty = the donor's
-    // shell), and its paint colours (name, RGB 0..1) in menu order.
-    std::string model_file;
+    // A body of its own: host paths of binary glTFs by CarScene, every scene filled when the
+    // car has one (empty = the donor's shell; resolve_model_files), and its paint colours
+    // (name, RGB 0..1) in menu order.
+    std::array<std::string, kCarScenes> model_files;
+    const std::string& model_file(CarScene s) const { return model_files[size_t(s)]; }
     std::string wheel; // rim (wheel/<label> on the disc); empty = the donor's
     std::optional<DriverSide> driver_side; // the side its file gives (CarDatabase::driver_side)
     float model_lower = 0; // metres to move a glTF body down from its own ground line

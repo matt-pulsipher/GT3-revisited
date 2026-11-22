@@ -138,6 +138,37 @@ TEST(modcar_parse) {
     CHECK(warns.size() == 1);
 }
 
+TEST(modcar_model_scenes) {
+    // Issue 412: a menu model (no driver) and race models (with one), each falling back so
+    // any single file serves every scene.
+    using data::CarScene;
+    auto files = [](const std::string& model) {
+        std::string err;
+        auto d = data::parse_mod_car("[car]\nlabel = x\nname = X\ndonor = y\n[model]\n" + model, &err);
+        CHECK(d.has_value());
+        return d ? data::resolve_model_files(*d) : std::array<std::string, data::kCarScenes>{};
+    };
+    auto is = [](const std::array<std::string, data::kCarScenes>& f, const char* menu, const char* day,
+                 const char* eve, const char* night) {
+        return f[size_t(CarScene::Menu)] == menu && f[size_t(CarScene::Day)] == day &&
+               f[size_t(CarScene::Eve)] == eve && f[size_t(CarScene::Night)] == night;
+    };
+    CHECK(is(files("wheel = a\n"), "", "", "", ""));
+    CHECK(is(files("file = a.glb\n"), "a.glb", "a.glb", "a.glb", "a.glb"));
+    CHECK(is(files("menu = m.glb\n"), "m.glb", "m.glb", "m.glb", "m.glb"));
+    CHECK(is(files("race = r.glb\n"), "r.glb", "r.glb", "r.glb", "r.glb"));
+    CHECK(is(files("menu = m.glb\nrace = r.glb\n"), "m.glb", "r.glb", "r.glb", "r.glb"));
+    CHECK(is(files("file = a.glb\nrace = r.glb\n"), "a.glb", "r.glb", "r.glb", "r.glb"));
+    CHECK(is(files("file = a.glb\nmenu = m.glb\n"), "m.glb", "a.glb", "a.glb", "a.glb"));
+    CHECK(is(files("menu = m.glb\nrace = r.glb\nnight = n.glb\n"), "m.glb", "r.glb", "r.glb", "n.glb"));
+    // Only some times of day: the others take the first given, then the menus do too.
+    CHECK(is(files("night = n.glb\n"), "n.glb", "n.glb", "n.glb", "n.glb"));
+    CHECK(is(files("eve = e.glb\nnight = n.glb\nmenu = m.glb\n"), "m.glb", "e.glb", "e.glb", "n.glb"));
+    std::string err;
+    auto d = data::parse_mod_car("[car]\nlabel = x\nname = X\ndonor = y\n[model]\nfile = a.glb\nmenu = a.glb\nday = d.glb\n", &err);
+    CHECK(d && data::model_files_of(*d) == std::vector<std::string>({"a.glb", "d.glb"}));
+}
+
 TEST(adpcm_encode_roundtrip) {
     std::vector<s16> pcm(28 * 200);
     for (size_t i = 0; i < pcm.size(); ++i)
@@ -842,7 +873,7 @@ TEST(example_mod_car) {
     }
 
     // The body: a glTF the loader reads, sized like the [body] numbers, with paint and glass.
-    auto glb = read_host_file(m->model_file);
+    auto glb = read_host_file(m->model_file(data::CarScene::Menu));
     CHECK(glb.has_value() && glb->size() < 4u * 1024 * 1024);
     if (!glb) return;
     scene::Model body = load_glb(*glb, GlbOptions{}, label);
@@ -863,6 +894,37 @@ TEST(example_mod_car) {
     CHECK(std::fabs((body.bounds_max[0] - body.bounds_min[0]) - 2.34f) < 0.03f); // with the mirrors
     CHECK(body.bounds_min[2] < -2.2f && body.bounds_max[2] < 2.1f);               // longer front overhang
     CHECK(body.bounds_min[1] > 0.05f && body.bounds_min[1] < 0.15f && std::fabs(body.bounds_max[1] - 1.149f) < 0.02f);
+    // One `file`: every scene draws it.
+    for (size_t i = 1; i < data::kCarScenes; ++i) CHECK(m->model_files[i] == m->model_files[0]);
+    {
+        // A menu model and a race model (issue 412): the menus draw one, races of every time
+        // of day the other.
+        const std::filesystem::path dir2 = test::temp_path("scene_models");
+        std::filesystem::create_directories(dir2 / "cars");
+        const std::string race_glb = (dir2 / "race.glb").string();
+        CHECK(write_host_file(race_glb, *glb));
+        std::string ini(text->begin(), text->end());
+        const size_t at = ini.find("\nfile = ");
+        CHECK(at != std::string::npos);
+        if (at == std::string::npos) return;
+        ini.replace(at, ini.find('\n', at + 1) - at, "\nmenu = " + m->model_files[0] + "\nrace = race.glb");
+        const std::string file2 = (dir2 / "cars" / (label + ".ini")).string();
+        CHECK(write_host_file(file2, Bytes(ini.begin(), ini.end())));
+        data::CarDatabase db2;
+        CHECK(db2.load(disc->volume()));
+        data::load_mod_maker_file(db2, dir + "/makers/gt3r.ini", "example_coupe");
+        data::load_mod_car_files(db2, {file2}, "scene_models");
+        db2.rebuild();
+        CHECK(db2.mod_car_errors().empty());
+        const data::ModCar* m2 = db2.mod_car(label);
+        CHECK(m2 && m2->model_file(data::CarScene::Menu) == m->model_files[0]);
+        if (!m2) return;
+        for (data::CarScene sc : {data::CarScene::Day, data::CarScene::Eve, data::CarScene::Night})
+            CHECK(m2->model_file(sc) == race_glb);
+        CarBodyMod menu_body = body_mod_for_car(db2, label, 0, data::CarScene::Menu);
+        CarBodyMod race_body = body_mod_for_car(db2, label, 0, data::CarScene::Night);
+        CHECK(menu_body.glb && race_body.glb && menu_body.glb != race_body.glb);
+    }
     // The engine's wheels match the modelled ones (768 mm across).
     auto ws = wheel_spec_for_car(db, label);
     CHECK(ws.has_value() && std::fabs(ws->radius[0] - 0.384f) < 0.01f && std::fabs(ws->radius[1] - 0.384f) < 0.01f);
@@ -902,7 +964,7 @@ TEST(example_mod_car_electric) {
     CHECK(db.mod_car_errors().empty());
     const data::ModCar* m = db.mod_car(label);
     const data::ModCar* c = db.mod_car(coupe);
-    CHECK(m && c && m->electric && !c->electric && m->model_file == c->model_file);
+    CHECK(m && c && m->electric && !c->electric && m->model_files == c->model_files);
     if (!m) return;
     CHECK(m->for_sale && !m->picture.empty() && !m->thumb.empty());
     for (const std::string* png : {&m->picture, &m->thumb}) {

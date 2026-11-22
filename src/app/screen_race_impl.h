@@ -799,6 +799,12 @@ private:
     mutable std::vector<int> lamp_index_;
     BrakeLamps brake_lamps_;
     std::string car_folder_ = "cars/day/"; // the course's car time of day (day / eve / night)
+    // The same as a CarScene (which body a mod car with several draws).
+    data::CarScene car_scene() const {
+        return car_folder_ == "cars/eve/"     ? data::CarScene::Eve
+               : car_folder_ == "cars/night/" ? data::CarScene::Night
+                                              : data::CarScene::Day;
+    }
     CarLampGlows car_lamps_;
     WetRoad wet_;                                // the wet-road reflection pass (course slots 9 / 13)
     std::vector<render::DrawItem> wet_items_;    // its buffer's scene

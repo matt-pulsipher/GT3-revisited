@@ -169,6 +169,31 @@ void stock_arcade_settings(Bytes& a, Part&& part) {
 
 } // namespace
 
+std::array<std::string, kCarScenes> resolve_model_files(const ModCarDef& d) {
+    auto first = [](std::initializer_list<const std::string*> keys) {
+        for (const std::string* k : keys)
+            if (!k->empty()) return *k;
+        return std::string();
+    };
+    const auto& t = d.model_time;
+    std::array<std::string, kCarScenes> out;
+    out[size_t(CarScene::Menu)] = first({&d.model_menu, &d.model_file, &d.model_race, &t[0], &t[1], &t[2]});
+    for (size_t i = 0; i < 3; ++i) {
+        std::string& o = out[size_t(CarScene::Day) + i];
+        o = first({&t[i], &d.model_race, &d.model_file});
+        for (size_t j = 0; j < 3 && o.empty(); ++j) o = t[j];
+        if (o.empty()) o = d.model_menu;
+    }
+    return out;
+}
+
+std::vector<std::string> model_files_of(const ModCarDef& d) {
+    std::vector<std::string> out;
+    for (const std::string* k : {&d.model_file, &d.model_menu, &d.model_race, &d.model_time[0], &d.model_time[1], &d.model_time[2]})
+        if (!k->empty() && std::find(out.begin(), out.end(), *k) == out.end()) out.push_back(*k);
+    return out;
+}
+
 std::optional<ModCarDef::TireSize> parse_tire_size(std::string_view s) {
     // "255/35R21", "255/35 R21", "255/35ZR21"
     std::string t;
@@ -357,6 +382,11 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
                 else known = false;
             } else if (sn == "model") {
                 if (key == "file") d.model_file = v;
+                else if (key == "menu") d.model_menu = v;
+                else if (key == "race") d.model_race = v;
+                else if (key == "day") d.model_time[0] = v;
+                else if (key == "eve") d.model_time[1] = v;
+                else if (key == "night") d.model_time[2] = v;
                 else if (key == "wheel") d.wheel = v;
                 else if (key == "lower_mm") {
                     if (auto n = num()) d.model_lower_mm = float(*n);
@@ -1089,7 +1119,10 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, cons
     m.wheel = def.wheel;
     m.driver_side = def.driver_side;
     m.model_lower = def.model_lower_mm * 0.001f;
-    m.model_file = mod_path(def.file, def.model_file);
+    {
+        const std::array<std::string, kCarScenes> files = resolve_model_files(def);
+        for (size_t i = 0; i < kCarScenes; ++i) m.model_files[i] = mod_path(def.file, files[i]);
+    }
     m.picture = mod_path(def.file, def.picture);
     m.thumb = mod_path(def.file, def.thumb);
     m.logo = mod_path(def.file, def.logo);

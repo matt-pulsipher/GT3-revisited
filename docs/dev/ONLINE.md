@@ -524,7 +524,8 @@ sends a garage mod car without its package: a player without the mod sees
   (`body_mod_for_car`), as the player's car always did.
 
 **Validation** (everything checked before anything is written or loaded):
-- **Structure:** magic, at most 8 files and 32 MB, per-type caps (`.ini`
+- **Structure:** magic, at most 8 files and 32 MB (the definition, up to
+  four bodies: the ones its menus and races draw, and three pictures), per-type caps (`.ini`
   64 KB, `.glb` 16 MB, `.png` 4 MB).
 - **Paths:** plain relative (letters, digits, `. _ -`, at most 3 levels, no
   `..`, absolute or hidden parts, no duplicates even by case).

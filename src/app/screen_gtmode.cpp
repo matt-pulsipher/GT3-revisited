@@ -732,7 +732,7 @@ private:
             opt.paint = paint;
             race::CarSetup setup = race::car_setup_from_database(s->gt().db(), car);
             opt.wheel_spec = setup.wheels;
-            opt.body_mod = body_mod_for_car(s->gt().db(), car, paint);
+            opt.body_mod = body_mod_for_car(s->gt().db(), car, paint, data::CarScene::Menu);
             std::optional<Bytes> wheel_file;
             // A fitted wheel: the menus load the detailed menu/wheel/<code> model,
             // the race wheel/<code>.

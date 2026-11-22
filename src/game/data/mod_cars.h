@@ -78,8 +78,12 @@ struct ModCarDef {
     // tyres, not to the shop's upgrade compounds.
     std::optional<float> grip_pct;
 
-    // [model] a body of its own (binary glTF), relative to the mod folder
-    std::string model_file;
+    // [model] a body of its own (binary glTF), relative to the mod folder: `file` for every
+    // scene, or a model per scene (GT3's menu model has an empty cockpit, its race models a
+    // driver): `menu`, `race`, or one per race time of day (`day`, `eve`, `night`). Any one
+    // of them is enough; the others fall back (resolve_model_files).
+    std::string model_file, model_menu, model_race;
+    std::array<std::string, 3> model_time; // day, eve, night
     float model_lower_mm = 0; // [model] lower_mm: move the body down (negative = up)
     std::string wheel; // [model] wheel: a rim from the disc (wheel/<label>) instead of the donor's
     // [paints] name = #RRGGBB, in menu order
@@ -159,6 +163,15 @@ void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, 
 // The name and description go in as game text (add_mod_car).
 void load_mod_maker_file(CarDatabase& db, const std::string& file, const std::string& mod = {},
                          const text::JisTable* jis = nullptr);
+
+// The body file each scene draws (by CarScene; mod-relative as written), all empty without
+// one. A race's time of day takes its own key, else `race`, else `file`, else another time
+// of day's (day, eve, night), else `menu`; the menus take `menu`, else `file`, else the
+// race's (`race`, day, eve, night). So one model serves every scene, and a menu + race pair
+// serves both kinds.
+std::array<std::string, kCarScenes> resolve_model_files(const ModCarDef& d);
+// Every distinct body file the definition names (the package's .glb files).
+std::vector<std::string> model_files_of(const ModCarDef& d);
 
 // "255/35R21" <-> the stored size. nullopt on malformed text or sizes the
 // disc format cannot hold (width and aspect must be multiples of 5).
