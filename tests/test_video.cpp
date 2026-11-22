@@ -2,7 +2,9 @@
 // demux/Movie tests, and (with GT3R_DISC) the real FMVs under stream/.
 
 #include "test_framework.h"
+#include "concept_discs.h"
 
+#include "disc/disc.h"
 #include "formats/ads.h"
 #include "formats/pss.h"
 #include "video/field_layout.h"
@@ -1080,6 +1082,32 @@ TEST(video_disc_opening) {
     CHECK(nonzero);
 }
 
+// Concept's openings are progressive pictures that begin on a grid with a line on the seam row
+// (issue 404): the player shows them whole. Its course and menu movies are field-split, as GT3's.
+TEST(video_concept_disc_field_layout) {
+    const std::vector<std::string> discs = test::concept_discs();
+    if (discs.empty()) SKIP("GT3R_DISC_CONCEPT not set");
+    for (const std::string& path : discs) {
+        std::unique_ptr<Disc> d = Disc::open(path);
+        Volume& vol = d->volume();
+        int checked = 0;
+        for (const char* name : {"stream/opening.pss", "stream/opening_GTCJP.pss", "stream/akasaka_full.pss",
+                                 "stream/arcade_menu_gtc.pss"}) {
+            const Volume::Entry* e = vol.find(name);
+            if (!e) continue;
+            auto m = open_disc_movie(vol, *e);
+            FieldLayoutDetector det;
+            Frame f;
+            while (!det.decided() && m->next_frame(f)) det.add(f);
+            const bool opening = std::strncmp(name, "stream/opening", 14) == 0;
+            if (det.field_split() == opening) std::printf("  %s %s: field_split %d\n", path.c_str(), name, det.field_split());
+            CHECK(det.decided() && det.field_split() != opening);
+            ++checked;
+        }
+        CHECK(checked >= 3);
+    }
+}
+
 TEST(video_disc_all_headers) {
     Disc* disc = test::any_region_disc();
     if (!disc) SKIP("needs GT3R_DISC");
@@ -1166,6 +1194,26 @@ TEST(video_field_layout_synthetic) {
     CHECK(det.decided() && det.field_split());
     Frame w = weave_fields(f);
     CHECK(w.y[0] == f.y[0] && w.y[64] == f.y[32 * 64] && w.y[2 * 64] == f.y[64]);
+}
+
+// A one-line stripe on (or just above) the seam row of a progressive picture, as in the grid that
+// opens the Concept openings, is not a field seam.
+TEST(video_field_layout_stripe_on_seam) {
+    Frame f;
+    f.width = 64;
+    f.height = 64;
+    f.y.assign(64 * 64, 0);
+    f.u.assign(32 * 32, 128);
+    f.v.assign(32 * 32, 128);
+    for (int line : {32, 31}) {
+        for (int y = 0; y < 64; ++y)
+            for (int x = 0; x < 64; ++x) f.y[y * 64 + x] = u8(40 + y + (x & 3));
+        for (int x = 0; x < 64; ++x) f.y[line * 64 + x] = 220;
+        CHECK(seam_ratio(f) < FieldLayoutDetector::kSeamThreshold);
+        FieldLayoutDetector det;
+        for (int i = 0; i < FieldLayoutDetector::kVotes; ++i) det.add(f);
+        CHECK(det.decided() && !det.field_split());
+    }
 }
 
 namespace {
