@@ -492,7 +492,8 @@ with entry rules, prize money and a prize car.
 
 - **New event**, then its **title** and **description**, a **picture** (any PNG;
   it is cropped and scaled to 640 x 448 and fills the screen behind the event),
-  the **league** GT Mode lists it in, single races or a **championship**, the
+  an **icon** (any PNG; cropped to the league page's 51 x 27 strip buttons, the
+  picture squeezed into them when there is none), the **league** GT Mode lists it in, single races or a **championship**, the
   license it needs, the **car rules**, the **prizes** (per place, the champion's
   bonus, a prize car) and the **opponents**.
 - **Car rules** are GT3's own: the car type (race and rally cars, tuned cars,
@@ -516,7 +517,7 @@ with entry rules, prize money and a prize car.
   colour of its own, or one drawn at the start. The page shows its power and
   weight as built.
 - Every change is saved as you make it, in `mods/my_events/` (`events/<name>.ini`,
-  `pictures/<name>.png`): GT Mode lists the event the next time you go there.
+  `pictures/<name>.png`, `pictures/<name>_icon.png`): GT Mode lists the event the next time you go there.
   The pages that edit part of an event (a race, its cars, a car, the prizes,
   the car rules) have **Save** and **Cancel**: Cancel puts back what the page
   held when it opened.
@@ -533,8 +534,8 @@ disc's own races pay.
 
 ### In GT Mode
 
-An event shows on its league's page like the disc's series: its strip icon, its
-picture full screen, its title and the results so far. Behind it are its race
+An event shows on its league's page like the disc's series: its icon in the
+strip, its picture full screen, its title and the results so far. Behind it are its race
 page and entry page, copied from a disc series with room for its races, with the
 course logos, race information, preview and results of the disc's own. You enter
 with your active car, which must meet the license and car rules, checked as
@@ -557,6 +558,7 @@ game's completion.
 title = Hot Hatch Cup
 description = Three rounds for front-wheel-drive hatchbacks.
 picture = pictures/hot_hatch_cup.png   ; relative to the mod folder; 640x448 shown
+icon = pictures/hot_hatch_cup_icon.png ; the strip button, 51x27 shown (default: the picture)
 league = r/beginner/beginner           ; the league page on the race map (see below)
 championship = yes                     ; no: single races
 prizes = 5000, 3000, 2000, 1000, 500, 250 ; credits for 1st .. 6th

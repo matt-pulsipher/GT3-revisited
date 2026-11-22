@@ -25,8 +25,8 @@ namespace gt3r::data {
 // unknown keys and dropped values go to *warnings.
 std::optional<ModEventDef> parse_mod_event(std::string_view text, const std::string& id, std::string* error,
                                            std::vector<std::string>* warnings = nullptr);
-// The definition as a file parse_mod_event reads back. `picture` is written as given (the
-// creator passes it relative to the mod folder).
+// The definition as a file parse_mod_event reads back. `picture` and `icon` are written as given
+// (the creator passes them relative to the mod folder).
 std::string format_mod_event(const ModEventDef& def);
 
 // The race codes' stem for an event of a mod ("X" + the mod and file names).

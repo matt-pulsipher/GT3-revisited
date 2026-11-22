@@ -3,7 +3,7 @@
 // Player-made GT Mode events (docs/MODDING.md "Adding events"): what a mods/<id>/events/<name>.ini
 // holds, and what loading it made (game/data/mod_events.h). The race records themselves live in the
 // ordinary event table (32), cloned from a disc event; this keeps what the disc format has no field
-// for (the title, the picture, the league page, the skills and grid place of the field).
+// for (the title, the pictures, the league page, the skills and grid place of the field).
 
 #include <array>
 #include <string>
@@ -55,6 +55,7 @@ struct ModEventDef {
     // [event]
     std::string title, description;
     std::string picture; // host path of the event's picture (PNG, 640x448 shown), "" = none
+    std::string icon;    // host path of its strip icon on the league page (PNG, 51x27 shown), "" = the picture
     // The league page it is listed on, as the disc's race map links it ("r/beginner/beginner");
     // "" or a page the open disc does not have: the Custom Events league.
     std::string league;
