@@ -24,6 +24,13 @@ using namespace gt3r::menu::flow;
 
 namespace {
 
+// A bronze license on the first course, so Single Race opens (with none, the main menu refuses it).
+void give_license_medal() {
+    game::GtModeSession* session = game::gt_mode_session();
+    CHECK(session != nullptr);
+    if (session) session->gt().state().concept_game.record_license(0, 2, 100);
+}
+
 void set_env(const char* name, const char* value) {
 #ifdef _WIN32
     _putenv_s(name, value);
@@ -184,6 +191,8 @@ TEST(concept_disc_walk) {
         press(f, key_bit(MenuKey::Confirm));
         const std::string top = where(f);
         CHECK(top == "concept:ar/top");
+        // Single Race needs a course with a license medal (concept §5.5): a bronze on the first course.
+        give_license_medal();
         const std::vector<std::string> games = item_names(f);
         CHECK((games == std::vector<std::string>{"license", "single_race", "two_player", "time_attack", "game_status", "ilink_battle"}));
         const std::string category = geneva ? "ar/select_category2" : "ar/select_category";
@@ -312,6 +321,7 @@ TEST(concept_disc_languages_walk) {
             CHECK(focus_named(f, "game_start"));
             press(f, key_bit(MenuKey::Confirm));
             CHECK(where(f) == "concept:ar/top" && f.controller()->items().size() == 6);
+            give_license_medal();
             CHECK(focus_named(f, "single_race"));
             press(f, key_bit(MenuKey::Confirm));
             CHECK(page(f) == "ar/level");
