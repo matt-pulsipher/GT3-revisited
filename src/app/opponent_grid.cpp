@@ -73,7 +73,7 @@ std::vector<std::string> OpponentGrid::labels(const IniDocument& cfg, const std:
 }
 
 int OpponentGrid::place_in(const IniDocument& cfg, const std::string& section) {
-    return std::clamp(std::atoi(cfg.get(section, "place").value_or("5").c_str()), 0, kMaxCars);
+    return std::clamp(std::atoi(cfg.get(section, "place").value_or(std::to_string(kMaxCars)).c_str()), 0, kMaxCars);
 }
 
 void OpponentGrid::fill(App& app, const std::vector<std::string>& entries, int fallback, int count) {

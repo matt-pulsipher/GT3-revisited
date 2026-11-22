@@ -5,6 +5,7 @@
 #include "app/app.h"
 #include "app/ui.h"
 #include "base/log.h"
+#include "formats/course/ai_lines.h"
 #include "formats/course/course_file.h"
 #include "formats/course/road.h"
 #include "formats/model/car_model.h"
@@ -97,6 +98,24 @@ int course_grid_size(const Vfs& vfs, const std::string& course) {
     try {
         const course::CourseFile cf = course::CourseFile::parse(*f);
         return int(course::Road::parse(cf.section(*f, course::kSlotRoad)).grid.size());
+    } catch (const std::exception& e) {
+        LOG_WARN("%s's start grid: %s", course.c_str(), e.what());
+        return 0;
+    }
+}
+
+int course_field_size(const Vfs& vfs, const std::string& course) {
+    std::optional<Bytes> f = vfs.read(course_file_path(vfs, course));
+    if (!f) return 0;
+    try {
+        const course::CourseFile cf = course::CourseFile::parse(*f);
+        const int grid = int(course::Road::parse(cf.section(*f, course::kSlotRoad)).grid.size());
+        if (grid <= 0) return 0;
+        const ByteSpan lines = cf.section(*f, course::kSlotAiLines);
+        bool line = false;
+        if (!lines.empty())
+            for (const course::AiLine& l : course::AiLines::parse(lines).lines) line = line || !l.points.empty();
+        return line ? kMaxFieldCars : std::min(grid, 8);
     } catch (const std::exception& e) {
         LOG_WARN("%s's start grid: %s", course.c_str(), e.what());
         return 0;

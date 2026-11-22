@@ -409,6 +409,7 @@ RaceSetup RaceRecord::setup(const ProgramData& d, const data::CarDatabase& db, s
     s.entries = entries;
     s.effects = effects;
     s.info = info, s.conductor = conductor, s.course_addr = course_addr, s.road_addr = road_addr;
+    s.made_grid = made_grid;
     s.recorders = recorders, s.ghost_car = ghost_car, s.external_ghost = external_ghost;
     s.sparks = sparks;
     return s;
@@ -434,6 +435,7 @@ RaceRecord RaceRecord::of(const RaceSetup& s, std::string course_label) {
     r.rules = s.rules ? *s.rules : race_config(s.event);
     r.effects = s.effects;
     r.info = s.info, r.conductor = s.conductor, r.course_addr = s.course_addr, r.road_addr = s.road_addr;
+    r.made_grid = s.made_grid;
     r.entries = s.entries;
     r.pads.assign(s.entries.size(), {});
     r.recorders = s.recorders, r.ghost_car = s.ghost_car, r.external_ghost = s.external_ghost;
@@ -541,6 +543,7 @@ Bytes RaceRecord::serialize() const {
         w.var(u32(e.size()));
         for (const SparkPoint& p : e) w.put<u32>(p.x.bits), w.put<u32>(p.y.bits), w.put<u32>(p.z.bits);
     }
+    w.put<u8>(made_grid ? 1 : 0);
     w.put<u64>(final_hash);
     return std::move(w.out);
 }
@@ -579,10 +582,10 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
     r.info = rd.get<u32>(), r.conductor = rd.get<u32>(), r.course_addr = rd.get<u32>();
     if (version >= 2) r.road_addr = rd.get<u32>();
     const u8 n = rd.get<u8>();
-    if (n == 0 || n > 8) throw FormatError("race record: bad car count");
+    if (n == 0 || n > kMaxCars) throw FormatError("race record: bad car count");
     for (u8 i = 0; i < n; ++i) {
         r.entries.push_back(get_entry(rd, version));
-        if (u32(r.entries.back().grid_slot) >= 8) throw FormatError("race record: bad grid slot");
+        if (u32(r.entries.back().grid_slot) >= kMaxCars) throw FormatError("race record: bad grid slot");
     }
     r.frames = rd.get<u32>();
     if (r.frames > 60u * 60 * 60 * 24) throw FormatError("race record: bad frame count");
@@ -642,7 +645,7 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
     }
     if (version >= 4) {
         const u32 ne = rd.var();
-        if (ne > 8) throw FormatError("race record: bad spark point lists");
+        if (ne > kMaxCars) throw FormatError("race record: bad spark point lists");
         for (u32 i = 0; i < ne; ++i) {
             const u32 np = rd.var();
             if (np > 64) throw FormatError("race record: bad spark points");
@@ -655,6 +658,7 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
             r.sparks.push_back(std::move(e));
         }
     }
+    if (version >= 7) r.made_grid = rd.get<u8>() != 0;
     r.final_hash = rd.get<u64>();
     if (!rd.at_end()) throw FormatError("race record: bytes past the end");
     return r;
@@ -674,7 +678,9 @@ u64 race_hash(const ExactRace& race) {
         mix(image.data(), image.size());
         if (has_later(c)) word(c.later.ratio.bits), mix(c.later.special.data(), c.later.special.size()); // (never on GT3's discs)
     }
-    for (s32 k : race.order()) word(u32(k));
+    // (GT3's 8 places of the order; a bigger field's every car: a race of 8 cars or fewer hashes as before)
+    const size_t places = std::max(kGt3Cars, race.cars().size());
+    for (size_t k = 0; k < places && k < race.order().size(); ++k) word(u32(race.order()[k]));
     const RaceFlow& f = race.flow();
     word(f.clock), word(f.end_count), word(u32(f.result)), word(f.result_time), word(f.record);
     word(race.random().r);

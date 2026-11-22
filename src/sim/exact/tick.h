@@ -183,13 +183,13 @@ void ai_steer_pct(Car& c);
 // has counted the stop. Unused under GT3's rules.
 struct StopZone {
     u8 active = 0;               // +0xE408: 1 while the race has a stop zone
-    std::array<u8, 8> stops{};   // +0xE40A + car: the stops it made
+    std::array<u8, kMaxCars> stops{}; // +0xE40A + car: the stops it made
     F base, spacing;             // +0xE414 / +0xE418: the zone's start along the lap and its length (m)
-    std::array<F, 8> x, y, dist; // +0xE41C / +0xE43C / +0xE45C + 4 car: the car's stop point and its race distance
+    std::array<F, kMaxCars> x, y, dist; // +0xE41C / +0xE43C / +0xE45C + 4 car: the car's stop point and its race distance
     int cars = 0;                // (+0xE3E4, the car count)
     bool has(int i) const { return active == 1 && i >= 0 && i < cars; }
     // Later: the stops car owes, its laps counted less its stops made (-1 without a zone).
-    s32 owed(const Car& c) const { return active == 1 ? s32(c.laps) - s32(stops[size_t(c.index) & 7]) : -1; }
+    s32 owed(const Car& c) const { return active == 1 ? s32(c.laps) - s32(stops[size_t(c.index) % kMaxCars]) : -1; }
 };
 
 struct AiPlan {

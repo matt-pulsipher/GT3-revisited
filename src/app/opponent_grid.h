@@ -1,6 +1,6 @@
 #pragma once
 
-// The lineup of a race the player sets up: one to five CPU cars, each any car in any of its colours with a skill, and the
+// The lineup of a race the player sets up: one to kMaxCars CPU cars (as many as the course's field holds, set_limit), each any car in any of its colours with a skill, and the
 // player's own place among them, pole first. Rows for the page that shows them (Quick race's custom race): the number of
 // opponents, the player's place, every opponent's skill, then the lineup. The page keeps the cursor and the car page; action()
 // says whose car is to be chosen. The page gives the grid the cars, and the limit its course's start grid sets (0: no room, no rows).
@@ -28,7 +28,8 @@ class CarDatabase;
 
 class OpponentGrid {
 public:
-    static constexpr int kMaxCars = 5; // (a race has six cars, the player's included)
+    static constexpr int kMaxCars = kMaxFieldCars - 1; // (a field of our own has up to 32 cars, the player's included)
+    static constexpr int kDefaultCount = 5;             // the opponents of a lineup not set up yet (GT3's six-car races)
     static constexpr int kPlayer = kMaxCars; // who: the player, as against opponents 0 .. kMaxCars - 1
     static constexpr int kNobody = -1;
     static constexpr int kSkills = 4;

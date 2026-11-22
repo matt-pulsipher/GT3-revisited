@@ -29,6 +29,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
     cfg.opponent_sources.clear(), cfg.opponent_drivers.clear(), cfg.opponent_skills.clear();
     cfg.grid_slots.clear();
     cfg.max_opponents = 0;
+    cfg.made_grid = true; // (up to net::kMaxRaceCars cars: the places past the course's grid made along its main line)
     cfg.event.clear();
     cfg.battle_wear = ns.settings().tire_wear; // the host's (the lobby refuses the start while a player's game lacks it)
     net_.player.clear(), net_.paint.clear(), net_.names.clear(), net_.top_speed.clear();

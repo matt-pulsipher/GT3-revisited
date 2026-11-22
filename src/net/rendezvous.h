@@ -82,7 +82,7 @@ enum class Rv : u8 {
 // A Reservation's state.
 enum class RvSlot : u8 { Granted = 0, Queued = 1, Released = 2, Refused = 3 };
 constexpr u16 kWaitUnknown = 0xFFFF;
-constexpr int kMaxLinks = kMaxPlayers * (kMaxPlayers - 1) / 2; // relayed pairs in one race (15)
+constexpr int kMaxLinks = kMaxPlayers * (kMaxPlayers - 1) / 2; // relayed pairs in one race (120)
 
 enum class RvError : u8 { BadRequest = 1, NotFound = 2, Version = 3, Busy = 4, Denied = 5, UpdateRequired = 6 };
 

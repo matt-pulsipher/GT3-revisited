@@ -430,7 +430,7 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
             ok = true, owner = n->second.serial; // a join pair
         if (auto s = sessions_.find(code); !ok && s != sessions_.end() && token == s->second.token && a != b &&
                                            a < kMaxPlayers && b < kMaxPlayers && key == pair_key(token, a, b))
-            ok = true, owner = s->second.serial; // two players of the session (at most 15 channels per session)
+            ok = true, owner = s->second.serial; // two players of the session (at most kMaxLinks channels per session)
         if (!ok) return error(from, RvError::Denied, "not allowed to bind this channel");
         auto it = channels_.find(key);
         if (it == channels_.end()) {

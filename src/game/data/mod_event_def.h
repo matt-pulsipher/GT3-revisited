@@ -86,7 +86,8 @@ struct ModEventDef {
     std::vector<ModEventRace> races;
 
     static constexpr int kMaxRaces = 10;
-    static constexpr int kMaxOpponents = 5; // in a race
+    static constexpr int kMaxOpponents = 31;    // in a race (a field of up to 32 cars, the player's included; GT3's races 5)
+    static constexpr int kDefaultOpponents = 5; // a race without cars = (as GT3's races)
     static constexpr int kMaxPool = 32;     // in a pool (event +0x10)
 };
 

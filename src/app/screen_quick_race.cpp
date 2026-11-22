@@ -17,8 +17,8 @@
 // The last choices are kept in config.ini [quickrace].
 //
 // The list's first item is a custom race, the player's own, on one page: any course, the laps
-// and the lineup (app/opponent_grid.h): one to five opponents, as many as the course's start
-// grid holds, and the player's car and place among them. It runs on the arcade's Normal race (Class S's, on dirt the dirt race's):
+// and the lineup (app/opponent_grid.h): one to 31 opponents, as many as the course's field holds
+// (course_field_size: its grid continued along its racing line), and the player's car and place among them. It runs on the arcade's Normal race (Class S's, on dirt the dirt race's):
 // that race's start and tyre wear, and its rubber band if the player turns catch-up on, which
 // would otherwise hold fast opponents back. Each opponent's skill is the driver overrides of
 // the arcade race of that difficulty; the values are the disc's. Custom races can be saved
@@ -253,6 +253,7 @@ private:
     // The custom race: the course, its rows and the car at the left, the lineup at the right, the buttons along the bottom.
     static constexpr float kLeftX = 8, kLeftW = 232, kLeftY = 110, kLeftH = 24, kGridX = 248, kGridR = 632, kGridY = 26;
     static constexpr float kButtonY = 316, kButtonH = 24;
+    static constexpr float kGridBottom = kButtonY - 4; // the lineup's rows scroll between kGridY and here
     static constexpr int kSetupCar = -1, kCustomCar = -2; // what the car page chooses, or an opponent's (0 ..)
     enum Hit { kHitRow, kHitLeft, kHitRight, kHitButton, kHitFooter };
     enum Foot { kFootChoose, kFootBack };
@@ -268,6 +269,7 @@ private:
             if (a.kind == K::Back) go_back(app);
             else if (a.kind == K::Hover || a.kind == K::Click) pointer_at(app, a);
             else if (page_ == Page::Events) scroll_list(a);
+            else if (page_ == Page::Custom) scroll_grid(a);
             if (page_ != page || naming_) return; // (the rest was for a page no longer on screen)
         }
     }
@@ -335,6 +337,35 @@ private:
         } else if (a.kind == K::Wheel && a.x < kListW) {
             list_first_ = std::clamp(list_first_ - int(std::lround(a.wheel * 3)), 0, last_first());
         }
+    }
+
+    // The custom race's lineup (a field bigger than its column): a drag or the wheel over it scrolls it.
+    float grid_content() const {
+        float h = 0;
+        for (int r = 0; r < grid_.rows(); ++r) h += grid_.row_h(r);
+        return h;
+    }
+    void clamp_grid_scroll() { grid_scroll_ = std::clamp(grid_scroll_, 0.0f, std::max(0.0f, grid_content() - (kGridBottom - kGridY))); }
+    void scroll_grid(const PointerInput::Action& a) {
+        using K = PointerInput::Action::Kind;
+        if (a.kind == K::DragEnd) {
+            grid_drag_ = false;
+        } else if (a.kind == K::Drag && a.sx >= kGridX && a.sy >= kGridY && a.sy < kGridBottom) {
+            if (!grid_drag_) grid_drag_ = true, drag_scroll_ = grid_scroll_;
+            grid_scroll_ = drag_scroll_ - (a.y - a.sy);
+        } else if (a.kind == K::Wheel && a.x >= kGridX) {
+            grid_scroll_ -= a.wheel * 3 * OpponentGrid::kCarH;
+        }
+        clamp_grid_scroll();
+    }
+    // Scrolls the lineup so the focused row (a key move) is in view.
+    void follow_grid() {
+        const std::vector<CustomRow> rows = custom_rows();
+        if (custom_sel_ < 0 || size_t(custom_sel_) >= rows.size() || rows[size_t(custom_sel_)].kind != CRow::Grid) return;
+        const UiRect& r = rows[size_t(custom_sel_)].r;
+        if (r.y < kGridY) grid_scroll_ -= kGridY - r.y;
+        else if (r.y + r.h > kGridBottom) grid_scroll_ += r.y + r.h - kGridBottom;
+        clamp_grid_scroll();
     }
 
     // --- data -------------------------------------------------------------------
@@ -1082,7 +1113,7 @@ private:
             custom_.paint = 0;
         }
         const data::Event* ev = db_.event(custom_event());
-        grid_.fill(app, ev ? ev->entries : std::vector<std::string>{}, custom_.car, OpponentGrid::kMaxCars);
+        grid_.fill(app, ev ? ev->entries : std::vector<std::string>{}, custom_.car, OpponentGrid::kDefaultCount);
         grid_.set_limit(course_grid_limit(app, custom_.course));
         grid_.set_player(custom_.car, custom_.paint);
     }
@@ -1130,7 +1161,7 @@ private:
     int course_grid_limit(App& app, const std::string& course) {
         auto [it, fresh] = grid_limits_.try_emplace(course, OpponentGrid::kMaxCars);
         if (fresh)
-            if (const int slots = course_grid_size(*app.vfs(), course); slots > 0) it->second = std::clamp(slots - 1, 1, OpponentGrid::kMaxCars);
+            if (const int slots = course_field_size(*app.vfs(), course); slots > 0) it->second = std::clamp(slots - 1, 1, OpponentGrid::kMaxCars);
         return it->second;
     }
 
@@ -1324,7 +1355,7 @@ private:
             rows.push_back({k, -1, {kLeftX, y, kLeftW, kLeftH}});
             y += kLeftH;
         }
-        y = kGridY;
+        y = kGridY - grid_scroll_;
         for (int r = 0; r < grid_.rows(); ++r) {
             rows.push_back({CRow::Grid, r, {kGridX, y, kGridR - kGridX, grid_.row_h(r)}});
             y += grid_.row_h(r);
@@ -1347,6 +1378,7 @@ private:
             custom_sel_ = (custom_sel_ + v + n) % n;
             delete_armed_ = false;
             picker_sound(app, "cursor");
+            follow_grid();
         }
         custom_sel_ = std::clamp(custom_sel_, 0, n - 1);
         int h = m.horizontal();
@@ -1429,6 +1461,7 @@ private:
     }
 
     void render_custom(App& app, Ui& ui) {
+        clamp_grid_scroll(); // (the lineup may have shrunk)
         ui.header("QUICK RACE", saved_name_.empty() ? "Custom race" : "Custom race: " + saved_name_);
         grid_.set_player(custom_.car, custom_.paint);
         const std::vector<CustomRow> rows = custom_rows();
@@ -1437,7 +1470,8 @@ private:
             const UiRect& b = r.r;
             const bool f = int(i) == custom_sel_;
             if (r.kind == CRow::Grid) {
-                grid_.render_row(app, ui, r.grid, b, f, {hits_, pointer_, kHitRow, kHitLeft, kHitRight, int(i)});
+                if (b.y >= kGridY - 0.5f && b.y + b.h <= kGridBottom + 0.5f) // (the rows scrolled out of the column: not drawn)
+                    grid_.render_row(app, ui, r.grid, b, f, {hits_, pointer_, kHitRow, kHitLeft, kHitRight, int(i)});
                 continue;
             }
             if (r.kind == CRow::Save || r.kind == CRow::Delete || r.kind == CRow::Start) {
@@ -1460,6 +1494,8 @@ private:
             const float vx = label.empty() ? b.x + 2 : b.x + 78;
             value_arrows(ui, {vx, b.y + 1, b.right() - vx - 2, b.h - 4}, value, colors::kText, hits_, kHitLeft, kHitRight, int(i), pointer_);
         }
+        if (const float content = grid_content(); content > kGridBottom - kGridY)
+            ui.scrollbar(UiRect{kGridX, kGridY, kGridR - kGridX + 6, kGridBottom - kGridY}, content, grid_scroll_);
         // The course, and the car under the cursor (an opponent's, else the player's).
         course_art(app, ui, custom_.course, SDL_FRect{kLeftX + 2, 28, kLeftW - 4, 76});
         const CustomRow& at = rows[size_t(std::clamp(custom_sel_, 0, int(rows.size()) - 1))];
@@ -1507,6 +1543,7 @@ private:
         }
         rq.no_rubber_band = !custom_.catch_up;
         rq.player_slot = grid_.player_place();
+        rq.big_field = true;
         LOG_INFO("Quick race: custom race at %s, %d laps, with %s", custom_.course.c_str(), custom_.laps, rq.car.c_str());
         remember(app);
         (void)menu::flow::take_game_result(); // nothing stale from earlier races
@@ -1683,7 +1720,9 @@ private:
     PointerInput pointer_; // the list, the setup and the custom race (the pickers have their own)
     HitList hits_;
     bool list_drag_ = false;
-    int drag_first_ = 0;   // the list's first row when a drag began
+    int drag_first_ = 0;
+    float grid_scroll_ = 0, drag_scroll_ = 0; // the custom race's lineup: scrolled by (UI units), when a drag began
+    bool grid_drag_ = false;   // the list's first row when a drag began
     PickerArt art_;
     CarPicker car_picker_;
     CoursePicker course_picker_;

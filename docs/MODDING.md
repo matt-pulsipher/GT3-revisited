@@ -622,7 +622,7 @@ parts = sus_semi_racing, nat_2, wtr_1, tir_soft
 course = trialmt
 laps = 2
 skill = league         ; league, easy, normal, hard, professional
-cars = 3               ; opponents it draws from its pool (default: as many as the pool has, at most 5)
+cars = 3               ; opponents it draws from its pool, 1 to 31 (default: as many as the pool has, at most 5)
 
 [race2]
 course = midfield
@@ -631,8 +631,10 @@ skill = hard
 opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
 ```
 
-- Up to 10 races, `[race1]` to `[race10]`, and up to 5 opponents per lineup. A
-  course's start grid must have room for every car (the creator checks it).
+- Up to 10 races, `[race1]` to `[race10]`, and up to 31 opponents per race (32
+  cars with yours; a pool holds up to 32 cars). The original's races have 6 cars;
+  a bigger field lines up behind the course's own grid, two by two along its
+  racing line. Places past 6th win no prize money and no championship points.
 - A pool entry is a car label (`gt3tool car`, or the creator's car page; mod
   cars work too), a car variant of the disc (an opponent as its races field it,
   the labels in their pools), or `tune:<name>`. A colour is a `carcolor.db` id,

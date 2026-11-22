@@ -16,12 +16,13 @@
 
 namespace gt3r::net {
 
-constexpr u16 kProtocolVersion = 5; // 4: races on the exact core (exact car states, pad frames); 5: CPU cars
-constexpr int kMaxPlayers = 6; // as the original's i.LINK battle
+constexpr u16 kProtocolVersion = 6; // 4: races on the exact core (exact car states, pad frames); 5: CPU cars; 6: 32-car fields
+constexpr int kMaxPlayers = 16; // players in a lobby (the original's i.LINK battle: 6)
+constexpr int kMaxRaceCars = 32; // a race's cars, the players' and the CPU cars (sim::exact::kMaxCars)
 // The host's CPU cars on the grid's empty places (docs/dev/ONLINE.md "CPU cars"): ids of their own, never a player's. The
 // host runs them; their states, finishes and descriptors (CarInfo) come from it.
 constexpr u8 kCpuId = 0x80;  // CPU car k is kCpuId + k
-constexpr int kMaxCpuCars = 5;
+constexpr int kMaxCpuCars = kMaxRaceCars - 1; // (the host alone and a full field)
 constexpr bool is_cpu_id(u8 id) { return id >= kCpuId && id < kCpuId + kMaxCpuCars; }
 constexpr size_t kMaxDatagram = 1200;
 // What a game supports beyond its protocol (Hello's last byte; older games send none): races with tyre wear.

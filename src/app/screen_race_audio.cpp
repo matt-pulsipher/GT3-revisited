@@ -274,7 +274,27 @@ void RaceScreen::update_tyre_sounds(App& app, const sim::VehicleState& s) {
         opp_sfx_.clear();
         opp_sfx_.resize(size_t(n));
     }
+    // A field bigger than GT3's (more than 8 cars): besides the player's car, only the car the camera follows and the nearest
+    // others to the camera keep their tyres' loops (kTyreCars of them), the rest silent; 8 cars or fewer: every car (as GT3).
+    constexpr int kTyreCars = 7;
+    std::vector<bool> heard(size_t(n), true);
+    if (n > kTyreCars) {
+        const sim::Vec3 eye = to_sim(camera_.eye());
+        std::vector<std::pair<float, int>> near;
+        for (int i = 0; i < n; ++i) {
+            const sim::Vec3& q = f->opponent_state(i).position;
+            const float dx = q.x - eye.x, dy = q.y - eye.y, dz = q.z - eye.z;
+            near.push_back({i + 1 == l.target ? -1.0f : dx * dx + dy * dy + dz * dz, i});
+        }
+        std::partial_sort(near.begin(), near.begin() + kTyreCars, near.end());
+        std::fill(heard.begin(), heard.end(), false);
+        for (int k = 0; k < kTyreCars; ++k) heard[size_t(near[size_t(k)].second)] = true;
+    }
     for (int i = 0; i < n; ++i) {
+        if (!heard[size_t(i)]) {
+            opp_sfx_[size_t(i)].stop(mixer);
+            continue;
+        }
         const sim::VehicleState& os = f->opponent_state(i);
         CarSfx::Step p = step(camera_, os, f->opponent_setup(i), f->opponent_telemetry(i), sound_view(l.kind, i + 1 == l.target));
         p.doppler = l.doppler(os);

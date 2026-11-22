@@ -97,7 +97,7 @@ struct RaceSetup {
     u32 ghost_switch = 0;   // the race object's +0x217A4: a ghost car is drawn (phase 12's draw mode, with +0x70 clear)
     // The race configuration block itself (conductor + 0xE340) instead of the event record's (null: race_config(event)).
     const RaceConfig* rules = nullptr;
-    // The entries in grid order (entry i is car i, at most 8).
+    // The entries in grid order (entry i is car i, at most kMaxCars).
     std::vector<StartEntry> entries;
     // The course's tyre effect emitter (the race's particle system, RaceCourse +4): it draws the VU0 random register for every
     // particle. Off only to reproduce a race run without one.
@@ -111,6 +111,9 @@ struct RaceSetup {
     u32 info = 0, conductor = 0, course_addr = 0;
     // The road block's address (StartRace::road): only a start on a grid slot past the course's table reads it.
     u32 road_addr = 0;
+    // Grid places past the course's table made along its main line (start.h StartRace::made_grid): our own bigger fields
+    // (Quick race's custom race, mod events, online), never one of GT3's races.
+    bool made_grid = false;
     // The solo race modes' recorders as the run starts (race_flow.h SoloRecorders: the race object's input devices and their
     // recordings; the race keeps its own copy). With them car 0 is the player's car, whose frames (pads[0]) its device
     // records, and `ghost_car` (if any) the ghost car, whose frames its device plays, both when their phases run, and the
@@ -347,6 +350,7 @@ private:
     std::vector<u8> hit_, hit_43c_;
     std::vector<u8> posed_;
     std::vector<CarContact> car_contacts_;
+    std::vector<CarInputs> inputs_; // run()'s per-car inputs (kept for their storage)
 };
 
 // The fields of a car's record that a posed car takes from its pose: the position, velocity, attitude and their rates, the

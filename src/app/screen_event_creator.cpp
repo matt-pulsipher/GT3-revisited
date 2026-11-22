@@ -420,17 +420,13 @@ private:
         std::sort(events_.begin(), events_.end(), [](const data::ModEventDef& a, const data::ModEventDef& b) { return a.title < b.title; });
     }
 
-    // How many opponents a course's start grid holds (the player takes a place).
+    // How many opponents a course's field holds (the player takes a place): course_field_size, up to 31 where the grid can
+    // be made longer along the course's racing line.
     int grid_limit(App& app, const std::string& course) {
         auto [it, fresh] = grid_limits_.try_emplace(course, data::ModEventDef::kMaxOpponents);
         if (fresh)
-            if (std::optional<Bytes> f = app.vfs()->read(course_file_path(*app.vfs(), course))) try {
-                const course::CourseFile cf = course::CourseFile::parse(*f);
-                const int slots = int(course::Road::parse(cf.section(*f, course::kSlotRoad)).grid.size());
-                it->second = std::clamp(slots - 1, 1, data::ModEventDef::kMaxOpponents);
-            } catch (const std::exception& e) {
-                LOG_WARN("Event creator: %s's start grid: %s", course.c_str(), e.what());
-            }
+            if (const int cars = course_field_size(*app.vfs(), course); cars > 0)
+                it->second = std::clamp(cars - 1, 1, data::ModEventDef::kMaxOpponents);
         return it->second;
     }
 
@@ -765,7 +761,7 @@ private:
             rows.push_back(action_row("Its cars", std::to_string(r.opponents.size()) + (r.opponents.size() == 1 ? " car" : " cars"),
                                       "{Cross}: the cars this race draws its opponents from", [this] { open_pool(race_); }, x, y, w));
         const int most = std::min({data::ModEventDef::kMaxOpponents, int(race_pool(r).size()), grid_limit(app, r.course)});
-        const int n = r.cars > 0 ? std::min(r.cars, most) : most;
+        const int n = r.cars > 0 ? std::min(r.cars, most) : std::min(most, data::ModEventDef::kDefaultOpponents);
         rows.push_back(value_row("Racing you", std::to_string(n) + (n == 1 ? " car" : " cars"),
                                  "How many cars it draws (" + course_name(r.course) + "'s grid has room for " +
                                      std::to_string(grid_limit(app, r.course)) + ")",
@@ -1374,7 +1370,7 @@ private:
         // A race draws no more cars than its course's grid holds.
         for (data::ModEventRace& r : ed_.races) {
             const int pool = int(race_pool(r).size()), room = grid_limit(app, r.course);
-            const int n = r.cars > 0 ? std::min(r.cars, pool) : std::min(pool, data::ModEventDef::kMaxOpponents);
+            const int n = r.cars > 0 ? std::min(r.cars, pool) : std::min(pool, data::ModEventDef::kDefaultOpponents);
             if (n > room) r.cars = room;
         }
         // The tunes a pool still names (a car switched back to stock leaves its tune behind).

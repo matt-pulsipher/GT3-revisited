@@ -51,7 +51,7 @@ public:
         double nonce_timeout_ms = 120000;  // a join that never bound its relay
         double rebind_after_ms = 10000;    // a bound address silent this long may be replaced (NAT rebinding)
         // Link slots and the queue.
-        size_t relay_links = 300;             // racing links the relay carries at once
+        size_t relay_links = 1200;            // racing links the relay carries at once
         size_t max_queue = 100;               // lobbies waiting for slots
         double queue_timeout_ms = 600000;     // a queued lobby gives up after 10 min
         double queue_ping_timeout_ms = 15000; // a queued host must keep its keepalives coming
@@ -59,7 +59,8 @@ public:
         double skip_horizon_ms = 60000;       // a smaller lobby may go first if the head still starts within this
         double race_estimate_ms = 240000;     // typical race (slot hold) length until races measured it
         // Bandwidth guards (not admission): a racing link, a lobby link, all lobby links together.
-        double channel_bytes_per_s = 0.5e6 / 8;    // per racing channel and direction (a race uses ~0.07 Mbit/s)
+        // (a car's states are ~0.07 Mbit/s: a host's channel to a player carries every other car's, up to 31 in a full field)
+        double channel_bytes_per_s = 3e6 / 8;      // per racing channel and direction
         double idle_channel_bytes_per_s = 32e3;    // per lobby channel and direction (lobby messages, mod downloads)
         double idle_bytes_per_s = 20e6 / 8;        // all lobby channels together
         bool bench = false; // loopback sources skip the per-IP limits (gt3r-relay --bench; never on by default)

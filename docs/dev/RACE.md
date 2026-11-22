@@ -1331,6 +1331,32 @@ From the event record (database table 32; `race::event_start`):
 - Time-limited races, like every race of 10 laps or more, use the endurance HUD layout
   (Total, Best, the lap-time list, Lap; "Lap n" without a total); no time remaining is shown.
 
+### Bigger fields (ours)
+
+GT3's races have six cars at most and its conductor keeps eight places. Our own races (Quick race's custom race,
+mod events, online) hold up to 32 (`sim::exact::kMaxCars`): every table of the exact core indexed by a car is that
+long, and a race of eight cars or fewer reads and writes only GT3's places, byte for byte as before (its race hash
+too: `race_hash` takes GT3's eight places of the order, or every car of a bigger field).
+
+- **Grid.** Courses keep six grid places (Trial Mountain eight, Smokey Mountain North five). With
+  `FieldConfig::made_grid` (`RaceSetup::made_grid`, kept in the race record from version 7) a place past the
+  course's table is made along the main line (`made_grid_slot`, sim/exact/start.cpp): the table's places measured
+  against the line, then its pattern continued behind the last row (the last two places' offsets across the line in
+  turn, each half a row behind the one before: staggered two by two on a wide road, single file on a narrow one),
+  each car at the same share of the road's width as the table place it copies (the road measured across the line
+  to where its surface ends, so a grid running back round a corner stays centred), facing along the line. In GT3's floats, so every machine of an online race places them alike. A
+  course without racing lines keeps its grid's size (`course_field_size`). GT3's races never set it: a place past
+  their table still reads what follows it, as the program does.
+- **Field.** `GameRequest::big_field` (Quick race's custom race) or a mod event's code (`X…`) lets the field take
+  31 opponents; GT Mode's and the arcade's races stay at five.
+- **HUD place.** GT3's rank strings stop at "12th"; past it the place is made of the same rank-font glyphs
+  (`rank_ordinal`: "13th", "21st", "32nd").
+- **Results.** The board shows the first seven rows and the player's own (`ResultsOverlay::kShownRows`). Places
+  past 6th win no prize money and score no championship points (GT3's tables stop at 6th). The replay cameras rank
+  cars past 6th as the 6th.
+- **Sound.** Past eight cars only eight play their tyre loops: the player's, the car the camera follows and the
+  nearest others to the camera; engine notes were already limited to the nearest five.
+
 ## Results and flags
 
 From the race workstream's research (presentation §B, `result1.pmb`,

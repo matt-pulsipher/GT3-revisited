@@ -799,16 +799,23 @@ void Hud::draw_map(SDL_Renderer* r, const HudData& d, int view) {
 }
 
 // The position (presentation §D5).
+std::string rank_ordinal(int n) {
+    const int tens = n % 100, ones = n % 10;
+    const char* suffix = tens >= 11 && tens <= 13 ? "th" : ones == 1 ? "st" : ones == 2 ? "nd" : ones == 3 ? "rd" : "th";
+    return std::to_string(n) + suffix;
+}
+
 void Hud::draw_rank(SDL_Renderer* r, const HudData& d, int view) {
     const HudRow* rank_row = hud_row(d.mode, HudPart::Rank, -1, view);
-    if (rank_row && d.live && d.cars > 1 && d.position >= 1 && d.position <= 12) {
+    if (rank_row && d.live && d.cars > 1 && d.position >= 1 && d.position <= 99) {
         // "1st".."12th" in font rank (the suffix is part of the string), 3 px glyph spacing, at
         // the row's position and scale (size / 100); shadow at +4 in black 75 % first. The
         // original draws it with no 16:9 push (presumably an overscan margin); ours pushes it
         // out to the left edge whatever the row's alignment, like the lap count on the right.
-        static const char* const kRank[] = {"1st", "2nd", "3rd", "4th", "5th", "6th",
-                                            "7th", "8th", "9th", "10th", "11th", "12th"};
-        const char* s = kRank[d.position - 1];
+        // GT3's strings stop at "12th"; a bigger field's places ("13th", "21st", "32nd") are made
+        // of the same glyphs (every digit and suffix letter is in the font's twelve).
+        const std::string ord = rank_ordinal(d.position);
+        const char* s = ord.c_str();
         const float k = rank_row->w / 100.0f, x = rank_row->x - margin(), y = rank_row->y;
         text(r, ux(x + 4), uy(y + 4), s, "rank#1", k, SDL_Color{0, 0, 0, 192}, text::HAlign::Left, true, 3);
         text(r, ux(x), uy(y), s, "rank#1", k, kAmber, text::HAlign::Left, true, 3);

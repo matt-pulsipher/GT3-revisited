@@ -155,6 +155,7 @@ void RaceScreen::resolve_launch() {
         race_no_rubber_band_ = rq.no_rubber_band;
         race_chosen_laps_ = rq.laps;
         race_player_slot_ = rq.player_slot;
+        race_big_field_ = rq.big_field;
     }
     // Arcade Single Race: the field is drawn from the event's pool with the race module's
     // generator (gt_mode §20.4), slots 1 .. cars-1.

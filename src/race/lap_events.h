@@ -62,7 +62,7 @@ int lap_list_of(int car, HudPlay play, int followed);
 class PassingOrder {
 public:
     static constexpr int kPoints = 4; // up to 3 split points and the line
-    static constexpr int kCars = 8;   // cars kept per point and lap
+    static constexpr int kCars = 32;  // cars kept per point and lap (a field of our own has up to 32)
 
     void reset();
     // A car passes timing point `point` (0..kPoints-1) on lap index `lap` at `ms`. Returns

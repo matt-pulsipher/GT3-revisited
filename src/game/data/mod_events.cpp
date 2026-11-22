@@ -423,9 +423,10 @@ bool add_mod_event(CarDatabase& db, const ModEventDef& def, std::string* error) 
         put64(b, kRegulation, regulation.empty() ? none : db::id_hash(regulation));
         put8(b, kLaps, u8(std::clamp(r.laps, 1, 99)));
         put8(b, kLicense, u8(std::clamp(ev.def.license, 0, 6)));
-        // The cars it draws: the player and as many opponents as it asks for, at most the pool's and five.
+        // The cars it draws: the player and as many opponents as it asks for (cars =, up to 31), at most the pool's; five
+        // when it does not say (as GT3's races).
         const int most = std::min<int>(int(lineup.size()), ModEventDef::kMaxOpponents);
-        put8(b, kCars, u8(std::clamp(r.cars > 0 ? r.cars : most, 1, most) + 1));
+        put8(b, kCars, u8(std::clamp(r.cars > 0 ? r.cars : std::min(most, ModEventDef::kDefaultOpponents), 1, most) + 1));
         put8(b, kSpecial, course->surface == kSurfaceDirt ? kDirtTires : 0);
         for (size_t p = 0; p < 6; ++p) put16(b, kPrize + 2 * p, hundreds(ev.def.prizes[p]));
         put16(b, kBonus, ev.def.championship ? hundreds(ev.def.bonus) : 0);

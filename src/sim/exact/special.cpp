@@ -83,8 +83,8 @@ void set_mood(Car& c, const MoodTables& k, int mood, int time) {
 
 void pass_by_step(PassByState& p, const Proximity& k, int n, bool pal_rate) {
     const s16 cap = pal_rate ? 250 : 300, held = pal_rate ? 51 : 61; // (a second and a step)
-    for (size_t i = 0; i < size_t(n) && i < 8; ++i)
-        for (size_t j = 0; j < size_t(n) && j < 8; ++j) {
+    for (size_t i = 0; i < size_t(n) && i < kMaxCars; ++i)
+        for (size_t j = 0; j < size_t(n) && j < kMaxCars; ++j) {
             if (i == j) continue;
             s16& t = p.timer[i][j];
             if (F{} < k.slip[i][j]) {

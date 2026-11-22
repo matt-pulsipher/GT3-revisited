@@ -780,10 +780,18 @@ private:
     // finger's first tap only focuses). `act(row, h, cross)` does it; false = the page changed
     // (the remaining actions are for a page no longer on screen).
     template <class Act>
-    void row_pointer(int& sel, Act&& act, int rows, bool* back = nullptr) {
+    void row_pointer(int& sel, Act&& act, int rows, bool* back = nullptr, float* scroll = nullptr) {
         using K = PointerInput::Action::Kind;
         for (const PointerInput::Action& a : pointer_.take()) {
             if (a.kind == K::Back && back) *back = true;
+            if (scroll) { // (a page whose rows scroll: a drag or the wheel moves them)
+                if (a.kind == K::DragEnd) drag_scroll_ = -1;
+                else if (a.kind == K::Drag) {
+                    if (drag_scroll_ < 0) drag_scroll_ = *scroll;
+                    *scroll = std::max(0.0f, drag_scroll_ - (a.y - a.sy));
+                } else if (a.kind == K::Wheel)
+                    *scroll = std::max(0.0f, *scroll - a.wheel * 3 * OpponentGrid::kCarH);
+            }
             if (a.kind != K::Hover && a.kind != K::Click) continue;
             const HitArea* h = hits_.at(a.x, a.y);
             if (!h || h->id < 0) continue;
@@ -2119,14 +2127,14 @@ private:
     // How many cars a course's grid holds (0: unknown).
     int grid_size(const std::string& course) {
         auto [it, fresh] = grid_sizes_.try_emplace(course, 0);
-        if (fresh && app_ && app_->vfs()) it->second = course_grid_size(*app_->vfs(), course);
+        if (fresh && app_ && app_->vfs()) it->second = course_field_size(*app_->vfs(), course);
         return it->second;
     }
     int grid_size(const std::string& course) const { return const_cast<OnlineScreen*>(this)->grid_size(course); }
-    // Room for CPU cars: the course's grid (six cars at most, as GT3's races) less the players.
+    // Room for CPU cars: the course's field (course_field_size: up to 32 cars) less the players.
     int cpu_limit(const net::Session& ns) const {
         const int slots = grid_size(ns.is_host() ? course_label() : ns.course());
-        const int cars = std::min(net::kMaxPlayers, slots > 0 ? slots : net::kMaxPlayers);
+        const int cars = std::min(net::kMaxRaceCars, slots > 0 ? slots : net::kMaxRaceCars);
         return std::clamp(cars - int(ns.players().size()), 0, net::kMaxCpuCars);
     }
     // A Gran Turismo Concept disc: CPU skills are its single-race levels.
@@ -2227,8 +2235,23 @@ private:
     }
 
     enum CpuFooter { kFootCpuBack };
-    static constexpr float kCpuX = 40, kCpuR = 600, kCpuY = 50;
+    static constexpr float kCpuX = 40, kCpuR = 600, kCpuY = 50, kCpuBottom = 292; // (the lineup scrolls between Y and Bottom)
     int cpu_sel_ = 0;
+    float cpu_scroll_ = 0, drag_scroll_ = -1; // the CPU cars' lineup scrolled by (UI units); where a drag began (-1 none)
+    // The CPU cars' lineup scrolled into its column (`follow`: the focused row in view).
+    void clamp_cpu_scroll(const OpponentGrid& g, bool follow) {
+        float top = 0, at = 0, h = 0;
+        for (int r = 0; r < g.rows(); ++r) {
+            if (r == cpu_sel_) at = top, h = g.row_h(r);
+            top += g.row_h(r);
+        }
+        const float view = kCpuBottom - kCpuY;
+        if (follow && h > 0) {
+            if (at < cpu_scroll_) cpu_scroll_ = at;
+            else if (at + h > cpu_scroll_ + view) cpu_scroll_ = at + h - view;
+        }
+        cpu_scroll_ = std::clamp(cpu_scroll_, 0.0f, std::max(0.0f, top - view));
+    }
 
     void update_cpu(App& app) {
         const MenuInput& m = app.menu();
@@ -2244,7 +2267,7 @@ private:
             }
             cpu_action(app, row, h, cross);
             return page_ == Page::Cpu;
-        }, rows, &back);
+        }, rows, &back, &cpu_scroll_);
         if (back || m.pressed(PadButton::Triangle) || m.pressed(PadButton::Circle)) {
             page_ = Page::Lobby;
             sel_ = kCpu;
@@ -2256,6 +2279,7 @@ private:
         if (int v = m.vertical()) {
             cpu_sel_ = (cpu_sel_ + v + rows) % rows;
             picker_sound(app, "cursor");
+            clamp_cpu_scroll(g, true);
         }
         cpu_sel_ = std::clamp(cpu_sel_, 0, rows - 1);
         int h = m.horizontal();
@@ -2295,15 +2319,21 @@ private:
         g.set_texts("CPU cars", "Players start", "The players (" + std::to_string(ns.players().size()) + ")");
         ui.fill(0, 20, Ui::kWidth, Ui::kHeight - 36, colors::kBackground);
         ui.header("CPU CARS", host ? "Cars the computer drives on the grid's empty places" : "The host chooses them");
-        float y = kCpuY;
+        clamp_cpu_scroll(g, false);
+        float y = kCpuY - cpu_scroll_;
         if (g.rows() == 0) {
-            ui.text(kCpuX, y, "No room for CPU cars: the course's grid is full.", colors::kDim);
+            ui.text(kCpuX, kCpuY, "No room for CPU cars: the course's grid is full.", colors::kDim);
         }
+        float content = 0;
         for (int r = 0; r < g.rows(); ++r) {
             const UiRect rect{kCpuX, y, kCpuR - kCpuX, g.row_h(r)};
-            g.render_row(app, ui, r, rect, r == cpu_sel_, {hits_, pointer_, kHitRow, kHitLeft, kHitRight, r});
+            if (rect.y >= kCpuY - 0.5f && rect.y + rect.h <= kCpuBottom + 0.5f) // (rows scrolled out of the column: not drawn)
+                g.render_row(app, ui, r, rect, r == cpu_sel_, {hits_, pointer_, kHitRow, kHitLeft, kHitRight, r});
             y += g.row_h(r);
+            content += g.row_h(r);
         }
+        ui.scrollbar(UiRect{kCpuX, kCpuY, kCpuR - kCpuX + 8, kCpuBottom - kCpuY}, content, cpu_scroll_);
+        y = std::min(y, kCpuBottom);
         // What the row under the cursor does.
         std::string help;
         const int rows = g.rows();

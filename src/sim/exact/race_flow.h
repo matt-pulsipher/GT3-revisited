@@ -254,8 +254,8 @@ struct RaceFlowInputs {
     std::array<u32, 3> licence_times{};
     // The data logger's: per car its input object's frame (car + 0xC: + 0xFC) and whether its table counts frames from its
     // first entry's (+ 0xC8 is 2).
-    std::array<u32, 8> logger_frame{};
-    std::array<u8, 8> logger_relative{};
+    std::array<u32, kMaxCars> logger_frame{};
+    std::array<u8, kMaxCars> logger_relative{};
     MoodTables moods;               // special car 1's mood tables (the later builds' pod race: a disqualified car's mood)
     u8 speed_unit = 0;        // the speed display's unit (0 km/h, 1 mph, others m/s): the machine test's speed event
     FreeRunRecorder recorder; // the free run's
@@ -411,8 +411,8 @@ StopZone stop_zone_setup(const ProgramData& d, const Behaviour& how, u8 kind, F 
 // The conductor's gap matrices (conductor + 0xB8F4 / + 0xB934, cleared at the initialisation), which the AI's
 // queries read.
 struct GapMatrix {
-    std::array<std::array<s8, 8>, 8> laps{}; // +0xB8F4 + 8 i + j: car i's whole laps behind car j (clamped to -127 .. 127)
-    std::array<std::array<F, 8>, 8> gap{};   // +0xB934 + 32 i + 4 j: and its metres
+    std::array<std::array<s8, kMaxCars>, kMaxCars> laps{}; // +0xB8F4 + 8 i + j: car i's whole laps behind car j (clamped to -127 .. 127)
+    std::array<std::array<F, kMaxCars>, kMaxCars> gap{};   // +0xB934 + 32 i + 4 j: and its metres
 };
 // For every pair i != j, race_gap(car j, car i) with the lap length `lap`; the diagonal is left alone.
 void gap_matrix(std::span<const Car> cars, F lap, GapMatrix& m);

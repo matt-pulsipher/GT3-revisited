@@ -186,7 +186,15 @@ void ResultsOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::ve
     const menu::Element* seiko = find(page, "z9_seiko");
     if (!title || !bar) return;
     Frame f{dst};
-    size_t n = rows.size();
+    // The rows shown (GT3's races have 6 cars, room for kShownRows): a bigger field's first kShownRows - 1 and the player's
+    // row, each with its own place.
+    std::vector<size_t> shown;
+    for (size_t i = 0; i < rows.size() && shown.size() < kShownRows; ++i) shown.push_back(i);
+    if (rows.size() > kShownRows) {
+        const auto mine = std::find_if(rows.begin(), rows.end(), [](const ResultRow& w) { return w.player; });
+        if (mine != rows.end() && size_t(mine - rows.begin()) >= kShownRows) shown.back() = size_t(mine - rows.begin());
+    }
+    size_t n = shown.size();
     // Bars: title (52 high) at y 44, then the rows and the term bar unroll downwards: each
     // bar's centre approaches (hPrev + hOwn) / 2 below the previous one by 0.19 per frame.
     // Without per-frame state we evaluate the closed form of that approach.
@@ -237,16 +245,17 @@ void ResultsOverlay::draw(SDL_Renderer* r, text::GameFonts& fonts, const std::ve
     // time (t_time right edge 612 - 12; the reference capture).
     for (size_t i = 0; i < n; ++i) {
         if (row_alpha[i] * view.alpha <= 0) continue;
+        const size_t k = shown[i];
         u8 a = u8(255 * row_alpha[i] * view.alpha);
         SDL_Color others{0xCC, 0xCC, 0xCC, a}, mine{0xFF, 0xC8, 0x00, a};
-        SDL_Color c = rows[i].player ? mine : others;
+        SDL_Color c = rows[k].player ? mine : others;
         float y = row_top[i] + 18;
-        text(r, fonts, f, 24 + 18, y, std::to_string(i + 1), "rank#1", 0.5f, 0.5f, others, text::HAlign::Center,
+        text(r, fonts, f, 24 + 18, y, std::to_string(k + 1), "rank#1", 0.5f, 0.5f, others, text::HAlign::Center,
              text::VAlign::Middle);
-        if (icons) (*icons)[i] = {f.x(66), f.y(y - 13), 58 * f.sx(), 26 * f.sy()}; // car picture at 66..124
-        text(r, fonts, f, 144, y, rows[i].name, "sw_16#1", 0.87f, 1.0f, c, text::HAlign::Left,
+        if (icons) (*icons)[k] = {f.x(66), f.y(y - 13), 58 * f.sx(), 26 * f.sy()}; // car picture at 66..124
+        text(r, fonts, f, 144, y, rows[k].name, "sw_16#1", 0.87f, 1.0f, c, text::HAlign::Left,
              text::VAlign::Middle, kGameText);
-        text(r, fonts, f, 600, y, rows[i].time, "sw_16#1", 0.87f, 1.0f, c, text::HAlign::Right, text::VAlign::Middle);
+        text(r, fonts, f, 600, y, rows[k].time, "sw_16#1", 0.87f, 1.0f, c, text::HAlign::Right, text::VAlign::Middle);
     }
 }
 

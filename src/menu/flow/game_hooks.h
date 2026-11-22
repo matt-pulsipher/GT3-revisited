@@ -97,6 +97,9 @@ struct GameRequest {
     bool no_rubber_band = false;
     int laps = 0;
     int player_slot = -1;
+    // Not GT3's: a field of our own (Quick race's custom race, a mod event) of up to 32 cars, the grid places past the course's
+    // own made along its main line (race::FieldConfig::made_grid). GT3's races: off.
+    bool big_field = false;
     // Championship round (GT mode): 1-based round and round count, 0 = not a championship.
     int champ_round = 0;
     int champ_rounds = 0;

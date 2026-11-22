@@ -143,6 +143,9 @@ struct HudData {
     bool hybrid_charging = true;
 };
 
+// A race place as the HUD's rank font draws it: "1st", "2nd", "3rd", "4th" .. "11th", "12th", "13th", "21st", "32nd".
+std::string rank_ordinal(int n);
+
 class Hud {
 public:
     Hud();

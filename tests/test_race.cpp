@@ -2161,6 +2161,7 @@ TEST(race_record_v4_entries) {
         return std::search(b.begin(), b.end(), p, p + 8) - b.begin();
     };
     const auto first = start(ids[0]), second = start(ids[1]);
+    b.erase(b.end() - 9); // (version 7's made grid byte, before the final hash)
     b.erase(b.begin() + second + (second - first) - 1); // (each entry's last byte: whether it has overrides)
     b.erase(b.begin() + second - 1);
     const u32 v4 = 4;
