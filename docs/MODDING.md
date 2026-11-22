@@ -90,7 +90,7 @@ earlier versions kept them.
 `eu`, `jp`, or a serial of its own such as `SCEF-50294`) or serials, written
 either way (`SCES_502.94` or `SCES-50294`). A serial names one release (`PBPX-95503`
 is NTSC-U 1.10, not 1.00); `eu` means the PAL releases only, not a modified disc
-under a serial of its own. On other discs the mod stays off, and the Mods screen
+under a serial of its own. A `!` leaves a disc out: `discs = !SCES-50858` is every disc but that one. On other discs the mod stays off, and the Mods screen
 says which discs it is for. Give `files/` mods a `discs` line: a file replaced
 for one release can break another disc (a PAL car list on a modified PAL disc
 with cars of its own). Texture packs and mod cars rarely need one: a texture is
@@ -213,6 +213,43 @@ wheel and tyre nodes, can come back as a mod car's own body.
 
 From the command line: `gt3tool model <iso> <vol-path> <outdir> --gltf` (cars, wheels, prize
 models) and `gt3tool course-obj <iso> <vol-path> <outdir> glb`.
+
+## Exporting cars
+
+A car from one of your discs can be exported whole, as a mod your other discs load: a Gran
+Turismo Concept car in Gran Turismo 3, or a car one GT3 release has and another lacks. On the
+**Car database** screen, **R2** exports the selected car and **L2** every car on the disc. From
+the command line:
+
+```bash
+gt3tool car-export concept.iso r35_gtr_tmv_01 mods/
+```
+```bash
+gt3tool car-export concept.iso all mods/
+```
+
+The cars go into one mod per disc, `mods/cars_<disc>/` (`cars_sces50858` for the European Tokyo-Geneva
+disc). Its `mod.ini` says `discs = !<disc>`, so it stays off on the disc it came from and is on
+everywhere else. Each car's label gets the disc's suffix (`r35_gtr_tmv_01_sces50858`), so an exported
+car never replaces a car of the disc it is loaded on. A car brings everything it has on its disc:
+
+| File | Holds |
+|---|---|
+| `cars/<label>.ini` | name, maker, year, price, category and its paints (the model's colour list, in order); a car file like any other, so `[dealer]`, `[arcade]` and `[raw.*]` work on it |
+| `cars/<label>.records` | every database record of the car: the stock parts, the upgrade parts the shops sell, the car record, and the shared records they use (steering, driving aids, tyre sizes and compounds). A shared record the other disc holds differently comes in under a label of the car's own |
+| `files/cars/{day,eve,night}/<model>_<disc>`, `files/menu/cars/<model>_<disc>` | its models for races and the showroom, with their stock rims, lamps and camera points |
+| `sounds/engine/<id>`, `sounds/<normal0-3, turbo0-3>/<id>` | its engine sounds |
+
+The car then races on the physics of the disc it is loaded on. Gran Turismo Concept's longer chassis,
+engine and gear records are cut to GT3's sizes (their added bytes are not read). What GT3 itself does
+not have stays behind: a car with a stepless or automatic gearbox on its disc shifts as a manual one
+in GT3 (its file says so in a comment). A maker GT3 has no dealer for (LEXUS, a few racing cars
+without a maker) gets no dealer page: the car is in arcade mode and the quick race pickers, and joins
+GT Mode once a mod adds the maker (see "Dealers and makers"). A car its disc gives no price is not
+for sale.
+
+The exported files are your disc's data: keep them for your own use. Online, an exported car is never
+sent to another player.
 
 ## Adding cars
 
@@ -672,6 +709,7 @@ tune playing (the log says why).
 | Menu music | Works now: a WAV, FLAC, Ogg or MP3 recording in place of any sequenced menu tune, with its own loop points (see "Menu music") |
 | Textures | Works now: PNG texture packs at any size (see "Texture packs"), PCSX2 packs converted; whole `.img` files through `files/` too |
 | New cars (`cars/*.ini`) | Works now: data-only cars on a disc car's shell or their own glTF body, including electric ones, sold at GT Mode dealers, new makers included (see above) |
+| Cars from your other discs | Works now: any disc car, Gran Turismo Concept's included, exported whole as a mod (see "Exporting cars") |
 | GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes and a prize car, listed on a league page; made with the Event creator or by hand (see "Adding events") |
 | Any other file | Overrides are loaded wherever the game reads the file (menus, models, courses, sounds, databases, movies) |
 
@@ -686,4 +724,4 @@ tune playing (the log says why).
 ## Rules
 
 Mods should only contain your own work. Don't distribute files extracted
-from the game.
+from the game (an exported car, a texture dump).

@@ -257,6 +257,7 @@ public:
     struct Car {
         u16 sound_id = 0;
         u8 variant = 0;
+        std::string sound_dir; // an exported mod car's own banks
         float cd = 0.35f; // drag coefficient for the wind unit
     };
     void load(Vfs& vfs, const std::vector<Car>& cars);

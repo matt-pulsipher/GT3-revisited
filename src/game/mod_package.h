@@ -3,6 +3,8 @@
 // Mod car packages: what an online player sends when another player lacks their mod car
 // (docs/dev/ONLINE.md "Mod cars").
 //
+// A car exported from a disc (data::ModCar::exported) has no package: its files are that disc's.
+//
 // A package is the car's definition file (cars/<label>.ini) and the files it references
 // (its glTF body and pictures), with paths relative to the mod folder, as one blob. The
 // SHA-256 of the blob is the package's identity: the lobby advertises it, the download is

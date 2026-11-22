@@ -55,13 +55,17 @@ void collect_files(const std::string& root, const std::string& rel, std::vector<
 } // namespace
 
 bool mod_for_disc(const std::vector<std::string>& discs, std::string_view key, std::string_view serial) {
-    if (discs.empty()) return true;
     const std::string k = to_lower(key), s = to_lower(serial), ss = to_lower(short_serial(serial));
+    bool listed = false, any_listed = false;
     for (const std::string& d : discs) {
-        const std::string n = to_lower(trim(d));
-        if (n == k || (!s.empty() && (n == s || n == ss))) return true;
+        std::string n = to_lower(trim(d));
+        const bool exclude = !n.empty() && n[0] == '!';
+        if (exclude) n = to_lower(trim(std::string_view(n).substr(1)));
+        const bool match = n == k || (!s.empty() && (n == s || n == ss));
+        if (exclude && match) return false;
+        if (!exclude) any_listed = true, listed = listed || match;
     }
-    return false;
+    return !any_listed || listed;
 }
 
 void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {

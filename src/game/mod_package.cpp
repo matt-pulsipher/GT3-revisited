@@ -80,6 +80,10 @@ std::optional<Bytes> build_mod_package(const data::CarDatabase& db, const Vfs& v
         fail(error, label + " is not a mod car");
         return std::nullopt;
     }
+    if (m->exported) { // (its files are a disc's: never sent to another player)
+        fail(error, label + " was exported from a disc: players who want it export it from their own");
+        return std::nullopt;
+    }
     std::string root;
     for (const ModInfo& mi : vfs.mods())
         if (mi.id == m->mod) root = mi.root;

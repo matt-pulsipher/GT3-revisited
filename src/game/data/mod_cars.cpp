@@ -2,6 +2,7 @@
 #include "game/data/weight_class.h"
 
 #include "base/config.h"
+#include "base/file.h"
 #include "base/log.h"
 #include "formats/db/gt_db.h"
 #include "formats/text/charset.h"
@@ -262,6 +263,7 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
                 else if (key == "maker") d.maker = v;
                 else if (key == "donor") d.donor = v;
                 else if (key == "model") d.model = v;
+                else if (key == "records") d.records = v;
                 else if (key == "year") set_u16(d.year);
                 else if (key == "price") {
                     if (auto n = num()) d.price = u32(std::max(0.0, *n));
@@ -393,6 +395,7 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
                 if (key == "whine_order") set_f(d.whine_order);
                 else if (key == "whine_level") set_f(d.whine_level);
                 else if (key == "inverter_level") set_f(d.inverter_level);
+                else if (key == "bank") d.sound_bank = v;
                 else known = false;
             } else {
                 known = false;
@@ -402,7 +405,8 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
     }
     if (!valid_label(d.label)) return fail("[car] label must be 1-40 characters of a-z, 0-9 and _");
     if (d.name.empty()) return fail("[car] name is required");
-    if (d.donor.empty()) return fail("[car] donor is required (a car on the disc to borrow unlisted parts from)");
+    if (d.donor.empty() && d.records.empty())
+        return fail("[car] donor is required (a car on the disc to borrow unlisted parts from)");
     if (d.electric) {
         if (d.curve.empty() && (!d.torque_nm || !d.power_kw || !d.max_rpm))
             return fail("[powertrain] electric: give torque_nm, power_kw and max_rpm (or a curve and max_rpm)");
@@ -415,6 +419,277 @@ std::optional<ModCarDef> parse_mod_car(std::string_view text, std::string* error
     return d;
 }
 
+// --- exported cars ------------------------------------------------------------------------------------
+
+namespace {
+
+constexpr char kRecordsMagic[8] = {'G', 'T', '3', 'R', 'C', 'A', 'R', '1'};
+
+// The arcade class a mod car takes (ModCarDef::arcade_class / arcade_variant): "auto" by its power-to-weight, as the
+// game ranks garage cars (weight_class.h).
+void choose_arcade_class(const ModCarDef& def, float weight_kg, float ps, ModCar& m) {
+    const WeightClass w = class_by_weight(weight_kg / std::max(ps, 1.0f));
+    const std::string by_weight(1, "?cbas"[w.cls]);
+    std::string cls = def.arcade_class;
+    int variant = def.arcade_variant;
+    if (cls == "auto") cls = by_weight;
+    if (variant < 0) variant = by_weight == cls ? w.next : 0;
+    if (cls != "none" && cls != "auto") m.arcade_class = "CLASS_" + to_upper_ascii(cls);
+    m.arcade_variant = std::max(variant, 0);
+    m.arcade_level = def.arcade_level;
+}
+
+// A car part table: its records name the car they belong to at +8.
+bool part_table(TableId t) {
+    int i = int(t);
+    return (i <= 21 && i != 2) || i == 28 || i == 29;
+}
+
+} // namespace
+
+std::vector<std::pair<u16, bool>> record_text_fields(TableId t) {
+    if (t == TableId::Engine) return {{0x10, true}, {0x12, true}, {0x14, true}, {0x38, false}, {0x3C, true}, {0x40, true}};
+    return {};
+}
+
+Bytes serialize_car_records(const CarRecordFile& f) {
+    Bytes out(kRecordsMagic, kRecordsMagic + 8);
+    auto u8_ = [&](u32 v) { out.push_back(u8(v)); };
+    auto u16_ = [&](u32 v) { u8_(v & 0xFF), u8_(v >> 8 & 0xFF); };
+    auto u32_ = [&](u32 v) { u16_(v & 0xFFFF), u16_(v >> 16); };
+    auto str = [&](const std::string& s) {
+        u16_(u32(s.size()));
+        out.insert(out.end(), s.begin(), s.end());
+    };
+    u32_(u32(f.records.size()));
+    for (const CarRecordFile::Record& r : f.records) {
+        u8_(u32(r.table));
+        str(r.label);
+        u16_(u32(r.bytes.size()));
+        out.insert(out.end(), r.bytes.begin(), r.bytes.end());
+        u8_(u32(r.texts.size()));
+        for (const CarRecordFile::Text& t : r.texts) {
+            u16_(t.offset);
+            u8_(t.kind);
+            str(t.text);
+        }
+    }
+    return out;
+}
+
+std::optional<CarRecordFile> parse_car_records(ByteSpan d, std::string* error) {
+    auto fail = [&](const std::string& m) -> std::optional<CarRecordFile> {
+        if (error) *error = m;
+        return std::nullopt;
+    };
+    if (d.size() < 12 || std::memcmp(d.data(), kRecordsMagic, 8) != 0) return fail("not a car records file");
+    size_t p = 8;
+    bool ok = true;
+    auto take = [&](size_t n) -> ByteSpan {
+        if (!ok || p + n > d.size()) {
+            ok = false;
+            return {};
+        }
+        ByteSpan s = d.subspan(p, n);
+        p += n;
+        return s;
+    };
+    auto u8_ = [&]() -> u32 { ByteSpan s = take(1); return ok ? s[0] : 0; };
+    auto u16_ = [&]() -> u32 { ByteSpan s = take(2); return ok ? u32(s[0] | s[1] << 8) : 0; };
+    auto u32_ = [&]() -> u32 { u32 lo = u16_(); return lo | u16_() << 16; };
+    auto str = [&]() {
+        ByteSpan s = take(u16_());
+        return std::string(s.begin(), s.end());
+    };
+    CarRecordFile f;
+    u32 n = u32_();
+    if (n > 4096) return fail("too many records");
+    for (u32 i = 0; i < n && ok; ++i) {
+        CarRecordFile::Record r;
+        u32 t = u8_();
+        if (t > u32(TableId::ArcadeCar)) return fail("unknown table " + std::to_string(t));
+        r.table = TableId(t);
+        r.label = str();
+        ByteSpan b = take(u16_());
+        r.bytes.assign(b.begin(), b.end());
+        u32 nt = u8_();
+        for (u32 k = 0; k < nt && ok; ++k) {
+            CarRecordFile::Text x;
+            x.offset = u16(u16_());
+            const u32 kind = u8_();
+            if (kind > CarRecordFile::Text::Label) return fail("unknown text kind");
+            x.kind = CarRecordFile::Text::Kind(kind);
+            x.text = str();
+            r.texts.push_back(std::move(x));
+        }
+        if (ok && (r.bytes.size() < 16 || r.label.empty())) return fail("record " + std::to_string(i) + " is too short");
+        f.records.push_back(std::move(r));
+    }
+    if (!ok) return fail("the file ends early");
+    if (p != d.size()) return fail("trailing data");
+    return f;
+}
+
+namespace {
+
+// A car exported from a disc (ModCarDef::records): its own records go in as they are; the shared records they refer to
+// (steering, aids, tyre sizes and compounds) are the disc's when this disc holds the same record, else added under a
+// label of the car's own. The names, maker, price and the mod's extras come from the definition, as for any mod car.
+bool add_exported_car(CarDatabase& db, const ModCarDef& def, std::string* error, const text::JisTable* jis) {
+    auto fail = [&](const std::string& m) {
+        if (error) *error = m;
+        return false;
+    };
+    auto game = [jis](const std::string& utf8) { return text::encode_game_text(text::utf8_decode(utf8), jis); };
+    const std::string path = mod_path(def.file, def.records);
+    std::optional<Bytes> data = read_host_file(path);
+    if (!data) return fail("cannot read its records file " + def.records);
+    std::string err;
+    std::optional<CarRecordFile> file = parse_car_records(*data, &err);
+    if (!file) return fail(def.records + ": " + err);
+    const u64 car_code = db::id_hash(def.label);
+
+    // Shared records: the disc's same record, or a copy under a label of this car's.
+    std::map<u64, u64> remap;
+    std::vector<CarRecordFile::Record*> own;
+    CarRecordFile::Record* car_rec = nullptr;
+    for (CarRecordFile::Record& r : file->records) {
+        if (db::id_hash(r.label) != rd64(r.bytes, 0)) return fail(def.records + ": record " + r.label + " has another id");
+        if (r.table == TableId::Car) {
+            if (car_rec || r.label != def.label) return fail(def.records + ": its car record is not " + def.label);
+            car_rec = &r;
+            continue;
+        }
+        if (part_table(r.table) && rd64(r.bytes, 8) == car_code) {
+            const ByteSpan* have = db.record(r.table, rd64(r.bytes, 0));
+            if (have && rd64(*have, 8) != car_code) return fail("its part " + r.label + " is a record of another car on this disc");
+            own.push_back(&r);
+            continue;
+        }
+        const u64 id = rd64(r.bytes, 0);
+        if (const ByteSpan* have = db.record(r.table, id)) {
+            const size_t n = std::min(have->size(), r.bytes.size());
+            if (std::equal(r.bytes.begin(), r.bytes.begin() + std::ptrdiff_t(n), have->begin())) continue;
+            const std::string l = r.label + "_" + def.label;
+            put64(r.bytes, 0, db::id_hash(l));
+            remap[id] = db::id_hash(l);
+            r.label = l;
+        }
+        db.add_label(r.label);
+        db.put_record(r.table, r.bytes);
+    }
+    if (!car_rec) return fail(def.records + ": no car record");
+    // References to the renamed shared records: every id word of the car's records (ids are 64-bit label hashes).
+    auto apply_remap = [&](Bytes& b, size_t from) {
+        for (size_t o = from; o + 8 <= b.size(); o += 8)
+            if (auto it = remap.find(rd64(b, o)); it != remap.end()) put64(b, o, it->second);
+    };
+    apply_remap(car_rec->bytes, 8);
+    for (CarRecordFile::Record* r : own) apply_remap(r->bytes, 0x10);
+    for (CarRecordFile::Record* r : own) {
+        for (const CarRecordFile::Text& t : r->texts) {
+            if (t.kind == CarRecordFile::Text::Label) {
+                if (t.offset + 8u > r->bytes.size()) continue;
+                db.add_label(t.text);
+                put64(r->bytes, t.offset, db::id_hash(t.text));
+            } else if (t.offset + 2u <= r->bytes.size()) {
+                put16(r->bytes, t.offset, t.kind == CarRecordFile::Text::Unistring ? db.add_unistring(t.text) : db.add_string(t.text));
+            }
+        }
+        db.add_label(r->label);
+    }
+
+    // Raw pokes on its stock records, as for a donor car.
+    Bytes& car = car_rec->bytes;
+    if (car.size() < kCarRecordSize) car.resize(kCarRecordSize, 0);
+    auto stock = [&](int slot) -> Bytes* {
+        const u64 id = rd64(car, 8 + size_t(slot) * 8);
+        for (CarRecordFile::Record* r : own)
+            if (int(r->table) == kCarPartTables[size_t(slot)] && rd64(r->bytes, 0) == id) return &r->bytes;
+        return nullptr;
+    };
+    for (const ModCarDef::Poke& p : def.pokes) {
+        Bytes* b = nullptr;
+        for (size_t i = 0; i < kCarPartTables.size() && !b; ++i)
+            if (kCarPartTables[i] == int(p.table)) b = stock(int(i));
+        if (!b) return fail(std::string("[raw.") + table_name(p.table) + "]: the car has no own record in that table");
+        size_t w = p.type == 'b' ? 1 : p.type == 'h' ? 2 : 4;
+        if (p.offset < 0x10 || p.offset + w > b->size()) return fail(std::string("[raw.") + table_name(p.table) + "]: offset out of range");
+        if (p.type == 'b') put8(*b, p.offset, clamp8(p.value));
+        else if (p.type == 'h') put16(*b, p.offset, u16(std::lround(p.value)));
+        else if (p.type == 'i') put32(*b, p.offset, u32(std::llround(p.value)));
+        else putf(*b, p.offset, float(p.value));
+    }
+    for (int slot : {3, 5, 6, 13, 18})
+        if (!stock(slot)) return fail(def.records + ": no stock chassis, body, engine, drivetrain and gearbox of its own");
+
+    // The car record: its maker by name when this disc has it, the names in every language.
+    std::string maker = game(def.maker);
+    u16 maker_id = 0xFFFF;
+    for (const Car& c : db.cars())
+        if (!db.mod_car(c.label) && to_lower(c.maker) == to_lower(maker)) {
+            maker_id = c.maker_id;
+            break;
+        }
+    if (maker_id == 0xFFFF) maker_id = 0; // (no dealer of its maker here: listed with the makerless cars)
+    put16(car, 0xE0, maker_id);
+    put16(car, 0xE2, maker_id);
+    const u16 name = db.add_unistring(game(def.name)), second = db.add_unistring(" ");
+    for (size_t o : {0xE4, 0xF2, 0x100}) put16(car, o, name);
+    for (size_t o : {0xE6, 0xF4, 0x102}) put16(car, o, second);
+    put16(car, 0xE8, db.add_string(def.label));
+    if (def.year) put16(car, 0xEA, *def.year);
+    if (def.price) put32(car, 0xEC, *def.price);
+    put8(car, 0xF0, 0);
+    if (def.category) put8(car, 0xF1, *def.category);
+    put8(car, 0xF7, 0);
+    put16(car, 0x104, db.add_unistring(maker));
+    db.add_label(def.label);
+
+    // Its arcade record: the car with its own parts and stock settings (as add_mod_car makes one).
+    Bytes arcade;
+    if (const db::Table& at = db.table(TableId::ArcadeCar); !at.records.empty()) {
+        arcade.assign(at.records[0].begin(), at.records[0].end());
+        put64(arcade, 0, car_code);
+        put64(arcade, 8, car_code);
+        for (size_t i = 0; i < kCarPartTables.size(); ++i) put64(arcade, 0x10 + i * 8, rd64(car, 8 + i * 8));
+        stock_arcade_settings(arcade, [&](int slot) -> ByteSpan {
+            if (const Bytes* b = stock(slot)) return *b;
+            const u64 id = rd64(car, 8 + size_t(slot) * 8);
+            const ByteSpan* r = id ? db.record(TableId(kCarPartTables[size_t(slot)]), id) : nullptr;
+            return r ? *r : ByteSpan{};
+        });
+    }
+    const u16 weight = get16(*stock(3), 0x1A);
+    for (CarRecordFile::Record* r : own) db.put_record(r->table, std::move(r->bytes));
+    const u64 engine_id = rd64(car, 8 + 6 * 8);
+    db.put_record(TableId::Car, std::move(car));
+    if (!arcade.empty()) db.put_record(TableId::ArcadeCar, std::move(arcade));
+
+    ModCar m;
+    m.label = def.label;
+    m.mod = def.mod;
+    m.file = def.file;
+    m.exported = true;
+    if (!def.sound_bank.empty()) m.sound_dir = mod_path(def.file, def.sound_bank);
+    m.paints = def.paints;
+    for (auto& p : m.paints) p.first = game(p.first);
+    m.for_sale = def.for_sale;
+    m.description = game(def.description);
+    float ps = 0;
+    if (auto e = db.engine(engine_id)) ps = e->curve_peak_ps() * float(e->torque_scale_pct) / 100.0f;
+    choose_arcade_class(def, float(weight), ps, m);
+    m.driver_side = def.driver_side;
+    m.wheel = def.wheel;
+    m.picture = mod_path(def.file, def.picture);
+    m.thumb = mod_path(def.file, def.thumb);
+    m.logo = mod_path(def.file, def.logo);
+    db.add_mod_car(std::move(m));
+    return true;
+}
+
+} // namespace
+
 bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, const text::JisTable* jis) {
     auto fail = [&](const std::string& m) {
         if (error) *error = m;
@@ -422,6 +697,7 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, cons
     };
     auto game = [jis](const std::string& utf8) { return text::encode_game_text(text::utf8_decode(utf8), jis); };
     if (db.car(def.label) && !db.mod_car(def.label)) return fail("label '" + def.label + "' is already a disc car");
+    if (!def.records.empty()) return add_exported_car(db, def, error, jis);
     const Car* donor = db.car(def.donor);
     if (!donor) return fail("donor '" + def.donor + "' is not a car on this disc");
     if (db.mod_car(def.donor)) return fail("donor '" + def.donor + "' is a mod car; use a disc car");
@@ -808,16 +1084,7 @@ bool add_mod_car(CarDatabase& db, const ModCarDef& def, std::string* error, cons
     {
         // Arcade class by weight / power, the game's garage-car table (weight_class.h).
         // Power: the curve's peak with the hidden output factor.
-        float ps = peak_kw * 1.35962f * float(output_pct) / 100.0f;
-        const WeightClass w = class_by_weight(float(weight) / std::max(ps, 1.0f));
-        const std::string by_weight(1, "?cbas"[w.cls]);
-        std::string cls = def.arcade_class;
-        int variant = def.arcade_variant;
-        if (cls == "auto") cls = by_weight;
-        if (variant < 0) variant = by_weight == cls ? w.next : 0;
-        if (cls != "none" && cls != "auto") m.arcade_class = "CLASS_" + to_upper_ascii(cls);
-        m.arcade_variant = std::max(variant, 0);
-        m.arcade_level = def.arcade_level;
+        choose_arcade_class(def, float(weight), peak_kw * 1.35962f * float(output_pct) / 100.0f, m);
     }
     m.wheel = def.wheel;
     m.driver_side = def.driver_side;

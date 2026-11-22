@@ -414,7 +414,7 @@ void OpponentEngines::load(Vfs& vfs, const std::vector<Car>& cars) {
     active_.assign(cars.size(), false);
     for (const Car& c : cars) {
         auto e = std::make_unique<EngineSound>();
-        if (c.sound_id) e->load(vfs, c.sound_id, c.variant);
+        if (c.sound_id) e->load(vfs, c.sound_id, c.variant, nullptr, c.sound_dir);
         engines_.push_back(std::move(e));
         auto w = std::make_unique<EngineUnit>();
         w->load(vfs, EngineUnit::kWindBank);
