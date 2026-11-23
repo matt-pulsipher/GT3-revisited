@@ -17,6 +17,7 @@
 #include "menu/flow/menu_sound.h"
 #include "menu/flow/options.h"
 #include "race/backend.h"
+#include "race/custom_paints.h"
 #include "race/paint.h"
 #include "render/gpu_model.h"
 #include "render/showroom.h"
@@ -756,6 +757,13 @@ std::vector<PaintInfo> CarPicker::paints(App& app, const PickerCar& c) const {
             }
     }
     if (out.empty()) out.push_back({0x808080, ""});
+    // The model's custom colours after the disc's (race/custom_paints.h): paint index disc count + k.
+    if (c.garage < 0 && !c.mod) {
+        std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+        if (custom->disc_count(c.model) == int(out.size()))
+            for (const race::CustomPaint& p : custom->of(c.model))
+                if (p.listed()) out.push_back({p.rgb, p.name});
+    }
     return out;
 }
 

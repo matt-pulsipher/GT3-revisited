@@ -29,6 +29,7 @@
 #include "race/backend.h"
 #include "race/camera_rig.h"
 #include "race/controls.h"
+#include "race/custom_paints.h"
 #include "race/field.h"
 #include "race/scenery_fade.h"
 #include "race/exact_field.h"

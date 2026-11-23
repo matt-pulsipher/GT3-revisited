@@ -43,6 +43,11 @@
 //       the earlier rounding, would play differently: refused).
 //   v13 (before the v11 race, after the v9 battle block): u8 n + n x s8 the opponents' chosen
 //       paints (Quick race's custom race; -1 = drawn from the paint seed; n = 0 for any other race).
+//   v14 (after the v13 paints): u8 n + n x {u8 car (0 player 1, k + 1 the opponents' paint k, 255 player 2), string
+//       model, u8 flags (1: a colour), u8 R, G, B, u8 finish, string livery ("" = none)}: the custom paints
+//       (race/custom_paints.h) those paints were. Parsing puts each one's paint index here in its place: the installed
+//       livery, else the colour (added for the session when not installed), else the finish paint, so a replay keeps
+//       its colours after they are removed.
 
 #include "base/game_random.h"
 #include "race/backend.h"
@@ -97,7 +102,7 @@ enum class ReplayKind : u8 {
 const char* replay_kind_name(ReplayKind k); // "Arcade", "GT", "License", ...
 
 struct Replay {
-    static constexpr u32 kVersion = 13;
+    static constexpr u32 kVersion = 14;
     std::string course, car; // database labels
     bool automatic = true;
     int paint = 0;
@@ -115,6 +120,15 @@ struct Replay {
     std::string event;                  // race with opponents (event label); empty = time trial
     std::vector<std::string> opponents; // opponent car labels, grid order
     std::vector<int> opponent_paints;   // v13: their chosen paints (-1 or past the list: drawn from paint_seed)
+    struct CustomColor {
+        u8 car = 0; // 0 player 1, k + 1 opponent_paints[k], 255 player 2 (battle->paint2)
+        std::string model;
+        bool colour = true; // rgb is a computed colour
+        u32 rgb = 0;
+        u8 finish = 0;
+        std::string livery; // CustomPaint::id, "" = none
+    };
+    std::vector<CustomColor> custom_colors; // v14: which of the paints above are custom colours
     std::string car2;                    // 2P battle: player 2's car label
     std::vector<sim::ControlInputs> inputs2; // player 2's inputs (same length as inputs)
     float start_speed = 0;               // m/s: rolling / flying start (0 = from rest)
@@ -176,6 +190,7 @@ public:
     void set_start_speed(float mps) { replay_.start_speed = mps; }
     void set_paint_seed(u32 seed) { replay_.paint_seed = seed; }
     void set_opponent_paints(std::vector<int> paints) { replay_.opponent_paints = std::move(paints); }
+    void set_custom_colors(std::vector<Replay::CustomColor> c) { replay_.custom_colors = std::move(c); }
     void set_engine_condition(const sim::EngineCondition& c) { replay_.condition = c; }
     void lap(double time, u32 begin_tick, u32 end_tick); // a completed lap; keeps the best
     void finish(const sim::Vec3& final_position) { replay_.final_position = final_position; }

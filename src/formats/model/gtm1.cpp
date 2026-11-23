@@ -627,28 +627,233 @@ std::vector<PaintVariant> paint_variants(ByteSpan tex1) {
     return out;
 }
 
+namespace {
+double channel(u32 c, int k) { return double((c >> (8 * k)) & 0xFF); }
+double luminance(u32 c) { return 0.299 * channel(c, 0) + 0.587 * channel(c, 1) + 0.114 * channel(c, 2); }
+u32 pack_rgb(const double* c) {
+    u32 v = 0;
+    for (int k = 0; k < 3; ++k) v |= u32(std::clamp(std::lround(c[k]), 0L, 255L)) << (8 * k);
+    return v;
+}
+} // namespace
+
+std::vector<u32> paint_body_colours(const std::vector<std::vector<std::vector<u32>>>& textures) {
+    size_t n = 0;
+    for (const auto& t : textures) n = std::max(n, t.size());
+    std::vector<double> sum(n * 3, 0);
+    double count = 0;
+    for (const std::vector<std::vector<u32>>& t : textures) {
+        if (t.size() != n || n == 0) continue;
+        bool same = true;
+        for (const std::vector<u32>& v : t) same = same && v.size() == t[0].size();
+        if (!same) continue;
+        for (size_t i = 0; i < t[0].size(); ++i) {
+            bool moves = false;
+            for (size_t v = 1; v < n && !moves; ++v) moves = (t[v][i] & 0xFFFFFFu) != (t[0][i] & 0xFFFFFFu);
+            if (!moves) continue;
+            count += 1;
+            for (size_t v = 0; v < n; ++v)
+                for (int k = 0; k < 3; ++k) sum[v * 3 + size_t(k)] += channel(t[v][i], k);
+        }
+    }
+    std::vector<u32> out(n, 0);
+    if (count > 0)
+        for (size_t v = 0; v < n; ++v) {
+            double c[3];
+            for (int k = 0; k < 3; ++k) c[k] = sum[v * 3 + size_t(k)] / count;
+            out[v] = pack_rgb(c);
+        }
+    return out;
+}
+
+u32 computed_body_colour(const ComputedPaint& p, const std::vector<u32>& body) {
+    // How much darker (or lighter) the paints look on the body than their carcolor.db colours, over every paint:
+    // the new colour's body colour is its colour by that factor, as the disc's own paints are on average.
+    double l_body = 0, l_label = 0;
+    for (size_t v = 0; v < body.size() && v < p.paint_rgb.size(); ++v) l_body += luminance(body[v]), l_label += luminance(p.paint_rgb[v]);
+    const double r = l_label > 1 ? std::clamp(l_body / l_label, 0.2, 2.0) : 1.0;
+    double c[3];
+    for (int k = 0; k < 3; ++k) c[k] = channel(p.rgb, k) * r;
+    return pack_rgb(c);
+}
+
+std::vector<u32> computed_paint_texels(const std::vector<std::vector<u32>>& by_paint, const std::vector<u32>& body, u32 target,
+                                       int finish) {
+    const size_t n = by_paint.size();
+    if (n == 0) return {};
+    const size_t f = size_t(std::clamp(finish, 0, int(n) - 1));
+    std::vector<u32> out = by_paint[f];
+    if (body.size() != n) return out;
+    for (const std::vector<u32>& v : by_paint)
+        if (v.size() != out.size()) return out;
+    // Paints nearer the new colour count for more (the palettes are not quite linear in the colour).
+    std::vector<double> w(n);
+    for (size_t v = 0; v < n; ++v) {
+        double d = 0;
+        for (int k = 0; k < 3; ++k) d += (channel(body[v], k) - channel(target, k)) * (channel(body[v], k) - channel(target, k));
+        w[v] = 1.0 / (d + 400.0);
+    }
+    for (size_t i = 0; i < out.size(); ++i) {
+        bool changes = false;
+        for (size_t v = 0; v < n && !changes; ++v) changes = (by_paint[v][i] & 0xFFFFFFu) != (out[i] & 0xFFFFFFu);
+        if (!changes) continue; // trim, lamps, glass: the same under every paint
+        // texel = s x body colour + h, one s and h for all three channels (shading and a grey highlight).
+        double sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+        for (size_t v = 0; v < n; ++v)
+            for (int k = 0; k < 3; ++k) {
+                const double x = channel(body[v], k), y = channel(by_paint[v][i], k);
+                sw += w[v], sx += w[v] * x, sy += w[v] * y, sxx += w[v] * x * x, sxy += w[v] * x * y;
+            }
+        const double var = sxx - sx * sx / sw;
+        const double s = var > 1e-9 ? (sxy - sx * sy / sw) / var : 0, h = (sy - s * sx) / sw;
+        double c[3];
+        for (int k = 0; k < 3; ++k) c[k] = s * channel(target, k) + h;
+        out[i] = (out[i] & 0xFF000000u) | pack_rgb(c);
+    }
+    return out;
+}
+
+std::vector<u8> livery_coverage(const texture_pack::Image& pic, TemplateTexels templ) {
+    std::vector<u8> cover(pic.rgba.size());
+    for (u32 y = 0; y < pic.height; ++y)
+        for (u32 x = 0; x < pic.width; ++x) {
+            const u32 p = pic.rgba[size_t(y) * pic.width + x];
+            double a = double(p >> 24);
+            if (templ.rgba && templ.width && templ.height) {
+                const u32 q = templ.rgba[size_t(u64(y) * templ.height / pic.height) * templ.width + size_t(u64(x) * templ.width / pic.width)];
+                int d = 0;
+                for (int k = 0; k < 3; ++k) d = std::max(d, std::abs(int((p >> (8 * k)) & 0xFF) - int((q >> (8 * k)) & 0xFF)));
+                a *= std::clamp((d - 6) / 12.0, 0.0, 1.0);
+            }
+            cover[size_t(y) * pic.width + x] = u8(std::lround(a));
+        }
+    return cover;
+}
+
+void overlay_livery(scene::Texture& t, const texture_pack::Image& pic, TemplateTexels templ) {
+    if (t.width == 0 || t.height == 0 || pic.width == 0 || pic.height == 0 || pic.rgba.size() != size_t(pic.width) * pic.height ||
+        t.rgba.size() != size_t(t.width) * t.height)
+        return;
+    const std::vector<u8> cover = livery_coverage(pic, templ);
+    if (std::all_of(cover.begin(), cover.end(), [](u8 c) { return c == 0; })) return;
+    const u32 w = std::max(t.width, pic.width), h = std::max(t.height, pic.height);
+    // A texel of `px` (sw x sh) at (x + 0.5) / w across: filtered (bilinear, edges clamped) or the nearest.
+    auto sample = [&](const std::vector<u32>& px, u32 sw, u32 sh, u32 x, u32 y, bool filter) -> u32 {
+        if (sw == w && sh == h) return px[size_t(y) * sw + x];
+        const double fx = (double(x) + 0.5) * sw / w - 0.5, fy = (double(y) + 0.5) * sh / h - 0.5;
+        if (!filter) {
+            const u32 nx = std::min(sw - 1, u32(std::max(0.0, std::floor(fx + 0.5)))), ny = std::min(sh - 1, u32(std::max(0.0, std::floor(fy + 0.5))));
+            return px[size_t(ny) * sw + nx];
+        }
+        const double x0 = std::floor(fx), y0 = std::floor(fy), ax = fx - x0, ay = fy - y0;
+        auto at = [&](double xx, double yy) {
+            const u32 cx = u32(std::clamp(xx, 0.0, double(sw - 1))), cy = u32(std::clamp(yy, 0.0, double(sh - 1)));
+            return px[size_t(cy) * sw + cx];
+        };
+        const u32 c00 = at(x0, y0), c10 = at(x0 + 1, y0), c01 = at(x0, y0 + 1), c11 = at(x0 + 1, y0 + 1);
+        u32 v = 0;
+        for (int k = 0; k < 4; ++k) {
+            auto ch = [&](u32 c) { return double((c >> (8 * k)) & 0xFF); };
+            const double top = ch(c00) * (1 - ax) + ch(c10) * ax, bot = ch(c01) * (1 - ax) + ch(c11) * ax;
+            v |= u32(std::clamp(std::lround(top * (1 - ay) + bot * ay), 0L, 255L)) << (8 * k);
+        }
+        return v;
+    };
+    // (a picture smaller than the texture: its coverage filtered like its colour)
+    auto cover_at = [&](u32 x, u32 y) -> u32 {
+        const double fx = (double(x) + 0.5) * pic.width / w - 0.5, fy = (double(y) + 0.5) * pic.height / h - 0.5;
+        const double x0 = std::floor(fx), y0 = std::floor(fy), ax = fx - x0, ay = fy - y0;
+        auto at = [&](double xx, double yy) {
+            return double(cover[size_t(std::clamp(yy, 0.0, double(pic.height - 1))) * pic.width + size_t(std::clamp(xx, 0.0, double(pic.width - 1)))]);
+        };
+        const double top = at(x0, y0) * (1 - ax) + at(x0 + 1, y0) * ax, bot = at(x0, y0 + 1) * (1 - ax) + at(x0 + 1, y0 + 1) * ax;
+        return u32(std::clamp(std::lround(top * (1 - ay) + bot * ay), 0L, 255L));
+    };
+    std::vector<u32> out(size_t(w) * h);
+    for (u32 y = 0; y < h; ++y)
+        for (u32 x = 0; x < w; ++x) {
+            const u32 base = sample(t.rgba, t.width, t.height, x, y, !t.nearest);
+            const u32 alpha = sample(t.rgba, t.width, t.height, x, y, false) & 0xFF000000u;
+            const u32 p = sample(pic.rgba, pic.width, pic.height, x, y, true);
+            const u32 a = pic.width == w && pic.height == h ? cover[size_t(y) * w + x] : cover_at(x, y);
+            u32 v = alpha;
+            for (int k = 0; k < 3; ++k) {
+                const u32 b = (base >> (8 * k)) & 0xFF, c = (p >> (8 * k)) & 0xFF;
+                v |= ((b * (255 - a) + c * a + 127) / 255) << (8 * k);
+            }
+            out[size_t(y) * w + x] = v;
+        }
+    if (w != t.width || h != t.height) t.nearest = false;
+    std::vector<u8> cov(size_t(w) * h);
+    for (u32 y = 0; y < h; ++y)
+        for (u32 x = 0; x < w; ++x)
+            cov[size_t(y) * w + x] = u8(pic.width == w && pic.height == h ? cover[size_t(y) * w + x] : cover_at(x, y));
+    t.width = w, t.height = h, t.rgba = std::move(out);
+    t.livery_cover = std::make_shared<const std::vector<u8>>(std::move(cov));
+}
+
 int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const std::string& prefix, int paint,
-                       ClutTextures* clut, bool use_pack) {
+                       ClutTextures* clut, bool use_pack, const ComputedPaint* computed, const texture_pack::Pack* livery) {
     Tex1 t = Tex1::parse(tex1);
     GsMemory gs;
     t.upload(tex1, gs);
     std::vector<PaintVariant> variants;
-    if (paint > 0) variants = paint_variants(tex1);
+    if (paint > 0 || computed) variants = paint_variants(tex1);
+    // A computed colour needs a variant for each of the car's paints; otherwise its finish paint.
+    if (computed && (variants.empty() || variants.size() != computed->paint_rgb.size())) {
+        paint = computed->finish;
+        computed = nullptr;
+    }
     const PaintVariant* pv = paint > 0 && size_t(paint) < variants.size() ? &variants[paint] : nullptr;
     int first = int(out.size());
-    for (size_t i = 0; i < t.textures.size(); ++i) {
+    auto decode = [&](size_t i, const PaintVariant* v, bool* patched = nullptr) {
         const Tex1::Texture& tx = t.textures[i];
         Tex0 t0 = tx.tex0;
-        if (pv)
-            for (const PaintVariant::Entry& e : pv->clut)
-                if (e.texture == i) t0.cbp = e.cbp, t0.csa = e.csa, t0.cpsm = e.cpsm;
+        if (v)
+            for (const PaintVariant::Entry& e : v->clut)
+                if (e.texture == i) {
+                    t0.cbp = e.cbp, t0.csa = e.csa, t0.cpsm = e.cpsm;
+                    if (patched) *patched = true;
+                }
+        // Always the full power-of-two size: model UVs address the whole texture.
+        return indexed_ct32(t0) ? decode_indexed_csa(gs, t0, t0.width(), t0.height())
+                                : gs.decode_rgba(t0, t0.width(), t0.height());
+    };
+    // A computed colour: every texture under every paint first (the paints' body colours are measured over the set).
+    std::vector<std::vector<std::vector<u32>>> by_paint;
+    std::vector<u32> body;
+    u32 target = 0;
+    if (computed) {
+        by_paint.resize(t.textures.size());
+        for (size_t i = 0; i < t.textures.size(); ++i) {
+            bool recoloured = false;
+            by_paint[i].resize(variants.size());
+            for (size_t v = 1; v < variants.size(); ++v) by_paint[i][v] = decode(i, &variants[v], &recoloured);
+            by_paint[i][0] = decode(i, nullptr);
+            if (!recoloured) by_paint[i].resize(1); // the same under every paint
+        }
+        body = paint_body_colours(by_paint);
+        target = computed_body_colour(*computed, body);
+    }
+    std::vector<u64> livery_keys; // per texture, with a livery
+    std::vector<std::vector<u32>> livery_templates; // the textures in the livery's paint
+    for (size_t i = 0; i < t.textures.size(); ++i) {
+        const Tex1::Texture& tx = t.textures[i];
         scene::Texture st;
         st.name = prefix + std::to_string(i);
-        // Always the full power-of-two size: model UVs address the whole texture.
-        st.width = t0.width();
-        st.height = t0.height();
-        st.rgba = indexed_ct32(t0) ? decode_indexed_csa(gs, t0, st.width, st.height)
-                                   : gs.decode_rgba(t0, st.width, st.height);
+        st.width = tx.tex0.width();
+        st.height = tx.tex0.height();
+        if (!computed) st.rgba = decode(i, pv);
+        // The livery's key: the texture in the livery's paint (the computed colour's finish).
+        if (livery) {
+            const std::vector<u32>& in_paint =
+                !computed ? st.rgba
+                          : by_paint[i][by_paint[i].size() == 1 ? 0 : size_t(std::clamp(computed->finish, 0, int(by_paint[i].size()) - 1))];
+            livery_keys.push_back(texture_pack::key_of(st.width, st.height, in_paint.data()));
+            livery_templates.push_back(in_paint);
+        }
+        if (computed && by_paint[i].size() == 1) st.rgba = std::move(by_paint[i][0]);
+        else if (computed) st.rgba = computed_paint_texels(by_paint[i], body, target, computed->finish);
         st.clamp_u = tx.clamp.wms == 1 || tx.clamp.wms == 2;
         st.clamp_v = tx.clamp.wmt == 1 || tx.clamp.wmt == 2;
         st.nearest = ((tx.tex1 >> 5) & 1) == 0; // TEX1.MMAG
@@ -656,7 +861,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
     }
     // CLUT animations: the textures they feed show the animations' state (at their reset here).
     ClutTextures c;
-    if (!t.clut_animations.empty() && !pv) {
+    if (!t.clut_animations.empty() && !pv && !computed) {
         c = ClutTextures(tex1);
         for (u32 r : c.records())
             if (const std::vector<u32>* px = c.rgba(r); px && px->size() == out[size_t(first) + r].rgba.size())
@@ -672,6 +877,14 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
             st.width = r->width, st.height = r->height, st.rgba = r->rgba, st.nearest = false;
             c.erase(u32(i - size_t(first)));
         }
+    // The livery's pictures over the paint (and the pack's picture). A covered texture no longer animates.
+    if (livery)
+        for (size_t i = 0; i < livery_keys.size(); ++i)
+            if (std::shared_ptr<const texture_pack::Image> pic = livery->find(livery_keys[i])) {
+                const Tex0& t0 = t.textures[i].tex0;
+                overlay_livery(out[size_t(first) + i], *pic, {livery_templates[i].data(), t0.width(), t0.height()});
+                c.erase(u32(i));
+            }
     if (clut && !c.empty()) *clut = std::move(c);
     return first;
 }
@@ -883,7 +1096,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             // A set that is not a Tex1 has no textures. The game then binds none (the program skips TEX0
             // without a texture table) and the GS keeps an earlier draw's texture.
             const std::string prefix = "set" + std::to_string(texset) + "_";
-            int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut);
+            int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint, opt.livery);
             it = set_first.emplace(texset, first).first;
             set_size[texset] = u32(model.textures.size() - before);
             if (!clut.empty()) {
@@ -1384,7 +1597,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 // Lit packets: the VU lights them with the selected paint's material (GL
                 // defaults when the packet has none); chunk header byte 9 bit 0 = 255 scale.
                 if (dp.has_normals && !dp.has_colors && !env) {
-                    const std::vector<Material>& mats = g.materials_for(opt.paint);
+                    const std::vector<Material>& mats = g.materials_for(opt.computed_paint ? opt.computed_paint->finish : opt.paint);
                     scene::Material& sm = prim.material;
                     sm.valid = true;
                     if (mat != 0 && mat != 0x7F && mat - 1 < mats.size()) {

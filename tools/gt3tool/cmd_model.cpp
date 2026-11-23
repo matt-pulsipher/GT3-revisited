@@ -8,6 +8,8 @@
 #include "formats/model/wheel_model.h"
 #include "formats/model/wheel_spec.h"
 #include "game/data/car_database.h"
+#include "formats/texture_pack.h"
+#include "race/custom_paints.h"
 #include "formats/png_writer.h"
 
 #include <algorithm>
@@ -22,6 +24,7 @@ struct ModelArgs {
     CarModelOptions car;
     int node = -1;
     bool gltf = false;
+    std::string color; // --color=#RRGGBB[,finish]: a custom paint (race/custom_paints.h)
 };
 
 ModelArgs parse_flags(const Args& a, size_t first) {
@@ -35,6 +38,12 @@ ModelArgs parse_flags(const Args& a, size_t first) {
         else if (s.rfind("--node=", 0) == 0) m.node = std::stoi(s.substr(7));
         else if (s == "--gltf") m.gltf = true;
         else if (s.rfind("--paint=", 0) == 0) m.car.paint = std::stoi(s.substr(8));
+        else if (s.rfind("--color=", 0) == 0) m.color = s.substr(8);
+        else if (s.rfind("--livery=", 0) == 0) {
+            auto pack = std::make_shared<texture_pack::Pack>(); // a livery folder's pictures, over --paint
+            pack->add_folder(s.substr(9));
+            m.car.livery = std::move(pack);
+        }
         else throw FormatError("unknown option " + s);
     }
     return m;
@@ -127,6 +136,23 @@ int cmd_model(Disc& disc, const Args& a) {
                         w->track[0], w->track[1], w->radius[0], w->radius[1], w->width[0], w->width[1]);
         else
             std::printf("wheels: no database spec, estimated from the body\n");
+        if (!m.color.empty()) {
+            const size_t comma = m.color.find(',');
+            race::CustomPaint cp;
+            cp.model = name;
+            std::optional<u32> rgb = race::parse_rgb(m.color.substr(0, comma));
+            if (!rgb) throw FormatError("--color: not #RRGGBB");
+            cp.rgb = *rgb;
+            if (comma != std::string::npos) cp.finish = std::stoi(m.color.substr(comma + 1));
+            race::CarColors colors;
+            if (auto cc = disc.volume().find("database/carcolor.db")) colors.parse(disc.volume().read(*cc));
+            race::CustomPaints paints(std::move(colors));
+            std::string err;
+            int index = -1;
+            if (!paints.add(cp, &err, &index)) throw FormatError("--color: " + err);
+            m.car.computed_paint = paints.computed(name, index);
+            std::printf("paint: %s, the finish of paint %d\n", race::rgb_text(cp.rgb).c_str(), m.car.computed_paint->finish);
+        }
     }
     scene::Model model = load_any(data, m, name);
     print_summary(model);
@@ -264,7 +290,7 @@ GT3TOOL_COMMAND(prm, "prm", "<vol-path> [outdir] [--frame=N] [--packets]",
                 "describe a prize scene (.prm: medal, trophy, license card); export its model posed at a frame", 1,
                 cmd_prm);
 GT3TOOL_COMMAND(model, "model",
-                "<vol-path> <outdir> [--lod=N|-1] [--paint=N] [--effects] [--no-wheels] [--no-reflection] [--node=N] "
+                "<vol-path> <outdir> [--lod=N|-1] [--paint=N] [--color=#RRGGBB[,finish]] [--livery=<folder>] [--effects] [--no-wheels] [--no-reflection] [--node=N] "
                 "[--gltf]",
                 "export a car / wheel / prize (.prm) / GTM1 model to OBJ+MTL+PNG (+ binary glTF)", 2, cmd_model);
 GT3TOOL_COMMAND(model_survey, "model-survey", "[prefix]", "decode every car, wheel and prize (.prm) model (all LODs)", 0,

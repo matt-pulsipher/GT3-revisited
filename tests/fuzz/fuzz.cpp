@@ -24,6 +24,7 @@
 #include "formats/png_reader.h"
 #include "formats/png_writer.h"
 #include "game/data/mod_cars.h"
+#include "game/livery_package.h"
 #include "game/mod_package.h"
 #include "game/net_car.h"
 #include "net/protocol.h"
@@ -31,6 +32,7 @@
 #include "net/rendezvous.h"
 #include "net/session.h"
 #include "race/custom_music.h"
+#include "race/custom_paints.h"
 
 #include "../music_fixtures.h"
 
@@ -206,6 +208,12 @@ std::vector<Target> targets() {
                  o.max_texture_dim = 2048;
                  load_glb(d, o, "fuzz");
              } catch (const std::exception&) {}
+             try { // a downloaded body's images as ours; what it writes loads
+                 const Bytes ours = reencode_glb_images(d, 2048);
+                 try {
+                     load_glb(ours, {}, "fuzz");
+                 } catch (const std::exception&) {} // (geometry the loader refuses stays refused)
+             } catch (const std::exception&) {}
          },
          [] { return std::vector<Bytes>{tiny_glb()}; }},
         {"music_tags", // byte 0: the format; then the file's start (its last 128 bytes are an MP3's tail)
@@ -276,6 +284,9 @@ std::vector<Target> targets() {
              try {
                  json::Value v = json::Value::parse(std::string_view(reinterpret_cast<const char*>(d.data()), d.size()));
                  (void)v["a"][size_t(3)]["b"].integer();
+                 // What dump writes reads back to the same text.
+                 const std::string once = v.dump();
+                 if (json::Value::parse(once).dump() != once) std::abort();
              } catch (const std::exception&) {}
          },
          [] {
@@ -290,6 +301,23 @@ std::vector<Target> targets() {
              data::parse_tire_size(std::string_view(reinterpret_cast<const char*>(d.data()), std::min<size_t>(d.size(), 32)));
          },
          [] { return std::vector<Bytes>{text(kIni)}; }},
+        {"livery_ini", // a custom paint colour (race/custom_paints.h): a mod's, from a download
+         [](ByteSpan d) {
+             std::string err;
+             race::parse_custom_paint(std::string_view(reinterpret_cast<const char*>(d.data()), d.size()), &err);
+         },
+         [] { return std::vector<Bytes>{text("[livery]\nname = Blue ; comment\nmodel = am0006\ncolor = #1E3A8A\nfinish = 4\n")}; }},
+        {"livery_package", // a livery from another player (game/livery_package.h): the structure checks
+         [](ByteSpan d) {
+             std::string err;
+             game::parse_livery_package(d, &err);
+         },
+         [] {
+             game::LiveryPackage p;
+             p.files.push_back({"livery.ini", text("[livery]\nmodel = ni0137\npaint = 0\n")});
+             p.files.push_back({"p-0123456789abcdef.png", text("not really a png")});
+             return std::vector<Bytes>{game::serialize_livery_package(p)};
+         }},
         {"package",
          [](ByteSpan d) {
              std::string err;
@@ -345,8 +373,13 @@ std::vector<Target> targets() {
              game::OnlineCar md = m; // a mod car's donor after the digest
              md.digest = a.digest;
              md.donor = "legacy_gtb_96";
+             game::OnlineCar ac = a; // an arcade car in a custom colour (lobby flag 2)
+             ac.color = 0x8A3A1Eu;
+             ac.paint = 4;
+             ac.livery = std::string(64, 'd'); // and a livery (lobby flag 4)
+             ac.livery_size = 4096;
              return std::vector<Bytes>{game::encode_online_car(g), game::encode_online_car(m), game::encode_online_car(a),
-                                       game::encode_online_car(gm), game::encode_online_car(md)};
+                                       game::encode_online_car(gm), game::encode_online_car(md), game::encode_online_car(ac)};
          }},
         {"rendezvous",
          [](ByteSpan d) {

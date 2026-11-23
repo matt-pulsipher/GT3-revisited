@@ -189,6 +189,11 @@ TEST(mod_archive_top_level_mod_ids) {
     auto loose = s.zip(make_zip({{"Readme.md", "hi"}, {"pack/files/a.bin", "a"}}), "loose.zip");
     auto plan3 = plan_mod_install(*loose, "loose.zip", s.mods());
     CHECK(plan3 && plan3->mods.size() == 1 && plan3->mods[0].id == "pack" && plan3->mods[0].files.size() == 1);
+    // Paint colours alone (liveries/*.ini, race/custom_paints.h): a mod too.
+    auto paints = s.zip(make_zip({{"liveries/orange.ini", "[livery]\nmodel = ni0137\ncolor = #FF7A00\n"}}), "orange.zip");
+    auto plan4 = install(s, *paints, "R34 orange.zip");
+    CHECK(plan4 && plan4->mods.size() == 1 && plan4->mods[0].id == "R34_orange");
+    CHECK(s.read("R34_orange/liveries/orange.ini").rfind("[livery]", 0) == 0);
 }
 
 TEST(mod_archive_several_mods) {

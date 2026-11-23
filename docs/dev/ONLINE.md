@@ -228,6 +228,37 @@ which tires and whether tuned cars may race ("Lobby car rules").
   car's label = `tires=7;settings=...`), dropped when the car no longer has those tires or the
   settings no longer fit it (a garage car changed since).
 
+### Custom colours
+A disc or arcade car in a custom paint colour (`race/custom_paints.h`, docs/dev/CUSTOM_PAINTS.md)
+sends the colour, not its index: indices past the disc's paints differ between machines.
+`game::set_online_car_paint` puts the colour's finish in `paint` (what a game without the
+colour shows) and its RGB in `OnlineCar::color`, which travels in the lobby block after the
+tires and settings: flag 2 in its flags byte, then u8 R, G, B. Older games stop reading after
+the settings. A colour is no physics, so the digest does not change. Each machine turns the
+colour into its own paint index with `game::online_car_local_paint` (`race::received_paint`:
+the installed colour with that RGB and finish, else one added for the session, not listed in
+the pickers), for the lobby's chips, the race (`configure_online_field`, `resolve_online`) and
+the host's CPU cars (their `net::Settings` paint is the finish; the colour is in their
+descriptor). Garage and mod cars wear the disc's paints. Tests: `custom_paint_online_car`, the
+`online_car` fuzz target.
+
+### Liveries
+A disc or arcade car wearing a livery (race/custom_paints.h) sends its package's SHA-256 and size
+in the lobby block after the colour (flag 4; older games stop before it). The package
+(`game/livery_package.h`) is built once per livery from the installed folder and holds only what
+was painted: each picture's coverage against the template (`gtm1::livery_coverage`) as its alpha,
+unpainted pictures left out, livery.ini written afresh. It travels like a mod car's
+(`offer_package` / `request_package` / `take_package`, through the host, in the lobby). Receiving
+(Settings → Online → Other players' liveries, `[online] liveries = show | ask | off`, ask by default): the package is parsed and validated against this disc (its model and paint here, every
+picture keyed by one of that car's textures in that paint, PNGs within `Pack::kMaxSide`, at most
+16 MB and 64 files) and installed as `mods/downloaded_liveries/liveries/dl-<12 hash digits>/`, each
+picture written as our own re-encoding of it (never the sender's bytes: the system's thumbnailers
+and media scan then only read our encoder's output).
+`online_car_local_paint` finds it by hash (our own by `race::note_livery_hash`); until then, or
+when refused, the car shows the livery's paint (and colour). Measured on localhost: a stripe and
+roundel on the R34's side, 5,844 bytes, installed and raced by the guest. Tests:
+`livery_package_disc`, `livery_online_car`, fuzz `livery_package` and `online_car`.
+
 ### Regional discs
 
 Players on NTSC-U, PAL and NTSC-J discs share lobbies. Each machine builds the other
@@ -522,6 +553,11 @@ sends a garage mod car without its package: a player without the mod sees
   rim and physics.
 - Opponents (online players and the AI alike) now draw a mod car's own body
   (`body_mod_for_car`), as the player's car always did.
+- The installed pictures and body are our own encoding of what was sent, never
+  the sender's bytes (each PNG decoded and encoded again; the body's images
+  likewise by `reencode_glb_images`, other images a white 1x1 PNG as the loader
+  draws them, the sender's image bytes zeroed). Tests: `net_glb_images_reencoded`,
+  `net_mod_package_validation_disc`; fuzz `glb`, `json`.
 
 **Validation** (everything checked before anything is written or loaded):
 - **Structure:** magic, at most 8 files and 32 MB (the definition, up to

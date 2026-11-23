@@ -1159,3 +1159,29 @@ TEST(mod_car_arcade_matches_garage) {
     const ByteSpan* en = none ? db.record(T::Engine, none->parts[6]) : nullptr;
     CHECK(en && en->size() > 0x45 && (*en)[0x45] == 72);
 }
+
+// A glTF body's textures the game draws white are named for the modder: a JPEG, a file beside the .glb.
+TEST(mod_car_glb_image_warnings) {
+    auto glb_with = [](const std::string& images) {
+        std::string json = R"({"asset":{"version":"2.0"},"images":)" + images + "}";
+        while (json.size() % 4) json += ' ';
+        Bytes g;
+        auto u32le = [&](u32 v) { for (int i = 0; i < 4; ++i) g.push_back(u8(v >> (8 * i))); };
+        g.insert(g.end(), {'g', 'l', 'T', 'F'});
+        u32le(2);
+        u32le(u32(12 + 8 + json.size()));
+        u32le(u32(json.size()));
+        u32le(0x4E4F534A);
+        g.insert(g.end(), json.begin(), json.end());
+        return g;
+    };
+    CHECK(glb_image_warnings(glb_with(R"([{"bufferView":0,"mimeType":"image/png"}])")).empty());
+    const std::vector<std::string> w =
+        glb_image_warnings(glb_with(R"([{"bufferView":0,"mimeType":"image/png"},{"bufferView":1,"mimeType":"image/jpeg","name":"door"},{"uri":"x.png"}])"));
+    CHECK(w.size() == 2);
+    if (w.size() == 2) {
+        CHECK(w[0] == "texture \"door\": JPEG, shows white (use PNG)");
+        CHECK(w[1] == "texture 2: separate file, shows white (embed it)");
+    }
+    CHECK(glb_image_warnings(Bytes{'n', 'o'}).empty());
+}

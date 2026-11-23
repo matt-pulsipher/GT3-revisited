@@ -2,6 +2,8 @@
 
 #include "base/bytes.h"
 
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -164,6 +166,113 @@ Value Value::parse(std::string_view text) {
     p.ws();
     if (p.i != text.size()) p.fail("trailing data");
     return v;
+}
+
+Value Value::of_number(double v) {
+    Value r;
+    r.type_ = Type::Number, r.num_ = v;
+    return r;
+}
+
+Value Value::of_string(std::string s) {
+    Value r;
+    r.type_ = Type::String, r.str_ = std::move(s);
+    return r;
+}
+
+Value Value::empty_object() {
+    Value r;
+    r.type_ = Type::Object;
+    return r;
+}
+
+Value& Value::set(const std::string& key, Value v) {
+    if (type_ != Type::Object) *this = empty_object();
+    return obj_[key] = std::move(v);
+}
+
+void Value::erase(const std::string& key) { obj_.erase(key); }
+
+Value& Value::push(Value v) {
+    if (type_ != Type::Array) {
+        *this = Value();
+        type_ = Type::Array;
+    }
+    arr_.push_back(std::move(v));
+    return arr_.back();
+}
+
+Value* Value::member(const std::string& key) {
+    auto it = obj_.find(key);
+    return type_ == Type::Object && it != obj_.end() ? &it->second : nullptr;
+}
+
+Value* Value::item(size_t i) { return type_ == Type::Array && i < arr_.size() ? &arr_[i] : nullptr; }
+
+namespace {
+void dump_string(std::string& out, const std::string& s) {
+    out += '"';
+    for (unsigned char c : s) {
+        if (c == '"' || c == '\\') out += '\\', out += char(c);
+        else if (c < 0x20) {
+            char b[8];
+            std::snprintf(b, sizeof b, "\\u%04x", c);
+            out += b;
+        } else out += char(c);
+    }
+    out += '"';
+}
+void dump_value(std::string& out, const Value& v) {
+    switch (v.type()) {
+    case Value::Type::Null: out += "null"; break;
+    case Value::Type::Bool: out += v.boolean() ? "true" : "false"; break;
+    case Value::Type::Number: {
+        const double d = v.number();
+        if (!std::isfinite(d)) {
+            out += "0";
+            break;
+        }
+        char b[32];
+        for (int prec = 1; prec <= 17; ++prec) { // the shortest that reads back the same
+            std::snprintf(b, sizeof b, "%.*g", prec, d);
+            if (std::strtod(b, nullptr) == d) break;
+        }
+        out += b;
+        break;
+    }
+    case Value::Type::String: dump_string(out, v.string()); break;
+    case Value::Type::Array: {
+        out += '[';
+        bool first = true;
+        for (const Value& x : v.items()) {
+            if (!first) out += ',';
+            first = false;
+            dump_value(out, x);
+        }
+        out += ']';
+        break;
+    }
+    case Value::Type::Object: {
+        out += '{';
+        bool first = true;
+        for (const auto& [k, x] : v.members()) {
+            if (!first) out += ',';
+            first = false;
+            dump_string(out, k);
+            out += ':';
+            dump_value(out, x);
+        }
+        out += '}';
+        break;
+    }
+    }
+}
+} // namespace
+
+std::string Value::dump() const {
+    std::string out;
+    dump_value(out, *this);
+    return out;
 }
 
 } // namespace gt3r::json

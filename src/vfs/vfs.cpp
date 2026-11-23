@@ -103,6 +103,12 @@ void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {
             if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.makers.push_back(root + "/makers/" + name);
         for (const std::string& name : list_host_dir(root + "/events"))
             if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.events.push_back(root + "/events/" + name);
+        for (const std::string& name : list_host_dir(root + "/liveries")) {
+            const std::string path = root + "/liveries/" + name;
+            if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.liveries.push_back(path);
+            else if (host_is_directory(path) && host_path_exists(path + "/livery.ini")) mod.liveries.push_back(path + "/livery.ini");
+        }
+        std::sort(mod.liveries.begin(), mod.liveries.end());
         mod.textures = texture_pack::pictures_in(root + "/textures");
         LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, %zu events, %zu textures, priority %d, %s", mod.name.c_str(),
                  mod.id.c_str(), mod.files.size(), mod.cars.size(), mod.events.size(), mod.textures.size(), mod.priority,

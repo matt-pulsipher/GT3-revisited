@@ -1,7 +1,8 @@
 #pragma once
 
 // Minimal JSON reader (RFC 8259) for mod content such as glTF models. Numbers
-// are doubles; \u escapes are converted to UTF-8.
+// are doubles; \u escapes are converted to UTF-8. A value can be changed and written
+// back out (dump), for rewriting a downloaded model (formats/model/gltf.h).
 
 #include <map>
 #include <memory>
@@ -42,6 +43,18 @@ public:
 
     // Throws FormatError with the byte offset on malformed input.
     static Value parse(std::string_view text);
+
+    // Building and changing values.
+    static Value of_number(double v);
+    static Value of_string(std::string s);
+    static Value empty_object();
+    Value& set(const std::string& key, Value v); // (becomes an object if it is none)
+    void erase(const std::string& key);
+    Value& push(Value v);                        // (becomes an array if it is none)
+    Value* member(const std::string& key);       // null when missing
+    Value* item(size_t i);                       // null when missing
+    // Compact JSON text; numbers as the shortest form that reads back the same double. Object members in key order.
+    std::string dump() const;
 
 private:
     friend struct Parser;

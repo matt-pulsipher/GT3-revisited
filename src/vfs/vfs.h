@@ -19,6 +19,7 @@ class IniDocument;
 //   cars/     new car definitions (*.ini, see game/data/mod_cars.h)
 //   events/   GT Mode events (*.ini, see game/data/mod_events.h)
 //   textures/ replacement textures (PNGs named by key, formats/texture_pack.h)
+//   liveries/ custom paint colours (*.ini or <name>/livery.ini, race/custom_paints.h)
 // See docs/MODDING.md.
 struct ModInfo {
     std::string id; // directory name
@@ -38,6 +39,7 @@ struct ModInfo {
     std::vector<std::string> cars;  // host paths of cars/*.ini (game/data/mod_cars.h)
     std::vector<std::string> makers; // host paths of makers/*.ini
     std::vector<std::string> events; // host paths of events/*.ini (game/data/mod_events.h)
+    std::vector<std::string> liveries; // host paths of liveries/*.ini and liveries/*/livery.ini (race/custom_paints.h)
     std::vector<std::pair<u64, std::string>> textures; // textures/: key and host path of each picture
 };
 

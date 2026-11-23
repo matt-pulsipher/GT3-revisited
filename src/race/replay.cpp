@@ -2,6 +2,7 @@
 
 #include "base/file.h"
 #include "base/log.h"
+#include "race/custom_paints.h"
 #include "sim/exact/race_record.h"
 
 #include <algorithm>
@@ -152,6 +153,16 @@ Bytes Replay::serialize() const {
     }
     w.put<u8>(u8(std::min<size_t>(opponent_paints.size(), 64)));
     for (size_t i = 0; i < opponent_paints.size() && i < 64; ++i) w.put<s8>(s8(std::clamp(opponent_paints[i], -1, 127)));
+    w.put<u8>(u8(std::min<size_t>(custom_colors.size(), 66)));
+    for (size_t i = 0; i < custom_colors.size() && i < 66; ++i) {
+        const CustomColor& c = custom_colors[i];
+        w.put<u8>(c.car);
+        w.str(c.model);
+        w.put<u8>(c.colour ? 1 : 0);
+        for (int k = 0; k < 3; ++k) w.put<u8>(u8(c.rgb >> (8 * k)));
+        w.put<u8>(c.finish);
+        w.str(c.livery);
+    }
     {
         const Bytes xb = exact ? exact->serialize() : Bytes{};
         w.put<u32>(u32(xb.size()));
@@ -248,6 +259,30 @@ Replay Replay::parse(ByteSpan data) {
         const u8 np = r.get<u8>();
         if (np > 64) throw FormatError("bad replay paint count");
         for (u8 i = 0; i < np; ++i) rp.opponent_paints.push_back(r.get<s8>());
+    }
+    if (version >= 14) {
+        const u8 nc = r.get<u8>();
+        if (nc > 66) throw FormatError("bad replay colour count");
+        for (u8 i = 0; i < nc; ++i) {
+            Replay::CustomColor c;
+            c.car = r.get<u8>();
+            c.model = r.str();
+            c.colour = (r.get<u8>() & 1) != 0;
+            for (int k = 0; k < 3; ++k) c.rgb |= u32(r.get<u8>()) << (8 * k);
+            c.finish = r.get<u8>();
+            c.livery = r.str();
+            // This game's paint index of it: the livery when installed, else the colour, else the finish paint.
+            int paint = c.livery.empty() ? -1 : custom_paints()->index_of_livery(c.model, c.livery);
+            if (paint < 0 && c.colour) paint = received_paint(c.model, c.rgb, c.finish);
+            if (paint < 0) paint = c.finish;
+            if (c.car == 0) rp.paint = paint;
+            else if (c.car == 255) {
+                if (rp.battle) rp.battle->paint2 = paint;
+            } else if (size_t(c.car - 1) < rp.opponent_paints.size()) {
+                rp.opponent_paints[size_t(c.car - 1)] = paint;
+            }
+            rp.custom_colors.push_back(std::move(c));
+        }
     }
     const u32 nx = r.get<u32>();
     if (!nx) throw ReplayTooOld(kReplayTooOld); // (a run before every race ran on the exact core)

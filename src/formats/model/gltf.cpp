@@ -2,6 +2,7 @@
 
 #include "formats/json.h"
 #include "formats/png_reader.h"
+#include "formats/png_writer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -340,6 +341,138 @@ scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name
     if (!env.indices.empty()) model.meshes.push_back(std::move(env));
     model.compute_bounds();
     return model;
+}
+
+Bytes reencode_glb_images(ByteSpan d, u32 max_dim) {
+    if (d.size() < 20 || std::memcmp(d.data(), "glTF", 4) != 0) throw FormatError("not a binary glTF (.glb) file");
+    if (rd32(d, 4) != 2) throw FormatError("glTF: only version 2 is supported");
+    json::Value doc;
+    bool have_doc = false;
+    Bytes bin;
+    size_t o = 12;
+    while (o + 8 <= d.size()) {
+        const u32 len = rd32(d, o), type = rd32(d, o + 4);
+        if (o + 8 + len > d.size()) throw FormatError("glTF: truncated chunk");
+        ByteSpan body = d.subspan(o + 8, len);
+        if (type == 0x4E4F534A) {
+            doc = json::Value::parse(std::string_view(reinterpret_cast<const char*>(body.data()), body.size()));
+            have_doc = true;
+        } else if (type == 0x004E4942 && bin.empty()) {
+            bin.assign(body.begin(), body.end());
+        }
+        o += 8 + ((len + 3) & ~3u);
+    }
+    if (!have_doc || !doc.is_object()) throw FormatError("glTF: no JSON chunk");
+    // The views accessors read (geometry): never zeroed, even if an image shares one.
+    std::vector<bool> geometry(doc["bufferViews"].size(), false);
+    for (const json::Value& a : doc["accessors"].items())
+        if (const int v = a["bufferView"].integer(-1); v >= 0 && size_t(v) < geometry.size()) geometry[size_t(v)] = true;
+    auto view_range = [&](int v, size_t& off, size_t& len) {
+        const json::Value& bv = doc["bufferViews"][size_t(v)];
+        if (!bv.is_object() || bv["buffer"].integer() != 0) return false;
+        off = Glb::size_of(bv["byteOffset"], bin.size(), "buffer view offset");
+        len = Glb::size_of(bv["byteLength"], bin.size() - off, "buffer view length");
+        return true;
+    };
+    std::vector<std::pair<size_t, size_t>> old_images; // ranges to zero
+    std::vector<Bytes> fresh;                          // each image's new PNG, in image order
+    const Bytes white = encode_png(1, 1, {0xFFFFFFFFu});
+    for (const json::Value& im : doc["images"].items()) {
+        Bytes png = white;
+        if (im.has("bufferView")) {
+            const int v = im["bufferView"].integer(-1);
+            size_t off = 0, len = 0;
+            if (v >= 0 && size_t(v) < geometry.size() && view_range(v, off, len)) {
+                if (im["mimeType"].string() == "image/png" || im["mimeType"].string().empty()) {
+                    const PngImage p = decode_png(ByteSpan(bin).subspan(off, len), max_dim);
+                    png = encode_png(p.width, p.height, p.rgba);
+                }
+                if (!geometry[size_t(v)]) old_images.emplace_back(off, len);
+            }
+        }
+        fresh.push_back(std::move(png));
+    }
+    for (const auto& [off, len] : old_images) std::fill(bin.begin() + std::ptrdiff_t(off), bin.begin() + std::ptrdiff_t(off + len), u8(0));
+    // The new images at the end of the buffer, each in a view of its own.
+    json::Value* images = doc.member("images");
+    for (size_t i = 0; images && i < fresh.size(); ++i) {
+        while (bin.size() % 4) bin.push_back(0);
+        json::Value view = json::Value::empty_object();
+        view.set("buffer", json::Value::of_number(0));
+        view.set("byteOffset", json::Value::of_number(double(bin.size())));
+        view.set("byteLength", json::Value::of_number(double(fresh[i].size())));
+        bin.insert(bin.end(), fresh[i].begin(), fresh[i].end());
+        json::Value* views = doc.member("bufferViews");
+        const size_t index = views ? views->size() : 0;
+        if (views) views->push(std::move(view));
+        else {
+            json::Value arr;
+            arr.push(std::move(view));
+            doc.set("bufferViews", std::move(arr));
+        }
+        json::Value* im = images->item(i);
+        im->erase("uri");
+        im->set("bufferView", json::Value::of_number(double(index)));
+        im->set("mimeType", json::Value::of_string("image/png"));
+    }
+    while (bin.size() % 4) bin.push_back(0);
+    // One buffer: the GLB's own.
+    json::Value buffer = json::Value::empty_object();
+    buffer.set("byteLength", json::Value::of_number(double(bin.size())));
+    if (json::Value* buffers = doc.member("buffers"); buffers && buffers->item(0)) {
+        *buffers->item(0) = buffer;
+    } else {
+        json::Value arr;
+        arr.push(std::move(buffer));
+        doc.set("buffers", std::move(arr));
+    }
+    std::string text = doc.dump();
+    while (text.size() % 4) text += ' ';
+    Bytes out;
+    auto put32 = [&](u32 v) {
+        for (int k = 0; k < 4; ++k) out.push_back(u8(v >> (8 * k)));
+    };
+    out.insert(out.end(), {'g', 'l', 'T', 'F'});
+    put32(2);
+    put32(u32(12 + 8 + text.size() + 8 + bin.size()));
+    put32(u32(text.size()));
+    put32(0x4E4F534A);
+    out.insert(out.end(), text.begin(), text.end());
+    put32(u32(bin.size()));
+    put32(0x004E4942);
+    out.insert(out.end(), bin.begin(), bin.end());
+    return out;
+}
+
+std::vector<std::string> glb_image_warnings(ByteSpan d) {
+    std::vector<std::string> out;
+    if (d.size() < 20 || std::memcmp(d.data(), "glTF", 4) != 0) return out;
+    json::Value doc;
+    size_t o = 12;
+    while (o + 8 <= d.size()) {
+        const u32 len = rd32(d, o), type = rd32(d, o + 4);
+        if (o + 8 + len > d.size()) return out;
+        if (type == 0x4E4F534A) {
+            try {
+                doc = json::Value::parse(std::string_view(reinterpret_cast<const char*>(d.data() + o + 8), len));
+            } catch (const std::exception&) {
+                return out;
+            }
+            break;
+        }
+        o += 8 + ((len + 3) & ~3u);
+    }
+    for (size_t i = 0; i < doc["images"].size(); ++i) {
+        const json::Value& im = doc["images"][i];
+        const std::string mime = im["mimeType"].string();
+        const std::string which = "texture " + (im["name"].string().empty() ? std::to_string(i)
+                                                                            : "\"" + im["name"].string().substr(0, 40) + "\"");
+        if (!im.has("bufferView")) out.push_back(which + ": separate file, shows white (embed it)");
+        else if (!mime.empty() && mime != "image/png")
+            out.push_back(which + ": " + (mime.find("jp") != std::string::npos ? std::string("JPEG") : mime) +
+                          ", shows white (use PNG)");
+    }
+    return out;
 }
 
 } // namespace gt3r

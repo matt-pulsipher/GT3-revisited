@@ -29,6 +29,11 @@
 #include <string>
 #include <vector>
 
+namespace gt3r::texture_pack {
+struct Image;
+class Pack;
+} // namespace gt3r::texture_pack
+
 namespace gt3r::gtm1 {
 
 using Matrix = std::array<float, 16>; // row-vector convention: v' = v * M (rows r0..r3)
@@ -268,6 +273,7 @@ struct ClutSet {
 
 class AnimatedNodes;
 class MorphDraws;
+struct ComputedPaint;
 
 struct Options {
     RunParams run;
@@ -275,6 +281,11 @@ struct Options {
     bool reflection = true;   // include environment-map packets (normal in the UV slot)
     bool textures = true;     // decode texture sets into Model::textures
     int paint = 0;            // car colour index (Tex1 paint variant), 0 = default
+    // A computed colour in place of `paint` (its finish selects the material set); see ComputedPaint.
+    const ComputedPaint* computed_paint = nullptr;
+    // A livery (race/custom_paints.h): pictures over the paint, keyed as a texture pack's by the
+    // textures in the livery's paint (`paint`, or the computed colour's finish). See overlay_livery.
+    const texture_pack::Pack* livery = nullptr;
     std::optional<std::array<float, 3>> tint; // multiply vertex colours of tintable packets (RGB 0..1)
     // Course road "sheen": chunks of kind 4 (flag bits 0-4) are a second, lit pass
     // over the same vertices as the node's base pass, drawn with ALPHA 0x58
@@ -464,6 +475,47 @@ struct PaintVariant {
 };
 std::vector<PaintVariant> paint_variants(ByteSpan tex1);
 
+// A paint colour the disc does not have (docs/dev/CUSTOM_PAINTS.md), computed from the car's own
+// paints. A paint variant only changes which CLUT each texture reads, so every texel is the same
+// palette entry under every paint, and each texel that changes with the paint is fitted against
+// the paints' body colours (their mean over the set's changing texels): texel = s x body colour + h,
+// one s and h for its three channels (the shading and a grey highlight), the paints nearer the new
+// colour weighted more. Texels that never change (trim, lamps, glass) keep their value; alpha (the
+// reflectivity and the cut-outs) is the finish paint's. carcolor.db's colours are only the paints'
+// labels (the R34's paint labelled #D5D5D5 runs #444443 to #727270 on its body): the new colour is taken as
+// such a label, its body colour the colour by the factor the car's own paints show on average.
+struct ComputedPaint {
+    u32 rgb = 0;                // bytes R, G, B
+    int finish = 0;             // the car's paint whose material set and texel alpha it takes
+    std::vector<u32> paint_rgb; // carcolor.db colour (bytes R, G, B) of each of the car's paints, in variant order
+    bool operator==(const ComputedPaint&) const = default;
+};
+// Each paint's body colour: the mean of the texels that change with the paint, over a set's
+// textures (`textures[t][v]`: texture t under paint v; textures with fewer entries are skipped).
+std::vector<u32> paint_body_colours(const std::vector<std::vector<std::vector<u32>>>& textures);
+// The body colour `p.rgb` is given (see ComputedPaint), from the paints' body colours.
+u32 computed_body_colour(const ComputedPaint& p, const std::vector<u32>& body);
+// The texels of one texture in body colour `target`, from the same texture under each paint
+// (`by_paint[v]`, all the same size) and the paints' body colours; alpha from paint `finish`.
+std::vector<u32> computed_paint_texels(const std::vector<std::vector<u32>>& by_paint, const std::vector<u32>& body, u32 target,
+                                       int finish);
+
+// A livery picture over a texture: out = mix(texture, picture, coverage) per texel, the
+// texture's alpha kept (its reflectivity and cut-outs). The coverage is the picture's alpha,
+// except where the picture still shows `templ` (the texture in the livery's paint, at its disc
+// size, as the livery template enlarges it): a canvas painted over the template, opaque, covers
+// only what was painted (fading in over 6 to 18 levels of difference per channel). The result
+// has the larger of the two sizes per side: the texture is enlarged (its colour filtered unless
+// it is point-sampled, its alpha by nearest texel), the picture fitted to it. A picture that
+// covers nothing leaves the texture as it is.
+struct TemplateTexels {
+    const u32* rgba = nullptr;
+    u32 width = 0, height = 0;
+};
+void overlay_livery(scene::Texture& texture, const texture_pack::Image& picture, TemplateTexels templ = {});
+// The coverage overlay_livery gives each texel of `picture` (its size).
+std::vector<u8> livery_coverage(const texture_pack::Image& picture, TemplateTexels templ = {});
+
 // Appends the textures of one Tex1 set (all of them) to `out`; returns the
 // index of the first one. `paint` > 0 selects a colour variant (when the set
 // has one). Indexed textures honour TEX0.CSA. Textures fed by the set's CLUT
@@ -471,8 +523,13 @@ std::vector<PaintVariant> paint_variants(ByteSpan tex1);
 // (empty without animations). Shared by the car/wheel/course loaders.
 // `use_pack`: textures the texture pack replaces (formats/texture_pack.h) take its pictures,
 // and their CLUT animations stop; false gives the disc's textures (the keys are made from them).
+// `computed` (when the set has a variant for each of its paints): that colour instead of `paint`,
+// for the textures the paints recolour (no CLUT animations, like any paint but the first).
+// `livery`: its pictures over the textures whose key (in `paint`, or the computed colour's
+// finish) has one, over the texture pack's picture where there is one.
 int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const std::string& prefix, int paint = 0,
-                       ClutTextures* clut = nullptr, bool use_pack = true);
+                       ClutTextures* clut = nullptr, bool use_pack = true, const ComputedPaint* computed = nullptr,
+                       const texture_pack::Pack* livery = nullptr);
 
 // A cut-out copy (alpha 0 = cut away, else kept) of a texture the game samples point-filtered:
 // gives every cut texel the mean colour of its nearest kept texels (ring by ring; across the
