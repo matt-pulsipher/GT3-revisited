@@ -1602,7 +1602,7 @@ is the view's reset (§H8; in mode 1 a cut at once).
   turn on board or a re-arm, §H8) the director draws, and with p = 0.07, while
   the followed car has a battle partner (§G3), the camera turns on board the
   partner's car (a bumper view: 0.62 m up, 0.15 m behind the nose, vertical FOV
-  0.9 rad). That on-board cut lasts until the shot ends (§H8): the course record
+  0.9 rad; the partner's car is not drawn, as on every on-board mount). That on-board cut lasts until the shot ends (§H8): the course record
   under it runs out and the gate opens, or a new target is set (a new followed
   car or partner, §G3). Without a partner it never cuts on board. It frames the
   followed car with its partner (§G3).

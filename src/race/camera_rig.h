@@ -228,9 +228,11 @@ public:
     // camera's seat. Rebound by the screen when the camera's car changes.
     void set_hood_profile(const HoodCameraProfile& p) { hood_profile_ = p, last_cut_.reset(); }
     const HoodCameraProfile& hood_profile() const { return hood_profile_; }
-    // The replay camera is one of view mode 1's on-board car mounts (in-car, a bumper, the
-    // driver's head): the followed car is not drawn.
+    // The replay camera is on board a car: one of view mode 1's on-board car mounts (in-car, a
+    // bumper, the driver's head) or mode 2's on-board cut. The car it rides is not drawn: the
+    // followed car, or for mode 2's cut its battle partner (replay_on_partner).
     bool replay_on_board() const { return mode_ == CameraMode::Tv && replay_on_board_; }
+    bool replay_on_partner() const { return replay_on_board() && replay_on_partner_; }
     // The camera's kind for the race sounds (GT3's camera manager type over the camera's own
     // kind): the in-car views, the replay's car mounts (on board or outside: view mode 1's mounts,
     // mode 2's on-board cut) are car-mounted; the chase views chase; every other camera, and the
@@ -312,6 +314,7 @@ private:
     // Mode 1's procedural camera of the current cut (the director's cut serial), stepped at 60 Hz.
     ProceduralCamera proc_;
     bool replay_on_board_ = false;
+    bool replay_on_partner_ = false; // mode 2's on-board cut rides the partner's car
     bool replay_car_mount_ = false; // a car mount (procedural, inside or out) or mode 2's on-board cut
     // The eye's motion: the last update's eye and cut (eye_velocity).
     render::Vec3 eye_velocity_{}, last_eye_{};

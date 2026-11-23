@@ -477,6 +477,9 @@ void RaceScreen::take_best_run_ghost() {
 void RaceScreen::restart() {
     take_live_condition(); // the previous live run hands its engine condition on
     replaying_ = false;
+    // A live run follows the player's car: a replay that ended on an opponent would otherwise
+    // leave that opponent hidden in the in-car view and draw the player's car around the eye.
+    replay_focus_ = replay_partner_ = -1;
     run_recorded_ = false;
     retry_locked_ = false; // every run starts with RETRY available (presentation §E3)
     pod_intro_posted_ = false;

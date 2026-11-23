@@ -1562,7 +1562,8 @@ and width).
   the view kind `OnBoardCamera::vf10` returns: 1 outside (mirrors, roof, sills, outside points),
   0 on board (in-car, the bumpers, the driver's head 10 / 11); with 0 the car passes
   (`RacePS2Base::vf51..53` via `fn_00209370`) skip the camera's target car. Ours:
-  `CarMount::outside`, `CameraRig::replay_on_board` (the followed car not drawn).
+  `CarMount::outside`, `CameraRig::replay_on_board` (the car the camera rides not drawn: the followed car, or the
+  partner on mode 2's on-board cut, `CameraRig::replay_on_partner`).
 - Footage (`2-video-mode.mp4`): Zoomup head-on at 26 s, Matrix at 30 s, Automatic A at 35.6 s
   and 59.4 s (and with s at 66.8 s), Automount at 37.2 s and 61.1 s, the stuck player car's
   course record at 36.1 s and 63.1 s, all as decoded.
