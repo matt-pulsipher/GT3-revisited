@@ -87,14 +87,14 @@ struct ExactFieldOptions {
     // (the cars, grid, laps and words above are not used; the players' pads and inputs are ignored).
     std::shared_ptr<const sim::exact::RaceRecord> playback;
     // A whole-run ghost (time trial, licence test, machine test): car 0 of that run's record, as GT3 races it: a car of this
-    // race after the players (its entry the run's car 0's; the solo conductors' entry set-up flags it a ghost), its device
+    // race after the players (its entry the run's car 0's; the solo conductors' virtual 24 flags it a ghost), its device
     // playing the run's recording (RaceRecord::run_recording: every frame but the last, then empty ones). The screen draws it
     // from the race (exact_ghost).
     std::shared_ptr<const sim::exact::RaceRecord> ghost;
     // The solo modes (kind TimeTrial, License, MachineTest, FreeRun, FreePractice: the player alone, no opponents) and the race
     // information's words they read: the session's best sector times and lap (race info + 0x8AC .. + 0x8BC, ms; 0x157529FF
     // none: the visit's, the screen carries them from run to run), the licence test's judging times (gold, silver, bronze;
-    // ms), a licence test that is not judged (+0x80), the speed display's unit (0 km/h, 1 mph).
+    // ms), a licence test that is not judged (+0x80), the speed display's unit ([0x2F59D8]: 0 km/h, 1 mph).
     std::array<u32, 5> session{0x157529FF, 0x157529FF, 0x157529FF, 0x157529FF, 0x157529FF};
     std::array<u32, 3> licence_times{};
     bool unjudged = false;
@@ -102,7 +102,7 @@ struct ExactFieldOptions {
     // The free run's ghost car without a whole-run ghost (car 1, the player's car once more: the start flags it a ghost),
     // driven by the race's recorders (sim::exact::SoloRecorders: its lap recordings, best lap and the ghost's playback);
     // `ghost_shown`: the race object's ghost switch (+0x217A4: the ghost car is drawn, translucent); `ghost_option`: the Options
-    // menu's Ghost (on: a lap better than the ghost's becomes the ghost at once).
+    // menu's Ghost (on: a lap better than the ghost's becomes the ghost at once, 0x17AAD8).
     bool free_run_ghost = true, ghost_shown = true, ghost_option = true;
     // The visit's free run recorders (GT3's free run keeps its race object, and with it its best lap's store and the ghost's
     // playback, from run to run until the player leaves): the race starts from them and, when the field is done, leaves them
@@ -113,7 +113,7 @@ struct ExactFieldOptions {
     // (exact_logger_tables: the Analyzer's pass over a replay). A replay's own words are kept otherwise.
     bool logger = false, logger_record = false;
     // The Analyzer's race (a replay's, `playback` its track A; the time trial, licence test and machine test): GT3's logger
-    // race (the solo race's devices, both playing): car 0 plays track A's recording, car 1, a ghost car with track B's
+    // race (RaceSolitaire::vf58's devices, both playing): car 0 plays track A's recording, car 1, a ghost car with track B's
     // car, plays `analysis_b`'s (none: no car 1); `logger_tables` (optional) the tables of a pass over it, which the race's
     // jumps (exact_logger_jump) restore from.
     std::shared_ptr<const sim::exact::RaceRecord> analysis_b;
@@ -176,7 +176,7 @@ struct FieldConfig {
     // one slot per car): the order above.
     std::vector<int> grid_slots;
     // Free practice: each entry's best lap so far (ms, entry + 0x11D8: GT3's race information keeps it from run to run, and
-    // the conductor's restart, starts each car's best lap from it); empty (or not one per car): none.
+    // the conductor's restart, 0x1F20B0, starts each car's best lap from it); empty (or not one per car): none.
     std::vector<u32> entry_best;
 };
 
@@ -201,7 +201,7 @@ EventStart event_start(const data::Event& ev);
 // Rolling start: the computer drives the player's car for this long after the start (300 frames).
 constexpr double kRollingAutoDrive = 5.0;
 
-// GT Mode's starting grid (gt_mode §22.1; GT3's GT race grid and championship grid). A car's figure is its
+// GT Mode's starting grid (gt_mode §22.1; GT3's GT race grid 0x12E670 and championship grid 0x18E190). A car's figure is its
 // whole kg (the showroom spec's mass, sim::exact::Showroom::mass) over the whole power the menus show for it (HP, BHP or CV
 // where the language shows them, else PS: sim::exact::shown_power), truncated: gt_grid_figure (exact_grid_figure builds a
 // car's). The opponents take the grid from pole, the lowest figure first and equal figures in entry order; the player

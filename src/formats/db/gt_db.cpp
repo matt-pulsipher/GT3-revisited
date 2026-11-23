@@ -72,7 +72,7 @@ Table Table::parse(ByteSpan d) {
 }
 
 std::vector<ByteSpan> parse_archive(ByteSpan d) {
-    // As GT3 reads it: by the offsets alone, the tag unread (a modified game's tools may write another than
+    // As GT3 reads it (0x231548): by the offsets alone, the tag unread (a modified game's tools may write another than
     // "GTAR").
     if (d.size() < 16) throw FormatError("GTAR: truncated");
     u32 count = rd32(d, 4), base = rd32(d, 8);

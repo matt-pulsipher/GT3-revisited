@@ -159,7 +159,7 @@ std::vector<std::pair<std::string, std::string>> arcade_parts(const std::string&
         for (int k = 0; k < 3; ++k)
             out.push_back({kSlot[k], k < int(t.size()) ? format_time_ms(u32(std::llround(t[size_t(k)] * 1000)))
                                                         : std::string("--:--:--")});
-        // The car built stock (set_car_code), its computed peak ("%d %s", truncated) and its built weight
+        // 0x103CC0: the car built stock (set_car_code), its computed peak ("%d %s", truncated) and its built weight
         // (spec +0x2A: the chassis weight with the weight reduction and body parts, "%d KG").
         if (auto spec = sim::build_car_spec(gt.db(), arcade_entry_car(entry))) {
             out.push_back({"power_value", gt.power_text(spec_power_ps(*spec), " ")});
@@ -190,7 +190,7 @@ std::vector<std::pair<std::string, std::string>> arcade_parts(const std::string&
         std::string drive = sum.drive;
         for (char& ch : drive) ch = char(std::tolower(static_cast<unsigned char>(ch)));
         out.push_back({drive == "4wd" ? "four_wd" : drive, ""});
-        // Power and torque with their rpm: "276HP/7300rpm"; the engine's catalog torque as the dealer's car
+        // Power and torque with their rpm: "276HP/7300rpm"; 0x10AA40: the engine's catalog torque as the dealer's car
         // page prints it ("224.21ft.lb/5300rpm" in US English, "31.00kgf.m/5300rpm" in the other languages), none:
         // "----".
         out.push_back({"ps", power});

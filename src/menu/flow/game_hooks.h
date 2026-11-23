@@ -151,7 +151,7 @@ struct GameResult {
     bool abandoned = false;
     // The live race was started (START in the pre-race menu, or a run with no such menu); false
     // when the player left from the pre-race menu: GT3 counts and records only a started race
-    // (gt_mode §3.4; START).
+    // (gt_mode §3.4; START, 0x132E98).
     bool started = true;
     // License tests judged by the race: -2 = not judged (GT mode judges from
     // finished + total_time), -1 = failed / no medal, 0 gold, 1 silver, 2 bronze.

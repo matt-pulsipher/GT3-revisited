@@ -17,7 +17,7 @@ constexpr float kToDeg = 57.29578f;
 
 F f(float x) { return F(x); }
 
-// A - b, brought into -180 .. 180 by one turn.
+// fn_00206260: a - b, brought into -180 .. 180 by one turn.
 F diff(F a, F b) {
     F d = a - b;
     if (f(180.0f) < d) d = d - f(360.0f);
@@ -25,7 +25,7 @@ F diff(F a, F b) {
     return d;
 }
 
-// Into 0 .. 360 by whole turns (truncated), from below as 360 - (|a| mod 360).
+// fn_002062B0: into 0 .. 360 by whole turns (truncated), from below as 360 - (|a| mod 360).
 F wrap360(F a) {
     const F turn = f(360.0f);
     if (turn < a) a = a - ee::int_to_f(ee::to_int(a / turn)) * turn;
@@ -37,7 +37,7 @@ F wrap360(F a) {
     return a;
 }
 
-// On the curve (1, 0, 2): ((0 t - 0.5) t + 1) t 2, t clamped to 0 .. 1.
+// fn_00206460 on the curve fn_00206330(1, 0, 2): ((0 t - 0.5) t + 1) t 2, t clamped to 0 .. 1.
 F ease(F t) {
     if (t < f(0.0f)) t = f(0.0f);
     if (f(1.0f) < t) t = f(1.0f);
@@ -68,7 +68,7 @@ void OperatorNoise::reset(u32 seed) {
 }
 
 void OperatorNoise::step(float amp_in) {
-    // A draw every frame; every third frame a chance of a new target.
+    // fn_00206D08: a draw every frame; every third frame a chance of a new target.
     rng.next();
     const F r = F(rng.rand01());
     if (calls < 2) {
@@ -87,7 +87,7 @@ void OperatorNoise::step(float amp_in) {
             target = (((r3 * f(0.8f)) + f(0.2f)) * f(256.0f) - f(128.0f)).host();
         }
     }
-    // v += (60 n (target - x) - 10 v) / 60, x += v / 60 (n the frames, at least 1).
+    // fn_00206E68: v += (60 n (target - x) - 10 v) / 60, x += v / 60 (n the frames, at least 1).
     if (frames <= 0) ++frames;
     const F n = ee::int_to_f(frames);
     F a = n * f(60.0f);
@@ -102,7 +102,7 @@ void OperatorNoise::step(float amp_in) {
 }
 
 void AimFilter::push(float theta) {
-    // The history (128 long; only the last two count) and its newest change.
+    // fn_00206520: the history (128 long; only the last two count) and its newest change.
     if (count < 128) ++count;
     const float prev = newest;
     newest = theta;
@@ -136,7 +136,7 @@ float AimFilter::reset(float cur, float target, float k, int mode_in, float scal
         c = c - off;
     }
     out = c.host();
-    count = 0, delta = 0, newest = target; // the history holds the target
+    count = 0, delta = 0, newest = target; // fn_002064B8: the history holds the target
     push(out);
     v = diff(c, F(target)).host();
     noise.reset(seed);
@@ -204,7 +204,7 @@ CourseCameraAim::Out CourseCameraAim::step(const In& in) {
     const float yaw_raw = aim_yaw(to), pitch_raw = aim_pitch(to);
     Out o;
     if (!started_) {
-        // The shot's first frame (designer camera +0xDC): the zoom set, the filters reset. A car
+        // The shot's first frame (DesignerCamera +0xDC): the zoom set, the filters reset. A car
         // shot's filters start turning from where the aim was a frame ago (target state +0x94:
         // the aim point without its lift, kept while the cameras follow the same car), plus
         // mode 1's yaw seed.

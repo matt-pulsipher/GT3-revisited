@@ -40,7 +40,7 @@ void set_every_license_medal(GtMode& gt, Medal m);
 // --- Gran Turismo Concept's credit transfer ---------------------------------------------------
 
 // What Concept's Game Status present TRANSFER does to a Gran Turismo 3 game (concept §7.6; the Concept
-// programs' routine and its table, the same in every release): refused when the game already holds
+// programs' routine 0x21D860 and its table 0x322F60, the same in every release): refused when the game already holds
 // the mark; otherwise the mark is set, `credits` are added, all six license cards count as received (scalar +0xC0 |=
 // 0x3F), the bronze medal's award bit is set (+0xC4 |= 0x80000) and every license test without a medal gets a bronze
 // (its best time stays as it is). False: the transfer was already made, nothing changed.

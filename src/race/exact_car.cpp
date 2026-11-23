@@ -95,7 +95,7 @@ void exact_state(const ex::Car& c, const sim::VehicleSetup& setup, sim::VehicleS
         o.contact = {h(g.x), h(w.ground), h(g.z)};
         o.steer_angle = -h(w.steer);
         o.spin_angle = h(w.spin);
-        // The record's previous spin is moved by the turns the angle wrapped by (the loops): the tick's own turn.
+        // The record's previous spin is moved by the turns the angle wrapped by (0x1EAFC0's loops): the tick's own turn.
         o.spin_step = h(w.spin) - h(c.prev.spin[i]);
         o.angular_velocity = h(w.rim_speed) * h(c.p.inv_tire_radius[i >> 1]);
         o.suspension = -h(w.susp);

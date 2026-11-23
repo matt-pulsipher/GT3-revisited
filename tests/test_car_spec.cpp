@@ -117,7 +117,7 @@ TEST(car_spec_computed_gearbox_slider) {
 }
 
 TEST(car_gear_generator_values) {
-    // The ratio generator in the program's own arithmetic: a six-speed box's words fall gear by gear, reverse
+    // The ratio generator in the program's own arithmetic (0x1E28A8): a six-speed box's words fall gear by gear, reverse
     // is (3 first + second) / 4, a taller design speed a taller top gear.
     s16 a[8] = {}, b[8] = {};
     generate_gear_ratios(6, 80, 3545, 18, 49, 8, 25, a, 0, 0xFE);

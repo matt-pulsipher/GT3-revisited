@@ -515,7 +515,7 @@ gtm1::CarCallback car_callback_values(const sim::VehicleState& s, const sim::Veh
     v.phase[5] = setup.steer_lock > 0 ? 0.5f + 0.5f * s.steer / setup.steer_lock : 0.5f;
     const sim::VehicleState::Special& k = s.special;
     v.phase[6] = k.wing;
-    // (the callback's id 7: the nod while the lean is level)
+    // (the callback's id 7, 0x220C98: the nod while the lean is level)
     v.branch[7] = k.lean == 0.5f ? 1 : 0;
     v.phase[7] = k.lean == 0.5f ? k.nod : k.lean;
     v.branch[8] = k.lamp, v.phase[8] = k.lamp_weight;

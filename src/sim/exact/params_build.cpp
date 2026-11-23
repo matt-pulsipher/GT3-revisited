@@ -1,4 +1,4 @@
-// The converter (spec -> P) and its sub-builders; see params_build.h. Each statement is one ee::F operation, in
+// The converter 0x1DBFD8 (spec -> P) and its sub-builders; see params_build.h. Each statement is one ee::F operation, in
 // the program's order; offsets are P's (P = car + 0x10), the engine block E = P + 0x138, the
 // driveline block D = P + 0x1F8, a tyre record R = P + 0x398 + 0x1B4 r, a suspension block S = P + 0x2B8 + 0x44 axle, a spec
 // tyre block B = spec + 0x142 + 0x70 k [physics §6.4-§6.5].
@@ -26,9 +26,9 @@ constexpr F k100 = F::raw(0x42C80000), k200 = F::raw(0x43480000), k255 = F::raw(
 constexpr F k10000 = F::raw(0x461C4000), kToKmh = F::raw(0x40666666); // 3.6
 
 // The constants 2002 Tokyo-Geneva's compiler folded toward zero (Rule::SoftDouble, build_math.h) [physics §14.2]: GT3's and
-// that build's, each read from the build's routine (Europe's addresses: the converter, the engine, the
-// driveline, the layout, the tire sizes, the springs, the tire curves, the
-// steering curves, the top speed; Asia's hold the same values).
+// that build's, each read from the build's routine (Europe's addresses: the converter 0x1D7260, the engine 0x1D9AC8, the
+// driveline 0x1DCCD8, the layout 0x1DD860, the tire sizes 0x1DD7D0, the springs 0x1D69E8, the tire curves 0x1D6F40, the
+// steering curves 0x1D64B0, the top speed 0x1D6550; Asia's hold the same values).
 struct K {
     F milli, tenth, g, deg, quarter_pi, two_pi, rpm, kmh, fifth, twentieth, k98, k980, k9800, k7162, ten_kmh, awd3_gain;
     F half_pi_range, half_pi_b, camber_step;
@@ -38,25 +38,25 @@ struct K {
         tenth = v(0x3DCCCCCD, 0x3DCCCCCC);         // 0.1
         g = v(0x411CCCCD, 0x411CCCCC);             // 9.8
         deg = v(0x3C8EFA35, 0x3C8EFA34);           // pi / 180
-        quarter_pi = v(0x3F490FDB, 0x3F490FD9);    // pi / 4 (Europe)
+        quarter_pi = v(0x3F490FDB, 0x3F490FD9);    // pi / 4 (Europe 0x333F88, 0x333FD4)
         two_pi = v(0x40C90FDB, 0x40C90FDA);        // 2 pi
         rpm = v(0x3DD67750, 0x3DD6774E);           // 2 pi / 60
         kmh = v(0x3E8E38E4, 0x3E8E38E3);           // 1 / 3.6
         fifth = v(0x3E4CCCCD, 0x3E4CCCCC);         // 0.2 (the steering curves' degrees)
         twentieth = v(0x3D4CCCCD, 0x3D4CCCCC);     // 0.05 (the sidewall)
-        k98 = v(0x42C40000, 0x42C3FFFF);           // 98 (Europe)
-        k980 = v(0x44750000, 0x4474FFFE);          // 980
-        k9800 = v(0x46192000, 0x46191FFF);         // 9800
+        k98 = v(0x42C40000, 0x42C3FFFF);           // 98 (Europe 0x333F94)
+        k980 = v(0x44750000, 0x4474FFFE);          // 980 (0x333F4C)
+        k9800 = v(0x46192000, 0x46191FFF);         // 9800 (0x333F98)
         k7162 = v(0x44330CCD, 0x44330CCC);         // 716.2
         ten_kmh = v(0x4031C71D, 0x4031C71B);       // 10 / 3.6
-        awd3_gain = v(0x3EB851EB, 0x3EB851ED);     // 0.36
-        half_pi_range = v(0x3FC90FDB, 0x3FC90FDA); // curve A's range cap
-        half_pi_b = v(0x3FC90FDB, 0x3FC90FD9);     // curve B's span
-        camber_step = v(0x3D8EFA35, 0x3D8EFA34);   // 4 degrees
+        awd3_gain = v(0x3EB851EB, 0x3EB851ED);     // 0.36 (0x334160)
+        half_pi_range = v(0x3FC90FDB, 0x3FC90FDA); // curve A's range cap (0x333F68)
+        half_pi_b = v(0x3FC90FDB, 0x3FC90FD9);     // curve B's span (0x333F6C)
+        camber_step = v(0x3D8EFA35, 0x3D8EFA34);   // 4 degrees (0x333F90)
     }
 };
 
-// The static block's bytes the converter reads: +3 / +4 the mass added to every car (65 + 55 kg on the disc), +7 the
+// The static block 0x2D28B0's bytes the converter reads: +3 / +4 the mass added to every car (65 + 55 kg on the disc), +7 the
 // pitch-tyre byte, +8 the power cap's soft share, +0x8C / +0x8D the load-curve knees, +0x8F + k surface 11's grip cap (x 0.01)
 // per compound.
 
@@ -78,7 +78,7 @@ struct Img {
 struct Ctx {
     Img s, p;
     const ConvertInputs& in;
-    Condition condition; // the engine-condition limits (from the static block)
+    Condition condition; // the engine-condition limits (0x2D2B00, 0x1DAB50 from the static block)
     Behaviour h = in.data->behaviour();
     K k{toward_zero(h)};
     u32 addr(u32 off) const { return in.base + off; } // a pointer into P as the tables store it
@@ -88,7 +88,7 @@ struct Ctx {
 
 F cvt(s32 v) { return int_to_f(v); }
 
-// A curve table {s16 n; u8, u8 = 0; F* x; F* y} with its arrays in P.
+// 0x1D8DD0: a curve table {s16 n; u8, u8 = 0; F* x; F* y} with its arrays in P.
 void table_init(Ctx& c, u32 t, s32 n, u32 x, u32 y) {
     c.p.set16(t, n);
     c.p.set32(t + 4, c.addr(x));
@@ -97,7 +97,7 @@ void table_init(Ctx& c, u32 t, s32 n, u32 x, u32 y) {
     c.p.set8(t + 2, 0);
 }
 
-// The curve at v, clamped at both ends; the segment found by a linear walk from the second point.
+// 0x1D8FB8: the curve at v, clamped at both ends; the segment found by a linear walk from the second point.
 template <class X, class Y> F lookup(s32 n, X x, Y y, F v) {
     if (v <= x(0)) return y(0);
     if (x(n - 1) <= v) return y(n - 1);
@@ -109,7 +109,7 @@ template <class X, class Y> F lookup(s32 n, X x, Y y, F v) {
     return y(i - 1) + ((v - x(i - 1)) * (y(i) - y(i - 1))) / (x(i) - x(i - 1));
 }
 
-// The same with a bisection down to four points first (a tie with a point returns its value).
+// 0x1D8E50: the same with a bisection down to four points first (a tie with a point returns its value).
 template <class X, class Y> F lookup_bisect(s32 n, X x, Y y, F v) {
     if (v <= x(0)) return y(0);
     if (x(n - 1) <= v) return y(n - 1);
@@ -138,7 +138,7 @@ F p_lookup(const Ctx& c, u32 t, F v, bool bisect = false) {
 
 // ---- engine (E = P + 0x138) -----------------------------------------------------------------------------------------------------
 
-// Stage `st`'s boost at rpm (below the knee by the stage's shape: 0 parabola to the peak, 1 rising parabola, 2 linear;
+// 0x1E0CD8: stage `st`'s boost at rpm (below the knee by the stage's shape: 0 parabola to the peak, 1 rising parabola, 2 linear;
 // above it falling to zero at three times the knee).
 F stage_boost(const Ctx& c, u32 E, s32 rpm, u32 st) {
     const s32 knee = c.p.sh(E + 0x94 + 2 * st);
@@ -157,7 +157,7 @@ F stage_boost(const Ctx& c, u32 E, s32 rpm, u32 st) {
     return c.p.f(E + 0xA4 + 4 * st) - c.p.f(E + 0xB4 + 4 * st) * d * d;
 }
 
-// 1 + the two stages' boost (rpm per stage); each stage's share into out.
+// 0x1E0E08: 1 + the two stages' boost (rpm per stage); each stage's share into out.
 F boost(const Ctx& c, u32 E, s32 rpm0, s32 rpm1, F* out) {
     const s16 rpm[2] = {s16(rpm0), s16(rpm1)};
     F sum = k0;
@@ -171,7 +171,7 @@ F boost(const Ctx& c, u32 E, s32 rpm0, s32 rpm1, F* out) {
     return sum + k1;
 }
 
-// The boost, capped at 1 + E+0xBC.
+// 0x1E0ED8: the boost, capped at 1 + E+0xBC.
 F boost_capped(const Ctx& c, u32 E, s32 rpm0, s32 rpm1, F* out) {
     F b = boost(c, E, s16(rpm0), s16(rpm1), out);
     const F cap = c.p.f(E + 0xBC) + k1;
@@ -179,7 +179,7 @@ F boost_capped(const Ctx& c, u32 E, s32 rpm0, s32 rpm1, F* out) {
     return b;
 }
 
-// The turbo stages from the spec's turbo bytes.
+// 0x1E0F38: the turbo stages from the spec's turbo bytes.
 void turbo(Ctx& c, u32 E) {
     const Img& s = c.s;
     Img& p = c.p;
@@ -219,7 +219,7 @@ void turbo(Ctx& c, u32 E) {
     p.set(E + 0xB8, peak1 / k1f);
 }
 
-// The engine: idle and rev limit, the torque curve (rpm in rad/s, torque in N m with the spec's power factors, high
+// 0x1E10E8: the engine: idle and rev limit, the torque curve (rpm in rad/s, torque in N m with the spec's power factors, high
 // rpm at 0xA4 per mille and low rpm at 0xA6 percent, interpolated over the curve), its friction, the turbo and the boost cap's
 // share of each point, and the race's power cap (`cap` = the rule block's byte x 10, 0 = none).
 void engine(Ctx& c, u32 E, s32 cap) {
@@ -276,8 +276,8 @@ void engine(Ctx& c, u32 E, s32 cap) {
 
 // ---- driveline (D = P + 0x1F8) --------------------------------------------------------------------------------------------------
 
-// The layout D+0 from the drive type and AWD system, the driven axle D+3, the AWD coupling D+4 / D+8.
-// The later builds' (Rule::Layout, Concept 2001 Tokyo): AWD system 3's gain and capacity come from the program's
+// 0x1E2700: the layout D+0 from the drive type and AWD system, the driven axle D+3, the AWD coupling D+4 / D+8.
+// The later builds' (Rule::Layout, Concept 2001 Tokyo 0x1DCE80): AWD system 3's gain and capacity come from the program's
 // settings (ProgramData's Awd3 table) and not the spec's capacity byte; system 5 is a layout of its own, 7, and system 7's
 // layout is 8.
 void layout(Ctx& c, u32 Dv) {
@@ -329,7 +329,7 @@ void layout(Ctx& c, u32 Dv) {
     }
 }
 
-// The differential type's index in "frnmhvyt" (an unknown character reads as itself).
+// 0x1E1B28: the differential type's index in "frnmhvyt" (an unknown character reads as itself).
 s8 lsd_type(const Ctx& c, s8 ch) {
     auto letter = [&](u32 i) { return s8(c.in.data->b(ProgramData::Table::LsdTypes, i)); };
     if (letter(0) == ch) return 0;
@@ -338,7 +338,7 @@ s8 lsd_type(const Ctx& c, s8 ch) {
     return ch;
 }
 
-// An axle's tyre radius, width and sidewall from the spec's size bytes (a rear width of 0 reads as 10 mm).
+// 0x1E2670: an axle's tyre radius, width and sidewall from the spec's size bytes (a rear width of 0 reads as 10 mm).
 void tyre_size(const Ctx& c, u32 axle, F& radius, F& width, F& sidewall) {
     const Img& s = c.s;
     s32 w5 = s32(s.b(0x11A + axle)) * 5;
@@ -353,11 +353,11 @@ void tyre_size(const Ctx& c, u32 axle, F& radius, F& width, F& sidewall) {
     sidewall = side;
 }
 
-// The driveline: layout, differentials, gear ratios, tyre sizes, inertias, launch / shift rpm, gear speed factors.
+// 0x1E1C98: the driveline: layout, differentials, gear ratios, tyre sizes, inertias, launch / shift rpm, gear speed factors.
 void driveline(Ctx& c, u32 Dv, u32 E) {
     Img& s = c.s;
     Img& p = c.p;
-    // (Rule::Driveline: the later builds' routine, Concept 2001 Tokyo)
+    // (Rule::Driveline: the later builds' routine, Concept 2001 Tokyo 0x1DC278)
     const bool later = !gt3_program(c.in.data->behaviour().rule(Rule::Driveline));
     layout(c, Dv);
     for (u32 i = 0; i < 2; ++i) p.set8(Dv + 0x10 + i, lsd_type(c, s.sb(0xD6 + i)));
@@ -387,7 +387,7 @@ void driveline(Ctx& c, u32 Dv, u32 E) {
         default: p.set(o + 0x14, ini * k001), p.set(o + 0x1C, acc * k001), p.set(o + 0x24, dec * k001); break;
         }
     }
-    // The program would generate the gear words here when spec 0xCA is set; the spec builder always leaves it 0.
+    // 0x1E1C10 would generate the gear words here (0x1E28A8) when spec 0xCA is set; the spec builder always leaves it 0.
     const u8 gears = s.b(0xC8);
     p.set8(Dv + 2, gears);
     if (later) {
@@ -464,7 +464,7 @@ void driveline(Ctx& c, u32 Dv, u32 E) {
 
 // ---- tyre records (R = P + 0x398 + 0x1B4 r, from spec block B) -------------------------------------------------------------------
 
-// Curves C (+0xD4) and D (+0x14C) on one slip-ratio axis (+0xE0; the negative side reversed), the optimum slips
+// 0x1DB9E0: curves C (+0xD4) and D (+0x14C) on one slip-ratio axis (+0xE0; the negative side reversed), the optimum slips
 // +0x140 / +0x144 and C's braking-side maximum +0x148. Clears the block's curve origins.
 void tyre_slip_curves(Ctx& c, u32 R, u32 B) {
     Img& s = c.s;
@@ -499,7 +499,7 @@ void tyre_slip_curves(Ctx& c, u32 R, u32 B) {
     table_init(c, R + 0x14C, n1 + n2 - 1, R + 0xE0, R + 0x158);
 }
 
-// Curve A (+0x48: slip angle up to the block's range, at most pi/2) and curve B (+0x98: up to pi/2).
+// 0x1DBC50: curve A (+0x48: slip angle up to the block's range, at most pi/2) and curve B (+0x98: up to pi/2).
 void tyre_angle_curves(Ctx& c, u32 R, u32 B) {
     Img& s = c.s;
     Img& p = c.p;
@@ -524,20 +524,20 @@ void tyre_angle_curves(Ctx& c, u32 R, u32 B) {
     table_init(c, R + 0x98, m, R + 0xA4, R + 0xBC);
 }
 
-// The whole degree 0..45 where curve A peaks (90 when it never rises above 0), in rad.
+// 0x1E8670: the whole degree 0..45 where curve A peaks (90 when it never rises above 0), in rad.
 F peak_slip_angle(const Ctx& c, u32 R) {
     F best = k0;
     s32 at = 0x5A;
     for (s32 d = 0; d < 0x2E; ++d) {
         F sign;
-        const F a = slip_angle_fold(c.h, (cvt(d) * c.k.deg) - k0, sign);
+        const F a = slip_angle_fold(c.h, (cvt(d) * c.k.deg) - k0, sign); // 0x1E7A68
         const F v = p_lookup(c, R + 0x48, a) * sign;
         if (best < v) best = v, at = d;
     }
     return cvt(at) * c.k.deg;
 }
 
-// Base grip and the per-surface grip (+0x08 + 4 s; surface 11 capped at min(1, cap / mu)), the wear factor +0x04,
+// 0x1DBE40: base grip and the per-surface grip (+0x08 + 4 s; surface 11 capped at min(1, cap / mu)), the wear factor +0x04,
 // the load curve L (+0x188), and +0x00 = D(0) x 9.8.
 void tyre_grip(Ctx& c, u32 R, u32 B, F cap) {
     Img& s = c.s;
@@ -564,7 +564,7 @@ void tyre_grip(Ctx& c, u32 R, u32 B, F cap) {
 
 // ---- suspension (S = P + 0x2B8 + 0x44 axle) ----------------------------------------------------------------------------------
 
-// A damper's F(v) = o + g sqrt(v - t) through the two points (v1, F1), (v2, F2); all 0 when they do not fit.
+// 0x1DB5C0: a damper's F(v) = o + g sqrt(v - t) through the two points (v1, F1), (v2, F2); all 0 when they do not fit.
 void damper_fit(Ctx& c, u32 t, u32 o, u32 g, F v1, F f1, F v2, F f2) {
     Img& p = c.p;
     p.set(g, k0), p.set(o, k0), p.set(t, k0);
@@ -583,15 +583,15 @@ void damper_fit(Ctx& c, u32 t, u32 o, u32 g, F v1, F f1, F v2, F f2) {
     p.set(o, (-p.f(g)) * ee::sqrt(-tv));
 }
 
-// An axle block's spring (x the motion ratio %), dampers, anti-roll, progressive gain, unsprung mass and bump damping
+// 0x1DB6B8: an axle block's spring (x the motion ratio %), dampers, anti-roll, progressive gain, unsprung mass and bump damping
 // from the spec's axle bytes (0x3A front, 0x4A rear).
 void spring_block(Ctx& c, u32 S, u32 b, u8 ratio) {
     Img& s = c.s;
     Img& p = c.p;
     const F r = cvt(ratio) * k001;
     p.set(S + 0x14, (cvt(s.b(b)) * c.k.k980) * r);
-    const F scale = k100 / cvt(ratio);
-    // The damper's two points (speed bytes x 0.01 x the scale, force bytes x 5 x 9.8)
+    const F scale = k100 / cvt(ratio); // 0x1DB510
+    // 0x1DB538: the damper's two points (speed bytes x 0.01 x the scale, force bytes x 5 x 9.8)
     auto points = [&](u32 o, F& v1, F& f1, F& v2, F& f2) {
         f1 = (cvt(s.b(b + o + 1)) * k5) * c.k.g;
         f2 = (cvt(s.b(b + o + 3)) * k5) * c.k.g;
@@ -610,7 +610,7 @@ void spring_block(Ctx& c, u32 S, u32 b, u8 ratio) {
     p.set(S + 0x40, (cvt(s.b(b + 0xD)) * k10) * c.k.g);
 }
 
-// An axle block's static position +0x10 (the sprung load over the spring), its offset +0x0C from the tyre radius and
+// 0x1DB890: an axle block's static position +0x10 (the sprung load over the spring), its offset +0x0C from the tyre radius and
 // ride height, the bump-stop limit +0x04, the knee +0x00 and the droop limit +0x08.
 void spring_static(Ctx& c, u32 S, u32 a) {
     const Img& s = c.s;
@@ -636,7 +636,7 @@ void spring_static(Ctx& c, u32 S, u32 a) {
 
 // ---- top speed ------------------------------------------------------------------------------------------------------------------
 
-// Full-throttle torque at engine speed w (the curve, bisected) x the condition factor (on the entry
+// 0x1E0BC0: full-throttle torque at engine speed w (the curve, bisected) x the condition factor (0x1DAD28 on the entry
 // block's +4 / +8 words).
 F torque_at(const Ctx& c, u32 E, F w) {
     const F t = p_lookup(c, E, w, true);
@@ -644,7 +644,7 @@ F torque_at(const Ctx& c, u32 E, F w) {
                                 F::raw(c.in.condition[2]));
 }
 
-// The torque under the race's power cap (soft above (1 - share) x cap).
+// 0x1E0C38: the torque under the race's power cap (soft above (1 - share) x cap).
 F capped_torque(const Ctx& c, u32 E, F t, F w) {
     const Img& p = c.p;
     if (p.b(E + 0x9B) == 0) return t;
@@ -661,7 +661,7 @@ F capped_torque(const Ctx& c, u32 E, F t, F w) {
     return lim < t ? lim : t;
 }
 
-// The top speed P+0xDF8: from 0 to its first estimate in whole km/h steps (estimate / 500 + 1), shifting up past the
+// 0x1DB2C8: the top speed P+0xDF8: from 0 to its first estimate in whole km/h steps (estimate / 500 + 1), shifting up past the
 // upshift rpm, the last speed where the drive force beats rolling resistance (with downforce on the load) and drag.
 void top_speed(Ctx& c) {
     Img& p = c.p;
@@ -678,7 +678,7 @@ void top_speed(Ctx& c) {
         const u32 g = 0x254 + 4 * u32(gear);
         F w = v * p.f(g);
         const F v2 = v * v;
-        // (Rule::ParamsBuild, the later builds: a stepless gearbox of kind 1 holds the engine at its hold speed, of
+        // (Rule::ParamsBuild, the later builds: a stepless gearbox of kind 1 holds the engine at its hold speed, 0x1D9948 of
         // Concept 2001 Tokyo: above it the ratio falls, down to the last gear's relative ratio; no gear is changed)
         F ratio = k1;
         if (cvt1) {
@@ -702,7 +702,7 @@ void top_speed(Ctx& c) {
     }
 }
 
-// The engine's peak torque and power over its curve in 100 rpm steps (EnginePeak).
+// 0x1E14E8: the engine's peak torque and power over its curve in 100 rpm steps (EnginePeak).
 EnginePeak engine_peak_of(const Ctx& c) {
     const Img& p = c.p;
     const u32 E = 0x138;
@@ -730,7 +730,7 @@ EnginePeak engine_peak_of(const Ctx& c) {
     return out;
 }
 
-// The top speed's start (the rev limit in top gear) and the braking constant P+0xE34, then the walk.
+// 0x1DB498: the top speed's start (the rev limit in top gear) and the braking constant P+0xE34, then the walk.
 void top_speed_start(Ctx& c) {
     Img& p = c.p;
     F brake = p.f(0xE28) * p.f(0x27C);
@@ -748,21 +748,21 @@ void top_speed_start(Ctx& c) {
     top_speed(c);
 }
 
-// The driveline class: 1 FF and AWD system 0, 3 AWD system 3, 2 the other AWD systems, 0 the rest.
+// 0x1F5EF0: the driveline class: 1 FF and AWD system 0, 3 AWD system 3, 2 the other AWD systems, 0 the rest.
 u8 driveline_class(u8 drive, u8 sys, bool later = false) {
     if (drive == 1) return 1;
     if (drive != 2) return 0;
     if (sys == 0) return 1;
-    if (later && sys == 5) return 0; // (Rule::DriveClass: the later builds' layout 7, Concept 2001 Tokyo)
+    if (later && sys == 5) return 0; // (Rule::DriveClass: the later builds' layout 7, Concept 2001 Tokyo 0x1F5808)
     return sys == 3 ? 3 : 2;
 }
 
 } // namespace
 
 void ConvertInputs::physics_globals() {
-    // The static block: +0 the air density x 10 (x 0.1); the tarmac rolling-resistance curve and
-    // scale as the program builds them (race_inputs.h).
-    air_density = cvt(data->b(ProgramData::Table::Static, 0)) * K(toward_zero(data->behaviour())).tenth; // (Europe)
+    // The static block 0x2D28B0: +0 the air density x 10 (0x1DB020: x [0x350164] 0.1); the tarmac rolling-resistance curve and
+    // scale as 0x1DAE70 builds them (race_inputs.h).
+    air_density = cvt(data->b(ProgramData::Table::Static, 0)) * K(toward_zero(data->behaviour())).tenth; // (Europe 0x1D62B8)
     const Statics st = statics(*data);
     roll_n = st.rolling_curve.n;
     roll_x = {}, roll_y = {};
@@ -775,7 +775,7 @@ s32 convert_params(Spec& spec, const ConvertInputs& in, ParamImage& image) {
     Img& s = c.s;
     Img& p = c.p;
     p.set8(0x33, s.b(0x2D));
-    // (the later builds' converter: the special kind, Concept 2001 Tokyo)
+    // (the later builds' converter: the special kind, Concept 2001 Tokyo 0x1D6880)
     if (!gt3_program(in.data->behaviour().rule(Rule::SpecBuild))) p.set8(0x32, s.b(0x11));
     if (!(s.b(0xB2) < 5)) s.set8(0xB2, 0);
     // Chassis: extents, wheelbase, CoG distances, tracks (the mean track and 1 - wf in the program's doubles).
@@ -827,7 +827,7 @@ s32 convert_params(Spec& spec, const ConvertInputs& in, ParamImage& image) {
         tyre_grip(c, R, B, cvt(c.st(0x8F + blk % 3)) * k001);
         const u32 axle = r / 3;
         const F load = (p.f(0xE54 + 4 * axle) * kHalf) + p.f(0x2F4 + 0x44 * axle);
-        const F per_width = load / p.f(0x284 + 4 * ((axle * 2) >> 1));
+        const F per_width = load / p.f(0x284 + 4 * ((axle * 2) >> 1)); // 0x1EA1C0
         p.set(R, p.f(R) * p_lookup(c, R + 0x188, per_width));
     }
     // Camber curves per axle: x = (128 - code) x 4 deg / 32, y = code / 200, stored in reverse.
@@ -914,10 +914,10 @@ s32 convert_params(Spec& spec, const ConvertInputs& in, ParamImage& image) {
         const u8 lvl = s.b(0x117);
         p.set(A + 0x2C, lvl == 100 || lvl == 0 ? k1 : cvt(lvl) * k001);
     }
-    // Steering: full lock, the three speed curves (x = byte / 3.6 m/s, y = byte x 0.2 deg), Ackermann ratios,
+    // Steering: full lock, the three speed curves (0x1DB220: x = byte / 3.6 m/s, y = byte x 0.2 deg), Ackermann ratios,
     // the steer-coupled camber.
     p.set(0x58, cvt(s.b(0x35)) * c.k.deg);
-    auto steer_curve = [&](u32 t, u32 x, u32 y, u32 n, u32 sx, u32 sy) {
+    auto steer_curve = [&](u32 t, u32 x, u32 y, u32 n, u32 sx, u32 sy) { // 0x1DB220
         for (u32 i = 0; i < n; ++i) {
             p.set(x + 4 * i, cvt(s.b(sx + i)) * c.k.kmh);
             p.set(y + 4 * i, (cvt(s.b(sy + i)) * c.k.fifth) * c.k.deg);
@@ -1042,7 +1042,7 @@ EnginePeak engine_peak(const ParamImage& image, const ConvertInputs& in) {
 GearChart gear_chart(const data::CarDatabase& db, Equipment eq) {
     static const ProgramData none = ProgramData::synthetic();
     Spec spec{};
-    build_spec(db, none, eq, 0, 0, false, spec); // (the fix-ups after the builder touch no byte read here)
+    build_spec(db, none, eq, 0, 0, false, spec); // (0x1DA308's fix-ups after the builder touch no byte read here)
     ConvertInputs in;
     in.data = &none;
     ParamImage image{};
@@ -1050,6 +1050,7 @@ GearChart gear_chart(const data::CarDatabase& db, Equipment eq) {
     const u32 E = 0x138, Dv = 0x1F8; // (the program builds both blocks on the stack; the offsets do not matter)
     engine(c, E, 0);
     driveline(c, Dv, E);
+    // 0x1E2450
     const Img& p = c.p;
     GearChart g;
     g.n = p.b(Dv + 2);
@@ -1057,7 +1058,7 @@ GearChart gear_chart(const data::CarDatabase& db, Equipment eq) {
         const u32 k = u32(i);
         const F factor = p.f(Dv + 0x5C + 4 * k);
         auto speed = [&](u16 rpm) {
-            F w = cvt(rpm) * c.k.rpm; // 2 pi / 60
+            F w = cvt(rpm) * c.k.rpm; // 0x3503A0 / 0x3503A4: 2 pi / 60
             if (i == 0) w = -w;
             return w / factor;
         };
@@ -1070,7 +1071,7 @@ GearChart gear_chart(const data::CarDatabase& db, Equipment eq) {
 }
 
 Showroom showroom_build(const data::CarDatabase& db, const ProgramData& d, Equipment eq, const std::array<u32, 8>& condition) {
-    // The showroom's rule record, the same bytes on every disc: no power cap (byte
+    // The showroom's rule record 0x2D2988 (PAL 0x2D3F48, NTSC-J 0x2CF680), the same bytes on every disc: no power cap (byte
     // 3), the CPU grip percentages (read only for control source 2).
     constexpr std::array<u8, 12> kShowroomRules = {80, 0, 0, 0, 100, 100, 100, 100, 100, 100, 100, 100};
     Showroom s;
@@ -1083,7 +1084,7 @@ Showroom showroom_build(const data::CarDatabase& db, const ProgramData& d, Equip
     in.physics_globals();
     convert_params(s.spec, in, s.p);
     s.peak = engine_peak(s.p, in);
-    // (Rule::Layout: the later builds' showroom, Concept 2001 Tokyo, adds a layout 7 car's (AWD
+    // (Rule::Layout: the later builds' showroom, Concept 2001 Tokyo 0x1D42F0 through 0x1DB098, adds a layout 7 car's (AWD
     // system 5) motors to the peak: the two front motors' and the rear motor's ratings, the Hybrid table's bytes +0 / +1,
     // over 0.7355 kW a PS)
     if (!gt3_program(d.behaviour().rule(Rule::Layout)) && d.has(ProgramData::Table::Hybrid) && s.spec[0xB2] == 2 && s.spec[0xB3] == 5) {
@@ -1094,7 +1095,7 @@ Showroom showroom_build(const data::CarDatabase& db, const ProgramData& d, Equip
 }
 
 s32 shown_power(F ps, bool hp) {
-    return to_int(hp ? ps * F::raw(0x3F7C76F3) : ps); // 0.98619
+    return to_int(hp ? ps * F::raw(0x3F7C76F3) : ps); // 0x350A1C: 0.98619
 }
 
 } // namespace gt3r::sim::exact

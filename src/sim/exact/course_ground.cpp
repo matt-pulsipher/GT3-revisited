@@ -1,5 +1,5 @@
-// The course's ground query; see course_ground.h. With its cell lookup (RoadCells), breakpoint search
-// and neighbour test. The program groups the records by grid cell and tests each triangle of a cell against
+// The course's ground query; see course_ground.h. 0x2280C8 with its cell lookup 0x2274A0 (RoadCells), breakpoint search
+// 0x2273F0 and neighbour test 0x227758. The program groups the records by grid cell and tests each triangle of a cell against
 // every record in it; each record's result depends only on its own point, so here each record walks its cell alone.
 
 #include "sim/exact/course_ground.h"
@@ -15,7 +15,7 @@ namespace {
 
 constexpr int kBelow = INT_MIN + 1, kAbove = INT_MAX - 1;
 
-// The last i with bp[i] <= v; kBelow / kAbove off the ends.
+// 0x2273F0: the last i with bp[i] <= v; kBelow / kAbove off the ends.
 int search(const std::vector<F>& bp, F v) {
     int hi = int(bp.size()) - 1;
     if (v < bp[0]) return kBelow;

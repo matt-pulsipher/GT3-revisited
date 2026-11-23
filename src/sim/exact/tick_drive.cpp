@@ -38,7 +38,7 @@ void torque_vectoring(Car& c, const Hybrid& h) {
         const u8 type = c.p.d.diff_type[a];
         if (type < 6 || type >= 8) continue;
         const F v = c.speed;
-        // (2002 Tokyo-Geneva's constants: Europe)
+        // (2002 Tokyo-Geneva's constants: Europe 0x1F1380)
         if (v < folded(c.behaviour, 0x4031C71D, 0x4031C71B) || folded(c.behaviour, 0x42480001, 0x4247FFFF) < v) continue; // 10 km/h .. 50 m/s
         const F steer = c.steer_cmd;
         F s = steer < F() ? -steer : steer;
@@ -66,7 +66,7 @@ void torque_vectoring(Car& c, const Hybrid& h) {
 
 F clutch_slip_factor(F d, bool toward_zero) {
     if (d < F()) d = -d;
-    d = d - F::raw(toward_zero ? 0x42517082 : 0x42517084); // (2002 Tokyo-Geneva's: Europe)
+    d = d - F::raw(toward_zero ? 0x42517082 : 0x42517084); // (2002 Tokyo-Geneva's: Europe 0x1F16D0)
     if (d < F()) d = F();
     F f = d / F::raw(toward_zero ? 0x44517082 : 0x44517084) + kOne;
     if (F::raw(0x3F900000) <= f) f = F::raw(0x3F900000);
@@ -143,7 +143,7 @@ namespace {
 // (the later builds' gearbox kinds, D +0x12: 1 and 2 are without steps)
 bool stepless(const Driveline& d) { return u8(d.kind - 1) < 2; }
 
-// The later builds' code (Concept 2001 Tokyo's address): a stepless gearbox's ratio word for this step and the engine
+// The later builds' 0x1D9A08 (Concept 2001 Tokyo's address): a stepless gearbox's ratio word for this step and the engine
 // torque through it. Locked in a forward gear, the ratio is the engine's speed over the wheel side's, between the last
 // gear's relative ratio and 1, and moves towards its target by rate x dt x the stored ratio: kind 1's target holds the
 // engine at the hold speed (the down-shift word) scaled by the pedal, kind 2's is the selected gear's relative ratio.
@@ -186,7 +186,7 @@ F stepless_torque(Car& c, const Stepless& k) {
     return r * engine_torque(c, c.throttle);
 }
 
-// The later builds' axle step (Rule::AxleStep, Concept 2001 Tokyo). Against GT3's: a stepless gearbox's torque
+// The later builds' axle step (Rule::AxleStep, Concept 2001 Tokyo 0x1F1B10). Against GT3's: a stepless gearbox's torque
 // and its ratio on the engine's reflected inertia; kind 2's gear index at most 1; the other axle's wheel torques scaled by
 // the radii when the axles' tyres differ (layout 5); AWD system 7 is layout 8, and layout 7 (system 5) drives the rear axle
 // and keeps the clutch torque word; the centre clutch stays locked while the torque difference is within the requested
@@ -212,7 +212,7 @@ void axle_step_later(Car& c, const Awd3& k, const Stepless& sl, const Hybrid& h)
         case 8: mark(0, 4), mark(1, 4), mark(2, 8), mark(3, 8); break;
         default: break;
         }
-        // (layout 7: the engine at its share of the throttle, and the rear motor's torque, [physics §14.5])
+        // (layout 7: the engine at its share of the throttle, 0x1DA380, and the rear motor's torque, 0x1DAE50 [physics §14.5])
         F t;
         if (stepless(d)) t = stepless_torque(c, sl);
         else if (d.layout == 7 && hybrid_car(c, h)) {

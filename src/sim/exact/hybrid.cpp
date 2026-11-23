@@ -19,13 +19,13 @@ using ee::int_to_f;
 
 constexpr F kZero{}, kOne = F::raw(0x3F800000), kMinusOne = F::raw(0xBF800000), kHalf = F::raw(0x3F000000);
 
-// The routines' constants: (rad/s x N m to kW: 2 pi / 60000 x 1.0007, read), kW x this over rpm is N m (9542.84),
-// N x m/s to kW over a second (0.00100068) and 1 km/h.
+// The routines' constants: (rad/s x N m to kW: 2 pi / 60000 x 1.0007, read 0x332580 ..), kW x this over rpm is N m (9542.84,
+// 0x332578 / 0x3325A4), N x m/s to kW over a second (0.00100068, 0x332590 / 0x3325A8) and 1 km/h (0x33258C).
 F k_power(const Car& c) { return folded(c.behaviour, 0x38DBC304, 0x38DBC307); }
 F k_torque(const Car& c) { return folded(c.behaviour, 0x46151B5E, 0x46151B5C); }
 F k_charge(const Car& c) { return folded(c.behaviour, 0x3A832920, 0x3A832923); }
 
-// The flow display.
+// 0x1DA0D8: the flow display.
 void flow(Car& c, const Hybrid& h, F x) {
     s32 v = s32(s8(c.later.special[5])) + ee::to_int(x * h.flow_scale);
     if (v < -100) v = -100;
@@ -53,11 +53,11 @@ Hybrid hybrid_settings(std::span<const u8> table, const Behaviour& b) {
     h.front = f(0), h.rear = f(1);
     const F sum = (h.front + h.front) + h.rear;
     h.front_drive = tens(2), h.rear_drive = tens(3), h.front_regen = tens(4), h.rear_regen = tens(5);
-    h.front_scale = f(6) * folded(b, 0x3DCCCCCD, 0x3DCCCCCC); // 0.1
+    h.front_scale = f(6) * folded(b, 0x3DCCCCCD, 0x3DCCCCCC); // 0.1 (0x332570)
     h.capacity = f(7) * sum;
     h.front_charge_cap = int_to_f(s32(byte(8)) * 5), h.rear_charge_cap = int_to_f(s32(byte(9)) * 5);
     h.idle_rpm = f(0xA) * hundred;
-    h.idle_gain = f(0xB) / F::raw(0x47C35000); // 100000
+    h.idle_gain = f(0xB) / F::raw(0x47C35000); // 100000 (0x33256C)
     h.idle_share = f(0xC) / hundred;
     h.idle_power = f(0xD);
     h.low = (h.capacity * f(0xE)) / hundred, h.high = (h.capacity * f(0xF)) / hundred;
@@ -66,7 +66,7 @@ Hybrid hybrid_settings(std::span<const u8> table, const Behaviour& b) {
     h.front_share = f(0x14) / hundred;
     h.drive_accel = f(0x15) / g100, h.drive_lat = f(0x16) / g100, h.drive_dead = f(0x17) / hundred;
     h.regen_accel = f(0x18) / g100, h.regen_lat = f(0x19) / g100, h.regen_dead = f(0x1A) / hundred;
-    // (6000; 2002 Tokyo-Geneva Europe's routine has 5000)
+    // (0x332574: 6000; 2002 Tokyo-Geneva Europe's routine 0x1DA4F8 has 5000)
     h.flow_scale = F::raw(b.rule(Rule::HybridStep) == Program::ConceptGenevaEu ? 0x459C4000 : 0x45BB8000) / sum;
     return h;
 }
@@ -231,8 +231,8 @@ void hybrid_front_motors(Car& c, const Hybrid& h) {
         if (h.front_charge_cap < g) g = h.front_charge_cap;
         hybrid_charge(c, h, g * dt);
     }
-    // a front wheel's speed (m/s) to its motor's rpm x 716.2 / 44.13 (2 pi, 9.8, 716.2,
-    // 44.13)
+    // a front wheel's speed (m/s) to its motor's rpm x 716.2 / 44.13 (0x332594 2 pi, 0x332598 9.8, 0x3325A0 716.2,
+    // 0x33259C 44.13)
     const F k = (((c.p.tire_radius[0] * folded(c.behaviour, 0x40C90FDB, 0x40C90FDA)) * folded(c.behaviour, 0x411CCCCD, 0x411CCCCC)) *
                  folded(c.behaviour, 0x44330CCD, 0x44330CCC)) /
                 F::raw(0x4230851E);

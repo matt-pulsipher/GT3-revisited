@@ -62,8 +62,8 @@ float Engine::curve_peak_ps() const {
     return best;
 }
 
-// A switch over the byte with the
-// language tests 0, 1, 2 and not 0 or 1; values
+// 0x23AC80 (via 0x23ABF0 and 0x236A38; PAL 0x23BD00), a switch over the byte with the
+// language tests 0x231680 (0), 0x231690 (1), 0x2316A0 (2) and 0x2316B0 (not 0 or 1); values
 // over 8 offer the car. The NTSC-J program has no filter.
 bool car_region_offered(u8 region_byte, Language lang) {
     const bool br = lang == Language::BR, us = lang == Language::US, jp = lang == Language::JP;
@@ -81,7 +81,7 @@ bool car_region_offered(u8 region_byte, Language lang) {
     }
 }
 
-// The name and second string: language 0 the
+// The name 0x2343A0 and second string 0x234420 (also 0x23A050 / 0x23A0D8): language 0 the
 // record's +0xF2 / +0xF4, language 2 +0x100 / +0x102, else +0xE4 / +0xE6.
 CarNameFields car_name_fields(Language lang) {
     if (lang == Language::JP) return {0xF2, 0xF4};

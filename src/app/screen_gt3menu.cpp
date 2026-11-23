@@ -414,7 +414,7 @@ private:
             if (!movie_.texture()) return;
             SDL_FRect src, dst;
             movie_.picture_rects(box, src, dst); // handles field-split movies
-            // Car page steps: 2-D blur over the background (a 3 x 3 box of offset copies).
+            // Car page steps: Blur2D over the background (a 3 x 3 box of offset copies).
             float blur = flow_ && flow_->carousel() ? flow_->carousel()->blur : 0;
             if (blur > 0.01f) {
                 float px = blur * dst.w / 640.0f;

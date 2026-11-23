@@ -1094,7 +1094,7 @@ TEST(gtmode_menu_disc_garage_wheel_list) {
     choose(f, "buy3");
     // A row longer than the window (13 buttons, 828 units): left-aligned near the start, the
     // cursor's button centred in the middle, right-aligned at the end; the scroll bar and its
-    // pinch at bar x - offset x bar w / row w, window w x bar w / row w wide (GT3's scroll bar).
+    // pinch at bar x - offset x bar w / row w, window w x bar w / row w wide (GT3's ScrollBar).
     for (const char* w : {"bbw006_s", "bbw007_s", "bbw008_s", "bbw009_s", "bbw010_s", "bbw011_s", "bbw012_s",
                           "bbw013_s", "duw001_s"})
         CHECK(gt.buy_wheel(w));
@@ -1169,7 +1169,7 @@ TEST(gtmode_menu_disc_garage_wheel_list) {
     game::reset_gt_mode_menu_for_tests();
 }
 
-// The code-drawn vertical lists on the disc's pages as GT3's vertical button list (menus §4.6,
+// The code-drawn vertical lists on the disc's pages as GT3's vertical ButtonList (menus §4.6,
 // §9.7; gt_mode §5, §8, §17.2, §19):
 // the garage and trade lists (the 24-unit "car1" rows 28 apart in the 304-unit window), Cars
 // Permitted (the 20-unit rows 24 apart in 232) and the records (the 56-unit bars 60 apart in
@@ -1712,7 +1712,7 @@ TEST(gtmode_menu_disc_record_name_entry) {
     // A new 0-400 m record: the name entry page.
     CHECK(f.control() == "name_entry" && f.controller()->page_name() == "name_entry");
     MenuController* c = f.controller();
-    // One key cursor over the whole grid (free button rows), the column kept across rows.
+    // One key cursor over the whole grid (FreeButton rows), the column kept across rows.
     {
         auto highlighted = [&] {
             int n = 0;

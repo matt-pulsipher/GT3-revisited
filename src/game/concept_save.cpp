@@ -19,14 +19,14 @@ namespace {
 using namespace ps2save;
 
 constexpr u16 kConceptMajor = 100;
-// The payload's blocks after the cars (the status object's writer, Tokyo-Geneva; the loops' counts and
+// The payload's blocks after the cars (the status object's writer, Tokyo-Geneva 0x21BD80; the loops' counts and
 // strides are the same in the five programs).
 constexpr size_t kLicenseTests = 10;
 constexpr size_t kResults = 144, kResultRec = 0x14;
 constexpr size_t kRankings = 44;
 constexpr size_t kPresents = 0x4C;
 // The four presents that are not prize keys have fixed flags (0x216F40); a prize key's flag is its place in the game
-// config's list.
+// config's list (0x216EF0).
 constexpr size_t kMovie0Flag = 0x46, kMovie1Flag = 0x47, kPodFlag = 0x48, kTransferFlag = 0x49;
 // A license record (GT3's, gt_mode §12): s32 medal, six entries' names (16 bytes each), times (ms), stamps and blocks.
 constexpr size_t kLicNames = 0x04, kLicTimes = 0x64, kLicStamps = 0x7C, kLicCodes = 0x94, kLicEntries = 6;
@@ -110,8 +110,8 @@ std::string ps2_save_name(const GtData& data) {
 }
 
 int concept_open_car_count(const GtData& d, const ConceptState& state) {
-    // The availability table's count (the table is built over the five categories' own lists, whatever the
-    // language): the slots that are not locked.
+    // The availability table's count (0x211278; the table is built over the five categories' own lists, whatever the
+    // language, 0x211178): the slots that are not locked.
     int n = 0;
     for (const char* cls : {"CLASS_C", "CLASS_B", "CLASS_A", "CLASS_S", "CLASS_DIRT"}) {
         const auto it = d.arcade_classes.find(cls);
@@ -241,8 +241,8 @@ Bytes export_concept_ps2_save(const GameState& s, const GtData& data) {
         GarageCar c = cars[i];
         c.serial = u32(i);
         write_garage_car(p, o, c, db);
-        // What this game's record holds besides (the car built from its arcade row, and
-        // painted): the paint's color, the row's kind word 3, the gear ratios as 16-bit words and the row's engine
+        // What this game's record holds besides (the car built from its arcade row, 0x233CF0 and 0x2361D8, and
+        // painted, 0x2382C8): the paint's color, the row's kind word 3, the gear ratios as 16-bit words and the row's engine
         // output factor (row +0x10A).
         wr32(p, o + 0x08, data.color_id(c.car, c.color));
         wr16(p, o + 0x10, 3);
@@ -305,7 +305,7 @@ Bytes export_concept_ps2_save(const GameState& s, const GtData& data) {
 }
 
 Bytes concept_ps2_thumbnail(const GameState& s, const GtData& data) {
-    // The status object's thumbnail call writes the first word, the credits (zero), the cars that can be
+    // The status object's thumbnail call (0x21BF58) writes the first word, the credits (zero), the cars that can be
     // chosen, two more zero words and the completion x 100; the rest is not set.
     Bytes t(0x60, 0);
     wr32(t, 0x10, u32(concept_open_car_count(data, s.concept_game)));

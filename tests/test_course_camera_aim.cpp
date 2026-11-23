@@ -1,5 +1,5 @@
 // The course camera's operator (presentation §H6a): the filtered aim and the zoom spring of
-// replay course shots (the designer camera).
+// replay course shots (DesignerCamera::vf13).
 
 #include "test_framework.h"
 

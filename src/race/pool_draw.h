@@ -35,7 +35,7 @@ bool pool_entry_available(const data::CarDatabase& db, const std::string& label)
 std::vector<int> draw_pool(GameRandom& rng, const std::vector<bool>& unavailable, int draws);
 
 // The paint of pool entry `k` (+0x110 + 4 k: a carcolor id, 0xFFFFFFFF = drawn at the race start). The car
-// build gives it to the car drawn from that entry, so it follows the entry, not the grid slot.
+// build (0x238550) gives it to the car drawn from that entry, so it follows the entry, not the grid slot.
 u32 pool_color_id(const data::Event& ev, int k);
 
 // The labels of `draws` opponents drawn from the event's pool (empty when

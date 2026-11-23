@@ -33,7 +33,7 @@ void RaceScreen::load_analyzer(App& app) {
     analyzer_.set_course(app.renderer(), std::move(map), std::move(sectors), len);
 }
 
-// GT3's Analyzer pass over a replay: its race played with the data logger recording (race info
+// GT3's Analyzer pass over a replay (0x135788): its race played with the data logger recording (race info
 // + 0x70 / + 0x74), car 0 binned after every step (LoggerBinner), the logger table's sector times; its states from the
 // lap's start for the ghost.
 AnalyzerTrack RaceScreen::exact_logger_track(App& app, const Replay& r) {
@@ -70,11 +70,11 @@ AnalyzerTrack RaceScreen::exact_logger_track(App& app, const Replay& r) {
     return t;
 }
 
-// GT3's Analyzer race on the exact core (over the logger race, the solo race's devices both playing): track A's
+// GT3's Analyzer race on the exact core (0x135788 over the logger race, RaceSolitaire::vf58's devices both playing): track A's
 // replay with track B's car as its ghost car (car 1) playing track B's recording, the time trial, licence test and machine test;
 // the race played with the data logger recording (race info + 0x70 / + 0x74) until track A's recording ends, car 0 binned for
 // track A and car 1 for track B after every step (LoggerBinner, frames by the cars' input devices), the logger's tables' sector
-// times; the tables kept for the REPLAY view's jumps (exact_analysis_jump).
+// times; the tables kept for the REPLAY view's jumps (0x1873B8, exact_analysis_jump).
 bool RaceScreen::exact_analysis_pass(App& app, const Replay& a, std::shared_ptr<const sim::exact::RaceRecord> b, AnalyzerTrack& ta,
                                      AnalyzerTrack& tb) {
     using K = sim::exact::Conductor;
@@ -119,7 +119,7 @@ bool RaceScreen::exact_analysis_pass(App& app, const Replay& a, std::shared_ptr<
     return true;
 }
 
-// The REPLAY view's jump to the logger's entry k (the sector starting at its mark), on from the step of the pass
+// The REPLAY view's jump (0x1873B8) to the logger's entry k (the sector starting at its mark), on from the step of the pass
 // that read the entry's frame.
 void RaceScreen::exact_analysis_jump(App& app, int k) {
     (void)app;

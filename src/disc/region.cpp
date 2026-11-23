@@ -129,8 +129,8 @@ RegionData RegionData::of_program(Region region, const ProgramFiles& files) {
     rd.game = files.game();
     if (files.db_suffix && *files.db_suffix != plain.db_suffix()) rd.program_db_suffix = files.db_suffix;
     std::string g = files.gcf_for(plain.default_language());
-    // A Concept program that names a config for each language (Tokyo-Seoul v1.02: six, picked by its language)
-    // starts in its release's own language, the one of the database it names (paramdb_kr.db: the "_kr" config).
+    // A Concept program that names a config for each language (Tokyo-Seoul v1.02: six, picked by its language,
+    // 0x220FE0) starts in its release's own language, the one of the database it names (paramdb_kr.db: the "_kr" config).
     if (rd.game == GameKind::Concept && files.gcf.size() > 1 && files.db_suffix && !files.db_suffix->empty()) {
         const std::string& base = *std::min_element(files.gcf.begin(), files.gcf.end(), [](const std::string& a, const std::string& b) { return a.size() < b.size(); });
         const std::string want = base.substr(0, base.size() - kGcfExt.size()) + *files.db_suffix + std::string(kGcfExt);
@@ -192,9 +192,9 @@ std::string RegionData::gcf_path() const {
 namespace {
 
 // A Concept release's own language, from the game config its program names (ProgramFiles): each program's language
-// object starts as one language (its constructor: Tokyo-Geneva Europe stores 2, British English; Tokyo-Seoul
-// the program stores 7, Korean in that program's order; Tokyo-Geneva Asia stores 10, Traditional Chinese; the
-// 2001 Tokyo program sets 0, Japanese, as it starts), and that is the language of the config it loads.
+// object starts as one language (its constructor: Tokyo-Geneva Europe 0x2469D8 stores 2, British English; Tokyo-Seoul
+// 0x24A568 stores 7, Korean in that program's order; Tokyo-Geneva Asia 0x247028 stores 10, Traditional Chinese; the
+// 2001 Tokyo program sets 0, Japanese, as it starts, 0x100108), and that is the language of the config it loads.
 Language concept_language(const std::optional<std::string>& gcf) {
     const std::string g = gcf.value_or("");
     auto ends = [&](std::string_view tail) { return g.size() >= tail.size() && g.compare(g.size() - tail.size(), tail.size(), tail) == 0; };
@@ -282,8 +282,8 @@ Units language_units(Language lang) {
     case Language::FR: u.power = "CV", u.power_hp = true; break;
     case Language::JP:
     case Language::GR: break;
-    // The languages Gran Turismo Concept adds, from its programs' language-to-units table (Tokyo-Geneva,
-    // its Asian release, Tokyo-Seoul; the unit sets: switch): Portuguese takes French's
+    // The languages Gran Turismo Concept adds, from its programs' language-to-units table (Tokyo-Geneva 0x325C80,
+    // its Asian release 0x3263E0, Tokyo-Seoul 0x329520; the unit sets: switch 0x246F18): Portuguese takes French's
     // set (km/h, CV, kgf.m), Korean and both Chinese the Japanese one (km/h, PS, kgf.m).
     case Language::PT: u.power = "CV", u.power_hp = true; break;
     case Language::KR:
@@ -311,8 +311,8 @@ std::optional<bool> parse_speed_unit(std::string_view value) {
     return std::nullopt;
 }
 
-// The x100 (immediate 0x64) when
-// the program finds language 0.
+// The x100 of 0x21DCE0 / 0x237BC0 / 0x237C80 / 0x238950 / 0x238BC0 (immediate 0x64) when
+// 0x231680 finds language 0.
 int money_scale(Language lang) { return lang == Language::JP ? 100 : 1; }
 
 bool is_european(Language lang) { return int(lang) >= int(Language::BR); }

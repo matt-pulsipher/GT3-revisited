@@ -56,22 +56,22 @@ public:
         Count,
         // Tables only the later builds have (Gran Turismo Concept [physics §14.5]): found through their routines on those
         // discs and served as the disc holds them; on GT3's discs they are absent (later_table(): b() throws).
-        SpecialCars = Count, // later @0x20+0x20: the special cars' labels the spec builder knows, zero-ended, from 32 bytes
+        SpecialCars = Count, // later 0x320698@0x20+0x20: the special cars' labels the spec builder knows, zero-ended, from 32 bytes
                              // before the first build's first (special.h has each build's places in it)
-        Awd3,                // later: AWD system 3's settings: +0 the gain (%), +1 the capacity (x 10 kgf m), +2 a
+        Awd3,                // later 0x334C78: AWD system 3's settings: +0 the gain (%), +1 the capacity (x 10 kgf m), +2 a
                              // switch, +8 / +0x10 the lateral fade's start and floor (%)
-        PodMoods,            // later: special car 1's moods: per mood its time (16 bytes), its lean (16) and its lamp class (16)
-        Stepless,            // later: the stepless gearboxes' settings: +0 / +1 kind 1's ratio rates at full and no
+        PodMoods,            // later 0x2BAFD8: special car 1's moods: per mood its time (16 bytes), its lean (16) and its lamp class (16)
+        Stepless,            // later 0x334C38: the stepless gearboxes' settings: +0 / +1 kind 1's ratio rates at full and no
                              // throttle (% a second), +0xC / +0xD kind 2's rates down and up
-        RaceSwitches,        // later: +0 the stop zone's start (s16, m) and +2 its length (m); +3 .. +5 the ASCC's
+        RaceSwitches,        // later 0x334CF8: +0 the stop zone's start (s16, m) and +2 its length (m); +3 .. +5 the ASCC's
                              // switches (channel C's status, channel C under throttle, channel E's)
-        Kind7Ride,           // later3: 2002 Tokyo-Geneva's special kind 7 ride (its fourth later build, Europe, on):
+        Kind7Ride,           // later3 0x3367B8: 2002 Tokyo-Geneva's special kind 7 ride (its fourth later build, Europe, on):
                              // +0 on, +1 the travel (mm), +2 the lift (%), +3 / +4 its share per axle (%), +5 the drop (mm)
                              // reached between the speeds +6 and +7 (km/h)
-        FlyingStart,         // later-2: the single race's flying start (Concept 2001 Tokyo and 2002 Tokyo-Seoul): +0 the
+        FlyingStart,         // later-2 0x334C90: the single race's flying start (Concept 2001 Tokyo and 2002 Tokyo-Seoul): +0 the
                              // lines of cars 0 .. 5 (repeating), +8 the distance from car i to car i + 1 (m) and +0x10 the
                              // speed added (km/h), five entries each (repeating)
-        Hybrid,              // later: the layout 7 system's settings (AWD system 5 [physics §14.5], 0x1B bytes): +0 / +1
+        Hybrid,              // later 0x334C51: the layout 7 system's settings (AWD system 5 [physics §14.5], 0x1B bytes): +0 / +1
                              // the front motors' (each) and the rear motor's ratings, the store's capacity, marks and
                              // regeneration limits and the yaw terms' gains from +2 on (the layout routine makes them floats)
         PodMessages,         // beside Messages +0x80: the HUD messages 0x10 and 0x11 (the pod race's prompts), 8 bytes each as

@@ -868,7 +868,7 @@ TEST(gtmode_disc_entry_rules) {
 }
 
 // Public issue 331: the Roadster Endurance (car class 3, normal cars only) refused a stock Miata
-// whose settings had been changed. GT3's tuned test reads only the parts: settings
+// whose settings had been changed. GT3's tuned test (0x2362B8) reads only the parts: settings
 // never count, a part upgrade does, and so does a stock part above its first stage (the tuner
 // cars).
 TEST(gtmode_disc_normal_car_rule) {
@@ -1459,7 +1459,7 @@ TEST(gtmode_disc_demo_tuned_save) {
     CHECK(write_save(out, gt.state()));
 }
 
-// The auto-level slider (gt_mode §14): each change rebuilds the gear sliders' ranges from the reference final
+// The auto-level slider (gt_mode §14, 0x1662F0): each change rebuilds the gear sliders' ranges from the reference final
 // as it is at that moment, then the reference follows the final; so with a final changed since the reference was set,
 // the first change ranges around the old reference and the next around the final. A page opening builds them from the
 // reference as it then is.

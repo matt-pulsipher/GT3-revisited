@@ -1,13 +1,13 @@
 #pragma once
 
 // The later builds' leaves (Gran Turismo Concept, every build [concept §15; physics §14]): fallen leaves a wheel throws up
-// off ground whose road triangle has flag 0x20 (Autumn Ring's). The tire effect emitter (Concept 2001 Tokyo, 2002
-// Tokyo-Geneva Europe: GT3's code with one more call) hands each wheel's request first to the smoke and then,
-// on such ground, to the particle manager's leaf maker (Rule::Leaves: 2001 Tokyo, Europe), which draws the
+// off ground whose road triangle has flag 0x20 (Autumn Ring's). The tire effect emitter (Concept 2001 Tokyo 0x1ED4F0, 2002
+// Tokyo-Geneva Europe 0x1ED4B8: GT3's 0x1DF150 with one more call) hands each wheel's request first to the smoke and then,
+// on such ground, to the particle manager's leaf maker (Rule::Leaves: 2001 Tokyo 0x19C4E8, Europe 0x19C578), which draws the
 // VU0 random register once and, when the wheel's slip speed scaled by 0.5 .. 0.95 is 2 m/s or more, makes one leaf with
-// twelve draws more (its init, Europe, draws the last three). So the leaves, like the sparks, are part of the
+// twelve draws more (its init, Europe 0x19D230, draws the last three). So the leaves, like the sparks, are part of the
 // race's state: they share the particle manager's pool of 128 with the sparks (sparks.h), a leaf the pool has no room for is
-// not made. A leaf (leaf particle, its update the leaf particle: Europe) is a small rigid plate: one of eight shapes (squares of
+// not made. A leaf (LeafParticle, its update LeafParticle::vf1: Europe 0x19D308) is a small rigid plate: one of eight shapes (squares of
 // 0.12, 0.13, 0.14 and 0.1 m, 1 g), its turn by three angles kept in 0 .. 2 pi, its spin under Euler's equations with the
 // air's torque, its fall under gravity with the air's force on its plane; it is gone once its center is below the ground's
 // plane by its shape's diagonal. The update draws nothing. Each line of leaves.cpp is one EE operation in the program's
@@ -22,7 +22,7 @@ namespace gt3r::sim::exact {
 
 struct TyreEffect;
 
-// A leaf's shape (the manager's +0xC + 0x74 k, k 0 .. 7, built by Europe from its constructor's mass and sizes).
+// A leaf's shape (the manager's +0xC + 0x74 k, k 0 .. 7, built by Europe 0x19CF10 from its constructor's mass and sizes).
 struct LeafShape {
     F mass;          // +0x04 (kg)
     F w, h;          // +0x08 / +0x0C its sides (m)
@@ -35,7 +35,7 @@ struct LeafShape {
     std::array<Vec3, 4> corners; // +0x34's block: (-w/2, 0, -h/2), (w/2, 0, -h/2), (-w/2, 0, h/2), (w/2, 0, h/2)
 };
 
-// A leaf (the 0x50-byte leaf particle record from +0x08; +0x00 the list link and +0x04 the class pointer are the pool's).
+// A leaf (the 0x50-byte LeafParticle record from +0x08; +0x00 the list link and +0x04 the class pointer are the pool's).
 struct Leaf {
     Vec3 angle;      // +0x08 its turn: three angles (rad, 0 .. 2 pi) as leaf_matrix() takes them
     Vec3 pos;        // +0x14 (course frame: x, height, z)
@@ -57,13 +57,13 @@ struct LeafRules {
     F yaw_spread, yaw_offset;     // the heading's spread: + 30 degrees x r - 15 degrees
     F pitch_spread, pitch_offset; // the throw's angle: 10 degrees x r - 85 degrees
     F two_pi, gravity, spin_keep; // 2 pi, 9.81, the spin kept each update (0.999)
-    // The draw's (race/leaves.h): the diffuse light's share 0.3 + 0.7 x the ground's shade (Europe).
+    // The draw's (race/leaves.h): the diffuse light's share 0.3 + 0.7 x the ground's shade (Europe 0x333C64 / 0x333C68).
     F light_base, light_gain;
 };
 LeafRules leaf_rules(const Behaviour& b);
 
-// Europe: the turn's matrix from the three angles (a, b, c): three rows of three (the fourth row and column 0, 0, 0, 1).
-// Rows times a vector take a leaf's velocity into its own frame; columns, a force back.
+// Europe 0x19D070: the turn's matrix from the three angles (a, b, c): three rows of three (the fourth row and column 0, 0, 0, 1).
+// Rows times a vector take a leaf's velocity into its own frame (0x19D1D8); columns, a force back (0x19D180).
 std::array<Vec3, 3> leaf_matrix(const Vec3& angle);
 
 // The leaf maker for one wheel's request `q` (its ground's flag byte has 0x20), in two parts with the pool's slot asked for
@@ -74,7 +74,7 @@ bool leaf_amount(const TyreEffect& q, Vu0Random& rng, F& amount);
 void leaf_throw(const TyreEffect& q, const Vec3& vel, F amount, const LeafRules& r, Vu0Random& rng, Leaf& out);
 // The car's velocity as the emitter hands it to the leaf maker (car + 0x13D4 in the later builds' record): course frame.
 inline Vec3 course_velocity(const Car& c) { return {c.vel.x, c.vel.z, -c.vel.y}; }
-// The leaf particle (Europe): one update of `dt`; false when the leaf is gone (below its plane).
+// LeafParticle::vf1 (Europe 0x19D308): one update of `dt`; false when the leaf is gone (below its plane).
 bool leaf_step(Leaf& p, const LeafShape& s, const LeafRules& r, F dt);
 
 } // namespace gt3r::sim::exact

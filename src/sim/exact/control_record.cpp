@@ -1,4 +1,4 @@
-// Pad recording (control_record.h): the recorder's bit stream and frame coding, in the program's integer
+// AutomobileControlRecord (control_record.h): the recorder's bit stream and frame coding, in the program's integer
 // arithmetic.
 
 #include "sim/exact/control_record.h"
@@ -23,7 +23,7 @@ PadFrame pad_of(const RawPad& r) {
 
 namespace {
 
-// The n low bits of v, highest first, into the stream (the byte being filled is stored after every call).
+// 0x26C9B0: the n low bits of v, highest first, into the stream (the byte being filled is stored after every call).
 void put(std::span<u8> mem, ControlRecorder& r, u64 v, u32 n) {
     u64 a1 = v << ((64 - n) & 63);
     u32 t1 = r.ptr, t0 = r.cur, a3 = r.bits;
@@ -44,7 +44,7 @@ void put(std::span<u8> mem, ControlRecorder& r, u64 v, u32 n) {
     r.bits = a3, r.ptr = t1, r.cur = u8(t0);
 }
 
-// n bits of the stream, highest first.
+// 0x26C930: n bits of the stream, highest first.
 u64 get(std::span<const u8> mem, ControlRecorder& r, u32 n) {
     u32 t1 = r.ptr, a2 = r.bits;
     u64 t0 = r.cur, a1 = 0;
@@ -61,7 +61,7 @@ u64 get(std::span<const u8> mem, ControlRecorder& r, u32 n) {
 
 s32 low32(u64 v) { return s32(u32(v)); }
 
-// A count (1 or more) as its gamma code: n = count - 1 (0 for 0) in s ones, a zero and s bits, s the code's class.
+// 0x1F4830: a count (1 or more) as its gamma code: n = count - 1 (0 for 0) in s ones, a zero and s bits, s the code's class.
 void put_count(std::span<u8> mem, ControlRecorder& r, u32 count) {
     u64 s0 = count != 0 ? u32(count - 1) : 0u;
     u32 s1 = 0;
@@ -75,7 +75,7 @@ void put_count(std::span<u8> mem, ControlRecorder& r, u32 count) {
     put(mem, r, s0, s1);
 }
 
-// A gamma code's count (n + 1).
+// 0x1F4570: a gamma code's count (n + 1).
 s32 get_count(std::span<const u8> mem, ControlRecorder& r) {
     u32 s1 = 0;
     while (get(mem, r, 1) != 0) ++s1;
@@ -83,7 +83,7 @@ s32 get_count(std::span<const u8> mem, ControlRecorder& r) {
     return v + s32(u32(1) << (s1 & 31));
 }
 
-// A signed difference: its class (3 bits), sign, and the magnitude past the class's start in 2 class + 1 bits.
+// 0x1F48D8: a signed difference: its class (3 bits), sign, and the magnitude past the class's start in 2 class + 1 bits.
 void put_diff(std::span<u8> mem, ControlRecorder& r, s32 v) {
     u32 sign = 0;
     s32 m = v;
@@ -102,7 +102,7 @@ void put_diff(std::span<u8> mem, ControlRecorder& r, s32 v) {
     put(mem, r, u64(s64(m)), u32(s1));
 }
 
-// A signed difference. The class's start is what the coding's classes before it hold: 2, 8, 32, ...
+// 0x1F45D0: a signed difference. The class's start (0x2D8EE0) is what the coding's classes before it hold: 2, 8, 32, ...
 s32 get_diff(std::span<const u8> mem, ControlRecorder& r) {
     const s32 c = low32(get(mem, r, 3));
     const s32 sign = low32(get(mem, r, 1));
@@ -116,7 +116,7 @@ s32 get_diff(std::span<const u8> mem, ControlRecorder& r) {
 s16 field16(const RawPad& f, u32 o) { return s16(u16(f[o] | f[o + 1] << 8)); }
 void set16(RawPad& f, u32 o, u16 v) { f[o] = u8(v), f[o + 1] = u8(v >> 8); }
 
-// The last frame's steering replaced by its linear prediction (when it is 16 or more either way).
+// 0x1F4518: the last frame's steering replaced by its linear prediction (when it is 16 or more either way).
 void predict(ControlRecorder& r) {
     const s32 a1 = field16(r.last, 4);
     const s32 v1 = r.steer_before;

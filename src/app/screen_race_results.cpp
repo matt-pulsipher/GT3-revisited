@@ -63,10 +63,10 @@ std::vector<ResultRow> RaceScreen::result_menu_rows() const {
 
 std::vector<ResultRow> RaceScreen::result_panel_rows(race::ResultPage page) const {
     std::vector<ResultRow> rows = result_rows(true);
-    if (page == race::ResultPage::Points) { // the round's points by place
+    if (page == race::ResultPage::Points) { // the round's points by place (0x1756F0)
         for (size_t i = 0; i < rows.size(); ++i)
             rows[i].time = race::result_points_text('+', race::championship_points(int(i)), lang_);
-    } else if (page == race::ResultPage::TotalPoints) { // the totals, highest first
+    } else if (page == race::ResultPage::TotalPoints) { // the totals, highest first (0x175790)
         const std::vector<int>& before_round = launch_.request.champ_points; // the player first, then the opponents
         std::vector<int> before;
         for (const ResultRow& r : rows) {

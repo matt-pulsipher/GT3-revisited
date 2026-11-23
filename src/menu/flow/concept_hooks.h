@@ -15,7 +15,7 @@
 namespace gt3r::menu::flow {
 
 // The title's idle time before the attract sequence: 20 seconds (the session's constant: 1000 frames in the 50 Hz
-// European Tokyo-Geneva program, 1200 in the 60 Hz 2001 Tokyo program), in menu steps.
+// European Tokyo-Geneva program at 0x1097A4, 1200 in the 60 Hz 2001 Tokyo program at 0x10972C), in menu steps.
 constexpr int kConceptTitleIdleFrames = 20 * 60;
 
 struct ConceptHooks {

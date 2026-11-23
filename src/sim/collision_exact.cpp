@@ -16,25 +16,25 @@ const F kZero = F::raw(0), kOne = F::raw(0x3F800000), kHalf = F::raw(0x3F000000)
 const F kQuarter = F::raw(0x3E800000), kTen = F::raw(0x41200000), kHundred = F::raw(0x42C80000),
         kTwenty = F::raw(0x41A00000), kMinusOneAndHalf = F::raw(0xBFC00000);
 // The program's constants.
-const F kChamfer = F::raw(0x3E4CCCCD);       // 0.2, the corner chamfer per metre of width
-const F kPi = F::raw(0x40490FDB);
-const F kTwoPi = F::raw(0x40C90FDB);
-const F kMinusTwoPi = F::raw(0xC0C90FDB);
-const F kMaxYaw = F::raw(0x427B53D2);        // 20 pi rad/s
-const F kMinYaw = F::raw(0xC27B53D2);
-const F kEarly = F::raw(0x3DCCCCCD);         // 0.1, the stuck nudge's "last hit early in the step"
-const F kPairStrength = F::raw(0x466A6000);  // 15000
-const F kSoundDecay = F::raw(0x3F7AE148);    // 0.98, the hit sound level's decay per step
-const F kPointBounce = F::raw(0xBF866666);   // -(1 + 0.05)
-const F kPointStrength = F::raw(0x47C35000); // 1e5
-const F kCornerBounce = F::raw(0xBF866666);
-const F kCornerStrength = F::raw(0x47C35000);
+const F kChamfer = F::raw(0x3E4CCCCD);       // 0x35069C: 0.2, the corner chamfer per metre of width
+const F kPi = F::raw(0x40490FDB);            // 0x3506A0
+const F kTwoPi = F::raw(0x40C90FDB);         // 0x3506A4
+const F kMinusTwoPi = F::raw(0xC0C90FDB);    // 0x3506A8
+const F kMaxYaw = F::raw(0x427B53D2);        // 0x3506AC: 20 pi rad/s
+const F kMinYaw = F::raw(0xC27B53D2);        // 0x3506B0
+const F kEarly = F::raw(0x3DCCCCCD);         // 0x3506B4: 0.1, the stuck nudge's "last hit early in the step"
+const F kPairStrength = F::raw(0x466A6000);  // 0x3506BC: 15000
+const F kSoundDecay = F::raw(0x3F7AE148);    // 0x3506B8: 0.98, the hit sound level's decay per step
+const F kPointBounce = F::raw(0xBF866666);   // 0x3506C0: -(1 + 0.05)
+const F kPointStrength = F::raw(0x47C35000); // 0x3506C4: 1e5
+const F kCornerBounce = F::raw(0xBF866666);  // 0x3506C8
+const F kCornerStrength = F::raw(0x47C35000); // 0x3506CC
 
 F neg_if_negative(F v) { return v < kZero ? -v : v; }
 
 bool linked(const Body& t, int a, int b) { return !t.course || t.course->linked(a, b); }
 
-// The points at the start / end pose (sincosf).
+// 0x1FB420 / 0x1FB4D8: the points at the start / end pose (sincosf).
 void start_points(Body& b) {
     F s, cs;
     ee::sincos(b.sh, s, cs);
@@ -52,7 +52,7 @@ void end_points(Body& b) {
     }
 }
 
-// The box swept from the start to the end pose, grown by the radius.
+// 0x1FB590: the box swept from the start to the end pose, grown by the radius.
 void sweep_box(Body& b) {
     F lo = b.sx, hi = b.ex;
     if (b.dx < kZero) lo = b.ex, hi = b.sx;
@@ -66,7 +66,7 @@ void sweep_box(Body& b) {
     b.bh = b.by1 - b.by0;
 }
 
-// Moves the start pose and the start-world points.
+// 0x1FB7E8: moves the start pose and the start-world points.
 void shift(Body& b, F dx, F dy) {
     b.sx = b.sx + dx;
     b.sy = b.sy + dy;
@@ -76,7 +76,7 @@ void shift(Body& b, F dx, F dy) {
     }
 }
 
-// (2002 Tokyo-Geneva's 20 pi two units lower: Europe)
+// 0x1FB698 (2002 Tokyo-Geneva's 20 pi two units lower: Europe 0x1FB030)
 F clamp_yaw(F w, const Behaviour& h) {
     const F hi = sim::exact::folded(h, kMaxYaw.bits, 0x427B53D0), lo = sim::exact::folded(h, kMinYaw.bits, 0xC27B53D0);
     if (ee::abs(w) < hi) return w;
@@ -114,7 +114,7 @@ void min_max(F v, F& lo, F& hi) {
     if (hi < v) hi = v;
 }
 
-// A wall segment (record P -> next) against the body's unflagged points (end beyond the wall, start inside,
+// 0x1FD368: a wall segment (record P -> next) against the body's unflagged points (end beyond the wall, start inside,
 // the motion crossing the segment), then a corner vertex P against the car's edges. Keeps each point's / edge's
 // earliest crossing; sensor segments only record the body's earliest sensor crossing.
 void sweep_segment(Body& b, const WallPt* W, int P, const EndPoints& ends) {
@@ -199,7 +199,7 @@ void sweep_segment(Body& b, const WallPt* W, int P, const EndPoints& ends) {
     }
 }
 
-// The end-of-step push-out against one wall segment: each unflagged point whose end position is beyond the
+// 0x1FDA10: the end-of-step push-out against one wall segment: each unflagged point whose end position is beyond the
 // wall while a neighbour point (the previous one in the first pass, the next in the second) is inside, the car edge
 // between them crossing the segment. The end pose moves at once (the next tests see it); true when it moved.
 bool push_segment(Body& b, const WallPt* W, int P, const EndPoints& ends) {
@@ -250,7 +250,7 @@ bool push_segment(Body& b, const WallPt* W, int P, const EndPoints& ends) {
             continue;
         }
         F inv = kOne, u = ur;
-        const bool jp = b.behaviour.rule(Rule::PushSegment) == Program::NtscJ; // the NTSC-J program takes the root of a zero length too
+        const bool jp = b.behaviour.rule(Rule::PushSegment) == Program::NtscJ; // NTSC-J's 0x1FAEE0 takes the root of a zero length too
         if (jp) inv = ee::rsqrt(kOne, d2);
         if (!(d2 == kZero)) {
             if (!jp) inv = ee::rsqrt(kOne, d2);
@@ -280,10 +280,10 @@ bool push_segment(Body& b, const WallPt* W, int P, const EndPoints& ends) {
     return moved;
 }
 
-// Friction of a wall impulse J at a point moving with vp: against the velocity's part off J (and the
+// 0x1FE660: friction of a wall impulse J at a point moving with vp: against the velocity's part off J (and the
 // vertical velocity), min(0.5 |J|, m |that velocity|).
 void friction(const Body& b, F jx, F jy, F vpx, F vpy, F& fx, F& fy, F& fz) {
-    const bool jp = b.behaviour.rule(Rule::WallFriction) == Program::NtscJ; // the NTSC-J program has neither zero test
+    const bool jp = b.behaviour.rule(Rule::WallFriction) == Program::NtscJ; // NTSC-J's 0x1FBB18 has neither zero test
     F j2 = (jx * jx) + (jy * jy), lam = kZero;
     if (jp || !(j2 == kZero)) lam = ((vpx * jx) + (vpy * jy)) / j2;
     F ty = (lam * jy) - vpy, tx = (lam * jx) - vpx, tz = -b.vz;
@@ -300,7 +300,7 @@ void friction(const Body& b, F jx, F jy, F vpx, F vpy, F& fx, F& fy, F& fz) {
     fy = mag * ty;
 }
 
-// The vertical velocity after a wall impulse never changes sign.
+// The vertical velocity after a wall impulse never changes sign (0x1FDEC0 / 0x1FE3A0).
 void vertical(Body& b, F fz) {
     bool down = b.vz < kZero;
     F vz = b.vz + (fz * b.im);
@@ -308,7 +308,7 @@ void vertical(Body& b, F fz) {
     if (down ? kZero < vz : vz < kZero) b.vz = kZero;
 }
 
-// The car-car impulse at A's crossing point on its edge against B's vertex, normal = A's edge normal:
+// 0x1FC840: the car-car impulse at A's crossing point on its edge against B's vertex, normal = A's edge normal:
 // j = -1.5 (v_rel . n) / K. J (on A) = j n.
 F pair_impulse(const Body& A, const Body& B, const F* ra, const F* rb, F& jx, F& jy) {
     const Edge& ae = A.e[size_t(A.hit_edge)];
@@ -338,7 +338,7 @@ F pair_impulse(const Body& A, const Body& B, const F* ra, const F* rb, F& jx, F&
     return j;
 }
 
-// If B's vertex is still outside A's edge line after the response's pose (the rigid pose differs from the
+// 0x1FCB20: if B's vertex is still outside A's edge line after the response's pose (the rigid pose differs from the
 // straight crossing), half the gap each, along A's edge normal.
 void touch_up(Body& A, Body& B, const F* ra, const F* rb) {
     const Edge& bv = B.e[size_t(A.vertex)];
@@ -358,7 +358,7 @@ void touch_up(Body& A, Body& B, const F* ra, const F* rb) {
     A.sy = A.sy - my;
 }
 
-// After a point-wall impulse, a point the advance left beyond the wall's line goes back onto it (the pose
+// 0x1FE288: after a point-wall impulse, a point the advance left beyond the wall's line goes back onto it (the pose
 // moves, start-world points recomputed).
 void correct_point(Body& b) {
     const WallPt* W = b.course->walls();
@@ -396,7 +396,7 @@ void build(Body& b, F a, F rear, F width, F mass, F iz, int car) {
     const Behaviour behaviour = b.behaviour;
     b = Body{};
     b.behaviour = behaviour;
-    // (Rule::BodyBuild: 2002 Tokyo-Geneva's constant is one unit lower, Europe, Asia)
+    // 0x1FA740 (Rule::BodyBuild: 2002 Tokyo-Geneva's constant is one unit lower, Europe 0x3345B8, Asia 0x334D78)
     const F chamfer = behaviour.rule(Rule::BodyBuild) >= Program::ConceptGenevaEu ? F::raw(0x3E4CCCCC) : kChamfer;
     F d1 = width * chamfer, d2 = width * chamfer;
     F nb = -rear, h = width * kHalf, iz10 = iz * kTen;
@@ -446,7 +446,7 @@ void pair_tables(std::vector<Body>& bodies) {
 
 namespace fn {
 
-// The sweep from the committed state; the start-world points carry over from the last step's end points.
+// 0x1FB140: the sweep from the committed state; the start-world points carry over from the last step's end points.
 void init(Body& b, F dt) {
     b.dt = dt;
     b.te = kOne;
@@ -472,14 +472,14 @@ void init(Body& b, F dt) {
     }
 }
 
-// Switching car-car contact off drops the points' car flags.
+// 0x1FB1F0: switching car-car contact off drops the points' car flags.
 void enable(Body& b, bool on) {
     if (b.enabled && !on)
         for (Point& q : b.p) q.flags &= ~2u;
     b.enabled = on;
 }
 
-// Static separation: o's start-world points inside t's outline; the one that is deepest along the line of
+// 0x1FCC98: static separation: o's start-world points inside t's outline; the one that is deepest along the line of
 // centres (its distance to the boundary crossing of that line through it) moves both bodies half that each.
 void separate(std::vector<Body>& bd, int it, int io) {
     Body& t = bd[size_t(it)];
@@ -529,7 +529,7 @@ void separate(std::vector<Body>& bd, int it, int io) {
     }
 }
 
-// A vertex flagged on another body's edge (start-world points) keeps its flag while it projects inside the
+// 0x1FBCE8: a vertex flagged on another body's edge (start-world points) keeps its flag while it projects inside the
 // edge and is not outside it, and both poses then move half the gap each; projecting inside, while the bodies approach
 // the relative velocity loses its part across the edge (half each).
 void persist(std::vector<Body>& bd, int i) {
@@ -568,7 +568,7 @@ void persist(std::vector<Body>& bd, int i) {
     }
 }
 
-// A point flagged on a wall walks to the neighbouring segment it projects onto (one step), then, while the
+// 0x1FCF48: a point flagged on a wall walks to the neighbouring segment it projects onto (one step), then, while the
 // car moves into the wall and the point is beyond it, the pose moves the point back onto the line, the velocity
 // becomes its projection on the body's wall tangent and the yaw rate loses the moment of that change.
 void hold(Body& b) {
@@ -617,7 +617,7 @@ void hold(Body& b) {
     }
 }
 
-// The end pose from the start pose and the velocities over the rest of the step.
+// 0x1FB268: the end pose from the start pose and the velocities over the rest of the step.
 void end_pose(Body& b) {
     F f = (b.te - b.ts) * b.dt;
     b.dx = b.vx * f;
@@ -632,6 +632,7 @@ void end_pose(Body& b) {
     end_points(b);
 }
 
+// 0x1FB308
 void reset_hit(Body& b) {
     b.pair = false;
     b.sensor_t = kTwo;
@@ -640,7 +641,7 @@ void reset_hit(Body& b) {
     b.sensor = false;
 }
 
-// The body's walls: the candidates of the box of its start and end points, then its earliest point or
+// 0x1FD720: the body's walls: the candidates of the box of its start and end points, then its earliest point or
 // corner crossing (a point first on a tie).
 bool wall_sweep(Body& b) {
     F xmin = b.p[0].sx, xmax = xmin, ymin = b.p[0].sy, ymax = ymin;
@@ -698,7 +699,7 @@ bool wall_sweep(Body& b) {
     return true;
 }
 
-// B's unflagged vertices against A's edges, in A's frame at the start and at the end pose (each vertex on a
+// 0x1FBF50: B's unflagged vertices against A's edges, in A's frame at the start and at the end pose (each vertex on a
 // straight line between them), after a box test and the closest approach of the two centres' straight paths. The
 // earliest crossing is A's hit unless A already holds an earlier car or point-wall hit.
 bool pair_sweep(std::vector<Body>& bd, int ia, int ib) {
@@ -775,12 +776,12 @@ bool pair_sweep(std::vector<Body>& bd, int ia, int ib) {
     return true;
 }
 
-// A sensor crossing before `t` sets the body's sensor flag.
+// 0x1FD9D0: a sensor crossing before `t` sets the body's sensor flag.
 void sensor_check(Body& b, F t) {
     if (b.sensor && ((b.te - b.ts) * b.sensor_t) + b.ts < t) b.sensor_hit = true;
 }
 
-// The start pose to sweep time t, along the displacement.
+// 0x1FB328: the start pose to sweep time t, along the displacement.
 void advance(Body& b, F t) {
     F span = b.te - b.ts, f = kZero;
     if (!(span == kZero)) f = (t - b.ts) / span;
@@ -796,7 +797,7 @@ void advance(Body& b, F t) {
     start_points(b);
 }
 
-// Point wk on wall wseg (tangent u, normal
+// 0x1FDEC0 (+ 0x1FE100 impulse, 0x1FE660 friction, 0x1FE288 correction): point wk on wall wseg (tangent u, normal
 // n = (-u.y, u.x)): j = -1.05 (v_p . n) / K, friction, the point flagged on the wall, the moment of J alone.
 void point_response(Body& b, Trace* trace) {
     F cs = ee::cos(b.sh), sn = ee::sin(b.sh), msn = -sn;
@@ -807,6 +808,7 @@ void point_response(Body& b, Trace* trace) {
     F vpx = b.vx - (b.w * rpy);
     F nrx = (sn * e.sy) + (cs * nlx);
     F vpy = b.vy - (b.w * nrx);
+    // 0x1FE100
     F nx = -b.uy, ny = b.ux;
     F lnx = (r[0] * nx) + (r[2] * ny), lny = (r[1] * nx) + (r[3] * ny);
     F rwy = (r[0] * e.sy) + (r[1] * nlx), nrwx = (r[2] * e.sy) + (r[3] * nlx);
@@ -832,7 +834,7 @@ void point_response(Body& b, Trace* trace) {
     }
 }
 
-// A wall corner on edge we: n = the edge's normal (world), the
+// 0x1FE3A0 (+ 0x1FE578 impulse, 0x1FE660 friction): a wall corner on edge we: n = the edge's normal (world), the
 // arm from the CoG to the corner, j = -1.05 (v_p . n) / K, friction; no flag, no correction.
 void corner_response(Body& b, Trace* trace) {
     F cs = ee::cos(b.sh), sn = ee::sin(b.sh);
@@ -860,7 +862,7 @@ void corner_response(Body& b, Trace* trace) {
                           neg_if_negative(j).value(), b.ts.value(), neg_if_negative(j)});
 }
 
-// B's vertex on A's edge: the impulse, the touch-up, A's and B's
+// 0x1FC5C0 (+ 0x1FC840 impulse, 0x1FCB20 touch-up): B's vertex on A's edge: the impulse, the touch-up, A's and B's
 // velocities and moments, B's vertex flagged on A's edge.
 void pair_response(std::vector<Body>& bd, int ia, Trace* trace) {
     Body& A = bd[size_t(ia)];
@@ -895,8 +897,8 @@ void pair_response(std::vector<Body>& bd, int ia, Trace* trace) {
     }
 }
 
-// A car nearly at rest whose last hit came early in the step turns by its steering: yaw rate +=
-// steer / 100 x 20 x dt, end pose recomputed. (Rule::StuckNudge: the later builds', Concept 2001 Tokyo, only for a
+// 0x1FB740: a car nearly at rest whose last hit came early in the step turns by its steering: yaw rate +=
+// steer / 100 x 20 x dt, end pose recomputed. (Rule::StuckNudge: the later builds', Concept 2001 Tokyo 0x1FB840, only for a
 // pad car (control source 0) and only while it touches something: a point or corner hit, a wall hit, a point held on a
 // wall or crossing one this round, an edge's corner crossing.)
 void stuck(Body& b, F last) {
@@ -906,12 +908,12 @@ void stuck(Body& b, F last) {
         for (size_t k = 0; k < 8 && !touch; ++k) touch = (b.p[k].flags & 1) || b.p[k].hit || b.e[k].hit;
         if (!touch) return;
     }
-    if (!(ee::abs(b.vx) < kOne) || !(ee::abs(b.vy) < kOne) || !(last < sim::exact::folded(b.behaviour, kEarly.bits, 0x3DCCCCCC))) return; // (Europe's)
+    if (!(ee::abs(b.vx) < kOne) || !(ee::abs(b.vy) < kOne) || !(last < sim::exact::folded(b.behaviour, kEarly.bits, 0x3DCCCCCC))) return; // (Europe 0x1FB0D0's)
     b.w = b.w + (((ee::int_to_f(b.steer) / kHundred) * kTwenty) * b.dt);
     end_pose(b);
 }
 
-// The end-of-step push-out against the candidates of the box of end points 0-6.
+// 0x1FDE08: the end-of-step push-out against the candidates of the box of end points 0-6.
 void push_out(Body& b) {
     F xmin = b.p[0].ex, xmax = xmin, ymin = b.p[0].ey, ymax = ymin;
     for (size_t k = 0; k < 7; ++k) {
@@ -929,6 +931,7 @@ void push_out(Body& b) {
         if (push_segment(b, W, P, ends)) ends.load(b); // (the end pose moved)
 }
 
+// 0x1FB6D8
 void commit(Body& b) {
     b.cx = b.ex;
     b.cy = b.ey;
@@ -936,7 +939,7 @@ void commit(Body& b) {
     b.cvx = b.vx;
     b.cvy = b.vy;
     b.cvz = b.vz;
-    if (b.behaviour.rule(Rule::CollisionCommit) == Program::NtscJ) { // the NTSC-J program: no wrap, no clamp
+    if (b.behaviour.rule(Rule::CollisionCommit) == Program::NtscJ) { // NTSC-J's 0x1FB6D8: no wrap (0x1FB628), no clamp (0x1FB698)
         b.ch = b.eh;
         b.cw = b.w;
         return;
@@ -945,11 +948,11 @@ void commit(Body& b) {
     b.cw = clamp_yaw(b.w, b.behaviour);
 }
 
-// The hit sound's hold (60 steps from a stronger hit, its level decaying by 0.98 a step otherwise), the strength
-// capped at 1, the rumble (24 steps from a stronger hit, then the car's value cleared). Its calls are given
+// 0x1FB890: the hit sound's hold (60 steps from a stronger hit, its level decaying by 0.98 a step otherwise), the strength
+// capped at 1, the rumble (24 steps from a stronger hit, then the car's value cleared). Its calls of 0x1DFD98 are given
 // kind -1, which does nothing.
 void effects(Body& b) {
-    // PAL's 50 steps a second: 20; 2002 Tokyo-Geneva's one step shorter (Europe: 19, Asia: 23)
+    // PAL's 50 steps a second: 20; 2002 Tokyo-Geneva's one step shorter (Europe 0x1FB2C0: 19, Asia 0x1FB258: 23)
     const s32 rumble_count = (b.behaviour.pal_rate() ? 20 : 24) - (sim::exact::toward_zero(b.behaviour) ? 1 : 0);
     F s = b.strength;
     const bool louder = kZero < s && (b.sound_steps == 0 || b.sound_level < s);
@@ -959,7 +962,7 @@ void effects(Body& b) {
     } else {
         s32 n = b.sound_steps - 1;
         b.sound_steps = n < 0 ? 0 : n;
-        b.sound_level = b.sound_level * sim::exact::folded(b.behaviour, kSoundDecay.bits, 0x3F7AE147); // (Europe's)
+        b.sound_level = b.sound_level * sim::exact::folded(b.behaviour, kSoundDecay.bits, 0x3F7AE147); // (Europe 0x1FB2C0's)
     }
     s = b.strength;
     if (kOne < s) b.strength = s = kOne;
@@ -978,8 +981,8 @@ void effects(Body& b) {
     }
 }
 
-// The heading less whole turns once it is 8 turns or more from zero.
-// (2002 Tokyo-Geneva's pi and 2 pi one unit lower: Europe)
+// 0x1FB628: the heading less whole turns once it is 8 turns or more from zero.
+// (2002 Tokyo-Geneva's pi and 2 pi one unit lower: Europe 0x1FAFC0)
 F wrap_heading(F h, const Behaviour& bh) {
     const F pi = sim::exact::folded(bh, kPi.bits, 0x40490FDA), two_pi = sim::exact::folded(bh, kTwoPi.bits, 0x40C90FDA);
     const F minus_two_pi = sim::exact::folded(bh, kMinusTwoPi.bits, 0xC0C90FDA);

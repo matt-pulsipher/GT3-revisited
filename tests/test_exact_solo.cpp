@@ -350,7 +350,7 @@ TEST(exact_game_free_practice_field) {
     rc.grid_slots = {0, 0, 1};
     std::unique_ptr<race::RaceField> other = race::RaceField::create(*track, db, rc, &err);
     CHECK(other && race::exact_recording(*other)->entries[0].grid_slot == int(opponents.size()));
-    // A second practice on that grid: each car's best lap from its entry's at the start (the restart).
+    // A second practice on that grid: each car's best lap from its entry's at the start (the restart 0x1F20B0).
     pc.grid_slots = grid;
     pc.entry_best = b.entry;
     std::unique_ptr<race::RaceField> again = race::RaceField::create(*track, db, pc, &err);
@@ -405,7 +405,7 @@ TEST(exact_game_free_run_visit) {
 }
 
 // The free run with the Options menu's Ghost off (presentation §A8a, issue 225): a lap that beats the ghost does not become
-// it at once: the ghost's playback stays empty, so the ghost car is never put on the lap's start; race info +
+// it at once (0x17AAD8): the ghost's playback stays empty, so the ghost car is never put on the lap's start; race info +
 // 0x48 stays set for "Update Ghost?" after the run, whose YES gives the visit's next run the best lap's ghost.
 TEST(exact_game_free_run_ghost_option_off) {
     if (!database() || !program()) SKIP("needs GT3R_DISC");
@@ -652,7 +652,7 @@ TEST(exact_game_exit_as_finish) {
 // conductors give the player's car control source 1 (the AI drives; the pad is not read), the races' every car control
 // source 2; the time trial hands only a pad car back, and records off leave the race no laps and no time limit, so it never
 // ends: the car laps on and on, a GT race's field races on after its countdown. With records on (the attract demo's) the
-// same races end 3 s after car 0's last lap (event 1); GT Mode's Preview has them on and sets race info + 0x7C,
+// same races end 3 s after car 0's last lap (event 1); GT Mode's Preview (0x100538) has them on and sets race info + 0x7C,
 // which clears the same laps and time limit: its field races on as well.
 TEST(exact_game_menu_race) {
     if (!database() || !program()) SKIP("needs GT3R_DISC");
@@ -762,7 +762,7 @@ TEST(exact_game_licence_over_the_times) {
                 int(slow.result), o.time, lt.ms[2] / 1000.0);
 }
 
-// A licence lap test's line short of its end, as GT3's licence conductor posts it: a sector with the time since
+// A licence lap test's line short of its end, as GT3's licence conductor posts it (0x1F0ED8): a sector with the time since
 // the run's start (the test never moves its lap start), not a lap; the game shows it as a split time (T1, T2 on A-4's
 // circle, race_license_split_numbers). The last lap's line ends the run with its judged time and is no split.
 TEST(exact_game_licence_lap_splits) {

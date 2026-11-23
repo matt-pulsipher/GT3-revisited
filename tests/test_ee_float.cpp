@@ -289,7 +289,7 @@ TEST(ee_float_platform_hash) {
 }
 
 
-// expf: GT3's and the later builds' (another routine) near the host's exp over the display's range, exact at 0, a
+// expf: GT3's (0x26A270) and the later builds' (another routine) near the host's exp over the display's range, exact at 0, a
 // negative argument the reciprocal of its positive one (GT3's) and the later builds' ends of the scale.
 TEST(ee_math_exp) {
     using gt3r::ee::F;

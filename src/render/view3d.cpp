@@ -339,8 +339,8 @@ std::array<u8, 3> sheen_vertex_bytes(const scene::Material& m, const Vec3& light
     return out;
 }
 
-// presentation §G17. GT3's lens (its race +0x97CC object): a film 1.333 times as wide
-// as high whose diagonal is the focal length, 0.001 m per mm; the focal length f at
+// presentation §G17. GT3's lens (its race +0x97CC object): a film 1.333 (0x34FCF0) times as wide
+// as high whose diagonal is the focal length, 0.001 m per mm (0x34FF90); the focal length f at
 // the view's zoom from the projection's vertical scale; the focus s; one line of its 448-line frame
 // on the film as the unit of blur. The near side: blurs 2^k lines, k from trunc(log2(4 + 1)) (the
 // largest, 4) down to 0, each at d = f^2 s / (f^2 + N r c (s - f)) and drawn from the last one's
@@ -348,7 +348,7 @@ std::array<u8, 3> sheen_vertex_bytes(const scene::Material& m, const Vec3& light
 // sharp picture from the last. The far side: 2^(k/2) lines, k = 0, 1, ... up to 8 lines, level
 // k / 2, at weight 1/2 for even k (a mix of two levels) and 1 for odd k, each from
 // d = f^2 s / (f^2 - N r c (s - f)) on, until a distance passes the far plane or turns negative
-// (past the hyperfocal distance: everything beyond is in focus). With ln 2.
+// (past the hyperfocal distance: everything beyond is in focus). With ln 2 (0x34FF9C, 0x34FFA0).
 std::vector<DofLayer> dof_layers(const DrawOptions::DepthOfField& d, float proj_y, float near) {
     constexpr float kLn2 = 0.6931472f;
     constexpr int kNearSteps = 1, kFarSteps = 2;     // steps per doubling (+0x28, +0x24)
@@ -381,7 +381,7 @@ std::vector<DofLayer> dof_layers(const DrawOptions::DepthOfField& d, float proj_
     return out;
 }
 
-// GT3's pyramid (table, in one 640 x 224 buffer) at its sizes; wider pictures widen it.
+// GT3's pyramid (table 0x330BD0, in one 640 x 224 buffer) at its sizes; wider pictures widen it.
 std::array<int, 2> dof_level_size(int level, float aspect) {
     static constexpr int kSize[5][2] = {{320, 224}, {320, 112}, {160, 112}, {160, 56}, {160, 56}};
     const int k = std::clamp(level, 0, 4);

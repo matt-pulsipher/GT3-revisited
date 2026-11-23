@@ -1,4 +1,4 @@
-// The exact core's ground query (sim::exact::CourseGround, the program's) against a plain copy of the program's
+// The exact core's ground query (sim::exact::CourseGround, the program's 0x18FB58) against a plain copy of the program's
 // walk: every triangle of the point's cell computed in full, in the program's operations. Synthetic roads with slivers,
 // overlapping and degenerate triangles, query points on and next to edges and vertices: every record field bit for bit (the
 // query leaves out work whose outcome is certain).

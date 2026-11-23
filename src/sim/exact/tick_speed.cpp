@@ -11,22 +11,22 @@ namespace {
 
 const F kZero = F::raw(0), kHalf = F::raw(0x3F000000), kOne = F::raw(0x3F800000);
 
-// The odometer, the carry and the distance total from the signed forward speed (car +0x16A8 at this point).
+// 0x1EA908: the odometer, the carry and the distance total from the signed forward speed (car +0x16A8 at this point).
 void odometer(Car& c) {
     F d = c.speed_abs;
     if (d < kZero) return;
     d = d * c.dt;
     c.odo_carry = odometer_add(c.odometer, c.odo_carry + d);
     F t = c.dist_total + d;
-    const F wrap = F::raw(0x4AF42400); // 8000 km
+    const F wrap = F::raw(0x4AF42400); // 0x35056C: 8000 km
     c.dist_total = t;
     if (wrap <= t) c.dist_total = t - wrap;
 }
 
-// The speedometer follows |speed| by at most 111.111 m/s per second.
+// 0x1EA870: the speedometer follows |speed| by at most 111.111 m/s per second.
 void speedometer(Car& c) {
     const F s = c.speed_abs, v = c.speedo;
-    const F step = c.dt * folded(c.behaviour, 0x42DE38E4, 0x42DE38E2); // (2002 Tokyo-Geneva's: Europe)
+    const F step = c.dt * folded(c.behaviour, 0x42DE38E4, 0x42DE38E2); // 0x350568 (2002 Tokyo-Geneva's: Europe 0x1E1BD8)
     if (v < s) {
         c.speedo = v + step;
         if (s < c.speedo) c.speedo = s;
@@ -36,7 +36,7 @@ void speedometer(Car& c) {
     }
 }
 
-// Grounded, unbraked, undriven wheels roll with the ground; the axles' mean spin [physics §10.2].
+// 0x1EA720: grounded, unbraked, undriven wheels roll with the ground; the axles' mean spin [physics §10.2].
 void free_wheels(Car& c) {
     bool free[2] = {};
     for (size_t i = 0; i < 4; ++i) {
@@ -67,7 +67,7 @@ void hub_velocities(Car& c) {
     }
     c.lat_speed = l;
     c.speed = u;
-    // Hub i's velocity from the yaw rate and its lever (half track across, axle distance along).
+    // 0x1EA5F8: hub i's velocity from the yaw rate and its lever (half track across, axle distance along).
     const F r = c.yaw_rate;
     const F xf = -c.p.half_track[0] * r, xr = -c.p.half_track[1] * r;
     const F yf = -c.p.dist_front * r, yr = c.p.dist_rear * r;
@@ -95,13 +95,13 @@ void speed_bookkeeping(Car& c, const Condition& cond) {
     c.speed_abs = c.speed;
     odometer(c);
     if (c.speed_abs < kZero) c.speed_abs = -c.speed_abs;
-    // The distance of the step. (Rule::EngineCondition: the later builds' routine returns 0, Concept 2001 Tokyo
-    // the wear and oil counters do not advance in a race; their limits below still apply.)
+    // 0x1DAD18: the distance of the step. (Rule::EngineCondition: the later builds' routine returns 0, Concept 2001 Tokyo
+    // 0x1D5918: the wear and oil counters do not advance in a race; their limits below still apply.)
     const F d = gt3_program(c.behaviour.rule(Rule::EngineCondition)) ? c.speed_abs * c.dt : kZero;
-    // Engine wear E += d, at most its limit e3.
+    // 0x1D9C80: engine wear E += d, at most its limit e3.
     c.engine_wear = c.engine_wear + d;
     if (cond.e3 < c.engine_wear) c.engine_wear = cond.e3;
-    // Oil O += d; a negative O that reaches 0 jumps to its limit omax; at most omax.
+    // 0x1D9D78: oil O += d; a negative O that reaches 0 jumps to its limit omax; at most omax.
     const F o = c.oil;
     c.oil = o + d;
     if (o < kZero && kZero <= c.oil) c.oil = -(-cond.omax);
@@ -113,13 +113,13 @@ void speed_bookkeeping(Car& c, const Condition& cond) {
 
 void wheel_spin(Car& c) {
     const F dt = c.dt;
-    // (2002 Tokyo-Geneva's 2 pi a unit lower: Europe)
+    // (2002 Tokyo-Geneva's 2 pi a unit lower: Europe 0x1E2260)
     const F kTwoPi = folded(c.behaviour, 0x40C90FDB, 0x40C90FDA), kMinusTwoPi = folded(c.behaviour, 0xC0C90FDB, 0xC0C90FDA);
     const F h = c.heading;
-    if (kTwoPi <= h) {
+    if (kTwoPi <= h) { // 0x350570
         c.heading = h - kTwoPi;
         c.prev.heading = c.prev.heading - kTwoPi;
-    } else if (h <= kMinusTwoPi) {
+    } else if (h <= kMinusTwoPi) { // 0x350574
         c.heading = h + kTwoPi;
         c.prev.heading = c.prev.heading + kTwoPi;
     }
@@ -129,11 +129,11 @@ void wheel_spin(Car& c) {
         d = d * dt;
         if (c.race_hold != 0) d = kZero;
         F a = w.spin + d;
-        while (kTwoPi <= a) {
+        while (kTwoPi <= a) { // 0x350578
             a = a - kTwoPi;
             c.prev.spin[i] = c.prev.spin[i] - kTwoPi;
         }
-        while (a <= kMinusTwoPi) {
+        while (a <= kMinusTwoPi) { // 0x35057C
             a = a + kTwoPi;
             c.prev.spin[i] = c.prev.spin[i] + kTwoPi;
         }
@@ -155,11 +155,11 @@ void wheel_spin(Car& c) {
 }
 
 void view_follow(Car& c) {
-    const F step = pal_rate(c) ? F::raw(0x3CA3D70A) : folded(c.behaviour, 0x3C888889, 0x3C888888); // 1/60 (PAL 1/50; Asia's)
-    const F k10 = F::raw(0x41200000);
+    const F step = pal_rate(c) ? F::raw(0x3CA3D70A) : folded(c.behaviour, 0x3C888889, 0x3C888888); // 0x35030C: 1/60 (PAL 1/50; Asia 0x1EE010's)
+    const F k10 = F::raw(0x41200000);  // 0x352960
     // Heading: acceleration 30 (diff) - 10 rate, integrated with the mean of this and the last acceleration.
     F a = angle_diff(c.heading, c.lag_heading, c.behaviour.rule(Rule::AngleWrap));
-    a = a * F::raw(0x41F00000); // 30
+    a = a * F::raw(0x41F00000); // 0x352958: 30
     a = a - c.lag_heading_rate * k10;
     F m = c.lag_heading_acc + a;
     c.lag_heading_acc = a;

@@ -30,7 +30,7 @@ struct RaceChange {
         TimeScale = 8,      // ExactRace::set_time_scale(F::raw(a))
         FlowByte = 9,       // ExactRace::set_flow_byte(a)
         Timer = 10,         // ExactRace::set_timer(a)
-        Hit = 11,           // the conductor's hit rule for car's hit of kind a, impulse F::raw(b) (hit_course_out): the
+        Hit = 11,           // the conductor's virtual 41 for car's hit of kind a, impulse F::raw(b) (hit_course_out): the
                             // course's rigid bodies (the game's pylons) touched by the car
     };
     u32 frame = 0;

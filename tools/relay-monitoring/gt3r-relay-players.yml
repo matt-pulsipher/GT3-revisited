@@ -1,0 +1,8 @@
+# Installed as /etc/newrelic-infra/logging.d/gt3r-relay-players.yml.
+# External Fluent Bit config: the supported systemd: source cannot select a
+# journal namespace. See gt3r-relay-players.conf.
+logs:
+  - name: gt3r-relay-players
+    fluentbit:
+      config_file: /usr/local/lib/gt3r-monitoring/gt3r-relay-players.conf
+      parsers_file: /usr/local/lib/gt3r-monitoring/gt3r-relay-players.parsers.conf

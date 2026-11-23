@@ -11,9 +11,9 @@ namespace gt3r::sim::exact {
 namespace {
 
 const F kZero = F::raw(0), kHalf = F::raw(0x3F000000);
-const F kTurnA = F::raw(0x40C90FDB), kTurnB = F::raw(0x40C90FDB); // 2 pi
+const F kTurnA = F::raw(0x40C90FDB), kTurnB = F::raw(0x40C90FDB); // $gp 0x350694 / 0x350698: 2 pi
 
-// The race distance wrapped once into [0, lap).
+// The race distance wrapped once into [0, lap) (0x1FA018 / 0x1FA368).
 F wrap_lap(F s, F lap) {
     if (s < kZero) return s + lap;
     if (lap <= s) return s - lap;
@@ -96,7 +96,7 @@ bool AiCourse::evaluate(int line, int hint, F s, F& x, F& y, F& h) const {
         F a0 = atan2(behaviour, cx - a.x, a.y - cy);
         F a1 = atan2(behaviour, cx - b.x, b.y - cy);
         if (kZero < r) {
-            if (a1 < a0) a1 = a1 + folded(behaviour, kTurnA.bits, 0x40C90FDA); // (2002 Tokyo-Geneva's: Europe)
+            if (a1 < a0) a1 = a1 + folded(behaviour, kTurnA.bits, 0x40C90FDA); // (2002 Tokyo-Geneva's: Europe 0x1F99E8)
         } else {
             r = -r;
             if (a0 < a1) a0 = a0 + folded(behaviour, kTurnB.bits, 0x40C90FDA);
@@ -121,7 +121,7 @@ F ai_line_heading(const AiCourse& k, int line, int hint, F s) {
         s = s + kHalf;
         at(s, x1, y1, h1);
         dx = x1 - x0, dy = y1 - y0;
-        if (F::raw(0x3E4CCCCC) <= ee::sqrt((dx * dx) + (dy * dy))) break; // 0.2 m (Europe)
+        if (F::raw(0x3E4CCCCC) <= ee::sqrt((dx * dx) + (dy * dy))) break; // 0.2 m (Europe 0x3344FC)
     }
     return atan2(k.behaviour, -dx, dy);
 }

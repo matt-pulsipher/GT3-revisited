@@ -74,8 +74,8 @@ struct Placement {
     float x_over_d = 0, z_over_d = 1; // for the surround cue
 };
 Placement place_voice(float x, float z, float vol);
-// The se.inf effect a later build's special car plays for a new mood (VehicleState::Special::mood_new; the
-// switch on Tokyo-Geneva Europe, the same in every build, into the program's effect table): nullptr for 0.
+// The se.inf effect a later build's special car plays for a new mood (VehicleState::Special::mood_new; 0x1A5860's
+// switch on Tokyo-Geneva Europe, the same in every build, into the program's effect table 0x2BC460): nullptr for 0.
 const char* mood_effect(int mood);
 
 // The distance gain of a car's engine units and loops at (x, z) in the listener's frame: min(1, 32/d),

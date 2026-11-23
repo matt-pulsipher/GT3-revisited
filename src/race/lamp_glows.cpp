@@ -172,12 +172,12 @@ void Flare::add(render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRe
 }
 
 const Flare::Mesh& Flare::disc_mesh() {
-    // The flare system's own mesh, built at start-up: rim j = 2k + i (i = 0..2) of strip
+    // The flare system's own mesh, built at start-up (fn_00246710, at 0x4A56A0): rim j = 2k + i (i = 0..2) of strip
     // k at the angle (4k + 2i) x pi / 14 in single precision (j = 14: 0), cos / sin in double;
     // the strip table 7, 6 x 7 (seven strips of four vertices).
     static const Mesh mesh = [] {
         Mesh m;
-        constexpr float kPi = 3.14159274f; // f32 pi
+        constexpr float kPi = 3.14159274f; // f32 pi (0x350A5C)
         for (int k = 0; k < 7; ++k) {
             const int first = int(m.verts.size());
             for (int i = 0; i < 3; ++i) {

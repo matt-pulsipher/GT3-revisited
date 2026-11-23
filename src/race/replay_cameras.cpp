@@ -219,7 +219,7 @@ void ReplayDirector::rearm(int k) {
     if (onboard_) ++serial_;
     onboard_ = on_partner_ = false;
     hold_on_ = false;
-    aim_restart_ = true, yaw_seeded_ = false; // (the record set again: the designer camera)
+    aim_restart_ = true, yaw_seeded_ = false; // (the record set again: DesignerCamera::vf25)
     shot_time_ = armed_time_ = 0;
 }
 
@@ -322,7 +322,7 @@ ReplayDirector::Shot ReplayDirector::evaluate(const GtrcRecord& r, float D, cons
         const float wide = pair_angle(shot.eye, *pair, angle);
         if (wide > angle) want = 1.0f / std::tan(wide * 0.5f);
     }
-    // The record's limits as the game applies them (the designer camera, presentation §G4e):
+    // The record's limits as the game applies them (DesignerCamera::vf13, presentation §G4e):
     // at most max, then at least min, always. min = max fixes the zoom (Grand Valley's start
     // shot: zoom(0) is 0 there, a telephoto from 22.9); min > max gives min.
     want = std::max(std::min(want, r.zoom_max), r.zoom_min);
@@ -366,7 +366,7 @@ ReplayDirector::Shot ReplayDirector::update(float s, int lap, const render::Vec3
                                             const Pair* pair) {
     lap = seam_lap(s, lap); // (issue 402: a frame's flicker as the followed car crossed the line)
     Shot shot = update_shot(s, lap, car, dt, aspect, pair);
-    aim_.remember(car); // the target state's aim point, after the cameras
+    aim_.remember(car); // the target state's aim point, after the cameras (fn_001FF380)
     return shot;
 }
 

@@ -66,7 +66,7 @@ F band_scale(const RubberBand& k, const Car& ref, Car& car, F lap, F scale, bool
         if (behind) s = (k.fast == kZero ? s : speed_up(k, car, laps, gap)) * scale;
         else s = (k.slow == kZero ? s : slow_down(k, -laps, -gap)) * scale;
     }
-    // PAL's time-scale hook caps every mode's scale at 1.3; its i.LINK battle adds no cap of its own.
+    // PAL's virtual 4 caps every mode's scale at 1.3 (0x351F18); its i.LINK battle (0x1F13F0) adds no cap of its own.
     if (pal_rules(car, Rule::RubberBand) && F::raw(0x3FA66666) < s) s = F::raw(0x3FA66666);
     car.time_scale = s * k.global;
     if (cap && !pal_rules(car, Rule::BattleCap)) {

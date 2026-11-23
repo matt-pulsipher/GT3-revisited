@@ -1,7 +1,7 @@
 #pragma once
 
 // A course's road block (GTRW) as the race's initialisation queries it, in EE arithmetic on the course's own floats: the
-// single-point ground query (the course's), the race progress query, the lap length,
+// single-point ground query 0x18FA80 (the course's 0x227D78), the race progress query 0x18FA20 (0x227AA0), the lap length,
 // the start grid and the sector markers. Built from our parse of the course file (course::Road). The vehicle tick's batched
 // ground query is CourseGround (course_ground.h).
 
@@ -18,20 +18,20 @@ class CourseQuery {
 public:
     explicit CourseQuery(const course::Road& road);
 
-    // The highest road triangle under record g's point (x, z) that contains it (edges included), among the
+    // 0x18FA80: the highest road triangle under record g's point (x, z) that contains it (edges included), among the
     // segment g.seg names, its neighbours, or every segment when it is < 0: the record's segment, height, interpolated
     // scalars (clamped to the corners' range), unit normal and plane, raw scalars and the triangle's bytes; height ties go to
     // the later group of the grid cell. g.h is left as it is. On a miss: miss = 1, height = g.h, scalars 1, bytes 0, segment
     // -1 (kept when the point is off the grid); the program then copies its own uninitialised stack words into the normal,
     // plane and raw scalars, which here keep their values. `material`: the triangle's whole material word (triangle +0x08, as
-    // the program reads it; the record keeps its low byte), set on a hit.
+    // 0x18FC18 reads it; the record keeps its low byte), set on a hit.
     void ground(Ground& g, u16* material = nullptr) const;
-    // The race progress (metres along the lap) of course point (x, z) from the checkpoints of segment `seg`, of its
+    // 0x18FA20: the race progress (metres along the lap) of course point (x, z) from the checkpoints of segment `seg`, of its
     // neighbours, or of every segment when it is not a segment number; 0 when no checkpoint pair brackets the point.
     F progress(F x, F h, F z, s32 seg) const;
-    // The lap length (GTRW +0x18).
+    // 0x18FA10: the lap length (GTRW +0x18).
     F lap_length() const { return length_; }
-    // Start grid slot i (x, y, z, yaw).
+    // 0x18F9F0 / 0x18F9C8: start grid slot i (x, y, z, yaw).
     struct Slot {
         F x, y, z, yaw;
     };
@@ -40,11 +40,11 @@ public:
     // table too (what follows it there), with the road block at address `road` in memory (the words the course loader makes
     // pointers hold their own value plus `road` less the file's base word; with `road` at that base, as the file holds them).
     Slot slot(int i, u32 road) const;
-    // The conductor's sector count (at most 4): the sector count; the sector start: sector i's start
+    // The conductor's virtual 33 (0x228AB0 + 1, at most 4): the sector count; virtual 34 (0x228B00): sector i's start
     // distance, -1 past the last, 0 when there is no such marker.
     int sectors() const;
     F sector_start(int i) const;
-    // With group 1 (the race info's course): the data logger's marks, their count
+    // 0x228AB0 / 0x228B00 with group 1 (0x17A528 / 0x17A550, the race info's course): the data logger's marks, their count
     // and mark k's distance (0 when there is no such marker).
     int logger_marks() const;
     F logger_mark(int k) const;

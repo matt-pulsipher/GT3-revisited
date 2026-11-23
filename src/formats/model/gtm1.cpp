@@ -196,7 +196,7 @@ Gtm1 Gtm1::parse(ByteSpan data) {
         if (off == 0) return kNoTexset; // unused slot (e.g. wheel/pd0004)
         auto it = std::find(g.texsets.begin(), g.texsets.end(), off);
         if (it != g.texsets.end()) return u32(it - g.texsets.begin());
-        // No magic check: the game sets up whatever the offset holds, and a
+        // No magic check: the game sets up whatever the offset holds (0x224600 -> 0x248DA8), and a
         // zeroed header (courses/EU/L_apricot1 slot 23) is a set without textures.
         if (off >= data.size()) throw FormatError("GTM1 texture set out of range");
         g.texsets.push_back(off);
@@ -1093,7 +1093,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             ByteSpan sub = g.data.subspan(g.texsets[texset]);
             size_t before = model.textures.size();
             ClutTextures clut;
-            // A set that is not a Tex1 has no textures. The game then binds none (the program skips TEX0
+            // A set that is not a Tex1 has no textures. The game then binds none (0x24CF40 skips TEX0
             // without a texture table) and the GS keeps an earlier draw's texture.
             const std::string prefix = "set" + std::to_string(texset) + "_";
             int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint, opt.livery);

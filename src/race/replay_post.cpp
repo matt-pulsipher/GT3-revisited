@@ -11,8 +11,8 @@ namespace gt3r::race {
 
 namespace {
 
-// The lens shape: 0.58 (half-width of the top / bottom edges, x S), 0.5
-// (half-height, an immediate), 0.45 (their texels' height), 1.6 (the side
+// The lens shape (fn_00245F30): 0x350A4C 0.58 (half-width of the top / bottom edges, x S), 0.5
+// (half-height, an immediate), 0x350A50 0.45 (their texels' height), 0x350A54 1.6 (the side
 // texels: 1.6 x 0.58 S = 0.928 S).
 constexpr float kEdge = 0.58f, kHalfHeight = 0.5f, kTexelHeight = 0.45f, kSideTexel = 1.6f;
 // The frame the original draws the lenses in: 640 x 448, the display buffers 640 x 224 (one
@@ -50,7 +50,7 @@ void HeatHaze::setup(const SunParams& p) {
     particles_.clear();
     if (!p.haze || p.haze_count == 0) return;
     const u32 n = std::min(p.haze_count, kMaxLenses);
-    // The EE's arithmetic for the draws ((r - 1) (hi - lo) + lo, r in [1, 2) from the
+    // The EE's arithmetic for the draws (fn_00245DC8: (r - 1) (hi - lo) + lo, r in [1, 2) from the
     // generator's low 23 bits), so the field starts where the original's does.
     u32 seed = kSeed;
     auto draw = [&](ee::F lo, ee::F hi) {
@@ -58,7 +58,7 @@ void HeatHaze::setup(const SunParams& p) {
         const ee::F r = ee::F::raw(0x3F800000u | (seed & 0x7FFFFFu));
         return (r - ee::F(1.0f)) * (hi - lo) + lo;
     };
-    // For every particle, the last first: x, y, z, vx, vz drawn; vy the constant.
+    // fn_00245E58 for every particle, the last first: x, y, z, vx, vz drawn; vy the constant.
     auto fill = [&](ee::F box, ee::F cap, ee::F vx, ee::F vy, ee::F vz) {
         const ee::F half = ee::F(0.5f);
         for (u32 i = n; i-- > 0;) {
@@ -72,7 +72,7 @@ void HeatHaze::setup(const SunParams& p) {
         }
     };
     particles_.resize(n);
-    // The defaults (box 32, cap 8, drift 0.5 / 0.01 / 0.5), then the program
+    // fn_002461D8's defaults (box 32, cap 8, drift 0.5 / 0.01 [0x350A58] / 0.5), then fn_00246290
     // with Env0 +0xB8 / +0xBC / +0xC4 / +0xC8 / +0xC4.
     fill(ee::F(32.0f), ee::F(8.0f), ee::F(0.5f), ee::F(0.01f), ee::F(0.5f));
     fill(ee::F(p.haze_box), ee::F(p.haze_cap), ee::F(p.haze_drift_xz), ee::F(p.haze_drift_y), ee::F(p.haze_drift_xz));
@@ -80,7 +80,7 @@ void HeatHaze::setup(const SunParams& p) {
 }
 
 void HeatHaze::step() {
-    // p += v per component (in the EE's float rounding).
+    // fn_00246320: p += v per component (in the EE's float rounding).
     for (Particle& q : particles_) {
         q.x = (ee::F(q.x) + ee::F(q.vx)).host();
         q.y = (ee::F(q.y) + ee::F(q.vy)).host();
@@ -100,8 +100,8 @@ void HeatHaze::lenses(const render::Mat4& view, const render::Mat4& proj, std::v
     // The centre: (0, 0, -ahead) through the inverted view rotation (translation removed).
     const render::Vec3 c = render::Vec3{-view.at(2, 0), -view.at(2, 1), -view.at(2, 2)} * ahead_;
     // The lenses' matrix: the view's rotation (its translation zeroed) then the projection. The
-    // original reads m from the projection alone, then the program rebuilds the draw composite
-    // (the modelview, dirty since its translation was zeroed, times the projection)
+    // original reads m from the projection alone, then fn_002486B8 rebuilds the draw composite
+    // (fn_0024E670: the modelview, dirty since its translation was zeroed, times the projection)
     // before projecting the lenses, so the box is always ahead of the camera, whatever its heading.
     render::Mat4 rot = view;
     rot.at(0, 3) = rot.at(1, 3) = rot.at(2, 3) = 0;
@@ -152,7 +152,7 @@ void add_haze_lenses(render::ScreenBatch& b, const std::vector<HazeLens>& lenses
 }
 
 std::array<VignetteVertex, 64> vignette_ring(const SunParams& p) {
-    // RGB x 255, A x 128, + 0.5, clamped to [0, 255], truncated.
+    // fn_0025A090: RGB x 255, A x 128, + 0.5, clamped to [0, 255], truncated.
     auto bytes = [](const std::array<float, 4>& c, u8 out[4]) {
         for (size_t i = 0; i < 4; ++i) {
             const float k = i < 3 ? 255.0f : 128.0f;
@@ -160,7 +160,7 @@ std::array<VignetteVertex, 64> vignette_ring(const SunParams& p) {
         }
     };
     std::array<VignetteVertex, 64> v{};
-    constexpr float kTwoPi = 6.28318548f;
+    constexpr float kTwoPi = 6.28318548f; // 0x34FFA4
     for (int i = 0; i < 32; ++i) {
         const float a = (i == 31 ? 0.0f : float(i) * kTwoPi) / 31.0f;
         const float s = std::sin(a), co = std::cos(a);

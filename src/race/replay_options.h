@@ -1,6 +1,6 @@
 #pragma once
 
-// GT3's REPLAY OPTIONS (replay option, menu/<LANG>/replay_panel1.pmb page replay_option,
+// GT3's REPLAY OPTIONS (ReplayOption, menu/<LANG>/replay_panel1.pmb page replay_option,
 // replay_panel2.pmb replay_option_2p for 2P replays), opened from the replay pause's
 // REPLAY OPTIONS button.
 //

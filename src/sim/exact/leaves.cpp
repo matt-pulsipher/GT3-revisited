@@ -1,5 +1,5 @@
-// The later builds' leaves; see leaves.h. The addresses are 2002 Tokyo-Geneva Europe's (Concept 2001 Tokyo: the maker,
-// the init, the update, the shapes from the manager's constructor); the code
+// The later builds' leaves; see leaves.h. The addresses are 2002 Tokyo-Geneva Europe's (Concept 2001 Tokyo: the maker
+// 0x19C4E8, the init 0x19D1B8, the update 0x19D290, the shapes 0x19CE98 from the manager's constructor 0x19C240); the code
 // is the same in every later build, its constants the build's (2002 Tokyo-Geneva's folded toward zero).
 
 #include "sim/exact/leaves.h"
@@ -14,7 +14,7 @@ namespace {
 
 const F kZero = F::raw(0), kHalf = F::raw(0x3F000000), kOne = F::raw(0x3F800000), kTwo = F::raw(0x40000000);
 
-// Europe: shape k from the constructor's mass m and sides w, h.
+// Europe 0x19CF10: shape k from the constructor's mass m and sides w, h.
 LeafShape shape(const Behaviour& b, F m, F w, F h) {
     LeafShape s;
     s.mass = m, s.w = w, s.h = h;
@@ -27,7 +27,7 @@ LeafShape shape(const Behaviour& b, F m, F w, F h) {
     s.diag = ee::sqrt(d2);
     const F m2 = F::raw(0xC0000000);                                 // -2
     const F wm = w * m2;                                             // -2 w
-    const F m12 = m * folded(b, 0x3DAAAAAB, 0x3DAAAAAA);             // (Europe) 1 / 12
+    const F m12 = m * folded(b, 0x3DAAAAAB, 0x3DAAAAAA);             // (Europe 0x333C44) 1 / 12
     F sum = w + h;
     sum = sum * m2;
     F a = wm * w;
@@ -36,7 +36,7 @@ LeafShape shape(const Behaviour& b, F m, F w, F h) {
     a = a * w;
     F c = wh * h;
     s.lift = wh;
-    s.drag = sum * F::raw(0x3BA3D70A);                               // 0.005
+    s.drag = sum * F::raw(0x3BA3D70A);                               // (0x333C4C) 0.005
     ix = ix * h;
     a = a * h;
     c = c * h;
@@ -44,7 +44,7 @@ LeafShape shape(const Behaviour& b, F m, F w, F h) {
     s.ix = ix;
     iz = iz * w;
     s.iz = iz;
-    const F k12 = F::raw(0x41400000), k015 = F::raw(0x3C75C28F); // 12, 0.015
+    const F k12 = F::raw(0x41400000), k015 = F::raw(0x3C75C28F); // 12, (0x333C48) 0.015
     s.damp_z = (a / k12) * k015;
     s.damp_x = (c / k12) * k015;
     return s;
@@ -54,25 +54,25 @@ LeafShape shape(const Behaviour& b, F m, F w, F h) {
 
 LeafRules leaf_rules(const Behaviour& b) {
     LeafRules r;
-    // The manager's constructor (Europe): 1 g; shapes 1 .. 3 squares of 0.12, 0.13 and 0.14 m, 4 .. 8 of 0.1 m.
-    const F m = folded(b, 0x3A83126F, 0x3A83126E);                   // 0.001
-    const F tenth = folded(b, 0x3DCCCCCD, 0x3DCCCCCC);               // 0.1
-    const F sides[3] = {F::raw(0x3DF5C28F), F::raw(0x3E051EB8), folded(b, 0x3E0F5C29, 0x3E0F5C28)}; // 0.12 .. 0.14
+    // The manager's constructor (Europe 0x19C2D8): 1 g; shapes 1 .. 3 squares of 0.12, 0.13 and 0.14 m, 4 .. 8 of 0.1 m.
+    const F m = folded(b, 0x3A83126F, 0x3A83126E);                   // (0x333BC4) 0.001
+    const F tenth = folded(b, 0x3DCCCCCD, 0x3DCCCCCC);               // (0x333BC8) 0.1
+    const F sides[3] = {F::raw(0x3DF5C28F), F::raw(0x3E051EB8), folded(b, 0x3E0F5C29, 0x3E0F5C28)}; // (0x333BCC ..) 0.12 .. 0.14
     for (size_t k = 0; k < 8; ++k) {
         const F s = k < 3 ? sides[k] : tenth;
         r.shapes[k] = shape(b, m, s, s);
     }
-    r.carry = folded(b, 0x3F59999A, 0x3F599999);                     // 0.85
-    r.scatter = folded(b, 0x3E4CCCCD, 0x3E4CCCCC);                   // 0.2
-    r.yaw_spread = folded(b, 0x3F060A8B, 0x3F060A89);                // 30 degrees
-    r.yaw_offset = folded(b, 0xBE860A8B, 0xBE860A89);                // -15 degrees
-    r.pitch_spread = F::raw(0x3E32B8B0);                             // 10 degrees
-    r.pitch_offset = folded(b, 0xBFBDE444, 0xBFBDE442);              // -85 degrees
-    r.two_pi = folded(b, 0x40C90FDB, 0x40C90FDA);
-    r.gravity = folded(b, 0x411CF5C3, 0x411CF5C2);                   // 9.81
-    r.spin_keep = folded(b, 0x3F7FBE77, 0x3F7FBE76);                 // 0.999
-    r.light_base = folded(b, 0x3E99999A, 0x3E999999);                // 0.3
-    r.light_gain = F::raw(0x3F333333);                               // 0.7
+    r.carry = folded(b, 0x3F59999A, 0x3F599999);                     // (0x333BDC) 0.85
+    r.scatter = folded(b, 0x3E4CCCCD, 0x3E4CCCCC);                   // (0x333BE0) 0.2
+    r.yaw_spread = folded(b, 0x3F060A8B, 0x3F060A89);                // (0x333BE4) 30 degrees
+    r.yaw_offset = folded(b, 0xBE860A8B, 0xBE860A89);                // (0x333BE8) -15 degrees
+    r.pitch_spread = F::raw(0x3E32B8B0);                             // (0x333BEC) 10 degrees
+    r.pitch_offset = folded(b, 0xBFBDE444, 0xBFBDE442);              // (0x333BF0) -85 degrees
+    r.two_pi = folded(b, 0x40C90FDB, 0x40C90FDA);                    // (0x333C50 / 0x333C58 / 0x333C5C)
+    r.gravity = folded(b, 0x411CF5C3, 0x411CF5C2);                   // (0x333C54) 9.81
+    r.spin_keep = folded(b, 0x3F7FBE77, 0x3F7FBE76);                 // (0x333C60) 0.999
+    r.light_base = folded(b, 0x3E99999A, 0x3E999999);                // (0x333C64) 0.3
+    r.light_gain = F::raw(0x3F333333);                               // (0x333C68) 0.7
     return r;
 }
 
@@ -103,7 +103,7 @@ std::array<Vec3, 3> leaf_matrix(const Vec3& angle) {
 
 bool leaf_amount(const TyreEffect& q, Vu0Random& rng, F& amount) {
     F r = vu0_random(rng);
-    r = r * F::raw(0x3EE66666);           // 0.45
+    r = r * F::raw(0x3EE66666);           // (0x333BD8) 0.45
     const F slip = q.rim_speed - q.hub_vx; // request +0x38 - +0x34
     r = r + kHalf;
     amount = slip * r;
@@ -160,7 +160,7 @@ void leaf_throw(const TyreEffect& q, const Vec3& vel, F amount, const LeafRules&
     r = vu0_random(rng);
     s32 k = ee::to_int(r * F::raw(0x41000000));
     if (!(k < 8)) k = 7;
-    // The init (Europe): the record, the plane lowered by the shape's diagonal, three random angles.
+    // The init (Europe 0x19D230): the record, the plane lowered by the shape's diagonal, three random angles.
     const LeafShape& s = rr.shapes[size_t(k)];
     p.pos = at, p.vel = v, p.spin = w;
     p.normal = q.normal;
@@ -181,8 +181,8 @@ bool leaf_step(Leaf& p, const LeafShape& s, const LeafRules& rr, F dt) {
     const std::array<Vec3, 3> m = leaf_matrix(p.angle);
     const F ix = s.ix, iy = s.iy, iz = s.iz;
     const F wx = p.spin.x, wy = p.spin.y, wz = p.spin.z;
-    // The velocity in the leaf's frame, the air's force there (along the plane, along the normal), back to the
-    // course's frame; gravity.
+    // The velocity in the leaf's frame (0x19D1D8), the air's force there (along the plane, along the normal), back to the
+    // course's frame (0x19D180); gravity.
     auto row = [&](const Vec3& r, const Vec3& v) {
         F x = v.x * r.x;
         const F y = v.y * r.y, z = v.z * r.z;

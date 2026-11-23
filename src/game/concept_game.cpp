@@ -117,7 +117,7 @@ const int kConceptCustomSet[kConceptSetParts] = {3, 51, 22, 56, 67};
 
 namespace {
 
-// Slider position of each tire stage (indexed by the tire goods less the first: stages 0 .. 9, then dirt).
+// Slider position of each tire stage (0x324560, indexed by the tire goods less the first: stages 0 .. 9, then dirt).
 constexpr int kTirePosition[11] = {1, -1, -1, 2, -1, -1, -1, 0, -1, -1, -1};
 
 const data::CarVariant* arcade_entry(const data::CarDatabase& db, const std::string& entry) {
@@ -154,8 +154,8 @@ std::optional<GarageCar> concept_new_car(const GtMode& gt, const std::string& en
     const data::CarDatabase& db = gt.db();
     const data::CarVariant* v = arcade_entry(db, entry);
     if (!v || !db.car(v->car)) return std::nullopt;
-    // The entry's car as an arcade race builds it (the row's parts with their own settings, then
-    // the row's own tune over them).
+    // The entry's car as an arcade race builds it (0x233CF0 -> 0x233E58: the row's parts with their own settings, then
+    // the row's own tune over them, 0x2361D8).
     GarageCar g;
     g.car = v->car;
     g.origin = v->label;
@@ -163,8 +163,8 @@ std::optional<GarageCar> concept_new_car(const GtMode& gt, const std::string& en
     g.parts[26] = 0;
     g.settings = settings_of(sim::exact::variant_equipment(db, *v));
     g.ref_final = g.settings.final_drive;
-    // It owns the goods of the parts it wears (the garage record's set-up) and of every part the
-    // database has for it. A garage car of this game has no running-in to do.
+    // It owns the goods of the parts it wears (the garage record's set-up, 0x2395C0 -> 0x239620) and of every part the
+    // database has for it (0x238F70). A garage car of this game has no running-in to do.
     data::Car fitted = *db.car(v->car);
     fitted.parts = g.parts;
     g.owned = gt.fitted_ownership(fitted);
@@ -218,13 +218,13 @@ bool concept_car_normal(const GtMode& gt, const GarageCar& c) {
 
 namespace {
 
-// The settings a car's parts start with, as the parts' setters leave them (each value put into
+// The settings a car's parts start with, as the parts' setters leave them (0x233F28 .. 0x2344D0: each value put into
 // its record's range; this game's records hold starting values outside their ranges).
 sim::CarSettings own_settings(const GtMode& gt, const GarageCar& c) {
     return settings_of(sim::exact::stock_equipment(gt.db(), c.car, c.parts));
 }
 
-// Fitting a goods: the part, and its settings back to its own.
+// Fitting a goods (0x237FA8): the part, and its settings back to its own.
 void fit(const GtMode& gt, GarageCar& c, int goods) {
     if (!gt.fit_goods(c, goods)) return;
     const int table = goods_info(goods).table;
@@ -255,7 +255,7 @@ bool concept_cvt(const GtMode& gt, const GarageCar& c) {
 }
 
 int concept_tire_position(const GtMode& gt, const GarageCar& c, bool rear) {
-    // The fitted tire's goods: the first tire goods without a record.
+    // The fitted tire's goods (0x237150 / 0x237190): the first tire goods without a record.
     const ByteSpan* r = gt.db().record(rear ? data::TableId::RearTire : data::TableId::FrontTire, c.parts[size_t(tire_slot(rear))]);
     if (!r || r->size() <= 0x10) return kTirePosition[0];
     const int stage = (*r)[0x10];
@@ -264,7 +264,7 @@ int concept_tire_position(const GtMode& gt, const GarageCar& c, bool rear) {
 }
 
 bool concept_set_tire(const GtMode& gt, GarageCar& c, bool rear, int position) {
-    // The first stage of that position, fitted on this axle alone.
+    // 0x239148 / 0x2391A8: the first stage of that position, fitted on this axle alone.
     for (int index = 0; index < 11; ++index) {
         if (kTirePosition[index] != position) continue;
         const std::optional<PartOffer> o = find_part(gt.db(), c.car, (rear ? 67 : 56) + index);
@@ -300,7 +300,7 @@ std::vector<std::string> concept_attract_steps(const RegionData& release) {
     const std::string opening = "stream/opening.pss";
     if (gcf == "gameconf/concept_eu.gcf" || gcf == "gameconf/concept_tw.gcf")
         return {"", "stream/tvcm_GTCJP1.pss", "", "stream/tvcm_GTCJP2.pss", "", opening};
-    // (Tokyo-Seoul v1.02 names v2.00's config but runs the 2001 program's loop: three demo races.)
+    // (Tokyo-Seoul v1.02 names v2.00's config but runs the 2001 program's loop: three demo races, 0x100200 .. 0x100220.)
     if (gcf == "gameconf/concept_kr.gcf" && !release.gcf_per_language) return {"", "", "", "", opening};
     return {"", "", "", opening};
 }

@@ -90,8 +90,8 @@ void GameFlow::concept_tick() {
     }
     // The license page: the test under the cursor is the one its pace car page starts.
     if (page == "ar/select_license") concept_test_ = std::max(0, ctl_->focus());
-    // Game Status: the map follows the focused button (map button list: each frame the scroll moves by the
-    // rate 0.1 x 1.2 of what is left, program constants).
+    // Game Status: the map follows the focused button (MapButtonList 0x1B6630: each frame the scroll moves by the
+    // rate 0.1 x 1.2 of what is left, program constants 0x333E28 and 0x333EC0).
     if (page == "ar/status") {
         float x = 0, y = 0;
         if (concept_map_target(x, y)) {
@@ -107,7 +107,7 @@ void GameFlow::concept_tick() {
 }
 
 // Game Status: a direction moves the focus to the button that lies best that way, as GT3's map list picks its next
-// building (the same map button list; game/gt_mode_menu/lists.cpp map_input: the greatest cos^2 / distance among the
+// building (the same MapButtonList; game/gt_mode_menu/lists.cpp map_input: the greatest cos^2 / distance among the
 // buttons ahead). The controller does not see the directions on this page.
 MenuKeys GameFlow::concept_map_input(MenuKeys held) {
     const MenuKeys dirs = key_bit(MenuKey::Up) | key_bit(MenuKey::Down) | key_bit(MenuKey::Left) | key_bit(MenuKey::Right);
@@ -156,7 +156,7 @@ MenuKeys GameFlow::concept_map_input(MenuKeys held) {
 }
 
 // Where the map's scroll is heading: the focused button's centre from the screen's centre, held inside half the
-// "menu_map" window's size either way (the program clamps the pointer's place to the window's centre +- half its width and
+// "menu_map" window's size either way (0x1B6630 clamps the pointer's place to the window's centre +- half its width and
 // height; M: that the place is the button's centre measured from the screen's, which keeps the map's art over the
 // screen at both ends).
 bool GameFlow::concept_map_target(float& x, float& y) const {
@@ -314,7 +314,7 @@ void GameFlow::handle_concept(const MenuEvent& e) {
                 arcade_steps_ = {"ar/select_car"};
                 arcade_step(0);
             } else {
-                // Two players: the 2 player car page, each player's row holding the pod alone.
+                // Two players: the 2 player car page (0x111070), each player's row holding the pod alone.
                 arcade_action_ = "two_player_battle";
                 arcade_steps_ = {concept_page("ar/select_car_2p")};
                 arcade_step(0);
@@ -524,7 +524,7 @@ void GameFlow::concept_draws(std::vector<ElementDraw>& out) const {
     }
     if (page == "ar/select_license" && h.license_tests) {
         // Course License: each test's target times and car name (the focused test's layer holds its widgets
-        // "LC00000<n>_gold" and "car_0<n>"), and the medal won so far over its button (license button).
+        // "LC00000<n>_gold" and "car_0<n>"), and the medal won so far over its button (LicenseButton).
         const std::vector<ConceptHooks::Test> tests = h.license_tests();
         auto test_of = [&](const std::string& name, size_t digit) -> const ConceptHooks::Test* {
             if (name.size() <= digit || name[digit] < '0' || name[digit] > '9') return nullptr;
@@ -595,7 +595,7 @@ void GameFlow::concept_draws(std::vector<ElementDraw>& out) const {
             d.z = z;
             out.push_back(d);
         };
-        // The nodes (widgets "C<nn><L|N|H>_stat", the factory): the course license's medal; a first-place
+        // The nodes (widgets "C<nn><L|N|H>_stat", the factory 0x115E68): the course license's medal; a first-place
         // badge once the course is won at some level (N) and at Professional or Ace (H). Nothing before that.
         for (const Layer& l : ref.layout().layers)
             for (const Element& w : l.widgets) {
@@ -613,7 +613,7 @@ void GameFlow::concept_draws(std::vector<ElementDraw>& out) const {
                 }
                 put(art, w, w.z, 1.0f);
             }
-        // The prize cars (status button) and the presents: a key that is reached shows its car's picture, the
+        // The prize cars (StatusButton 0x11A250) and the presents: a key that is reached shows its car's picture, the
         // focused one pulsing; one that is not reached shows it in black, and so does a present's gift box (as the
         // original's page shows them; its draw for them was not read to the end).
         const int focus = ctl_->depth() == 0 ? ctl_->focus() : -1;
@@ -654,7 +654,7 @@ void GameFlow::concept_draws(std::vector<ElementDraw>& out) const {
         std::stable_sort(out.begin(), out.end(), [](const ElementDraw& x, const ElementDraw& y) { return x.z < y.z; });
     }
     if (page == "ar/select_course" && !carousel_.entries.empty() && arcade_action_ == "single_race" && h.course_place) {
-        // The strip's place badges (mini course cursor): the best place at the chosen level on each course's icon.
+        // The strip's place badges (MiniCourseCursor): the best place at the chosen level on each course's icon.
         const Layer* hidden = layer_named(ref.layout(), "hidden");
         const Element* strip = element_named(hidden, "mini_courses");
         static const char* const kBadge[6] = {"item_1st", "item_2nd", "item_3rd", "item_4th", "item_5th", "item_6th"};

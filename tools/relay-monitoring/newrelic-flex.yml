@@ -1,0 +1,15 @@
+# Installed as /etc/newrelic-infra/integrations.d/gt3r-relay-health.yml: runs
+# relay-health.py every minute, and the JSON it prints becomes a GT3RelaySample event.
+# The script reads journalctl --namespace=gt3r-relay (the unit's LogNamespace) and
+# appends tagged register/join lines for logging.d/gt3r-relay-players.yml.
+integrations:
+  - name: nri-flex
+    interval: 60s
+    timeout: 50s
+    config:
+      name: gt3rRelayHealth
+      apis:
+        - event_type: GT3RelaySample
+          commands:
+            - run: python3 -I /usr/local/lib/gt3r-monitoring/relay-health.py
+              timeout: 40000

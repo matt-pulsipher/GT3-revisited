@@ -10,7 +10,7 @@ namespace gt3r::sim::exact {
 namespace {
 
 const F kZero = F::raw(0), kHalf = F::raw(0x3F000000), kOne = F::raw(0x3F800000), kMinusOne = F::raw(0xBF800000);
-const F kRampGain = F::raw(0x3CA3D709); // 0.02 per m/s
+const F kRampGain = F::raw(0x3CA3D709); // 0x350548: 0.02 per m/s
 
 } // namespace
 
@@ -46,7 +46,7 @@ void hub_offsets(Car& c) {
 }
 
 void speed_ramp(Car& c) {
-    const F gain = folded(c.behaviour, kRampGain.bits, 0x3CA3D70B); // (2002 Tokyo-Geneva's, Europe)
+    const F gain = folded(c.behaviour, kRampGain.bits, 0x3CA3D70B); // (2002 Tokyo-Geneva's, Europe 0x1F2870)
     for (Wheel& w : c.w) {
         const F v = ee::sqrt(w.hub_vx * w.hub_vx + w.hub_vy * w.hub_vy) * gain;
         w.speed_ramp = kOne < v ? kOne : v;
@@ -115,7 +115,7 @@ F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x, const Kind7Ride
     }
     const F xc = x < s.bump_limit ? s.bump_limit : x;
     const F e = xc - s.knee;
-    // (Rule::PodSpring, the later builds: the rate is the caller's, later's for special car 1)
+    // (Rule::PodSpring, the later builds: the rate is the caller's, later 0x1DBB28's for special car 1)
     F fs = -xc * (c ? pod_spring(*c, i, s.k) : s.k);
     if (e < kZero) fs = fs + (e * e) * s.k2;
     F v = inv_dt * (x - w.susp);
@@ -125,7 +125,7 @@ F wheel_suspension(Wheel& w, const Suspension& s, F inv_dt, F x, const Kind7Ride
         if (v < kMinusOne) v = kMinusOne;
         fd = fd - s.bump_damping * v;
     }
-    if (ride && ride->on && c && c->p.special == 7) fd = fd + kind7_ride_force(*c, i, xc, *ride); // (Europe)
+    if (ride && ride->on && c && c->p.special == 7) fd = fd + kind7_ride_force(*c, i, xc, *ride); // (Europe 0x1E03F0)
     w.damper_f = fd;
     const F sum = fs + fd;
     w.susp = xc;

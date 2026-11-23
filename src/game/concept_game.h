@@ -20,7 +20,7 @@ namespace gt3r::game {
 ConceptRules concept_rules(const GtData& d);
 
 // The category page's five categories, in its item order C, B, A, S, D: the game config class of each (program
-// tables); in British English the class's "_UK" twin when the config has one.
+// tables 0x21E8F8 .. 0x21EA18); in British English the class's "_UK" twin when the config has one.
 constexpr int kConceptCategories = 5;
 std::string concept_category_class(const GtData& d, int category);
 // A class without its "_UK" (the prize keys name the plain class; the twin lists the same cars in the same places).
@@ -88,39 +88,39 @@ const GtData::ArcadeCar* concept_key_car(const GtData& d, const ConceptRules::Ke
 // database has a record of for the car, in one of two fixed sets of parts, Normal or Custom. The races take the car
 // from there, so what the settings menu changes on a car stays on it (and is saved with the game).
 
-// The two sets (program tables, the same five goods in all four programs: Tokyo-Geneva): the brake
+// The two sets (program tables, the same five goods in all four programs: Tokyo-Geneva 0x2BD440 / 0x2BD458): the brake
 // controller, suspension, gearbox and both tires. Normal fits each; Custom fits each the car has a record of.
 constexpr int kConceptSetParts = 5;
 extern const int kConceptNormalSet[kConceptSetParts];
 extern const int kConceptCustomSet[kConceptSetParts];
 
-// A new garage car of a class entry (an arcade car's label): Normal. nullopt for an unknown entry.
+// A new garage car of a class entry (an arcade car's label): Normal (0x21ABA8). nullopt for an unknown entry.
 std::optional<GarageCar> concept_new_car(const GtMode& gt, const std::string& entry);
 // The entry's garage car (GarageCar::origin is the entry), made when the garage has none yet; it becomes the current
 // car when `ride`. nullptr for an unknown entry or a full garage.
 GarageCar* concept_garage_car(GtMode& gt, const std::string& entry, bool ride);
-// The settings menu opens on its Normal page for this car (the brake controller it wears is the plain one).
+// The settings menu opens on its Normal page for this car (0x2390B0: the brake controller it wears is the plain one).
 bool concept_car_normal(const GtMode& gt, const GarageCar& c);
 void concept_fit_normal(const GtMode& gt, GarageCar& c);
 void concept_fit_custom(const GtMode& gt, GarageCar& c);
-// The Custom page's Reset: every setting back to its part's own, then the Custom set again.
+// The Custom page's Reset (0x153AB0): every setting back to its part's own, then the Custom set again.
 void concept_reset_custom(const GtMode& gt, GarageCar& c);
 
-// The class entries the game keeps a garage car of, in the garage's order (from a new game's): the
+// The class entries the game keeps a garage car of, in the garage's order (0x21EFE0, from a new game's 0x21A868): the
 // five categories' lists in the game's language (concept_category_class) one after another, 200 at most; an entry the
-// database has no car for makes none.
+// database has no car for makes none (0x21ABA8).
 std::vector<std::string> concept_garage_entries(const GtMode& gt);
 
-// A continuously variable gearbox (the gearbox record's gear count is 2): its ratio cannot be set.
+// A continuously variable gearbox (0x2365F8: the gearbox record's gear count is 2): its ratio cannot be set.
 bool concept_cvt(const GtMode& gt, const GarageCar& c);
 
 // The Custom page's tires (its two sliders, front and rear on their own): position 0 soft, 1 normal, 2 hard, by the
-// tire's stage (program table: stages 7, 0 and 3). -1 for a tire of another stage.
+// tire's stage (program table 0x324560: stages 7, 0 and 3). -1 for a tire of another stage.
 constexpr int kConceptTirePositions = 3;
 int concept_tire_position(const GtMode& gt, const GarageCar& c, bool rear);
 bool concept_set_tire(const GtMode& gt, GarageCar& c, bool rear, int position);
 
-// The parts a garage car races with (the race's car build, the same rule in GT3): on a dirt course the car's
+// The parts a garage car races with (the race's car build, 0x1D5A00, the same rule in GT3): on a dirt course the car's
 // dirt tires (stage 12), with the car page's drift tires its stage 11 ones (not on a wet course), else the tires it
 // wears.
 std::array<u64, 27> concept_race_parts(const GtMode& gt, const GarageCar& c, const std::string& course, bool drift);

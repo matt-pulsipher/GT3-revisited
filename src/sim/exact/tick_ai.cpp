@@ -14,15 +14,15 @@ const F kMinusHalf = F::raw(0xBF000000), kMinusOne = F::raw(0xBF800000), kMinusT
 // The look-ahead: the stop line, leaving the pit (kind 4), reversing out, turning round; the start's long look ahead.
 const F kLookStop = F::raw(0x40A00000), kLookLeave = F::raw(0x41A00000), kLookReverse = F::raw(0x41200000);
 const F kLookTurn = F::raw(0x42200000), kStartLook = F::raw(0x42200000), kStartMs = F::raw(0x44FA0000);
-// ; each with 2002 Tokyo-Geneva's value, its compiler having folded them toward zero
-// (toward_zero(), build_math.h [physics §14.2]; Europe's code, Asia's the same).
+// $gp 0x3505F0 .. 0x350678; each with 2002 Tokyo-Geneva's value, its compiler having folded them toward zero
+// (toward_zero(), build_math.h [physics §14.2]; Europe's 0x1F72A0 / 0x1F6FF8 / 0x1F83B8, Asia's the same).
 struct DecideK {
     F park_speed, park_turn;                                       // 0.25 km/h, 3 deg/s
     F theta, theta_rev, theta_speed, theta_slope, theta_span, theta_base; // 60, 10 deg; -30 km/h, 50 deg, 30 km/h, 10 deg
     F back, roll, out, round, round_speed, reverse_out, spin, rear_hit; // -2, 2, 3 km/h, 40 deg, 30 km/h, 60, 80, 45 deg
     F moving, moving_back, wrong, wrong_neg, slow, lock, lock_neg;  // 2, -2 km/h, 80, -80 deg, 5 km/h, 45, -45 deg
     F turn_neg, turn_full, turn, turn_full_pos, turn_gain;          // -20, -30, 20, 30 deg, 1.5
-    F stop_speed, turn_speed, pit_margin, pit_margin2;              // 20, 50 km/h, 2 km/h
+    F stop_speed, turn_speed, pit_margin, pit_margin2;              // 20, 50 km/h, 2 km/h (0x350668, 0x35066C)
     F stop_at, stop_slow;                                           // the stop point's 1 and 10 km/h
     F blip_up, blip_down, hold_rank;                                // the start hold's
     explicit DecideK(bool z) {
@@ -70,7 +70,7 @@ void ai_stop(Car& c, F target) {
     const DecideK k(toward_zero(c.behaviour));
     if (v < k.park_speed && w < k.park_turn) {
         d.brake = kZero;
-        c.driver_kind = 8;
+        c.driver_kind = 8; // 0x1E3E90
         return;
     }
     if (c.driver_kind != 5) d.brake = kOne;
@@ -190,7 +190,7 @@ void ai_decide(Car& c, const AiInputs& in, AiPlan& plan) {
     else {
         look = ai_lookahead(d, c.speed);
         // (Rule::AiDecide, 2002 Tokyo-Geneva: a computer's car looks further ahead over the first 5 s, 200 m at the start,
-        // except on dirt, with a stop zone, or at a start speed of 60 km/h or more; Europe)
+        // except on dirt, with a stop zone, or at a start speed of 60 km/h or more; Europe 0x1F7458)
         const StopZone* zone = geneva ? plan.stop_zone() : nullptr;
         if (geneva && c.control == 2 && in.course_category != 2 && !(zone && zone->active == 1) && in.start_speed < 60) {
             const s32 left = s32(5000u - in.clock / 3u);
@@ -233,7 +233,7 @@ void ai_decide(Car& c, const AiInputs& in, AiPlan& plan) {
         if (aeps < k.round && k.round_speed < v) d.state = 0;
         else if (in.hit_front != 0) {
             // (Rule::AiDecide, 2002 Tokyo-Geneva: also when the line's own heading there is more than 60 degrees off the
-            // car's, unwrapped; Europe, the heading)
+            // car's, unwrapped; Europe 0x1F7738, the heading 0x1F6E38)
             bool off = false;
             if (geneva) {
                 F dh = plan.line_heading(c, d.line, d.next, c.f3e4) - c.heading;

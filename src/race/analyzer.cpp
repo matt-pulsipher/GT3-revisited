@@ -98,7 +98,7 @@ using ee::F;
 const F kZero = F::raw(0), kHalf = F::raw(0x3F000000), kOne = F::raw(0x3F800000);
 constexpr size_t kMaxBins = 0x4000;
 
-// The area under the line from (d0, v0) to (d1, v1) over [lo, hi]: 0 when the segment misses it, else the segment
+// 0x135638: the area under the line from (d0, v0) to (d1, v1) over [lo, hi]: 0 when the segment misses it, else the segment
 // cut to it (the line's values at the cuts) as a trapezoid.
 F bin_area(F d0, F d1, F v0, F v1, F lo, F hi) {
     if (d1 < lo || hi < d0) return kZero;
@@ -113,7 +113,7 @@ F bin_area(F d0, F d1, F v0, F v1, F lo, F hi) {
     return ((v0 + v1) * (d1 - d0)) * kHalf;
 }
 
-// The value at `at` of the line through (d0, x0) and (d1, x1).
+// 0x135600: the value at `at` of the line through (d0, x0) and (d1, x1).
 F line_at(F d0, F d1, F x0, F x1, F at) {
     const F a = x0 * d1, b = x1 * d0;
     const F inv = kOne / (d1 - d0);
@@ -121,7 +121,7 @@ F line_at(F d0, F d1, F x0, F x1, F at) {
     return (((x1 - x0) * at) + c) * inv;
 }
 
-// At t = 0: a drawn coordinate between the last two steps (the race-flow accumulator's share of the last).
+// 0x1EB400 / 0x1EB490 at t = 0: a drawn coordinate between the last two steps (the race-flow accumulator's share of the last).
 F drawn(F prev, F cur, F flow) {
     const F f = kZero + flow;
     return (prev * f) + (cur * (kOne - f));
@@ -130,7 +130,7 @@ F drawn(F prev, F cur, F flow) {
 } // namespace
 
 LoggerBinner::LoggerBinner(F lap) : lap_(lap) {
-    w_ = ee::max(lap / F::raw(0x467FFC00), kHalf); // 16383
+    w_ = ee::max(lap / F::raw(0x467FFC00), kHalf); // [0x34FB1C] 16383
     inv_w_ = kOne / w_;
 }
 
@@ -171,7 +171,7 @@ void LoggerBinner::add(const sim::exact::Car& c, double time, u32 frame) {
         a = a + kHalf, b = b + kHalf, s = s + kHalf;
         const F px = line_at(d_, d, x_, x, hi), pz = line_at(d_, d, z_, z, hi);
         LoggerBin bin;
-        s = ee::min(s, F::raw(0x45FFF800)); // 8191
+        s = ee::min(s, F::raw(0x45FFF800)); // [0x34FB20] 8191
         bin.word = u16(gear | u32(ee::to_int(s)) << 3);
         bin.throttle = u8(ee::to_int(ee::min(a, k255)));
         bin.brake = u8(ee::to_int(ee::min(b, k255)));

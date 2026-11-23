@@ -1,5 +1,5 @@
-// The course for the collision step; see course_collision.h. The grid walks are the program's wall walk and
-// road walk, with its breakpoint search, clamps and cell lookup.
+// The course for the collision step; see course_collision.h. The grid walks are the program's wall walk (0x228848) and
+// road walk (0x2280C8), with its breakpoint search 0x2273F0, clamps 0x227558 / 0x227578 and cell lookup 0x2274A0.
 
 #include "sim/course_collision.h"
 
@@ -13,7 +13,7 @@ namespace {
 
 constexpr int kBelow = INT_MIN + 1, kAbove = INT_MAX - 1;
 
-// The cell index of v along sorted breakpoints: the last i with bp[i] <= v; kBelow / kAbove off the ends.
+// 0x2273F0: the cell index of v along sorted breakpoints: the last i with bp[i] <= v; kBelow / kAbove off the ends.
 int search(const std::vector<F>& bp, F v) {
     int hi = int(bp.size()) - 1;
     if (v < bp[0]) return kBelow;
@@ -27,7 +27,7 @@ int search(const std::vector<F>& bp, F v) {
     return lo - 1;
 }
 
-// Clamped to the cells.
+// 0x227558 / 0x227578: clamped to the cells.
 int clamp_cell(int i, size_t n) {
     if (i < 0) return 0;
     int last = int(n) - 2;
@@ -81,7 +81,7 @@ bool CourseCollision::passes(int seg, int hint) const {
     return false;
 }
 
-// The cells of the box grown by 8 m (clamped into the grid), rows then columns, the groups of each cell in
+// 0x228848: the cells of the box grown by 8 m (clamped into the grid), rows then columns, the groups of each cell in
 // stored order.
 void CourseCollision::wall_candidates(F x0, F z0, F x1, F z1, int hint, std::vector<int>& out) const {
     const Grid& g = wall_grid_;
@@ -101,7 +101,7 @@ void CourseCollision::wall_candidates(F x0, F z0, F x1, F z1, int hint, std::vec
         }
 }
 
-// b in a's neighbour list. Segment -1 reads the words before the segment table (Road::before_segments).
+// 0x228B68: b in a's neighbour list. Segment -1 reads the words before the segment table (Road::before_segments).
 bool CourseCollision::linked(int a, int b) const {
     const std::vector<u16>* list = a >= 0 && size_t(a) < neighbours_.size() ? &neighbours_[size_t(a)] : a == -1 ? &before_ : nullptr;
     if (!list) return false;
@@ -110,7 +110,7 @@ bool CourseCollision::linked(int a, int b) const {
     return false;
 }
 
-// One query point: the grid cell (none off the grid), then each passing triangle: barycentric u, v strictly
+// 0x2280C8 (one query point): the grid cell (none off the grid), then each passing triangle: barycentric u, v strictly
 // inside, its height highest so far (from -FLT_MAX).
 int CourseCollision::road_segment(F x, F z, int hint) const {
     const Grid& g = road_grid_;

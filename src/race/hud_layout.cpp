@@ -176,7 +176,7 @@ constexpr HudRow kTimeTrial[] = {
     {P::Title, 0, kAny, 320, 160, 500, 0, 2, 0},
     {P::Tires, 0, kAny, 20, 435, 0, 0, 4, 1},
 };
-// The Analyzer's REPLAY (solo race's logger display): drawn once per track's car (Hud::draw_logger).
+// The Analyzer's REPLAY (RaceSolitaire's logger display, 0x187598): drawn once per track's car (Hud::draw_logger).
 constexpr HudRow kLogger[] = {
     {P::Steering, 0, kAny, 42, 70, 100, 100, 0, 1},
     {P::BarTach, 0, kAny, 24, 200, 48, 25, 0, 0},

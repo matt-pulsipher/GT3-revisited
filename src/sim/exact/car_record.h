@@ -36,7 +36,7 @@ struct Wheel {
     F ground;               // +0x04 ground height under the hub
     F load;                 // +0x08 tyre load Fz (N) [physics §4.2]
     F steer;                // +0x0C road-wheel steer angle (phase 4)
-    F camber, half_track;   // +0x10 / +0x14 visual camber and hub half-track at the suspension travel
+    F camber, half_track;   // +0x10 / +0x14 visual camber and hub half-track at the suspension travel (0x1E9348)
     F susp;                 // +0x18 suspension coordinate x [physics §4.2]
     F damper_v;             // +0x1C damper speed (unclamped)
     F rim_speed;            // +0x20 (m/s)
@@ -49,7 +49,7 @@ struct Wheel {
     F smoke_emit;           // +0x2C smoke / dust emission intensity [physics §8.3b]
     F slip_intensity;       // +0x30 slip intensity (skid sound, wear) [physics §8.3]
     F skid_pitch;           // +0x34 the tyre loops' pitch factor [physics §8.3c]
-    F spin;                 // +0x38 wheel spin angle (drawn)
+    F spin;                 // +0x38 wheel spin angle (drawn; 0x1EAFC0)
     Vec3 hub;               // +0x3C hub offset from the CoG, physics frame (body offsets turned by the attitude)
     F slip_gain;            // +0x48 slip gain g [physics §3.4]
     F hub_vx, hub_vy;       // +0x4C / +0x50 hub velocity, along / across the car [physics §10.1]
@@ -101,7 +101,7 @@ struct Previous {
 };
 
 // A piecewise-linear table as the program keeps it, {s16 n; float* x; float* y}, with the arrays it points at (up to N
-// points); looked up (lookup()).
+// points); looked up by 0x1D8FB8 (lookup()).
 template <size_t N> struct Table {
     s16 n = 0;
     std::array<F, N> x, y;
@@ -182,7 +182,7 @@ struct Driveline {
 };
 
 // The AI driver object (car + 0xEC8; D below) [ai §1]: its parameters (from the driver parameter set and the event's overrides,
-// set when the car is made [ai §9]), the AI line and speed plan, the recovery state, the outputs the program applies to the
+// set when the car is made [ai §9]), the AI line and speed plan, the recovery state, the outputs 0x1F79F0 applies to the
 // controls, what the proximity phase writes for it. D +0x00 / +0x04 / +0x08 point at the conductor, the car and the course's AI
 // lines.
 struct Driver {
@@ -268,7 +268,7 @@ struct Params {
     Table<6> steer_b, steer_a, steer_c; // +0x5C / +0x98 / +0xD4 (x +0xC, y +0x24) lock (rad) vs forward speed: pad, steering
                                         // wheel, dirt
     std::array<F, 2> steer_ratio; // +0x110 front wheel i's share of the steering command when it is >= 0 (wheel 1 - i's when < 0)
-    F yaw_inertia;                // +0x118 the yaw inertia I_z (the collision body's)
+    F yaw_inertia;                // +0x118 the yaw inertia I_z (the collision body's, 0x1FA740)
     F inv_yaw_inertia;            // +0x11C 1 / P+0x118
     std::array<F, 2> pitch_lever; // +0x120 per axle: a 2 pi / Y, b 2 pi / Y [physics §4.3]
     std::array<F, 2> roll_lever;  // +0x128 per axle: half track 2 pi / Z
@@ -321,7 +321,7 @@ struct Drive {
     F slip_angle;               // +0x20 beta: the steer angle less the velocity direction, in [-pi, pi)
 };
 
-// The controller settings' gearbox bytes (static data that no code writes; the defaults are the shipped bytes):
+// The controller settings' gearbox bytes (static data at 0x2D4628 that no code writes; the defaults are the shipped bytes):
 // the automatic box's options [physics §2.6].
 struct GearSettings {
     u8 mode = 1;          // +0x14 1: a held shift input holds the automatic gear; 2: it shifts (with the anti-hunt counter)
@@ -350,7 +350,7 @@ struct Car {
     F flow;                 // +0xEC4 the race-flow accumulator (race_flow_gate)
     Driver ai;              // +0xEC8 the AI driver object
     Vec3 pos;               // F +0x00 CoG position (z = height)
-    Vec3 fwd, lat, up;      // F +0x0C / +0x18 / +0x24 body axes from the attitude [physics §1.3]
+    Vec3 fwd, lat, up;      // F +0x0C / +0x18 / +0x24 body axes from the attitude (0x1D8A80) [physics §1.3]
     Vec3 ground_pos;        // F +0x30 the ground under the CoG (x, y, height)
     Vec3 ground_fwd, ground_lat, ground_up; // F +0x3C / +0x48 / +0x54 ground frame axes
     std::array<Wheel, 4> w; // F +0x60
@@ -383,7 +383,7 @@ struct Car {
     F x420;                 // F +0x420 (1 after every pad frame)
     F steer_rate;           // F +0x424 the steering follower's rate (rad/s)
     F throttle_pedal, brake_pedal, handbrake; // F +0x428 / +0x42C / +0x430 the controls, 0..1 (phase 3)
-    s16 laps = 0;           // F +0x434 laps counted by the race flow; the gap's laps are laps - lap_base. The start
+    s16 laps = 0;           // F +0x434 laps counted by the race flow (0x1EE978); the gap's laps are laps - lap_base. The start
                             // gives 0 to a car behind the line, else 1 [physics §9.2]
     u8 gear = 0;            // F +0x436 0 reverse, 1..N
     u8 clutch = 0;          // F +0x437 clutch link state S: 0 open, 1 locked, 2 slipping, 3 shift [physics §2.4]
@@ -400,7 +400,7 @@ struct Car {
                             // is a clutch, 5 no back axis
     u16 antihunt = 0;       // F +0x462
     u8 kickdown = 0, kickdown_timer = 0, kickdown_count = 0; // F +0x464 / +0x465 / +0x466
-    u8 lap_base = 0;        // F +0x467 subtracted from the lap count: 1 from a pit-box start past half the lap
+    u8 lap_base = 0;        // F +0x467 subtracted from the lap count (0x1ED018): 1 from a pit-box start past half the lap
     F pitch, roll, heading; // F +0x468 / +0x46C / +0x470 (car +0x13EC ..) the body attitude
     F lat_g;                // F +0x474 lateral acceleration over the four wheels' grip ("lateral g / mu", signed)
     F yaw_accel, yaw_rate;  // F +0x478 / +0x47C
@@ -425,9 +425,9 @@ struct Car {
     u8 race_hold = 0;       // F +0x4DC set while the race's start sequence holds the cars
     u8 bump_mask = 0;       // F +0x4DD wheels beyond their bump stop: high nibble at the phase's start, low now
     s8 pit_box = 0;         // F +0x4DE the pit box: its point on the stop line (game line 4), the count - (index + 4)
-    u8 off_count = 0;       // F +0x4DF course-out ticks (the conductor's course-out rule; 0xFF: at once)
+    u8 off_count = 0;       // F +0x4DF course-out ticks (the conductor's virtual 40; 0xFF: at once)
     u8 finished = 0;        // F +0x4E0 the car's race has ended
-    s8 rank = 0;            // F +0x4E1 (car +0x1465) the race position the ranking gives the car, 1 first
+    s8 rank = 0;            // F +0x4E1 (car +0x1465) the race position the ranking (conductor virtual 3) gives the car, 1 first
     u16 turbo_pitch = 0;    // F +0x4E2 spool pitch: the larger lag
     u8 x4e4 = 0, x4e5 = 0;  // F +0x4E4 / +0x4E5 engine sound levels
     u8 turbo_spool = 0;     // F +0x4E6 spool level
@@ -436,15 +436,15 @@ struct Car {
     F intake;               // F +0x4EC intake smoothing (sound)
     F hit_rumble;           // F +0x4F0 the last wall hit's strength (collision step), for the rumble
     F clutch_torque;        // F +0x4F4 |transmitted torque|
-    F lag_heading_diff, lag_pitch_diff; // F +0x4F8 / +0x4FC heading and pitch less their lagging copies
+    F lag_heading_diff, lag_pitch_diff; // F +0x4F8 / +0x4FC heading and pitch less their lagging copies (0x1E0768)
     F lag_heading, lag_heading_rate, lag_heading_acc; // F +0x500 / +0x504 / +0x508 a lagging copy of the heading
     F lag_pitch, lag_pitch_rate; // F +0x50C / +0x510 a lagging copy of the pitch
     F ffb;                  // F +0x514 the steering force before its output scale (mode 3: the held peak)
     s32 ffb_count = 0;      // F +0x518 mode 3: steps since the peak
     u8 x51c = 0;            // F +0x51C
     u8 x51d = 0;            // F +0x51D a countdown, the HUD message timer (phase 2 steps it towards 0; 0xFF stays)
-    u8 course_out = 0;      // F +0x51E the course-out flag of time trials and licences: 2 off the course (the course-out rule), bit 0 a
-                            // hard wall hit (the hit rule) [physics §11]
+    u8 course_out = 0;      // F +0x51E the course-out flag of time trials and licences: 2 off the course (virtual 40), bit 0 a
+                            // hard wall hit (virtual 41) [physics §11]
     u8 blip = 0;            // F +0x51F the start hold's throttle blip: 1 rising, 0 falling [ai §10]
     u8 ascc_status = 0;     // F +0x520 0, 1 ASCC on, 2 acting (phase 6)
     u8 tcs_status = 0;      // F +0x521 0 off, 1 on, 2 limiting (phase 6)
@@ -469,11 +469,11 @@ struct Car {
     F speed_abs, max_speed; // +0x16A8 |speed| / +0x16AC its maximum while racing
     u32 best_lap = 0;       // +0x16C4 the best lap time (ms; 0x157529FF none, from the race's start)
     u32 feedback = 0;       // +0x16C8 the pad feedback word, cleared every tick: the strongest hit of the collision step
-                            // (float bits)
+                            // (float bits, 0x1DFD98)
     u8 hit_kind = 0;        // +0x16CC that hit's kind (0 a wall, 1 a car)
-    u8 hit_part = 0;        // +0x16CD and the car's part it struck (the argument)
+    u8 hit_part = 0;        // +0x16CD and the car's part it struck (0x1DFEB8's argument)
     u16 ai_hold = 0;        // +0x16CE steps a player's car is driven by the AI after the start (rolling start 300) [physics §9.4]
-    u8 x16d0 = 0;           // +0x16D0 1 unless the gearbox part's kind is 0x13
+    u8 x16d0 = 0;           // +0x16D0 1 unless the gearbox part's kind is 0x13 (0x234EC0)
     u8 x16d1 = 0;           // +0x16D1 (1 from the race's start)
     u8 x16d4 = 0;           // +0x16D4
     u8 rumble = 0;          // +0x16D5 the pad's vibration level (0..127)
@@ -515,7 +515,7 @@ struct AsccSwitches {
     u8 e_quiet = 0;    // channel E does not count for the status byte; an ASM switched off keeps channel E's wheels
 };
 
-// The later builds' stepless gearbox settings (ProgramData's Stepless table, its bytes x 0.01 as the routine of
+// The later builds' stepless gearbox settings (ProgramData's Stepless table, its bytes x 0.01 as the routine 0x1D9A08 of
 // Concept 2001 Tokyo leaves them): the ratio's rates a second [physics §14.5]. Unused under GT3's rules.
 struct Stepless {
     F full, none; // kind 1: at full throttle and with the pedal released
@@ -523,47 +523,47 @@ struct Stepless {
 };
 
 // The later builds' layout 7 system (AWD system 5: an engine on the rear axle with a motor of its own, two front motors and a
-// store; ProgramData's Hybrid table): the floats the set-up routine (Concept 2001 Tokyo) makes of the table's bytes,
-// in its globals.. [physics §14.5]. Unused under GT3's rules (on 0).
+// store; ProgramData's Hybrid table): the floats the set-up routine (Concept 2001 Tokyo 0x1D9CF0) makes of the table's bytes,
+// in its globals 0x33565C .. [physics §14.5]. Unused under GT3's rules (on 0).
 struct Hybrid {
     u8 on = 0;                 // the race's build has the system (its table found, the later builds' rules)
-    F front, rear;             // +0 / +1 the front motors' (each) and the rear motor's ratings (kW)
-    F front_drive, rear_drive; // +2 / +3 x 10 the front motors' torque factor driving, the rear motor's torque cap
-    F front_regen, rear_regen; // +4 / +5 x 10 the same regenerating
-    F front_scale;             // +6 x 0.1 the front motors' torque scale (their cap: x front_drive / front_regen)
-    F capacity;                // +7 x (2 front + rear) the store's capacity
-    F front_charge_cap;        // +8 x 5 a front wheel's braking charge per second, at most
-    F rear_charge_cap;         // +9 x 5 the rear wheels' braking charge per second, at most
-    F idle_rpm;                // +0xA x 100 the open clutch's charging: the rpm below which the throttle rises
-    F idle_gain;               // +0xB / 100000 its throttle per rpm below that
-    F idle_share;              // +0xC / 100 its torque at most this share of the full-throttle torque
-    F idle_power;              // +0xD and at most this power (kW)
-    F low, high;               // +0xE / +0xF % of the capacity: the marks the store's share fades between
-    F reserve;                 // +0x10 / front the front motors' share of the demand with the store at the low mark
+    F front, rear;             // +0 / +1 (0x33565C / 60) the front motors' (each) and the rear motor's ratings (kW)
+    F front_drive, rear_drive; // +2 / +3 x 10 (0x335664 / 68) the front motors' torque factor driving, the rear motor's torque cap
+    F front_regen, rear_regen; // +4 / +5 x 10 (0x33566C / 70) the same regenerating
+    F front_scale;             // +6 x 0.1 (0x335674) the front motors' torque scale (their cap: x front_drive / front_regen)
+    F capacity;                // +7 x (2 front + rear) (0x335678) the store's capacity
+    F front_charge_cap;        // +8 x 5 (0x33567C) a front wheel's braking charge per second, at most
+    F rear_charge_cap;         // +9 x 5 (0x335680) the rear wheels' braking charge per second, at most
+    F idle_rpm;                // +0xA x 100 (0x335684) the open clutch's charging: the rpm below which the throttle rises
+    F idle_gain;               // +0xB / 100000 (0x335688) its throttle per rpm below that
+    F idle_share;              // +0xC / 100 (0x33568C) its torque at most this share of the full-throttle torque
+    F idle_power;              // +0xD (0x335690) and at most this power (kW)
+    F low, high;               // +0xE / +0xF % of the capacity (0x335694 / 98): the marks the store's share fades between
+    F reserve;                 // +0x10 / front (0x33569C) the front motors' share of the demand with the store at the low mark
     s8 gear_lo = 0, gear_hi = 0; // +0x11 / +0x12 the gears in which the rear motor's demand can pass 0
     s8 gear_min = 0;           // +0x13 the rear motor drives only above this gear
-    F front_share;             // +0x14 / 100 the front motors' share of the engine's power
-    F drive_accel, drive_lat;  // +0x15 / +0x16 / 980 driving: the yaw split's gains on the lateral
+    F front_share;             // +0x14 / 100 (0x3356A0) the front motors' share of the engine's power
+    F drive_accel, drive_lat;  // +0x15 / +0x16 / 980 (0x3356A4 / A8) driving: the yaw split's gains on the lateral
                                // acceleration and the wanted lateral acceleration
-    F drive_dead;              // +0x17 / 100 and its dead band
-    F regen_accel, regen_lat;  // +0x18 / +0x19 / 980 the same regenerating
-    F regen_dead;              // +0x1A / 100
-    F flow_scale;              // the flow display's scale: 6000 (2002 Tokyo-Geneva Europe's 5000) / (2 front + rear)
+    F drive_dead;              // +0x17 / 100 (0x3356AC) and its dead band
+    F regen_accel, regen_lat;  // +0x18 / +0x19 / 980 (0x3356B0 / B4) the same regenerating
+    F regen_dead;              // +0x1A / 100 (0x3356B8)
+    F flow_scale;              // (0x3356BC) the flow display's scale: 6000 (2002 Tokyo-Geneva Europe's 5000) / (2 front + rear)
 };
 
-// The program's static physics block (shipped bytes, its tables): the parts phases 5 and 7 read.
+// The program's static physics block 0x2D28B0 (shipped bytes, its tables built by 0x1DAE70): the parts phases 5 and 7 read.
 struct Statics {
     Awd3 awd3;                          // (the later builds')
     Stepless stepless;                  // (the later builds')
     Hybrid hybrid;                      // (the later builds')
-    std::array<u8, 2> slip_fade{};      // +0x84 the slip ratio's low-speed fade speed (km/h) for slip state < 0 /
+    std::array<u8, 2> slip_fade{};      // +0x84 (0x2D2934 / 35) the slip ratio's low-speed fade speed (km/h) for slip state < 0 /
                                         // > 0; 0 = no fade
-    std::array<u8, 2> slip_gain_on{};   // +0x86 per side (0 braking, 1 driving): 0 the slip gain is 1 (phase 5);
+    std::array<u8, 2> slip_gain_on{};   // +0x86 (0x2D2936 / 37) per side (0 braking, 1 driving): 0 the slip gain is 1 (phase 5);
                                         // 2 the side's longitudinal force is the gained one (phase 7)
-    std::array<u8, 2> slip_gain_base{}; // +0x88 the slip gain at rest (%)
-    std::array<u8, 2> slip_gain_knee{}; // +0x8A the hub speed where it reaches 1 (km/h)
-    Table<16> rolling_curve;            // +0x430 rolling-resistance factor vs |forward speed|
-    std::array<F, 16> rolling_mu;       // +0x440 rolling-resistance coefficient per surface
+    std::array<u8, 2> slip_gain_base{}; // +0x88 (0x2D2938 / 39) the slip gain at rest (%)
+    std::array<u8, 2> slip_gain_knee{}; // +0x8A (0x2D293A / 3B) the hub speed where it reaches 1 (km/h)
+    Table<16> rolling_curve;            // +0x430 (0x2D2CE0) rolling-resistance factor vs |forward speed|
+    std::array<F, 16> rolling_mu;       // +0x440 (0x2D2CF0) rolling-resistance coefficient per surface
 };
 
 } // namespace gt3r::sim::exact

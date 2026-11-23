@@ -48,7 +48,7 @@ std::string intercept(const std::string& page, const MblItem& it) {
     if (is_setting_page(page) || page == "change_parts" || page == "custom") {
         GarageCar* real = setting_real();
         if (!real) return {};
-        // Gran Turismo Concept's Custom page (the link prechecks): no gear ratio for a continuously
+        // Gran Turismo Concept's Custom page (the link prechecks 0x161020 / 0x160FB0): no gear ratio for a continuously
         // variable gearbox, no tire choice for a race on a dirt course.
         if (page == "custom" && it.link == "set/adjast_gear" && concept_cvt(s->gt(), *real)) return "your_car_is_CVT";
         if (page == "custom" && it.link == "set/adjast_tir" && s->setting_dirt) return "dirt_tire_only";
@@ -106,8 +106,8 @@ std::string intercept(const std::string& page, const MblItem& it) {
     }
     if (act == "oil_change") return popup_for(gt.can_change_oil());
     if (act == "wash_car") return popup_for(gt.can_wash());
-    // "Get in now?" only when the player had a ride car before this purchase (GT3's check);
-    // otherwise the new car simply becomes the ride car. Ours makes it the ride car at
+    // "Get in now?" only when the player had a ride car before this purchase (GT3's check
+    // 0x11C5B8); otherwise the new car simply becomes the ride car. Ours makes it the ride car at
     // the purchase, so here: the new car (the head of the garage, index 0) is not the ride car.
     if (act == "check_ride_car" && gt.state().ride > 0 && page == "00cmn/cd_bought")
         return "00cmn/cd_ride_sure";

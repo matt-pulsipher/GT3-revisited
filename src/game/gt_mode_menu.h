@@ -107,7 +107,7 @@ struct CarGetScene {
     // The cars' colour scale: 0 = black silhouettes (the whole carousel), then the car won
     // alone lighting up (0..1).
     float shade = 0;
-    static constexpr float kHalfFov = 20.0f; // degrees, horizontal (= 0.3490659 rad)
+    static constexpr float kHalfFov = 20.0f; // degrees, horizontal (0x34FBA4 = 0.3490659 rad)
 };
 bool car_get_scene(CarGetScene& out);
 // The car wash spins the car (gt_mode §13.2): for 181 frames its showroom turntable gets an extra
@@ -141,7 +141,7 @@ std::vector<std::string> permitted_car_names(const GtMode& gt, const std::string
 // GT-mode session or ride car.
 bool begin_setting(const std::string& event);
 // The page that menu opens on: "root"; on a Gran Turismo Concept disc "custom" for a car in its Custom set
-// (setting control concept).
+// (SettingControlConcept, 0x1490D8).
 std::string setting_start_page();
 // Prepares the records menu (menu/records.mbl) for a ranking key: "lic:<test>",
 // "mt:M400" / "mt:M1000" / "mt:MMAX", "at:<arcade time trial code>", "ct:<course>".

@@ -32,76 +32,76 @@ const char* program_name(Program p) {
 
 const char* rule_name(Rule r) {
     switch (r) {
-    case Rule::RubberBand: return "the rubber band";
-    case Rule::BattleCap: return "the i.LINK battle's catch-up cap";
-    case Rule::Oversteer: return "the AI's oversteer indicator";
-    case Rule::PadRumble: return "the pad vibration";
-    case Rule::SteerForce: return "the steering-wheel force";
-    case Rule::LicenceStop: return "the licence test's stop";
-    case Rule::LapRecord: return "the lap record";
-    case Rule::SpeedEvent: return "the machine test's top speed";
-    case Rule::RecordsLocked: return "the records' lock";
-    case Rule::LapTime: return "the lap time";
-    case Rule::SectorTime: return "the sector time";
-    case Rule::SectorDiff: return "the sector difference";
-    case Rule::LapDiff: return "the lap difference";
-    case Rule::AngleWrap: return "the angle wrap";
-    case Rule::RunUp: return "the run-up start";
-    case Rule::BattleStart: return "the battle's start";
-    case Rule::CatchupAnswer: return "the battle's catch-up setting";
-    case Rule::WearAnswer: return "the battle's tyre wear setting";
-    case Rule::DrawMode: return "the car's draw mode";
-    case Rule::LapStartRestore: return "the replay's lap-start restore";
-    case Rule::CollisionCommit: return "the collision commit";
-    case Rule::WallFriction: return "the wall friction";
-    case Rule::PushSegment: return "the wall push-out";
-    case Rule::LapUsable: return "the free run's lap check";
-    case Rule::Atan2: return "atan2f";
-    case Rule::FloatToDouble: return "the float-to-double conversion";
-    case Rule::EngineCondition: return "the engine condition factor";
-    case Rule::SlipAngle: return "the slip angle's direction";
-    case Rule::SpecBuild: return "the spec builder";
-    case Rule::BodyBuild: return "the collision body's outline";
-    case Rule::DriverSpread: return "the computer drivers' spread";
-    case Rule::MovingStart: return "the moving start";
-    case Rule::GroundMiss: return "the ground query's height off the road";
-    case Rule::GearSpec: return "the gear part's spec";
-    case Rule::Layout: return "the drive layout";
-    case Rule::Driveline: return "the driveline block";
-    case Rule::AwdGain: return "the AWD coupling gain";
-    case Rule::DriveClass: return "the AI's driveline class";
-    case Rule::AxleStep: return "the axle step";
-    case Rule::PadClutch: return "the pad's clutch request";
-    case Rule::PadControls: return "the pad's control frame";
-    case Rule::DriverInput: return "the driver input phase";
-    case Rule::AiOutputs: return "the AI's outputs";
-    case Rule::AiDecide: return "the AI's decision";
-    case Rule::AiTraffic: return "the AI's traffic step";
-    case Rule::AiBraking: return "the AI's braking";
-    case Rule::Ascc: return "the ASCC";
-    case Rule::TyreEffects: return "the tyre effects";
-    case Rule::GapClosing: return "a pair's closing speed";
-    case Rule::ContactIntensity: return "the AI's contact intensity";
-    case Rule::SlowDown: return "the run-on after a finish";
-    case Rule::ParamsBuild: return "the parameter converter";
-    case Rule::Aids: return "the aids' choice";
-    case Rule::RecordStore: return "the pad recorder's store";
-    case Rule::StuckNudge: return "the collision step's stuck nudge";
-    case Rule::SoftDouble: return "the soft doubles";
-    case Rule::HybridStep: return "the layout 7 car's step"; // later
-    case Rule::PodMood: return "special car 1's mood"; // later
-    case Rule::PodStop: return "special car 1's stop count"; // later
-    case Rule::ActiveWing: return "special car 2's wing"; // later
-    case Rule::FlyingGrid: return "the single race's flying start"; // later
-    case Rule::StopZone: return "the stop zone's set-up"; // later
-    case Rule::PodRule: return "the pod race's rule"; // later
-    case Rule::PodLine: return "the pod race's line"; // later
-    case Rule::PodSpring: return "special car 1's springs"; // later
-    case Rule::HitReport: return "the collision report";
-    case Rule::PassBy: return "the pass-by states";
-    case Rule::LicenceJudge: return "the licence test's judge";
-    case Rule::Leaves: return "the leaf maker"; // later
-    case Rule::SparkEmit: return "the sparks' emission";
+    case Rule::RubberBand: return "the rubber band"; // 0x1ECEB8
+    case Rule::BattleCap: return "the i.LINK battle's catch-up cap"; // 0x1F0478
+    case Rule::Oversteer: return "the AI's oversteer indicator"; // 0x1E3708
+    case Rule::PadRumble: return "the pad vibration"; // 0x1DF2B0
+    case Rule::SteerForce: return "the steering-wheel force"; // 0x1E0068
+    case Rule::LicenceStop: return "the licence test's stop"; // 0x1EF488
+    case Rule::LapRecord: return "the lap record"; // 0x1EFDE8
+    case Rule::SpeedEvent: return "the machine test's top speed"; // 0x1EC8C0
+    case Rule::RecordsLocked: return "the records' lock"; // 0x1EC4E8
+    case Rule::LapTime: return "the lap time"; // 0x1EC620
+    case Rule::SectorTime: return "the sector time"; // 0x1EC520
+    case Rule::SectorDiff: return "the sector difference"; // 0x1EC758
+    case Rule::LapDiff: return "the lap difference"; // 0x1EC818
+    case Rule::AngleWrap: return "the angle wrap"; // 0x1D8C00
+    case Rule::RunUp: return "the run-up start"; // 0x1DDAD0
+    case Rule::BattleStart: return "the battle's start"; // 0x1F0010
+    case Rule::CatchupAnswer: return "the battle's catch-up setting"; // 0x1F0098
+    case Rule::WearAnswer: return "the battle's tyre wear setting"; // 0x1F00C0
+    case Rule::DrawMode: return "the car's draw mode"; // 0x1E0668
+    case Rule::LapStartRestore: return "the replay's lap-start restore"; // 0x1EE6D8
+    case Rule::CollisionCommit: return "the collision commit"; // 0x1FB6D8
+    case Rule::WallFriction: return "the wall friction"; // 0x1FE660
+    case Rule::PushSegment: return "the wall push-out"; // 0x1FDA10
+    case Rule::LapUsable: return "the free run's lap check"; // 0x1F16B8
+    case Rule::Atan2: return "atan2f"; // 0x269FC8
+    case Rule::FloatToDouble: return "the float-to-double conversion"; // 0x27AFA0
+    case Rule::EngineCondition: return "the engine condition factor"; // 0x1DAD28
+    case Rule::SlipAngle: return "the slip angle's direction"; // 0x1EA348
+    case Rule::SpecBuild: return "the spec builder"; // 0x1DA308
+    case Rule::BodyBuild: return "the collision body's outline"; // 0x1FA740
+    case Rule::DriverSpread: return "the computer drivers' spread"; // 0x1F6380
+    case Rule::MovingStart: return "the moving start"; // 0x1DD8A8
+    case Rule::GroundMiss: return "the ground query's height off the road"; // 0x2280C8
+    case Rule::GearSpec: return "the gear part's spec"; // 0x232E18
+    case Rule::Layout: return "the drive layout"; // 0x1E2700
+    case Rule::Driveline: return "the driveline block"; // 0x1E1C98
+    case Rule::AwdGain: return "the AWD coupling gain"; // 0x1E5998
+    case Rule::DriveClass: return "the AI's driveline class"; // 0x1F5EF0
+    case Rule::AxleStep: return "the axle step"; // 0x1E5B98
+    case Rule::PadClutch: return "the pad's clutch request"; // 0x1E4180
+    case Rule::PadControls: return "the pad's control frame"; // 0x1E4478
+    case Rule::DriverInput: return "the driver input phase"; // 0x1E4D38
+    case Rule::AiOutputs: return "the AI's outputs"; // 0x1F79F0
+    case Rule::AiDecide: return "the AI's decision"; // 0x1F7AE0
+    case Rule::AiTraffic: return "the AI's traffic step"; // 0x1F6D70
+    case Rule::AiBraking: return "the AI's braking"; // 0x1F7088
+    case Rule::Ascc: return "the ASCC"; // 0x1E2D08
+    case Rule::TyreEffects: return "the tyre effects"; // 0x1DEBB0
+    case Rule::GapClosing: return "a pair's closing speed"; // 0x1EBDA0
+    case Rule::ContactIntensity: return "the AI's contact intensity"; // 0x1F6CC0
+    case Rule::SlowDown: return "the run-on after a finish"; // 0x1F6518
+    case Rule::ParamsBuild: return "the parameter converter"; // 0x1DBFD8
+    case Rule::Aids: return "the aids' choice"; // 0x1E3B18
+    case Rule::RecordStore: return "the pad recorder's store"; // 0x1F4FF0
+    case Rule::StuckNudge: return "the collision step's stuck nudge"; // 0x1FB740
+    case Rule::SoftDouble: return "the soft doubles"; // 0x279480
+    case Rule::HybridStep: return "the layout 7 car's step"; // later 0x1DA0A8
+    case Rule::PodMood: return "special car 1's mood"; // later 0x1DB2F8
+    case Rule::PodStop: return "special car 1's stop count"; // later 0x1DBAB0
+    case Rule::ActiveWing: return "special car 2's wing"; // later 0x1DBC48
+    case Rule::FlyingGrid: return "the single race's flying start"; // later 0x1E73E0
+    case Rule::StopZone: return "the stop zone's set-up"; // later 0x1EE280
+    case Rule::PodRule: return "the pod race's rule"; // later 0x1EE8C0
+    case Rule::PodLine: return "the pod race's line"; // later 0x1EE7F0
+    case Rule::PodSpring: return "special car 1's springs"; // later 0x1DBB28
+    case Rule::HitReport: return "the collision report"; // 0x1DFEB8
+    case Rule::PassBy: return "the pass-by states"; // 0x1F59B0
+    case Rule::LicenceJudge: return "the licence test's judge"; // 0x1EF780
+    case Rule::Leaves: return "the leaf maker"; // later 0x19C4E8
+    case Rule::SparkEmit: return "the sparks' emission"; // 0x1AADD0
     case Rule::Count: break;
     }
     return "?";

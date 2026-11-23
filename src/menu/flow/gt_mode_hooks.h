@@ -113,7 +113,7 @@ struct GtModeHooks {
     std::function<void(const std::string& page, const std::string& game, const std::string& car_class,
                        std::vector<std::string>& entries)>
         arcade_entries;
-    // GT Mode map (page "map", a map button list): the direction keys move a pointer
+    // GT Mode map (page "map", a MapButtonList): the direction keys move a pointer
     // between the buildings instead of the list order; called every tick with the
     // keys held (the controller does not see the directions on that page).
     std::function<void(MenuController& ctl, MenuKeys held)> map_input;

@@ -127,15 +127,15 @@ std::optional<ex::Equipment> exact_equipment(const data::CarDatabase& db, const 
         if (src.settings) {
             ex::Equipment eq = ex::make_equipment(db, base, *src.parts, *src.settings);
             // A garage car made from an arcade row (Gran Turismo Concept keeps one per class entry, concept §10) carries
-            // the row's engine output factor (the row's +0x10A, EQ +0x1B8), which the settings do not hold.
+            // the row's engine output factor (the row's +0x10A, EQ +0x1B8: 0x2361D8), which the settings do not hold.
             for (const data::CarVariant& a : db.arcade_cars())
                 if (a.label == label && a.bytes.size() >= 0x10C) eq.setting[(0x1B8 - 0xF0) / 4] = rd16(a.bytes, 0x10A);
             return eq;
         }
         return ex::stock_equipment(db, base, *src.parts);
     }
-    // As the race entries are built: an event's entry (table 31) from its record, as the race information builds it;
-    // else an arcade car (table 35, which the set-car looks up first); else the car (table 30) with its own parts.
+    // As the race entries are built: an event's entry (table 31) from its record, as the race information builds it (0x238550);
+    // else an arcade car (table 35, which the set-car looks up first: 0x231DB0); else the car (table 30) with its own parts.
     if (const data::CarVariant* v = db.variant(label)) return ex::variant_equipment(db, *v);
     for (const data::CarVariant& a : db.arcade_cars()) {
         if (a.label != label && a.label != "_" + label) continue;

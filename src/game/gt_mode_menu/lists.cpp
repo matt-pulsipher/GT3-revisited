@@ -86,7 +86,7 @@ bool wheel_row(const MenuController& ctl, WheelRow& r) {
     if (!r.win) return false;
     r.n = int(ctl.items().size());
     r.tile = ctl.items().empty() || !ctl.items()[0].element ? 52.0f : ctl.items()[0].element->w;
-    r.step = r.tile + menu::flow::kRowGap; // GT3's button list gap (4) after each 52-unit tile: 56
+    r.step = r.tile + menu::flow::kRowGap; // GT3's ButtonList gap (4) after each 52-unit tile: 56
     const int f = std::max(0, ctl.focus());
     std::vector<float> xs;
     float total = 0;
@@ -114,7 +114,7 @@ std::string wheel_list_entry(const GameState& st, int i) {
 
 int worn_wheel_entry(const GameState& st, const GarageCar& c) {
     // GT3 compares each entry's name with the car's wheel: the placeholder's empty name matches
-    // a car on its own wheels, a bought wheel's name the wheel the car wears.
+    // a car on its own wheels, a bought wheel's name the wheel the car wears (0x1C11C0).
     if (c.wheel.empty()) return 0;
     auto it = std::find(st.wheels.begin(), st.wheels.end(), c.wheel);
     return it == st.wheels.end() ? -1 : int(it - st.wheels.begin()) + 1;
@@ -283,7 +283,7 @@ std::string page_frame(MenuController& ctl) {
         }
         // Up / Down move the cursor, held at the ends (no wrap); the list then eases towards the
         // cursor row (not while a hovering pointer holds it). The garage lists play "cursor"
-        // (garage button list), the records the plain button list's "select".
+        // (GarageButtonList), the records the plain ButtonList's "select".
         std::string se;
         ListRows g;
         if (int* cursor = page_list(ctl, *s, g); cursor && d && g.n > 0) {

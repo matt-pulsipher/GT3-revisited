@@ -61,7 +61,7 @@ sorted by code.
 **GTAR**: `"GTAR"`, u32 table count (36), u32 data offset (0xA8), u32 7
 (GT3 clears these low bits of an offset; the discs' offsets are 16-byte
 aligned), u32 offsets[count + 1] relative to the data offset. GT3 reads an
-archive by its offsets alone, so the reader does not check the tag
+archive by its offsets alone (0x231548), so the reader does not check the tag
 (a modified game's tools write `"GTAr"`).
 
 **GTDT**: `"GTDT"`, u16 version (0x0827 in paramdb, 0x0804 standalone),

@@ -123,7 +123,7 @@ F wheel_side_speed(const Car& c) {
 }
 
 void engine_rpm(Car& c) {
-    s32 n = ee::to_int((c.omega * F::raw(0x42700000)) / folded(c.behaviour, 0x40C90FDB, 0x40C90FDA)); // (2002 Tokyo-Geneva's 2 pi: Europe)
+    s32 n = ee::to_int((c.omega * F::raw(0x42700000)) / folded(c.behaviour, 0x40C90FDB, 0x40C90FDA)); // (2002 Tokyo-Geneva's 2 pi: Europe 0x1DE188)
     const s32 floor = s32(c.p.e.idle) - 1;
     if (n < floor) n = floor;
     c.rpm = s16(n);
@@ -137,7 +137,7 @@ void clutch_engage(Car& c) {
     if (c.clutch == 0) {
         if (!(c.clutch_req == F())) {
             const F v = c.speed;
-            const F kKmh10 = folded(c.behaviour, sim::exact::kKmh10.bits, 0x4031C71B); // (2002 Tokyo-Geneva's: Europe)
+            const F kKmh10 = folded(c.behaviour, sim::exact::kKmh10.bits, 0x4031C71B); // (2002 Tokyo-Geneva's: Europe 0x1DE1D0)
             const bool moving = (kKmh10 < v && c.gear != 0) || (v < -kKmh10 && c.gear == 0);
             if (moving) {
                 if (F::raw(0x3E800000) < c.throttle) c.clutch = 2;
@@ -261,7 +261,7 @@ F engine_torque(Car& c, F x) {
     c.intake = (c.intake + (load + (kOne - x) * k)) * kHalf;
     if (c.blowoff_state == 0) {
         if (x < F::raw(0x3F400000)) {
-            F l = c.turbo_load - folded(c.behaviour, 0x3F4CCCCD, 0x3F4CCCCC); // (2002 Tokyo-Geneva's: Europe)
+            F l = c.turbo_load - folded(c.behaviour, 0x3F4CCCCD, 0x3F4CCCCC); // (2002 Tokyo-Geneva's: Europe 0x1DC860)
             if (l < c.blowoff) l = c.blowoff;
             c.blowoff_state = 1;
             c.blowoff = l * F::raw(0x3B800000);
@@ -293,11 +293,11 @@ F engine_torque(Car& c, F x) {
 void engine_speed(Car& c, const Hybrid& h) {
     const Engine& e = c.p.e;
     const F dt = c.dt;
-    // (2002 Tokyo-Geneva's 2 pi / 60 and 10 km/h, folded toward zero: Europe)
+    // (2002 Tokyo-Geneva's 2 pi / 60 and 10 km/h, folded toward zero: Europe 0x1DE998)
     const F kRpmToW = folded(c.behaviour, sim::exact::kRpmToW.bits, 0x3DD6774E), kKmh10 = folded(c.behaviour, sim::exact::kKmh10.bits, 0x4031C71B);
     if (c.clutch == 0) {
         const F idle = ee::int_to_f(e.idle) * kRpmToW;
-        // (the later builds' layout 7 car: the engine charges the store, Concept 2001 Tokyo)
+        // (the later builds' layout 7 car: the engine charges the store, Concept 2001 Tokyo 0x1DA218)
         const F t = hybrid_car(c, h) ? hybrid_open_clutch_torque(c, h) : engine_torque(c, c.throttle);
         const F w = c.omega + (t * c.p.d.inv_engine_inertia) * dt;
         c.omega = w;

@@ -11,12 +11,12 @@ namespace gt3r::sim::exact {
 namespace {
 
 const F kZero{}, kHalf = F::raw(0x3F000000);
-const F kFast = F::raw(0x3FB1C71D), kFastNeg = F::raw(0xBFB1C71D); // +-5 km/h
-const F kStopSpeed = F::raw(0x41DE38E4);                            // 100 km/h
+const F kFast = F::raw(0x3FB1C71D), kFastNeg = F::raw(0xBFB1C71D); // $gp 0x35058C / 0x350590: +-5 km/h
+const F kStopSpeed = F::raw(0x41DE38E4);                            // $gp 0x350594: 100 km/h
 const F kBoxApproach = F::raw(0x41C80000);                          // 25 m before the box
-const F kSlowCorner = F::raw(0x3F4CCCCD);                           // 0.8
+const F kSlowCorner = F::raw(0x3F4CCCCD);                           // $gp 0x3505CC: 0.8
 
-// The stop line's point k (from the end when negative); its point k.
+// 0x1F2EC8 (0x1F9DB8): the stop line's point k (from the end when negative); 0x1F2EE8 (0x1F9DF0): its point k.
 F stop_point(AiPlan& plan, s32 k) { return plan.stop_distance(k < 0 ? k + plan.stop_count() : k); }
 
 } // namespace
@@ -108,7 +108,7 @@ void end_of_run(Car& c, int mode, const PitInputs& in, AiPlan& plan) {
 }
 
 void end_of_run_drive(Car& c, int mode, const PitInputs& in, AiPlan& plan) {
-    if (c.control == 0) event_overrides(c, *in.rules, in.config, c.p.drive_class); // empty
+    if (c.control == 0) event_overrides(c, *in.rules, in.config, c.p.drive_class); // 0x1F6548 (empty), then 0x1F6380
     if (mode == 1) stop_on_line(c, plan);
     else if (mode < 2) drive_on(c, plan);
     else if (mode == 2) stop_straight(c);
@@ -147,7 +147,7 @@ void pit_lane(Car& c, F s, F old, bool hit, bool hit_43c, const PitInputs& in, A
             return;
         }
         const F v = c.speed, u = c.lat_speed;
-        // (2002 Tokyo-Geneva's +-5 km/h two units smaller: Europe)
+        // (2002 Tokyo-Geneva's +-5 km/h two units smaller: Europe 0x1F3308)
         const F kFast = folded(c.behaviour, sim::exact::kFast.bits, 0x3FB1C71B), kFastNeg = folded(c.behaviour, sim::exact::kFastNeg.bits, 0xBFB1C71B);
         if (!(kFast < v || v < kFastNeg || kFast < u || u < kFastNeg)) return;
         if (hit) return;
@@ -167,12 +167,12 @@ void pit_lane(Car& c, F s, F old, bool hit, bool hit_43c, const PitInputs& in, A
     const u8 kind = c.driver_kind;
     if (kind == 3) { // the stop line
         if (c.hold != 0) {
-            if (c.hold == (pal_rate(c) ? 50 : 60)) tyres_start(c, in.wear);
+            if (c.hold == (pal_rate(c) ? 50 : 60)) tyres_start(c, in.wear); // 0x1DD110
             return;
         }
         const F box = plan.stop_distance(c.pit_box);
         if (service != 0 && old < box && box <= s) {
-            standing_start(c);
+            standing_start(c); // 0x1DD5F0
             c.hold = pal_rate(c) ? 250 : 300;
             hud_message(c, msg, 11);
             return;
@@ -202,7 +202,7 @@ void pit_lane(Car& c, F s, F old, bool hit, bool hit_43c, const PitInputs& in, A
         } else if (service == 0) {
             pit_leave(c, plan);
             hud_message(c, msg, 9);
-        } else if (folded(c.behaviour, kStopSpeed.bits, 0x41DE38E2) <= c.speed) { // (Europe's 100 km/h)
+        } else if (folded(c.behaviour, kStopSpeed.bits, 0x41DE38E2) <= c.speed) { // (Europe 0x1F3308's 100 km/h)
             pit_leave(c, plan);
             hud_message(c, msg, 7);
         } else {
@@ -272,7 +272,7 @@ void tick_flow(std::span<Car> cars, FlowStep& f, AiPlan& plan) {
             f.pit.clock = f.flow->clock;
             const size_t n = f.pit_events->size();
             pit_lane(c, s, old, f.hit[size_t(i)] != 0, f.hit_43c[size_t(i)] != 0, f.pit, plan, *f.pit_events);
-            for (size_t q = n; q < f.pit_events->size(); ++q) { // their notes
+            for (size_t q = n; q < f.pit_events->size(); ++q) { // 0x1ED9F0 / 0x1EDA40: their notes through 0x1901B8
                 RaceEvent e;
                 e.type = 18, e.car = (*f.pit_events)[q].car, e.arg = 2, e.value = (*f.pit_events)[q].type;
                 f.events->push_back(e);

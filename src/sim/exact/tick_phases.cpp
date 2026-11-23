@@ -13,7 +13,7 @@ void class_grip_scale(Car& c, const ClassGrip& grip) {
     if (!toward_zero(c.behaviour) || !(c.control == 1 || c.control == 2 || c.driver_kind != 0)) return;
     const s8 pct = grip[size_t(c.p.drive_class) & 3];
     if (pct == 0) return;
-    const F k = ee::int_to_f(pct) * F::raw(0x3C23D70A) + F::raw(0x3F800000); // (Europe: 0.01)
+    const F k = ee::int_to_f(pct) * F::raw(0x3C23D70A) + F::raw(0x3F800000); // (Europe 0x33421C: 0.01)
     for (Wheel& w : c.w) {
         w.slip_fade = w.slip_fade * k;
         w.circle = w.circle * k;

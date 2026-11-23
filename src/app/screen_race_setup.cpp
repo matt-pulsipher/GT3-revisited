@@ -138,7 +138,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         gtrc_.reset();
         director_ = ReplayDirector(); // (not left pointing at the old script)
         camera_.set_replay_director(nullptr);
-        // The pre-race shot's camera move (starting camera: cameras/start.cam, record 0).
+        // The pre-race shot's camera move (StartingCamera: cameras/start.cam, record 0).
         camera_.set_start_shot(std::nullopt);
         if (std::optional<Bytes> sc = app.vfs()->read("cameras/start.cam")) try {
                 if (GtrcScript::is_gtrc(*sc))
@@ -462,7 +462,7 @@ std::optional<sim::exact::SoloRecorders> RaceScreen::solo_recorders_of(const Rep
 
 // The session's best run becomes the ghost (presentation §G11): its record, the ghost car of the next run.
 void RaceScreen::take_best_run_ghost() {
-    // A free run's best lap becomes the ghost in its recorders (1, 0: "Update Ghost?").
+    // A free run's best lap becomes the ghost in its recorders (0x17AAD8 (1, 0): "Update Ghost?").
     if (lap_ghost()) {
         if (RaceField* f = exact_field(); f && exact_best_lap_to_ghost(*f)) LOG_INFO("Race: ghost updated, the best lap");
         else if (exact_free_run_) exact_free_run_->best_to_ghost(false);
@@ -662,14 +662,14 @@ bool RaceScreen::build_vehicle(App& app) {
         o.kind = online_       ? sim::exact::Conductor::BattleMP // the i.LINK battle
                  : two_player_ ? sim::exact::Conductor::Battle2P
                                : sim::exact::Conductor::SinglePlayer;
-        // The attract demo runs as GT3's does: the race's play kind 2 (the race passes it to the conductor's
-        // race start as the race-flow byte; the race's exit(2) from the demo runner), so every car, slot 0 too,
+        // The attract demo runs as GT3's does: the race's play kind 2 (RaceBase::vf10 passes it to the conductor's
+        // virtual 23 as the race-flow byte; RacePS2Base::vf42(2) from the demo runner 0x100A78), so every car, slot 0 too,
         // is a CPU car (control 2) with the event's overrides varied by grid slot, and no records. So is the pre-race menu's
         // race, with records off as well: no laps or time limit, so it races on (presentation §A8c). The test autopilot:
         // configuration 3, the race's AI drives the players' cars (the pads decoded).
         o.config = attract_ || backdrop_ ? 2 : preset_.autodrive ? 3 : 0;
         o.records_off = backdrop_;
-        o.locked = race_preview_; // (the Preview's runner, after building the race)
+        o.locked = race_preview_; // (the Preview's runner 0x100538, after building the race)
         o.laps = race_laps_;
         if (two_player_) {
             o.second.car = launch_source2_.value_or(ExactCarSource{car2});

@@ -11,7 +11,7 @@ constexpr F kPi = F::raw(0x40490FDB);
 constexpr F kHalfPi = F::raw(0x3FC90FDB), kNegHalfPi = F::raw(0xBFC90FDB);
 constexpr F kOne = F::raw(0x3F800000), kNegOne = F::raw(0xBF800000);
 
-// Two tables on table c's axis at once (the same point k for both): c's y and y2's.
+// 0x1D9098: two tables on table c's axis at once (the same point k for both): c's y and y2's.
 void lookup2(const Table<12>& c, const std::array<F, 12>& y2, F v, F& out_c, F& out_2) {
     const u32 last = u32(s32(c.n) - 1);
     if (v <= c.x[0]) {
@@ -35,7 +35,7 @@ void lookup2(const Table<12>& c, const std::array<F, 12>& y2, F v, F& out_c, F& 
 } // namespace
 
 F slip_angle_fold(const Behaviour& h, F b, F& sign) {
-    // (2002 Tokyo-Geneva's pi / 2 and pi one unit lower: Europe)
+    // (2002 Tokyo-Geneva's pi / 2 and pi one unit lower: Europe 0x1DF048)
     const F pi = folded(h, kPi.bits, 0x40490FDA);
     if (b < folded(h, kNegHalfPi.bits, 0xBFC90FDA)) {
         sign = kOne;
@@ -101,7 +101,7 @@ void tyre_slip_force(Car& c) {
             continue;
         }
         F a = w.steer;
-        if (w.hub_vx < F()) a = a + folded(c.behaviour, kPi.bits, 0x40490FDA); // rolling backwards (Europe)
+        if (w.hub_vx < F()) a = a + folded(c.behaviour, kPi.bits, 0x40490FDA); // rolling backwards (Europe 0x1DF1D8)
         const F beta = angle_diff(a, w.slip_dir, c.behaviour.rule(Rule::AngleWrap));
         t.slip_angle = beta;
         F sign;

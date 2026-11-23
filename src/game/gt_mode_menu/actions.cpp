@@ -33,7 +33,7 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
             e.page == "records_free_tt")
             ms.list_off = {}, ms.list_pin = {};
         // The garage's wheel list starts on the entry the car wears (the stock-wheel button for a
-        // car on its own wheels), else on its first button (gt_mode §7; wheel button list).
+        // car on its own wheels), else on its first button (gt_mode §7; WheelButtonList 0x1C0D18).
         if (starts(e.page, "at/ws/ws_")) ms.shop_row = {}; // a brand page's row is placed at once
         if (e.page == "hm/hm_wheel") {
             const GarageCar* car = wheel_page_car(*s);
@@ -82,8 +82,8 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
         if (GarageCar* real = setting_real()) s->setting_work = *real;
         return false;
     }
-    // Gran Turismo Concept's settings (concept §10): Normal and Custom fit their set of parts on the car at once,
-    // the Custom page's Reset puts every setting back.
+    // Gran Turismo Concept's settings (concept §10): Normal and Custom fit their set of parts on the car at once
+    // (0x153C38 / 0x153BE0), the Custom page's Reset puts every setting back (0x153AB0).
     if (e.kind == K::Action && (e.action == "set_concept_normal" || e.action == "set_concept_custom" || e.action == "retrieve_all")) {
         if (GarageCar* real = setting_real()) {
             if (e.action == "set_concept_normal") concept_fit_normal(gt, *real);
@@ -108,7 +108,7 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
         // Part change: fit the owned part at once (no OK needed). GT3's part-change action plays
         // "ok" when the car owns the part and "disable" when it does not; with no car, nothing.
         // It runs for every set_* item but set_brk_racing, which has an action of its own that
-        // plays none.
+        // plays none (0x167038, 0x1670F8).
         GarageCar* real = setting_real();
         int goods = setting_goods(e.action);
         const bool sound = e.action != "set_brk_racing";
@@ -187,7 +187,7 @@ bool on_event(const MenuEvent& e, std::vector<std::string>& log) {
         } else if (a == "set_focus_wheel") {
             // The chosen list entry (wheel_cursor) for the focused garage car.
         } else if (a == "change_wheel") {
-            // GT3's change_wheel: the car takes the chosen entry's wheel, the
+            // GT3's change_wheel (0x126048): the car takes the chosen entry's wheel, the
             // placeholder putting it back on its own wheels; its "wheel" effect comes a moment later.
             ms.sound_timers.push_back({kSoundTimerFrames, "wheel"});
             gt.fit_wheel(s->garage_focus, wheel_list_entry(gt.state(), s->wheel_cursor));

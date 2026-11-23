@@ -70,7 +70,7 @@ its sections); this page describes the code.
   the license prize car once), `can_open_license_page` (B → A → IB → IA → S;
   B and rally always open), `can_take_test` (8th test needs 1–7).
 - **Races**: `rules(code)` decodes the event record fields GT mode needs;
-  `check_entry` reproduces reguration result (dirt tires, license,
+  `check_entry` reproduces RegurationResult (dirt tires, license,
   drivetrain, regulation list, NA/turbo, car class/tuned); `can_enter` maps
   it to the license / regulation popups. `record_race` pays the place prize
   (every time), keeps the best place, counts races/wins and awards prize
@@ -198,7 +198,7 @@ hooks, `intercept` / `enabled`, and the widget hooks on `ar/goodies`
   regulation as name + second name, a string once at its last place, rows of
   the `link_menu` template in `menu_regulated_car`, Up/Down; "No Limitations"
   without a list), the records page's places (`records_free_tt`, Up/Down); these
-  three are GT3's vertical button list (`ListRows`, `menu::flow::column_layout`:
+  three are GT3's vertical ButtonList (`ListRows`, `menu::flow::column_layout`:
   rows 4 apart, the cursor row centred, the offset eased in `MenuState::list_off`, the
   scroll bar by `list_scroll_bar`), the status bar day number (hidden-layer widget), and the wheel
   inventory cursor. Dealer pages (maker and car lists) are tile strips in the
@@ -515,7 +515,7 @@ exactly (`ShowroomCamera`: single = look-at 0.25 -> 0.5 m, 10 degrees, yaw
 with the game's yaw used directly (180 = in front: head-on at ~2 s, side-on
 at ~6 s, matching the timed captures); the logo pair's corner-diagonal fade
 (`ElementDraw::corner_alpha`); the colour column easing (30 % per frame,
-clip bands); the 2-D blur behind the car page steps (3 x 3 offset copies of
+clip bands); the Blur2D behind the car page steps (3 x 3 offset copies of
 the background movie, radius 0 -> 2); the step buttons over the car; the 2
 Player car page's player-1 half (gauges, colour column, badges, small 3D
 car); no AREA badge outside Single Race.
@@ -789,7 +789,7 @@ prize cars (Licenses and Races pages) gives every set the results earn
 (`GtMode::earned_prizes` / `award_earned_prizes`: the conditions of `award_prizes` without
 the checked code, prize flags respected, rolled as one car_get check rolls them). GT3 itself
 checks a series' set only with a win in that series and a licence set only with that
-licence's test, so results set by hand earn nothing there until
+licence's test (`0x214480`, `0x214510`), so results set by hand earn nothing there until
 such a win. It edits
 the save being played as the session has it (`editable_save`: it can be a race ahead of
 its file), and `store_edited_save` writes the file and hands the running game the edit.
@@ -906,10 +906,10 @@ Revisited converts both (M: an original display quirk).
 
 ```bash
 ./build-gtmode/gt3r_tests gtmode                     # logic and synthetic menus (no disc)
-GT3R_DISC="$PWD/PBPX-95503 (1.10).iso" ./build-gtmode/gt3r_tests gtmode
+GT3R_DISC="$PWD/gt3-us.iso" ./build-gtmode/gt3r_tests gtmode
 GT3R_GTMODE_DEMO_SAVE=/tmp/x/demo.sav GT3R_DISC=… ./build-gtmode/gt3r_tests gtmode_disc_demo_save
 GT3R_GTMODE_SAVE=/tmp/x/demo.sav GT3R_GTMODE_NOSAVE=1 GT3R_GT3MENU_SCRIPT="down,cross,wait:90" \
-  GT3R_GT3MENU_FREEZE=1 ./build-gtmode/gt3r.app/Contents/MacOS/gt3r "PBPX-95503 (1.10).iso" --screen gt3menu --shot map.png
+  GT3R_GT3MENU_FREEZE=1 ./build-gtmode/gt3r.app/Contents/MacOS/gt3r "gt3-us.iso" --screen gt3menu --shot map.png
 ```
 
 Disc tests check: gcf constants (18,000 / 50 / 250 / 500, 364 codes); 151

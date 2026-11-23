@@ -407,7 +407,7 @@ TEST(build_rules_pod_race) {
     CHECK(ex::stop_zone_setup(kTokyo, 5, 660, 33, lap, 3).active == 0);
     CHECK(ex::stop_zone_setup(kTokyo, 1, 608, 33, lap, 3).active == 0 && ex::stop_zone_setup(kGt3, 5, 608, 33, lap, 3).active == 0);
     CHECK(ex::stop_zone_setup(kTokyo, 5, 0, 33, lap, 3).active == 0 && ex::stop_zone_setup(kTokyo, 5, 608, 0, lap, 3).active == 0);
-    // The rule each step (the race clock): car 0 the player's, cars 1 and 2 the computer's, each owing its first lap's stop.
+    // The rule each step (virtual 14): car 0 the player's, cars 1 and 2 the computer's, each owing its first lap's stop.
     ex::RaceFlowInputs in;
     in.kind = ex::Conductor::SinglePlayer, in.behaviour = kTokyo, in.laps = 3;
     in.messages[0] = 0;
@@ -453,7 +453,7 @@ TEST(build_rules_pod_race) {
         cars = race(0, 630.0f, false, 0, 600.0f); // off its ground inside it: nothing
         ex::race_mode_clock(cars, in, flow, events, {});
         CHECK(cars[0].x51c == 0);
-        // Under the time trial's conductor (its own the race clock) nothing; nor at 2 cars' race of GT3.
+        // Under the time trial's conductor (its own virtual 14) nothing; nor at 2 cars' race of GT3.
         in.kind = ex::Conductor::TimeTrial;
         cars = race(0x22, 615.0f, true, 0x22, 610.0f);
         ex::race_mode_clock(cars, in, flow, events, {});
@@ -610,7 +610,7 @@ TEST(build_rules_solo_recorder_layout) {
     CHECK(!g.ghost_from_best(l) && !g.later);
 }
 
-// The pass-by states: a slipstream held a second makes state 1, a car alongside 2, just ahead 3; behind again the
+// The pass-by states (0x1F59B0): a slipstream held a second makes state 1, a car alongside 2, just ahead 3; behind again the
 // pair's roles swap; at 50 steps a second the timer's cap and the second are PAL's (250, 51).
 TEST(build_rules_pass_by) {
     for (const bool pal : {false, true}) {

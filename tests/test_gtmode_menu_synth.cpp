@@ -922,7 +922,7 @@ TEST(gtmode_synth_garage) {
     choose(f, "hm_gr");
     CHECK(page(f) == "hm/hm_gr");
     // Rows in the "menu_garage" window (y up: from its top at 400, 24 apart: the 20-unit rows
-    // and GT3's button list gap of 4), date order, the cursor row in the template's focused look;
+    // and GT3's ButtonList gap of 4), date order, the cursor row in the template's focused look;
     // the MAKE column; the ride car's mark.
     auto rows = [&] {
         std::vector<std::pair<std::string, menu::ElementDraw>> out;
@@ -983,7 +983,7 @@ TEST(gtmode_synth_garage) {
     CHECK(page(f) == "00cmn/not_for_sell" && gt.state().garage.size() == 2);
 }
 
-// The garage list as GT3's vertical button list (menus §4.6, §9.7; gt_mode §5, §19): the 20-unit
+// The garage list as GT3's vertical ButtonList (menus §4.6, §9.7; gt_mode §5, §19): the 20-unit
 // rows 24 apart from the
 // window's top; a list that fits stays there, with no scroll bar at all (track included); a
 // longer one keeps the cursor row centred, held at the window's top and bottom near the ends,
@@ -1167,7 +1167,7 @@ TEST(gtmode_synth_tune_shop) {
     choose(f, "muf_sports");
     CHECK(page(f) == "ts/already_you_have");
     // A part the ride car cannot take (the wagon has no muffler record): no price, and AFTER
-    // shows dashes.
+    // shows dashes (0x11CF08).
     const int wagon = gt.add_prize_car(w::kWagon, -1, "test");
     CHECK(wagon >= 0);
     gt.ride(wagon);
@@ -1350,7 +1350,7 @@ TEST(gtmode_synth_race_and_prizes) {
             CHECK(*rows[1].text == "Synthetic Wagon Touring" && box_is(rows[1], 60, 276, 300, 20));
             CHECK(rows[0].element == &f.controller()->items()[0].element->alt[0]); // the cursor row
         }
-        // (Rows 24 apart from the window's top, GT3's vertical button list; the list fits: no
+        // (Rows 24 apart from the window's top, GT3's vertical ButtonList; the list fits: no
         // scroll bar, track included.)
         CHECK(draws_named(f, "scroll_bar").empty() && draws_named(f, "pinch").empty());
     }

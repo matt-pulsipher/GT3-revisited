@@ -21,8 +21,8 @@ std::vector<std::string> RaceScreen::pause_items() const {
 }
 
 // GT3's pause window for this run (presentation §E): time trials,
-// licence tests and machine tests have RETRY (race pause with retry), races / free runs /
-// 2P do not (race pause), replays have REPLAY OPTIONS (replay pause).
+// licence tests and machine tests have RETRY (RacePauseWithRetry), races / free runs /
+// 2P do not (RacePause), replays have REPLAY OPTIONS (ReplayPause).
 PauseMenu::Kind RaceScreen::pause_kind() const {
     if (replaying_ || demo_replay()) return PauseMenu::Kind::Replay;
     bool machine = from_menu_ && launch_.request.mode == "go_machine_test";

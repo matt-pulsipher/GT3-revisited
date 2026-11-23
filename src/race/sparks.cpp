@@ -14,7 +14,7 @@ namespace gt3r::race {
 
 namespace {
 
-// The colour keys at P +0x38 .. +0x84: r, g, b, a and the life remaining (s) where the
+// The colour keys at P +0x38 .. +0x84 (0x19F898 from 0x34FE74 .. 0x34FEBC): r, g, b, a and the life remaining (s) where the
 // key starts.
 struct Key {
     float r, g, b, a, t;
@@ -154,7 +154,7 @@ void SparkDraw::add_items(std::vector<render::DrawItem>& items, const sim::exact
         if (!have) continue;
         const u32 col = spark_colour(p.life.host());
         if (col == 0) continue;
-        // The streak from e0 to e1, w its half-width (a square of 2w when it has no length on screen).
+        // 0x19EB30: the streak from e0 to e1, w its half-width (a square of 2w when it has no length on screen).
         const float hw = p.size.host();
         const float dx = e1.x - e0.x, dy = e1.y - e0.y, l2 = dx * dx + dy * dy;
         render::Vec3 c[4];
@@ -166,7 +166,7 @@ void SparkDraw::add_items(std::vector<render::DrawItem>& items, const sim::exact
             c[0] = {e0.x - ex - ey, e0.y - ey + ex, e0.z}, c[1] = {e0.x - ex + ey, e0.y - ey - ex, e0.z};
             c[2] = {e1.x + ex - ey, e1.y + ey + ex, e1.z}, c[3] = {e1.x + ex + ey, e1.y + ey - ex, e1.z};
         }
-        const float uv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+        const float uv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}}; // 0x32FE10
         const u32 vc = vertex_colour(col);
         for (int j = 0; j < 4; ++j) {
             scene::Vertex& v = verts_[n * 4 + size_t(j)];

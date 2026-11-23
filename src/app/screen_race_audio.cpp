@@ -16,7 +16,7 @@ void RaceScreen::music_cues(App& app) {
     c.replay = replaying_ || race_preview_; // (a race song's level outside live play)
     c.songs = music_.has_songs();
     bool lic_replay = !license_event_.empty() && !attract_ && (replaying_ || demo_);
-    // (The Preview is an attract demo with the race's own music: needs race +0x7C clear.)
+    // (The Preview is an attract demo with the race's own music: 0x17DD80 needs race +0x7C clear.)
     c.kind = lic_replay                             ? RaceMusic::Kind::LicenseReplay
              : demo_ || (attract_ && !race_preview_) ? RaceMusic::Kind::Demo
              : !license_event_.empty()              ? RaceMusic::Kind::License

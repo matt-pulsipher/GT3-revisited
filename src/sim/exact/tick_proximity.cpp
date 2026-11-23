@@ -14,9 +14,9 @@ const F kHeightMargin = F::raw(0x40A00000); // 5 m
 const F kViewRange = F::raw(0x42C80000);    // 100 m
 const F kCodeRange = F::raw(0x42480000);    // 50 m
 const F kContactRange = F::raw(0x41A00000); // 20 m
-const F kSlipSpeed = F::raw(0x41DE38E4);    // 100 km/h
+const F kSlipSpeed = F::raw(0x41DE38E4);    // 0x350580: 100 km/h
 const F kFastClosing = F::raw(0x41200000);  // 10 m/s
-const F kSlowClosing = F::raw(0x3E8E38E4);  // 1 km/h
+const F kSlowClosing = F::raw(0x3E8E38E4);  // 0x3505D8: 1 km/h
 const F kCloseTime = F::raw(0x40400000);    // 3 s
 const F kCloseGap = F::raw(0x40000000);     // 2 m
 const F kQuarter = F::raw(0x3E800000);
@@ -128,7 +128,7 @@ void contact_intensity(Car& c, F gap, F closing) {
 
 F slipstream_factor(const Car& leader, F x, F y) {
     const F v = leader.speed, h = leader.p.body_width;
-    // (2002 Tokyo-Geneva's 100 km/h two units lower: Europe)
+    // (2002 Tokyo-Geneva's 100 km/h two units lower: Europe 0x1F2C50)
     if (folded(leader.behaviour, kSlipSpeed.bits, 0x41DE38E2) < v && x < F() && -v < x && -h < y && y < h) return (v + x) / v;
     return F();
 }

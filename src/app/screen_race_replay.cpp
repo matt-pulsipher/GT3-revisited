@@ -585,7 +585,7 @@ void RaceScreen::aim_replay_camera() {
         aim = aim * (1.0f - e) + aim_of(aim_from_, from_partner) * e;
     }
     director_.set_pair(partner >= 0);
-    // The zoom spring's inward pull follows the aim's move (1 with a pair).
+    // The zoom spring's inward pull follows the aim's move (1 with a pair, fn_001FF5F8).
     director_.set_aim_progress(partner >= 0 || aim_left_ <= 0 || aim_total_ <= 0
                                    ? 1.0f
                                    : 1.0f - float(aim_left_) / float(aim_total_));

@@ -9,7 +9,7 @@ namespace {
 const F kOne = F::raw(0x3F800000);
 const F kMinusOne = F::raw(0xBF800000);
 const F k255 = F::raw(0x437F0000);
-// The flap pendulums.
+// The flap pendulums (0x352994 .. 0x3529AC).
 const F kFlapAccel = F::raw(0x40A00000);  // 5: a_x's share
 const F kFlapSpeed = F::raw(0x40A00000);  // 5: the hub-speed kick
 const F kFlapChance = F::raw(0x3CA3D70A); // 0.02
@@ -78,7 +78,7 @@ void wear_flags(Car& c, const WearParams& cp, const PitMode& m) {
                 break;
             }
         }
-    // The conductor's mode code, 0 for a car with +0x136D set.
+    // 0x1D9FE0: the conductor's mode code, 0 for a car with +0x136D set.
     const s32 mode = c.control ? 0 : m.mode;
     if (mode == 4)
         for (const Wheel& w : c.w)

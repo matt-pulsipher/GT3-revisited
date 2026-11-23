@@ -186,7 +186,7 @@ public:
     void add_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s, const sim::VehicleSetup& setup,
                    const render::Vec3& eye, const CarLook& look = {}) const;
     // One race step of the car on `slot` (CarLook::slot; its drawing 0): the CLUT animations of its callback textures,
-    // as race's frame plays them (the callback's id 10, on Tokyo-Geneva Europe): a new value
+    // as RacePS2Base's frame plays them (the callback's id 10, 0x220EE0 and 0x220D38 on Tokyo-Geneva Europe): a new value
     // of id 10 (the pod's mood) starts the animations of that group again, and that group plays for `seconds`.
     void step_look(int slot, const sim::VehicleState& s, float seconds) const;
     // The wet-road reflection's mirrored car (docs/dev/RACE.md "Wet-road reflection"): body and wheels only, reflected about
@@ -304,7 +304,7 @@ render::Mat4 car_matrix(const sim::VehicleState& s);
 // 80 m, else 2, at most lods - 1; 0 at any distance with `full_detail` ([video] full_car_detail = on).
 int car_lod(float dist, int lods, bool full_detail = false);
 
-// The car callback's values for a state (gtm1::RunParams::callback; race's frame, on Tokyo-Geneva
+// The car callback's values for a state (gtm1::RunParams::callback; RacePS2Base's frame, 0x1A9B00 on Tokyo-Geneva
 // Europe): ids 1-4 the flaps, 0.5 + 0.5 x (physics §8.8); id 5 the steering, 0.5 + 0.5 steer / lock (0.5 straight
 // ahead); the later builds' special cars (VehicleState::Special): id 6 the wing, id 7 the tail (its lean, or at level its
 // nod in branch 1), id 8 the lamps' class and fade, ids 9 and 10 the mood.

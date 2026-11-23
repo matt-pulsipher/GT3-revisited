@@ -10,9 +10,9 @@ namespace {
 
 const F kOne = F::raw(0x3F800000);
 const F kMinusOne = F::raw(0xBF800000);
-const F kPercent = F::raw(0x3C23D70A); // 0.01
-// 1 / 3.6 and 1 / 57.6 m/s (minus);
-// 2002 Tokyo-Geneva's a unit lower (Europe).
+const F kPercent = F::raw(0x3C23D70A); // 0x35048C: 0.01
+// 1 / 3.6 (0x350490 / 0x3504AC) and 1 / 57.6 m/s (0x350498 / 0x35049C / 0x3504A4, minus: 0x350494 / 0x3504A0 / 0x3504A8);
+// 2002 Tokyo-Geneva's a unit lower (Europe 0x1DE520).
 struct SlipK {
     F kmh, eps, minus_eps;
 };

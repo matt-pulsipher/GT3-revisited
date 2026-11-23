@@ -133,7 +133,7 @@ std::string lap_time_text(long long ms) { return Hud::format_time(double(ms) / 1
 
 std::string split_text(int number, long long ms) { return "T" + std::to_string(number) + " " + lap_time_text(ms); }
 
-// The licence conductor's checkpoint numbers ((laps - 1) x points + index; at the line: laps x points
+// The licence conductor's checkpoint numbers (0x1F0D90: (laps - 1) x points + index; 0x1F0ED8 at the line: laps x points
 // - 1; laps from 1), + 1 as the split shows them.
 int license_split_number(bool line, int lap, int point, int points) {
     return line ? (lap + 1) * points : lap * points + point + 1;

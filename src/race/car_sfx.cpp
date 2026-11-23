@@ -157,7 +157,7 @@ void CarSfx::update(RaceSfx& sfx, VoiceMixer& mixer, const Step& st) {
         }
     }
 
-    // A special car's mood (the later builds' pod, on Tokyo-Geneva Europe): a new mood gives the car's mood voice
+    // A special car's mood (the later builds' pod, 0x1A5860 on Tokyo-Geneva Europe): a new mood gives the car's mood voice
     // its effect (the one playing stops), keyed at once; the voice stays at the car, placed from the camera as the tyres'
     // loops are (min(1, 32/d), no channel gain), while it plays.
     {

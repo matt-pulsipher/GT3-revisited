@@ -1,4 +1,4 @@
-// The pad read's live path; see pad_read.h.
+// The pad read 0x210740's live path; see pad_read.h.
 
 #include "sim/exact/pad_read.h"
 
@@ -6,7 +6,7 @@ namespace gt3r::sim::exact {
 
 namespace {
 
-// The stick response curve (256 bytes): a dead band at both ends and around the centre.
+// The stick response curve 0x3416F8 (256 bytes): a dead band at both ends and around the centre.
 u8 curve(const ProgramData& d, u8 v) { return d.b(ProgramData::Table::StickCurve, v); }
 
 s32 at_most_256(s32 v) { return v < 0x100 ? v : 0x100; }
@@ -14,7 +14,7 @@ s32 at_most_256(s32 v) { return v < 0x100 ? v : 0x100; }
 } // namespace
 
 void type_a_channels(PadReading& r) {
-    // The type A entries: 1 (the left stick's x: channel 2 in +2 and +4), 12 (Cross: +4 channel 10), 14 (Square:
+    // The type A entries of 0x2E2CF8: 1 (the left stick's x: channel 2 in +2 and +4), 12 (Cross: +4 channel 10), 14 (Square:
     // 11), 13 (Triangle: 8), 11 (Circle: 9), 16 (R2: 15), 18 (L2: 14); a button's +2 is -1 (no analog channel).
     r.channel_a = {2, -1, -1, -1, -1, -1, -1};
     r.channel_b = {2, 10, 11, 8, 9, 15, 14};
@@ -80,8 +80,8 @@ s32 pad_channel(s32 code, u8 value, s32 scale, const ProgramData& d) {
 }
 
 void pad_pedals(PadFrame& f, const PadReading& r, const ProgramData& d, bool pressure) {
-    // In the program's order: throttle (function 1), brake (2), third (4), back (3); the program scales them all by 100,
-    // the pressure buttons by 35, 65, 20 and 35.
+    // In the program's order: throttle (function 1), brake (2), third (4), back (3); 0x211050 scales them all by 100,
+    // 0x2111C0 (the pressure buttons) by 35, 65, 20 and 35.
     struct Pedal {
         int function;
         u8 flag;
@@ -102,7 +102,7 @@ void pad_pedals(PadFrame& f, const PadReading& r, const ProgramData& d, bool pre
 }
 
 void pad_shift(PadFrame& f, const PadReading& r, const ProgramData& d) {
-    // For functions 5 and 6: the configuration's +2 channel at least half way.
+    // 0x211330 for functions 5 and 6: the configuration's +2 channel at least half way.
     auto on = [&](int function) {
         const s32 code = r.channel_a[size_t(function)];
         if (code < 0) return 0;
@@ -123,14 +123,14 @@ void pad_wheel(PadFrame& f, const PadReading& r) {
     f.kind = 4;
     f.flags = u8(f.flags | 1);
     f.steer = s16(steer);
-    // 0xFF - x - dead travel x 2, at most 256.
+    // 0x2115D8: (0xFF - x - dead travel) x 2, at most 256.
     auto pedal = [](u8 x, s32 dead) { return at_most_256((0xFF - s32(x) - dead) * 2); };
     if (const s32 t = pedal(r.wheel_throttle, 0x4B); t > 0) f.throttle = u16(t << 4), f.flags = u8(f.flags | 2);
     if (const s32 b = pedal(r.wheel_brake, 0x50); b > 0) f.brake = u16(b << 4), f.flags = u8(f.flags | 4);
 }
 
 PadFrame pad_read(const PadReading& r, const ProgramData& d) {
-    PadFrame f;
+    PadFrame f; // 0x1F4330
     switch (r.type) {
     case 4:
         pad_buttons(f, r.buttons);
