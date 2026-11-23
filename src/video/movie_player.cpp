@@ -53,6 +53,7 @@ void MoviePlayer::begin(std::unique_ptr<Movie> movie, float volume, double start
     video_done_ = false;
     audio_done_ = !info_.has_audio;
     audio_frames_put_ = 0;
+    tex_left_split_ = texture_split(); // (still the earlier one's when the last movie put up no picture)
     field_split_ = false;
     layout_ = FieldLayoutDetector();
     ready_.clear();
@@ -245,7 +246,7 @@ void MoviePlayer::picture_rects(const SDL_FRect& display, SDL_FRect& src, SDL_FR
     float w = float(tex_w_), h = float(tex_h_);
     src = {0, 0, w, h};
     dst = display;
-    if (!field_split_ || tex_h_ < 4) return;
+    if (!texture_split() || tex_h_ < 4) return;
     if (tex_stacked_) { // deinterlaced: a full picture per field, stacked
         src = {0, second_field() ? h / 2 : 0, w, h / 2};
         return;
@@ -264,7 +265,7 @@ void MoviePlayer::picture_rects(const SDL_FRect& display, SDL_FRect& src, SDL_FR
 }
 
 bool MoviePlayer::second_field() const {
-    if (!field_split_) return false;
+    if (!texture_split()) return false;
     // The second field's time, by the same early rule as the frames': with 29.97 fps at 60 Hz a
     // refresh that took a frame up to 2 ms early came 16.67 ms later just before its second
     // field, so for seconds at a time only first fields were shown.
@@ -368,6 +369,7 @@ bool MoviePlayer::update(SDL_Renderer* renderer) {
         tex_h_ = frame.height;
     }
     tex_stacked_ = frame.fields_stacked;
+    tex_left_split_.reset();
     if (texture_)
         SDL_UpdateYUVTexture(texture_, nullptr, frame.y.data(), frame.width, frame.u.data(), frame.chroma_width(),
                              frame.v.data(), frame.chroma_width());

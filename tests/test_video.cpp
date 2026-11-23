@@ -209,7 +209,8 @@ void put_slice_header(BitWriter& w, int row) {
     w.put(0, 1); // extra_bit_slice
 }
 
-Bytes build_i_picture(int tref) {
+// `flat`: every macroblock the same (no seam: FieldLayoutDetector casts no vote, so the movie stays whole).
+Bytes build_i_picture(int tref, bool flat = false) {
     BitWriter w;
     put_picture_header(w, tref, 1);
     for (int row = 0; row < kMbH; ++row) {
@@ -218,7 +219,8 @@ Bytes build_i_picture(int tref) {
         for (int mx = 0; mx < kMbW; ++mx) {
             int i = row * kMbW + mx;
             w.str("1"); // macroblock_address_increment 1
-            put_intra_mb(w, mb_luma(i), mb_cb(i), mb_cr(i), pred);
+            const int k = flat ? 0 : i;
+            put_intra_mb(w, mb_luma(k), mb_cb(k), mb_cr(k), pred);
         }
     }
     w.align();
@@ -803,14 +805,14 @@ namespace {
 
 // A video-only movie of `frames` pictures (an I picture, then zero-vector P pictures: all the same
 // picture, whose macroblock rows differ at the middle, so the player takes it as field-split) at
-// frame_rate_code's rate, one PES packet per picture with its PTS.
-Bytes timed_movie(int frame_rate_code, double fps, int frames) {
+// frame_rate_code's rate, one PES packet per picture with its PTS. `flat`: one grey picture (taken as whole).
+Bytes timed_movie(int frame_rate_code, double fps, int frames, bool flat = false) {
     Bytes s;
     const s64 base = 90000;
     for (int k = 0; k < frames; ++k) {
         Bytes v;
         if (k == 0) append(v, sequence_prefix(frame_rate_code));
-        append(v, k == 0 ? build_i_picture(0) : build_p_picture(k));
+        append(v, k == 0 ? build_i_picture(0, flat) : build_p_picture(k));
         if (k == frames - 1) append(v, sequence_end());
         append(s, pack_header());
         append(s, pes_packet(0xE0, v, base + s64(std::llround(k * 90000.0 / fps))));
@@ -888,6 +890,91 @@ Cadence play_cadence(int frame_rate_code, double fps, double hz, int frames) {
 }
 
 } // namespace
+
+// The picture left in the texture when another movie starts (a menu's movie switches, a loop's restarts) is drawn
+// as it was until the new movie's first picture replaces it, though the new movie's layout starts over.
+TEST(video_player_left_picture_keeps_layout) {
+    const Bytes split = timed_movie(5, 30.0, 4), flat = timed_movie(5, 30.0, 4, true);
+    SDL_Surface* surface = SDL_CreateSurface(64, 64, SDL_PIXELFORMAT_RGBA32);
+    SDL_Renderer* r = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+    CHECK(r != nullptr);
+    if (!r) {
+        SDL_DestroySurface(surface);
+        return;
+    }
+    {
+        MoviePlayer p;
+        u64 now = 1'000'000'000;
+        p.set_time_source([&now] { return now; });
+        const SDL_FRect box{0, 0, 64, 48};
+        auto src = [&] {
+            SDL_FRect s, d;
+            p.picture_rects(box, s, d);
+            return s;
+        };
+        auto th = [&] {
+            float w = 0, h = 0;
+            SDL_GetTextureSize(p.texture(), &w, &h);
+            return h;
+        };
+        auto play = [&](const Bytes& s) {
+            p.start(std::make_unique<Movie>(buffer_reader(s), s.size()));
+            CHECK(p.wait_for_frame(2.0));
+        };
+        play(split);
+        p.update(r);
+        CHECK(src().h * 2 == th()); // one picture of the deinterlaced pair
+        play(flat);                 // no votes: its layout stays whole
+        CHECK(!p.field_split());
+        CHECK(src().h * 2 == th()); // still the split picture: one of the pair
+        p.update(r);
+        CHECK(src().y == 0 && src().h == th()); // the flat picture: whole
+        play(split);
+        CHECK(p.field_split());                 // decided before its first picture is up
+        CHECK(src().y == 0 && src().h == th()); // still the flat picture: whole
+        play(flat);                             // before any picture of the split movie came up
+        CHECK(src().y == 0 && src().h == th()); // still the flat picture: whole
+        play(split);
+        p.update(r);
+        CHECK(src().h * 2 == th());
+    }
+    SDL_DestroyRenderer(r);
+    SDL_DestroySurface(surface);
+}
+
+// A loop's next pass starts its layout over too (update() restarts the movie): every refresh across the seams draws
+// the field-split movie one picture of each deinterlaced pair at a time.
+TEST(video_player_loop_seam_keeps_layout) {
+    const Bytes split = timed_movie(5, 30.0, 4);
+    SDL_Surface* surface = SDL_CreateSurface(64, 64, SDL_PIXELFORMAT_RGBA32);
+    SDL_Renderer* r = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+    CHECK(r != nullptr);
+    if (!r) {
+        SDL_DestroySurface(surface);
+        return;
+    }
+    {
+        MoviePlayer p;
+        u64 now = 1'000'000'000;
+        p.set_time_source([&now] { return now; });
+        p.start_loop([&split] { return std::make_unique<Movie>(buffer_reader(split), split.size()); });
+        int drawn_whole = 0, shown = 0;
+        for (int k = 0; k < 30; ++k) { // 0.5 s at 60 Hz: about four passes of the 4-picture movie
+            now = 1'000'000'000 + u64(std::llround((0.0008 + k / 60.0) * 1e9));
+            p.wait_for_frame(2.0); // (false at the end of a pass: update() starts the next)
+            if (p.update(r)) ++shown;
+            float th = 0;
+            SDL_GetTextureSize(p.texture(), nullptr, &th);
+            SDL_FRect src, dst;
+            p.picture_rects(SDL_FRect{0, 0, 64, 48}, src, dst);
+            if (src.h * 2 != th) ++drawn_whole;
+        }
+        CHECK(shown > 8); // crossed at least two seams
+        CHECK(drawn_whole == 0);
+    }
+    SDL_DestroyRenderer(r);
+    SDL_DestroySurface(surface);
+}
 
 // PAL movies (25 fps, two fields a frame) on 60 and 120 Hz displays, against NTSC's 30 fps: every
 // refresh shows the field its timestamps say, nothing is dropped, and the fields take turns in the

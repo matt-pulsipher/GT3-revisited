@@ -155,6 +155,11 @@ half of the texture. `gt3tool video-fields` writes the rebuilt pictures.
 CORE.GT3's own movie table carries the same distinction as a
 per-movie flag (pss.md).
 
+When another movie starts, or a loop starts its next pass, the layout is
+decided again from the new movie's pictures, but the picture left in the
+texture stays until the new movie's first one replaces it: meanwhile
+`picture_rects()` draws it with the layout it was drawn with.
+
 ## Game-flow API
 
 | Use | API |
