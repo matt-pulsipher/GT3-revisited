@@ -152,6 +152,32 @@ TEST(texture_pack_replaces_decoded_sets) {
     CHECK(raw.size() == 1 && raw[0].width == 4); // the disc's, for keys
 }
 
+// Cars (Options::gs_mip_levels): a texture whose TEX1 has MXL 0 is sampled from its full-size image
+// only, as the GS samples it; MXL > 0 keeps its mips, and so does a texture pack's picture.
+TEST(texture_set_mip_levels_follow_tex1) {
+    Bytes set = synthetic_set(false);
+    std::vector<scene::Texture> t;
+    gtm1::decode_texture_set(set, t, "t", 0, nullptr, false, nullptr, nullptr, true);
+    CHECK(t.size() == 1 && t[0].no_mips); // (TEX1 0: MXL 0)
+    t.clear();
+    gtm1::decode_texture_set(set, t, "t", 0, nullptr, false);
+    CHECK(t.size() == 1 && !t[0].no_mips); // courses: unchanged
+    put64(set, 0x38, 2ull << 2);           // MXL 2
+    t.clear();
+    gtm1::decode_texture_set(set, t, "t", 0, nullptr, false, nullptr, nullptr, true);
+    CHECK(t.size() == 1 && !t[0].no_mips);
+
+    const Bytes plain = synthetic_set(false);
+    const auto dir = test::temp_dir("tp-mips");
+    auto pack = std::make_shared<texture_pack::Pack>();
+    const u64 key = texture_pack::keys_of_set(plain)[0];
+    pack->add_file(key, write_png(dir / (texture_pack::key_name(key) + ".png"), 8, 8, ramp(8, 8)));
+    PackScope scope(pack);
+    t.clear();
+    gtm1::decode_texture_set(plain, t, "t", 0, nullptr, true, nullptr, nullptr, true);
+    CHECK(t.size() == 1 && t[0].width == 8 && !t[0].no_mips);
+}
+
 TEST(texture_pack_cuts_region_clamped_textures) {
     // REGION_CLAMP u 1..2, v 0..3: Tex1::decode keeps a 2x4 part of the 4x4 texture.
     const u64 clamp = 2 | (0ull << 2) | (1ull << 4) | (2ull << 14);

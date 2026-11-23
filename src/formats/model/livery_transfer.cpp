@@ -258,7 +258,7 @@ int apply(scene::Model& model, const scene::Model& reference) {
                 }
                 out[o] = px;
             }
-        t.width = w, t.height = h, t.rgba = std::move(out), t.nearest = false;
+        t.width = w, t.height = h, t.rgba = std::move(out), t.nearest = false, t.no_mips = false;
         t.livery_cover = std::make_shared<const std::vector<u8>>(std::move(cover));
         ++changed;
     }

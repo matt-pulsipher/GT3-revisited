@@ -385,6 +385,9 @@ TEST(livery_template_round_trip_disc) {
     for (int l : lods) std::printf(" %d", l);
     std::printf(" (model loaded in %.0f ms)\n", ms);
     CHECK(lods.count(0) && lods.count(1) && lods.count(2));
+    // A livery is a picture, often finer than the disc's texture: it keeps its mips (car textures have none).
+    for (size_t i = 0; i < m.textures.size() && i < plain.size(); ++i)
+        if (m.textures[i].rgba != plain[i]) CHECK(!m.textures[i].no_mips);
     if (std::optional<Bytes> menu = [&]() -> std::optional<Bytes> {
             const Volume::Entry* e = vol.find("menu/cars/ni0137");
             return e ? std::optional<Bytes>(vol.read(*e)) : std::nullopt;

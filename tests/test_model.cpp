@@ -467,6 +467,33 @@ TEST(car_model_disc) {
     CHECK(tris > 2000 && tris < 6000);
 }
 
+// GT3 samples car textures from their full-size images (every car texture's TEX1 has MXL 0): no
+// mips blend a packed picture with its neighbours, as the 787B's far windshield took the orange
+// paint around it (issue 418). Course scenery keeps its mips.
+TEST(car_textures_without_mips_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const Volume::Entry* e = disc->volume().find("cars/eve/ma0095");
+    if (!e) SKIP("no 787B on this disc");
+    const Bytes data = disc->volume().read(*e);
+    for (int lod = 0; lod < 3; ++lod) {
+        CarModelOptions o;
+        o.lod = lod;
+        o.wheels = false;
+        scene::Model m = load_car_model(data, o, "ma0095");
+        CHECK(!m.textures.empty());
+        for (const scene::Texture& t : m.textures) CHECK(t.no_mips);
+    }
+    const Volume::Entry* c = disc->volume().find("courses/US/midfield");
+    if (!c) c = disc->volume().find("courses/midfield"); // (NTSC-J)
+    if (!c) return;
+    course::CourseModelOptions co;
+    co.backdrop = co.course_line = false;
+    scene::Model course = course::build_course_model(disc->volume().read(*c), co, "midfield");
+    CHECK(!course.textures.empty());
+    for (const scene::Texture& t : course.textures) CHECK(!t.no_mips);
+}
+
 // As the later builds' pod lamps: node 0 = op 0x06 callback id 8 with two branches, chunk 0 or chunk 1, meeting again past
 // them (the out-of-range jump past the table); node 1 = a plain draw of chunk 0.
 Bytes make_branch_callback_gtm1() {

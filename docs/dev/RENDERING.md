@@ -445,7 +445,7 @@ screen-linear by hand (above), and the background warm-up builds all 72 pipeline
 
 There are eight samplers: the `clamp_u`/`clamp_v` combinations (otherwise repeat), each with
 mipmaps or without (`scene::Texture::no_mips`: the full-size image only, no anisotropy; the
-tyres).
+tyres, and the car bodies, whose textures all have TEX1 MXL 0).
 `texture = -1` binds a 1×1 white texture.
 
 Out-of-range indices are dropped on upload. A primitive's `index_count` is
