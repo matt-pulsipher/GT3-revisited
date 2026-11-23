@@ -424,7 +424,7 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
         render::Vec3 target = aim + render::Vec3{0, 0.7f, 0};
         director_record_ = -1;
         director_haze_ = false;
-        replay_on_board_ = replay_car_mount_ = false;
+        replay_on_board_ = replay_on_partner_ = replay_car_mount_ = false;
         if (director_) {
             ReplayDirector::Shot shot =
                 director_->update(track_s_, lap_, aim, dt, 16.0f / 9.0f, replay_pair ? &*replay_pair : nullptr);
@@ -440,6 +440,9 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
                 fovy_ = 0.9f;
                 focus_ = 100.0f;
                 replay_car_mount_ = true;
+                // An on-board mount: GT3's passes skip the car the camera rides (the eye is inside its nose).
+                replay_on_board_ = true;
+                replay_on_partner_ = other;
                 break;
             }
             // View mode 1's procedural cameras (presentation §G15) on the followed car, planned

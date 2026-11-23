@@ -13,6 +13,7 @@
 #include "base/game_random.h"
 #include "menu/flow/menu_controller.h"
 #include "menu/flow/screen_transition.h"
+#include "race/camera_rig.h"
 #include "race/field.h"
 #include "race/hud.h"
 #include "race/hud_clocks.h"
@@ -470,6 +471,49 @@ TEST(race_replay_broadcast_onboard_cut) {
     d.update(950, 1, {950, 0, 0}, 1.0 / 60, 16.0f / 9.0f);
     shot = d.update(951, 1, {951, 0, 0}, 1.0 / 60, 16.0f / 9.0f);
     CHECK(d.on_board() && !shot.on_partner && shot.procedural == 4 && d.procedural_shot().mount == 0);
+}
+
+// Mode 2's on-board cut rides the partner's car with the eye inside its nose: GT3's on-board
+// mounts skip the car the camera is on, so the camera reports it on board that car (issue 426).
+TEST(race_replay_onboard_cut_hides_ridden_car) {
+    GtrcScript one = script_of({trackside(1000, 1900, 0, 30)});
+    u32 seed = 1;
+    for (;; ++seed) { // a seed whose first draw cuts on board
+        GameRandom q;
+        q.x = seed;
+        q.next();
+        if (q.rand01() < 0.07f) break;
+    }
+    auto rig_after_cut = [&](bool with_partner, CameraRig& c, ReplayDirector& d) {
+        d.set_view_mode(2);
+        d.set_pair(true);
+        d.seed(seed);
+        c.set_replay_director(&d);
+        c.set_mode(CameraMode::Tv);
+        sim::VehicleSetup setup;
+        sim::VehicleState s, partner;
+        partner.position = {0, 0, 8};
+        const ReplayDirector::Pair pair{{0, 0, 0}, {0, 0, 8}};
+        c.set_track_distance(10);
+        c.set_lap(1);
+        c.set_replay_aim({0, 0, 4}, &pair, with_partner ? &partner : nullptr, 4.0f);
+        c.update(s, setup, PadState{}, 1.0 / 60.0);
+    };
+    {
+        ReplayDirector d(&one);
+        CameraRig c;
+        rig_after_cut(true, c, d);
+        CHECK(c.replay_on_board() && c.replay_on_partner());
+        // Not the live views: the in-car view is the own car's, not the partner's.
+        c.set_mode(CameraMode::Bumper);
+        CHECK(!c.replay_on_board() && !c.replay_on_partner() && c.hides_car());
+    }
+    { // no partner state to mount on: the cut rides the followed car
+        ReplayDirector d(&one);
+        CameraRig c;
+        rig_after_cut(false, c, d);
+        CHECK(c.replay_on_board() && !c.replay_on_partner());
+    }
 }
 
 // The lap counter and the lap variants; the records the game finds at a distance (presentation §H6).
