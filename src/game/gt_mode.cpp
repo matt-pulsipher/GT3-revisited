@@ -603,9 +603,9 @@ std::string GtData::model(const std::string& car) const {
     return c ? db.model_of(*c) : std::string();
 }
 
-// Mod cars' own paints ([paints]) get ids of their own: kModColor | car << 12 | paint.
+// Mod cars' own paints ([paints]) get ids of their own (race::mod_paint_id), the ids the race lists them under.
 namespace {
-constexpr u32 kModColor = 0xF0000000u;
+constexpr u32 kModColor = race::kModPaint;
 const data::ModCar* mod_with_paints(const data::CarDatabase& db, const std::string& car) {
     const data::ModCar* m = db.mod_car(car);
     return m && !m->paints.empty() ? m : nullptr;
@@ -628,8 +628,7 @@ int GtData::color_index(const std::string& car, int color_id) const {
 u32 GtData::color_id(const std::string& car, int index) const {
     if (const data::ModCar* m = mod_with_paints(db, car)) {
         if (index < 0 || index >= int(m->paints.size())) return 0xFFFFFFFFu;
-        u32 car_no = u32(m - db.mod_cars().data());
-        return kModColor | (car_no & 0xFFFFu) << 12 | u32(index);
+        return race::mod_paint_id(size_t(m - db.mod_cars().data()), index);
     }
     return colors_.id_at(model(car), index);
 }
