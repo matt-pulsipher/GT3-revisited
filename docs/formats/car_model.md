@@ -487,6 +487,15 @@ y = (i >> 3) + (CSA >> 1)·2 of the 32-bit CLUT rect at CBP (width 1).
 `gtm1::decode_texture_set` has its own CSA-aware path for indexed textures with
 32-bit CLUTs.
 
+Every texture of every car (the bodies of `cars/day/`, `eve/`, `night/` and
+`menu/cars/`, and the rims of `wheel/`) has MXL 0 in its Tex1 record's TEX1: the
+GS samples the full-size image only. The car bodies are drawn that way
+(`gtm1::Options::gs_mip_levels`, `scene::Texture::no_mips`): mips would blend a
+packed picture with its neighbours far away (the 787B's windshield went the
+orange of the paint around it). Texture pack and livery pictures keep
+their mips, and so do the rims: our spin blur reads one (presentation §S). Courses differ: about 1,100 of their textures
+have MXL 1-3.
+
 **Paint.** Tex1 +0x20 is an offset (from the Tex1 start, 0 = none) to
 `u32 V; u32 variant_offsets[V]`, each variant `u32 n` (entry count in the low
 16 bits) followed by n × u32 entries. Each entry patches three TEX0 fields of

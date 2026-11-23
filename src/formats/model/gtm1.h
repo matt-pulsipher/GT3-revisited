@@ -316,6 +316,11 @@ struct Options {
     // in the vertex alpha. The env map itself is a runtime slot, so the
     // renderer supplies the reflection colour.
     bool weighted_reflection = false;
+    // Textures whose Tex1 record's TEX1 has MXL 0 (the GS samples only the full-size image) get
+    // Texture::no_mips: no generated mip levels blend a packed picture with its neighbours (the
+    // 787B's far windshield took the orange paint around it, issue 418). Car bodies: every texture
+    // on every disc has MXL 0. Off for courses, whose scenery keeps its mips.
+    bool gs_mip_levels = false;
     // The runtime texture slot (0x1FF, op 0x29) on colour packets: the first texture of this
     // entry of the texture-LOD table in use. Wheels: 1, the rim image the game binds there
     // (docs/formats/car_model.md "GTTW (wheel)"). -1, or a table without the entry: the current
@@ -527,9 +532,10 @@ std::vector<u8> livery_coverage(const texture_pack::Image& picture, TemplateTexe
 // for the textures the paints recolour (no CLUT animations, like any paint but the first).
 // `livery`: its pictures over the textures whose key (in `paint`, or the computed colour's
 // finish) has one, over the texture pack's picture where there is one.
+// `gs_mip_levels`: Options::gs_mip_levels (pack and livery pictures keep their mips).
 int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const std::string& prefix, int paint = 0,
                        ClutTextures* clut = nullptr, bool use_pack = true, const ComputedPaint* computed = nullptr,
-                       const texture_pack::Pack* livery = nullptr);
+                       const texture_pack::Pack* livery = nullptr, bool gs_mip_levels = false);
 
 // A cut-out copy (alpha 0 = cut away, else kept) of a texture the game samples point-filtered:
 // gives every cut texel the mean colour of its nearest kept texels (ring by ring; across the

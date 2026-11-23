@@ -793,7 +793,8 @@ void overlay_livery(scene::Texture& t, const texture_pack::Image& pic, TemplateT
 }
 
 int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const std::string& prefix, int paint,
-                       ClutTextures* clut, bool use_pack, const ComputedPaint* computed, const texture_pack::Pack* livery) {
+                       ClutTextures* clut, bool use_pack, const ComputedPaint* computed, const texture_pack::Pack* livery,
+                       bool gs_mip_levels) {
     Tex1 t = Tex1::parse(tex1);
     GsMemory gs;
     t.upload(tex1, gs);
@@ -857,6 +858,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
         st.clamp_u = tx.clamp.wms == 1 || tx.clamp.wms == 2;
         st.clamp_v = tx.clamp.wmt == 1 || tx.clamp.wmt == 2;
         st.nearest = ((tx.tex1 >> 5) & 1) == 0; // TEX1.MMAG
+        st.no_mips = gs_mip_levels && ((tx.tex1 >> 2) & 7) == 0; // TEX1.MXL
         out.push_back(std::move(st));
     }
     // CLUT animations: the textures they feed show the animations' state (at their reset here).
@@ -874,7 +876,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
             scene::Texture& st = out[i];
             std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(st.width, st.height, st.rgba.data());
             if (!r) continue;
-            st.width = r->width, st.height = r->height, st.rgba = r->rgba, st.nearest = false;
+            st.width = r->width, st.height = r->height, st.rgba = r->rgba, st.nearest = false, st.no_mips = false;
             c.erase(u32(i - size_t(first)));
         }
     // The livery's pictures over the paint (and the pack's picture). A covered texture no longer animates.
@@ -883,6 +885,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
             if (std::shared_ptr<const texture_pack::Image> pic = livery->find(livery_keys[i])) {
                 const Tex0& t0 = t.textures[i].tex0;
                 overlay_livery(out[size_t(first) + i], *pic, {livery_templates[i].data(), t0.width(), t0.height()});
+                out[size_t(first) + i].no_mips = false; // (a picture, often finer than the disc's texture)
                 c.erase(u32(i));
             }
     if (clut && !c.empty()) *clut = std::move(c);
@@ -1096,7 +1099,8 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             // A set that is not a Tex1 has no textures. The game then binds none (the program skips TEX0
             // without a texture table) and the GS keeps an earlier draw's texture.
             const std::string prefix = "set" + std::to_string(texset) + "_";
-            int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint, opt.livery);
+            int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint, opt.livery,
+                                                                                                    opt.gs_mip_levels);
             it = set_first.emplace(texset, first).first;
             set_size[texset] = u32(model.textures.size() - before);
             if (!clut.empty()) {
