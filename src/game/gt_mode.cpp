@@ -1417,11 +1417,12 @@ std::vector<int> GtMode::pool_paints(const std::string& code, const std::vector<
     bool any = false;
     for (const std::string& l : labels) {
         u32 id = 0xFFFFFFFFu;
-        for (size_t k = 0; k < pool.size(); ++k)
-            if (!used[k] && pool[k] == l) {
-                used[k] = true, id = race::pool_color_id(*ev, int(k));
-                break;
-            }
+        size_t k = 0;
+        while (k < pool.size() && (used[k] || pool[k] != l)) ++k;
+        if (k < pool.size()) used[k] = true;
+        else // a repeat (more opponents than entries): an entry of its car
+            k = size_t(std::find(pool.begin(), pool.end(), l) - pool.begin());
+        if (k < pool.size()) id = race::pool_color_id(*ev, int(k));
         out.push_back(pool_paint(l, id));
         any = any || out.back() >= 0;
     }

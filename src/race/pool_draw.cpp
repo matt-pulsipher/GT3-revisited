@@ -49,6 +49,13 @@ std::vector<int> draw_pool(GameRandom& rng, const std::vector<bool>& unavailable
                 left = 0;
             }
         }
+        if (left == 0 && k < n && unavailable[size_t(k)]) {
+            // A repeat lands on an available entry (the original never gets here with an unavailable
+            // one: it probes forever before its pool runs out).
+            int j = k, probes = 0;
+            while (probes < n && unavailable[size_t(j)]) j = (j + 1) % n, ++probes;
+            if (probes < n) k = j;
+        }
         out.push_back(k);
     }
     return out;

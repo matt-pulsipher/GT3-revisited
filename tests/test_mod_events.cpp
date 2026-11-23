@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <set>
 
 using namespace gt3r;
 using namespace gt3r::test;
@@ -518,4 +519,42 @@ TEST(mod_event_disc_tunes_pools) {
         CHECK(std::any_of(sprint->def.field.begin(), sprint->def.field.end(), [&](const data::ModEventCar& c) { return c.label == d; }));
     // The tuned car races as built: its spec is the variant's.
     CHECK(race::exact_equipment(db, {"Xmy_events_sprint_hot_vitz"}).has_value());
+}
+
+// More opponents than the pool has (issue 417): a one-make race from a pool of one car. GT3's draw repeats its cars once
+// every entry is taken; each repeat keeps its entry's paint.
+TEST(mod_event_disc_one_make) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    EventWorld w = event_world(*disc);
+    CHECK(w.error.empty());
+    data::ModEventDef def;
+    def.id = "one_make", def.mod = "my_events", def.title = "One make";
+    def.field = {{"vitz_euro_00", 0xFFFFFFFFu}, {"r34_gtr_v_99", g_r34_1}};
+    data::ModEventRace one;
+    one.course = "trialmt", one.laps = 1, one.cars = 5, one.opponents = {{"r34_gtr_v_99", g_r34_1}};
+    data::ModEventRace two;
+    two.course = "midfield", two.laps = 1, two.cars = 5; // the field's two cars
+    data::ModEventRace plain;
+    plain.course = "midfield", plain.laps = 1; // no count: as many as the pool has
+    def.races = {one, two, plain};
+    std::string err;
+    CHECK(data::add_mod_event(w.data->db, def, &err));
+    w.data->db.rebuild();
+    game::GtMode gt(w.data);
+    CHECK(gt.rules("Xmy_events_one_make_0001")->cars == 6);
+    CHECK(gt.rules("Xmy_events_one_make_0002")->cars == 6);
+    CHECK(gt.rules("Xmy_events_one_make_0003")->cars == 3);
+    for (u32 seed = 1; seed < 50; ++seed) {
+        GameRandom rng{seed};
+        std::vector<int> paints;
+        CHECK(gt.pick_opponents("Xmy_events_one_make_0001", rng, &paints) == std::vector<std::string>(5, "r34_gtr_v_99"));
+        CHECK(paints == std::vector<int>(5, 1));
+        CHECK(gt.pool_paints("Xmy_events_one_make_0001", std::vector<std::string>(5, "r34_gtr_v_99")) == std::vector<int>(5, 1));
+        const std::vector<std::string> drawn = gt.pick_opponents("Xmy_events_one_make_0002", rng);
+        CHECK(drawn.size() == 5);
+        // Both cars in the first two draws, then either.
+        CHECK(std::set<std::string>(drawn.begin(), drawn.begin() + 2) == std::set<std::string>({"vitz_euro_00", "r34_gtr_v_99"}));
+        for (const std::string& d : drawn) CHECK(d == "vitz_euro_00" || d == "r34_gtr_v_99");
+    }
 }

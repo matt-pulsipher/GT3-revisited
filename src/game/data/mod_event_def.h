@@ -38,8 +38,8 @@ struct ModEventRace {
     // the race's pool: the race draws its opponents from it as GT3's races do (every car, in the draw's
     // order), the player behind them.
     std::vector<ModEventCar> opponents;
-    // How many opponents it draws from its pool (event +0x1B5 less the player's car): 0 = as many as the
-    // pool has, at most 5.
+    // How many opponents it draws from its pool (event +0x1B5 less the player's car), up to 31: more than the
+    // pool has repeats its cars (GT3's draw); 0 = as many as the pool has, at most 5.
     int cars = 0;
     // How the opponents drive: the race record's own driver percentages (event +0x19C .. +0x1B3, every
     // CPU car of a driveline class alike, ai §9.2), -1 the base race's, 0 .. 3 the arcade race of that

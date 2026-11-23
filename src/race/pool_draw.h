@@ -30,7 +30,8 @@ bool pool_entry_available(const data::CarDatabase& db, const std::string& label)
 // `draws` pool indices: each a random index (unit x pool size, truncated),
 // moved forward (wrapping) to the first entry not yet taken; unavailable
 // entries count as taken. Once as many entries were taken as the pool has,
-// draws are plain random indices (repeats). `unavailable` is per pool entry.
+// draws are plain random indices (repeats), moved forward to an available
+// entry. `unavailable` is per pool entry.
 std::vector<int> draw_pool(GameRandom& rng, const std::vector<bool>& unavailable, int draws);
 
 // The paint of pool entry `k` (+0x110 + 4 k: a carcolor id, 0xFFFFFFFF = drawn at the race start). The car
