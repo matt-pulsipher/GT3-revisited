@@ -348,6 +348,7 @@ std::unique_ptr<Screen> make_developer_screen(); // Developer options (tools)
 std::unique_ptr<Screen> make_browser_screen(const std::string& open_path = "");
 std::unique_ptr<Screen> make_jukebox_screen();
 std::unique_ptr<Screen> make_mods_screen();
+std::unique_ptr<Screen> make_new_livery_screen(); // a livery template for a car, into a mod (app/screen_new_livery.cpp)
 // Settings; `tab` picks the first page shown (SettingsTab order: 0 Display .. 6 Disc & saves).
 // `to_game`: opened from the game's menus, which it returns to ("Back to game").
 std::unique_ptr<Screen> make_settings_screen(int tab = 0, bool to_game = false);

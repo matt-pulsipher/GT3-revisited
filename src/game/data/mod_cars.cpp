@@ -5,6 +5,7 @@
 #include "base/file.h"
 #include "base/log.h"
 #include "formats/db/gt_db.h"
+#include "formats/model/gltf.h"
 #include "formats/text/charset.h"
 #include "vfs/vfs.h"
 
@@ -1178,6 +1179,13 @@ void load_mod_car_files(CarDatabase& db, const std::vector<std::string>& files, 
             continue;
         }
         LOG_INFO("Mod car '%s' (%s) from %s", def->label.c_str(), def->name.c_str(), mod.empty() ? f.c_str() : mod.c_str());
+        // Body textures the game draws white (JPEG, or a file beside the .glb): said here, not left to be found in a race.
+        if (!def->model_file.empty())
+            if (std::optional<Bytes> glb = read_host_file(mod_path(f, def->model_file)))
+                for (const std::string& w : glb_image_warnings(*glb)) {
+                    LOG_WARN("Mod car %s: %s: %s", f.c_str(), def->model_file.c_str(), w.c_str());
+                    db.add_mod_car_warning(f + ": " + w);
+                }
         any = true;
     }
     if (any) db.rebuild();

@@ -6,7 +6,7 @@
 //
 // An archive holds one mod or several. A mod is a folder with a mod.ini (the shallowest one on
 // each branch); an archive without any mod.ini is one mod when its top level, or its only top
-// folder, has files/, cars/, makers/, events/ or textures/. Each mod installs as mods/<id>/: <id> is its folder's
+// folder, has files/, cars/, makers/, events/, textures/ or liveries/. Each mod installs as mods/<id>/: <id> is its folder's
 // name, or for a mod at the top of the archive the archive's own name (else its mod.ini name).
 // Anything outside the mods (READMEs beside them, __MACOSX/) is left out.
 //

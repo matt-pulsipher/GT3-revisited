@@ -67,6 +67,14 @@ struct OnlineCar {
     // digest).
     int tires = -1;
     std::optional<sim::CarSettings> tune;
+    // A custom colour (race/custom_paints.h; docs/dev/ONLINE.md "Custom colours"), bytes R, G, B: `paint` is then its finish
+    // (the paint a game without it shows). Travels with the lobby tires (a disc or arcade car's; no physics, so not in the
+    // digest).
+    std::optional<u32> color;
+    // A livery's package (game/livery_package.h): lower-case hex SHA-256 and size, after the colour (lobby flag 4). Others
+    // without it see `paint` (and the colour).
+    std::string livery;
+    u32 livery_size = 0;
     // The owner's online_car_digest (absent from older games' descriptors; a protocol-3 game's held another digest, but
     // those games cannot join a protocol-4 lobby).
     std::optional<std::array<u8, 32>> digest;
@@ -103,6 +111,13 @@ OnlineCar online_car_from_arcade(const data::CarDatabase& db, const std::string&
 // spec (the descriptor's digest), as the regional twins of a car do.
 std::optional<sim::CarSpec> online_car_spec(const data::CarDatabase& db, const OnlineCar& c, std::string* error = nullptr,
                                             const std::string& course = {});
+
+// Our car in paint index `paint` of its model's list here: a custom colour goes as its colour and finish (a disc or arcade
+// car; garage and mod cars wear the disc's paints).
+void set_online_car_paint(const data::CarDatabase& db, OnlineCar& c, int paint);
+// The paint index this machine draws `c` in: its custom colour's (added for the session when not installed here, as
+// `owner`'s), else its paint.
+int online_car_local_paint(const data::CarDatabase& db, const OnlineCar& c, const std::string& owner = {});
 
 // The database car this machine draws `c` as: an arcade car's base car on this disc (a regional
 // twin may carry another label than the owner's), else its own label; "" when it is not here.

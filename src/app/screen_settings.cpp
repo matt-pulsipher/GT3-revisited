@@ -2417,6 +2417,17 @@ private:
             info("Discord", discord_status().status_text());
         }
         heading("Online battle");
+        {
+            const std::string v = to_lower(app.config().get("online", "liveries").value_or("ask"));
+            choice("Other players' liveries",
+                   "The liveries other players' cars wear in online battles: Download shows them (each is checked, "
+                   "then kept with your liveries), Ask asks about each one first, Off shows those cars in the "
+                   "livery's paint.",
+                   {"Download", "Ask", "Off"}, v == "show" ? 0 : v == "off" ? 2 : 1, [a](int i) {
+                       a->config().set("online", "liveries", i == 1 ? "ask" : i == 2 ? "off" : "show");
+                       a->save_config();
+                   });
+        }
         std::string server = app.config().get("online", "server").value_or(kDefaultServer);
         info("Relay server", server.empty() ? kDefaultServer : server,
              "Change it in the online lobby (Relay server). The update check asks the same server.");

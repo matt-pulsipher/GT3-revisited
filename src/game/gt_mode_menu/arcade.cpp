@@ -8,6 +8,7 @@
 
 #include "base/log.h"
 #include "game/data/weight_class.h"
+#include "race/custom_paints.h"
 #include "sim/car_spec.h"
 
 #include <algorithm>
@@ -230,6 +231,14 @@ std::vector<std::pair<std::string, u32>> arcade_colors(const std::string& entry)
     for (int i = 0; i < d.color_count(car); ++i) {
         u32 id = d.color_id(car, i);
         out.push_back({d.color_name(id), d.color_rgb(id)});
+    }
+    // The model's custom colours after the disc's (race/custom_paints.h): paint index disc count + k.
+    if (const data::Car* c = s->gt().db().car(car)) {
+        const std::string model = s->gt().db().model_of(*c);
+        std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+        if (custom->disc_count(model) == int(out.size()))
+            for (const race::CustomPaint& p : custom->of(model))
+                if (p.listed()) out.push_back({p.name, p.rgb});
     }
     return out;
 }

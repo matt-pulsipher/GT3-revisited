@@ -1,5 +1,6 @@
 #include "formats/model/car_model.h"
 #include "formats/model/gltf.h"
+#include "formats/model/livery_transfer.h"
 
 #include "formats/model/rim_light.h"
 #include "formats/model/tyre_model.h"
@@ -9,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include <utility>
 
 namespace gt3r {
@@ -158,6 +160,8 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
     const bool brakes = opt.wheels && opt.menu_tyres;
     o.node = opt.effects || brakes || opt.floor_shadow ? -1 : 0;
     o.paint = opt.paint;
+    o.computed_paint = opt.computed_paint ? &*opt.computed_paint : nullptr;
+    o.livery = opt.livery.get();
     o.program_alpha_test = true;  // wheel-arch / grille cut-outs
     o.weighted_reflection = true; // reflection passes weighted by the body's texel alpha
     scene::Model m = gtm1::build_model(g, o, name);
@@ -516,7 +520,52 @@ void mark_car_glass(scene::Model& model) {
     }
 }
 
-scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std::string& name) {
+namespace {
+std::mutex g_resolver_mutex;
+std::shared_ptr<const PaintResolver> g_resolver;
+} // namespace
+
+void set_paint_resolver(PaintResolver resolver) {
+    auto r = resolver ? std::make_shared<const PaintResolver>(std::move(resolver)) : nullptr;
+    std::lock_guard lock(g_resolver_mutex);
+    g_resolver = std::move(r);
+}
+
+std::optional<ResolvedPaint> resolve_paint(const std::string& model, int paint) {
+    std::shared_ptr<const PaintResolver> r;
+    {
+        std::lock_guard lock(g_resolver_mutex);
+        r = g_resolver;
+    }
+    return r && !model.empty() ? (*r)(model, paint) : std::nullopt;
+}
+
+scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt_in, const std::string& name) {
+    // A custom colour's index: resolved once for every LOD (the finish paint where none is installed).
+    CarModelOptions resolved;
+    const bool resolve = opt_in.resolve_paint && !opt_in.computed_paint && !opt_in.livery && !opt_in.body_mod.active();
+    std::optional<ResolvedPaint> rp = resolve ? resolve_paint(name, opt_in.paint) : std::nullopt;
+    if (rp) {
+        resolved = opt_in;
+        resolved.paint = rp->paint;
+        resolved.computed_paint = std::move(rp->computed);
+        resolved.livery = std::move(rp->livery);
+    }
+    const CarModelOptions& opt = rp ? resolved : opt_in;
+    // A livery reaches the lower-detail models through the full-detail body (formats/model/livery_transfer.h).
+    auto carry_livery = [&](scene::Model& m) {
+        if (!opt.livery || opt.body_mod.active()) return;
+        if (std::none_of(m.meshes.begin(), m.meshes.end(), [](const scene::Mesh& x) { return x.lod >= 1; })) return;
+        CarModelOptions r;
+        r.lod = 0;
+        r.wheels = false;
+        r.reflection = false;
+        r.paint = opt.paint;
+        r.computed_paint = opt.computed_paint;
+        r.livery = opt.livery;
+        r.resolve_paint = false;
+        livery_transfer::apply(m, load_car_model(data, r, name));
+    };
     CarFile f = CarFile::parse(data);
     gtm1::Gtm1 g = gtm1::Gtm1::parse(f.body);
     // (Mod bodies keep the morph draws in place: their parts would not follow the new body.)
@@ -528,6 +577,7 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std
         scene::Model m = car_lod(f, g, opt, opt.lod, name, morphs ? &md : nullptr, opt.clut_sets);
         mark_car_glass(m);
         if (opt.body_mod.active()) apply_body_mod(m, opt.body_mod, name);
+        carry_livery(m);
         m.compute_bounds();
         if (!md.empty()) opt.morphs->push_back(std::move(md));
         return m;
@@ -552,6 +602,7 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt, const std
         }
     }
     if (opt.body_mod.active()) apply_body_mod(all, opt.body_mod, name);
+    carry_livery(all);
     all.compute_bounds();
     return all;
 }
