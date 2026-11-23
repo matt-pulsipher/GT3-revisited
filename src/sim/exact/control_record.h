@@ -1,16 +1,16 @@
 #pragma once
 
-// GT3's pad frame recordings (pad recording): what its replays, its ghosts and the free run's lap
+// GT3's pad frame recordings (AutomobileControlRecord): what its replays, its ghosts and the free run's lap
 // recordings keep of a car's driving, and how they play it back.
 //
-// A recorder (pad recording's recorder) turns the frames a car's input device reads (PadFrame, the pad read)
-// into a bit stream (bit stream) in a block of memory: +0 the frames recorded, +4 the stream's bytes
+// A recorder (AutomobileControlRecord's recorder, 0x1F43B0) turns the frames a car's input device reads (PadFrame, the pad read
+// 0x210740) into a bit stream (BitStreamBuffer, 0x26C8B8) in a block of memory: +0 the frames recorded, +4 the stream's bytes
 // + 8 (both written when the recording is closed), +8 the stream. Each frame is coded against the one before (the steering
 // against its linear prediction): the fields that changed, each change as a signed variable-length number, and runs of
 // unchanged frames. A recording closes itself when its stream comes within 0x40 bytes of the block's capacity; its playback
 // gives every frame but the last (the count check comes first), then empty frames.
 //
-// A manager (pad recording's manager) binds a recorder to a pool of the game's record memory: in mode 0
+// A manager (AutomobileControlRecord's manager, 0x1F4ED0) binds a recorder to a pool of the game's record memory: in mode 0
 // the whole pool (0x20000 bytes less the header), in modes 1 and 2 one of its four stores of 0x8000 bytes (a 0x1B00-byte car
 // snapshot, then a block of 0x64F8 bytes).
 
@@ -28,10 +28,10 @@ using RawPad = std::array<u8, 16>;
 RawPad raw_pad(const PadFrame& f);
 PadFrame pad_of(const RawPad& r);
 
-// The game's record memory: pools of 0x20000 bytes, each four stores of 0x8000.
+// The game's record memory (0x1F4D80): pools of 0x20000 bytes, each four stores of 0x8000.
 constexpr u32 kRecordPool = 0x20000, kRecordStore = 0x8000;
 constexpr u32 kStoreSnapshot = 0x1B00, kStoreBlock = 0x64F8; // a store: the snapshot, then the recording's block
-// (Rule::RecordStore: the later builds' store, Concept 2001 Tokyo, holds a snapshot 4 bytes longer, their car
+// (Rule::RecordStore: the later builds' store, Concept 2001 Tokyo 0x1E9FB0, holds a snapshot 4 bytes longer, their car
 // record's extra word: the block from 0x1B04, 0x64F4 bytes. ControlManager::later takes it; the races' solo recorders keep
 // GT3's layout on every disc, their snapshots being ours: a lap's recording closes itself 4 bytes later than a later
 // build's would.)
@@ -39,9 +39,9 @@ constexpr u32 store_snapshot(bool later) { return later ? 0x1B04 : kStoreSnapsho
 constexpr u32 store_block(bool later) { return later ? 0x64F4 : kStoreBlock; }
 bool later_store(const Behaviour& b); // the later builds' store layout under behaviour b
 
-// Pad recording's recorder on a block of `mem` (offsets into it; the caller keeps the memory).
+// AutomobileControlRecord's recorder on a block of `mem` (offsets into it; the caller keeps the memory).
 struct ControlRecorder {
-    // Bit stream (+0x00): the stream's start, the byte it is at, the byte being filled or read and its bits (written: the
+    // BitStreamBuffer (+0x00): the stream's start, the byte it is at, the byte being filled or read and its bits (written: the
     // bits used; read: the bits left).
     u32 base = 0, ptr = 0;
     u8 cur = 0;
@@ -56,40 +56,40 @@ struct ControlRecorder {
     u32 block = 0;
     u32 capacity = 0;       // +0x3C
 
-    // Bound to the block at `off` (its stream at + 8) of this capacity.
+    // 0x1F4478: bound to the block at `off` (its stream at + 8) of this capacity.
     void bind(u32 off, u32 cap);
-    // Back to the stream's start, nothing recorded or played (done when there is no block).
+    // 0x1F44C8: back to the stream's start, nothing recorded or played (done when there is no block).
     void rewind();
-    // Frame f recorded (nothing once closed).
+    // 0x1F4998: frame f recorded (nothing once closed).
     void write(std::span<u8> mem, const RawPad& f);
-    // The recording closed: the last run and the end, the header (frames, bytes + 8).
+    // 0x1F4C00: the recording closed: the last run and the end, the header (frames, bytes + 8).
     void close(std::span<u8> mem);
-    // The next frame played.
+    // 0x1F4660: the next frame played.
     RawPad read(std::span<const u8> mem);
-    // n frames read from the start (`keep`: from where it is).
+    // 0x1F47D8: n frames read from the start (`keep`: from where it is).
     void seek(std::span<const u8> mem, u32 n, bool keep = false);
     // The block's header (written by close): the frames and the bytes.
     u32 header_frames(std::span<const u8> mem) const;
 };
 
-// Pad recording's manager: its mode (+0x04: 0 the whole pool, 1 the stores in turn, 2 one store), the pool (+0x4C)
+// AutomobileControlRecord's manager: its mode (+0x04: 0 the whole pool, 1 the stores in turn, 2 one store), the pool (+0x4C)
 // and store (+0x50) it is on, and its recorder (+0x08).
 struct ControlManager {
     u32 mode = 0;
-    bool playing = false; // +0x00 (race input device's play mode: not 0)
+    bool playing = false; // +0x00 (RaceInput's play mode 0x210658: not 0)
     int pool = -1;        // +0x4C (-1 none)
     u32 store = 0;        // +0x50: the store's offset in its pool
     u32 index = 0, used = 0; // +0x54 / +0x58 (mode 1)
     ControlRecorder rec;
     bool later = false; // the later builds' store layout (store_snapshot)
 
-    // On pool p (mode 0: the recorder on the whole pool, else store 0 of it).
+    // 0x1F4F78 / 0x1F4FB0: on pool p (mode 0: the recorder on the whole pool, else store 0 of it).
     void bind_pool(int p);
-    // On store s of its pool (the recorder on the store's block).
+    // 0x1F4FF0: on store s of its pool (the recorder on the store's block).
     void bind_store(u32 s);
-    // Restarted (mode 1 from store 0), its recorder rewound.
+    // 0x1F52B0: restarted (mode 1 from store 0), its recorder rewound.
     void restart();
-    // The store's offset in its pool (its snapshot), none in mode 0.
+    // 0x1F5188: the store's offset in its pool (its snapshot), none in mode 0.
     bool has_store() const { return mode != 0; }
 };
 

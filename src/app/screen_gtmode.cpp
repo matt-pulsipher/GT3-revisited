@@ -265,7 +265,7 @@ private:
                 ++show_.load_wait;
                 continue;
             }
-            // The menu car camera integrator: v += a / 60, v -= v c / 60, x += v / 60.
+            // The MenuCarCamera integrator: v += a / 60, v -= v c / 60, x += v / 60.
             auto spring = [](float& x, float& v, float target, float k, float c) {
                 v += (target - x) * k / 60.0f;
                 v -= v * c / 60.0f;
@@ -527,7 +527,7 @@ private:
             area = SDL_FRect{box.x - e.x * sx, box.y - (448 - e.y - e.h) * sy, 640 * sx, 448 * sy};
             // The championship trophy item draws 160 pixels left of centre (gt_mode §18, M).
             if (trophy) area.x -= 160 * sx;
-            // Race prizes (mini prize): the cup appears smaller and higher than the .prm camera
+            // Race prizes (MiniPrize): the cup appears smaller and higher than the .prm camera
             // over the full frame gives (M: fitted to the reference capture of the Sunday Cup
             // cup page: 0.86 x about the frame centre).
             if (mini) {

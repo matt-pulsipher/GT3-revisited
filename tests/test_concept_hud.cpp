@@ -70,7 +70,7 @@ TEST(concept_disc_hud_rows) {
         CHECK(events && events->w == 400 && hud_builtin_row(HudMode::Battle, HudPart::Events, -1, 1)->w == 320);
         // The Analyzer's REPLAY (LOGGER): a whole-frame dashboard at the bottom (Hud::draw_logger): the steering centred at
         // (320, 420), the bar tachometer, the pedal boxes, the gear, a digital speed and the hybrid store monitor (type 13
-        // sub 1, race capacity monitor).
+        // sub 1, RaceCapacityMonitor).
         for (const HudRow& r : hud_layout(HudMode::Logger))
             std::printf("    logger row part %d sub %d (%d, %d) %dx%d align %d/%d\n", int(r.part), r.sub, r.x, r.y, r.w, r.h,
                         r.align, r.valign);

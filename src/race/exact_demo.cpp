@@ -17,9 +17,9 @@ ex::Conductor demo_conductor(const std::string& event_label) {
 s32 demo_start_type(const data::Event& ev, ex::Conductor kind) {
     const ex::RaceConfig cfg = ex::race_config(ev.bytes);
     s32 t = ev.bytes.size() > 0x1F3 ? s32(ev.bytes[0x1F3]) : 2;
-    // The race's start-up from the conductor's start type: 0 and 3 none (-1), 1 the event's, 2 moving (3).
-    if (kind == ex::Conductor::TimeTrial || kind == ex::Conductor::FreeRun) t = 3; // their start type: 2
-    else if (kind == ex::Conductor::FreePractice) t = -1;                          // its start type: 3
+    // RaceBase::vf9 from the conductor's virtual 9 (0x17BCB4): 0 and 3 none (-1), 1 the event's, 2 moving (3).
+    if (kind == ex::Conductor::TimeTrial || kind == ex::Conductor::FreeRun) t = 3; // their virtual 9: 2
+    else if (kind == ex::Conductor::FreePractice) t = -1;                          // its virtual 9 (0x1F2698): 3
     else if (cfg[0] != 0) t = -1;                                                    // the base's: configuration +0 clear
     return t;
 }
@@ -41,7 +41,7 @@ std::optional<ex::RaceRecord> demo_record(const DemoReplay& demo, const data::Ev
     for (u32 k = 0; k < 3; ++k)
         s.licence_times[k] = u32(ev.bytes[0x1C4 + 4 * k]) * 60000u + u32(ev.bytes[0x1C5 + 4 * k]) * 1000u +
                              u32(rd16(ev.bytes, 0x1C6 + 4 * k));
-    // The replay header's car record as GT3's playback loads it into the entry.
+    // The replay header's car record as GT3's playback loads it into the entry (0x18D3C0).
     ex::StartEntry e;
     e.eq = ex::equipment_image(demo.car_record);
     e.human = 1;
@@ -58,7 +58,7 @@ std::optional<ex::RaceRecord> demo_record(const DemoReplay& demo, const data::Ev
     r.program = program; // (r.data: none, the disc's own recording)
     r.behaviour = {sim::Program::NtscU, 60}; // (every disc carries the NTSC-U recordings: they play with its rules)
     r.add_change({0, ex::RaceChange::StartCountdown});
-    // Car 0's frames as the playback hands them over: the recording's, then empty ones (past its end).
+    // Car 0's frames as the playback hands them over: the recording's, then empty ones (0x1F4660 past its end).
     const size_t n = demo.size() + extra;
     for (size_t t = 0; t < n; ++t) {
         const ex::PadFrame f = demo.pad_frame(t);

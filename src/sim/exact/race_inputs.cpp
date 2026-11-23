@@ -20,7 +20,7 @@ const F kZero{}, kOne = F::raw(0x3F800000), kTen = F::raw(0x41200000), kHundred 
 
 F byte_f(u32 v) { return ee::int_to_f(s32(v)); } // an unsigned byte as a float
 
-// The table header over the arrays the builder filled.
+// 0x1D8DD0's table header over the arrays the builder filled.
 template <size_t N> void set_table(Table<N>& t, s32 n) { t.n = s16(n); }
 
 } // namespace
@@ -31,17 +31,17 @@ Statics statics(const ProgramData& d) {
     const u32 n = d.b(T::Static, 0x0B);
     if (n < 1 || n > 8) throw std::runtime_error("static physics block: " + std::to_string(n) + " rolling-resistance points (1..8)");
     for (u32 t = 0; t < n; ++t) {
-        s.rolling_curve.x[t] = byte_f(u32(d.b(T::Static, 0x0C + t)) << 1) * folded(h, 0x3E8E38E4, 0x3E8E38E3); // 1/3.6
-        s.rolling_curve.y[t] = byte_f(d.b(T::Static, 0x14 + t)) * folded(h, 0x3A83126F, 0x3A83126E);           // 0.001
+        s.rolling_curve.x[t] = byte_f(u32(d.b(T::Static, 0x0C + t)) << 1) * folded(h, 0x3E8E38E4, 0x3E8E38E3); // [0x35014C] 1/3.6
+        s.rolling_curve.y[t] = byte_f(d.b(T::Static, 0x14 + t)) * folded(h, 0x3A83126F, 0x3A83126E);           // [0x350150] 0.001
     }
     set_table(s.rolling_curve, s32(n));
     for (u32 t = 0; t < 16; ++t)
-        s.rolling_mu[t] = ee::int_to_f(s16(d.h(T::Static, 0x2C + 2 * t))) * F::raw(0x3C23D70A); // 0.01
+        s.rolling_mu[t] = ee::int_to_f(s16(d.h(T::Static, 0x2C + 2 * t))) * F::raw(0x3C23D70A); // [0x350154] 0.01
     for (u32 k = 0; k < 2; ++k) {
         s.slip_fade[k] = d.b(T::Static, 0x84 + k), s.slip_gain_on[k] = d.b(T::Static, 0x86 + k);
         s.slip_gain_base[k] = d.b(T::Static, 0x88 + k), s.slip_gain_knee[k] = d.b(T::Static, 0x8A + k);
     }
-    // The later builds' AWD system 3 settings: the fade's floats as the driveline builder computes them (the later
+    // The later builds' AWD system 3 settings: the fade's floats as the driveline builder computes them (0x1E2700's later
     // variant: the bytes +8 and +0x10 over 100).
     if (d.has(T::Awd3)) {
         const F hundred = F::raw(0x42C80000);
@@ -62,8 +62,8 @@ Statics statics(const ProgramData& d) {
 SurfaceBumps surface_bumps(const ProgramData& d) {
     SurfaceBumps sb{};
     for (u32 t = 0; t < 16; ++t) {
-        sb.amp[t] = byte_f(d.b(T::Static, 0x1C + t)) * folded(d.behaviour(), 0x3A83126F, 0x3A83126E); // 0.001
-        sb.freq[t] = F::raw(0x40C90FDB) / (byte_f(d.b(T::Static, 0x4C + t)) * F::raw(0x3DCCCCCD));
+        sb.amp[t] = byte_f(d.b(T::Static, 0x1C + t)) * folded(d.behaviour(), 0x3A83126F, 0x3A83126E); // [0x350158] 0.001
+        sb.freq[t] = F::raw(0x40C90FDB) / (byte_f(d.b(T::Static, 0x4C + t)) * F::raw(0x3DCCCCCD)); // [0x350160] / [0x35015C]
         sb.scaled[t] = s8(d.b(T::Static, 0x5C + t));
         sb.mode[t] = s8(d.b(T::Static, 0x6C + t));
         sb.soft[t] = d.w(T::Soft, 4 * t);
@@ -108,10 +108,10 @@ BrakeHeatConsts brake_heat_consts(const ProgramData& d) {
     if (cool == 0) cool = 1;
     BrakeHeatConsts k;
     const Behaviour& h = d.behaviour();
-    k.c0 = kOne / (byte_f(heat) * folded(h, 0x46192000, 0x46191FFF));             // 9800
-    k.c1 = kOne / ((byte_f(cool) * folded(h, 0x3DCCCCCD, 0x3DCCCCCC)) * kHundred); // 0.1
-    k.c2 = byte_f(d.b(T::Static, 0x7E)) * folded(h, 0x3E8E38E4, 0x3E8E38E3);       // 1/3.6
-    k.c3 = byte_f(d.b(T::Static, 0x7F)) * F::raw(0x3C23D70A);                    // 0.01
+    k.c0 = kOne / (byte_f(heat) * folded(h, 0x46192000, 0x46191FFF));             // [0x350474] 9800
+    k.c1 = kOne / ((byte_f(cool) * folded(h, 0x3DCCCCCD, 0x3DCCCCCC)) * kHundred); // [0x350470] 0.1
+    k.c2 = byte_f(d.b(T::Static, 0x7E)) * folded(h, 0x3E8E38E4, 0x3E8E38E3);       // [0x350478] 1/3.6
+    k.c3 = byte_f(d.b(T::Static, 0x7F)) * F::raw(0x3C23D70A);                    // [0x35047C] 0.01
     return k;
 }
 
@@ -121,7 +121,7 @@ PedalCurve pedal_curve_record(u8 type, u8 param, bool toward_zero) {
     s32 p = param;
     if (type == 1) {
         p = p > 0 ? (p < 101 ? p : 100) : 1;
-        const F c = byte_f(u32(p)) * F::raw(0x3C23D70A); // 0.01
+        const F c = byte_f(u32(p)) * F::raw(0x3C23D70A); // [0x350118] 0.01
         const F one_c = kOne - c;
         k.c = c;
         const F two_c = c + c;
@@ -129,7 +129,7 @@ PedalCurve pedal_curve_record(u8 type, u8 param, bool toward_zero) {
         k.b = ((-c) * k.a) * k.a;
     } else if (type == 2) {
         p = p < 10 ? 10 : (p < 101 ? p : 100);
-        const F c = byte_f(u32(p)) * F::raw(toward_zero ? 0x3DCCCCCC : 0x3DCCCCCD); // 0.1
+        const F c = byte_f(u32(p)) * F::raw(toward_zero ? 0x3DCCCCCC : 0x3DCCCCCD); // [0x35011C] 0.1
         F c2 = c * c;
         k.c = c;
         F a = c2 - kOne;
@@ -144,17 +144,17 @@ PedalCurve pedal_curve_record(u8 type, u8 param, bool toward_zero) {
 }
 
 SteerFeel steer_feel(const ProgramData& d) {
-    const F pct = F::raw(0x3C23D70A); // 0.01
+    const F pct = F::raw(0x3C23D70A); // [0x3502E0] 0.01
     const Behaviour& h = d.behaviour();
     SteerFeel f{};
     f.lat_gain = byte_f(d.b(T::Controller, 0x34)) * pct;
-    f.align_gain = byte_f(d.b(T::Controller, 0x38)) * folded(h, 0x3DCCCCCD, 0x3DCCCCCC); // 0.1
+    f.align_gain = byte_f(d.b(T::Controller, 0x38)) * folded(h, 0x3DCCCCCD, 0x3DCCCCCC); // [0x3502E4] 0.1
     f.curve = pedal_curve_record(d.b(T::Controller, 0x35), d.b(T::Controller, 0x36), toward_zero(h));
-    f.steer_max = byte_f(d.b(T::Controller, 0x3C)) * folded(h, 0x3AE4C388, 0x3AE4C385); // 0.1 degree
+    f.steer_max = byte_f(d.b(T::Controller, 0x3C)) * folded(h, 0x3AE4C388, 0x3AE4C385); // [0x3502E8] 0.1 degree
     f.pad_gain = (byte_f(d.b(T::Controller, 0x3A)) * pct) * F::raw(0x39800000);
     f.steer_gain = d.b(T::Controller, 0x3B) == 0 ? kZero : (byte_f(d.b(T::Controller, 0x3B)) * pct) / f.steer_max;
-    f.slip_max = byte_f(d.b(T::Controller, 0x3E)) * folded(h, 0x3AE4C388, 0x3AE4C385);
-    f.slip_gain = d.b(T::Controller, 0x3D) == 0 ? kZero : (byte_f(d.b(T::Controller, 0x3D)) * F::raw(0x3C23D70A)) / f.slip_max;
+    f.slip_max = byte_f(d.b(T::Controller, 0x3E)) * folded(h, 0x3AE4C388, 0x3AE4C385); // [0x3502EC]
+    f.slip_gain = d.b(T::Controller, 0x3D) == 0 ? kZero : (byte_f(d.b(T::Controller, 0x3D)) * F::raw(0x3C23D70A)) / f.slip_max; // [0x3502F0]
     f.use_x420 = d.b(T::Controller, 0x37);
     f.mode = d.b(T::Controller, 0x39);
     return f;
@@ -162,7 +162,7 @@ SteerFeel steer_feel(const ProgramData& d) {
 
 void clamp_effect_block(ProgramData& d) {
     const u32 e = 0; // offsets in the effect block
-    // A channel's point counts 4 (curve a, the two halves of curve b), the first y of each half zeroed on
+    // 0x1DE158: a channel's point counts 4 (curve a, the two halves of curve b), the first y of each half zeroed on
     // channel 0, the speed ramp's threshold at most 50 (x 1/3.6 m/s).
     auto channel = [&](u32 a, bool first) {
         d.poke(T::Effects, a + 3, 4), d.poke(T::Effects, a + 1, 4), d.poke(T::Effects, a + 2, 4);
@@ -179,7 +179,7 @@ void clamp_effect_block(ProgramData& d) {
         else if (v >= 0xC9) d.poke(T::Effects, base, 0xC8);
         channel(cls + 0x140, false);
     }
-    // A pair of thresholds kept ascending.
+    // 0x1DE198: a pair of thresholds kept ascending.
     auto order = [&](u32 a, u32 b) {
         const u8 lo = d.b(T::Effects, a), hi = d.b(T::Effects, b);
         if (lo < hi) return;
@@ -195,9 +195,9 @@ EffectTables effect_tables(const ProgramData& data) {
     clamp_effect_block(d);
     EffectTables t{};
     const Behaviour& h = data.behaviour();
-    const F scale = F::raw(0x451F6000); // 2550
+    const F scale = F::raw(0x451F6000); // [0x350264] 2550
     // Curve a's x scale with its selector byte set / clear (the lateral speed, 1/9 km/h, or the slip angle, 0.2 degree), curve
-    // b's (the slip speed, 1/18 km/h, or the slip ratio, 1/255); the same per channel.
+    // b's (the slip speed, 1/18 km/h, or the slip ratio, 1/255); the same per channel ([0x35025C] .. [0x35028C]).
     // (2002 Tokyo-Geneva's: 0x3DE38E37, 0x3B64C385, 0x3D638E37, 0x3B808080)
     const bool z = toward_zero(h);
     const u32 kAx[2] = {z ? 0x3DE38E37u : 0x3DE38E3Au, z ? 0x3B64C385u : 0x3B64C388u};
@@ -207,13 +207,13 @@ EffectTables effect_tables(const ProgramData& data) {
             const u32 src = 0xA0 * ch + 0x28 * cl;
             auto b = [&](u32 o) { return d.b(T::Effects, src + o); };
             EffectCurves& e = t.set[ch][cl];
-            // Curve a.
+            // 0x1DE5E0: curve a.
             F fx = F::raw(kAx[b(0) != 0 ? 0 : 1]);
             F fy = byte_f(b(0x1C)) / scale;
             const u32 na = b(1);
             for (u32 i = 0; i < na && i < 8; ++i) e.a.x[i] = byte_f(b(4 + i)) * fx, e.a.y[i] = byte_f(b(8 + i)) * fy;
             set_table(e.a, s32(na));
-            // Curve b, its first half mirrored to negative x.
+            // 0x1DE680: curve b, its first half mirrored to negative x.
             fx = F::raw(kBx[b(0x1F) != 0 ? 0 : 1]);
             fy = byte_f(b(0x1D)) / scale;
             const F fy2 = byte_f(b(0x1E)) / scale;
@@ -222,20 +222,20 @@ EffectTables effect_tables(const ProgramData& data) {
                 e.b.x[i] = (-byte_f(b(0xC + (n1 - 1 - i)))) * fx, e.b.y[i] = byte_f(b(0x10 + (n1 - 1 - i))) * fy;
             for (u32 j = 0; j < n2 && n1 + j < 8; ++j) e.b.x[n1 + j] = byte_f(b(0x14 + j)) * fx, e.b.y[n1 + j] = byte_f(b(0x18 + j)) * fy2;
             set_table(e.b, s32(n1 + n2));
-            // Base, the speed ramp's threshold and gain.
-            const F k = F::raw(0x3C23D70A); // 0.01
+            // 0x1DE7C0: base, the speed ramp's threshold and gain.
+            const F k = F::raw(0x3C23D70A); // [0x35024C] 0.01
             e.base = byte_f(b(0x20)) * k;
-            const F v = byte_f(b(0x21)) * folded(h, 0x3E8E38E4, 0x3E8E38E3); // 1/3.6
-            const F div = folded(h, 0x42480001, 0x4247FFFF);
+            const F v = byte_f(b(0x21)) * folded(h, 0x3E8E38E4, 0x3E8E38E3); // [0x350250] 1/3.6
+            const F div = folded(h, 0x42480001, 0x4247FFFF);                 // [0x350254]
             e.r0 = v / div;
-            const F span = folded(h, 0x41DE38E4, 0x41DE38E2) - v; // 100 km/h
+            const F span = folded(h, 0x41DE38E4, 0x41DE38E2) - v; // [0x350258] 100 km/h
             e.g = ((byte_f(b(0x22)) * k) * div) / span;
             t.by_lat[ch][cl] = b(0), t.by_slip[ch][cl] = b(0x1F);
         }
     const u32 kerb = 0x1E0;
     const F tenth = folded(h, 0x3DCCCCCD, 0x3DCCCCCC), ten_kmh = folded(h, 0x4031C71D, 0x4031C71B);
-    t.kerb_scale = byte_f(d.b(T::Effects, kerb + 0x20)) * tenth; // 0.1
-    t.kerb_x0 = byte_f(d.b(T::Effects, kerb + 0x21)) * ten_kmh;  // 10 km/h
+    t.kerb_scale = byte_f(d.b(T::Effects, kerb + 0x20)) * tenth; // [0x350290] 0.1
+    t.kerb_x0 = byte_f(d.b(T::Effects, kerb + 0x21)) * ten_kmh;  // [0x350294] 10 km/h
     t.kerb_y0 = byte_f(d.b(T::Effects, kerb + 0x22)) * tenth;
     t.kerb_x1 = byte_f(d.b(T::Effects, kerb + 0x23)) * ten_kmh;
     t.kerb_y1 = byte_f(d.b(T::Effects, kerb + 0x24)) * tenth;
@@ -253,7 +253,7 @@ std::array<F, 4> sound_scales(const ProgramData& data) {
 Kind7Ride kind7_ride(const ProgramData& d) {
     Kind7Ride r;
     if (!d.has(T::Kind7Ride) || d.b(T::Kind7Ride, 0) == 0) return r;
-    // (Europe: its 0.001 and 1 / 3.6, the build's own)
+    // (Europe 0x1DC5B0: its 0.001 and 1 / 3.6 at 0x3340F8 / 0x3340FC, the build's own)
     const Behaviour& h = d.behaviour();
     const F milli = folded(h, 0x3A83126F, 0x3A83126E), kmh = folded(h, 0x3E8E38E4, 0x3E8E38E3), hundred = F::raw(0x42C80000);
     r.on = true;
@@ -282,10 +282,10 @@ PadConstants pad_constants(const ProgramData& d) {
         *ramps[i] = r;
     }
     const Behaviour& h = d.behaviour();
-    const F deg = folded(h, 0x3C8EFA35, 0x3C8EFA34); // pi / 180
-    k.analog_jump = byte_f(b(6)) * F::raw(0x3C23D70A); // 0.01
+    const F deg = folded(h, 0x3C8EFA35, 0x3C8EFA34); // [0x350400] pi / 180
+    k.analog_jump = byte_f(b(6)) * F::raw(0x3C23D70A); // [0x3503FC] 0.01
     k.k1 = byte_f(b(0xC));
-    k.k2 = byte_f(b(0xD)) * folded(h, 0x3DCCCCCD, 0x3DCCCCCC); // 0.1
+    k.k2 = byte_f(b(0xD)) * folded(h, 0x3DCCCCCD, 0x3DCCCCCC); // [0x350404] 0.1
     k.k3 = byte_f(b(0xE));
     const F out = byte_f(u32(b(0xF)) * 10) * deg, both = byte_f(u32(b(0x11)) * 10) * deg, back = byte_f(u32(b(0x10)) * 10) * deg;
     const F rate = byte_f(u32(b(0x12)) * 10) * deg;
@@ -294,7 +294,7 @@ PadConstants pad_constants(const ProgramData& d) {
     k.rate = {rate, rate, rate};
     k.wheel_slew = byte_f(u32(b(0x23)) * 10) * deg;
     k.wheel_lock = {byte_f(b(0x24)) * deg, byte_f(b(0x25)) * deg, folded(h, 0x3E567750, 0x3E56774E),
-                    folded(h, 0x3EB2B8C2, 0x3EB2B8C1)}; // [2], [3]
+                    folded(h, 0x3EB2B8C2, 0x3EB2B8C1)}; // [2], [3]: $gp 0x352988 / 0x35298C
     k.wheel_throttle = pedal_curve_record(b(0x2C), b(0x2D), toward_zero(h));
     k.wheel_brake = pedal_curve_record(b(0x30), b(0x31), toward_zero(h));
     for (u32 i = 0; i < 16; ++i) k.surface_class[i] = d.b(T::SurfaceClass, i);
@@ -321,7 +321,7 @@ RaceConfig race_config(ByteSpan ev) {
     RaceConfig c{};
     c[0] = ev[0x198], c[1] = ev[0x199], c[2] = ev[0x19A];
     for (u32 i = 0; i < 0x18; ++i) c[4 + i] = ev[0x19C + i];
-    // +0x38 / +0x3A (u16) are set from +0x1E4 / +0x1E6 (the s16 stores).
+    // +0x38 / +0x3A (u16) are set from +0x1E4 / +0x1E6 (the s16 stores of 0x1DA708).
     c[0x38] = ev[0x1E4], c[0x39] = 0;
     c[0x3A] = ev[0x1E6], c[0x3B] = ev[0x1E7];
     c[0x20] = ev[0x1B4], c[0x22] = ev[0x1B6], c[0x24] = ev[0x1B7], c[0x25] = ev[0x1B8], c[0x26] = ev[0x1B9];
@@ -346,11 +346,11 @@ void clear_rubber_band(RaceConfig& c) {
 bool wear_answer(Conductor k, RaceConfig& c, u8 course_category, s32 battle_wear, Program p) {
     switch (k) {
     case Conductor::SinglePlayer:
-    case Conductor::FreePractice: return !dirt_course(course_category); // the wear setting: 1; the initialisation gives 0 on dirt
+    case Conductor::FreePractice: return !dirt_course(course_category); // virtual 10: 1; virtual 21 gives 0x1DA998 0 on dirt
     case Conductor::Battle2P:
     case Conductor::BattleMP: {
         if (dirt_course(course_category)) return false;
-        // With setting 2 when the race info's word is set, else 0; NTSC-J's with the word itself.
+        // 0x1DA238 with setting 2 when the race info's word is set, else 0; NTSC-J's (0x1ED958) with the word itself.
         const s32 set = p == Program::NtscJ ? battle_wear : battle_wear != 0 ? 2 : 0;
         if (set == 1) {
             c[0x2F] = 2, c[0x2E] = 9, c[0x30] = 6, c[0x31] = 8, c[0x34] = 5, c[0x2C] = 0x2A, c[0x2D] = 0x1E, c[0x32] = 0, c[0x33] = 0x1E;
@@ -361,7 +361,7 @@ bool wear_answer(Conductor k, RaceConfig& c, u8 course_category, s32 battle_wear
         }
         return set != 0;
     }
-    default: return false; // the base conductor's wear setting
+    default: return false; // the base conductor's virtual 10
     }
 }
 
@@ -371,7 +371,7 @@ bool rubber_band_answer(Conductor k, RaceConfig& c, s32 battle_catchup, Program 
     case Conductor::Training: return true;
     case Conductor::Battle2P:
     case Conductor::BattleMP:
-        if (p == Program::NtscJ) battle_catchup = battle_catchup != 0 ? 2 : 0; // the NTSC-J program
+        if (p == Program::NtscJ) battle_catchup = battle_catchup != 0 ? 2 : 0; // NTSC-J's 0x1ED928
         if (battle_catchup == 1) {
             c[0x28] = 0x0F, c[0x2A] = 100, c[0x29] = 0x14, c[0x22] = 0;
             return true;
@@ -390,7 +390,7 @@ WearParams wear_params(const RaceConfig& c, const ProgramData& d, bool on) {
     WearParams w{};
     if (!on || c[0x2C] == 0) return w;
     if (!(c[0x33] < c[0x2C]) || !(c[0x34] < c[0x2D]) || !(c[0x31] < c[0x33]) || !(c[0x32] < c[0x34]) || !(c[0x2E] < c[0x2D])) return w;
-    const F k1 = F::raw(0x461C4000), k2 = F::raw(0x3C23D70A); // 10000, 0.01
+    const F k1 = F::raw(0x461C4000), k2 = F::raw(0x3C23D70A); // [0x350140] 10000, [0x350144] 0.01
     w.max = byte_f(c[0x2C]) * k1;
     w.max_loss = byte_f(c[0x2D]) * k2;
     w.worn = ee::int_to_f(s32(100 - u32(c[0x2E]))) * k2;
@@ -456,7 +456,7 @@ RubberBand rubber_band_params(const RaceConfig& c, bool on) {
         b.global = kOne;
         return b;
     }
-    const F pct = F::raw(0x3C23D70A); // 0.01
+    const F pct = F::raw(0x3C23D70A); // [0x350584] 0.01
     b.slow_start = byte_f(c[0x25]);
     b.slow_full = byte_f(c[0x26]) * kTen;
     b.slow = byte_f(c[0x24]) * pct;

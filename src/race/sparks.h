@@ -1,12 +1,12 @@
 #pragma once
 
-// GT3's spark draw (from the race's drawing: the one-player view only, not the rear-view mirror or the split-screen
+// GT3's spark draw (0x19F738, from RacePS2Base::vf45: the one-player view only, not the rear-view mirror or the split-screen
 // halves; presentation §L7). The sparks themselves are the race's (sim/exact/sparks.h). Every active particle is a streak
 // from where it was in eye space one frame earlier to where it is now: a quad 2w wide (w its half-width), its ends pushed
 // out by w along the streak, the race/particle.img glow (16x16, bilinear, clamped) times the particle's colour by its life
 // remaining (four keys, orange to dark red), added to the frame (Cs + Cd: alpha ignored), depth-tested without depth
 // writes, unfogged, both faces. A particle is first drawn once it has an earlier position, and a camera cut drops every
-// earlier position (from the update), so no streak runs across a cut.
+// earlier position (0x19EEE8 from the update), so no streak runs across a cut.
 //
 // Ours draws between the race's frames (the position blended like the cars'); the earlier position is the eye-space one at
 // the same time one race frame (1/60 s) before, from each particle's last few drawn positions, so a streak spans one race
@@ -25,7 +25,7 @@ class Vfs;
 
 namespace gt3r::race {
 
-// A particle's colour from its life remaining L (s): the first key whose time is below L (key 0 itself;
+// 0x19EDA0 / 0x19ED48: a particle's colour from its life remaining L (s): the first key whose time is below L (key 0 itself;
 // later keys blended with the key before), each channel x 127.5 truncated (the GS's 0x80 = 1.0), RGBA in the low bytes;
 // 0 (nothing added) when no key's time is below L.
 u32 spark_colour(float life);

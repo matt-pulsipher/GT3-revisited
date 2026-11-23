@@ -98,7 +98,7 @@ u64 ee_double_hash() {
         const u64 a = operand(rng()), b = operand(a);
         mix(add(a, b)), mix(sub(a, b)), mix(mul(a, b)), mix(truncate(a)), mix(extend(u32(b)));
     }
-    // the AI braking distance's factor 1 + b / 100 for every s8 b: widened, x 0.01, + 1, narrowed
+    // the AI braking distance's factor 1 + b / 100 (0x1F7088) for every s8 b: widened, x 0.01, + 1, narrowed
     for (int b = -128; b < 128; ++b) {
         const u64 w = extend(ee::int_to_f(b).bits), m = mul(w, 0x3F847AE147AE147Bull), t = add(m, 0x3FF0000000000000ull);
         mix(w), mix(m), mix(t), mix(truncate(t));

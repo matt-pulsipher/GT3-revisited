@@ -270,7 +270,7 @@ struct DrawItem {
     // pass, depth writes kept), e.g. a ghost car.
     float alpha = 1.0f;
     // Multiplies the item's final colour (its lit colour; the car reflection passes take
-    // reflection_scale): GT3's car colour scale ((0, s)), e.g. 0 for a black
+    // reflection_scale): GT3's car colour scale (fn_0024F580(0, s)), e.g. 0 for a black
     // silhouette.
     float tint = 1.0f;
     // Prize scenes (.prm loaded with gtm1::Options::static_env_maps) and course environment

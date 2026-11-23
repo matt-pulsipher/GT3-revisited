@@ -1,0 +1,73 @@
+# The later builds' addresses program_map.py's matcher cannot place or places wrong, placed by hand (program_map.py --pins).
+# <NTSC-U>  <Concept 2001 Tokyo>  <2002 Tokyo-Seoul v1.02>  <v2.00>  <2002 Tokyo-Geneva Europe>  <Asia>   (- : the matcher's)
+#
+# The surface tables the physics globals' routine 0x1DAE70 builds (rolling resistance x / y / curve, grip, bump amplitude,
+# frequency, scaled and mode bytes): the later builds keep the eight blocks in GT3's order below their static block, and
+# their compiler forms the addresses in the opposite order (the votes pair them the wrong way round). Read from the
+# routine's address instructions, in ascending order.
+2D2CA0  2BB150 2BBC50 2BF048 2BB648 2BBBC8
+2D2CC0  2BB170 2BBC70 2BF068 2BB668 2BBBE8
+2D2CE0  2BB190 2BBC90 2BF088 2BB688 2BBC08
+2D2CF0  2BB1A0 2BBCA0 2BF098 2BB698 2BBC18
+2D2D30  2BB1E0 2BBCE0 2BF0D8 2BB6D8 2BBC58
+2D2D70  2BB220 2BBD20 2BF118 2BB718 2BBC98
+2D2DB0  2BB260 2BBD60 2BF158 2BB758 2BBCD8
+2D2DC0  2BB270 2BBD70 2BF168 2BB768 2BBCE8
+# The pad constants' small data block 0x352960 .. 0x35299F (the steering wheel's slew and lock words, the 0.1 after them):
+# one block in every build, as long and in the same order (its first eight words are placed by the matcher; the rest
+# follow at the same distance).
+35297C  334D0C 335AAC 33A02C 33682C 33702C
+352980  334D10 335AB0 33A030 336830 337030
+352990  334D20 335AC0 33A040 336840 337040
+# The controller settings' globals 0x1DFF40 / 0x1E3EA0 build (the steering feel's curve 0x49D050, the steering wheel's
+# pedal curves 0x49D060 / 0x49D070, the pad's steering rates 0x49D080 / 0x49D090 / 0x49D0A0): one run of objects in every
+# build, in the same order. Read from the two routines' address instructions.
+49D050  47F5B0 4803B0 484930 481130 481930
+49D054  47F5B4 4803B4 484934 481134 481934
+49D058  47F5B8 4803B8 484938 481138 481938
+49D05C  47F5BC 4803BC 48493C 48113C 48193C
+49D060  47F5C0 4803C0 484940 481140 481940
+49D070  47F5D0 4803D0 484950 481150 481950
+49D080  47F5E0 4803E0 484960 481160 481960
+49D090  47F5F0 4803F0 484970 481170 481970
+49D0A0  47F600 480400 484980 481180 481980
+# The kerb scale and curve points before them (0x49CFC0 .. 0x49CFD0), by the one routine pair that refers to them.
+49CFC0  47F598 480398 484918 481118 481918
+49CFC4  47F59C 48039C 48491C 48111C 48191C
+49CFC8  47F5A0 4803A0 484920 481120 481920
+49CFCC  47F5A4 4803A4 484924 481124 481924
+49CFD0  47F5A8 4803A8 484928 481128 481928
+# The tyre effect emitter's block 0x2D35B8 and its three curve sets 0x49C9B0 / 0x49CBC0 / 0x49CDD0 (the kerb block
+# 0x49CFC0 follows them, 0x1F0 after the third): one run in every build, in the same order. Read from the emitter's
+# address instructions.
+2D35B8  2BB400 2BBF00 2BF5B0 2BBBD0 2BC150
+49C9B0  47EF88 47FD88 484308 480B08 481308
+49CBC0  47F198 47FF98 484518 480D18 481518
+49CDD0  47F3A8 4801A8 484728 480F28 481728
+# The race step 0x1F39D8's places between its loops (neither a call nor an access): the gate with the race-flow byte set
+# and the path with it clear, before and after the collision step, before the race flow's hooks, after its per-car loop,
+# after the ranking, after the rubber band. Read from each build's step beside 2001 Tokyo's, by the calls around them.
+1F3AB8  1E8920 1E8FA8 1EB400 1E8E3C 1E8DDC
+1F3AC8  1E8930 1E8FB8 1EB410 1E8E50 1E8DF0
+1F3CC8  1E8BD8 1E9260 1EB6B8 1E90F8 1E9098
+1F3D00  1E8C1C 1E92A4 1EB6FC 1E913C 1E90DC
+1F3DF0  1E8D40 1E93C8 1EB820 1E9260 1E9200
+1F3E4C  1E8DA4 1E942C 1EB88C 1E92CC 1E926C
+1F3EAC  1E8E24 1E94AC 1EB90C 1E934C 1E92EC
+1F4254  1E91E0 1E9868 1EBCC8 1E9708 1E96A8
+# Phase 12's return from the tyre effect emitter 0x1DF150: a later build's phase 12 ends by jumping to the emitter, which
+# returns to the step (phase 12's own return there).
+1EB2E0  1E8C8C 1E9314 1EB76C 1E91AC 1E914C
+# The angle wrap 0x1D8C00 and the angle difference 0x1D8C80: 2002 Tokyo-Geneva's own routines (another code: the matcher
+# finds no counterpart), read from the routines that call them (the view's lag 0x1E0768).
+1D8C00  -      -      -      1EAE20 1EADC0
+1D8C80  -      -      -      1EAEA0 1EAE40
+# The AI decision's call of the aim point 0x1F7658 (its return address 0x1F7CE8): 2002 Tokyo-Geneva's longer start
+# look-ahead comes just before it, and the matcher places the return one instruction late. Read from the call.
+1F7CE8  -      -      -      1F756C 1F7504
+# The pad recorder's playback table of the difference classes' starts (0, 2, 10, 42, ...: eight words): the matcher's
+# guess is a zero block nearby; the one place each later build's data holds the table.
+2D8EE0  2BB070 2BBB70 2BF350 2BB970 2BBEF0
+# The VU0 matrix library's sine and cosine 0x257A44's start of its VU0 micro program (vcallms 0x1D0, the routine's start
+# + 0xE0 on every build; the matcher leaves the instruction unplaced). Read from the routines.
+257B24  259BD4 25A494 25D704 2597FC 259D1C

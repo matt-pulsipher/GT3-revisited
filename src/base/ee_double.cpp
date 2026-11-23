@@ -1,5 +1,5 @@
 // The program's software doubles (fp-bit); see ee_double.h. The unpacked form and each step follow the program's routines:
-// unpack_d, unpack_f, pack_d, pack_f, _fpadd_parts, _fpmul_parts.
+// unpack_d 0x2790E0, unpack_f 0x27A510, pack_d 0x278FB0, pack_f 0x27A400, _fpadd_parts 0x279180, _fpmul_parts in 0x279480.
 
 #include "base/ee_double.h"
 
@@ -18,7 +18,7 @@ struct Parts {
 
 constexpr u64 kImplicit1 = u64(1) << 60, kImplicit2 = u64(1) << 61, kFracHigh = u64(1) << 63;
 
-// unpack_d. The later builds' (2002 Tokyo-Geneva Europe): an Inf's fraction is the implicit bit, the
+// unpack_d (0x2790E0). The later builds' (2002 Tokyo-Geneva Europe 0x27F0E8): an Inf's fraction is the implicit bit, the
 // exponent field of either 0x3FF.
 Parts unpack_d(u64 v, Fp fp = Fp::Gt3) {
     Parts p;
@@ -44,7 +44,7 @@ Parts unpack_d(u64 v, Fp fp = Fp::Gt3) {
     return p;
 }
 
-// pack_d. The later builds' (Concept 2001 Tokyo, 2002 Tokyo-Geneva Europe): a result below
+// pack_d (0x278FB0). The later builds' (Concept 2001 Tokyo 0x282DF8 .. , 2002 Tokyo-Geneva Europe 0x27F010): a result below
 // the smallest normal is a signed zero; 2002 Tokyo-Geneva's cuts the guard bits off.
 u64 pack_d(const Parts& p, Fp fp = Fp::Gt3) {
     u64 f = p.frac;
@@ -79,7 +79,7 @@ u64 pack_d(const Parts& p, Fp fp = Fp::Gt3) {
     return (u64(p.sign) << 63) | (u64(e & 0x7FF) << 52) | (f & 0xFFFFFFFFFFFFFull);
 }
 
-// _fpadd_parts: the operand it returns (a, b, the NaN or the sum).
+// _fpadd_parts (0x279180): the operand it returns (a, b, the NaN or the sum).
 Parts add_parts(const Parts& a, const Parts& b) {
     if (a.cls < 2) return a;
     if (b.cls < 2) return b;
@@ -126,7 +126,7 @@ Parts add_parts(const Parts& a, const Parts& b) {
     return t;
 }
 
-// _fpmul_parts inside __muldf3; 2002 Tokyo-Geneva's (Europe) has no rounding step.
+// _fpmul_parts inside __muldf3 (0x279480); 2002 Tokyo-Geneva's (Europe 0x27B0D0) has no rounding step.
 Parts mul_parts(Parts a, Parts b, Fp fp = Fp::Gt3) {
     const u32 sign = a.sign != b.sign;
     if (a.cls < 2) return a.sign = sign, a;
@@ -181,7 +181,7 @@ D operator-(D a, D b) {
 
 D operator*(D a, D b) { return D::raw(pack_d(mul_parts(unpack_d(a.bits), unpack_d(b.bits)))); }
 
-// unpack_f, then make_dp with the fraction moved up by 30 bits.
+// unpack_f (0x27A510), then make_dp with the fraction moved up by 30 bits.
 D widen(F x) {
     Parts p;
     const u32 v = x.bits;
@@ -200,7 +200,7 @@ D widen(F x) {
     return D::raw(pack_d(p));
 }
 
-// unpack_d, the fraction moved down by 30 bits (bit 0 = sticky), then pack_f.
+// unpack_d, the fraction moved down by 30 bits (bit 0 = sticky), then pack_f (0x27A400).
 F narrow(D x) {
     const Parts p = unpack_d(x.bits);
     u32 f = u32(s32(s64(p.frac << 2) >> 32));
@@ -243,7 +243,7 @@ D sub(D a, D b, Fp fp) {
 
 D mul(D a, D b, Fp fp) { return D::raw(pack_d(mul_parts(unpack_d(a.bits, fp), unpack_d(b.bits, fp), fp), fp)); }
 
-// The later builds' __truncdfsf2 (Concept 2001 Tokyo's pack_f, 2002 Tokyo-Geneva Europe): only the zero
+// The later builds' __truncdfsf2 (Concept 2001 Tokyo's pack_f 0x283240 .., 2002 Tokyo-Geneva Europe 0x27F428): only the zero
 // class is told apart; below the smallest normal a signed zero, exponent 128 an ordinary one, above it Inf; 2002
 // Tokyo-Geneva's cuts the guard bits off.
 F narrow(D x, Fp fp) {

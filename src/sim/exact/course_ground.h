@@ -1,7 +1,7 @@
 #pragma once
 
-// A course's road surface as the vehicle tick's ground query sees it [physics §1.3]: the program's code (the course's
-// road block) on the four wheel query records, in EE arithmetic on the course's own floats. Built from our parse of
+// A course's road surface as the vehicle tick's ground query sees it [physics §1.3]: the program's 0x18FB58 (the course's
+// road block, 0x2280C8) on the four wheel query records, in EE arithmetic on the course's own floats. Built from our parse of
 // the course file (the road block, GTRW): the triangle lookup grid (GTRW +0x48), each segment's vertices (position and the
 // two u16 scalars) and triangles (material and flags bytes) and the segment neighbour lists.
 
@@ -13,8 +13,8 @@
 
 namespace gt3r::sim::exact {
 
-// The road block's triangle lookup grid (GTRW +0x48) as both course queries find a point's cell, the cell under
-// (x, z) (-1 off the breakpoints), with its breakpoint search.
+// The road block's triangle lookup grid (GTRW +0x48) as both course queries find a point's cell: 0x2274A0, the cell under
+// (x, z) (-1 off the breakpoints), with its breakpoint search 0x2273F0.
 class RoadCells {
 public:
     RoadCells() = default;
@@ -29,11 +29,11 @@ class CourseGround {
 public:
     explicit CourseGround(const course::Road& road);
 
-    // For each record, the highest road triangle that strictly contains its point (x, z) in the grid cell under
+    // 0x18FB58: for each record, the highest road triangle that strictly contains its point (x, z) in the grid cell under
     // it, among the segment record 0 holds from the last query (+0x0C), that segment's neighbours, or every segment when it
     // is < 0: its segment, height, interpolated scalars, plane and the triangle's bytes. A record with no triangle keeps
     // the last plane (renormalised) and bytes, with miss = 1 and height -FLT_MAX. `how`: the race's build (Rule::GroundMiss:
-    // the later builds' lowest height, the word at Concept 2001 Tokyo's code, is 0xFFFFFFFF, GT3's code 0xFF7FFFFF).
+    // the later builds' lowest height, the word at Concept 2001 Tokyo's 0x334F14, is 0xFFFFFFFF, GT3's 0x352AFC 0xFF7FFFFF).
     void query(std::array<Ground, 4>& g, const Behaviour& how = {}) const;
 
 private:

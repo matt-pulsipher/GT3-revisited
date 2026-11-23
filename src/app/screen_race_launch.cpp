@@ -168,7 +168,7 @@ void RaceScreen::resolve_launch() {
     if (ev && (rq.mode == "time_trial" || rq.mode == "go_license" || rq.mode == "go_machine_test"))
         tt_start_ = event_start(*ev);
     if (ev && rq.mode == "go_license") license_event_ = code;
-    // Concept's test with the pace car (the race training information): entry 1 is the event pool's third car in its pool
+    // Concept's test with the pace car (RaceTrainingInformation::vf11): entry 1 is the event pool's third car in its pool
     // paint (the car's first paint when the pool names none).
     pace_car_ = ev && rq.mode == "go_license" && rq.lead_car && ev->entries.size() >= 3 && !online_;
     if (pace_car_) {

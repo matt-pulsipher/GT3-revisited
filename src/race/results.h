@@ -87,20 +87,20 @@ struct ResultPanelView {
     float alpha = 1;
 };
 
-// Championship points for a finishing place (0-based): the program's signed bytes read by
-// place (after them the program's data holds zeros, so places 7 and 8 score none).
-// The same table.
+// Championship points for a finishing place (0-based): the program's signed bytes 0x352D78 read by
+// place (0x238A80; after them the program's data holds zeros, so places 7 and 8 score none).
+// PAL 0x354710, NTSC-J 0x34CEF0: the same table.
 int championship_points(int place);
-// A points cell of the panel ("%c%d" + "pt" under 2, else "pts"; NTSC-J "%c%d pt"):
+// A points cell of the panel ("%c%d" + "pt" under 2, else "pts"; NTSC-J "%c%d pt", 0x1B1830):
 // `sign` '+' on the POINTS page, ' ' on TOTAL POINT. `lang` the game's language (JP: the NTSC-J text).
 std::string result_points_text(char sign, int points, std::string_view lang = "US");
-// TOTAL POINT's order: the rows in finishing order, each with its points before the
+// TOTAL POINT's order (fn_00175790): the rows in finishing order, each with its points before the
 // round (`before`, same order) plus its place's; sorted by that total, highest first, a tie in
 // finishing order. Returns the row indices in panel order and fills `totals` by row.
 std::vector<size_t> total_points_order(std::span<const int> before, std::vector<int>& totals);
 
-// When the results panel turns its pages and when the race ends (the result arcade,
-// the result championship). Each page waits until its window is fully shown
+// When the results panel turns its pages and when the race ends (ResultArcade::vf9 0x174EF8,
+// ResultChampionship::vf4 0x1753F8). Each page waits until its window is fully shown
 // (ResultsOverlay::fully_shown_time); from then a timer runs while every car has finished (10 s on a
 // championship round's RACE RESULTS and POINTS, 15 s otherwise and on TOTAL POINT, which always runs
 // it), and confirm (Circle / Cross) or the timer's end moves on: in a championship round the page
@@ -141,7 +141,7 @@ public:
     }
     // The most rows the panel shows (a bigger field than GT3's: the first 7 and the player's, draw()).
     static constexpr size_t kShownRows = 8;
-    // The window is fully shown (its last bar's fade done; the ready time) at this clock.
+    // The window is fully shown (its last bar's fade done; fn_001B1DF0's ready time) at this clock.
     static double fully_shown_time(size_t rows, double delay = ResultPanelFlow::kResultsDelay) {
         return delay + 2.0 + 0.12 * double(std::min(rows, kShownRows));
     }
@@ -242,19 +242,19 @@ public:
                    const SDL_FRect& dst);
 };
 
-// Gran Turismo Concept's examination message: the pod race's disqualification (concept §9.2: simple exam display with
-// its simple exam messages, GT3's time-trial fail display with a byte that keeps the message up). Steps count at 60 a
+// Gran Turismo Concept's examination message: the pod race's disqualification (concept §9.2: SimpleExamDisplay with
+// its SimpleExamMessages, GT3's time-trial fail display with a byte that keeps the message up). Steps count at 60 a
 // second from the display's stage 1 (step 1: the fail jingle, our first step after the disqualification); the 60 Hz
 // builds' values (2002 Tokyo-Geneva Europe's 50 Hz program holds the same times: 50 steps, a fade of 0.02, 150, 200).
-//   the simple exam display: sub 0 sets a 60-step timer; the message starts once it has run out (step 61, its fade 0).
-//   the simple exam messages (one call a step, then the simple exam messages counts its timer down): state 1 adds the
+//   SimpleExamDisplay::vf23: sub 0 sets a 60-step timer; the message starts once it has run out (step 61, its fade 0).
+//   SimpleExamMessages::vf2 (one call a step, then SimpleExamMessages::vf3 counts its timer down): state 1 adds the
 //   fade step to the fade (EE singles) until it is 1 or more (61 steps: the last one about 1.0167), then a 180-step
 //   hold; at its end the fade is set to 1 and, with the byte (+0x1C: the two-player halves) set, the message stays,
 //   flagged held (+0x1D); else state 3 takes the step off until the fade is below 0 (61 steps: the EE's subtraction
 //   drops the step's low bits in the alignment), and the message is done (+1, no longer drawn).
-//   the simple exam display sub 3: then 240 steps or a confirm (pad bit 0x40) and the display's stage 3, the next
+//   SimpleExamDisplay::vf23 sub 3: then 240 steps or a confirm (pad bit 0x40) and the display's stage 3, the next
 //   step event 1: the race ends. So the message is up for 302 steps (5 s) and the race ends 4 s after it has gone.
-//   the simple exam messages draws, while the message is up, the bluish wash (160, 160, 255) with alpha
+//   SimpleExamMessages::vf5 draws, while the message is up, the bluish wash (160, 160, 255) with alpha
 //   (int(fade x 128) & 0xFF) >> 1 in the GS's 0x80 units (half at most) over the screen, and the text in `sw_20` at
 //   1.5 x 1.5, (160, 192, 64) with alpha int(fade x 128) & 0xFF, in two copies at y 224 + s and 224 - s,
 //   s = int((1 - fade) x 30) (in doubles, toward zero), centred on x 320: the copies meet as it fades in and part again
@@ -265,9 +265,9 @@ public:
 //   race::Hud lays out its frame) and the wash over the whole rectangle.
 class ConceptExamMessage {
 public:
-    static constexpr int kDelay = 60; // The simple exam display sub 0 (Geneva Europe 50)
-    static constexpr int kHold = 180; // The simple exam messages state 1 -> 2 (Geneva Europe 150)
-    static constexpr int kWait = 240; // The simple exam display sub 3 (Geneva Europe 200)
+    static constexpr int kDelay = 60; // SimpleExamDisplay::vf23 sub 0 (Geneva Europe 50)
+    static constexpr int kHold = 180; // SimpleExamMessages::vf2 state 1 -> 2 (Geneva Europe 150)
+    static constexpr int kWait = 240; // SimpleExamDisplay::vf23 sub 3 (Geneva Europe 200)
     // The fade's step, 1/60 (Geneva Europe 0.02; the Asian Tokyo-Geneva's one bit lower, as many steps).
     static constexpr u32 kFadeStepBits = 0x3C888889;
 
@@ -323,16 +323,16 @@ enum class QmAction {
 QmAction quick_menu_action(std::string_view action);
 
 // The list column a quick-menu widget shows and its row (0-based), by the widget's game-code
-// class, as the list setters read list entry n - 1: qm_list_car_name<n> the car
-// name, qm_list_time<n> the time, qm_pt<n> the points; else by
+// class, as the list setters read list entry n - 1 (fn_0012D8C0): qm_list_car_name<n> the car
+// name (0x12D040), qm_list_time<n> the time (0x12D240), qm_pt<n> the points (0x12D328); else by
 // the names rank<n>_name / rank<n>_time; None for any other widget.
 enum class QmColumn { None, Name, Time, Points };
 QmColumn quick_menu_column(const menu::Element& e, int& row);
 
-// The result menu's list after a race: the finishing order `finish` (only when the
+// The result menu's list after a race: the finishing order `finish` (fn_0012F070, only when the
 // player finished). Left by pause EXIT (not finished): a championship round's list is not
-// refilled, the list of its pre-round menu, `grid` (the grid order, no times, the
-// player's row marked), when there is one; a GT race's is cleared, every row "---"
+// refilled (0x1338EC), the list of its pre-round menu, `grid` (the grid order, no times, the
+// player's row marked), when there is one; a GT race's is cleared (0x13306C), every row "---"
 // with no time and no player mark; other runs keep `finish`.
 enum class ResultList { Other, GtRace, Championship };
 std::vector<ResultRow> result_menu_list(ResultList kind, bool finished, std::vector<ResultRow> finish,
@@ -342,16 +342,16 @@ std::vector<ResultRow> result_menu_list(ResultList kind, bool finished, std::vec
 // car of the field runs it, and each keeps its best lap of that practice (ms; kPracticeNoTime for none). `best` is by
 // entry: 0 the player, k opponent k - 1.
 constexpr u32 kPracticeNoTime = 0x157529FF; // GT3's "no time" (359,999,999 ms)
-// Whether the practice re-grids the field (and its own test): the player set a lap.
+// Whether the practice re-grids the field (0x133B38, and fn_0012E920's own test): the player set a lap.
 bool practice_regrids(std::span<const u32> best);
-// The grid after it (GT race, championship): each pair of entries with different best laps counts
+// The grid after it (GT race fn_0012E920, championship fn_0018DFA8): each pair of entries with different best laps counts
 // one place against the slower (an unsigned compare, so no time is the slowest; equal times count nothing), then each
 // entry in entry order takes the slot of its count, or the next one not yet taken (equal times in entry order). Entry k's
 // new grid slot.
 std::vector<int> practice_grid(std::span<const u32> best);
-// The GT race pre-race menu's list after a free practice (with its flag 0; before the first, flag 1:
+// The GT race pre-race menu's list after a free practice (fn_0012F160 with its flag 0, 0x133174; before the first, flag 1:
 // every time none): the rows in grid order (`rows`, by grid slot), each with its car's best lap of the practice. A
-// championship round's list is the grid with the points: its layout has no time column, and its
+// championship round's list (fn_0012F290, 0x133B84) is the grid with the points: its layout has no time column, and its
 // entries keep no time.
 void practice_list_times(std::vector<ResultRow>& rows, std::span<const u32> best);
 

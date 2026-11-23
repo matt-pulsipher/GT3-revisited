@@ -56,7 +56,7 @@ Bytes export_concept_ps2_save(const GameState& s, const GtData& data);
 Bytes concept_ps2_thumbnail(const GameState& s, const GtData& data);
 // The save's title for icon.sys (Shift-JIS), from GtData::save_title.
 Bytes concept_save_title_sjis(const GtData& data);
-// The cars that can be chosen (the save thumbnail's count).
+// The cars that can be chosen (the save thumbnail's count, 0x211278).
 int concept_open_car_count(const GtData& data, const ConceptState& state);
 
 } // namespace gt3r::game

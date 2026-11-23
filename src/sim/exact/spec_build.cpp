@@ -1,4 +1,4 @@
-// The packed car spec (the builder and its per-table helpers); see params_build.h. Integer code: each helper
+// The packed car spec (0x1DA308, the builder 0x2325B8 and its per-table helpers); see params_build.h. Integer code: each helper
 // copies record bytes into the spec and scales a few with the program's 32-bit multiply and truncating divide.
 
 #include "sim/exact/params_build.h"
@@ -35,7 +35,7 @@ struct S {
 
 s32 mul(s32 a, s32 b) { return s32(u32(a) * u32(b)); } // mult: the low word
 
-// A setting index (1-based) into the record's [lo, hi] range of `steps` steps.
+// 0x233F60: a setting index (1-based) into the record's [lo, hi] range of `steps` steps.
 s32 interp(s32 lo, s32 hi, s32 steps, s32 set) {
     if (steps < 2) return lo;
     return lo + mul(hi - lo, set - 1) / (steps - 1);
@@ -44,16 +44,16 @@ s32 interp(s32 lo, s32 hi, s32 steps, s32 set) {
 // The setting word's low byte / half (lbu / lhu of the word).
 u8 sb(const Equipment& eq, u32 o) { return u8(eq.word(o)); }
 
-void brake(S& s, const Rec& r) {
+void brake(S& s, const Rec& r) { // 0x232A68
     s.b(0xDE, r.b(0x11)), s.b(0xDF, r.b(0x12)), s.b(0xE0, r.b(0x13));
 }
 
-void brake_controller(const Equipment& eq, S& s, const Rec& r) {
+void brake_controller(const Equipment& eq, S& s, const Rec& r) { // 0x232A88
     s.b(0x10A, interp(r.b(0x12), r.b(0x13), r.b(0x11), eq.word(0x11C)));
     s.b(0x10B, interp(r.b(0x16), r.b(0x17), r.b(0x15), eq.word(0x120)));
 }
 
-void steer(S& s, const Rec& r) { // lock, then the three 6-point curves A (0xFC), B (0xE2), C (0xEF)
+void steer(S& s, const Rec& r) { // 0x232AF8: lock, then the three 6-point curves A (0xFC), B (0xE2), C (0xEF)
     s.b(0xFC, 6);
     s.b(0x35, r.b(0x11));
     for (u32 i = 0; i < 12; ++i) s.b(0xFD + i, r.b(0x12 + i));
@@ -63,7 +63,7 @@ void steer(S& s, const Rec& r) { // lock, then the three 6-point curves A (0xFC)
     for (u32 i = 0; i < 12; ++i) s.b(0xF0 + i, r.b(0x2A + i));
 }
 
-void chassis(S& s, const Rec& r) {
+void chassis(S& s, const Rec& r) { // 0x232C38
     s.b(0x2C, r.b(0x10));
     s.b(0x36, r.b(0x12) + 0x7C);
     s.b(0x37, r.b(0x1E) + 0x7C);
@@ -74,7 +74,7 @@ void chassis(S& s, const Rec& r) {
     s.h(0x1A, r.h(0x14));
 }
 
-void engine(S& s, const Rec& r) {
+void engine(S& s, const Rec& r) { // 0x232C88
     for (u32 i = 0; i < 16; ++i) s.h(0x82 + 2 * i, r.h(0x18 + 2 * i));
     s.h(0xA2, mul(r.b(0x42), 10));
     s.b(0xC9, r.b(0x43));
@@ -85,7 +85,7 @@ void engine(S& s, const Rec& r) {
     s.b(0x71, r.b(0x57));
 }
 
-void drivetrain(S& s, const Rec& r) {
+void drivetrain(S& s, const Rec& r) { // 0x232DC8
     s.b(0xB4, r.b(0x13));
     s.b(0xB2, r.b(0x14));
     s.b(0xB3, r.b(0x15));
@@ -97,17 +97,17 @@ void drivetrain(S& s, const Rec& r) {
     s.h(0x6A, r.h(0x20));
 }
 
-void gear(const Equipment& eq, S& s, const Rec& r) {
+void gear(const Equipment& eq, S& s, const Rec& r) { // 0x232E18
     for (u32 i = 0; i < 8; ++i) s.h(0xB6 + 2 * i, u16(eq.word(0xF0 + 4 * i)));
     s.h(0xC6, u16(eq.word(0x110)));
     s.b(0xCB, sb(eq, 0x114));
     s.b(0xCA, 0);
     s.b(0xC8, r.b(0x11));
 }
-// ... the later builds' (Rule::GearSpec, Concept 2001 Tokyo): also the record's gearbox kind.
+// ... the later builds' (Rule::GearSpec, Concept 2001 Tokyo 0x235498): also the record's gearbox kind.
 void gear_kind(S& s, const Rec& r) { s.b(0xE1, r.b(0x30)); }
 
-void suspension(const Equipment& eq, S& s, const Rec& r) {
+void suspension(const Equipment& eq, S& s, const Rec& r) { // 0x232E68
     for (u32 i = 0; i < 4; ++i) s.b(0x64 + i, r.b(0x1D + i));
     s.b(0x3C, r.b(0x29));
     s.b(0x4C, r.b(0x2A));
@@ -138,12 +138,12 @@ void suspension(const Equipment& eq, S& s, const Rec& r) {
     s.b(0x4B, interp(r.b(0x4C), r.b(0x4D), r.b(0x4B), eq.word(0x190)));
 }
 
-void lsd(const Equipment& eq, S& s, const Rec& r) {
+void lsd(const Equipment& eq, S& s, const Rec& r) { // 0x233150
     s.b(0xD6, r.b(0x11)), s.b(0xD7, r.b(0x1B));
     for (u32 i = 0; i < 6; ++i) s.b(0xD8 + i, sb(eq, 0x194 + 4 * i));
 }
 
-// One tyre block (0x70 bytes at `o`) from a compound record c (table 27) and a force-vol record f (table 26).
+// 0x2333A0: one tyre block (0x70 bytes at `o`) from a compound record c (table 27) and a force-vol record f (table 26).
 void tire_block(S& s, u32 o, const Rec& c, const Rec& f) {
     s.b(o + 0x00, c.b(0x08));
     s.b(o + 0x01, c.b(0x09));
@@ -165,7 +165,7 @@ void tire_block(S& s, u32 o, const Rec& c, const Rec& f) {
     s.b(o + 0x5B, 0), s.b(o + 0x5C, 0);
 }
 
-// The three compound blocks of a tyre part (table 28 front, 29 rear) and its size (table 25).
+// 0x233198 / 0x2332A0: the three compound blocks of a tyre part (table 28 front, 29 rear) and its size (table 25).
 void tire(const data::CarDatabase& db, S& s, const Rec& r, bool rear) {
     for (u32 k = 0; k < 3; ++k)
         tire_block(s, (rear ? 0x292 : 0x142) + 0x70 * k, Rec{db.record(TableId::TireCompound, r.d(0x20 + 8 * k))},
@@ -178,12 +178,12 @@ void tire(const data::CarDatabase& db, S& s, const Rec& r, bool rear) {
     if (!rear) s.b(0x120, 4), s.b(0x121, 4); // the camber curves' point counts
 }
 
-void lightweight(S& s, const Rec& r) {
+void lightweight(S& s, const Rec& r) { // 0x233690
     s.h(0x2A, mul(s.sh(0x2A), r.h(0x12)) / 1000);
     s.b(0x2E, mul(s.b(0x2E), r.b(0x11)) / 100);
 }
 
-void body(const Equipment& eq, S& s, const Rec& r) {
+void body(const Equipment& eq, S& s, const Rec& r) { // 0x2336D8
     s.h(0x2A, mul(s.sh(0x2A), r.h(0x30)) / 1000);
     s.b(0x2E, mul(s.b(0x2E), r.b(0x38)) / 100);
     s.b(0x32, r.b(0x39));
@@ -203,13 +203,13 @@ void body(const Equipment& eq, S& s, const Rec& r) {
 }
 
 // The power factors (0xA4 per mille, 0xA6 percent) times the part's two percentages: port polish, displacement, computer,
-// muffler, intercooler.
+// muffler, intercooler (0x2337C0, 0x233960, 0x2339A8, 0x233D88, 0x233DD0).
 void power_factors(S& s, const Rec& r) {
     s.h(0xA4, mul(s.h(0xA4), r.b(0x11)) / 100);
     s.b(0xA6, mul(s.b(0xA6), r.b(0x12)) / 100);
 }
 
-// Engine balance / NA tune: +0x11 rpm/100 onto every curve point, +0x12 onto the rev limit, then the
+// Engine balance / NA tune (0x233808, 0x2339F0): +0x11 rpm/100 onto every curve point, +0x12 onto the rev limit, then the
 // factors from +0x13 / +0x14.
 void rpm_tune(S& s, const Rec& r) {
     for (u32 i = 0; i < 16; ++i) s.b(0x72 + i, s.b(0x72 + i) + r.b(0x11));
@@ -218,7 +218,7 @@ void rpm_tune(S& s, const Rec& r) {
     s.b(0xA6, mul(s.b(0xA6), r.b(0x14)) / 100);
 }
 
-void turbo(const Equipment& eq, S& s, const Rec& r) {
+void turbo(const Equipment& eq, S& s, const Rec& r) { // 0x233B48
     s.h(0xA4, mul(s.h(0xA4), r.h(0x1C)) / 100);
     const u8 rev = s.b(0x6F), upshift = s.b(0x70);
     s.b(0xA6, mul(s.b(0xA6), r.b(0x1B)) / 100);
@@ -229,7 +229,7 @@ void turbo(const Equipment& eq, S& s, const Rec& r) {
     s.b(0xAD, sb(eq, 0x138)), s.b(0xAB, sb(eq, 0x13C)), s.b(0xAF, sb(eq, 0x140));
 }
 
-// Flywheel / clutch: friction 0x6C, inertia 0x6A, the axle words 0xD2 / 0xD4 in percent; the clutch
+// Flywheel / clutch (0x233BE8, 0x233C68): friction 0x6C, inertia 0x6A, the axle words 0xD2 / 0xD4 in percent; the clutch
 // also sets 0xCC.
 void flywheel(S& s, const Rec& r) {
     s.h(0x6C, mul(s.h(0x6C), r.b(0x11)) / 100);
@@ -238,7 +238,7 @@ void flywheel(S& s, const Rec& r) {
     s.h(0xD4, mul(s.sh(0xD4), r.b(0x14)) / 100);
 }
 
-void prop_shaft(S& s, const Rec& r) {
+void prop_shaft(S& s, const Rec& r) { // 0x233CF0
     s.h(0x6C, mul(s.h(0x6C), r.b(0x11)) / 100);
     s.h(0xD2, mul(s.sh(0xD2), r.b(0x12)) / 100);
     s.h(0xD4, mul(s.sh(0xD4), r.b(0x13)) / 100);
@@ -246,7 +246,7 @@ void prop_shaft(S& s, const Rec& r) {
     s.h(0xD0, mul(s.sh(0xD0), r.b(0x15)) / 100);
 }
 
-void ascc(const Equipment& eq, S& s, const Rec& r) {
+void ascc(const Equipment& eq, S& s, const Rec& r) { // 0x233E18
     s.b(0x10C, interp(r.b(0x14), r.b(0x15), r.b(0x11), eq.word(0x1BC)));
     s.b(0x10D, r.b(0x13));
     s.b(0x111, interp(r.b(0x19), r.b(0x1A), r.b(0x18), eq.word(0x1C0)));
@@ -256,14 +256,14 @@ void ascc(const Equipment& eq, S& s, const Rec& r) {
     s.b(0x109, (r.b(0x17) & 3) | (r.b(0x16) & 3) << 2 | (r.b(0x1D) & 3) << 4 | (r.b(0x1C) & 3) << 6);
 }
 
-void tcs(const Equipment& eq, S& s, const Rec& r) {
+void tcs(const Equipment& eq, S& s, const Rec& r) { // 0x233F08
     s.b(0x110, r.b(0x13));
     s.b(0x10E, r.b(0x14));
     s.b(0x10F, r.b(0x17));
     s.b(0x117, interp(r.b(0x15), r.b(0x16), r.b(0x12), eq.word(0x1B0)));
 }
 
-// The id of the first tyre part of table t fitted to this car with this stage byte, 0 when none.
+// 0x233F98: the id of the first tyre part of table t fitted to this car with this stage byte, 0 when none.
 u64 tire_for_stage(const data::CarDatabase& db, TableId t, u64 car, s32 stage) {
     for (const ByteSpan& r : db.table(t).records)
         if (rd64(r, 8) == car && r[0x10] == u8(stage)) return rd64(r, 0);
@@ -308,24 +308,24 @@ Equipment equipment_image(ByteSpan eq) {
 
 Equipment stock_equipment(const data::CarDatabase& db, const std::string& car_label, const std::array<u64, 27>& parts) {
     CarSettings c = stock_settings(db, car_label, parts);
-    // Max with the low bound, then min with the high bound (so an empty range gives its high bound).
+    // 0x235F18: max with the low bound, then min with the high bound (so an empty range gives its high bound).
     auto clamp = [](int v, int lo, int hi) { return std::min(std::max(v, lo), hi); };
     std::array<u64, 30> part{};
     for (size_t i = 0; i < parts.size(); ++i) part[size_t(data::kCarPartTables[i])] = parts[i];
     auto rec = [&](TableId t) { return Rec{db.record(t, part[size_t(t)])}; };
-    if (const Rec g = rec(TableId::Gear); g.r) { // (a computed box's words come from stock_settings' generator)
+    if (const Rec g = rec(TableId::Gear); g.r) { // 0x231FC8 (a computed box's words come from stock_settings' generator)
         const int fd = clamp(g.h(0x22), g.h(0x26), g.h(0x24)), sl = clamp(g.b(0x29), g.b(0x2A), g.b(0x2B));
         if (fd != c.final_drive || sl != c.gear_slider) {
             c.final_drive = fd, c.gear_slider = sl;
             if (g.b(0x28)) apply_gear_slider(db, parts, c);
         }
     }
-    if (const Rec d = rec(TableId::Drivetrain); d.r) c.front_torque = clamp(d.b(0x13), d.b(0x11), d.b(0x12));
-    if (const Rec b = rec(TableId::BrakeController); b.r)
+    if (const Rec d = rec(TableId::Drivetrain); d.r) c.front_torque = clamp(d.b(0x13), d.b(0x11), d.b(0x12)); // 0x232080
+    if (const Rec b = rec(TableId::BrakeController); b.r)                                                    // 0x2320C8
         c.brake_front = clamp(b.b(0x14), 1, b.b(0x11)), c.brake_rear = clamp(b.b(0x14), 1, b.b(0x15));
-    if (const Rec b = rec(TableId::RacingModify); b.r)
+    if (const Rec b = rec(TableId::RacingModify); b.r)                                                       // 0x232138
         c.downforce_front = clamp(b.b(0x13), b.b(0x11), b.b(0x12)), c.downforce_rear = clamp(b.b(0x3C), b.b(0x3A), b.b(0x3B));
-    if (const Rec su = rec(TableId::Suspension); su.r) {
+    if (const Rec su = rec(TableId::Suspension); su.r) {                                                     // 0x232208
         c.camber = {clamp(su.b(0x13), su.b(0x11), su.b(0x12)), clamp(su.b(0x16), su.b(0x14), su.b(0x15))};
         c.ride_height = {clamp(su.h(0x54), su.h(0x50), su.h(0x52)), clamp(su.h(0x5A), su.h(0x56), su.h(0x58))};
         c.spring = {clamp(su.b(0x23), su.b(0x21), su.b(0x22)), clamp(su.b(0x26), su.b(0x24), su.b(0x25))};
@@ -334,12 +334,12 @@ Equipment stock_equipment(const data::CarDatabase& db, const std::string& car_la
                     clamp(su.b(0x3C), 1, r1), clamp(su.b(0x3F), 1, r1), clamp(su.b(0x43), 1, r2), clamp(su.b(0x46), 1, r2)};
         c.arb = {clamp(su.b(0x4A), 1, su.b(0x47)), clamp(su.b(0x4E), 1, su.b(0x4B))};
     }
-    if (const Rec l = rec(TableId::Lsd); l.r)
+    if (const Rec l = rec(TableId::Lsd); l.r) // 0x232400
         c.lsd = {clamp(l.b(0x12), l.b(0x13), l.b(0x14)), clamp(l.b(0x1C), l.b(0x1D), l.b(0x1E)), clamp(l.b(0x15), l.b(0x16), l.b(0x17)),
                  clamp(l.b(0x1F), l.b(0x20), l.b(0x21)), clamp(l.b(0x18), l.b(0x19), l.b(0x1A)), clamp(l.b(0x22), l.b(0x23), l.b(0x24))};
-    if (const Rec a = rec(TableId::Ascc); a.r)
+    if (const Rec a = rec(TableId::Ascc); a.r) // 0x2324D0
         c.ascc = {clamp(a.b(0x12), 1, a.b(0x11)), clamp(a.b(0x1B), 1, a.b(0x18)), clamp(a.b(0x21), 1, a.b(0x1E)), clamp(a.b(0x26), 1, a.b(0x23))};
-    if (const Rec t = rec(TableId::Tcsc); t.r) c.tcs = clamp(t.b(0x11), 1, t.b(0x12));
+    if (const Rec t = rec(TableId::Tcsc); t.r) c.tcs = clamp(t.b(0x11), 1, t.b(0x12)); // 0x232570
     return make_equipment(db, car_label, parts, c);
 }
 
@@ -384,17 +384,17 @@ Bytes variant_record(const data::CarDatabase& db, const std::string& label, cons
 }
 
 bool course_tires(const data::CarDatabase& db, Equipment& eq, u8 category) {
-    auto stage = [&](TableId t) { return s32(Rec{db.record(t, eq.part[size_t(t)])}.b(0x10)); };
+    auto stage = [&](TableId t) { return s32(Rec{db.record(t, eq.part[size_t(t)])}.b(0x10)); }; // 0x234D60 / 0x234D90
     const s32 front = stage(TableId::FrontTire), rear = stage(TableId::RearTire);
     s32 want = -1;
-    if (category == 2) { // unless both are dirt tyres already
+    if (category == 2) { // 0x2366D8, unless both are dirt tyres already (0x2345A8)
         if (front != 12 || rear != 12) want = 12;
-    } else if (category == 1) { // unless both are wet tyres already: the front's stage + 13
+    } else if (category == 1) { // 0x236798, unless both are wet tyres already (0x236600): the front's stage + 13
         auto wet = [](s32 s) { return u32(s - 13) < 12; };
         if (!(wet(front) && wet(rear)) && front < 12) want = front + 13;
     }
     if (want < 0) return false;
-    // Both tyres or neither.
+    // 0x236668: both tyres or neither.
     const u64 f = tire_for_stage(db, TableId::FrontTire, eq.car, want);
     const u64 r = f ? tire_for_stage(db, TableId::RearTire, eq.car, want) : 0;
     if (!r) return false;
@@ -414,6 +414,7 @@ void build_spec(const data::CarDatabase& db, const ProgramData& d, Equipment& eq
             if (u64 id = tire_for_stage(db, TableId::RearTire, eq.car, stage)) eq.part[size_t(TableId::RearTire)] = id;
         }
     }
+    // 0x2325B8
     s.b(0xA6, 100);
     s.b(0xA7, 0);
     s.h(0xA4, 1000);
@@ -456,13 +457,13 @@ void build_spec(const data::CarDatabase& db, const ProgramData& d, Equipment& eq
     // (Rule::SpecBuild: the later builds give the two cars their program names a special kind, special.h)
     if (!gt3_program(d.behaviour().rule(Rule::SpecBuild)))
         if (const u8 kind = special_kind(d, eq.car)) s.b(0x11, kind);
-    // The fix-ups [physics §6.3]
+    // 0x1DA308's fix-ups [physics §6.3]
     for (u32 o : {0x1Cu, 0x1Eu})
         if (s.sh(o) == 0) s.h(o, s.sh(0x1A) / 2);
     s.b(0x2D, Rec{db.record(TableId::RacingModify, eq.part[size_t(TableId::RacingModify)])}.b(0x10) != 0);
     s.b(0x10, 2);
-    auto steer_x = [&](u32 i) { return d.b(ProgramData::Table::SpecCurves, i); };
-    auto steer_y = [&](u32 i) { return d.b(ProgramData::Table::SpecCurves, 8 + i); };
+    auto steer_x = [&](u32 i) { return d.b(ProgramData::Table::SpecCurves, i); };     // 0x352900
+    auto steer_y = [&](u32 i) { return d.b(ProgramData::Table::SpecCurves, 8 + i); }; // 0x352908
     if (s.b(0xFC) == 0) {
         s.b(0xFC, 6);
         for (u32 i = 0; i < 6; ++i) s.b(0xFD + i, steer_x(i)), s.b(0x103 + i, steer_y(i));
@@ -474,7 +475,7 @@ void build_spec(const data::CarDatabase& db, const ProgramData& d, Equipment& eq
     if (mode == 2)
         for (u32 o : {0x10Eu, 0x10Fu, 0x110u, 0x109u, 0x10Cu, 0x10Du, 0x111u, 0x114u, 0x115u, 0x116u}) s.b(o, 0);
     if (s.b(0x112) == 0) s.b(0x112, 100);
-    // (Rule::SpecBuild: the later builds' default for +0x113 is 90, Concept 2001 Tokyo)
+    // (Rule::SpecBuild: the later builds' default for +0x113 is 90, Concept 2001 Tokyo 0x1D5584)
     if (s.b(0x113) == 0) s.b(0x113, gt3_program(d.behaviour().rule(Rule::SpecBuild)) ? 100 : 90);
     if (s.b(0x117) == 100) s.b(0x110, 0);
     s.b(0x12, 1);

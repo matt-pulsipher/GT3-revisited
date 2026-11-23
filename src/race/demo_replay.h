@@ -48,7 +48,7 @@ struct DemoReplay {
     u32 time_ms = 0;        // the run's recorded time
     bool automatic = true;  // car record transmission
     Bytes car_record;       // the car record's first 0x1D0 bytes: a CarSaveEquipments (car, parts, settings)
-    // The rest of the car record (the race's car loading writes it from the race entry): the condition words (entry
+    // The rest of the car record (RaceBase::vf8 0x17C000 writes it from the race entry): the condition words (entry
     // + 0x2104 ..), EQ + 0x1E8, the grid slot, pedal style, spec flag, steering-wheel type and the ASM / TCS switches
     // (entry + 0x20E0 .. + 0x20F4).
     std::array<u32, 8> condition{};
@@ -69,7 +69,7 @@ struct DemoReplay {
     void pad_bytes(size_t i, u8* out16) const;
     size_t size() const { return frames.size(); }
     // Played as a replay, the save runs out on step size() + 1, the first that gets an empty frame: the playback sets its
-    // done flag there and the replay's race ends (presentation §A8c). True once `steps` race steps have run that
+    // done flag there (0x1F4660) and the replay's race ends (presentation §A8c). True once `steps` race steps have run that
     // far.
     bool run_out(size_t steps) const { return steps > frames.size(); }
 };

@@ -1,16 +1,16 @@
 #pragma once
 
-// A whole race in GT3's own arithmetic: everything GT3's race step (entry mode 0) reads and writes, kept in
+// A whole race in GT3's own arithmetic: everything GT3's race step 0x1F39D8 (entry mode 0) reads and writes, kept in
 // one object and stepped from the cars' pad frames with nothing taken from the original. Built from the race's setup as the
-// race's initialisation builds it (the conductor's hooks: the program's tables, the race configuration, the AI course,
+// race's initialisation builds it (the conductor's virtuals 21-23: the program's tables, the race configuration, the AI course,
 // every car's record from start_cars, the collision bodies, the matrices), then per race frame: the race information's
-// start countdown (which the race's frame runs before the step) and the step: the race-flow gate, phases 1-9, the
-// collision hook-up (phase 10, the conductor's collision step: the bodies from the cars, the all-bodies or walls-only step, the
+// start countdown (0x17A5E8, which RaceBase::vf30 runs before the step) and the step: the race-flow gate, phases 1-9, the
+// collision hook-up (phase 10, the conductor's virtual 12: the bodies from the cars, the all-bodies or walls-only step, the
 // results back, each hit's course-out and pad feedback), phase 11, phase 12 with the tyre effect emitter's particles and its
 // draws of the VU0 random register, phase 13, the race flow and the pit lane, the race clock, the gap matrices, the ranking,
 // the rubber band and the race's end countdown [physics §1.1-§1.2, §5.3; ai §9-§13].
 //
-// A race frame (step) is that step and what race's frame does after it that the race's later frames depend on: each car's
+// A race frame (step) is that step and what RacePS2Base's frame does after it that the race's later frames depend on: each car's
 // spark bursts and the sparks' update (sparks.h), which draw the VU0 random register after the step's tyre effects and flaps.
 // The later builds' emitter also makes leaves inside the step (a wheel on ground with flag 0x20: leaves.h), in the sparks'
 // pool, updated with them.
@@ -18,9 +18,9 @@
 // The race flow's outputs for the game (race_flow.h): the race display's events among the queue posts, the entries' and the
 // session's time records, the data logger's tables (race info + 0x70 / + 0x74), the free run's recorder events (its lap
 // recordings and ghost car: the ghost's extra step, the race step in its second entry mode, runs inside), the pass-by states
-// (on conductor + 0xBA34: the race's sounds'; the later builds' special car 1 reads them). Not modelled (outputs
-// the game makes itself): the pad's vibration output, the tyre effect particles' ageing and drawing (their pool:
-// the race's frame update / drawing).
+// (0x1F59B0 on conductor + 0xBA34: the race's sounds'; the later builds' special car 1 reads them). Not modelled (outputs
+// the game makes itself): the pad's vibration output (0x1E0618), the tyre effect particles' ageing and drawing (their pool:
+// RacePS2Base::vf29 / vf45).
 
 #include "base/game_random.h"
 #include "formats/course/ai_lines.h"
@@ -56,7 +56,7 @@ struct RaceCourse {
     bool has_lines = false;
     course::DriverSets sets; // slots 37-40
     std::vector<u8> env;     // slot 32 (Env0), with the tyre effects' parameters (+0x4D0 + 0x44 kind, +0x910) as the race's
-                             // initialisation writes them
+                             // initialisation writes them (0x1DE070)
     std::unique_ptr<CourseGround> ground;              // the vehicle tick's ground query
     std::unique_ptr<CourseQuery> query;                // the race's progress, grid, sectors
     std::unique_ptr<sim::CourseCollision> collision;   // the collision step's walls
@@ -75,13 +75,13 @@ struct RaceSetup {
     ByteSpan event;                        // the event record (database table 32): race_config; copied
     u8 course_category = 0;                // the course record's +8 (race_course_category)
     Conductor kind = Conductor::SinglePlayer;
-    u8 config = 0;                         // the race start's byte, kept as the race-flow byte (conductor + 0x8000 + 0x37AC)
+    u8 config = 0;                         // virtual 23's byte, kept as the race-flow byte (conductor + 0x8000 + 0x37AC)
     s32 laps = -1;                         // the configuration's +1 as the race sets it (the laps; the licence's and
                                            // machine test's type); -1 keeps the event's
     // The race information's words.
     s32 start_type = 0;     // +0x54: -1 none, 0 a countdown of `countdown` seconds, 1 four seconds, 2 ten, 3 the rolling start
     s32 countdown = 0;      // +0x58: the seconds of start type 0
-    s32 battle_laps = 0;    // +0x08: the battles' laps (their lap count)
+    s32 battle_laps = 0;    // +0x08: the battles' laps (their virtual 30)
     s32 battle_wear = 0;    // +0x0C: the battles' tyre wear setting (2 on)
     s32 handicap = 0;       // +0x10: the split-screen battle's handicap
     s32 battle_catchup = 0; // +0x14: the battles' catch-up setting (1 or 2)
@@ -93,7 +93,7 @@ struct RaceSetup {
     Splits session;         // +0x8AC: the session's (the visit's) best splits and lap, the record time; none at first
     std::vector<EntryRecords> records; // the entries' time records at the run's start (missing: none; new_run applies)
     std::array<u32, 3> licence_times{}; // the licence test's judging times (ms)
-    u8 speed_unit = 0;      // the speed display's unit (the machine test's speed event)
+    u8 speed_unit = 0;      // [0x2F59D8] the speed display's unit (the machine test's speed event)
     u32 ghost_switch = 0;   // the race object's +0x217A4: a ghost car is drawn (phase 12's draw mode, with +0x70 clear)
     // The race configuration block itself (conductor + 0xE340) instead of the event record's (null: race_config(event)).
     const RaceConfig* rules = nullptr;
@@ -128,21 +128,21 @@ struct RaceSetup {
 
 // The race information's start words (race info + 0x50 .. + 0x68).
 struct RaceInfoStart {
-    s32 start = 0;       // +0x50 the countdown's start request
+    s32 start = 0;       // +0x50 the countdown's start request (0x179FE8)
     s32 start_type = 0;  // +0x54: -1 none, 0 a countdown of `seconds`, 1 four seconds, 2 ten, 3 the rolling start
     s32 seconds = 0;     // +0x58
     s32 start_count = 0; // +0x5C the frames the cars are still held (the race's start countdown)
     s32 timer_on = 0;    // +0x60 the information's timer (event 7 at its end)
     s32 timer = 0;       // +0x68
 };
-// The race information's frame (the race's frame runs it before the race step): a start request sets the countdown
+// 0x17A5E8, the race information's frame (RaceBase::vf30 runs it before the race step): a start request sets the countdown
 // from the start type (with its posts: 2 the countdown, 0x14 its sounds), then the countdown runs down (event 4 at its end)
-// or, once it is over, the timer. Its countdown display is the game's. steps: the race's steps a second
+// or, once it is over, the timer. Its countdown display (0x1A96B8) is the game's. steps: the race's steps a second
 // (steps_per_second of the race's behaviour; PAL's own release counts 50).
 void race_info_frame(RaceInfoStart& info, std::vector<RaceEvent>& events, int steps = 60);
 
-// One collision response as the collision step reports it to the race (the conductor's hit rule, then the car's
-// hit record) [physics §5.3].
+// One collision response as the collision step reports it to the race (0x1DFEB8: the conductor's virtual 41, then the car's
+// hit record 0x1DFD98) [physics §5.3].
 struct CollisionHit {
     s32 car = 0;  // the car whose body the response is for
     s32 kind = 0; // 0 a wall (one of the car's points on a wall, or a wall corner on its edge), 1 another car
@@ -150,13 +150,13 @@ struct CollisionHit {
     F strength;   // |j| for a wall, |j| / 15000 for a car
 };
 
-// A tyre smoke / dust particle as the course's tyre effect emitter makes it from a wheel's request (its 0x40-byte
+// A tyre smoke / dust particle as the course's tyre effect emitter 0x1A46C8 makes it from a wheel's request (its 0x40-byte
 // particle record; the pool, ageing and drawing are the game's).
 struct SmokeParticle {
     s32 car = 0, wheel = 0;
     u8 size_class = 0; // +0x02 0..7 (a random draw), + 0x20 for a right-side wheel
-    u8 kind = 0;       // +0x03 the effect kind: the surface's, its parameters at Env0 +0x4D0 + 0x44 kind
-    u32 colour = 0;    // +0x04 RGBA
+    u8 kind = 0;       // +0x03 the effect kind: the surface's (0x3306D0), its parameters at Env0 +0x4D0 + 0x44 kind
+    u32 colour = 0;    // +0x04 RGBA (0x25A090)
     F size;            // +0x08
     F emit;            // +0x0C the request's emission scaled by the size class
     F x10;             // +0x10
@@ -181,12 +181,12 @@ public:
     // pads[i] is car i's frame (the pad read and the conductor's pad hook; a car without an input device has an empty one);
     // missing entries read as empty frames.
     void step(std::span<const PadFrame> pads);
-    // The race step alone (as the race's frame calls it, after the countdown; no sparks), for a caller that drives the
+    // The race step alone (0x1F39D8 as RaceBase::vf30 calls it, after the countdown; no sparks), for a caller that drives the
     // race information's countdown itself (set_start_count).
     void race_step(std::span<const PadFrame> pads);
 
     // ---- the race information's start countdown (race info + 0x50 .. + 0x68) ----
-    // the countdown starts at the next frame (by the start type: +0x5C = 60 x its seconds).
+    // 0x179FE8: the countdown starts at the next frame (by the start type: +0x5C = 60 x its seconds).
     void start_countdown();
     // Race info + 0x5C directly (the frames the cars are still held).
     void set_start_count(s32 n);
@@ -212,9 +212,9 @@ public:
     void set_nested_pads(std::function<void(std::span<PadFrame>)> f) { nested_pads_ = std::move(f); }
     // The data logger (race info + 0x70 / + 0x74): its tables recorded or not from the next step (the Analyzer's pass ends:
     // + 0x74 cleared), its tables replaced (a race restarted to replay a pass: the pass's), and the Analyzer's REPLAY jump to
-    // entry k: race info + 0x50 cleared; car 0 and, with a recording on the ghost's device, car 1 back on their
-    // table's entry k (the record from the entry's snapshot, and its device's playback sought to the
-    // entry's frame from the recording's start). False when car 0's table has no such entry (nothing changes).
+    // entry k (0x1873B8): race info + 0x50 cleared; car 0 and, with a recording on the ghost's device, car 1 back on their
+    // table's entry k (0x1E0AD8: the record from the entry's snapshot, 0x1EE6D8, and its device's playback sought to the
+    // entry's frame from the recording's start, 0x1F47D8). False when car 0's table has no such entry (nothing changes).
     void set_logger_record(bool on) { flow_in_.logger_record = on; }
     void set_logger_tables(const std::vector<std::map<s32, Snapshot>>& t) { flow_.logger = t; }
     bool logger_jump(int k);
@@ -232,7 +232,7 @@ public:
     const RaceFlow& flow() const { return flow_; }       // the race clock, end countdown, result words, records, the logger's
                                                          // tables, the last frame's recorder events
     const GapMatrix& gaps() const { return gaps_; }
-    const PassByState& pass_by() const { return pass_; } // the (conductor + 0xBA34), as the last step left them
+    const PassByState& pass_by() const { return pass_; } // 0x1F59B0's (conductor + 0xBA34), as the last step left them
     const Proximity& proximity() const { return prox_; }
     const std::vector<collide::exact::Body>& bodies() const { return bodies_; }
     std::vector<collide::exact::Body>& bodies() { return bodies_; }
@@ -259,15 +259,16 @@ public:
     const RubberBand& band() const { return band_; }
     const RaceConfig& rules() const { return cfg_; }
 
-    // The AI's switches the game may use on a car between steps (pit_lane.h), on this race's AI course: the AI drives it on,
-    // it is handed back to its player.
+    // The AI's switches the game may use on a car between steps (pit_lane.h), on this race's AI course: the AI drives it on
+    // (0x1E3C78), it is handed back to its player (0x1E3BF0).
     bool drive_on(int i);
     bool hand_back(int i);
-    // On car i between steps with `mode` (a race object's own end of a run outside the race flow: the free run's
+    // 0x1EACB8 on car i between steps with `mode` (a race object's own end of a run outside the race flow: the free run's
     // pause EXIT counted as its finish, mode 4; the top-speed test's, mode 3): the car marked finished, the AI's end-of-run
     // driver (pit_lane.h end_of_run).
     void end_run(int i, int mode);
-    // The same pause EXIT's recordings closed: the player's and, with `lap`, the free run's lap recording
+    // The same pause EXIT's recordings closed: the player's (0x1F4C00) and, with `lap`, the free run's lap recording
+    // (0x2106D8).
     void close_recordings(bool lap);
 
     // ---- posed cars (an online race's remote players, docs/dev/ONLINE.md) ----
@@ -295,15 +296,15 @@ public:
     const std::vector<CarContact>& car_contacts() const { return car_contacts_; }
 
 private:
-    void run(std::span<const PadFrame> pads, int mode); // conductor, mode: 1 the free run ghost's extra step
-    void collide(size_t first);      // phase 10 (mode 1: for the cars from `first`)
+    void run(std::span<const PadFrame> pads, int mode); // 0x1F39D8 (conductor, mode): 1 the free run ghost's extra step
+    void collide(size_t first);      // phase 10 (mode 1: 0x1F3950 for the cars from `first`)
     void emit(int i, const ChassisOutputs& out); // phase 12's emitter calls
-    void smoke(int i, const TyreEffect& q);      // ... one request's smoke
-    void spark_frame();              // The race's frame's bursts (per car), then the race's frame update's update
+    void smoke(int i, const TyreEffect& q);      // ... one request's smoke (0x1A46C8)
+    void spark_frame();              // RacePS2Base::vf30's bursts (0x1AADD0 per car), then RacePS2Base::vf29's update
     void flow_after(AiPlan& plan, std::span<const PadFrame> pads, int mode); // after phase 13
-    void copy_in();
-    void restore_body(int k, const Snapshot& s); // the body
-    PadFrame device_frame(size_t i, const PadFrame& given); // and the free run's pad hook for car i
+    void copy_in();                  // 0x1E8730
+    void restore_body(int k, const Snapshot& s); // 0x1EE6D8's body
+    PadFrame device_frame(size_t i, const PadFrame& given); // 0x210740 (and the free run's virtual 20) for car i
     void apply_recorder_events();    // the free run's recorder events so far, on the recorders
 
     std::shared_ptr<const RaceCourse> course_;
@@ -316,8 +317,8 @@ private:
     bool band_cap_ = false;
     RaceFlowInputs flow_in_;
     PitInputs pit_in_;
-    std::array<u32, 16> effect_kinds_{}; // a surface's effect kind
-    std::array<F, 8> effect_scales_{};   // the size classes' emission scales
+    std::array<u32, 16> effect_kinds_{}; // 0x3306D0: a surface's effect kind
+    std::array<F, 8> effect_scales_{};   // 0x330730: the size classes' emission scales
     RaceInfoStart info_;
     u8 flow_byte_ = 0;
     F time_scale_ = F::raw(0x3F800000);

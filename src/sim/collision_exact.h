@@ -34,12 +34,12 @@ class Course {
 public:
     virtual ~Course() = default;
     virtual const WallPt* walls() const = 0;
-    // The wall records whose segments are candidates for a body box (world x range, world z range) and
+    // 0x228848: the wall records whose segments are candidates for a body box (world x range, world z range) and
     // the body's road segment hint, in the order the program visits them.
     virtual void wall_candidates(F x0, F z0, F x1, F z1, int hint, std::vector<int>& out) const = 0;
-    // Whether segment b is a neighbour of segment a (two bodies on different segments meet only then).
+    // 0x228B68: whether segment b is a neighbour of segment a (two bodies on different segments meet only then).
     virtual bool linked(int a, int b) const = 0;
-    // For one point (world x, z): the road segment under it, filtered by the hint as the walls are (-1: none).
+    // 0x2280C8 for one point (world x, z): the road segment under it, filtered by the hint as the walls are (-1: none).
     // A car's segment hint is this at its front-left wheel after each step, from the hint before.
     virtual int road_segment(F x, F z, int hint) const {
         (void)x, (void)z, (void)hint;
@@ -115,7 +115,7 @@ struct Body {
     F mass;                       // +0x488
     std::array<F, kMaxBodies> rsum, r2; // +0x49C / +0x4BC per body: the radius sum and its square
     F dt;                         // +0x4DC the car's step length
-    // The impact effects' state: the rumble's steps left and its strength, the hit sound's hold and its
+    // The impact effects' state (0x1FB890): the rumble's steps left and its strength, the hit sound's hold and its
     // level (decaying while held).
     s32 rumble_steps = 0;         // +0x4E0
     F rumble_level;               // +0x4E4
@@ -136,10 +136,10 @@ struct Body {
     Behaviour behaviour;
 };
 
-// The body of a car with the CoG -> front / rear extents, width, mass and I_z: an octagon with
+// 0x1FA740 / 0x1FAE38: the body of a car with the CoG -> front / rear extents, width, mass and I_z: an octagon with
 // corners chamfered by 0.2 x width. Clears the carried-over state.
 void build(Body& b, F front, F rear, F width, F mass, F iz, int car);
-// Every body's pair tables.
+// 0x1FB0D8: every body's pair tables.
 void pair_tables(std::vector<Body>& bodies);
 
 // The responses of a step, for sounds, effects and contact events (not read back by the step).
@@ -153,37 +153,37 @@ struct Response {
     double nx = 0, ny = 0; // the normal (plane): Point: the wall's, into the track; Corner, Car: the struck edge's, outward
     double j = 0;         // |j|
     double t = 0;         // the sweep fraction
-    F mag;                // |j| as the program has it (the hit's report to the race)
+    F mag;                // |j| as the program has it (the hit's report to the race, 0x1DFEB8)
 };
 using Trace = std::vector<Response>;
 
-// The step of all bodies (walls and car-car contact). `rounds` (at most 2, the program's) caps the hits
+// 0x1FA8F8: the step of all bodies (walls and car-car contact). `rounds` (at most 2, the program's) caps the hits
 // answered; `trace` (optional) gets the responses.
 void step_all(std::vector<Body>& bodies, Trace* trace = nullptr, int rounds = 2);
-// The walls-only step of body i (car-car contact switched off).
+// 0x1FACB8: the walls-only step of body i (car-car contact switched off).
 void step_walls(std::vector<Body>& bodies, int i, Trace* trace = nullptr, int rounds = 2);
 
 // The step's functions, each callable on its own.
 namespace fn {
-void init(Body& b, F dt);
-void enable(Body& b, bool on);
-void separate(std::vector<Body>& bd, int t, int o);
-void persist(std::vector<Body>& bd, int i);
-void hold(Body& b);
-void end_pose(Body& b);
-void reset_hit(Body& b);
-bool wall_sweep(Body& b);
-bool pair_sweep(std::vector<Body>& bd, int a, int b);
-void sensor_check(Body& b, F t);
-void advance(Body& b, F t);
-void point_response(Body& b, Trace* trace = nullptr);
-void corner_response(Body& b, Trace* trace = nullptr);
-void pair_response(std::vector<Body>& bd, int a, Trace* trace = nullptr);
-void stuck(Body& b, F last);
-void push_out(Body& b);
-void commit(Body& b);
-void effects(Body& b);                                      // (its sound and pad calls are empty)
-F wrap_heading(F h, const Behaviour& bh);                   // (bh: 2002 Tokyo-Geneva's constants)
+void init(Body& b, F dt);                                   // 0x1FB140
+void enable(Body& b, bool on);                              // 0x1FB1F0
+void separate(std::vector<Body>& bd, int t, int o);         // 0x1FCC98
+void persist(std::vector<Body>& bd, int i);                 // 0x1FBCE8
+void hold(Body& b);                                         // 0x1FCF48
+void end_pose(Body& b);                                     // 0x1FB268
+void reset_hit(Body& b);                                    // 0x1FB308
+bool wall_sweep(Body& b);                                   // 0x1FD720
+bool pair_sweep(std::vector<Body>& bd, int a, int b);       // 0x1FBF50
+void sensor_check(Body& b, F t);                            // 0x1FD9D0
+void advance(Body& b, F t);                                 // 0x1FB328
+void point_response(Body& b, Trace* trace = nullptr);       // 0x1FDEC0
+void corner_response(Body& b, Trace* trace = nullptr);      // 0x1FE3A0
+void pair_response(std::vector<Body>& bd, int a, Trace* trace = nullptr); // 0x1FC5C0
+void stuck(Body& b, F last);                                // 0x1FB740
+void push_out(Body& b);                                     // 0x1FDE08
+void commit(Body& b);                                       // 0x1FB6D8
+void effects(Body& b);                                      // 0x1FB890 (its sound and pad calls are empty)
+F wrap_heading(F h, const Behaviour& bh);                   // 0x1FB628 (bh: 2002 Tokyo-Geneva's constants)
 } // namespace fn
 
 } // namespace gt3r::sim::collide::exact

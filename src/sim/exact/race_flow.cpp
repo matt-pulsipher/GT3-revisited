@@ -13,10 +13,10 @@ namespace gt3r::sim::exact {
 namespace {
 
 const F kZero{}, kHalf = F::raw(0x3F000000), kOne = F::raw(0x3F800000), kTen = F::raw(0x41200000), kFifty = F::raw(0x42480000);
-const F kFast = F::raw(0x3FB1C71D); // 5 km/h
-const F kSlow = F::raw(0x3F555556); // 3 km/h
-const F kStop = F::raw(0x3E8E38E4); // 1 km/h: the licence's stop speed
-// The unit factors: m/s to km/h, x m/s to mph.
+const F kFast = F::raw(0x3FB1C71D); // [0x350598] 5 km/h
+const F kSlow = F::raw(0x3F555556); // [0x35059C] 3 km/h
+const F kStop = F::raw(0x3E8E38E4); // [0x3505A0] 1 km/h: the licence's stop speed
+// 0x245A18's unit factors: [0x350A10] m/s to km/h, [0x350A14] x [0x350A18] m/s to mph.
 const F kKmh = F::raw(0x40666666), kMph1 = F::raw(0x40666666), kMph2 = F::raw(0x3F1F136A);
 
 // The race clock's units in a step (the clock counts 3000 a second): 50, at PAL's rate 60; as a float and as the integer
@@ -40,7 +40,7 @@ RecorderEvent recorder_event(RecorderEvent::Kind kind, int car, u32 time = 0) {
     return e;
 }
 
-// The conductor's player-record test: the mode records the player (time trial, free run, licence, machine test): a pad
+// The conductor's virtual 5: the mode records the player (time trial, free run, licence, machine test); with 0x1E08C8: a pad
 // car (control source 0) of driver kind 0 is recorded.
 bool records_player(Conductor k) {
     return k == Conductor::TimeTrial || k == Conductor::FreeRun || k == Conductor::License || k == Conductor::MachineTest;
@@ -52,15 +52,15 @@ bool logs_from_start(const RaceFlowInputs& in) {
 }
 // Virtual 7: the licence's type 3 test of more than one lap.
 bool multi_lap_licence(const RaceFlowInputs& in) { return licence_kind(in.kind) && in.config[2] == 3 && in.config[1] != 1; }
-// The logger mark: the data logger entry of car's mark (end: the one ending there): the mark count F +0x493; the licence's laps test
-// counts on over its laps (the logger's marks + 1 a lap), the ending one 1 lower.
+// Virtual 8: the data logger entry of car's mark (end: the one ending there): the mark count F +0x493; the licence's laps test
+// counts on over its laps (0x1E0888: the logger's marks + 1 a lap), the ending one 1 lower.
 s32 logger_entry(const Car& c, bool end, const RaceFlowInputs& in) {
     if (!multi_lap_licence(in)) return c.x493;
     const s32 k = (s32(c.laps) - 1) * (in.course->logger_marks() + 1) + s32(c.x493);
     return end ? k - 1 : k;
 }
 
-// The machine test's type (the configuration's laps byte below 4, else 0) and sector count (its sector count).
+// The machine test's type (0x1F0678: the configuration's laps byte below 4, else 0) and sector count (its virtual 33).
 int machine_type(u8 laps_byte) { return laps_byte < 4 ? laps_byte : 0; }
 int machine_sectors_count(u8 laps_byte) {
     const int t = machine_type(laps_byte);
@@ -73,22 +73,22 @@ F split_line(const RaceFlowInputs& in) {
 }
 bool sector_order_mode(Conductor k) { return k == Conductor::SinglePlayer || k == Conductor::Battle2P || k == Conductor::BattleMP; }
 
-// Car i's run is over (end_of_run_head, pit_lane.h), then the AI calls after it (the hook).
+// 0x1EACB8: car i's run is over (end_of_run_head, pit_lane.h), then the AI calls after it (the hook).
 void finish_car(Car& c, int i, int mode, const RaceFlowHooks& hooks) {
     if (end_of_run_head(c, mode) && hooks.finish_drive) hooks.finish_drive(c, i, mode);
 }
 
-// With 3 (the race-flow byte 2): the race ends 3 s on (3 x 60 + 1 steps; PAL 3 x 50 + 1).
+// 0x1F2AE8 with 3 (the race-flow byte 2): the race ends 3 s on (3 x 60 + 1 steps; PAL 3 x 50 + 1).
 void end_countdown(const RaceFlowInputs& in, RaceFlow& flow) {
     if (in.flow == 2) flow.end_count = u16(3 * steps_per_second(in.behaviour) + 1); // steps a second
 }
 
-// A time `t` of the car with index byte `index` (F +0x3E8) not above the session's best (race info + 0x8BC) marks a
+// 0x1EFDE8: a time `t` of the car with index byte `index` (F +0x3E8) not above the session's best (race info + 0x8BC) marks a
 // new record (race info + 0x4C) and, with a result (+0x40), posts 19. Only for the first car, outside replays, with the
 // race-flow byte clear and the data logger off.
 bool new_record(u8 index, u32 t, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events) {
     if (index != 0 || in.replay || in.flow != 0 || in.logger || t == kNoTime) return false;
-    // NTSC: a time equal to the session's best is a new record; the PAL program asks for a lower one.
+    // NTSC: a time equal to the session's best is a new record; PAL's 0x1F0D60 asks for a lower one.
     if (pal_rules(in, Rule::LapRecord) ? !(t < flow.session.lap) : flow.session.lap < t) return false;
     flow.record = 1;
     if (flow.result != 0) events.push_back(race_event(0x13, 0, 0));
@@ -102,9 +102,9 @@ EntryRecords& entry(RaceFlow& flow, int i) {
     if (flow.entries.size() <= size_t(i)) flow.entries.resize(size_t(i) + 1);
     return flow.entries[size_t(i)];
 }
-// A time event's time, at most 0x0FFFFFFF.
+// 0x1905C8: a time event's time, at most 0x0FFFFFFF.
 u32 clamp_time(u32 t) { return 0x0FFFFFFEu < t ? 0x0FFFFFFFu : t; }
-// The store, entry + 0x11DC + 4 sector, for any sector: the current lap's four sector times, and past them on into
+// 0x17AEA8's store, entry + 0x11DC + 4 sector, for any sector: the current lap's four sector times, and past them on into
 // the entry (a licence test counts its sectors on over its laps): its current lap's time (+0x11EC), its best lap (+0x11F0),
 // the machine test's top speed (+0x2100), any other word in EntryRecords::words.
 void put_split(EntryRecords& e, s32 sector, u32 t) {
@@ -115,7 +115,7 @@ void put_split(EntryRecords& e, s32 sector, u32 t) {
     else if (off == 0x2100) e.top_speed = F::raw(t);
     else e.words[off] = t;
 }
-// A lap into the list.
+// 0x17B508: a lap into the list.
 void add_lap(LapList& l, u32 lap) {
     ++l.count;
     if (l.counted_only != 0) return;
@@ -123,18 +123,18 @@ void add_lap(LapList& l, u32 lap) {
     if (l.laps.size() == 1000) ++l.dropped, l.laps.erase(l.laps.begin());
     l.laps.push_back(lap);
 }
-// The lower time (no time counts as none).
+// 0x17B6D0: the lower time (no time counts as none).
 void best_time(u32& best, u32 lap) {
     if (best != kNoTime && !(lap < best)) return;
     best = kNoTime < lap ? kNoTime : lap;
 }
-// src's splits into dst when its lap is the better (dst none counts as worse).
+// 0x17B810: src's splits into dst when its lap is the better (dst none counts as worse).
 void better_splits(Splits& dst, const Splits& src) {
     if (dst.lap != kNoTime && !(src.lap < dst.lap)) return;
     dst.sector = src.sector;
     dst.lap = src.lap;
 }
-// The time trial's and free run's difference of a sector time to the session's best (event 15); not with the
+// 0x1EC758: the time trial's and free run's difference of a sector time to the session's best (event 15); not with the
 // race-flow byte set (NTSC-J: also then).
 void sector_diff(std::span<const Car> cars, int i, s32 sector, u32 split, const RaceFlowInputs& in, const RaceFlow& flow,
                  std::vector<RaceEvent>& events) {
@@ -146,14 +146,14 @@ void sector_diff(std::span<const Car> cars, int i, s32 sector, u32 split, const 
     e.value = s32(split - best);
     events.push_back(e);
 }
-// The same for a lap time and the session's best lap.
+// 0x1EC818: the same for a lap time and the session's best lap.
 void lap_diff(std::span<const Car> cars, int i, u32 lap, const RaceFlowInputs& in, const RaceFlow& flow, std::vector<RaceEvent>& events) {
     if ((in.flow != 0 && !ntsc_j_rules(in, Rule::LapDiff)) || cars[size_t(i)].course_out != 0 || flow.session.lap == kNoTime) return;
     RaceEvent e = display(15, i);
     e.value = s32(lap - flow.session.lap);
     events.push_back(e);
 }
-// The machine test's top speed: unless locked into the entry; event 17 in the display's unit. PAL:
+// 0x1EC8C0: the machine test's top speed: unless locked into the entry; event 17 in the display's unit (0x245A18). PAL:
 // nothing for a ghost.
 void speed_event(std::span<const Car> cars, int i, F speed, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events) {
     if (pal_rules(in, Rule::SpeedEvent) && cars[size_t(i)].ghost != 0) return;
@@ -169,12 +169,12 @@ std::map<s32, Snapshot>& logger_table(RaceFlow& flow, int i) {
     if (flow.logger.size() <= size_t(i)) flow.logger.resize(size_t(i) + 1);
     return flow.logger[size_t(i)];
 }
-// The car: the car of index F +0x3E8 (itself in a race).
+// 0x1EE638's car: the car of index F +0x3E8 (itself in a race).
 const Car& snapshot_car(std::span<const Car> cars, int i) {
     const u8 k = cars[size_t(i)].index;
     return k < cars.size() ? cars[k] : cars[size_t(i)];
 }
-// The end of car i's logger entry k (a mark, the split, a lap, the licence's stop): posts 13 (the car's index);
+// 0x1E0A18: the end of car i's logger entry k (a mark, the split, a lap, the licence's stop): posts 13 (the car's index);
 // recording, the entry's time and frames.
 void logger_end(std::span<Car> cars, int i, s32 k, u32 time, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events) {
     events.push_back(race_event(13, cars[size_t(i)].index, 0));
@@ -183,7 +183,7 @@ void logger_end(std::span<Car> cars, int i, s32 k, u32 time, const RaceFlowInput
     e.time = time;
     e.frames = in.logger_frame[size_t(i) % kMaxCars] - e.frame;
 }
-// The start of car i's logger entry k: the car, the crossing's remainder and fraction, the clock's phase
+// 0x1E0940: the start of car i's logger entry k: the car (0x1EE638), the crossing's remainder and fraction, the clock's phase
 // and the car's input frame (less the table's first entry's when its input object counts so).
 void logger_start(std::span<Car> cars, int i, s32 k, u32 sub, F frac, const RaceFlowInputs& in, RaceFlow& flow,
                   const RaceFlowHooks& hooks) {
@@ -199,7 +199,7 @@ void logger_start(std::span<Car> cars, int i, s32 k, u32 sub, F frac, const Race
     e.frac = frac;
     e.phase = u8((flow.clock + u32(clock_step(in))) % 3);
 }
-// Car i's lap start into the free run's lap recording (its header) and the recording restarted.
+// 0x1F1348: car i's lap start into the free run's lap recording (its header) and the recording restarted.
 void lap_start(std::span<Car> cars, int i, s32 sub, F frac, const RaceFlowInputs& in, RaceFlow& flow, const RaceFlowHooks& hooks) {
     RecorderEvent e;
     e.kind = RecorderEvent::lap_start, e.car = i;
@@ -210,9 +210,9 @@ void lap_start(std::span<Car> cars, int i, s32 sub, F frac, const RaceFlowInputs
     e.snapshot.phase = u8((flow.clock + u32(clock_step(in))) % 3);
     flow.recorder.push_back(std::move(e));
 }
-// The ghost's playback's lap start (of its +0xC4), none while it is empty (+0x140).
+// The ghost's playback's lap start (0x1F5188 of its +0xC4), none while it is empty (+0x140).
 const Snapshot* ghost_start(const RaceFlowInputs& in) { return in.recorder.ghost ? in.recorder.ghost_start : nullptr; }
-// Car c restored from a snapshot, but its ghost flag, index and control source; its last crossing's time from the
+// 0x1EE6D8: car c restored from a snapshot, but its ghost flag, index and control source; its last crossing's time from the
 // snapshot's remainder and the race clock. (Its collision body, reset and restored from the snapshot's copy, is the
 // caller's.) The snapshot's car brings its electric drive along with its parameters: a ghost recorded on another car,
 // or on a donor's engine, drives as it was recorded.
@@ -223,7 +223,7 @@ void restore(Car& c, const Snapshot& s, u32 clock) {
     c.ghost = ghost, c.index = index, c.control = control;
     c.x530 = (clock + s.sub) / 3;
 }
-// The free run's ghost car (car 1) put back on its recording's lap start with `laps` laps and its playback
+// 0x1F1400: the free run's ghost car (car 1) put back on its recording's lap start with `laps` laps and its playback
 // restarted; its step accumulator takes the crossing's fraction less the recording's, a step more for it when that is below 0.
 void ghost_restart(std::span<Car> cars, s32 laps, F frac, const Snapshot* ghost, const RaceFlowInputs& in, RaceFlow& flow,
                    const RaceFlowHooks& hooks) {
@@ -246,15 +246,15 @@ void ghost_restart(std::span<Car> cars, s32 laps, F frac, const Snapshot* ghost,
     g.flow = f;
 }
 
-// The licence test's end for car i (lap time t): finished (mode 1 in a type 1 test, else 3), then outside replays
+// 0x1EF5C0: the licence test's end for car i (lap time t): finished (mode 1 in a type 1 test, else 3), then outside replays
 // for a pad car the result: unjudged tests post 5; judged, the first judging time (0, gold, silver, bronze, 0) not below t
 // gives the result 1 + its index (passed; with the race-flow byte set posts 5 and keeps no result) or 0 (failed: posts 9);
-// the time's display event for the car of index F +0x3E8 (car i in a race).
+// the time's display event (0x1EC620) for the car of index F +0x3E8 (car i in a race).
 void licence_end(std::span<Car> cars, int i, u32 t, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events,
                  const RaceFlowHooks& hooks) {
     Car& c = cars[size_t(i)];
     finish_car(c, i, in.config[2] == 1 ? 1 : 3, hooks);
-    // (the later builds' code: a computer car, the pace car, ends its run and nothing else; GT3's judges every car)
+    // (the later builds' 0x1F3FE8: a computer car, the pace car, ends its run and nothing else; GT3's judges every car)
     if (c.control == 2 && later_judge(in)) return;
     auto shown = [&] {
         if (c.index >= cars.size()) return; // (cannot happen: a car's index is its place in the race)
@@ -288,11 +288,11 @@ void licence_end(std::span<Car> cars, int i, u32 t, const RaceFlowInputs& in, Ra
     shown();
 }
 
-// The licence test's car i went out of the course: finished (mode 2), then for a pad car outside replays of a judged
+// 0x1EF520: the licence test's car i went out of the course: finished (mode 2), then for a pad car outside replays of a judged
 // test posts 9 and, with the race-flow byte clear, the result -1.
 void licence_out(Car& c, int i, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events, const RaceFlowHooks& hooks) {
     if (in.replay) return;
-    // (the later builds' code: a computer car, the pace car, is not judged; GT3's judges every car)
+    // (the later builds' 0x1F3F38: a computer car, the pace car, is not judged; GT3's judges every car)
     if (c.control == 2 && later_judge(in)) return;
     finish_car(c, i, 2, hooks);
     if (c.ghost != 0 || in.unjudged) return;
@@ -300,7 +300,7 @@ void licence_out(Car& c, int i, const RaceFlowInputs& in, RaceFlow& flow, std::v
     if (in.flow == 0) flow.result = -1, flow.result_time = kNoTime;
 }
 
-// All four wheels on stop-zone ground (G +0x33 bit 2) below the stop speed: the speed's fraction of it in `ratio`.
+// 0x1EF488: all four wheels on stop-zone ground (G +0x33 bit 2) below the stop speed: the speed's fraction of it in `ratio`.
 bool stopped(const Car& c, F& ratio) {
     ratio = kZero;
     int n = 0;
@@ -310,7 +310,7 @@ bool stopped(const Car& c, F& ratio) {
     s = s + c.vel.y * c.vel.y;
     s = s + c.vel.z * c.vel.z;
     s = sqrt(s);
-    // PAL: 1.5 km/h; 2002 Tokyo-Geneva's own constants: Europe's 1.5 km/h two units lower, Asia's 1 km/h one lower
+    // PAL: 1.5 km/h (0x351F34); 2002 Tokyo-Geneva's own constants: Europe's 1.5 km/h two units lower, Asia's 1 km/h one lower
     const Program how = c.behaviour.rule(Rule::LicenceStop);
     const F stop = how == Program::Pal               ? F::raw(0x3ED55556)
                    : how == Program::ConceptGenevaEu   ? F::raw(0x3ED55554)
@@ -326,12 +326,12 @@ bool stopped(const Car& c, F& ratio) {
 // ---- the later builds' pod race (Rule::PodRule, Rule::PodLine) ------------------------------------------------------------
 namespace {
 
-// Later: the stops car i owes, its laps counted less its stops made (-1 without a zone).
+// Later 0x1EE6A0: the stops car i owes, its laps counted less its stops made (-1 without a zone).
 s32 owed(std::span<const Car> cars, int i, const StopZone& z) {
     return z.active == 1 ? s32(cars[size_t(i)].laps) - s32(z.stops[size_t(i) % kMaxCars]) : -1;
 }
 
-// Later: car i's stop counted (255 at most); information note 7 for a car the player drives (control source 0, no
+// Later 0x1EE708: car i's stop counted (255 at most); information note 7 for a car the player drives (control source 0, no
 // driver kind), or any car in a race of two.
 void stop_made(std::span<const Car> cars, int i, StopZone& z, std::vector<RaceEvent>& events) {
     const Car& c = cars[size_t(i)];
@@ -344,7 +344,7 @@ void stop_made(std::span<const Car> cars, int i, StopZone& z, std::vector<RaceEv
     n = u8(n + (n < 0xFF ? 1 : 0));
 }
 
-// Later: for every car that owes a stop, "on" = all four wheels on the zone's ground (G +0x33 bit 2). A car the
+// Later 0x1EE8C0: for every car that owes a stop, "on" = all four wheels on the zone's ground (G +0x33 bit 2). A car the
 // player drives (control source 0, no driver kind, no lap base): on and sitting, the stop; on, HUD message 0x10; off and past
 // the zone's end, message 0x11. A car the computer drives: past the zone's start and sitting, the stop; else on, message 0x10.
 void pod_rule(std::span<Car> cars, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events) {
@@ -372,13 +372,13 @@ void pod_rule(std::span<Car> cars, const RaceFlowInputs& in, RaceFlow& flow, std
     }
 }
 
-// Later: false (the lap handler returns at once) when car i owes two stops or more: the stop driver, its lap put
+// Later 0x1EE7F0: false (the lap handler returns at once) when car i owes two stops or more: the stop driver, its lap put
 // back, mood 7 for good, kStopsMissedEvent.
 bool pod_line(std::span<Car> cars, int i, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events,
               const RaceFlowHooks& hooks) {
     if (flow.zone.active != 1 || owed(cars, i, flow.zone) < 2) return true;
     Car& c = cars[size_t(i)];
-    if (hooks.stop_drive) hooks.stop_drive(c, i);
+    if (hooks.stop_drive) hooks.stop_drive(c, i); // 0x1EF8A0
     if (c.laps > 0) c.laps = s16(c.laps - 1);
     set_mood(c, in.moods, kMoodSad, 0xFF);
     events.push_back(race_event(kStopsMissedEvent, i, 0));
@@ -422,7 +422,7 @@ SoloRecorders::SoloRecorders(bool fr, bool l) : pool0(kRecordPool), pool1(kRecor
     snapshot[2] = Snapshot{}, snapshot[2].time = kNoTime; // (cleared, "no time": in the memory too)
     for (u32 k = 0; k < 4; ++k) pool1[best.store + 0x10 + k] = u8(kNoTime >> (8 * k));
     ghost.mode = 0, ghost.bind_pool(1);
-    if (free_run) ghost.mode = 2; // Race free-run's devices
+    if (free_run) ghost.mode = 2; // RaceFreeRun's devices
     start();
 }
 
@@ -465,7 +465,7 @@ void SoloRecorders::lap_frame(const PadFrame& f) { lap.rec.write(pool1, raw_pad(
 
 FreeRunRecorder SoloRecorders::inputs(const Behaviour& how) const {
     FreeRunRecorder r;
-    // The lap recording not closed (it closes itself when its store is full) and under 36,000 frames; NTSC-J's
+    // 0x210690: the lap recording not closed (it closes itself when its store is full) and under 36,000 frames; NTSC-J's
     // lap handler reads the player's device's own recording's flag instead.
     const bool open = how.rule(Rule::LapUsable) == Program::NtscJ ? !player.rec.done : !lap.rec.done;
     r.lap_ok = open && s32(lap.rec.count) < 36000;
@@ -478,7 +478,7 @@ FreeRunRecorder SoloRecorders::inputs(const Behaviour& how) const {
 }
 
 namespace {
-// / the copy: store `from` of pool 1 (its snapshot and recording) over store `to`.
+// 0x1F51E0 / 0x17AAD8's copy: store `from` of pool 1 (its snapshot and recording) over store `to`.
 void copy_store(SoloRecorders& r, u32 from, u32 to) {
     std::copy_n(r.pool1.begin() + from, kRecordStore, r.pool1.begin() + to);
     r.snapshot[to / kRecordStore] = r.snapshot[from / kRecordStore];
@@ -513,12 +513,12 @@ void SoloRecorders::run_to_ghost(std::span<const u8> recording) {
 
 void SoloRecorders::apply(const RecorderEvent& e) {
     switch (e.kind) {
-    case RecorderEvent::close: lap.rec.close(pool1); break;
+    case RecorderEvent::close: lap.rec.close(pool1); break;       // 0x2106D8
     case RecorderEvent::lap: snapshot[lap.store / kRecordStore].time = e.time; break;
-    case RecorderEvent::best: copy_store(*this, lap.store, best.store); break;
-    case RecorderEvent::ghost: best_to_ghost(true); break;       // (1, 1)
-    case RecorderEvent::ghost_restart: ghost.restart(); break;   // the ghost car's restart: its playback
-    case RecorderEvent::lap_start: {                              // the snapshot
+    case RecorderEvent::best: copy_store(*this, lap.store, best.store); break; // 0x210700 -> 0x1F51E0
+    case RecorderEvent::ghost: best_to_ghost(true); break;       // 0x17AAD8 (1, 1)
+    case RecorderEvent::ghost_restart: ghost.restart(); break;   // the ghost car's restart (0x1F1400): its playback (0x1F52B0)
+    case RecorderEvent::lap_start: {                              // 0x1F1348: the snapshot (0x1EE638), 0x210668
         Snapshot& h = snapshot[lap.store / kRecordStore];
         const u32 time = h.time, frame = h.frame, frames = h.frames; // (the header's other words stay)
         h = e.snapshot, h.time = time, h.frame = frame, h.frames = frames;
@@ -601,7 +601,7 @@ void lap_time(std::span<Car> cars, int n, s32 laps, u32 lap, u8 failed, const Ra
     if (!locked) add_lap(e.laps, lap);
     if (failed != 0) return;
     if (!locked) best_time(e.best_lap, lap);
-    // The entry's best lap's splits, then (not locked) the session's. NTSC-J: also for a locked
+    // 0x17AF10 -> 0x1786E8 (with 1): the entry's best lap's splits, then (not locked) the session's. NTSC-J: also for a locked
     // car's entry.
     e.current.lap = lap;
     better_splits(e.best, e.current);
@@ -621,13 +621,13 @@ void sector_time(std::span<Car> cars, int i, s32 lap, s32 sector, u32 split, u8 
         events.push_back(b);
     }
     if (failed != 0 || locked) return;
-    put_split(entry(flow, i), sector, split);
+    put_split(entry(flow, i), sector, split); // 0x17AEA8
 }
 
 void race_mode_sector_order(std::span<Car> cars, int i, s32 lap, s32 sector, u32 t, const RaceFlowInputs& in, RaceFlow& flow,
                             std::vector<RaceEvent>& events) {
     (void)cars;
-    if (!sector_order_mode(in.kind)) return; // the others' sector handler is empty
+    if (!sector_order_mode(in.kind)) return; // the others' virtual 15 0x1ED8B0 is empty
     if (u32(sector) >= 4) return; // (cannot happen: a race's sector is the course's, below 4)
     SectorOrder& o = flow.order;
     const size_t s = size_t(sector);
@@ -638,7 +638,7 @@ void race_mode_sector_order(std::span<Car> cars, int i, s32 lap, s32 sector, u32
         o.car[s][0] = s8(i);
         return;
     }
-    if (lap != s32(o.lap[s])) { // laps behind
+    if (lap != s32(o.lap[s])) { // laps behind (0x1ECA40)
         RaceEvent e = display(16, i);
         e.value = s32(o.lap[s]) - lap;
         events.push_back(e);
@@ -661,20 +661,20 @@ void race_mode_sector(std::span<Car> cars, int i, s32 laps, s32 sector, u32 spli
                       std::vector<RaceEvent>& events) {
     const Car& c = cars[size_t(i)];
     switch (in.kind) {
-    case Conductor::TimeTrial:
-    case Conductor::FreeRun:
+    case Conductor::TimeTrial: // 0x1F1C20
+    case Conductor::FreeRun:   // 0x1F12A8
         sector_diff(cars, i, sector, split, in, flow, events);
         sector_time(cars, i, laps - 1, sector, split, c.course_out, in, flow, events);
         return;
-    case Conductor::License: // the sectors counted on over the laps, as lap 1's
+    case Conductor::License: // 0x1F0D90: the sectors counted on over the laps, as lap 1's
     case Conductor::Training:
         sector_time(cars, i, 1, (laps - 1) * sector_count(in.kind, in.config[1], *in.course) + sector, split, c.course_out, in, flow,
                     events);
         return;
-    case Conductor::MachineTest:
+    case Conductor::MachineTest: // 0x1F07E0
         if (!in.replay) sector_time(cars, i, laps, sector, split, c.course_out, in, flow, events);
         return;
-    case Conductor::FreePractice: // the difference to the session's best without the race-flow byte's test
+    case Conductor::FreePractice: // 0x1F2150: the difference to the session's best without the race-flow byte's test
         if (c.course_out == 0) {
             if (u32(sector) >= 4) return; // (cannot happen: free practice's sector is the course's, below 4)
             if (const u32 best = flow.session.sector[size_t(sector)]; best != kNoTime) {
@@ -685,7 +685,7 @@ void race_mode_sector(std::span<Car> cars, int i, s32 laps, s32 sector, u32 spli
         }
         sector_time(cars, i, laps, sector, split, c.course_out, in, flow, events);
         return;
-    default: // the base conductor's
+    default: // the base conductor's 0x1EFAE8
         sector_time(cars, i, laps - 1, sector, split, c.course_out, in, flow, events);
         return;
     }
@@ -693,19 +693,19 @@ void race_mode_sector(std::span<Car> cars, int i, s32 laps, s32 sector, u32 spli
 
 void race_mode_display(std::span<const Car> cars, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events) {
     (void)cars;
-    if (!sector_order_mode(in.kind)) return; // the others' time-difference hook is empty
+    if (!sector_order_mode(in.kind)) return; // the others' virtual 1 0x1ED988 is empty
     SectorOrder& o = flow.order;
     const int sectors = sector_count(in.kind, in.config[1], *in.course);
     for (int s = 0; s < sectors && s < 4; ++s) { // (sector_count is at most 4)
         const size_t k = size_t(s);
         if (o.shown[k] == o.count[k]) continue;
         for (s32 p = o.shown[k]; p < o.count[k]; ++p) {
-            if (p == 0) continue; // the lead car: (empty)
+            if (p == 0) continue; // the lead car: 0x1EC960 / 0x1EC970 (empty)
             const u32 tp = o.time[k][size_t(p)];
-            RaceEvent e = display(15, o.car[k][size_t(p)]); // behind the lead car
+            RaceEvent e = display(15, o.car[k][size_t(p)]); // 0x1EC9E0: behind the lead car
             e.value = s32(tp - o.time[k][0]);
             events.push_back(e);
-            if (p == 1) { // the lead car ahead of the second
+            if (p == 1) { // 0x1EC980: the lead car ahead of the second
                 RaceEvent f = display(15, o.car[k][0]);
                 f.value = s32(o.time[k][0] - tp);
                 events.push_back(f);
@@ -715,26 +715,26 @@ void race_mode_display(std::span<const Car> cars, const RaceFlowInputs& in, Race
     }
 }
 
-// The conductors' first-crossing handler, the race's first crossing of car i.
+// The conductors' virtual 17, the race's first crossing of car i.
 void race_mode_first_crossing(std::span<Car> cars, int i, u32 t, s32 sub, F frac, const RaceFlowInputs& in, RaceFlow& flow,
                               std::vector<RaceEvent>& events, const RaceFlowHooks& hooks) {
     Car& c = cars[size_t(i)];
     switch (in.kind) {
-    case Conductor::TimeTrial:
+    case Conductor::TimeTrial: // 0x1F1CC0
         if (c.control == 0) {
             if (hooks.rolling_handback) hooks.rolling_handback(c);
             events.push_back(race_event(4, i, 0));
         }
         c.x530 = t;
         break;
-    case Conductor::License:
+    case Conductor::License: // 0x1F0E40
     case Conductor::Training:
         if (in.config[0] == 0) break;
         c.x530 = t;
         if (hooks.rolling_handback) hooks.rolling_handback(c);
         if (i == 0) events.push_back(race_event(4, 0, 0));
         break;
-    case Conductor::FreePractice: // car 0's note 3
+    case Conductor::FreePractice: // 0x1F2248: car 0's note 3
         if (i == 0) {
             RaceEvent e = display(18, 0);
             e.value = 3;
@@ -742,7 +742,7 @@ void race_mode_first_crossing(std::span<Car> cars, int i, u32 t, s32 sub, F frac
         }
         c.x530 = t;
         break;
-    case Conductor::FreeRun:
+    case Conductor::FreeRun: // 0x1F1540
         if (i == 0) {
             if (c.driver_kind != 0) { // the AI drove the run-up
                 if (hooks.rolling_handback) hooks.rolling_handback(c);
@@ -755,16 +755,16 @@ void race_mode_first_crossing(std::span<Car> cars, int i, u32 t, s32 sub, F frac
         if ((c.ghost != 0 || in.logger_record) && hooks.drive_on) hooks.drive_on(c, i);
         c.x530 = t;
         break;
-    default: break; // the base conductor's code, the single races' code: nothing
+    default: break; // the base conductor's 0x1EFB68, the single races' 0x1F28E8: nothing
     }
 }
 
-// The conductors' lap handler, a completed lap of car i.
+// The conductors' virtual 18, a completed lap of car i.
 void race_mode_lap(std::span<Car> cars, std::span<const s32> order, int i, s32 laps, u32 t, u32 lap, s32 sub, F frac,
                    const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events, const RaceFlowHooks& hooks) {
     Car& c = cars[size_t(i)];
     switch (in.kind) {
-    case Conductor::TimeTrial: // every lap ends the run
+    case Conductor::TimeTrial: // 0x1F1D40: every lap ends the run
         if (in.replay) return;
         finish_car(c, i, 3, hooks);
         if (c.ghost == 0) {
@@ -776,7 +776,7 @@ void race_mode_lap(std::span<Car> cars, std::span<const s32> order, int i, s32 l
         lap_time(cars, i, laps, lap, c.course_out, in, flow, events);
         c.x530 = t;
         return;
-    case Conductor::FreePractice: { // the difference to the session's best lap and a new best's note
+    case Conductor::FreePractice: { // 0x1F22C0: the difference to the session's best lap and a new best's note
         const u32 best = flow.session.lap;
         if (c.course_out == 0) {
             if (best != kNoTime) {
@@ -795,7 +795,7 @@ void race_mode_lap(std::span<Car> cars, std::span<const s32> order, int i, s32 l
         c.x530 = t;
         return;
     }
-    case Conductor::FreeRun: // the lap's recording, a best lap, the ghost
+    case Conductor::FreeRun: // 0x1F16B8: the lap's recording, a best lap, the ghost
         lap_diff(cars, i, lap, in, flow, events);
         lap_time(cars, i, laps, lap, c.course_out, in, flow, events);
         if (i == 0) {
@@ -822,13 +822,13 @@ void race_mode_lap(std::span<Car> cars, std::span<const s32> order, int i, s32 l
         clear_course_out(c);
         c.x530 = t;
         return;
-    case Conductor::MachineTest: return; // nothing
-    case Conductor::License:             // a type 3 test ends with its laps; else the lap as a sector time
+    case Conductor::MachineTest: return; // 0x1F0880: nothing
+    case Conductor::License:             // 0x1F0ED8: a type 3 test ends with its laps; else the lap as a sector time
     case Conductor::Training:
         if (in.config[2] == 3 && in.laps == laps) return licence_end(cars, i, lap, in, flow, events, hooks);
         sector_time(cars, i, laps, laps * sector_count(in.kind, in.config[1], *in.course) - 1, lap, c.course_out, in, flow, events);
         return;
-    case Conductor::Battle2P: { // the leader finished or the laps done; the AI takes the other pad cars over
+    case Conductor::Battle2P: { // 0x1F0118: the leader finished or the laps done; the AI takes the other pad cars over
         if (!pod_line(cars, i, in, flow, events, hooks)) return;
         lap_time(cars, i, laps, lap, c.course_out, in, flow, events);
         bool end = cars[size_t(order[0])].finished != 0;
@@ -848,7 +848,7 @@ void race_mode_lap(std::span<Car> cars, std::span<const s32> order, int i, s32 l
     }
     default: break;
     }
-    // The base conductor's code (single races, the i.LINK battle): the leader finished, the race's laps done, or the time
+    // The base conductor's 0x1EFB70 (single races, the i.LINK battle): the leader finished, the race's laps done, or the time
     // limit passed.
     if (!pod_line(cars, i, in, flow, events, hooks)) return;
     lap_time(cars, i, laps, lap, c.course_out, in, flow, events);
@@ -864,12 +864,12 @@ void race_mode_lap(std::span<Car> cars, std::span<const s32> order, int i, s32 l
     c.x530 = t;
 }
 
-// The conductors' split handler, car i over the split line. True when the run ended.
+// The conductors' virtual 19, car i over the split line. True when the run ended.
 bool race_mode_split(std::span<Car> cars, int i, s32 laps, u32 t, u32 lap, const RaceFlowInputs& in, RaceFlow& flow,
                      std::vector<RaceEvent>& events, const RaceFlowHooks& hooks) {
     (void)t;
     Car& c = cars[size_t(i)];
-    if (in.kind == Conductor::MachineTest) {
+    if (in.kind == Conductor::MachineTest) { // 0x1F0888
         if (c.max_speed < c.speed_abs) c.max_speed = c.speed_abs;
         if (in.replay) return false;
         finish_car(c, i, 3, hooks);
@@ -880,7 +880,7 @@ bool race_mode_split(std::span<Car> cars, int i, s32 laps, u32 t, u32 lap, const
         if (i == 0) events.push_back(race_event(5, 0, 2));
         return true;
     }
-    if (licence_kind(in.kind) && in.config[2] == 2) {
+    if (licence_kind(in.kind) && in.config[2] == 2) { // 0x1F0FC8
         licence_end(cars, i, lap, in, flow, events, hooks);
         return true;
     }
@@ -957,7 +957,7 @@ int line_crossings(std::span<Car> cars, std::span<const s32> order, int i, F old
             return 1;
         }
         if (c.lap_base != 0 || c.laps == 0 || c.finished != 0) return 0;
-        // A sector line (the sector start): the sector handler (unless the player-record test) and 16, then the next sector.
+        // A sector line (virtual 34): virtuals 15 (unless virtual 5) and 16, then the next sector.
         const F line = sector_line(in.kind, in.config[1], in.machine_sectors, *in.course, c.sector);
         if (old < line && line <= now) {
             const F frac = (line - old) / (now - old);
@@ -967,7 +967,7 @@ int line_crossings(std::span<Car> cars, std::span<const s32> order, int i, F old
             race_mode_sector(cars, i, c.laps, c.sector, split, in, flow, events);
             c.sector = u8(c.sector + 1);
         }
-        // The data logger's next mark for a recorded car: its entry's end, the next one's start.
+        // The data logger's next mark (0x1E08A8) for a recorded car: its entry's end, the next one's start.
         if (recorded(c, in) && in.logger) {
             const F mark = in.course->logger_mark(c.x493);
             if (old < mark && mark <= now) {
@@ -980,7 +980,7 @@ int line_crossings(std::span<Car> cars, std::span<const s32> order, int i, F old
                 if (in.logger_record) logger_start(cars, i, k, u32(clock_step(in) - v), frac, in, flow, hooks);
             }
         }
-        // The split line (none at 0): the split handler.
+        // The split line (virtual 31, none at 0): virtual 19.
         const F split = split_line(in);
         if (split == kZero || !(old < split) || !(split <= now)) return 0;
         const F frac = (split - old) / (now - old);
@@ -1008,10 +1008,10 @@ int line_crossings(std::span<Car> cars, std::span<const s32> order, int i, F old
     const s32 v = ee::to_int(frac * clock_units(in));
     const u32 t = (flow.clock + u32(v)) / 3, run = t - c.x530;
     const s32 sub = clock_step(in) - v;
-    if (laps == 0) { // the race's first crossing: the first-crossing handler (after it: a hand-back makes the car recorded)
+    if (laps == 0) { // the race's first crossing: virtual 17 (0x1E08C8 after it: a hand-back makes the car recorded)
         race_mode_first_crossing(cars, i, t, sub, frac, in, flow, events, hooks);
         if (recorded(c, in) && !logs_from_start(in) && in.logger_record) logger_start(cars, i, 0, u32(sub), frac, in, flow, hooks);
-    } else { // the sector handler (unless the player-record test) and the lap handler; the data logger's lap
+    } else { // virtual 15 (unless virtual 5) and the lap handler, virtual 18; the data logger's lap
         if (!records_player(in.kind)) race_mode_sector_order(cars, i, laps - 1, sector, t, in, flow, events);
         const bool rec = recorded(c, in);
         race_mode_lap(cars, order, i, laps, t, run, sub, frac, in, flow, events, hooks);
@@ -1036,7 +1036,7 @@ void race_flow_car(std::span<Car> cars, std::span<const s32> order, int i, bool 
         s = s + c.lat_speed * c.lat_speed;
         c.x535 = u8(c.x535 | 1);
         s = sqrt(s);
-        // (2002 Tokyo-Geneva's 5 and 3 km/h two units lower: Europe)
+        // (2002 Tokyo-Geneva's 5 and 3 km/h two units lower: Europe 0x1E4A88)
         if (folded(in.behaviour, kFast.bits, 0x3FB1C71B) < s) {
             if (!hit && !(u32(u8(c.control)) - 1 < 2) && c.driver_kind == 0) hud_message(c, in, 1);
         } else if (s < folded(in.behaviour, kSlow.bits, 0x3F555554)) {
@@ -1064,19 +1064,19 @@ void race_mode_start(std::span<Car> cars, const RaceFlowInputs& in, std::vector<
     Car& c = cars[0];
     switch (in.kind) {
     case Conductor::SinglePlayer: rolling_start(c, in, events, hooks); return;
-    case Conductor::FreeRun:
+    case Conductor::FreeRun: // 0x1F1968
         if (!(s16(c.ai_hold) > 0)) return;
         c.ai_hold = u16(c.ai_hold - 1);
         if (c.ai_hold != 0) return;
         if (hooks.rolling_handback) hooks.rolling_handback(c);
         events.push_back(race_event(4, 0, 0));
         return;
-    case Conductor::TimeTrial: // out of the course (either flag)
+    case Conductor::TimeTrial: // 0x1F1E50 / 0x1F1BB8: out of the course (either flag)
         if ((c.course_out & 3) == 0 || in.replay || c.finished != 0) return;
         if (c.index == 0) events.push_back(race_event(10, 0, 0));
         finish_car(c, 0, 2, hooks);
         return;
-    default: return; // the base conductor's code, the licence's
+    default: return; // the base conductor's 0x1EFCD0, the licence's 0x1F1030
     }
 }
 
@@ -1090,7 +1090,7 @@ void race_clock(RaceFlow& flow, const RaceFlowInputs& in) {
 
 void race_mode_clock(std::span<Car> cars, const RaceFlowInputs& in, RaceFlow& flow, std::vector<RaceEvent>& events,
                      const RaceFlowHooks& hooks) {
-    if (licence_kind(in.kind)) // for every car
+    if (licence_kind(in.kind)) // 0x1F1038: 0x1EF780 for every car
         for (int i = 0; i < int(cars.size()); ++i) {
             Car& c = cars[size_t(i)];
             if (c.finished != 0) continue;
@@ -1099,7 +1099,7 @@ void race_mode_clock(std::span<Car> cars, const RaceFlowInputs& in, RaceFlow& fl
                 continue;
             }
             if (c.course_out & 1) {
-                // A hit (hit_course_out): GT3 fails the test; the later builds' judge (in 2002 Tokyo-Geneva's)
+                // A hit (hit_course_out): GT3 fails the test; the later builds' judge (0x1F4208 in 2002 Tokyo-Geneva's)
                 // clears the flags and goes on, so no contact ends a test there.
                 if (later_judge(in)) c.course_out = 0;
                 else licence_out(c, i, in, flow, events, hooks);
@@ -1113,9 +1113,9 @@ void race_mode_clock(std::span<Car> cars, const RaceFlowInputs& in, RaceFlow& fl
             if (in.logger) logger_end(cars, i, logger_entry(c, true, in), t, in, flow, events);
             licence_end(cars, i, t, in, flow, events, hooks);
         }
-    // The later builds' single race and split-screen battle (their race clock): the pod race's rule first.
+    // The later builds' single race and split-screen battle (their virtual 14): the pod race's rule first.
     if (in.kind == Conductor::SinglePlayer || in.kind == Conductor::Battle2P) pod_rule(cars, in, flow, events);
-    // The base conductor's code: at the countdown's last step the data logger's first entries; the clock.
+    // The base conductor's 0x1EFCD8: at the countdown's last step the data logger's first entries; the clock.
     if (in.start_count == 1 && logs_from_start(in) && in.logger_record)
         for (int i = 0; i < int(cars.size()); ++i)
             if (recorded(cars[size_t(i)], in)) logger_start(cars, i, 0, 0, kOne, in, flow, hooks);

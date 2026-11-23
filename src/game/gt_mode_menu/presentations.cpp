@@ -77,8 +77,8 @@ bool car_get_ok() { return !car_get_holding(); }
 
 namespace {
 
-// One frame of the car_get page (car get control's loop and the cars item): the "after"
-// band is built at the top of the frame after the one that gave the controls back;
+// One frame of the car_get page (CarGetControl's loop 0x13EDB0 and CarsItem::vf2): the "after"
+// band is built at the top of the frame after the one that gave the controls back (0x13EE48);
 // the roulette steps; the controls come back on its release.
 void car_get_frame(MenuController& ctl, Show& sh) {
     CarGetRoulette& rl = sh.car_get.roulette;
@@ -92,7 +92,7 @@ void car_get_frame(MenuController& ctl, Show& sh) {
     }
 }
 
-// The candidates' sizes the page reads from each car's built spec: +0x1A the
+// The candidates' sizes the page reads from each car's built spec (0x13D368): +0x1A the
 // chassis length, +0x22 the body's height extent (body f32 +0x2C truncated), in mm.
 CarGetRoulette::Size car_get_size(const GtMode& gt, const std::string& label) {
     CarGetRoulette::Size z;
@@ -197,7 +197,7 @@ std::optional<menu::flow::GtModeHooks::Presentation> next_presentation() {
     // last name entered), the cursor after it (gt_mode §17.1).
     if (GtModeSession* s = S())
         if (const RankEntry* r = named_entry()) s->name_box.reset(r->name, kRecordNameMax);
-    // The prize car page takes the controls when it is built ((pm, 1)) and
+    // The prize car page takes the controls when it is built (0x1B7BD0(pm, 1), 0x13D24C) and
     // gives them back when its roulette is over (car_get_frame); with the controls given (a
     // screenshot started past the release) the page keeps them.
     const bool take = ms.show->page == "car_get" && !ms.show->car_get.roulette.released;

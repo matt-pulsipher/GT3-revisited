@@ -78,7 +78,7 @@ std::string page_music(const std::string& set, const std::string& p) {
     if (set == "option") return "";
     // Concept's control: its title pages are silent like GT3's title, the others take the arcade pages' music
     // (M: the page rule below is the engine's; the Concept spec lists what was not read). Its Replay Theater page is
-    // "ar/replay_theater": the rule's "replay_theater" test is a prefix test, so the page is one of the
+    // "ar/replay_theater": the rule's "replay_theater" test is a prefix test (0x1C1EE0), so the page is one of the
     // "ar/" pages to it, not GT3's Replay Theater with its own stream (which the Concept discs do not carry); ours keeps
     // it with the title it is opened from.
     if (set == "concept" && (p == "ar/push_start" || p == "ar/credit" || p == "ar/replay_theater")) return "";
@@ -1375,7 +1375,7 @@ void GameFlow::handle_arcade(const MenuEvent& e) {
             const std::string& a = e.action;
             if (a == "single_race") arcade_steps_ = {"ar/level", "ar/select_course", "ar/select_class", "ar/select_car"};
             else if (a == "compulsory") {
-                // The time trial's page resets the paint picker to the car's first paint, so the
+                // The time trial's page resets the paint picker to the car's first paint (0x1045D0), so the
                 // car is never in a paint chosen earlier on another mode's car page.
                 arcade_steps_ = {"ar/select_compulsory"};
                 car_paint_ = 0;
@@ -1460,9 +1460,9 @@ std::vector<int> GameFlow::car_steps() const {
     const ConceptHooks& ch = concept_hooks();
     const bool dirt = concept_ ? ch.course_dirt && ch.course_dirt(course_)
                                : h.arcade_disabled && !h.arcade_disabled("ar/select_class", course_, "class_c").empty();
-    // Concept (its car pages' step machine, Tokyo-Geneva): the tire step's test answers "skip" in every
-    // Concept program (a constant where GT3 tests the course), so the page never asks RACING / DRIFT; the
-    // assist step is skipped on a dirt course (GT3's tire test).
+    // Concept (its car pages' step machine, Tokyo-Geneva 0x10C978): the tire step's test answers "skip" in every
+    // Concept program (0x10FC50, a constant where GT3 tests the course), so the page never asks RACING / DRIFT; the
+    // assist step is skipped on a dirt course (0x107E98, GT3's tire test).
     if (concept_) return dirt ? std::vector<int>{2} : std::vector<int>{2, 4};
     const bool no_tires = car_class_ == "home_garage" || car_class_ == "guest_garage" || dirt;
     std::vector<int> steps{2};
@@ -1891,7 +1891,7 @@ void GameFlow::car_gauge_draws(std::vector<ElementDraw>& out, const Layer* hidde
         }
         return;
     }
-    // The three circle gauges (riding on the cross with the car's art): a ring 22..238 degrees in the background
+    // The three CircleGauges (riding on the cross with the car's art): a ring 22..238 degrees in the background
     // colour and the value arc from 230 degrees clockwise, orange up to 80 % and red beyond; each new car sweeps to
     // full (+0.04 per frame) and settles back (-0.02 per frame).
     std::array<float, 3> v = h.arcade_gauges(id);
@@ -2314,7 +2314,7 @@ std::vector<ElementDraw> GameFlow::draw_list_impl() const {
             }
             put(find_element(hidden, "color_selection"), dx, alpha);
         }
-        // Car pages: the spec ticker (ticker on "flow_spec"): a new line every second
+        // Car pages: the spec ticker (TransitiveEX on "flow_spec"): a new line every second
         // at the element's place, fading in 0.5 s, held 3 s, fading out 0.5 s, drifting up
         // 40 px/s; label above value.
         if ((c.page == "ar/select_car" || c.page == "ar/select_compulsory") && h.arcade_specs)

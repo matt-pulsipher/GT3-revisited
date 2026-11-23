@@ -31,7 +31,7 @@ EventStart event_start(const data::Event& ev) {
 // Integer division, truncating. A power of 0 has no figure in GT3; ours puts such a car last.
 int gt_grid_figure(int mass_kg, int power) { return power > 0 ? mass_kg / power : std::numeric_limits<int>::max(); }
 
-// The grids' ranking: each opponent counts the opponents with a lower figure (equal ones neither), then
+// The grids' ranking (0x12E670, 0x18E190): each opponent counts the opponents with a lower figure (equal ones neither), then
 // takes that place or, when an earlier opponent has it, the next free one.
 std::vector<int> gt_grid_places(std::span<const int> f) {
     const size_t n = f.size();

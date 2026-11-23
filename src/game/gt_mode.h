@@ -91,7 +91,7 @@ public:
     // The game's language (disc/region.h) and what it decides: the menus' units (miles, HP
     // and ft.lb in US English; imperial(): units.mph or the player's speed_unit), money x100
     // in Japanese (money(): every price, prize and game-config sum GtData and GtMode hand out
-    // is scaled, as the program's readers do when its language test finds 0), and
+    // is scaled, as the program's readers do when its language test 0x231680 finds 0), and
     // the arcade car filter's language index.
     Region region = Region::America; // the disc's release (its PS2 save names and versions)
     GameKind game = GameKind::Gt3;   // Gran Turismo 3 or Gran Turismo Concept (its own front end, concept_game.h)
@@ -139,8 +139,8 @@ public:
     std::map<std::string, std::vector<ArcadeCar>> arcade_classes;
 
     // The game config's sums (gcf tag 10), scaled (money()): a new game's credits ("initial")
-    // and the wheel shop / car wash / oil change prices, read by name as the program does.
-    // load() refuses a game config without one of them (the program has no
+    // and the wheel shop / car wash / oil change prices, read by name as the program does
+    // (0x21DCE0). load() refuses a game config without one of them (the program has no
     // fallback: its lookup reads the missing entry's value through a null pointer).
     u32 starting_credits() const { return initial_credits_; }
     u32 car_wash_price() const { return car_wash_price_; }
@@ -286,7 +286,7 @@ public:
     u8 car_flags(const std::string& car) const;  // car +0xF0: 1 not for buy, 2 not for sell, 4 no wheel change
     u8 car_category(const std::string& car) const; // car +0xF1: 0 production, 1 race, 2 rally
     s64 sell_price(const GarageCar& c) const;    // car_price / 4
-    // A part's price as the tune shop charges it (the part record's price, scaled);
+    // A part's price as the tune shop charges it (the part record's price, scaled: 0x237C80);
     // part_offer() applies it.
     u32 part_price(u32 stored) const { return data_->money(stored); }
     Check can_buy_car(const std::string& car) const;
@@ -316,7 +316,7 @@ public:
     // Gives every car of a loaded save the goods it comes with: a save from an older version
     // lacks those of its empty stock slots, so the car could not go back to stock.
     // The goods of the parts a car wears (`car.parts`: its own, or another set on a copy of its record), as a new
-    // garage car owns them (in GT3; Concept's).
+    // garage car owns them (0x236A68 in GT3; Concept's 0x239620).
     std::bitset<88> fitted_ownership(const data::Car& car) const;
     void own_stock_goods(GameState& s) const;
 
@@ -478,7 +478,7 @@ public:
     // (M4.., M1.., MM..); not arcade (A...) or anything else. Only a check with such a
     // code can award the whole-game prize set (gtmode_complete).
     static bool gt_mode_code(const std::string& code);
-    // The league a checked code belongs to for the league prize keys: a G
+    // The league a checked code belongs to for the league prize keys (0x214048, 0x214868): a G
     // code by "_e_" / "_n_" / "_h_" ("beginner", "amateur", "pro"), E "end", D "dirt", else "".
     static std::string code_league(const std::string& code);
     // Every GT-mode result slot (gcf section 4: 364 on this disc) won.
@@ -625,9 +625,9 @@ int pick_trophy_index(float completion, u32& rng);
 // Formatting helpers for the menus.
 std::string format_credits(s64 v);      // "18,000": digits grouped by ',' in every language
 // The game's money texts (its own format strings, the same in every language and release):
-// "Cr. %s" ("Cr. 18,000": the dealer's car price with the string, the
-// prize pages' balance) and the prize pages' amount left to
-// count, "%s Cr. %s" with the language's prefix (GtData::prize_prefix):
+// "Cr. %s" ("Cr. 18,000": the dealer's car price 0x11D2F8 with the string at 0x351178, the
+// prize pages' balance 0x129F50 / 0x12A140 with 0x3512E8) and the prize pages' amount left to
+// count, "%s Cr. %s" (0x129D68, 0x313A20) with the language's prefix (GtData::prize_prefix):
 // "Prize Cr. 991".
 std::string credits_text(s64 v);
 std::string prize_remain_text(std::string_view prefix, s64 v);

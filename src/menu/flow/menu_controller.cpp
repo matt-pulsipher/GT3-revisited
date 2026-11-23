@@ -27,14 +27,14 @@ bool fades_in(const Element& e) { return ((e.flags >> 4) & 0xF) != 0; }   // ele
 bool fades_out(const Element& e) { return ((e.flags >> 8) & 0xF) != 0; }  // element flag bits 24-27
 bool has_parts(const Element& e) { return (e.type & 0x7) != 0; }
 
-// Decide effect alphas (centre, edge) at frame f (1-based) of the effect.
+// DecideEffect alphas (centre, edge) at frame f (1-based) of the effect.
 void decide_alpha(int f, float& centre, float& edge) {
     auto ramp = [](float t) { return std::clamp(t, 0.0f, 1.0f) * 0.4f; };
     centre = f <= 11 ? ramp(f / 3.0f) : ramp(1.0f - (f - 11) / 6.0f);
     edge = f <= 18 ? ramp((f - 4) / 6.0f) : ramp(1.0f - (f - 18) / 6.0f);
 }
 
-// Free buttons (free button: the name-entry key rows and its OK row).
+// Free buttons (FreeButton: the name-entry key rows and its OK row).
 bool is_free_row(const MenuController::ItemState& s) { return s.flow && s.flow->name.rfind("free", 0) == 0; }
 
 int feedback_frames(u16 fb) { return fb == 0 ? 0 : fb == 0x40 ? 26 : 30; }
@@ -93,8 +93,8 @@ const Element* scroller_window(const Page& p) {
         right = right && (e.x >= 640 || e.y + e.h <= 0);
         above = above && (e.x >= 640 || e.y >= kMenuHeight);
     }
-    // Gran Turismo Concept: the title's items all sit at one place under its "menu_top" window (top button list places
-    // them), and the level page's buttons go in a row in the "menu_difficulty" band (difficulty button list).
+    // Gran Turismo Concept: the title's items all sit at one place under its "menu_top" window (TopButtonList places
+    // them), and the level page's buttons go in a row in the "menu_difficulty" band (DifficultyButtonList).
     if (!right && !above)
         if (const Element* w = find_widget(p, "menu_top")) {
             bool together = true;
@@ -103,7 +103,7 @@ const Element* scroller_window(const Page& p) {
         }
     if (right)
         if (const Element* w = find_widget(p, "menu_difficulty")) return w;
-    // ... and the Course License page's tests in a row in "menu_license" (license button list).
+    // ... and the Course License page's tests in a row in "menu_license" (LicenseButtonList).
     if (right)
         if (const Element* w = find_widget(p, "menu_license")) return w;
     if (!right) return above ? find_widget(p, "menu") : nullptr;
@@ -160,7 +160,7 @@ void text_effects(ElementDraw& d, const Element& e, u32 age) { apply_text_effect
 
 namespace {
 
-// GT3's button list placement: along the list's axis, buttons of the given sizes kRowGap
+// GT3's ButtonList placement: along the list's axis, buttons of the given sizes kRowGap
 // apart. A list that fits the window is centred (`centre_fit`, a horizontal row) or at its
 // start (a vertical list); else at the window's start while the focused button begins less
 // than half a window from the list's start, at its end while less than half a window follows
@@ -530,7 +530,7 @@ bool MenuController::move_focus(int delta, int dir_code) {
     int f = lv.focus + delta;
     f = (lv.flags & page_flag::kWrap) ? (f + n) % n : std::clamp(f, 0, n - 1);
     if (f == lv.focus) return false;
-    // Free buttons keep the column across rows (free button, name entry): after a Left /
+    // Free buttons keep the column across rows (FreeButton, name entry): after a Left /
     // Right, or coming from a row with at least as many keys, the new row's key is the one
     // under the previous key's centre (keys 24 wide, 28 apart; a one-key row's button
     // centre is 223 px in); else the row keeps the key it had.
@@ -577,7 +577,7 @@ void MenuController::confirm() {
             feedback_item_ = index;
             // The popup opens at once, with no confirm feedback: a refusal ("no money", "not
             // for sale", ...) with SE "disable", the dealer's "Get in now?" with SE "ok". GT3's
-            // checks play their own sound.
+            // checks play their own sound (0x11BC18, 0x11C5B8).
             sound(popup == "00cmn/cd_ride_sure" ? "ok" : "disable");
             build(popup, {}, true);
             return;
@@ -654,7 +654,7 @@ void MenuController::cancel(bool via_ok) {
     const MblPage* fp = lv.page.flow;
     std::string back = fp ? fp->back : std::string();
     std::string back_action = fp ? fp->back_action : std::string();
-    // The later programs' page manager (Gran Turismo Concept's) also takes the back name "exit" for "no back
+    // The later programs' page manager (Gran Turismo Concept's, 0x1B7D90) also takes the back name "exit" for "no back
     // page": the menu ends. (Its settings menu's Normal and Custom pages; a set with a page of that name keeps it.)
     if (back == "exit" && !set_.page(back)) back.clear();
     if (back.empty()) {
@@ -869,7 +869,7 @@ void MenuController::add_level_draws(std::vector<ElementDraw>& out, const Level&
                 if (e.widget_class && *e.widget_class == "blink") a *= blink_alpha(frame_);
                 const bool diag_in = e.widget_class && *e.widget_class == "diagonal_in";
                 const bool diag_out = e.widget_class && *e.widget_class == "diagonal_out";
-                // A horizontal selector's "scroll_bar" (menus §4.6; GT3's scroll bar): nothing at
+                // A horizontal selector's "scroll_bar" (menus §4.6; GT3's ScrollBar): nothing at
                 // all, track included, while the row is no longer than the bar; else the track
                 // and the hidden "pinch" over the visible share of the row at its scroll
                 // position: x = bar x - offset x bar w / row w, width = window w x bar w / row w
@@ -977,7 +977,7 @@ void MenuController::add_level_draws(std::vector<ElementDraw>& out, const Level&
             box_override.clip = {window->x, window->y, window->w, window->h};
             // (Concept's level band is lower than its buttons, which show whole.)
             if (window->name == "menu_difficulty") box_override.clip = {0, 0, kMenuWidth, kMenuHeight};
-            // Title list (top button list): items fade with their distance d from the window
+            // Title list (TopButtonList): items fade with their distance d from the window
             // centre, alpha 1 - d / (1.8 x item height), gone beyond; the focused one stays.
             if (window->name == "menu_top" && !is_focus) {
                 float d = std::fabs(cy - (window->y + window->h * 0.5f)), lim = 1.8f * e.h;

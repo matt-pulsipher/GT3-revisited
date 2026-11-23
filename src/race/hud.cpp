@@ -131,7 +131,7 @@ Hud::~Hud() {
 }
 
 std::string Hud::format_time(double s) {
-    // The race display's formatter: the font's dashes for negative times and the
+    // The race display's formatter (0x19A7F0): the font's dashes for negative times and the
     // 359,999,999 ms "no time" value (one for the minutes, not the menus' two), otherwise
     // clamped to 999'59.999.
     if (!(s >= 0)) return std::string(kHudNoTimeText);
@@ -145,7 +145,7 @@ std::string Hud::format_time(double s) {
 
 std::string Hud::speed_text(float kmh, bool imperial) {
     const float v = imperial ? kmh * 0.62139f : kmh;
-    if (!(v > 0)) return std::string(kNoSpeedText); // the race display's speed text
+    if (!(v > 0)) return std::string(kNoSpeedText); // the race display's speed text (0x19A968)
     char buf[16];
     std::snprintf(buf, sizeof(buf), "%.1f", double(std::min(v, 999.9f)));
     return buf;
@@ -405,9 +405,9 @@ void Hud::draw_meter(SDL_Renderer* r, const Meter& m, float value) {
 }
 
 std::array<Hud::NeedlePass, 8> Hud::needle_passes(float angle, float last) {
-    // The race round meter base: step (a - a') x 0.125, 0 while a' is still FLT_MAX;
-    // pass k at a + step x (k + 1). The jitter steps go into XYOFFSET
-    // after each pass, so pass k sits at minus the sum of the first k.
+    // RaceRoundMeterBase::vf15 (0x19C738): step (a - a') x 0.125, 0 while a' is still FLT_MAX
+    // (0x3520F0); pass k at a + step x (k + 1). The jitter steps (0x32F568) go into XYOFFSET
+    // after each pass (fn_00252B40), so pass k sits at minus the sum of the first k.
     static constexpr float kJitter[8][2] = {{0.5f, 0}, {-0.5f, 0.5f}, {0.5f, 0}, {-0.5f, -0.25f},
                                             {0.5f, 0}, {-0.5f, 0.5f}, {0.5f, 0}, {-0.5f, -0.75f}};
     const float step = last == kNoNeedleAngle ? 0.0f : (angle - last) * 0.125f;
@@ -421,14 +421,14 @@ std::array<Hud::NeedlePass, 8> Hud::needle_passes(float angle, float last) {
 }
 
 Hud::GearPens Hud::gear_pens(float cx, float cy, int size, int line_height, float dx, float dy) {
-    // The race gear display: the pen's baseline line_height >> 1 below the centre;
+    // RaceGearDisplay::vf5 (0x196E98): the pen's baseline line_height >> 1 below the centre;
     // the digit at x - size (font byte 0x0C), "> n" at x, the shift light at its (dx, dy).
     const float base = cy + float(line_height >> 1);
     return {{cx - float(size), base}, {cx, base}, {cx + dx, base + dy}};
 }
 
 SDL_Color Hud::gear_colour(bool reverse, bool clutch_engaged) {
-    // The race gear display: 0x801880D0, 0x800000F0 below first gear; the word shifted right
+    // RaceGearDisplay::vf5: 0x801880D0, 0x800000F0 below first gear; the word shifted right
     // once while the clutch is out.
     u32 c = reverse ? 0x800000F0u : 0x801880D0u;
     if (!clutch_engaged) c >>= 1;
@@ -436,8 +436,8 @@ SDL_Color Hud::gear_colour(bool reverse, bool clutch_engaged) {
 }
 
 SDL_FPoint Hud::transmission_pen(float cx, float cy, bool onboard) {
-    // The in-car and outside tachometers' constructors set the offsets
-    // the race round tachometer base adds to the box centre.
+    // The in-car and outside tachometers' constructors (0x19D510, 0x19D620) set the offsets
+    // RaceRoundTachometerBase::vf6 (0x19D428) adds to the box centre.
     return onboard ? SDL_FPoint{cx - 10, cy - 15} : SDL_FPoint{cx - 2, cy + 28};
 }
 
@@ -627,7 +627,7 @@ void Hud::draw_panel(SDL_Renderer* r, float X, float Y, float w, float h) {
                   SDL_Color{0, 0, 0, 128});
 }
 
-// The gear in its box (gx, gy, gw, gh; frame units, already aligned), as the original's race gear display
+// The gear in its box (gx, gy, gw, gh; frame units, already aligned), as the original's RaceGearDisplay
 // draws it (presentation §D2; gear_pens): the digit over an unlit "8" and "1", "> n" after it
 // in the font's small digits ('@' .. 'I'), the shift light at (dx, dy). The strings are the
 // game's own: the font has no space, which ends kerning and moves nothing.
@@ -1003,9 +1003,9 @@ void Hud::draw(SDL_Renderer* r, const HudData& d, const SDL_FRect* viewport) {
     (void)kGrey;
 }
 
-// The logger display (the Analyzer's REPLAY; solo race's display of mode LOGGER): its rows for one car, `dx` frame
-// units to the right. Gran Turismo 3 (/ the solo race) draws it for track A's car, then track B's 560
-// to the right, each on the whole frame; Gran Turismo Concept (the solo race) for track A's alone, under the
+// The logger display (the Analyzer's REPLAY; RaceSolitaire's display of mode LOGGER): its rows for one car, `dx` frame
+// units to the right. Gran Turismo 3 (0x187598 / RaceSolitaire::vf46) draws it for track A's car, then track B's 560
+// to the right, each on the whole frame; Gran Turismo Concept (RaceSolitaire::vf47) for track A's alone, under the
 // Analyzer's own page. The parts are the race display's: a release's own pictures say which kind it draws (Gran
 // Turismo 3's "steering" wheel and accel / brake gauges, Concept's "replay_sign_*" boxes).
 void Hud::draw_logger(SDL_Renderer* r, const HudData& d, float dx, const SDL_FRect* viewport) {
@@ -1026,7 +1026,7 @@ void Hud::draw_logger(SDL_Renderer* r, const HudData& d, float dx, const SDL_FRe
             }
             break;
         case HudPart::BarTach:
-            // Race battle tachometer: "meter_mini" in the row's box, lit across with the rpm, AT / MT 5 below its top left.
+            // RaceBattleTachometer: "meter_mini" in the row's box, lit across with the rpm, AT / MT 5 below its top left.
             if (const Image* im = image("meter_mini")) {
                 const float w = float(row.w), h = float(row.h);
                 const float frac = std::clamp(d.rpm / float(tach_scale(d.rev_limit_rpm)), 0.0f, 1.0f);
@@ -1061,7 +1061,7 @@ void Hud::draw_logger(SDL_Renderer* r, const HudData& d, float dx, const SDL_FRe
 // The steering monitor on its row, `dx` frame units to the right. Gran Turismo 3 (RaceSteeringDisplay, its "steering"
 // picture): a light grey tick from 24 to 43 units above the pivot (the row's point) and the wheel with its top edge at 43
 // above it, centred across, turned about the pivot (the wheel's hub) with the steering, up to 90 degrees either side.
-// Gran Turismo Concept (the race steering display, its "replay_sign_gtforce" picture in 0x80D0D0D0): the picture centred
+// Gran Turismo Concept (RaceSteeringDisplay::vf5, its "replay_sign_gtforce" picture in 0x80D0D0D0): the picture centred
 // on the row's point at the row's width and height (the routine scales it by twice the row's size over the picture's;
 // that its sprite draw halves it is ours, as every other part of Concept's display fills its row's box), turned the same.
 void Hud::draw_steering_row(SDL_Renderer* r, const HudData& d, const HudRow& row, float dx) {
@@ -1082,7 +1082,7 @@ void Hud::draw_steering_row(SDL_Renderer* r, const HudData& d, const HudRow& row
     }
 }
 
-// The accel / brake monitor on its row (sub 0), `dx` frame units to the right. Gran Turismo 3 (the race AB monitor, its
+// The accel / brake monitor on its row (sub 0), `dx` frame units to the right. Gran Turismo 3 (RaceABMonitor::vf5, its
 // "brake_gage" and "accel_gage" pictures): the brake gauge at the row's x, the accel gauge its width to the right, dark
 // grey gauges filled from the row's y up. Gran Turismo Concept: draw_pedal_boxes in the row's box.
 void Hud::draw_pedals_row(SDL_Renderer* r, const HudData& d, const HudRow& row, float dx) {
@@ -1106,7 +1106,7 @@ void Hud::draw_pedals_row(SDL_Renderer* r, const HudData& d, const HudRow& row, 
     gauge(float(row.x + row.w), "accel_gage", d.throttle, SDL_Color{73, 204, 43, 255});
 }
 
-// Gran Turismo Concept's accel / brake monitor (the race AB monitor, 2002 Tokyo-Geneva Europe): two boxes of the
+// Gran Turismo Concept's accel / brake monitor (RaceABMonitor::vf5, 2002 Tokyo-Geneva Europe 0x196B48): two boxes of the
 // row's size 4 apart (brake, then accel), each at half-alpha black with a dark inner box 2 in, its sign at the bottom
 // (the inner width across, 16 / 22 of it high) and above it the pedal's bar from the bottom: solid up to the lower of
 // the pedal's value now and a frame ago, fading out up to the higher.
@@ -1133,7 +1133,7 @@ void Hud::draw_pedal_boxes(SDL_Renderer* r, const HudData& d, float x, float y, 
     box(x + w + 4, "replay_sign_accel", d.throttle, d.throttle_prev, SDL_Color{73, 204, 43, 255});
 }
 
-// Gran Turismo Concept's store monitor (the race capacity monitor, 2002 Tokyo-Geneva Europe), drawn for a car of
+// Gran Turismo Concept's store monitor (RaceCapacityMonitor::vf5, 2002 Tokyo-Geneva Europe 0x197CC0), drawn for a car of
 // drive layout 7 (the hybrid system's): a half-alpha black box of the row's size, a dark inner box 2 in, the
 // "meter_sign_dualnote" sign at its bottom in blue (0x80CC4600; the inner width across, 5 / 7 of it high) and above it
 // the store's share of its capacity as a bar from the bottom, blue (0, 0.2745, 0.8) while the flow display is at 0 or
@@ -1359,7 +1359,7 @@ void Hud::draw_split(SDL_Renderer* r, const HudData& d, const SDL_FRect& half, b
             bool shift_lit = d.shift_rpm > 0 && d.rpm > d.shift_rpm && (blink_ / 3) % 2 == 0;
             fill(r, X(x + w + 3, Right), Y(y - 4), 3 * kw, 3 * kh, shift_lit ? kRed : SDL_Color{60, 0, 0, 200});
         } else {
-            // The race battle tachometer: the pen (left, baseline) 5 below the bar's
+            // RaceBattleTachometer::vf6 (0x19D7F0): the pen (left, baseline) 5 below the bar's
             // top left corner.
             txt(x, y + 5, d.automatic ? ">" : "=", "meter#1", 1, kTransmission, text::HAlign::Left, Right, true);
         }

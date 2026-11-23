@@ -54,7 +54,7 @@ struct GtrcRecord {
     u32 mount = 0;
     float zoom_min = 1, zoom_max = 100;
     float dissolve = 0; // +0x64: seconds of dissolve at the cut to it (modes 0, 2, 3)
-    // +0x1C: the shot's camera flag 0x2000 (the designer camera, > 0.0): the heat haze
+    // +0x1C: the shot's camera flag 0x2000 (DesignerCamera::vf13 0x202344, > 0.0): the heat haze
     // lenses on courses with Env0 flag 0x20 (presentation §L6). 0.0 or 1.0 on the disc.
     float haze = 0;
     GtrcCurve zoom, pos[3], target[3];
@@ -256,7 +256,7 @@ public:
     // Mode 2: whether the followed car has a battle partner now (its on-board cuts need one).
     void set_pair(bool on) { pair_ = on; }
     // The aim's move from the last target (presentation §G4e): 1 - frames left / its frames, 1
-    // once over or with a pair; it scales the zoom spring's pull inwards.
+    // once over or with a pair (fn_001FF5F8); it scales the zoom spring's pull inwards.
     void set_aim_progress(float p) { aim_progress_ = std::clamp(p, 0.0f, 1.0f); }
     // Mode 2's on-board cut on the partner's car, in its first 3 s (180 frames).
     bool onboard_cut() const { return onboard_ && on_partner_ && onboard_time_ < kOnboardCutSeconds - 1e-6; }
@@ -293,7 +293,7 @@ public:
     // A GT3 zoom (1 / tan of the half horizontal angle over the 640-pixel frame) as our
     // vertical field of view: the 448-line frame (tan(half) = 0.7 / zoom) after GT3's
     // Scale(1, 1 / kYScale, 1) (presentation §G8), tan(half) = 0.7 x 1.098 / zoom.
-    static constexpr float kYScale = 1.098f; // program constant
+    static constexpr float kYScale = 1.098f; // program constant 0x34FCE8
     static float zoom_fovy(float zoom) { return 2.0f * std::atan(0.7f * kYScale / std::max(zoom, 1e-3f)); }
     // `s` = car's track distance (0..L), `lap` = its lap counter (lap_counter: 0 before the
     // start line), `car` = the point the camera aims at (the followed car, or between a pair),

@@ -116,7 +116,7 @@ struct CarSettings {
 // the tarmac rolling resistance and the aero drag.
 float showroom_top_speed(const CarSpec& spec);
 
-// [physics §6.7] The program's ratio generator for computed (adjustable racing) gearboxes, in its own EE
+// [physics §6.7] The program's ratio generator 0x1E28A8 for computed (adjustable racing) gearboxes, in its own EE
 // arithmetic. n = forward gears, rev_byte = the rev byte (rev limit / 100), final_word = the final-drive word (final drive
 // x 1000), driven tyre size codes (rim inches, width / 5 mm, aspect / 5 %), slider = design top speed / 10 km/h. out[0] =
 // reverse, out[1..n] = gears, all x 1000 (s16). `drive` / `awd_system` = drive type / AWD system B3: the caller passes the

@@ -42,8 +42,8 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         GarageCar* real = setting_real();
         GarageCar* work = setting_work();
         if (real && work) {
-            // Gran Turismo Concept's Custom page: the tire of each axle by its slider's position
-            // (the SETTING texts TIRE_SOFT, TIRE_NORMAL, TIRE_HARD; TIRE_DIRT on a dirt course, "----" for another tire).
+            // Gran Turismo Concept's Custom page: the tire of each axle by its slider's position (0x14BFE8 / 0x14C100:
+            // the SETTING texts TIRE_SOFT, TIRE_NORMAL, TIRE_HARD; TIRE_DIRT on a dirt course, "----" for another tire).
             if (c == "parts_tir_f_concept" || c == "parts_tir_r_concept") {
                 static const char* const kSlot[kConceptTirePositions] = {"TIRE_SOFT", "TIRE_NORMAL", "TIRE_HARD"};
                 const int pos = concept_tire_position(gt, *work, c[10] == 'r');
@@ -51,14 +51,14 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
                 const auto it = slot ? gt.data().setting_texts.find(slot) : gt.data().setting_texts.end();
                 return it != gt.data().setting_texts.end() ? it->second : std::string("----");
             }
-            // The top gear's speed at the rev limit (the gear chart's last line, in the speed unit, "%.2t%s";
+            // The top gear's speed at the rev limit (0x14DD88: the gear chart's last line, in the speed unit, "%.2t%s";
             // "----" for a continuously variable gearbox, whose final cannot be set either).
             if (c == "gear_max_speed") {
                 if (concept_cvt(gt, *work)) return std::string("----");
                 const sim::exact::GearChart g =
                     sim::exact::gear_chart(gt.db(), sim::exact::make_equipment(gt.db(), work->car, work->parts, work->settings));
                 const int top = std::clamp(int(g.n), 0, 7);
-                // m/s x 3.6, and x 0.62139 in miles per hour, x 100, cut to a whole number.
+                // m/s x 3.6, and x 0.62139 in miles per hour (0x334914 .. 0x33491C), x 100, cut to a whole number.
                 ee::F v = g.speed_hi[size_t(top)] * ee::F(3.6f);
                 if (gt.data().imperial()) v = v * ee::F(0.62139f);
                 const int hundredths = ee::to_int(v * ee::F(100.0f));
@@ -109,7 +109,7 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         return s->focus_car.empty() ? std::string() : car_name(gt, s->focus_car);
     }
     if (c == "goods_car_price") {
-        // Widget "<car>_price[N]" on the dealer pages: "Cr. %s", "----" for a car not
+        // Widget "<car>_price[N]" on the dealer pages (0x11D2F8): "Cr. %s", "----" for a car not
         // for sale (flag bit 0).
         std::string car = e.name.substr(0, e.name.rfind("_price"));
         if (const DealerCar* d = gt.data().catalog.dealer_car(car)) car = d->car;
@@ -118,7 +118,7 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
     }
     if (c == "car_buy_price") {
         if (starts(page, "hm/") && focus_g) return cr_num(gt.car_price(focus_g->car));
-        // The dealer car page: the price, "----" for a car not for sale (flag bit 0).
+        // The dealer car page (0x11CC98): the price, "----" for a car not for sale (flag bit 0).
         // After the Cr. icon one space in (the reference dealer car pages: " 17,000").
         if (s->focus_car.empty()) return std::string();
         return gt.car_flags(s->focus_car) & 1 ? std::string("----") : " " + cr_num(gt.car_price(s->focus_car));
@@ -149,7 +149,7 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         return gt.power_text(c == "car_previous_torque" ? s->part_power_before : gt.ride_power_ps(), " ");
     }
     if (c == "disp_ps_befor" || c == "disp_ps_after") {
-        // The part page's BEFORE / AFTER: "%d %s" ("457 HP"); AFTER is
+        // The part page's BEFORE / AFTER (0x11CE48, 0x11CF08): "%d %s" ("457 HP"); AFTER is
         // the power with the part fitted, "----" for a part the car cannot take.
         if (!ride) return std::string();
         if (c == "disp_ps_befor") return gt.power_text(gt.ride_power_ps(), " ");
@@ -191,7 +191,7 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         return std::string(buf);
     }
     if (starts(c, "race_prize_")) {
-        // The race information page's prizes: the place's prize, "0" included.
+        // The race information page's prizes (0x122C30 ..): the place's prize, "0" included.
         int p = std::atoi(c.c_str() + 11) - 1;
         auto r = gt.rules(s->race_code);
         if (!r || p < 0 || p > 5) return std::string();
@@ -275,7 +275,7 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
             if (auto spec = built()) return peak_text(built_peak(*spec));
             return std::string("-");
         }
-        // The built torque as the program gives it: the peak kgf.m x 10 through the power's unit conversion (x 0.98619
+        // The built torque as 0x1D96F8 gives it: the peak kgf.m x 10 through the power's unit conversion (x 0.98619
         // where the power is in HP, BHP or CV, whatever the torque's unit), truncated. The torque-to-weight ratio reads
         // it; the garage's torque row converts with the torque's own unit instead (below).
         auto shown_torque = [&](const PowerPeak& p) {
@@ -284,8 +284,8 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         // The weight and the ratios read the built spec's weight (+0x2A: the chassis weight with the weight
         // reduction and body parts) and the built peak, the same for the dealer's spec_* and the garage's
         // spec_*_real widgets (the menu car's spec carries no catalogue figures). The ratios are whole numbers
-        // printed with three decimals ("%.3t": "3.409"), no unit: power, int(weight / the
-        // shown power x 1000); torque, int(weight / the shown torque x 0.1 x 1000). EE floats.
+        // printed with three decimals ("%.3t": "3.409"), no unit: power 0x122878 / 0x122908, int(weight / the
+        // shown power x 1000); torque 0x122998 / 0x122A30, int(weight / the shown torque x 0.1 x 1000). EE floats.
         const bool p_w = c == "spec_p_w_ratio" || c == "spec_p_w_ratio_real";
         const bool t_w = c == "spec_t_w_ratio" || c == "spec_t_w_ratio_real";
         if (c == "spec_weight" || p_w || t_w || c == "spec_max_torque_real") {
@@ -293,7 +293,7 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
             if (!spec) return std::string("-");
             if (c == "spec_weight") return num("%.0f kg", spec->weight_kg);
             const PowerPeak peak = built_peak(*spec);
-            // A tenth of the torque, "%.1f%s/%drpm" with the torque's unit and the torque peak's rpm. GT3
+            // 0x1227E8: a tenth of the torque, "%.1f%s/%drpm" with the torque's unit and the torque peak's rpm. GT3
             // takes the tenths from shown_torque, which converts with the power's factor, so NTSC-U printed the
             // kgf.m figure as ft.lb ("45.0ft.lb" for 45.6 kgf.m; issue 377). Ours converts the peak x 10 with
             // the torque's own factor, as the dealer's catalog torque does (ft.lb: x 7.2329, else kgf.m as is),
@@ -301,8 +301,8 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
             if (c == "spec_max_torque_real") {
                 const ee::F x10 = ee::F(peak.kgfm) * ee::F::raw(0x41200000); // x 10
                 const bool ftlb = gt.data().units.torque_ftlb;
-                const s32 tenths = ee::to_int(ftlb ? x10 * ee::F::raw(0x40E773EB) : x10); // 7.2329
-                const ee::F t = ee::int_to_f(tenths) * ee::F::raw(0x3DCCCCCD); // 0.1
+                const s32 tenths = ee::to_int(ftlb ? x10 * ee::F::raw(0x40E773EB) : x10); // 0x350A24: 7.2329
+                const ee::F t = ee::int_to_f(tenths) * ee::F::raw(0x3DCCCCCD); // 0x34FAD8: 0.1
                 std::snprintf(buf, sizeof buf, "%.1f%s/%drpm", double(t.host()), torque_unit(gt.data().units),
                               peak.torque_rpm);
                 return std::string(buf);
@@ -310,7 +310,7 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
             const s32 by = p_w ? display_power(peak.ps, gt.data().units) : shown_torque(peak);
             if (by <= 0) return std::string("-");
             ee::F r = ee::int_to_f(spec->weight_kg) / ee::int_to_f(by);
-            if (t_w) r = r * ee::F::raw(0x3DCCCCCD);              // 0.1
+            if (t_w) r = r * ee::F::raw(0x3DCCCCCD);              // 0x34FADC: 0.1
             const s32 v = ee::to_int(r * ee::F::raw(0x447A0000)); // x 1000
             std::snprintf(buf, sizeof buf, "%d.%03d", v / 1000, v % 1000);
             return std::string(buf);
@@ -320,12 +320,12 @@ std::optional<std::string> widget_text(const std::string& page, const Element& e
         // The menu car's fitted engine (its part 6): the catalog torque and the displacement text.
         const u64 engine_id = garage_car ? focus_g->parts[6] : dc->parts[6];
         if (c == "spec_max_torque") {
-            // The fitted engine's catalog torque in the language's unit with two decimals and the record's
+            // 0x122720: the fitted engine's catalog torque in the language's unit with two decimals and the record's
             // rpm text ("489.66ft.lb/3700rpm"); none: a space.
             const std::string t = catalog_torque_text(gt.db(), engine_id, gt.data().units);
             return t.empty() ? std::string(" ") : t;
         }
-        // Both widgets: the fitted engine record's displacement text (+0x38, "2568cc").
+        // 0x1223F0, both widgets: the fitted engine record's displacement text (+0x38, "2568cc").
         if (c == "spec_displacement" || c == "spec_displacement_real") {
             const auto en = gt.db().engine(engine_id);
             return en ? en->displacement : std::string("-");

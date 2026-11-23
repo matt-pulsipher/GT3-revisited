@@ -14,7 +14,7 @@ F atan2(const Behaviour& b, F y, F x) {
     if (gt3_program(p)) return ee::atan2(y, x);
     const F zero = F::raw(0);
     if (x == zero && y == zero) return zero;
-    // pi / 2 and pi: GT3's literals 0x3FC90FDB / 0x40490FDB, 2002 Tokyo-Geneva's one lower.
+    // pi / 2 and pi: GT3's literals 0x3FC90FDB / 0x40490FDB (0x350AB0 / 0x350AB4), 2002 Tokyo-Geneva's one lower.
     const bool geneva = p >= Program::ConceptGenevaEu;
     const F half_pi = F::raw(geneva ? 0x3FC90FDA : 0x3FC90FDB), pi = F::raw(geneva ? 0x40490FDA : 0x40490FDB);
     int oct = 0;

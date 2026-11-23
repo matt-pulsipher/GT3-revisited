@@ -118,7 +118,7 @@ u64 race_inputs_hash() {
 
 TEST(race_inputs_platform_hash) { CHECK(race_inputs_hash() == 0xa4bcb16f366249ecull); }
 
-// A pedal curve from its bytes, as the original builds the steering wheel's throttle curve from type 1, 50.
+// A pedal curve from its bytes (0x1D91D8), as the original builds the steering wheel's throttle curve from type 1, 50.
 TEST(race_inputs_pedal_curve) {
     const ex::PedalCurve k = ex::pedal_curve_record(1, 50);
     CHECK(k.type == 1 && k.a.bits == 0xBF000001 && k.b.bits == 0xBE000001 && k.c.bits == 0x3EFFFFFF);
@@ -191,7 +191,7 @@ TEST(race_inputs_program_behaviour) {
     CHECK(refused && refused_rate && d.behaviour() == (ex::Behaviour{ex::Program::NtscU, 60}));
 }
 
-// The ranking and the gap matrices on hand-made races: more laps (less the lap base) ahead; at equal
+// The ranking (virtual 3) and the gap matrices (0x1ED458) on hand-made races: more laps (less the lap base) ahead; at equal
 // laps a car not finished ahead of a finished one (the program's order), else the greater progress, two finished cars by the
 // earlier crossing; free practice by the smaller best lap. The matrices: car i behind car j, the lap taken over when laps
 // and metres disagree, the laps clamped to -127 .. 127.

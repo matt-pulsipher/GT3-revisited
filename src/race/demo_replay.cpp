@@ -95,7 +95,7 @@ std::optional<DemoReplay> DemoReplay::parse(ByteSpan file, std::string* error) {
     u32 total = rd32(body, off), blen = rd32(body, off + 4);
     size_t padded = (size_t(blen) + 3) & ~size_t(3);
     if (blen < 8 || off + padded > body.size()) return fail("bad stream length");
-    // As GT3 plays it back: reading goes on past the block into the rest of the save (then zeros), where a
+    // As GT3 plays it back (0x1F4660): reading goes on past the block into the rest of the save (then zeros), where a
     // stream that runs out early reads the bytes that follow.
     BitReader bits(ByteSpan(body).subspan(off + 8));
     std::array<s32, 9> st{};

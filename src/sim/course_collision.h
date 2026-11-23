@@ -19,7 +19,7 @@ public:
     const collide::exact::WallPt* walls() const override { return walls_.data(); }
     void wall_candidates(F x0, F z0, F x1, F z1, int hint, std::vector<int>& out) const override;
     bool linked(int a, int b) const override;
-    // For one point (world x, z): the segment of the highest road triangle that strictly contains it, among
+    // 0x2280C8 for one point (world x, z): the segment of the highest road triangle that strictly contains it, among
     // the segment `hint` and its neighbours (every segment when hint < 0); -1 when there is none.
     int road_segment(F x, F z, int hint) const override;
 

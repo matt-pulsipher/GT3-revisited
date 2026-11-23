@@ -3,7 +3,9 @@
 What the engine does, system by system: state, step order, rules, equations,
 constants and parameter tables. The implementation notes in [docs/dev/](../dev/)
 say how the code is organized and how each system was tested; these pages
-describe the behavior itself.
+describe the behavior itself. The research they were written from, with the original
+program's addresses, is in [docs/specs/](../specs/); a change to how a system
+behaves updates both.
 
 | Page | Covers | Code |
 |---|---|---|

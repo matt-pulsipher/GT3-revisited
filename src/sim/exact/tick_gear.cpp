@@ -42,7 +42,7 @@ int gear_for_speed(const Car& c, F v) {
     if (c.p.d.kind == 1 && !gt3_program(c.behaviour.rule(Rule::Driveline))) return 1;
     const int n = c.p.d.gears;
     if (!(1 < n)) return n;
-    const F w = ee::int_to_f(s32(c.p.d.up_rpm) - 500) * folded(c.behaviour, kRpmToW.bits, 0x3DD6774E); // (Europe's)
+    const F w = ee::int_to_f(s32(c.p.d.up_rpm) - 500) * folded(c.behaviour, kRpmToW.bits, 0x3DD6774E); // (Europe 0x1F0980's)
     for (int k = 1; k < n; ++k)
         if (v < w / c.p.d.gear_speed[size_t(k)]) return k;
     return n;
@@ -73,7 +73,7 @@ int shift_auto(Car& c, const GearSettings& s, bool kickdown) {
     if (c.shift_lockout != 0) return lockout_tick(c, c.shift_req != 0);
     if (c.reverse_req != 0) return g != 0 ? 0 : -1;
     const F v = c.speed;
-    // (2002 Tokyo-Geneva's constants folded toward zero: Europe)
+    // (2002 Tokyo-Geneva's constants folded toward zero: Europe 0x1F0B18)
     const F kKmh1 = folded(c.behaviour, sim::exact::kKmh1.bits, 0x3E8E38E3), kRpmToW = folded(c.behaviour, sim::exact::kRpmToW.bits, 0x3DD6774E);
     if (kKmh1 < v && g == 0) return 1;
     if (!(c.throttle == F())) {
@@ -188,7 +188,7 @@ int gear_decision(Car& c, const GearSettings& s) {
 }
 
 // The later builds' stepless gearbox of kind 1 (D +0x12; their Rule::Driveline's, 0 on GT3's discs) has no gear step
-// (Concept 2001 Tokyo in its place): forward or reverse alone, the clutch slipping in again after either; the
+// (Concept 2001 Tokyo 0x1DE4D8 in its place): forward or reverse alone, the clutch slipping in again after either; the
 // shift lock-out is not counted down.
 void stepless_gear(Car& c) {
     const F kKmh1 = folded(c.behaviour, sim::exact::kKmh1.bits, 0x3E8E38E3); // (2002 Tokyo-Geneva's)

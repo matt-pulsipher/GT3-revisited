@@ -56,11 +56,11 @@ struct PartOffer {
 };
 std::optional<PartOffer> find_part(const data::CarDatabase& db, const std::string& car_label, int goods);
 
-// Whether the car was built with a turbo: its own turbine record's +0x11. A turbo
+// Whether the car was built with a turbo: its own turbine record's +0x11 (0x234080). A turbo
 // kit fitted later does not count.
 bool stock_turbo(const data::CarDatabase& db, const data::Car& car);
 
-// The goods a car comes with in part slot `slot`, -1 for none: its stock part's
+// The goods a car comes with in part slot `slot` (0x237E18), -1 for none: its stock part's
 // stage, stage 0 when the slot holds no part. So an upgrade can always be swapped back, except
 // that a racing modification needs a record, a car built without a turbo has no intercooler
 // goods and an FF, MR or RR car no driveshaft goods.

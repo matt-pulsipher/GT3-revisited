@@ -1,6 +1,6 @@
-// The course's single-point queries; see course_query.h. The ground query with its triangle tests
-// (the inside test, the height), the scalar interpolation, the cell lookup (RoadCells,
-// course_ground.h) and the neighbour test; the race progress query with the checkpoint test.
+// The course's single-point queries; see course_query.h. The ground query (0x227D78) with its triangle tests (0x227598
+// the inside test, 0x227670 the height), the scalar interpolation 0x227790, the cell lookup 0x2274A0 (RoadCells,
+// course_ground.h) and the neighbour test 0x227758; the race progress query (0x227AA0) with the checkpoint test 0x227BA8.
 
 #include "sim/exact/course_query.h"
 
@@ -39,7 +39,7 @@ CourseQuery::CourseQuery(const course::Road& road)
 }
 
 void CourseQuery::ground(Ground& g, u16* material) const {
-    // its own record: the scalars start at 1, the bytes at 0.
+    // 0x18FA80's own record: the scalars start at 1, the bytes at 0.
     g.attr_a = k1, g.attr_b = k1;
     g.material = 0, g.flags = 0, g.x32 = 0;
     g.height = g.h;
@@ -58,7 +58,7 @@ void CourseQuery::ground(Ground& g, u16* material) const {
     for (u32 k = cell_group_begin_[size_t(c)]; k < cell_group_begin_[size_t(c) + 1]; ++k) {
         const course::RoadGridGroup& grp = groups_[k];
         const int seg = grp.segment;
-        if (seg != hint && hint >= 0) { // on the hint's neighbour list (a hint past the road's segments: none)
+        if (seg != hint && hint >= 0) { // 0x227758 on the hint's neighbour list (a hint past the road's segments: none)
             bool found = false;
             if (size_t(hint) < segs_.size())
                 for (u16 n : segs_[size_t(hint)].neighbours) found = found || n == seg;
@@ -70,7 +70,7 @@ void CourseQuery::ground(Ground& g, u16* material) const {
         for (u32 r = grp.begin; r < grp.end; ++r) {
             const Tri& t = s.t[refs_[r].triangle];
             const Vertex &a = s.v[t.a], &b = s.v[t.b], &cv = s.v[t.c];
-            // The point inside or on the edges (the three cross products all <= 0 or all >= 0).
+            // 0x227598: the point inside or on the edges (the three cross products all <= 0 or all >= 0).
             const F az = a.z - z, ax = a.x - x, bz = b.z - z, bx = b.x - x;
             const F e0 = (ax * bz) - (bx * az);
             const F cx = cv.x - x, cz = cv.z - z;
@@ -78,7 +78,7 @@ void CourseQuery::ground(Ground& g, u16* material) const {
             const F e1 = (bx * cz) - (cx * bz);
             const bool inside = (e0 <= k0 && e1 <= k0 && e2 <= k0) || (k0 <= e0 && k0 <= e1 && k0 <= e2);
             if (!inside) continue;
-            // The plane's height at (x, z), clamped to the corners' heights.
+            // 0x227670: the plane's height at (x, z), clamped to the corners' heights.
             F lo = ee::min(a.y, b.y), hi = ee::max(a.y, b.y);
             lo = ee::min(cv.y, lo), hi = ee::max(cv.y, hi);
             const F ux = b.x - a.x, uz = b.z - a.z, vx = cv.x - a.x, vz = cv.z - a.z;
@@ -108,7 +108,7 @@ void CourseQuery::ground(Ground& g, u16* material) const {
     if (material) *material = best->material;
     const Vertex &a = best_seg->v[best->a], &b = best_seg->v[best->b], &cv = best_seg->v[best->c];
     {
-        // The point's barycentric weights times the corners' scalars, clamped to the corners' range.
+        // 0x227790: the point's barycentric weights times the corners' scalars, clamped to the corners' range.
         const F p_x = x, p_z = z;
         F f8 = a.x * b.z;
         const F f17 = b.x - a.x;
@@ -167,7 +167,7 @@ void CourseQuery::ground(Ground& g, u16* material) const {
     g.plane_d = -(((g.normal.x * a.x) + (g.normal.y * a.y)) + (g.normal.z * a.z));
 }
 
-// The point between one of segment seg's checkpoints and the next (on the front side of the first, the back
+// 0x227BA8: the point between one of segment seg's checkpoints and the next (on the front side of the first, the back
 // side of the next and between their end lines): the distance there, interpolated by the planes.
 bool CourseQuery::in_checkpoints(F x, F z, int seg, F& out) const {
     const Segment& s = segs_[size_t(seg)];

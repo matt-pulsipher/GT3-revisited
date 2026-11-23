@@ -226,7 +226,7 @@ public:
         std::vector<std::string> cars;    // the chosen class's open cars
         int car = 0, paint = 0, transmission = 0, tire_mode = 0, assist = 0;
         int age = 0;                      // frames since the current car / class appeared
-        float scroll = 0, pulse = 1;      // the row's mini cursor
+        float scroll = 0, pulse = 1;      // the row's MiniCursor
         float paint_pos = 0;
         MenuKeys prev = 0;                // key repeat
         int repeat = 0;

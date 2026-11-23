@@ -7,14 +7,14 @@ namespace gt3r::race {
 
 namespace {
 // The disc's point is 10 x the sun direction from the camera and its size 10 x Env0 +0x9D4
-// (f32 10.0); its colour is RGB x gain x 0.5.
+// (fn_001A88C0, f32 10.0 at 0x1A88F4); its colour is RGB x gain x 0.5 (fn_00247DF0).
 constexpr float kDiscDistance = 10.0f;
 } // namespace
 
 scene::Model SunDisc::build(const SunParams& p) {
     scene::Model m;
     m.name = "sun_disc";
-    // The program draws nothing for a size x 10 <= 0 (Super Speedway's 0, the sunless courses).
+    // fn_00248538 draws nothing for a size x 10 <= 0 (Super Speedway's 0, the sunless courses).
     if (!p.enabled || !(p.disc_size * kDiscDistance > 0)) return m;
     const float g = p.disc_gain * 0.5f;
     const std::array<float, 3> col{p.rgb[0] * g, p.rgb[1] * g, p.rgb[2] * g};
@@ -25,7 +25,7 @@ scene::Model SunDisc::build(const SunParams& p) {
         scene::Vertex sv;
         sv.pos[0] = v.x, sv.pos[1] = v.y, sv.pos[2] = v.z;
         sv.normal[2] = 1;
-        // Full visibility: the program passes the 0xFF words, not an occlusion result.
+        // Full visibility: fn_00247DF0 passes the 0xFF words at 0x344AB0, not an occlusion result.
         const std::array<u8, 4> c = Flare::gs_color(v, col, 1.0f);
         sv.color = u32(c[0]) | u32(c[1]) << 8 | u32(c[2]) << 16 | u32(c[3]) << 24;
         mesh.vertices.push_back(sv);
@@ -33,7 +33,7 @@ scene::Model SunDisc::build(const SunParams& p) {
     for (int t : disc.tris) mesh.indices.push_back(u32(t));
     scene::Primitive prim;
     prim.index_count = u32(mesh.indices.size());
-    // ALPHA 0x48 (Cs As + Cd), depth test and write off, alpha test off, fog off.
+    // ALPHA 0x48 (Cs As + Cd), depth test and write off, alpha test off, fog off (fn_00248538).
     prim.flags = scene::kAdditive | scene::kUnlit | scene::kNoDepthWrite | scene::kDoubleSided;
     mesh.primitives.push_back(prim);
     m.meshes.push_back(std::move(mesh));
@@ -52,7 +52,7 @@ void SunDisc::load(render::GpuContext& ctx, const SunParams& p) {
 
 render::Mat4 SunDisc::transform(const render::Vec3& eye, const render::Vec3& sun_dir, float disc_size,
                                 const render::Vec3& right, const render::Vec3& up) {
-    // The camera's rotation, translation cleared, Translate(10 d), the rotation
+    // fn_00248538: the camera's rotation, translation cleared, Translate(10 d), the rotation
     // reset to identity (screen-aligned in eye space), Scale(10 x size).
     const float s = kDiscDistance * disc_size;
     const render::Vec3 back = render::cross(right, up);

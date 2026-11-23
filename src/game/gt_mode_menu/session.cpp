@@ -204,7 +204,7 @@ bool begin_setting(const std::string& event) {
     s->setting_event = event;
     s->setting_entry.clear();
     s->setting_committed = false;
-    // Gran Turismo Concept: an arcade race's tires are fixed when its course is a dirt course.
+    // Gran Turismo Concept (0x155F10): an arcade race's tires are fixed when its course is a dirt course.
     s->setting_dirt = false;
     if (concept_active())
         if (const std::optional<GameRequest>& rq = menu_state().last_request)

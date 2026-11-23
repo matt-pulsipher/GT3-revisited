@@ -1,7 +1,7 @@
 #pragma once
 
-// GT3's race pause windows (race menu select window and its PauseMenu /
-// pause menu with retry / replay pause menu builders), drawn from the disc's
+// GT3's race pause windows (RaceMenuSelectWindow and its PauseMenu /
+// PauseMenuWithRetry / ReplayPauseMenu builders), drawn from the disc's
 // menu/<LANG>/pause1..3.pmb: a row of image buttons from the page's hidden
 // layer (`m_<name>` in orange, `m_<name>_sel` in light orange over the
 // selected one).

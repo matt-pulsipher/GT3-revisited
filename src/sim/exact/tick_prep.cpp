@@ -64,7 +64,7 @@ void step_x51d(Car& c) {
 
 void step_length(Car& c) {
     const bool pal = pal_rate(c); // PAL: 50 steps a second
-    // 1/60 (PAL 1/50; 2002 Tokyo-Geneva Asia's 1/60 one unit lower, Asia)
+    // 1/60 (PAL 1/50; 2002 Tokyo-Geneva Asia's 1/60 one unit lower, Asia 0x1E37D8)
     c.dt = c.time_scale * (pal ? F::raw(0x3CA3D70A) : folded(c.behaviour, 0x3C888889, 0x3C888888));
     c.inv_dt = F::raw(pal ? 0x42480000 : 0x42700000) / c.time_scale; // 60 (PAL 50)
 }
@@ -98,7 +98,7 @@ bool wear_grip(Car& c, const WearParams& cp) {
         } else if (cp.knee2 <= x) {
             const F t = (x - cp.knee2) / (cp.max - cp.knee2);
             w.wear_grip = one_minus(c.behaviour, cp.loss2, t * (cp.max_loss - cp.loss2));
-            w.wear_level = kOne <= t ? s8(0x7F) : low_byte(ee::to_int(t * folded(c.behaviour, 0x427F999A, 0x427F9999)) + 0x40); // 63.9 (Europe's)
+            w.wear_level = kOne <= t ? s8(0x7F) : low_byte(ee::to_int(t * folded(c.behaviour, 0x427F999A, 0x427F9999)) + 0x40); // 63.9 (Europe 0x1E1200's)
         } else if (cp.knee1 <= x) {
             const F t = (x - cp.knee1) / (cp.knee2 - cp.knee1);
             w.wear_grip = one_minus(c.behaviour, cp.loss1, t * (cp.loss2 - cp.loss1));
@@ -169,7 +169,7 @@ void slip_angles(Car& c) {
 }
 
 void prep(Car& c, const PrepInput& in) {
-    c.race_hold = in.start_count > 0 ? 1 : 0;
+    c.race_hold = in.start_count > 0 ? 1 : 0; // 0x1EAAE8
     if (c.hold) --c.hold;
     step_x51d(c);
     step_length(c);

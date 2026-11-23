@@ -68,7 +68,7 @@ bool exact_exit_finish(RaceField& f, bool top_speed_test);
 // plays, for a live field or another field.
 std::optional<bool> exact_playback_matches(const RaceField& f);
 // The race's ghost car (a car flagged a ghost, F +0x3EA: ExactFieldOptions::ghost, the free run's), its state between the
-// last two steps at `alpha` and its geometry; false when the race has none or it is not drawn now (the draw mode: not
+// last two steps at `alpha` and its geometry; false when the race has none or it is not drawn now (0x1E0668's draw mode: not
 // while the computer drives it, the flying start's run-up).
 bool exact_ghost(const RaceField& f, float alpha, sim::VehicleState& state, const sim::VehicleSetup** setup = nullptr);
 // What the race display shows of a car (the Analyzer's logger display: track A's car 0, track B's car 1 of an analysis
@@ -90,13 +90,13 @@ bool exact_car_display(const RaceField& f, int car, float alpha, CarDisplay& out
 // (A pad-read step's frame comes back from its recorded inputs: the screen records them from exact_frames_of.)
 sim::exact::PadFrame exact_inputs_frame(const sim::ControlInputs& in, bool reverse);
 // A hit of `car` the collision step does not see (kind 2: the course's rigid bodies, the screen's pylons; licence tests and
-// time trials fail on it): the conductor's hit rule (hit_course_out) before the next step, kept in the record. False for
+// time trials fail on it): the conductor's virtual 41 (hit_course_out) before the next step, kept in the record. False for
 // another field.
 bool exact_report_hit(RaceField& f, int car, int kind);
 // The solo modes' recorders (sim/exact/race_flow.h SoloRecorders: the player's recording, the ghost's playback, the free run's
 // lap recording and best lap) as the race's steps have left them: nullptr for another field or race mode.
 const sim::exact::SoloRecorders* exact_solo_recorders(const RaceField& f);
-// The free run's best lap becomes the ghost (1, 0: the quick menu's "Update Ghost?"): false for another field.
+// The free run's best lap becomes the ghost (0x17AAD8 (1, 0): the quick menu's "Update Ghost?"): false for another field.
 bool exact_best_lap_to_ghost(RaceField& f);
 // LOAD GHOST in a free run: another free run's best lap becomes the live run's ghost (SoloRecorders::ghost_from_best; the
 // visit's recorders take it from the run as it ends): false for another field, or when `from` has no best lap.
@@ -106,7 +106,7 @@ bool exact_ghost_from_best(RaceField& f, const sim::exact::SoloRecorders& from);
 bool exact_logger_jump(RaceField& f, int k, u32 step);
 // The field is an Analyzer race (ExactFieldOptions::analysis, built).
 bool exact_analysis_field(const RaceField& f);
-// Car i's input device's frame (race input device +0xFC: its recorder's frames recorded or played; 0 without the solo recorders).
+// Car i's input device's frame (RaceInput +0xFC: its recorder's frames recorded or played; 0 without the solo recorders).
 u32 exact_device_frame(const RaceField& f, int i);
 // The data logger's recording stopped from the next step (the Analyzer's pass is over: race info + 0x74 cleared).
 void exact_logger_record(RaceField& f, bool on);

@@ -72,7 +72,7 @@ struct ProgramFiles {
     // Concept when the game configs are named concept*, else GT3.
     GameKind game() const;
     // The game config the program loads in `lang`. A program naming one loads that one. One
-    // naming several picks by the language (GT3, Concept Tokyo: the
+    // naming several picks by the language (GT3 PAL 0x21ED88, Concept Tokyo 0x220978: the
     // same test): language 0 (JP) the plain name, 1 (US) "<name>_us", any other "<name>_eu"
     // (Concept: Korean "<name>_kr"); the plain one when it does not name that. Empty when it
     // names none.
@@ -162,12 +162,13 @@ std::optional<bool> speed_unit();
 std::optional<bool> parse_speed_unit(std::string_view value);
 // Money as the game reads its figures (prices, prizes, the game config's sums): x100 in
 // Japanese ("initial" 15,000 is a new game's 1,500,000 Cr.), else as stored. Program
-// constant: every reader multiplies by 100 when the language test (language == 0)
-// holds: the game config, car prices, part
-// prices, race prizes, championship bonuses
-// (the PAL and NTSC-J programs have the same code).
+// constant: every reader multiplies by 100 when the language test 0x231680 (language == 0;
+// PAL 0x232700, NTSC-J 0x22E030) holds: the game config 0x21DCE0, car prices 0x237BC0, part
+// prices 0x237C80, race prizes 0x238950, championship bonuses 0x238BC0 / 0x133388 (NTSC-U
+// addresses; the PAL and NTSC-J programs have the same code).
 int money_scale(Language lang);
 // One of the European languages (BR, FR, GR, IT, SP): the program's "not 0 and not 1" test
+// (0x2316B0; PAL 0x232730).
 bool is_european(Language lang);
 
 } // namespace gt3r

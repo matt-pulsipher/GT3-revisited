@@ -9,7 +9,10 @@ may go into the repository keep it that way, so please read them first.
 
 1. **Never commit the game program**: not the program or any part of it,
    including listings of its code. This applies to code, docs, comments,
-   issues and pull requests.
+   issues and pull requests. Code that finds a routine keeps hashes of its
+   masked code (`src/sim/exact/program_locate.h`), never its instruction
+   words; `python3 -I tools/check_program_code.py . <your disc.iso>` checks
+   a checkout.
 2. **Never commit game data**: no files from the disc, extracted assets,
    textures, sounds, hex dumps of assets, screenshots of game textures used
    as fixtures, or test files cut from the disc. Tests that need game data
@@ -20,8 +23,11 @@ may go into the repository keep it that way, so please read them first.
    observed behaviour are fine to record. File formats go in
    [docs/FORMATS.md](docs/FORMATS.md) and [docs/formats/](docs/formats/);
    how a system behaves goes in [docs/behaviour/](docs/behaviour/), and how
-   ours implements it in the notes in [docs/dev/](docs/dev/). Code comments
-   cite behaviour sections as `<page> §n` (for example `physics §4.2`).
+   ours implements it in the notes in [docs/dev/](docs/dev/). The research
+   behind them, with the original program's addresses, is in
+   [docs/specs/](docs/specs/) ([docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md)
+   has the method). Code comments cite behaviour sections as `<page> §n`
+   (for example `physics §4.2`).
 4. Anything you extract from your own disc while working (`gt3tool extract`,
    screenshots, logs) stays outside the repository.
 

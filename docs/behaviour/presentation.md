@@ -2505,7 +2505,7 @@ A course shot does not hold the car dead centre. Every 60 Hz frame of a course s
   -0.x the next as the camera aims across level): shown frames at another rate or
   unevenly paced (a phone missing refreshes) see the same camera as an even 60 Hz
   (issue 402); the raw angles use
-  the host's atan2 (the program's code is not ported), the rest the EE's arithmetic.
+  the host's atan2 (the program's 0x245C10 is not ported), the rest the EE's arithmetic.
 
 ### §H7 Fallback TV cameras
 

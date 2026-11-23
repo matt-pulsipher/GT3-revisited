@@ -1,8 +1,8 @@
 #pragma once
 
 // GT3's double precision: the EE has no double FPU, so a `double` in the game's C is libgcc's software
-// floating point (GCC 2.95 fp-bit, linked into the program), bit for bit: __adddf3, __subdf3, __muldf3,
-// __extendsfdf2 and __truncdfsf2. Its rules differ from IEEE hardware and from the EE's
+// floating point (GCC 2.95 fp-bit, linked into the program), bit for bit: __adddf3 (0x2793C0), __subdf3 (0x279418), __muldf3
+// (0x279480), __extendsfdf2 (0x27AFA0) and __truncdfsf2 (0x279C50). Its rules differ from IEEE hardware and from the EE's
 // single FPU (ee_float.h):
 //  - an exponent-0 input reads as signed zero (no denormals), also from a single;
 //  - exponent 255 (single) / 2047 (double) is Inf or NaN, as in IEEE, so the EE's largest values (0x7F800000 and up) are

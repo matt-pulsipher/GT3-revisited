@@ -28,7 +28,7 @@ TextDrawer make_game_font_drawer(text::GameFonts& fonts) {
         int col = anchor % 3, row = anchor / 3;
         const SDL_FRect& b = req.box;
         float x = col == 0 ? b.x : col == 1 ? b.x + b.w / 2 : b.x + b.w;
-        // An item's text: the left / right pen half the font's size (its byte 0x0C,
+        // An item's text (0x1BA090): the left / right pen half the font's size (its byte 0x0C,
         // whatever the spec's scale) in from the box's side.
         if (req.font_inset && col != 1) x += (col == 0 ? 0.5f : -0.5f) * f->data().size * req.scale_x;
         float y = row == 0 ? b.y : row == 1 ? b.y + b.h / 2 : b.y + b.h;

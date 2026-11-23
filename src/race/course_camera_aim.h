@@ -8,8 +8,8 @@
 // little high (the car sits below the middle) and bobs while the camera pans. The zoom moves
 // with a spring that zooms out faster than in.
 //
-// All of it steps at 60 Hz, in degrees, in the EE's order of operations (the designer camera
-// and its helpers).
+// All of it steps at 60 Hz, in degrees, in the EE's order of operations (DesignerCamera::vf13
+// 0x201830 and its helpers 0x206260..0x206F0C).
 
 #include "base/game_random.h"
 #include "render/math3d.h"
@@ -19,7 +19,7 @@
 
 namespace gt3r::race {
 
-// The operator's random spring (reset, step, pick, value):
+// The operator's random spring (0x206CC0 reset, 0x206E68 step, 0x206D08 pick, 0x206E50 value):
 // a value chasing random targets in -76.8 .. 128 (shown / 128).
 struct OperatorNoise {
     float x = 0, target = 0, v = 0;
@@ -31,7 +31,7 @@ struct OperatorNoise {
     float value() const { return x * (1.0f / 128.0f); }
 };
 
-// One angle's filter (reset, step, the lead).
+// One angle's filter (0x206710 reset, 0x206808 step, 0x2065A8 the lead).
 struct AimFilter {
     float out = 0;     // the angle shown (0 .. 360)
     float v = 0;       // its speed (degrees per second, |v| <= 250)
@@ -53,7 +53,7 @@ struct AimFilter {
     void push(float theta);
 };
 
-// The zoom's spring (reset, step): towards `want`, zooming in at most 10 a
+// The zoom's spring (0x206B30 reset, 0x206B40 step): towards `want`, zooming in at most 10 a
 // second (scaled by `progress`, the aim's move between cars), out at most 30.
 struct ZoomSpring {
     float x = 1, want = 1, v = 0;

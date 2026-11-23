@@ -17,7 +17,7 @@ s32 cap127(F x) {
     return n < 0x80 ? n : 0x7F;
 }
 
-// Surface index -> effect class (the jump table on surface - 2): loose 2..5 -> 1, 6 and 12..14 -> 2, else 0.
+// Surface index -> effect class (the jump table at 0x33C420 on surface - 2): loose 2..5 -> 1, 6 and 12..14 -> 2, else 0.
 int effect_class(u8 surface) {
     const u32 k = u32(surface) - 2;
     if (k >= 13) return 0;
@@ -28,8 +28,8 @@ int effect_class(u8 surface) {
 
 } // namespace
 
-// The PAL program's routines leave a car the AI drives (control source 1 or 2, or a driver kind) at no vibration and a centred
-// wheel force; NTSC-U computes them for every car and only its pad writer skips those cars.
+// PAL's 0x1DF2B0 / 0x1E0068 leave a car the AI drives (control source 1 or 2, or a driver kind) at no vibration and a centred
+// wheel force; NTSC-U computes them for every car and only its pad writer 0x1E0618 skips those cars.
 static bool pal_ai_driven(const Car& c, Rule r) { return pal_rules(c, r) && (u32(u8(c.control)) - 1 < 2 || c.driver_kind != 0); }
 
 void pad_rumble(Car& c) {
@@ -37,18 +37,18 @@ void pad_rumble(Car& c) {
         c.x16d4 = 0, c.rumble = 0;
         return;
     }
-    // (2002 Tokyo-Geneva's constants one unit lower: Europe)
-    const F cap = folded(c.behaviour, 0x3EAA7EFA, 0x3EAA7EF9);      // 0.333
-    const F fx_scale = folded(c.behaviour, 0x46992000, 0x46991FFF); // 19600
+    // (2002 Tokyo-Geneva's constants one unit lower: Europe 0x1ED660)
+    const F cap = folded(c.behaviour, 0x3EAA7EFA, 0x3EAA7EF9);      // 0x3502B4: 0.333
+    const F fx_scale = folded(c.behaviour, 0x46992000, 0x46991FFF); // 0x3502B8: 19600
     F a = c.w[0].slip_ratio * c.w[0].slip_ratio;
     F b = c.w[1].slip_ratio * c.w[1].slip_ratio;
     const F drive = c.w[0].fx_drive + c.w[1].fx_drive;
     a = a + b;
     a = a * kHalf;
-    F d = a + folded(c.behaviour, 0x3DCCCCCD, 0x3DCCCCCC); // 0.1
+    F d = a + folded(c.behaviour, 0x3DCCCCCD, 0x3DCCCCCC); // 0x3502AC: 0.1
     d = d * drive;
     if (d < kZero) d = -d;
-    d = d * folded(c.behaviour, 0x3A2A7EFA, 0x3A2A7EF9);
+    d = d * folded(c.behaviour, 0x3A2A7EFA, 0x3A2A7EF9); // 0x3502B0
     if (cap < d) d = cap;
     F br = c.w[0].fx_brake + c.w[1].fx_brake;
     br = br / fx_scale;
@@ -67,7 +67,7 @@ void pad_rumble(Car& c) {
             bump = bump + (kOne < x ? kOne : x);
         }
         if (i < 2 && w.surface == 1) {
-            F k = w.load / folded(c.behaviour, 0x4537C000, 0x4537BFFF); // 2940
+            F k = w.load / folded(c.behaviour, 0x4537C000, 0x4537BFFF); // 0x3502BC: 2940
             const F v = c.speed * F::raw(0x3C800000);
             k = k * v;
             if (k < kZero) k = -k;
@@ -176,9 +176,9 @@ void steer_force(Car& c, const SteerFeel& s) {
         for (size_t k = 0; k < 3; ++k) dot = dot + d[k] * n[k];
         align = align + dot * c.w[i].load;
     }
-    // (2002 Tokyo-Geneva's constants: Europe)
-    F k = c.p.susp[0].k + folded(c.behaviour, 0x473F6800, 0x473F67FF); // 49000
-    k = k / folded(c.behaviour, 0x483F6800, 0x483F67FF);              // 196000
+    // (2002 Tokyo-Geneva's constants: Europe 0x1ED9F8)
+    F k = c.p.susp[0].k + folded(c.behaviour, 0x473F6800, 0x473F67FF); // 0x3502F4: 49000
+    k = k / folded(c.behaviour, 0x483F6800, 0x483F67FF);              // 0x3502F8: 196000
     F h = c.vel.x * c.vel.x;
     h = h + c.vel.y * c.vel.y;
     align = align * k;
@@ -186,12 +186,12 @@ void steer_force(Car& c, const SteerFeel& s) {
     t = t / c.p.xe54;
     out = out + t;
     h = ee::sqrt(h);
-    if (h < folded(c.behaviour, 0x3F0E38E4, 0x3F0E38E3)) { // 2 km/h
+    if (h < folded(c.behaviour, 0x3F0E38E4, 0x3F0E38E3)) { // 0x3502FC: 2 km/h
         F st2 = c.steer_cmd;
         const F hi = folded(c.behaviour, 0x3DB2B8C2, 0x3DB2B8C1), lo = folded(c.behaviour, 0xBDB2B8C2, 0xBDB2B8C1);
-        if (hi < st2) st2 = hi;                                        // 5 degrees
-        else if (st2 < lo) st2 = lo;
-        out = st2 * folded(c.behaviour, 0x40B758B4, 0x40B758B5);       // 1 / 10 degrees
+        if (hi < st2) st2 = hi;                                        // 0x350300: 5 degrees
+        else if (st2 < lo) st2 = lo;                                   // 0x350304
+        out = st2 * folded(c.behaviour, 0x40B758B4, 0x40B758B5);       // 0x350308: 1 / 10 degrees
     }
     if (kOne < out) out = kOne;
     else if (out < kMinusOne) out = kMinusOne;
@@ -242,14 +242,14 @@ void tyre_effects(Car& c, const EffectTables& t, u8 course_kind) {
             if (kZero < ramp) p = p + ramp * e1.g;
             w.skid_pitch = p;
         } else {
-            F k = w.load / folded(c.behaviour, 0x45192000, 0x45191FFF); // 2450 (Europe's)
+            F k = w.load / folded(c.behaviour, 0x45192000, 0x45191FFF); // 0x350298: 2450 (Europe 0x1ECE80's)
             k = k - kQuarter;
             if (k < kZero) k = kZero;
             else if (kOne < k) k = kOne;
             F rim = w.rim_speed;
             if (rim < kZero) rim = -w.rim_speed;
-            F e = rim - folded(c.behaviour, 0x3FB1C71D, 0x3FB1C71B); // 5 km/h
-            e = e * folded(c.behaviour, 0x3E1374BC, 0x3E1374BD);
+            F e = rim - folded(c.behaviour, 0x3FB1C71D, 0x3FB1C71B); // 0x35029C: 5 km/h
+            e = e * folded(c.behaviour, 0x3E1374BC, 0x3E1374BD);     // 0x3502A0
             if (e < kZero) e = kZero;
             else if (kOne < e) e = kOne;
             e = e * k;
@@ -270,13 +270,13 @@ void tyre_effects(Car& c, const EffectTables& t, u8 course_kind) {
         w.smoke_emit = m;
         if (cls != 0) dirt = dirt + m;
     }
-    const u8 kind = course_kind == 0xFF ? 0 : course_kind;
+    const u8 kind = course_kind == 0xFF ? 0 : course_kind; // 0x1F2F68
     if (kind == 0) dirt = dirt * kEight;
-    F add = dirt * folded(c.behaviour, 0x3A83126F, 0x3A83126E); // 0.001
+    F add = dirt * folded(c.behaviour, 0x3A83126F, 0x3A83126E); // 0x3502A4: 0.001
     add = add * c.dt;
-    // Condition word 3 += add, at most 0.8.
+    // 0x1D9F38: condition word 3 += add, at most 0.8.
     c.dirt = c.dirt + add;
-    if (const F cap = folded(c.behaviour, 0x3F4CCCCD, 0x3F4CCCCC); cap < c.dirt) c.dirt = cap; // (Europe's)
+    if (const F cap = folded(c.behaviour, 0x3F4CCCCD, 0x3F4CCCCC); cap < c.dirt) c.dirt = cap; // 0x35013C (Europe 0x1D5618's)
 }
 
 void phase12_stub(Car&) {}
@@ -308,7 +308,7 @@ void engine_sound(Car& c, const std::array<F, 4>& scales) {
 
 int draw_mode(const Car& c, u32 x70, u32 ghost_switch) {
     if (c.ghost == 0) return 3;
-    if ((x70 == 0 || ntsc_j_rules(c, Rule::DrawMode)) && ghost_switch == 0) return 1; // the NTSC-J program: no +0x70 test
+    if ((x70 == 0 || ntsc_j_rules(c, Rule::DrawMode)) && ghost_switch == 0) return 1; // NTSC-J's 0x1DE040: no +0x70 test
     if (c.control == 1 || c.driver_kind == 1) return 0;
     return 2;
 }

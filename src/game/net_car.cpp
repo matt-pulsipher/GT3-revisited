@@ -624,7 +624,7 @@ const char* power_unit(const Units& units) { return units.power; }
 
 int display_torque(int kgfm_x100, const Units& units) {
     const ee::F t = ee::int_to_f(kgfm_x100);
-    return ee::to_int(units.torque_ftlb ? t * ee::F::raw(0x40E773EB) : t); // 7.2329
+    return ee::to_int(units.torque_ftlb ? t * ee::F::raw(0x40E773EB) : t); // 0x350A24: 7.2329
 }
 
 const char* torque_unit(const Units& units) { return units.torque_ftlb ? "ft.lb" : "kgf.m"; }

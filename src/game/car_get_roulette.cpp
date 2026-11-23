@@ -28,7 +28,7 @@ void CarGetRoulette::start(int count, int won, const std::array<Size, kMaxCars>&
     *this = CarGetRoulette{};
     n = count < 1 ? 1 : count > kMaxCars ? kMaxCars : count;
     target = won >= 0 && won < n ? won : 0;
-    // The carousel: the spacing from the longest pair of neighbours
+    // The carousel (0x13D368 -> 0x13BA80): the spacing from the longest pair of neighbours
     // (half lengths summed), the tallest car, the radius of the polygon of that side.
     std::array<F, kMaxCars> half{}, high{};
     for (int i = 0; i < n; ++i) {
@@ -61,13 +61,13 @@ void CarGetRoulette::start(int count, int won, const std::array<Size, kMaxCars>&
 }
 
 float CarGetRoulette::others_opacity() const {
-    // pgl_set_alpha: FIX = int(clamp(a x 128, 0, 255)), 0x80 = 1.
+    // pgl_set_alpha (0x2527E8): FIX = int(clamp(a x 128, 0, 255)), 0x80 = 1.
     const F a = ee::min(ee::max((f(1.0f) - glow) * f(128.0f), F()), f(255.0f));
     return std::max(0.0f, 1.0f - float(ee::to_int(a)) / 128.0f);
 }
 
 void CarGetRoulette::place(int i, float& x, float& z) const {
-    // The i-th corner of the polygon (i 360 / n degrees, radius) turned by the
+    // 0x13BF18: the i-th corner of the polygon (i 360 / n degrees, radius) turned by the
     // carousel's angle (the program's sincos, right-handed about y).
     const double d2r = 3.14159265358979323846 / 180.0;
     const double a = double(float(i) * 360.0f / float(n > 0 ? n : 1)) * d2r;
@@ -81,7 +81,7 @@ void CarGetRoulette::place(int i, float& x, float& z) const {
 void CarGetRoulette::step() {
     if (n <= 0) return;
     const F nf = ee::int_to_f(n);
-    // --- the roulette ---
+    // --- the roulette (0x13B960) ---
     if (roll == 2) {
         F v = speed + decel;
         dist = dist - v;
@@ -93,7 +93,7 @@ void CarGetRoulette::step() {
     }
     pos = pos + speed;
     while (nf <= pos) pos = pos - ee::int_to_f(ee::to_int(pos / nf)) * nf;
-    // --- the carousel ---
+    // --- the carousel (0x13BCE0) ---
     if (slowing) {
         if (std::fabs(double(spin.host())) > double(kCarSpinFloor)) spin = spin + f(kCarSpinDecay);
         else spin = f(kCarSpinFloor);
@@ -110,18 +110,18 @@ void CarGetRoulette::step() {
     if (f(360.0f) <= a) a = a - f(360.0f);
     else if (a < F()) a = a + f(360.0f);
     angle = a;
-    // --- the cars item ---
+    // --- CarsItem::vf2 (0x13D498) ---
     --timer;
     int lit = -1;
     for (int i = 0; i < n; ++i) {
         current[size_t(i)] = i == shown();
         if (current[size_t(i)]) lit = i;
-        // The floor light.
+        // 0x13CA30: the floor light.
         F& s = spot[size_t(i)];
         if (current[size_t(i)]) s = f(1.0f);
         else s = s - f(kSpotStep) < F() ? F() : s - f(kSpotStep);
     }
-    // --- the camera (state table) ---
+    // --- the camera (0x13C3A0, state table 0x3192C0) ---
     switch (cam_state) {
     case 0: {
         const F far = side * f(0.5f) + radius;
@@ -160,7 +160,7 @@ void CarGetRoulette::step() {
     }
     default: break;
     }
-    for (int k = 0; k < 3; ++k) { // The menu car camera: the look springs
+    for (int k = 0; k < 3; ++k) { // MenuCarCamera::vf9: the look springs
         look[size_t(k)].force = look[size_t(k)].force + (look_to[size_t(k)] - look[size_t(k)].x) * look_k;
         look[size_t(k)].step(look_damp);
     }
@@ -181,13 +181,13 @@ void CarGetRoulette::step() {
             state = 3;
             break;
         }
-        roll = 1, speed = f(kSpinSpeed);
+        roll = 1, speed = f(kSpinSpeed); // 0x13B880
         timer = kSpinFrames;
         state = 2;
         break;
     case 2: {
         if (timer > 0) break;
-        // The travel to the middle of the car won plus (12 div n) n whole candidates,
+        // 0x13B898: the travel to the middle of the car won plus (12 div n) n whole candidates,
         // the deceleration that ends it at speed 0 one candidate later.
         F to = (ee::int_to_f(target) + f(0.5f)) - pos;
         while (to < F()) to = to + nf;
@@ -213,7 +213,7 @@ void CarGetRoulette::step() {
         sink = sink - f(kSinkStep);
         const F floor = -tall + -tall;
         if (sink < floor) {
-            released = true; // the controls back ((pm, 0)), the message, the band
+            released = true; // the controls back (0x1B7BD0(pm, 0)), the message, the band
             sink = floor;
             state = 6;
         }

@@ -111,7 +111,7 @@ void LeafDraw::add_items(std::vector<render::DrawItem>& items, const sim::exact:
         const sim::exact::Leaf& p = s.leaves()[size_t(k)];
         const size_t shape = std::min<size_t>(p.shape, kShapes - 1);
         const sim::exact::LeafShape& sh = s.leaf_rules().shapes[shape];
-        // Its turn and place between the last update and this one (the matrix: rows that are the leaf's axes).
+        // Its turn and place between the last update and this one (0x19D070's matrix: rows that are the leaf's axes).
         const float a = blend_angle(p.last_angle.x.host(), p.angle.x.host(), alpha);
         const float b = blend_angle(p.last_angle.y.host(), p.angle.y.host(), alpha);
         const float c = blend_angle(p.last_angle.z.host(), p.angle.z.host(), alpha);
@@ -124,7 +124,7 @@ void LeafDraw::add_items(std::vector<render::DrawItem>& items, const sim::exact:
                               p.last_pos.z.host() + (p.pos.z.host() - p.last_pos.z.host()) * alpha};
         const bool near_side = render::dot(at - from, ay) < 0;
         const u32 col = vertex_color(leaf_color(ay, near_side, p.shade.host(), light, lb, lg));
-        const float uv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+        const float uv[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}}; // (0x31BAA0)
         const size_t base = (shape * kPool + used[shape]++) * 4;
         for (size_t j = 0; j < 4; ++j) {
             const sim::exact::Vec3& q = sh.corners[j];

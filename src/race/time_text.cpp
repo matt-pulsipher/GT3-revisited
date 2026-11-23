@@ -7,7 +7,7 @@
 
 namespace gt3r::race {
 
-// The menus' formatter: the placeholder for exactly "no time", else unsigned
+// The menus' formatter (0x23B930): the placeholder for exactly "no time", else unsigned
 // divisions into hours, minutes, seconds and milliseconds.
 std::string menu_time_text(u32 ms) {
     if (ms == sim::exact::kNoTime) return std::string(kNoTimeText);

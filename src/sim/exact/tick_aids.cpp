@@ -25,7 +25,7 @@ void steer_indicators(Car& c, const AidInputs& in) {
     F grip = c.understeer;
     for (int i = 0; i < 4; ++i) grip = grip + tire_record(c.p, i, c.w[size_t(i)].surface).grip;
     F delta = c.steer_cmd, r = c.yaw_rate, ra = c.yaw_accel;
-    const Behaviour& h = c.behaviour; // (2002 Tokyo-Geneva's folded constants: Europe)
+    const Behaviour& h = c.behaviour; // (2002 Tokyo-Geneva's folded constants: Europe 0x1EEFF0)
     const F v = c.speed;
     // Understeer: the yaw rate short of v sin(delta) / L, while the lateral acceleration is more than 0.2 of the grip.
     if (zero <= delta * r) {
@@ -48,7 +48,7 @@ void steer_indicators(Car& c, const AidInputs& in) {
     if (u8(c.control - 1) < 2 || c.driver_kind != 0) {
         // The AI's: the yaw rate times the speed beyond the lateral acceleration, when they turn opposite ways.
         const F s = ee::sqrt(v * v + c.lat_speed * c.lat_speed);
-        if (pal_rules(c, Rule::Oversteer) && s < folded(h, 0x40DE38E4, 0x40DE38E2)) return; // PAL only: none below 25 km/h
+        if (pal_rules(c, Rule::Oversteer) && s < folded(h, 0x40DE38E4, 0x40DE38E2)) return; // PAL only: none below 25 km/h (0x351D84)
         F a = s * c.yaw_rate, lat = c.a_y;
         if (zero <= a * lat) return;
         if (a < zero) a = -a;
@@ -189,7 +189,7 @@ void brakes(Car& c, const Aids& a, bool ascc_enabled, const AidInputs& in) {
     const F zero{};
     if (dirt_course(in.course_category) && in.dirt_steer != 0) {
         F d = c.steer_cmd;
-        const F full = ee::int_to_f(in.dirt_steer) * folded(c.behaviour, kDeg.bits, 0x3C8EFA34); // (2002 Tokyo-Geneva's: Europe)
+        const F full = ee::int_to_f(in.dirt_steer) * folded(c.behaviour, kDeg.bits, 0x3C8EFA34); // (2002 Tokyo-Geneva's: Europe 0x1EED98)
         if (d < zero) d = -d;
         const F s = full <= d ? kOne : d / full;
         const F rear = kOne - s * (ee::int_to_f(in.dirt_cut[1]) * kHundredth);
@@ -214,13 +214,13 @@ void brakes(Car& c, const Aids& a, bool ascc_enabled, const AidInputs& in) {
             if (kOne < f) f = kOne;
             f = f * p;
         }
-        w.brake = f == zero ? folded(c.behaviour, 0x3A83126F, 0x3A83126E) : f; // 0.001 (2002 Tokyo-Geneva's: Europe's)
+        w.brake = f == zero ? folded(c.behaviour, 0x3A83126F, 0x3A83126E) : f; // 0.001 (2002 Tokyo-Geneva's: Europe 0x1EF3C8's)
     }
 }
 
 void driver_aids(Car& c, const AidInputs& in) {
     tcs(c, c.p.aids);
-    brakes(c, c.p.aids, c.handbrake < folded(c.behaviour, kTenth.bits, 0x3DCCCCCC), in); // (2002 Tokyo-Geneva's: Europe)
+    brakes(c, c.p.aids, c.handbrake < folded(c.behaviour, kTenth.bits, 0x3DCCCCCC), in); // (2002 Tokyo-Geneva's: Europe 0x1EF328)
 }
 
 void scripted_aids(Car& c, const AidInputs& in) {

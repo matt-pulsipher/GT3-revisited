@@ -202,7 +202,7 @@ TEST(race_camera_views) {
     CHECK(g.mode() == CameraMode::Bumper);
 }
 
-// The driver's camera sits at the points of the car it is on (issue 249): GT3's on-board camera
+// The driver's camera sits at the points of the car it is on (issue 249): GT3's OnBoardCamera
 // reads the GTCI table of its own car, so a replay's or the Preview's driver's view on an
 // opponent takes that car's in-car eye (mount 0) and chase point (mount 1), not the player's.
 // A car without two mounts gets GT3's fallbacks.
@@ -611,7 +611,7 @@ TEST(race_interpolation) {
 }
 
 // Frames at 120 Hz over 60 Hz ticks: the drawn car moves the same distance every frame, and a wheel turns by its speed every
-// frame although its spin angle wraps (the exact core's wheel spin, keeps it within a turn).
+// frame although its spin angle wraps (the exact core's wheel spin, 0x1EAFC0, keeps it within a turn).
 TEST(race_interpolation_120hz) {
     namespace ex = gt3r::sim::exact;
     ex::Car c{};
@@ -1238,7 +1238,7 @@ TEST(race_results_text) {
     CHECK(result_time_text(false, false, 0, 344, 0) == "Running...");
 }
 
-// presentation §B2 (the result arcade, the result championship): when the results panel turns its
+// presentation §B2 (ResultArcade::vf9, ResultChampionship::vf4): when the results panel turns its
 // pages and when the race ends. Driven in 60 Hz steps like the race screen.
 TEST(race_result_panel_pages) {
     constexpr double kStep = 1.0 / 60.0;
@@ -1295,7 +1295,7 @@ TEST(race_result_panel_pages) {
     CHECK(f.page() == race::ResultPage::TotalPoints);
 }
 
-// presentation §B2: the championship's points pages (points by place, texts, totals).
+// presentation §B2: the championship's points pages (points by place 0x352D78, texts 0x1B1830, totals 0x175790).
 TEST(race_championship_points_pages) {
     const int expect[8] = {10, 6, 4, 3, 2, 1, 0, 0};
     for (int p = 0; p < 8; ++p) CHECK(race::championship_points(p) == expect[p]);
@@ -1319,7 +1319,7 @@ TEST(race_championship_points_pages) {
     CHECK((order == std::vector<size_t>{3, 0, 5, 1, 2, 4}));
 }
 
-// result1.pmb's page has the three title bars a championship round's results switch between.
+// result1.pmb's page has the three title bars a championship round's results switch between (fn_001B12F0).
 TEST(race_result_panel_titles_disc) {
     Disc* disc = test::test_disc();
     if (!disc) SKIP("needs GT3R_DISC");
@@ -2434,7 +2434,7 @@ TEST(race_result_menu_list) {
     CHECK(names(result_menu_list(K::GtRace, true, finish, grid)) == "B 1'02.000;A* --'--.---;");
 }
 
-// The free practice's re-grid: the player's lap decides whether, every car's best lap where;
+// The free practice's re-grid (fn_0012E920 / fn_0018DFA8): the player's lap decides whether, every car's best lap where;
 // the slower of two different times counts a place, equal times (no time too) go in entry order.
 TEST(race_practice_grid) {
     constexpr u32 N = kPracticeNoTime;
@@ -2454,7 +2454,7 @@ TEST(race_practice_grid) {
     CHECK((grid({0xFFFFFFFFu, 1}) == std::vector<int>{1, 0}));
 }
 
-// The solo modes' start type (the race's start-up from the conductor's start type): free practice has none (-1) whatever
+// The solo modes' start type (RaceBase::vf9 from the conductor's virtual 9, 0x17BCB4): free practice has none (-1) whatever
 // the event's (GT3's practice holds no countdown: car 0 waits out its pit-box start), the time trial and free run a moving
 // start, the others the event's with the configuration's +0 clear.
 TEST(race_solo_start_type) {

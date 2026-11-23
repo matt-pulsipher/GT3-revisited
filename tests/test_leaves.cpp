@@ -83,7 +83,7 @@ TEST(leaf_shapes) {
     CHECK(ex::leaf_rules(kGenevaAsia).carry.bits == g.carry.bits);
 }
 
-// The draw's color (race/leaves.h): -(L.n) / |L| x (0.3 + 0.7 a), negated on the far side, at least 0; each
+// The draw's color (race/leaves.h, 0x19D700): -(L.n) / |L| x (0.3 + 0.7 a), negated on the far side, at least 0; each
 // channel trunc((diffuse c + ambient a) x 128), at most 0x80; alpha 0x80.
 TEST(leaf_draw_color) {
     race::LeafLight l;

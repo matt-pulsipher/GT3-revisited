@@ -115,7 +115,7 @@ GearRanges ranges_around(int n, const V& v) {
     return r;
 }
 
-// The ranges of the working copy's gear sliders: at its auto level and the reference final they
+// The ranges of the working copy's gear sliders (0x1654C8 / 0x1E2C58): at its auto level and the reference final they
 // were built from (GarageCar::range_ref_final; the car copy's +0x1AC when the page opened).
 GearRanges gear_ranges(const GtMode& gt, const GarageCar& real, const GarageCar& work) {
     const ByteSpan* g = part_rec(gt, real, 17);
@@ -196,7 +196,7 @@ std::optional<SliderRange> slider_range(const GtMode& gt, const GarageCar& real,
         if (sr.end - sr.begin < 2) sr.sub_begin = sr.sub_end = 0;
         return sr;
     }
-    // Gran Turismo Concept's tire sliders: three positions, the working copy's tire.
+    // Gran Turismo Concept's tire sliders (0x151320 / 0x151440): three positions, the working copy's tire.
     if (item == "slider_tire_f" || item == "slider_tire_r")
         return SliderRange{0, kConceptTirePositions, concept_tire_position(gt, work, item.back() == 'r')};
     return part_slider_range(gt.db(), real.parts, work.settings, item);
@@ -241,7 +241,7 @@ bool slider_set(const GtMode& gt, const GarageCar& real, GarageCar& work, const 
     } else if (item == "slider_elec_vcdc") s.front_torque = v;
     else if (item == "slider_gear_ratio_final") s.final_drive = v;
     else if (item == "slider_gear_auto_level") {
-        // Regenerate the ratios at the current final drive, rebuild the gear sliders' ranges from the
+        // 0x1662F0: regenerate the ratios at the current final drive, rebuild the gear sliders' ranges from the
         // reference final as it is now and clamp the ratios into them, then the reference follows the final.
         s.gear_slider = v;
         work.range_ref_final = work.ref_final;
@@ -331,7 +331,7 @@ std::optional<std::string> setting_text(const GtMode& gt, const GarageCar& real,
 namespace {
 
 // The text slot (DATABASEPARTS "PTEXT_<name>") of each goods on the part rows: the program's
-// goods name table (the same in every release). Stage-0 goods mostly read "Normal",
+// goods name table (0x2EC3C0; the same in every release). Stage-0 goods mostly read "Normal",
 // "N/A" or "-", the engine works "Installed".
 const char* const kGoodsText[kGoodsCount] = {
     "NORMAL", "BRAKE_SP", "NOTHING", "EQUIP", "NORMAL", "CLUTCH_1", "CLUTCH_2", "CLUTCH_3", "COMPUTER_NORMAL",

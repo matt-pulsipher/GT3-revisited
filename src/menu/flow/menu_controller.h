@@ -61,14 +61,14 @@ constexpr u16 kFeedback = 0x0C0;   // confirm feedback: 0 none, 0x40 decide glow
 constexpr u16 kCancel = 0x100;     // Triangle/Square goes back
 } // namespace page_flag
 
-// A horizontal button row (button list, menus §4.6): buttons of the given widths `kRowGap`
+// A horizontal button row (ButtonList, menus §4.6): buttons of the given widths `kRowGap`
 // apart; centred when the row fits the window, else left / right aligned near the ends and the
 // focused button (at `scroll`, eased between buttons) centred in between. Returns the row's x
 // offset from the window's left edge; `x` = each button's left edge in the row, `total` = the
 // row's width. The controller places its horizontal selectors with it; code-drawn rows too.
 constexpr float kRowGap = 4.0f;
 float row_layout(const std::vector<float>& widths, float scroll, float window_w, std::vector<float>& x, float& total);
-// A vertical button list (button list, menus §4.6): buttons of the given heights `kRowGap` apart;
+// A vertical button list (ButtonList, menus §4.6): buttons of the given heights `kRowGap` apart;
 // at the top of the window while the list fits it (a vertical list that fits is not centred),
 // else held at the window's top / bottom edge near the ends and the focused button (at
 // `focus`) centred in between. Returns the list's top from the window's top edge, downwards
@@ -76,7 +76,7 @@ float row_layout(const std::vector<float>& widths, float scroll, float window_w,
 // height. The code-drawn lists (the garage, Cars Permitted, the records) are placed with it.
 float column_layout(const std::vector<float>& heights, float focus, float window_h, std::vector<float>& y,
                     float& total);
-// One frame of a list's easing (GT3's button list, 0.3): 30 % of the way from
+// One frame of a list's easing (GT3's ButtonList, 0.3 at 0x350084): 30 % of the way from
 // `value` to `target`. The selectors ease their scroll position (in items) and a horizontal
 // row its offset (row_layout's result for the focused button) this way.
 float ease_scroll(float value, float target);

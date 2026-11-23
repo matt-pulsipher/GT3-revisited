@@ -176,7 +176,7 @@ std::vector<std::string> on_result(const GameResult& r) {
     // nothing is recorded from the result.)
     // Endings (gt_mode §10), checked whenever the result opened the prize-car check (a race
     // won, a championship won on points whatever its last round's place, a licence all gold;
-    // after the car_get check): Beginner league complete -> the short ending, then
+    // fn_0013F508 after the car_get check): Beginner league complete -> the short ending, then
     // Amateur or Professional complete -> the long ending, each once; both can play.
     if (a.prize_check) {
         GameState& st = gt.state();

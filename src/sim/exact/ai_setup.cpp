@@ -1,5 +1,5 @@
-// The AI course object's setup; see ai_setup.h. And the line loader with its ground probes,
-// the segment tracer, the stop line's first segment and the road frame under a point.
+// The AI course object's setup; see ai_setup.h. 0x1F9B98 and the line loader 0x1F92F8 with its ground probes 0x1F8BA0,
+// 0x1F8EC8, the segment tracer 0x1F8BF8, the stop line's first segment 0x1F91E8 and the road frame under a point 0x1F8F40.
 
 #include "sim/exact/ai_setup.h"
 
@@ -14,10 +14,10 @@ namespace {
 
 const F k0 = F::raw(0), kHalf = F::raw(0x3F000000), k1 = F::raw(0x3F800000), k10 = F::raw(0x41200000), k100 = F::raw(0x42C80000);
 const F kFixed = F::raw(0x39800000);                            // 1 / 4096
-const F kTwoPi = F::raw(0x40C90FDB), kPi = F::raw(0x40490FDB);
-const F kTenDeg = F::raw(0x3E32B8C2);                           // 10 degrees in radians
+const F kTwoPi = F::raw(0x40C90FDB), kPi = F::raw(0x40490FDB); // 0x35068C / 0x350690, 0x35067C / 0x350684
+const F kTenDeg = F::raw(0x3E32B8C2);                           // 0x350680 / 0x350688: 10 degrees in radians
 
-// The road segment under (x, y) from the hint, -1 off the road.
+// 0x1F8BA0: the road segment under (x, y) from the hint, -1 off the road.
 s32 segment_at(const CourseQuery& q, s32 hint, F x, F y) {
     Ground g;
     g.x = x, g.h = k100, g.z = -y, g.seg = hint;
@@ -27,7 +27,7 @@ s32 segment_at(const CourseQuery& q, s32 hint, F x, F y) {
 
 F height_at(const CourseQuery& q, s32& seg, bool& miss, F x, F y, F h) { return road_height(q, seg, miss, x, y, h); }
 
-// Point i's segment, traced from point i - 1's segment along the segment between them (straights every 10 m, arcs
+// 0x1F8BF8: point i's segment, traced from point i - 1's segment along the segment between them (straights every 10 m, arcs
 // every 10 degrees); an arc's kind byte becomes 1 (left, radius > 0) or 2 (right), 1 on the side map (line 5).
 s32 trace(const Behaviour& bh, const CourseQuery& q, std::vector<AiPoint>& p, int i, s32 seg, int line) {
     AiPoint& a = p[size_t(i - 1)];
@@ -51,7 +51,7 @@ s32 trace(const Behaviour& bh, const CourseQuery& q, std::vector<AiPoint>& p, in
     const F cx = ax - c * r, cy = ay + s * r;
     F a0 = atan2(bh, cx - ax, ay - cy);
     F a1 = atan2(bh, cx - b.x, by - cy);
-    const F two_pi = folded(bh, kTwoPi.bits, 0x40C90FDA), ten_deg = folded(bh, kTenDeg.bits, 0x3E32B8C1); // (Europe)
+    const F two_pi = folded(bh, kTwoPi.bits, 0x40C90FDA), ten_deg = folded(bh, kTenDeg.bits, 0x3E32B8C1); // (Europe 0x1F85A8)
     F steps;
     if (k0 < r) {
         a.kind = 1;
@@ -76,7 +76,7 @@ s32 trace(const Behaviour& bh, const CourseQuery& q, std::vector<AiPoint>& p, in
     return seg;
 }
 
-// The stop line's first point's segment: probed with the hints of the main line's (6) points from its last one
+// 0x1F91E8: the stop line's first point's segment: probed with the hints of the main line's (6) points from its last one
 // back until one finds the road; false when there is no main line or none does.
 bool stop_line_segment(const CourseQuery& q, const AiCourse& k, s32& seg, F x, F y) {
     const int line = k.resolve(6);
@@ -94,7 +94,7 @@ bool stop_line_segment(const CourseQuery& q, const AiCourse& k, s32& seg, F x, F
     return false;
 }
 
-// The road under a point: its height, surface index, pit-lane flag and the slope along / bank across the heading
+// 0x1F8F40: the road under a point: its height, surface index, pit-lane flag and the slope along / bank across the heading
 // from four probes half a metre away (one side alone when its opposite misses); false off the road.
 struct RoadFrame {
     F height, slope, bank;
@@ -162,7 +162,7 @@ AiCourse ai_course_setup(const CourseQuery& q, const course::AiLines* lines, con
             AiPoint p;
             p.kind = u8(f.flags), p.brake_adjust = s8(f.flags >> 8), p.speed_adjust = s8(f.flags >> 16), p.x03 = u8(f.flags >> 24);
             p.heading = ((ee::int_to_f(s32(f.packed)) * folded(k.behaviour, kTwoPi.bits, 0x40C90FDA)) * kFixed) +
-                        folded(k.behaviour, kPi.bits, 0x40490FDA); // (2002 Tokyo-Geneva's: Europe)
+                        folded(k.behaviour, kPi.bits, 0x40490FDA); // (2002 Tokyo-Geneva's: Europe 0x1F8D18)
             p.x = (-ee::int_to_f(f.raw_x)) * kFixed;
             p.radius = ee::int_to_f(f.raw_radius) * kFixed;
             p.y = (-ee::int_to_f(f.raw_z)) * kFixed;

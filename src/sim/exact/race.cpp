@@ -25,26 +25,26 @@ RaceEvent post(s32 type, s32 word, s32 prio) {
     return e;
 }
 
-// The conductors whose collision step is the all-bodies step (walls and car contact); the base conductor's
-// steps each body against the walls only.
+// The conductors whose virtual 12 is the all-bodies step (0x1F3918: walls and car contact); the base conductor's
+// (0x1F3950) steps each body against the walls only.
 bool all_bodies(Conductor k) {
     return k == Conductor::SinglePlayer || k == Conductor::Battle2P || k == Conductor::BattleMP || k == Conductor::FreePractice ||
            k == Conductor::Training;
 }
 
-// The car's strongest hit of the step (car +0x16C8 / +0x16CC / +0x16CD, the pad feedback): a wall's |j| / 50000, a
+// 0x1DFD98: the car's strongest hit of the step (car +0x16C8 / +0x16CC / +0x16CD, the pad feedback): a wall's |j| / 50000, a
 // car's twice the given strength, kind 2 |x| / 50, at most 1 and nothing below 0.2; kind -1 does nothing.
 void hit_record(Car& c, s32 kind, s32 part, F x) {
     if (kind == -1) return;
     F v = kZero;
     if (kind == 1) v = x + x;
-    else if (kind == 0) v = x / F::raw(0x47435000); // 50000
+    else if (kind == 0) v = x / F::raw(0x47435000); // 0x3502D8: 50000
     else if (kind == 2) {
         v = x / F::raw(0x42480000);
         if (v < kZero) v = -v;
     }
     if (kOne < v) v = kOne;
-    if (v < folded(c.behaviour, 0x3E4CCCCD, 0x3E4CCCCC)) v = kZero; // 0.2 (2002 Tokyo-Geneva's: Europe)
+    if (v < folded(c.behaviour, 0x3E4CCCCD, 0x3E4CCCCC)) v = kZero; // 0x3502DC: 0.2 (2002 Tokyo-Geneva's: Europe 0x1D8EC0)
     if (F::raw(c.feedback) < v) {
         c.hit_part = u8(part);
         c.feedback = v.bits;
@@ -52,7 +52,7 @@ void hit_record(Car& c, s32 kind, s32 part, F x) {
     }
 }
 
-// A colour from four channels times k (alpha times 128), each rounded into 0..255.
+// 0x25A090: a colour from four channels times k (alpha times 128), each rounded into 0..255.
 u32 pack_colour(F r, F g, F b, F a, F k) {
     const F kMax = F::raw(0x437F0000);
     F ch[4] = {r * k, g * k, b * k, a * F::raw(0x43000000)};
@@ -71,11 +71,11 @@ void env_w(std::vector<u8>& env, u32 o, u32 v) {
     for (u32 k = 0; k < 4; ++k) env[o + k] = u8(v >> (8 * k));
 }
 
-// the conductor's initialisation, every race's initialisation: the tyre effect kinds' parameters in the course's Env0
+// 0x1DE070 (the conductor's virtual 21, every race's initialisation): the tyre effect kinds' parameters in the course's Env0
 // block (+0x4D0 + 0x44 kind) from the program's table, 8 bytes per kind: an off kind (+0x4DC below 0.01) turned on (1), the
 // size +0x4E0 (x 0.01), +0x4E4 (x 0.1), the growth +0x4E8, +0x4EC, +0x4F0, +0x4FC, +0x500 (x 0.01), the life count +0x510.
 void effect_params(std::vector<u8>& env, const ProgramData& d) {
-    const F k1 = F::raw(0x3C23D70A), k2 = folded(d.behaviour(), 0x3DCCCCCD, 0x3DCCCCCC); // (2002 Tokyo-Geneva's 0.1: Europe)
+    const F k1 = F::raw(0x3C23D70A), k2 = folded(d.behaviour(), 0x3DCCCCCD, 0x3DCCCCCC); // 0x350244 / 0x350248 (2002 Tokyo-Geneva's 0.1: Europe 0x1EC7D0)
     if (env.size() < 0x4DC + 0x44 * 11) throw std::runtime_error("course: the Env0 block is too short for the tyre effects");
     for (u32 k = 0; k < 11; ++k) {
         const u32 p = 0x4DC + 0x44 * k, t = 8 * k;
@@ -129,11 +129,11 @@ ExactRace::ExactRace(const RaceSetup& s) {
     data_ = std::make_shared<const ProgramData>(*s.data);
     const ProgramData& d = *data_;
     kind_ = s.kind, category_ = s.course_category, effects_ = s.effects, flow_byte_ = s.config, ghost_switch_ = s.ghost_switch;
-    // The race configuration (from the event record, the race's laps), the conductor's rubber-band switch and wear setting as
-    // the initialisation asks them, then the tick's inputs from the program's tables.
+    // The race configuration (0x1DA708 from the event record, the race's laps), the conductor's virtuals 11 and 10 as
+    // virtual 21 asks them, then the tick's inputs from the program's tables.
     cfg_ = s.rules ? *s.rules : race_config(s.event);
     if (s.laps >= 0) cfg_[1] = u8(s.laps);
-    // With records off or locked (race info + 0x6C / + 0x7C; the quick menus' races) the race has no laps and no
+    // 0x1F35B8: with records off or locked (race info + 0x6C / + 0x7C; the quick menus' races) the race has no laps and no
     // time limit (+0x38), so no lap or clock ends it.
     if (s.replay || s.locked) cfg_[1] = 0, cfg_[0x38] = cfg_[0x39] = 0;
     const Behaviour how = d.behaviour();
@@ -169,10 +169,10 @@ ExactRace::ExactRace(const RaceSetup& s) {
     flow_.entries.resize(n);
     pit_in_.lap = course_->query->lap_length();
     f.moods = race_.later.moods;
-    // The later builds' stop zone (their initialisation, later: the pod race's, test kind 5).
+    // The later builds' stop zone (their initialisation, later 0x1EE280: the pod race's, test kind 5).
     flow_.zone = stop_zone_setup(d, how, cfg_[2], pit_in_.lap, int(n));
     pit_in_.pit_lines = course_->ai.pit_lines;
-    pit_in_.service_always = kind_ == Conductor::FreePractice; // the service rule
+    pit_in_.service_always = kind_ == Conductor::FreePractice; // virtual 42
     pit_in_.wear = race_.prep.wear;
     pit_in_.config = flow_byte_;
     for (u32 k = 0; k < 16; ++k) effect_kinds_[k] = d.w(ProgramData::Table::EffectKinds, 4 * k);
@@ -185,7 +185,7 @@ ExactRace::ExactRace(const RaceSetup& s) {
         for (u32 kind : effect_kinds_) ok = ok && u64(0x44) * kind + 0x514 <= env;
         if (!ok) throw std::runtime_error("course: the Env0 block is too short for the tyre effects");
     }
-    // Every car's record (the race start) and the ranking it ends with (the ranking set-up's rank reset and ranking).
+    // Every car's record (virtual 23) and the ranking it ends with (virtual 22's virtuals 2 and 3).
     StartRace r;
     r.db = s.db, r.course = course_->query.get(), r.ai = &course_->ai, r.sets = &course_->sets, r.data = &d;
     r.rules = cfg_, r.wear = race_.prep.wear, r.category = category_, r.config = s.config;
@@ -199,8 +199,8 @@ ExactRace::ExactRace(const RaceSetup& s) {
         load_image(cars_[i], sr.records[i].data()), cars_[i].later = sr.later[i];
     }
     order_ = sr.order;
-    // The rest of the ranking set-up: the proximity matrices cleared, the gap matrices,
-    // the bodies built (per car, the pair tables) after the copy-in (the build leaves
+    // The rest of virtual 22: the proximity matrices cleared (0x1EBED8 / 0x1EBBA0), the gap matrices (0x1ED410, 0x1ED458),
+    // the bodies built (0x1FA6A0: 0x1FA740 per car, the pair tables 0x1FA870) after the copy-in 0x1E8730 (the build leaves
     // the committed state alone; ours clears it, so the copy-in runs after it).
     prox_ = {};
     gaps_ = {};
@@ -214,9 +214,9 @@ ExactRace::ExactRace(const RaceSetup& s) {
     }
     cx::pair_tables(bodies_);
     copy_in();
-    // On race info + 0x40: no result yet (-2), no time.
+    // 0x17B030 on race info + 0x40: no result yet (-2), no time.
     flow_.result = -2, flow_.result_time = 0x157529FF, flow_.record = 0;
-    // The race's start-up: the particle system's reset seeds the VU0 random register with 0.1.
+    // RacePS2Base::vf9: the particle system's reset seeds the VU0 random register with 0.1 (0x1A4630).
     rng_.init(Vu0Random::kRunSeed);
     hit_.assign(n, 0), hit_43c_.assign(n, 0);
     posed_.assign(n, 0);
@@ -224,7 +224,7 @@ ExactRace::ExactRace(const RaceSetup& s) {
         rec_ = *s.recorders, ghost_car_ = s.ghost_car, external_ghost_ = s.external_ghost;
         rec_->set_layout(later_store(how)); // (the program's store layout: Rule::RecordStore)
     }
-    // The race's start-up: the sparks' reset.
+    // RacePS2Base::vf9: the sparks' reset (0x19EFF8).
     spark_points_ = s.sparks;
     spark_points_.resize(n);
     for (const std::vector<SparkPoint>& p : spark_points_) sparks_on_ = sparks_on_ || !p.empty();
@@ -251,22 +251,22 @@ void race_info_frame(RaceInfoStart& info, std::vector<RaceEvent>& events, int st
     if (info.start != 0) {
         info.start = 0;
         switch (info.start_type) {
-        case -1:
+        case -1: // 0x17A6BC
             events.push_back(post(0x14, 0x14, 0));
             info.seconds = 0;
             break;
-        case 0:
+        case 0: // 0x17A638
             if (info.seconds != 0) events.push_back(post(2, 0, 0));
             break;
-        case 1:
+        case 1: // 0x17A65C
             info.seconds = 4;
             events.push_back(post(2, 0, 0)), events.push_back(post(0x14, 0x1B, 0));
             break;
-        case 2:
+        case 2: // 0x17A68C
             info.seconds = 10;
             events.push_back(post(2, 0, 0)), events.push_back(post(0x14, 0x12, 0));
             break;
-        case 3: info.seconds = 0; break;
+        case 3: info.seconds = 0; break; // 0x17A6D0
         default: break;
         }
         info.start_count = steps * info.seconds;
@@ -279,7 +279,7 @@ void race_info_frame(RaceInfoStart& info, std::vector<RaceEvent>& events, int st
     }
 }
 
-// Each body's committed state from its car (position, velocity, heading, yaw rate) and its road segment hint.
+// 0x1E8730: each body's committed state from its car (position, velocity, heading, yaw rate) and its road segment hint.
 void ExactRace::copy_in() {
     for (size_t i = 0; i < cars_.size(); ++i) {
         cx::Body& b = bodies_[i];
@@ -291,10 +291,10 @@ void ExactRace::copy_in() {
     }
 }
 
-// Phase 10, the conductor's collision step: the copy-in, the step (all bodies, or each body against the
-// walls), the copy-out; each response's report to the race (the conductor's hit rule, the car's hit
-// record), in the order the step made them. The impact effects write the car's rumble strength. The step's second
-// entry mode runs for the bodies from `first` (1).
+// Phase 10, the conductor's virtual 12 (0x1F3918 / 0x1F3950): the copy-in, the step (all bodies, or each body against the
+// walls), the copy-out 0x1E8828; each response's report to the race (0x1DFEB8: the conductor's virtual 41, the car's hit
+// record), in the order the step made them. The impact effects (0x1FB890) write the car's rumble strength. The step's second
+// entry mode runs 0x1F3950 for the bodies from `first` (1).
 void ExactRace::collide(size_t first) {
     const size_t n = cars_.size();
     copy_in();
@@ -340,9 +340,9 @@ void ExactRace::collide(size_t first) {
     };
     for (const cx::Response& r : trace) {
         switch (r.kind) {
-        case cx::Response::Point: report(r.body, 0, r.feature, r.mag); break;
-        case cx::Response::Corner: report(r.body, 0, r.feature + 8, r.mag); break;
-        case cx::Response::Car: {                                                 // |j| / 15000 to both
+        case cx::Response::Point: report(r.body, 0, r.feature, r.mag); break;      // 0x1FE100
+        case cx::Response::Corner: report(r.body, 0, r.feature + 8, r.mag); break; // 0x1FE578
+        case cx::Response::Car: {                                                 // 0x1FC5C0: |j| / 15000 to both
             const F s = r.mag / F::raw(0x466A6000);
             report(r.body, 1, r.feature + 8, s);
             report(r.other, 1, r.vertex, s);
@@ -355,10 +355,10 @@ void ExactRace::collide(size_t first) {
     }
 }
 
-// The program hands car i's four requests to the course's tyre effect emitter: a particle when the surface's
+// 0x1DF150 hands car i's four requests to the course's tyre effect emitter 0x1A46C8 (0x18FDE0): a particle when the surface's
 // effect kind is on (Env0 +0x4DC at least 0.01) and the wheel emits more than 0.001, with six draws of the VU0 random register.
-// The later builds' (Concept 2002 Tokyo-Geneva Europe) then hand a wheel on ground with flag 0x20 to the particle
-// manager's leaf maker (Rule::Leaves) with the car's velocity, wheel by wheel after its smoke.
+// The later builds' (Concept 2002 Tokyo-Geneva Europe 0x1ED4B8) then hand a wheel on ground with flag 0x20 to the particle
+// manager's leaf maker (0x18E5C0 -> Rule::Leaves) with the car's velocity, wheel by wheel after its smoke.
 void ExactRace::emit(int i, const ChassisOutputs& out) {
     if (!effects_) return;
     const Vec3 vel = course_velocity(cars_[size_t(i)]);
@@ -372,9 +372,9 @@ void ExactRace::smoke(int i, const TyreEffect& q) {
     const std::vector<u8>& env = course_->env;
     const u32 kind = effect_kinds_[u32(q.surface) & 15]; // (below 16: RaceCourse::load)
     const u32 base = 0x44 * kind;                        // (in the course's Env0: the race's construction)
-    if (env_f(env, base + 0x4DC) < F::raw(0x3C23D70A)) return; // 0.01
+    if (env_f(env, base + 0x4DC) < F::raw(0x3C23D70A)) return; // 0x34FEF4: 0.01
     F e = q.smoke_emit;
-    if (e <= F::raw(0x3A83126F)) return; // 0.001
+    if (e <= F::raw(0x3A83126F)) return; // 0x34FEF8: 0.001
     SmokeParticle p;
     p.car = i, p.wheel = q.wheel;
     F r = vu0_random(rng_);
@@ -392,7 +392,7 @@ void ExactRace::smoke(int i, const TyreEffect& q) {
     p.emit = e;
     p.size = env_f(env, base + 0x4E0) * e;
     r = vu0_random(rng_);
-    p.growth = env_f(env, base + 0x4E8) * (((r - F::raw(0x3E4CCCCD)) * F::raw(0x3E99999A)) + kOne);
+    p.growth = env_f(env, base + 0x4E8) * (((r - F::raw(0x3E4CCCCD)) * F::raw(0x3E99999A)) + kOne); // 0x34FEFC / 0x34FF00
     r = vu0_random(rng_);
     p.angle = r * F::raw(0x43B40000);
     p.x10 = e + ((kOne - e) * env_f(env, base + 0x500));
@@ -404,7 +404,7 @@ void ExactRace::smoke(int i, const TyreEffect& q) {
         cf = ee::int_to_f(s32((count >> 1) | (count & 1)));
         cf = cf + cf;
     }
-    F life = (r * (cf + F::raw(0x3E4CCCCD))) + kOne; // 0.2
+    F life = (r * (cf + F::raw(0x3E4CCCCD))) + kOne; // 0x34FF04: 0.2
     if (F::raw(0x437F0000) <= life) life = F::raw(0x437F0000);
     p.life = s16(ee::to_int(life * F::raw(0x43800000)));
     r = vu0_random(rng_);
@@ -417,12 +417,12 @@ void ExactRace::smoke(int i, const TyreEffect& q) {
     particles_.push_back(p);
 }
 
-// The step after phase 13: the mode start and each car's race flow over the order (tick_flow; the free run
-// ghost's extra step inside), the time-difference hook (the sector order's time differences), the race clock (race_mode_clock), the gap matrices,
-// the ranking, the rubber band. The second entry mode: the race flow from the order's position 1, the rubber band.
+// The step after phase 13 (0x1F3DF0 .. 0x1F4254): virtual 13 and each car's race flow over the order (tick_flow; the free run
+// ghost's extra step inside), virtual 1 (the sector order's time differences), virtual 14 (race_mode_clock), the gap matrices,
+// virtual 3 (the ranking), the rubber band. The second entry mode: the race flow from the order's position 1, the rubber band.
 void ExactRace::flow_after(AiPlan& plan, std::span<const PadFrame> pads, int mode) {
     const size_t n = cars_.size();
-    // The free run's lap handlers read the recorders as phase 3 left them, the data logger the devices' frames (race input device +0xFC:
+    // The free run's lap handlers read the recorders as phase 3 left them, the data logger the devices' frames (RaceInput +0xFC:
     // its recorder's count; its table counts from its first entry's in mode 2, +0xC8).
     if (rec_) {
         flow_in_.recorder = rec_->inputs(flow_in_.behaviour);
@@ -481,11 +481,11 @@ void ExactRace::step(std::span<const PadFrame> pads) {
     spark_frame();
 }
 
-// The race's frame after the race step: every car's bursts (each entry's model is loaded, its +0x18BC
-// set), in race order; then the race's frame update's update of the sparks (dt 1/60), after the cars' animators,
+// RacePS2Base::vf30 after the race step: every car's bursts (0x1779D8 -> 0x1AADD0; each entry's model is loaded, its +0x18BC
+// set), in race order; then RacePS2Base::vf29's update of the sparks (0x19F698, dt 1/60: 0x34FCD8), after the cars' animators,
 // the flares, the tyre smoke's update and the course's rigid bodies, none of which draws the random register. A posed car
-// (online) makes none: its record has no drawn pose of its own. The later builds' update (their race's frame, a slot
-// on) takes the frame's time the race passes: 1/60 (2002 Tokyo-Geneva Asia's 0x3C888888), 1/50 on Europe's disc at
+// (online) makes none: its record has no drawn pose of its own. The later builds' update (their RacePS2Base::vf30, a slot
+// on) takes the frame's time RaceBase::vf2 passes: 1/60 (2002 Tokyo-Geneva Asia's 0x3C888888), 1/50 on Europe's disc at
 // its own 50 steps a second; it updates the leaves too, with or without sparks.
 void ExactRace::spark_frame() {
     if (!sparks_on_ && !sparks_.leaves_on()) return;
@@ -509,7 +509,7 @@ void ExactRace::run(std::span<const PadFrame> pads, int mode) {
     race_.later.pass_by = &pass_.state, race_.later.gaps = &gaps_, race_.later.lap_length = pit_in_.lap;
     flow_in_.start_count = info_.start_count, flow_in_.flow = flow_byte_;
     race_.prep.start_count = info_.start_count;
-    // Conductor, mode: the gate over every car, then the cars from `first` (1 in the second entry mode)
+    // 0x1F39D8 (conductor, mode): the gate over every car, then the cars from `first` (1 in the second entry mode)
     const bool ran = race_flow_gate(cars_, flow_byte_, time_scale_);
     if (mode == 0) ran_ = ran;
     if (ran) {
@@ -530,7 +530,7 @@ void ExactRace::run(std::span<const PadFrame> pads, int mode) {
             k.ai.start_speed = cfg_[0];
             k.mark_flagged = pits;
             k.box_heading = pit_box_heading(course_->ai, c.pit_box);
-            // The program reads the switch only with +0x70 clear; NTSC-J's reads only the switch
+            // 0x1E0668 reads the switch only with +0x70 clear; NTSC-J's (0x1DE040) reads only the switch
             if (ntsc_j_rules(c, Rule::DrawMode)) k.x70 = 0, k.ghost_switch = ghost_switch_;
             else k.x70 = x70_, k.ghost_switch = x70_ ? 0 : ghost_switch_;
             k.pit = {pits, pmode, flow_byte_};
@@ -545,15 +545,15 @@ void ExactRace::run(std::span<const PadFrame> pads, int mode) {
                              [this, first](int i, const ChassisOutputs& o, Vu0Random&) { emit(i + int(first), o); });
         flow_after(plan, pads, mode);
     }
-    // The race's end countdown (event 1 at its end).
+    // 0x1F2B18: the race's end countdown (event 1 at its end).
     if (flow_.end_count != 0 && --flow_.end_count == 0) events_.push_back(post(1, 0, 0));
-    // The pass-by states (the later builds' special car 1 reads them in the next step).
+    // 0x1F59B0: the pass-by states (the later builds' special car 1 reads them in the next step).
     pass_by_step(pass_, prox_, int(cars_.size()), flow_in_.behaviour.pal_rate());
 }
 
-// Phase 3's pad read for car i: with the solo recorders the ghost car's frame is its device's next
+// Phase 3's pad read (0x1E4D38 -> 0x210740) for car i: with the solo recorders the ghost car's frame is its device's next
 // one and the player's car's frame is recorded on its device; then, a car that is no ghost in the free run, the frame into
-// the lap recording (the conductor's pad hook records it for a car with an input device: the
+// the lap recording (the conductor's virtual 20 (0x1F14E8) records it (0x2106B0) for a car with an input device: the
 // player's).
 PadFrame ExactRace::device_frame(size_t i, const PadFrame& given) {
     if (!rec_) return given;
@@ -594,9 +594,9 @@ void ExactRace::apply_recorder_events() {
     for (; rec_applied_ < flow_.recorder.size(); ++rec_applied_) {
         const RecorderEvent& e = flow_.recorder[rec_applied_];
         rec_->apply(e);
-        // 1, 1 taking the lap at once (the Ghost option on): race info + 0x48 cleared (nothing left to ask), the
-        // player's entry copied into the ghost car's (its lap list among the rest) and that list then counted only
-        // (1: no laps yet).
+        // 0x17AAD8 (1, 1) taking the lap at once (the Ghost option on): race info + 0x48 cleared (nothing left to ask), the
+        // player's entry copied into the ghost car's (0x177488: its lap list among the rest) and that list then counted only
+        // (0x17B4E8 (1): no laps yet).
         if (e.kind == RecorderEvent::ghost && rec_->ghost_option) {
             flow_.ghost = 0;
             if (ghost_car_ > 0 && size_t(ghost_car_) < flow_.entries.size()) {
@@ -609,7 +609,7 @@ void ExactRace::apply_recorder_events() {
 }
 
 namespace {
-// The snapshot's body points but their local geometry (+0x00 .. +0x0F of each).
+// 0x1FBB50: the snapshot's body points but their local geometry (+0x00 .. +0x0F of each).
 void restore_points(cx::Body& b, const Snapshot& s) {
     for (size_t j = 0; j < 8; ++j) {
         const cx::Point keep = b.p[j];
@@ -619,8 +619,8 @@ void restore_points(cx::Body& b, const Snapshot& s) {
 }
 } // namespace
 
-// The body: the body rebuilt from its car; every pair table, then the
-// snapshot's points but their local geometry. The NTSC-J program does not rebuild the body: only the snapshot's points.
+// 0x1EE6D8's body: 0x1FA710 (the body rebuilt from its car, 0x1FA740; every pair table, 0x1FA870), then 0x1FBB50 the
+// snapshot's points but their local geometry. NTSC-J's 0x1EE6D8 does not rebuild the body: only the snapshot's points.
 void ExactRace::restore_body(int k, const Snapshot& s) {
     if (size_t(k) >= bodies_.size()) return;
     cx::Body& b = bodies_[size_t(k)];
@@ -629,7 +629,7 @@ void ExactRace::restore_body(int k, const Snapshot& s) {
         return;
     }
     const Params& p = cars_[size_t(k)].p;
-    // The program writes the body's geometry, mass, radius and its flags and effect counters (a point's held state and wall,
+    // 0x1FAE38 writes the body's geometry, mass, radius and its flags and effect counters (a point's held state and wall,
     // the start points' carry-over); the sweep, the hits and the points' and edges' crossing state stay.
     cx::Body built;
     cx::build(built, p.body_front, p.body_rear, p.body_width, p.mass, p.yaw_inertia, k);

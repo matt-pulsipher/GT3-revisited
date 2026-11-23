@@ -15,8 +15,8 @@ float rdf(ByteSpan d, size_t o) {
     return f;
 }
 
-// The program's constants: the level thresholds, 1024 / pi (the
-// tread's travel per radian in 1/16 texels of a 128-texel repeat) and 3 degrees.
+// The program's constants: the level thresholds (0x350990..0x350998), 1024 / pi (0x3509A4: the
+// tread's travel per radian in 1/16 texels of a 128-texel repeat) and 3 degrees (0x3509A8).
 constexpr float kDetail[3] = {0.09f, 0.03f, 0.015f};
 constexpr float kTreadPerRadian = 325.94931f;
 constexpr float kSpinningImage = 0.052359879f;

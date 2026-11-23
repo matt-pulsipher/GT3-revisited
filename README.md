@@ -496,8 +496,12 @@ The disc's file formats are documented in [FORMATS](docs/FORMATS.md) and
 [docs/formats/](docs/formats/), and how the game behaves is described per
 system in [docs/behaviour/](docs/behaviour/) (physics, AI, GT Mode, menus,
 race presentation, sound, music), with implementation notes in
-[docs/dev/](docs/dev/). The engine is verified against the original, side by
-side and with automated tests. It contains no game data or assets; all game
+[docs/dev/](docs/dev/). The specifications behind those pages, with the
+original program's addresses, are in [docs/specs/](docs/specs/), and the
+method in [REVERSE_ENGINEERING](docs/REVERSE_ENGINEERING.md). The engine is
+verified against the original, side by side, with automated tests and with a
+harness that runs the original's routines from your own disc against ours
+([DIFF_HARNESS](docs/dev/DIFF_HARNESS.md)). It contains no game data or assets; all game
 content is read from your own disc at runtime. The rules for contributions
 are in [CONTRIBUTING](CONTRIBUTING.md).
 
@@ -595,6 +599,10 @@ Run `gt3tool` without arguments for the full list.
 - [FORMATS](docs/FORMATS.md): the disc's file formats
 - [docs/behaviour/](docs/behaviour/): how the original game behaves, per
   system (physics, AI, GT Mode, menus, race presentation, sound, music)
+- [docs/specs/](docs/specs/): the research specifications, with program
+  addresses; [REVERSE_ENGINEERING](docs/REVERSE_ENGINEERING.md): the method,
+  [RE_TOOLKIT](docs/dev/RE_TOOLKIT.md) and [DIFF_HARNESS](docs/dev/DIFF_HARNESS.md):
+  the analysis scripts and the comparison harness
 - [INPUT](docs/INPUT.md): controller support and binding syntax
 - [MUSIC](docs/MUSIC.md): playing your own music in races
 - [MODDING](docs/MODDING.md): making and installing mods

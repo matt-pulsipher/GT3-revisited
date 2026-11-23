@@ -40,7 +40,7 @@ void RaceScreen::start_free_run(App& app) {
 }
 
 void RaceScreen::end_free_run(App& app) {
-    // The practice's end (GT race, championship): every car's best lap of it for the list; the grid by them
+    // The practice's end (GT race 0x133164, championship 0x133B00): every car's best lap of it for the list; the grid by them
     // when the player set one (else the grid stays); each entry's best lap carried into the next practice (race information
     // + entry 0x11D8, laps without a course-out: the min of what it had and this practice's).
     if (solo_field_) {
@@ -237,10 +237,10 @@ void RaceScreen::fill_top3() {
     }
 }
 
-// Championship quick menus (qm_gt_event_champ, qm_gt_result_champ): qm_session_num =
+// Championship quick menus (qm_gt_event_champ, qm_gt_result_champ): qm_session_num (0x12D720) =
 // SHORTMENU_SESSION_BRFORE + the round number + SHORTMENU_SESSION_AFTER ("%s%d%s", US "#1 Race";
 // an empty value keeps the program's default), the same in the round's result menu. `rows` (the pre-race list):
-// each car's points so far, "%d %s" with POINT_SINGLE under 2, else POINT_PLURAL ("0 pt",
+// each car's points so far, "%d %s" with POINT_SINGLE under 2, else POINT_PLURAL (0x12D328: "0 pt",
 // "10 pts"); the result menu's list is the finishing order with times only.
 void RaceScreen::fill_championship(std::vector<ResultRow>* rows) {
     if (!championship()) return;
@@ -284,8 +284,8 @@ void RaceScreen::open_prerace_menu(App& app) {
         return;
     }
     // The entry list in grid order (the capture of GT3's RACE MENU): every car, no times before a free practice ("no time"),
-    // each car's best lap of the last one after it (a GT race's; a championship round's keeps none,
-    // the entrants by grid slot with their points).
+    // each car's best lap of the last one after it (a GT race's, fn_0012F160; a championship round's keeps none,
+    // fn_0012F290: the entrants by grid slot with their points).
     if (field_) {
         std::vector<ResultRow> rows = result_rows();
         for (ResultRow& r : rows) r.time = kNoTimeText;
@@ -297,7 +297,7 @@ void RaceScreen::open_prerace_menu(App& app) {
         prerace_rows_ = rows;
         quick_menu_.set_rows(std::move(rows));
     }
-    // "%d %s" with the realtime text's Lap (under 2) or Laps, in every qm_laps widget
+    // "%d %s" with the realtime text's Lap (under 2) or Laps (0x12D450), in every qm_laps widget
     // (the championship layout has a shadow copy).
     if (race_laps_ > 0)
         quick_menu_.set_class_text("qm_laps", std::to_string(race_laps_) + " " +

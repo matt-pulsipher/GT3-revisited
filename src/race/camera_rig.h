@@ -82,7 +82,7 @@ public:
     void set_car_points(const render::Vec3& p0, const render::Vec3& p1) { point_[0] = p0, point_[1] = p1; }
     // The points of the car the camera is on, from its GTCI mounts (car_camera_mounts): mount 0
     // in-car, mount 1 the chase; GT3's fallbacks with fewer than two. GT3's driver's camera reads
-    // the table of the car it rides (on-board camera +0x15C -> that car's model), so a replay's or
+    // the table of the car it rides (OnBoardCamera +0x15C -> that car's model), so a replay's or
     // the Preview's driver's view on an opponent sits at that car's eye, not the player's.
     void set_car_mounts(const std::vector<CarMount>& mounts);
     // L1 held: look back (heading + pi, pitch negated; ours, the far chase and roof, turned
@@ -112,7 +112,7 @@ public:
     static constexpr float kLookStart = 0.2f, kLookFull = 0.5f; // the stick's reach: turn from, full turn at
     static constexpr float kLookRate = 14.0f;                   // the ease (1/s; 95 % in about 0.2 s)
     static constexpr float kLookMirror = 0.35f;                 // turned past this (radians): no mirror
-    // GT3's pre-race shot (starting camera, cameras/start.cam): while `on`, the camera follows the
+    // GT3's pre-race shot (StartingCamera, cameras/start.cam): while `on`, the camera follows the
     // file's record 0 in the car's frame as t goes 0 -> 1 (eye, target and zoom curves).
     void set_intro(bool on, float t) { intro_ = on, intro_t_ = t; }
     // cameras/start.cam's record (without it: a straight move from 30 m ahead to the front corner).
@@ -256,7 +256,7 @@ public:
         gt3_far = far;
         far_plane = far > 0 ? far / backdrop_scale : kFarPlane;
     }
-    // GT3's near plane at this view's zoom (presentation §G: 0.1 x 0.7002 x the zoom),
+    // GT3's near plane at this view's zoom (presentation §G: 0.1 x 0.7002 (0x350744) x the zoom),
     // where its VU clips at the guard band (render::DrawOptions::guard_near).
     float gt3_near() const { return 0.1f * 0.7002f * 0.7f * ReplayDirector::kYScale / std::tan(fovy_ * 0.5f); }
 
@@ -279,7 +279,7 @@ private:
     float look_x_ = 0, look_y_ = 0; // the look's stick (set_look)
     float look_ = 0;                // its eased turn (radians, + right)
     bool mirror_ = true;
-    // In-car vibration (GT3's on-board camera shakers): random kicks scaled by the tyres' slip,
+    // In-car vibration (GT3's OnBoardCamera shakers): random kicks scaled by the tyres' slip,
     // through a lag, stepped at 60 Hz; see update().
     struct Shaker {
         float v = 0, x = 0, u_prev = 0;

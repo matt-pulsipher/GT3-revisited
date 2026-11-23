@@ -55,7 +55,7 @@ void forward_step(Car& c) {
 
 F low_speed_hold(const Wheel& w, bool z) {
     if (w.peak_force == F()) return F();
-    // (z: 2002 Tokyo-Geneva's speeds, folded toward zero: Europe)
+    // (z: 2002 Tokyo-Geneva's speeds, folded toward zero: Europe 0x1DF0C0)
     auto v = [z](u32 x, u32 y) { return F::raw(z ? y : x); };
     const F ws = w.rim_speed, slip = w.hub_vx - ws;
     if (ws < v(0xBFB1C71D, 0xBFB1C71B) || v(0x3FB1C71D, 0x3FB1C71B) < ws) return F();     // |w| > 5 km/h
@@ -97,7 +97,7 @@ void lateral_yaw(Car& c, bool airborne) {
     }
     c.yaw_accel = torque * p.inv_yaw_inertia;
     const F r = c.yaw_rate + c.yaw_accel * dt;
-    const F hi = folded(c.behaviour, k2Pi.bits, 0x40C90FDA), lo = folded(c.behaviour, kNeg2Pi.bits, 0xC0C90FDA); // (Europe's)
+    const F hi = folded(c.behaviour, k2Pi.bits, 0x40C90FDA), lo = folded(c.behaviour, kNeg2Pi.bits, 0xC0C90FDA); // (Europe 0x1DF368's)
     c.yaw_rate = hi < r ? hi : r < lo ? lo : r;
     c.a_y = (lat - c.x4d4) * p.inv_mass;
     F grip{};
@@ -121,7 +121,7 @@ void stop_hold(Car& c, bool airborne) {
     if (airborne) return;
     // Near standstill (|u| < 1 km/h) with no fade weight on any wheel and a braked wheel.
     auto braked_stop = [&] {
-        if (!(folded(c.behaviour, 0xBE8E38E4, 0xBE8E38E3) < c.speed && c.speed < folded(c.behaviour, 0x3E8E38E4, 0x3E8E38E3))) return false; // (Europe's)
+        if (!(folded(c.behaviour, 0xBE8E38E4, 0xBE8E38E3) < c.speed && c.speed < folded(c.behaviour, 0x3E8E38E4, 0x3E8E38E3))) return false; // (Europe 0x1DF5B0's)
         for (const Wheel& w : c.w)
             if (!(w.slip_fade == F())) return false;
         for (const Wheel& w : c.w)

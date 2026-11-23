@@ -381,7 +381,7 @@ void LicenseResultOverlay::draw_fail(SDL_Renderer* r, text::GameFonts& fonts, in
 
 namespace {
 
-// Simple exam messages' update, then its timer's count: one call each a step.
+// SimpleExamMessages' update, then its timer's count: one call each a step.
 struct ExamMessageState {
     int state = 0, timer = -1;
     ee::F fade;
@@ -725,7 +725,7 @@ std::vector<ResultRow> result_menu_list(ResultList kind, bool finished, std::vec
 }
 
 bool practice_regrids(std::span<const u32> best) {
-    return !best.empty() && best[0] < kPracticeNoTime; // (a time below GT3's "no time")
+    return !best.empty() && best[0] < kPracticeNoTime; // (0x12E968, 0x133B40: a time below GT3's "no time")
 }
 
 std::vector<int> practice_grid(std::span<const u32> best) {
@@ -747,7 +747,7 @@ std::vector<int> practice_grid(std::span<const u32> best) {
 void practice_list_times(std::vector<ResultRow>& rows, std::span<const u32> best) {
     for (ResultRow& r : rows) {
         const size_t e = size_t(r.car + 1); // the entry: 0 the player, k opponent k - 1
-        r.time = menu_time_text(r.car >= -1 && e < best.size() ? best[e] : kPracticeNoTime);
+        r.time = menu_time_text(r.car >= -1 && e < best.size() ? best[e] : kPracticeNoTime); // (fn_0023B930)
     }
 }
 

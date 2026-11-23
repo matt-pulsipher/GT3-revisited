@@ -30,7 +30,7 @@ bool RaceScreen::build_exact_solo(App& app) {
     FieldConfig cfg;
     cfg.event = !solo_event_.empty() ? solo_event_ : race_event_;
     cfg.max_opponents = 0;
-    // Free practice: GT3 runs it with the race's field (the race information with every entry; car 0 in its pit box,
+    // Free practice: GT3 runs it with the race's field (0x1330E0: the race information with every entry; car 0 in its pit box,
     // the others on the line behind, start mode 5), on the grid the race has (the event's, or the last practice's).
     if (*kind == sim::exact::Conductor::FreePractice) {
         cfg.opponents = race_opponents_;
@@ -83,8 +83,8 @@ bool RaceScreen::build_exact_solo(App& app) {
     }
     vehicle_ = &solo_field_->player();
     if (solo_field_->opponents() > 0) load_opponent_cars(app, *solo_field_);
-    // The P.P. line starts with its label and no picture: the display's set-up call finds no car pictures yet
-    // (returns; the original's capture shows "P.P." until the first fastest lap).
+    // The P.P. line starts with its label and no picture: the display's set-up call (0x1943E8) finds no car pictures yet
+    // (0x194430 returns; the original's capture shows "P.P." until the first fastest lap).
     if (*kind == sim::exact::Conductor::FreePractice) practice_pole_car_ = kNoPoleCar, practice_ready_posted_ = false;
     track_->set_lap_source(exact_lap_source(*solo_field_)); // the exact core times the laps itself
     if (1.0 / step_.step() != solo_field_->tick_hz()) step_ = FixedStep(solo_field_->tick_hz()); // (PAL: 50 a second)
@@ -104,11 +104,11 @@ void RaceScreen::exact_solo_step() {
     const sim::exact::RaceFlow& fl = r->flow();
     for (size_t k = 0; k < 4; ++k) exact_session_[k] = fl.session.sector[k];
     exact_session_[4] = fl.session.lap;
-    // Free practice: the race display's Information notes (green, 3 s, queued). Its set-up posts kind 4 in free
-    // practice (D+0xA474): "Qualifying starts after 1 warm-up lap". Kind 2, the car of each new fastest lap (the
-    // lap handler), any car: the P.P. line's picture and "%s in pole position". The player's own: kind 3
-    // at its first line crossing, "Start qualifying"; kind 6 out of the pit lane (the pit lane's post), the START
-    // picture and count_s. (Car k is entry k: free practice has no ghost or second player.)
+    // Free practice: the race display's Information notes (0x1941C0; green, 3 s, queued). Its set-up posts kind 4 in free
+    // practice (0x191FB8, D+0xA474): "Qualifying starts after 1 warm-up lap". Kind 2, the car of each new fastest lap (the
+    // lap handler 0x1F22C0), any car: the P.P. line's picture (0x194420) and "%s in pole position". The player's own: kind 3
+    // at its first line crossing (0x1F2248), "Start qualifying"; kind 6 out of the pit lane (the pit lane's post), the START
+    // picture and count_s (0x194324). (Car k is entry k: free practice has no ghost or second player.)
     if (r->kind() == sim::exact::Conductor::FreePractice) {
         if (!practice_ready_posted_) { // (after the 3 s the event display is blocked at a moving start: §K3 Title)
             practice_ready_posted_ = true;
@@ -138,7 +138,7 @@ void RaceScreen::exact_solo_step() {
     using K = sim::exact::Conductor;
     const double best = c.best_lap == sim::exact::kNoTime ? -1.0 : double(c.best_lap) / 1000.0;
     switch (r->kind()) {
-    case K::TimeTrial: { // every lap ends the run; out of the course (event 10) fails it
+    case K::TimeTrial: { // 0x1F1D40: every lap ends the run; 0x1F1E50: out of the course (event 10) fails it
         bool out = false;
         for (const sim::exact::RaceEvent& e : r->events()) out = out || e.type == 10;
         finished_ = true;
@@ -156,7 +156,7 @@ void RaceScreen::exact_solo_step() {
         else finish_position_ = 1, rank_finish(best, false);
         return;
     }
-    case K::MachineTest: { // the split line ends the run: the time to it, or the top speed
+    case K::MachineTest: { // 0x1F0888: the split line ends the run: the time to it, or the top speed
         finished_ = true;
         finish_position_ = 1;
         track_->lap_freeze();
@@ -172,7 +172,7 @@ void RaceScreen::exact_solo_step() {
         return;
     }
     case K::Training:
-    case K::License: { // the licence's judging (the race clock) and its display (race info + 0x40
+    case K::License: { // the licence's judging (virtual 14, 0x1EF5C0 / 0x1EF520) and its display (0x18C1E0: race info + 0x40
                        // 0, slower than bronze, shows TIME EXPIRED with + 0x44's time; -1, out of the course, FAIL)
         bool failed_event = false;
         for (const sim::exact::RaceEvent& e : r->events()) failed_event = failed_event || e.type == 9;

@@ -8,7 +8,7 @@ namespace {
 
 const F kZero{}, kOne = F::raw(0x3F800000), kHalf = F::raw(0x3F000000), kQuarter = F::raw(0x3E800000);
 const F kStick = F::raw(0x39800000);           // 1 / 4096
-const F kHandbrakeClutch = F::raw(0x3F4CCCCD); // (0.8)
+const F kHandbrakeClutch = F::raw(0x3F4CCCCD); // $gp 0x350408 (0.8)
 
 // An analog axis: x + c (1 - x) once it moves.
 F analog(const PadConstants& k, F x) { return x + k.analog_jump * (kOne - x); }
@@ -107,7 +107,7 @@ void pad_clutch(Car& c, const PadFrame& f, u8 style) {
 
 namespace {
 
-// The later builds' code (Concept 2001 Tokyo): the steering command in percent of 15 degrees, within +-100.
+// The later builds' 0x1F0020 (Concept 2001 Tokyo): the steering command in percent of 15 degrees, within +-100.
 s32 hud_steer(F steer, bool geneva) {
     F x = steer * F::raw(geneva ? 0x43BEFC68 : 0x43BEFC66);
     if (F::raw(0x42C80000) < x) x = F::raw(0x42C80000);

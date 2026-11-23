@@ -127,7 +127,7 @@ void concept_arcade_entries(const std::string& page, const std::string& game, co
         entries = std::move(out);
     };
     if (page == "ar/select_course") {
-        // The game's course list; Single Race offers a course once its license has a medal, the other
+        // The game's course list; Single Race offers a course once its license has a medal (0x103FC0), the other
         // games all of them.
         const char* list = game == "time_attack" ? "TIME_ATTACK" : game == "two_player_battle" ? "TWO_PLAYER" : "SINGLE_RACE";
         std::vector<std::string> wanted;
@@ -157,7 +157,7 @@ std::vector<std::pair<std::string, std::string>> concept_course_parts(const std:
 
 namespace {
 
-// The garage cars of a request (concept §10; the race descriptor, the concept control): Single Race, Free Run
+// The garage cars of a request (concept §10; the race descriptor, ConceptControl::vf9 0x108448): Single Race, Free Run
 // and 2P Battle take each player's car from the garage, as its settings menu left it, on the tires the race gives it;
 // player 1's becomes the current car.
 void fill_garage_cars(GameRequest& r, GtMode& gt) {
@@ -204,7 +204,7 @@ void concept_prepare(GameRequest& r) {
     };
     const GtData::ArcadeCar* ac = resolve(r.car, r.car_class);
     if (!r.car2.empty()) resolve(r.car2, r.car2_class);
-    // Single Race: the class entry's code with its last character raised by the level.
+    // Single Race: the class entry's code with its last character raised by the level (0x114178).
     if (r.mode == "single_race" && ac) r.race_code = concept_race_code(ac->race_code, std::clamp(r.difficulty, 0, kConceptLevels - 1));
     if (r.mode == "go_license") r.event = r.race_code;
     fill_garage_cars(r, gt);
@@ -340,7 +340,7 @@ void install_concept_menu() {
                        .size());
     };
     h.cars = [](const std::string& car_class, const std::string& course) {
-        // The category's cars of the course's kind that are not locked, in list order, by picture.
+        // The category's cars of the course's kind that are not locked (0x211058), in list order, by picture.
         std::vector<std::string> out;
         if (!concept_active()) return out;
         const GtMode& gt = S()->gt();

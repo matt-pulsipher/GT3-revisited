@@ -47,14 +47,14 @@ enum Mood : int {
     kMoodDirt = 10, // all four wheels on a soft surface
 };
 
-// Later: asks for a mood for `time` steps (-1: the mood's own time; 0xFF: for good). Nothing while the lamps
+// Later 0x1DB160: asks for a mood for `time` steps (-1: the mood's own time; 0xFF: for good). Nothing while the lamps
 // fade (unless for good), after a mood set for good, or with time 0 while another mood's time runs.
 void set_mood(Car& c, const MoodTables& k, int mood, int time);
 
-// The pass-by state bytes the race's sounds keep per pair of cars (conductor + 0xBA34 + 0x84 + 8 i + j; the
+// The pass-by state bytes the race's sounds keep per pair of cars (0x1F59B0, conductor + 0xBA34 + 0x84 + 8 i + j; the
 // later builds' conductor + 0xBB18): 2 and 3 are a car passing.
 using PassBy = std::array<std::array<u8, kMaxCars>, kMaxCars>;
-// The race's pass-by states (at the end of every race step, both entry modes: conductor + 0xBA34, the later builds'
+// The race's pass-by states (0x1F59B0 at the end of every race step, both entry modes: conductor + 0xBA34, the later builds'
 // + 0xBA94), kept for the race's sounds and read by the later builds' special car 1: per ordered pair of cars (i, j) a timer
 // (+4 + 16 i + 2 j) of the steps car i has had car j's slipstream (the proximity's slip factor above 0: up by one to 300,
 // else down to 0) and a state (+0x84 + 8 i + j, PassBy) from the pair's relative-position code (the proximity's): 0 none,
@@ -65,11 +65,11 @@ struct PassByState {
     std::array<std::array<s16, kMaxCars>, kMaxCars> timer{};
     PassBy state{};
 };
-// For the first `n` cars (the conductor's car count) on the step's proximity matrices; `pal_rate`: 50 steps a second.
+// 0x1F59B0 for the first `n` cars (the conductor's car count) on the step's proximity matrices; `pal_rate`: 50 steps a second.
 void pass_by_step(PassByState& p, const Proximity& k, int n, bool pal_rate = false);
 
-// Later: how close car i's nearest rival is, 0..5 (5: one passing it, or it passing one, on the same lap), from
-// the pass-by states and the gap matrices (the laps between two cars, the gap folded into half a lap).
+// Later 0x1F5560: how close car i's nearest rival is, 0..5 (5: one passing it, or it passing one, on the same lap), from
+// the pass-by states and the gap matrices (0x1ED5E0: the laps between two cars, the gap folded into half a lap).
 int rival_level(int i, int count, const PassBy& m, const GapMatrix& gaps, F lap_length);
 
 // What the special cars' routines read outside the car record (RaceInputs::later).
@@ -82,35 +82,35 @@ struct LaterInputs {
 // rival_level() of car i among `count` cars from the inputs (0 without the pass-by states).
 int rival_level(int i, int count, const LaterInputs& in);
 
-// Rule::HybridStep (later), after phase 1: a layout 7 car's byte special[5] is cleared.
+// Rule::HybridStep (later 0x1DA0A8), after phase 1: a layout 7 car's byte special[5] is cleared.
 void hybrid_step(Car& c);
-// Rule::PodMood (later), before phase 2: special car 1's mood from the race (finished, the wrong way, the pit
+// Rule::PodMood (later 0x1DB2F8), before phase 2: special car 1's mood from the race (finished, the wrong way, the pit
 // lane, a rival alongside (`rival`: rival_level), the slip filter, soft ground under every wheel (`all_soft`)), its time,
 // the lamps' fade, the lean and the nod.
 void mood_step(Car& c, const MoodTables& k, int rival, bool all_soft);
-// Rule::PodStop (later), after phase 3: special car 1's stop count special[0], up to 34 (29 at 50 steps a
+// Rule::PodStop (later 0x1DBAB0), after phase 3: special car 1's stop count special[0], up to 34 (29 at 50 steps a
 // second) while the car stands (under 1 km/h) with the handbrake control at 1, down otherwise.
 void stop_count_step(Car& c);
-// Later (the pod race's rule, Rule::PodRule): whether a car sits, its stop count special[0] at its cap (34; 29 at 50
+// Later 0x1DBB18 (the pod race's rule, Rule::PodRule): whether a car sits, its stop count special[0] at its cap (34; 29 at 50
 // steps a second). Any car's byte (the rule reads it without the special kind).
 bool sitting(const Car& c);
-// Rule::PodSpring (later, the suspension's spring rate of wheel i, given P's rate k): special car 1's wheels lose
+// Rule::PodSpring (later 0x1DBB28, the suspension's spring rate of wheel i, given P's rate k): special car 1's wheels lose
 // their spring one after another while its stop count n is not 0, wheel i once n is past 7 r (r = (i + its index) mod 4,
 // mirrored for an index of 4 and up; 6 r at 50 steps a second): from then on k x max(0, 1 - (n - 7 r)).
 F pod_spring(const Car& c, int i, F k);
-// Rule::HitReport (later: the collision report's moods): special car 1 hit, by the report's kind (0 a wall:
+// Rule::HitReport (0x1DFEB8, later 0x1D8758: the collision report's moods): special car 1 hit, by the report's kind (0 a wall:
 // mood 9; 2: 5) and, for a car (1), by the part hit: 1, 2 mood 5; 5, 6 mood 8; 0, 3, 4, 7 mood 4, each for its own time; 8 to
 // 10 mood 5, 11 and 15 mood 4, the others 8, each for 210 steps (175 at 50 steps a second).
 void hit_mood(Car& c, const MoodTables& k, s32 kind, s32 part);
-// What the car model shows of a special car (race's frame: the getters,
-// read every frame into the car model's callback; the sound's): kinds 2 and 8 .. 10 their wing
+// What the car model shows of a special car (RacePS2Base's frame, 0x1A9B00: the getters 0x1DC570, 0x1DBC68, 0x1DBD30,
+// 0x1DBDE0 / 0x1DBE20, read every frame into the car model's callback; the sound's 0x1DBE60): kinds 2 and 8 .. 10 their wing
 // (the float special[0..3]); kind 1 its tail, lean 0.5 - special[5] / (2 x the lean's limit) and nod 0.5 + its position
 // / (half the nod's period), its lamps' class and fade (the fade's last steps: the class of the mood, weight (fade steps -
 // special[3]) / fade steps; before them the class of the mood before, weight (special[3] - fade steps) / the rest), its
 // mood (special[1] & 15) and the step's new mood (special[6]). Other cars: VehicleState::Special's defaults.
 sim::VehicleState::Special special_look(const Car& c, const MoodTables& k);
 
-// Rule::ActiveWing (later), before phase 12: special car 2's wing, the float special[0..3] towards 1 at half a
+// Rule::ActiveWing (later 0x1DBC48), before phase 12: special car 2's wing, the float special[0..3] towards 1 at half a
 // unit a second once the speed reaches 80 km/h and towards 0 once it falls below 60 km/h (special[4]: out). From
 // Tokyo-Seoul v2.00 on also kinds 8 and 10 (their own two speeds) and kind 9, whose wing follows the speed between two
 // speeds at two units a second.
