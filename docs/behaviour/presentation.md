@@ -197,7 +197,8 @@ recorded frame, where its replay ends (`DemoReplay::run_out`, test
 (`start_preview`); after a run left with the pause window's EXIT, and after
 DEMONSTRATION, it shows the demonstration again (§A8). It is seen as the race
 behind the other quick menus is (§C5): from the driver's camera, with the start
-shot over a standing start's hold.
+shot over a standing start's hold. Like the race, it renders the car's
+reflection map around the car every frame, from the first frame on.
 The box is silent, like the race behind every quick menu: only the menu's music
 and sounds play. What the other quick menus draw behind them is in §C5.
 
