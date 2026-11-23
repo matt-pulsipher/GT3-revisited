@@ -265,6 +265,7 @@ void RaceScreen::init(App& app) {
     // The makers' countries, for the driver's side of a car ([vr] seat_side = car).
     if (db_ok_) game::load_maker_countries([&](const std::string& p) { return app.vfs()->read(p); }, db_);
     if (!colors_.load(*app.vfs())) LOG_WARN("Race: database/carcolor.db not loaded (opponents in default paint)");
+    if (db_ok_) colors_.add_mod_cars(db_); // mod cars' own paints, under paint_key
     if (!db_ok_) error_ = db_.player_error();
     for (const data::Course& c : db_.courses()) {
         if (c.label.rfind("L_", 0) == 0 || course_path(*app.vfs(), c.label).empty()) continue;

@@ -735,6 +735,14 @@ std::vector<PaintInfo> CarPicker::paints(App& app, const PickerCar& c) const {
             int n = gd->color_count(c.label);
             for (int i = 0; i < n; ++i) out.push_back(info(gd->color_id(c.label, i)));
         }
+    } else if (const data::ModCar* m = db_ ? db_->mod_car(c.label) : nullptr; m && !m->paints.empty()) {
+        // A mod car's own paints ([paints]), as the race draws them (race::CarColors::add_mod_cars).
+        auto byte = [](float v) { return u32(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
+        for (size_t i = 0; i < m->paints.size(); ++i)
+            if (c.garage < 0 || int(i) == c.paint) {
+                const std::array<float, 3>& v = m->paints[i].second;
+                out.push_back({byte(v[0]) | byte(v[1]) << 8 | byte(v[2]) << 16, ""});
+            }
     } else if (app.vfs()) {
         static race::CarColors colors; // the disc's paint table, when GT Mode data is not loaded
         static bool loaded = colors.load(*app.vfs());

@@ -16,6 +16,7 @@
 #include "game/data/mod_cars.h"
 #include "exact_drive.h"
 #include "race/exact_setup.h"
+#include "race/paint.h"
 #include "race/results.h"
 #include "sim/car_spec.h"
 #include "sim/exact/race_flow.h"
@@ -312,6 +313,65 @@ TEST(modcar_texts_game_text) {
         CHECK(db->mod_makers()[0].name == disc_maker);
         CHECK(db->mod_makers()[0].description == "\x81\xC0 Paris");
     }
+}
+
+// Issue 413: a mod car's own paints ([paints]) are listed for the race under the car (mod cars may share a body), with
+// the ids GT Mode gives them, so a chosen paint holds and "draw at start" draws from the car's own list, not paint 0.
+TEST(modcar_race_paints) {
+    auto db = cardb::empty_database();
+    CHECK(db != nullptr);
+    if (!db) return;
+    cardb::add_car(*db, "syn_donor", 300, 75, "zz0001");
+    const ByteSpan* rec = db->record(data::TableId::Car, "syn_donor");
+    CHECK(rec != nullptr);
+    if (!rec) return;
+    Bytes car(rec->begin(), rec->end());
+    for (const auto& [t, slot, l] : {std::tuple{data::TableId::Drivetrain, 13, "dt_syn_donor"},
+                                     std::tuple{data::TableId::Gear, 18, "ge_syn_donor"}}) {
+        db->add_label(l);
+        Bytes r(0x40);
+        cardb::put64(r, 0, db::id_hash(l));
+        cardb::put64(r, 8, db::id_hash("syn_donor"));
+        db->put_record(t, r);
+        cardb::put64(car, size_t(8 + 8 * slot), db::id_hash(l));
+    }
+    db->put_record(data::TableId::Car, car);
+    db->rebuild();
+    std::string err;
+    auto plain = data::parse_mod_car("[car]\nlabel = syn_plain\nname = Plain\ndonor = syn_donor\n", &err);
+    auto painted = data::parse_mod_car("[car]\nlabel = syn_painted\nname = Painted\ndonor = syn_donor\n"
+                                       "[paints]\nRed = #FF0000\nGreen = #00FF00\nBlue = #0000FF\n",
+                                       &err);
+    CHECK(plain && painted);
+    if (!plain || !painted) return;
+    CHECK(data::add_mod_car(*db, *plain, &err) && data::add_mod_car(*db, *painted, &err));
+    db->rebuild();
+    const std::string model = db->model_of(*db->car("syn_painted"));
+    CHECK(model == "zz0001"); // the donor's body
+    CHECK(race::paint_key(*db, "syn_donor", model) == model);
+    CHECK(race::paint_key(*db, "syn_plain", model) == model); // no paints of its own: the body's list
+    const std::string key = race::paint_key(*db, "syn_painted", model);
+    CHECK(key == "mod:syn_painted");
+    size_t mod_no = size_t(db->mod_car("syn_painted") - db->mod_cars().data());
+    race::CarColors colors;
+    colors.add_mod_cars(*db);
+    const std::vector<u32>* ids = colors.ids(key);
+    CHECK(ids && ids->size() == 3);
+    CHECK(colors.ids(model) == nullptr); // the disc's list (none here) is left alone
+    CHECK(colors.id_at(key, 1) == race::mod_paint_id(mod_no, 1) && colors.index_of(key, race::mod_paint_id(mod_no, 2)) == 2);
+    CHECK(colors.rgb(colors.id_at(key, 0)) == 0x0000FFu && colors.rgb(colors.id_at(key, 2)) == 0xFF0000u); // bytes R, G, B
+    // A chosen paint holds; unset ones are drawn from the car's own three, so the field is not all paint 0.
+    std::vector<race::PaintEntry> e(4, race::PaintEntry{key});
+    e[1].id = colors.id_at(key, 2);
+    race::PaintRng rng;
+    std::vector<int> p = race::assign_paints(colors, e, rng);
+    CHECK(p.size() == 4 && p[1] == 2);
+    bool all_first = true;
+    for (int k : p) {
+        CHECK(k >= 0 && k < 3);
+        all_first = all_first && k == 0;
+    }
+    CHECK(!all_first);
 }
 
 // Through CarDatabase::load with a mods list: the disc's JIS table (font/jis2uni.dat) encodes Japanese in a mod's names

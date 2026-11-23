@@ -115,7 +115,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
             LOG_INFO("Race: camera points in-car (%.2f %.2f %.2f) chase (%.2f %.2f %.2f)", p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
         }
         if (event_paint_id_ != 0xFFFFFFFFu)
-            if (int k = colors_.index_of(model, event_paint_id_); k >= 0) preset_.paint = k;
+            if (int k = colors_.index_of(paint_key(db_, ca.label, model), event_paint_id_); k >= 0) preset_.paint = k;
         build_player_visual(app, model, *car_file);
         course_name_ = ce.name;
         // The start title shows the course table's name as it is: licence sections have their
@@ -771,20 +771,22 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     opp_visuals_.clear();
     camera_car_.reset();
     // Paint colours: player first, then the opponents (event entry ids or the game's draw). The attract demo's race has no
-    // player car: its slot-0 car is drawn like the others when its entry gives no paint.
+    // player car: its slot-0 car is drawn like the others when its entry gives no paint. A mod car's own paints are listed
+    // under its paint_key (issue 413: its model is not in the disc's list, so it was always paint 0).
     std::vector<PaintEntry> entries;
     std::string player_model = launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_;
-    entries.push_back({player_model, draw_player_paint_ ? 0xFFFFFFFFu : colors_.id_at(player_model, preset_.paint)});
+    const std::string player_key = paint_key(db_, car_.label, player_model);
+    entries.push_back({player_key, draw_player_paint_ ? 0xFFFFFFFFu : colors_.id_at(player_key, preset_.paint)});
     const data::Event* pev = db_.event(race_event_);
     for (int i = 0; i < f.opponents(); ++i) {
-        PaintEntry e{f.opponent_model(i)};
+        PaintEntry e{paint_key(db_, f.opponent_label(i), f.opponent_model(i))};
         if (pev && race_opponents_ == pev->entries) // the event's own field: slot i is pool entry i
             e.id = race::pool_color_id(*pev, i);
         if (size_t(i) < race_opponent_color_ids_.size()) e.id = race_opponent_color_ids_[size_t(i)];
         if (online_ && size_t(i) < net_.paint.size()) // the colour that player chose
-            e.id = colors_.id_at(f.opponent_model(i), net_.paint[size_t(i)]);
+            e.id = colors_.id_at(e.model, net_.paint[size_t(i)]);
         if (size_t(i) < race_opponent_paints_.size() && race_opponent_paints_[size_t(i)] >= 0) // the colour the grid gives it
-            e.id = colors_.id_at(f.opponent_model(i), race_opponent_paints_[size_t(i)]);
+            e.id = colors_.id_at(e.model, race_opponent_paints_[size_t(i)]);
         entries.push_back(e);
     }
     // The race module's generator, as left by the opponent draw; a replay re-runs

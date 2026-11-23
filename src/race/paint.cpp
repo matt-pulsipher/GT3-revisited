@@ -1,6 +1,7 @@
 #include "race/paint.h"
 
 #include "formats/db/gt_db.h"
+#include "game/data/car_database.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -58,6 +59,45 @@ int CarColors::index_of(const std::string& model, u32 id) const {
 u32 CarColors::id_at(const std::string& model, int index) const {
     const std::vector<u32>* l = ids(model);
     return l && index >= 0 && size_t(index) < l->size() ? (*l)[size_t(index)] : 0xFFFFFFFFu;
+}
+
+u32 mod_paint_id(size_t mod_car, int paint) {
+    return kModPaint | (u32(mod_car) & 0xFFFFu) << 12 | (u32(paint) & 0xFFFu);
+}
+
+namespace {
+const data::ModCar* mod_with_paints(const data::CarDatabase& db, const std::string& car) {
+    std::string base = car;
+    if (!db.car(car)) {
+        if (const data::CarVariant* v = db.variant(car)) base = v->car;
+        else
+            for (const data::CarVariant& a : db.arcade_cars())
+                if (a.label == car) base = a.car;
+    }
+    const data::ModCar* m = db.mod_car(base);
+    return m && !m->paints.empty() ? m : nullptr;
+}
+} // namespace
+
+std::string paint_key(const data::CarDatabase& db, const std::string& car, const std::string& model) {
+    const data::ModCar* m = mod_with_paints(db, car);
+    return m ? "mod:" + m->label : model;
+}
+
+void CarColors::add_mod_cars(const data::CarDatabase& db) {
+    auto byte = [](float v) { return u32(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
+    const std::vector<data::ModCar>& mods = db.mod_cars();
+    for (size_t c = 0; c < mods.size(); ++c) {
+        if (mods[c].paints.empty()) continue;
+        std::vector<u32>& ids = models_[db::id_hash("mod:" + mods[c].label)];
+        ids.clear();
+        for (size_t i = 0; i < mods[c].paints.size(); ++i) {
+            const u32 id = mod_paint_id(c, int(i));
+            const std::array<float, 3>& v = mods[c].paints[i].second;
+            ids.push_back(id);
+            rgb_[id] = byte(v[0]) | byte(v[1]) << 8 | byte(v[2]) << 16;
+        }
+    }
 }
 
 namespace {
