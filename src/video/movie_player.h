@@ -19,6 +19,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -142,6 +143,10 @@ private:
     SDL_Texture* texture_ = nullptr;
     int tex_w_ = 0, tex_h_ = 0;
     bool tex_stacked_ = false; // the texture holds deinterlace_fields() output
+    // begin() starts the layout over, but the picture in the texture stays until the new movie's first one replaces
+    // it: meanwhile it keeps the layout it was drawn with (none: the texture holds the playing movie's picture).
+    std::optional<bool> tex_left_split_;
+    bool texture_split() const { return tex_left_split_.value_or(field_split_.load()); }
     double clock_ = 0;
     double shown_time_ = 0; // presentation time of the frame in the texture
     u64 last_ticks_ = 0;
