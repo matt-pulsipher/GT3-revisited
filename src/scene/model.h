@@ -9,6 +9,7 @@
 
 #include <array>
 #include <string>
+#include <memory>
 #include <vector>
 
 namespace gt3r::scene {
@@ -155,6 +156,9 @@ struct Texture {
     // The game samples it point-filtered (its Tex1 record's TEX1: MMAG NEAREST): no texel's colour
     // spreads into its neighbours there (gtm1 cut-out copies rely on it). Texture pack pictures: false.
     bool nearest = false;
+    // A livery's coverage of each texel (0..255; gtm1::overlay_livery), null when no livery covers it: the
+    // lower-detail models take a livery from the textures that have one (formats/model/livery_transfer.h).
+    std::shared_ptr<const std::vector<u8>> livery_cover;
 };
 
 struct Model {

@@ -503,6 +503,17 @@ void RaceScreen::restart() {
     recorder_.set_start_speed(v0);
     recorder_.set_paint_seed(paint_seed_);
     recorder_.set_opponent_paints(race_opponent_paints_);
+    { // the custom colours among those paints, so the replay keeps them (Replay v14)
+        std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+        std::vector<race::Replay::CustomColor> colors;
+        auto note = [&](u8 car, const std::string& model, int paint) {
+            if (const race::CustomPaint* c = custom->at(model, paint)) colors.push_back({car, model, c->colour, c->rgb, u8(c->finish), c->id});
+        };
+        note(0, launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_, preset_.paint);
+        for (size_t i = 0; field_ && i < race_opponent_paints_.size() && i < 64 && int(i) < field_->opponents(); ++i)
+            note(u8(i + 1), field_->opponent_model(int(i)), race_opponent_paints_[i]);
+        recorder_.set_custom_colors(std::move(colors));
+    }
     begin_license();
 }
 
@@ -774,17 +785,28 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     // player car: its slot-0 car is drawn like the others when its entry gives no paint.
     std::vector<PaintEntry> entries;
     std::string player_model = launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_;
-    entries.push_back({player_model, draw_player_paint_ ? 0xFFFFFFFFu : colors_.id_at(player_model, preset_.paint)});
+    // A custom colour (race/custom_paints.h) enters the draw as its finish paint, so the others keep away from it, and
+    // comes back after it.
+    std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+    std::vector<int> custom_paint; // entry -> its custom colour's paint index, -1 = none
+    auto paint_id = [&](const std::string& model, int paint) {
+        const race::CustomPaint* c = custom->at(model, paint);
+        custom_paint.back() = c ? paint : -1;
+        return colors_.id_at(model, c ? c->finish : paint);
+    };
+    custom_paint.push_back(-1);
+    entries.push_back({player_model, draw_player_paint_ ? 0xFFFFFFFFu : paint_id(player_model, preset_.paint)});
     const data::Event* pev = db_.event(race_event_);
     for (int i = 0; i < f.opponents(); ++i) {
         PaintEntry e{f.opponent_model(i)};
+        custom_paint.push_back(-1);
         if (pev && race_opponents_ == pev->entries) // the event's own field: slot i is pool entry i
             e.id = race::pool_color_id(*pev, i);
         if (size_t(i) < race_opponent_color_ids_.size()) e.id = race_opponent_color_ids_[size_t(i)];
         if (online_ && size_t(i) < net_.paint.size()) // the colour that player chose
-            e.id = colors_.id_at(f.opponent_model(i), net_.paint[size_t(i)]);
+            e.id = paint_id(f.opponent_model(i), net_.paint[size_t(i)]);
         if (size_t(i) < race_opponent_paints_.size() && race_opponent_paints_[size_t(i)] >= 0) // the colour the grid gives it
-            e.id = colors_.id_at(f.opponent_model(i), race_opponent_paints_[size_t(i)]);
+            e.id = paint_id(f.opponent_model(i), race_opponent_paints_[size_t(i)]);
         entries.push_back(e);
     }
     // The race module's generator, as left by the opponent draw; a replay re-runs
@@ -801,6 +823,8 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         paints = assign_paints(colors_, entries, rng);
         if (!paint_seed_override_) drawn_paint_entries_ = entries, drawn_paints_ = paints, drawn_paint_seed_ = paint_seed_;
     }
+    for (size_t i = 0; i < paints.size() && i < custom_paint.size(); ++i)
+        if (custom_paint[i] >= 0) paints[i] = custom_paint[i];
     {
         std::string list;
         for (size_t i = 1; i < paints.size(); ++i) list += (i > 1 ? " " : "") + std::to_string(paints[i]);

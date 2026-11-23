@@ -35,4 +35,17 @@ struct GlbOptions {
 // enabled. Throws FormatError on malformed files.
 scene::Model load_glb(ByteSpan file, const GlbOptions& opt = {}, const std::string& name = {});
 
+// The same .glb with every image our own: each embedded PNG decoded and encoded again by our
+// PNG encoder, every other image (JPEG, or a file beside it) a 1x1 white PNG (what load_glb
+// draws for them anyway), the sender's image bytes zeroed in the binary buffer where no
+// accessor reads them. For a downloaded car (game/mod_package.h), so whatever else opens the
+// file reads only what our encoder wrote. Throws FormatError on malformed files.
+Bytes reencode_glb_images(ByteSpan file, u32 max_texture_dim);
+
+// The images of a .glb that load_glb does not read and draws white: a JPEG (or any type but PNG)
+// and an image in a file beside it, one line each for the modder ("texture \"door\": JPEG,
+// shows white (use PNG)"). Reads only the JSON chunk; empty when the file is
+// no .glb.
+std::vector<std::string> glb_image_warnings(ByteSpan file);
+
 } // namespace gt3r

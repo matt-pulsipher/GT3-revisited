@@ -22,6 +22,7 @@
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
 #include "platform/mac_layer.h"
+#include "race/custom_paints.h"
 #include "race/replay_library.h"
 
 #include <algorithm>
@@ -385,6 +386,7 @@ void App::rescan_mods() {
     if (!vfs_) return;
     vfs_->scan_mods(mods_dir(), &config_);
     texture_pack::set_pack(vfs_->textures()); // for what loads from now on
+    race::set_custom_paints(race::load_custom_paints(*vfs_));
     game::reload_gt_mode_data(); // loaded at the first title menu, with the mods of then
     if (audio_) audio_->forget_disc_music(); // mods may replace the music index and files
     measure_disc_music();
@@ -396,6 +398,7 @@ void App::set_mod_enabled(const std::string& id, bool enabled) {
     save_config();
     vfs_->set_mod_enabled(id, enabled);
     texture_pack::set_pack(vfs_->textures());
+    race::set_custom_paints(race::load_custom_paints(*vfs_));
     game::reload_gt_mode_data();
     if (audio_) audio_->forget_disc_music();
     measure_disc_music();
@@ -426,6 +429,7 @@ std::string App::open_disc(const std::string& path) {
         vfs_ = std::make_unique<Vfs>(&disc_->volume());
         vfs_->scan_mods(mods_dir(), &config_);
         texture_pack::set_pack(vfs_->textures());
+        race::set_custom_paints(race::load_custom_paints(*vfs_));
         apply_language();
         measure_disc_music();
         const DiscInfo& info = disc_->info();
@@ -695,6 +699,7 @@ void App::close_disc() {
     music_.set_disc_songs({}, {}); // its songs' measuring reads this disc
     game::close_gt_mode(); // its data, reader and save library belong to this disc
     texture_pack::set_pack(nullptr);
+    race::set_custom_paints(nullptr);
     vfs_.reset();
     disc_.reset();
 }

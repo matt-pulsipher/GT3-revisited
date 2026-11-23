@@ -89,7 +89,7 @@ void RaceScreen::resolve_online() {
     std::optional<game::OnlineCar> oc = game::decode_online_car(net_.car_info);
     if (!oc) return;
     preset_.car = oc->car;
-    preset_.paint = oc->paint;
+    preset_.paint = game::online_car_local_paint(db_, *oc); // (a custom colour: its index here)
     // The exact core's car: its parts and settings, its arcade tyres, its engine condition.
     launch_source_ = exact_online_source(db_, *oc, preset_.course, &run_condition_);
     start_condition_ = run_condition_;

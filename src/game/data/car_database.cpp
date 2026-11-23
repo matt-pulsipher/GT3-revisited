@@ -132,6 +132,7 @@ bool CarDatabase::load(const Reader& read, std::optional<std::string> suffix_opt
     mod_makers_.clear();
     mod_events_.clear();
     mod_car_errors_.clear();
+    mod_car_warnings_.clear();
     unsupported_ = false;
     paramdb_.clear();
     try {

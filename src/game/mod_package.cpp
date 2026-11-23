@@ -3,6 +3,7 @@
 #include "base/file.h"
 #include "formats/model/gltf.h"
 #include "formats/png_reader.h"
+#include "formats/png_writer.h"
 #include "game/data/car_database.h"
 #include "game/data/mod_cars.h"
 #include "net/protocol.h"
@@ -300,7 +301,21 @@ std::optional<std::string> install_mod_package(const ModPackage& p, const std::s
         std::string path = dir + "/" + f.path;
         std::string parent = path.substr(0, path.find_last_of('/'));
         SDL_CreateDirectory(parent.c_str());
-        if (!write_host_file(path, f.data)) {
+        // Pictures and bodies as our own encoding, never the sender's bytes: whatever else opens the files (a file
+        // manager's thumbnails, the system's media scan) reads only what our encoders wrote.
+        Bytes ours;
+        try {
+            if (ext_of(f.path) == "png") {
+                const PngImage img = decode_png(f.data, kMaxImageDim);
+                ours = encode_png(img.width, img.height, img.rgba);
+            } else if (ext_of(f.path) == "glb") {
+                ours = reencode_glb_images(f.data, kMaxImageDim);
+            }
+        } catch (const std::exception& ex) {
+            fail(error, f.path + ": " + ex.what());
+            return std::nullopt;
+        }
+        if (!write_host_file(path, ours.empty() ? ByteSpan(f.data) : ByteSpan(ours))) {
             fail(error, "cannot write " + path);
             return std::nullopt;
         }

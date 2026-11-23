@@ -23,6 +23,10 @@
 // - pictures: PNG, at most 2048 x 2048 (checked before decoding), decode cleanly;
 // - the body: a GLB that loads with embedded textures of at most 2048 x 2048 and at most
 //   500,000 vertices.
+// Installed pictures and bodies are our own encoding, never the sender's bytes: each PNG decoded and
+// encoded again, each body's images likewise (reencode_glb_images: other images a 1x1 white PNG, the
+// sender's image bytes zeroed), so whatever else opens the files (a file manager's thumbnails, the
+// system's media scan) reads only what our encoders wrote.
 
 #include "base/bytes.h"
 

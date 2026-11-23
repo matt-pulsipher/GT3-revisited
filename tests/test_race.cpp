@@ -2188,7 +2188,7 @@ TEST(race_replay_opponent_paints) {
     auto at = std::search(b.begin(), b.end(), record, record + 4);
     CHECK(at != b.end());
     if (at == b.end()) return;
-    b.erase(at - 5); // (the paint count, before the race record's size)
+    b.erase(at - 6, at - 4); // (the paint and custom colour counts, before the race record's size)
     const u32 v12 = 12;
     std::memcpy(b.data() + 8, &v12, 4);
     const Replay old = Replay::parse(b);

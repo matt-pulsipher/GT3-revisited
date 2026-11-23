@@ -462,6 +462,10 @@ public:
     // Problems found while loading mod cars (one line each, naming the file).
     const std::vector<std::string>& mod_car_errors() const { return mod_car_errors_; }
     void add_mod_car_error(std::string e) { mod_car_errors_.push_back(std::move(e)); }
+    // Things a loaded mod car shows differently than its author may expect (one line each, naming the file): textures
+    // of its body the game draws white (gltf.h glb_image_warnings).
+    const std::vector<std::string>& mod_car_warnings() const { return mod_car_warnings_; }
+    void add_mod_car_warning(std::string w) { mod_car_warnings_.push_back(std::move(w)); }
 
 private:
     Language language_ = Language::US;
@@ -490,6 +494,7 @@ private:
     std::vector<ModMaker> mod_makers_;
     std::vector<ModEvent> mod_events_;
     std::vector<std::string> mod_car_errors_;
+    std::vector<std::string> mod_car_warnings_;
     std::string error_;
     bool unsupported_ = false;
 };

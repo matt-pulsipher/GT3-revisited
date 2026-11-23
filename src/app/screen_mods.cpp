@@ -310,6 +310,7 @@ public:
         if (m.pressed(PadButton::Select) && can_open_folder()) open_folder(app);
         if (m.pressed(PadButton::Circle) && can_install()) ask_save_textures(app);
         if (m.pressed(PadButton::R1) && can_convert_pcsx2()) ask_convert(app);
+        if (m.pressed(PadButton::L1) && can_install()) app.push(make_new_livery_screen());
         if (m.pressed(PadButton::Triangle)) app.pop();
     }
 
@@ -329,6 +330,7 @@ public:
         if (lay_.open.w > 0) ui.button(lay_.open, kOpenLabel, false, pressed(Target::Open));
         if (lay_.textures.w > 0) ui.button(lay_.textures, kTexturesLabel, false, pressed(Target::Textures));
         if (lay_.convert.w > 0) ui.button(lay_.convert, kConvertLabel, false, pressed(Target::Convert));
+        if (lay_.livery.w > 0) ui.button(lay_.livery, kLiveryLabel, false, pressed(Target::Livery));
 
         render_list(app, ui, mods);
         if (!mods.empty()) render_details(app, ui, mods[size_t(sel_)]);
@@ -357,9 +359,9 @@ public:
         for (size_t i = 0; i < lines.size(); ++i) ui.text(S.x + 8, sy + 5 + float(i) * 11, lines[i], sc);
         if (!touch)
             ui.footer(can_convert_pcsx2() ? "{Cross}: on/off  {Square}: remove  {Start}: install .zip  {Select}: open folder  "
-                                            "{Circle}: save textures  {R1}: PCSX2 pack  {Triangle}: back"
+                                            "{Circle}: save textures  {R1}: PCSX2 pack  {L1}: new livery  {Triangle}: back"
                       : can_install()     ? "{Cross}: on/off   {Square}: remove   {Start}: install .zip   {Select}: open folder   "
-                                            "{Circle}: save textures   {Triangle}: back"
+                                            "{Circle}: save textures   {L1}: new livery   {Triangle}: back"
                                           : "{Cross}: on/off   {Square}: remove   {Triangle}: back");
 
         if (job_) render_progress(ui);
@@ -375,15 +377,16 @@ private:
     static constexpr const char* kInstallLabel = "Install from .zip";
     static constexpr const char* kOpenLabel = "Open folder";
     static constexpr const char* kTexturesLabel = "Save textures";
+    static constexpr const char* kLiveryLabel = "New livery";
     static constexpr const char* kConvertLabel = "PCSX2 pack";
 
     struct Target {
-        enum Kind { None, Back, Install, Open, Textures, Convert, Remove, Row, Toggle, Yes, No } kind = None;
+        enum Kind { None, Back, Install, Open, Textures, Convert, Livery, Remove, Row, Toggle, Yes, No } kind = None;
         int index = 0;
         bool operator==(const Target& o) const { return kind == o.kind && index == o.index; }
     };
     struct Layout {
-        UiRect back, install, open, textures, convert, list, details, remove, yes, no;
+        UiRect back, install, open, textures, convert, livery, list, details, remove, yes, no;
         float bar_bottom = 20, strip_y = 318, row_h = 30;
     };
     struct Confirm {
@@ -403,6 +406,7 @@ private:
         case Target::Install: pick(app); break;
         case Target::Open: open_folder(app); break;
         case Target::Textures: ask_save_textures(app); break;
+        case Target::Livery: app.push(make_new_livery_screen()); break;
         case Target::Convert: ask_convert(app); break;
         case Target::Remove: ask_remove(app, sel_); break;
         case Target::Row: sel_ = t.index; break;
@@ -717,6 +721,8 @@ private:
         const float left = can_install() ? l.install.x : l.open.x;
         l.convert = can_convert_pcsx2() ? UiRect{left - 6 - cw, l.back.y, cw, l.back.h} : UiRect{left, l.back.y, 0, 0};
         l.textures = can_install() ? UiRect{l.convert.x - (l.convert.w > 0 ? 6 : 0) - tw, l.back.y, tw, l.back.h} : UiRect{};
+        const float lw = std::ceil(Ui::text_width(kLiveryLabel)) + pad;
+        l.livery = can_install() ? UiRect{l.textures.x - 6 - lw, l.back.y, lw, l.back.h} : UiRect{};
         const float strip_h = 26, footer_h = touch ? 0.0f : 16.0f;
         l.strip_y = ui.height() - footer_h - strip_h - (touch ? ui.height() - S.bottom() : 0);
         const float top = l.bar_bottom + 5, split = std::floor(S.x + S.w * 0.5f);
@@ -814,6 +820,7 @@ private:
         count(mod.cars.size(), " car", " cars");
         count(mod.makers.size(), " maker", " makers");
         count(mod.textures.size(), " texture", " textures");
+        count(mod.liveries.size(), " paint or livery", " paints and liveries");
         line((what.empty() ? std::string("Nothing to load") : what) + "   priority " + std::to_string(mod.priority) +
                  (!mod.for_disc ? "" : mod.enabled ? "" : "   (off on this disc)"),
              colors::kDim);
@@ -867,6 +874,12 @@ private:
             }
             ui.text(x + 8, y, Ui::clip(text, w - 8), c);
             y += 11;
+            if (db_ok_ && car) // (body textures it draws white)
+                for (const std::string& wn : db_.mod_car_warnings()) {
+                    if (wn.rfind(file + ": ", 0) != 0 || y + Ui::kChar > bottom) continue;
+                    ui.text(x + 16, y, Ui::clip(wn.substr(file.size() + 2), w - 16), colors::kAccent);
+                    y += 11;
+                }
         }
     }
 
@@ -927,6 +940,7 @@ private:
         if (lay_.install.w > 0 && lay_.install.contains(x, y)) return {Target::Install};
         if (lay_.open.w > 0 && lay_.open.contains(x, y)) return {Target::Open};
         if (lay_.textures.w > 0 && lay_.textures.contains(x, y)) return {Target::Textures};
+        if (lay_.livery.w > 0 && lay_.livery.contains(x, y)) return {Target::Livery};
         if (lay_.convert.w > 0 && lay_.convert.contains(x, y)) return {Target::Convert};
         if (!rows_.empty() && lay_.remove.contains(x, y)) return {Target::Remove};
         if (lay_.list.contains(x, y))

@@ -55,6 +55,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
         sim::EngineCondition condition;
         float top_speed = 150.0f; // (m/s: unknown gearing, a generous bound)
         std::string name;         // the car's name (a CPU car's name)
+        int paint = -1;           // a custom colour's paint index here (-1: the paint the roster gives)
     };
     auto car_of = [&](u8 id, const std::string& fallback, const std::string& who) {
         Car c;
@@ -67,6 +68,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
                 std::string base = game::online_car_base(db_, *oc); // an arcade car's twin on this disc
                 c.label = base.empty() ? oc->car : base;
                 c.name = oc->name.empty() ? c.label : oc->name;
+                if (oc->color || !oc->livery.empty()) c.paint = game::online_car_local_paint(db_, *oc, who);
                 std::string err;
                 if (std::optional<sim::CarSpec> sp = game::online_car_spec(db_, *oc, &err, preset_.course))
                     c.top_speed = game::geared_top_speed(*sp);
@@ -102,7 +104,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
         cfg.opponent_drivers.push_back(cc->driver);
         cfg.grid_slots.push_back(s.slot);
         ++cfg.max_opponents;
-        add(s.id, cc->paint, c.name, c.top_speed, true, true);
+        add(s.id, c.paint >= 0 ? c.paint : cc->paint, c.name, c.top_speed, true, true);
     }
     if (cfg.grid_slots.size() < 2) cfg.grid_slots.clear();
     for (const Seat& s : theirs) {
@@ -118,7 +120,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
         FieldConfig::Remote rm{c.label, s.slot, c.source, c.condition, std::nullopt};
         if (cc) rm.driver = cc->driver; // (the host's CPU car: its prediction's AI drives with the same skill)
         cfg.remote.push_back(rm);
-        add(s.id, p ? p->paint : cc->paint, cc ? c.name : who, c.top_speed, cc != nullptr, false);
+        add(s.id, c.paint >= 0 ? c.paint : p ? p->paint : cc->paint, cc ? c.name : who, c.top_speed, cc != nullptr, false);
     }
     net_.cpu_tick.assign(net_.player.size(), 0);
     net_.reported_contact.assign(net_.player.size(), -1e18);
