@@ -527,7 +527,10 @@ Coordinate conventions:
   an earlier depth-writing triangle's plane of the same mesh, overlapping it (not just along
   an edge); passes over a marked primitive's vertices are marked too. Those draw with
   `PipelineKey::depth_bias`: 64 units of a float depth buffer (2^-23 of the depth each,
-  about 0.5 mm at 60 m, under GT3's Z step there) plus a slope factor of 1. It takes
+  about 0.5 mm at 60 m, under GT3's Z step there) plus a slope factor of 1/16. A larger
+  slope factor lifts the face by a share of a pixel's depth change, centimetres of road at a
+  grazing angle in a small or low-resolution view: at 1 the road hid the start line painted
+  1 cm above it in A-4's preview box (issue 429), and faces other models draw over it later. It takes
   16-75 ms per course on the development Mac (Seattle the most).
 - `scene::Mesh::transform` is column-major and applied as
   `item.transform * mesh.transform`.

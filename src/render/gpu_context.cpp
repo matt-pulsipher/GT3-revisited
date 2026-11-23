@@ -703,7 +703,11 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
         info.rasterizer_state.depth_bias_constant_factor =
             depth_format_ == SDL_GPU_TEXTUREFORMAT_D32_FLOAT ? 64.0f
             : depth_format_ == SDL_GPU_TEXTUREFORMAT_D24_UNORM ? 2.0f : 1.0f;
-        info.rasterizer_state.depth_bias_slope_factor = 1.0f; // (faces seen at a grazing angle)
+        // At a grazing angle, a sixteenth of a pixel's depth change: covers the rounding of two
+        // triangulations of one plane. Not more: a whole pixel's worth in a small or low-resolution
+        // view is centimetres of road, and the face lifted that far hid the start line painted
+        // 1 cm above it (A-4's preview box, issue 429) and faces other models draw over it later.
+        info.rasterizer_state.depth_bias_slope_factor = 1.0f / 16.0f;
     }
     info.multisample_state.sample_count = key.single ? SDL_GPU_SAMPLECOUNT_1 : samples_;
     info.depth_stencil_state.enable_depth_test = !key.single;
