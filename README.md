@@ -1,47 +1,117 @@
 # GT3 Revisited
 
 An open-source reimplementation of the *Gran Turismo 3 A-Spec* engine for
-modern platforms: **Windows, macOS, Linux, Android, iOS and Meta Quest (VR)**.
+modern platforms: **Windows, macOS, Linux, Android, iOS, Meta Quest and PC VR**.
 
-GT3 Revisited contains **no game data or assets**. It needs a
-disc image (`.iso` or `.chd`) that you made from your own copy of the game. At runtime
-it reads the image directly and decodes the assets. Nothing is extracted to
-disk or redistributed.
+[Download the latest release](../../releases/latest) ·
+[Installing](#installing) · [FAQ](#faq) · [Modding](docs/MODDING.md) ·
+[Controllers](docs/INPUT.md) · [Discussions](../../discussions)
 
-> **Status: the whole game is playable.** Everything in the original is
-> implemented: GT Mode (dealers, garage, tuning, licenses, championships,
-> endurance races with pit stops, endings), Arcade (single race, time trial,
-> free run, 2-player split screen), AI opponents, replays with the TV
-> cameras, the Replay Theater and Analyzer, movies, music and sound, all from
-> your disc. The physics is verified against the original. The remaining
-> differences are small and listed [below](#differences-from-the-original).
+You need a disc image (`.iso` or `.chd`) of your own copy of the game. Nothing
+from the game is included here. Cars, courses, menus, movies and music are
+loaded from your image at runtime and never extracted to disk.
 
-## What you get
+## What is this?
 
-| | |
-|---|---|
-| **The game** | GT Mode, Arcade, licenses, 2P battle, Replay Theater, Options: the game's own menus, text (every language on the disc), fonts, movies and soundtrack |
-| **Faithful racing** | physics, AI, cameras, HUD, replays, lighting, reflections, smoke and sounds reimplemented from the original's behaviour and compared side by side with it |
-| **Online battle** | the arcade's i.LINK Battle rebuilt for the internet and LANs: up to 16 players and 32 cars with CPU cars, session codes, no port forwarding |
-| **Quick race** | any of the game's events with any car, nothing to unlock; custom races: any course and laps, your own lineup of up to 31 opponents (any car, color and skill) and your place on the grid, saved by name |
-| **Saves** | any number of named saves; import from and export to the PS2 original |
-| **Modern display** | any resolution and aspect ratio, widescreen, high refresh rates (or a 60 fps limit), MSAA, dynamic resolution, or the original 640×448 look |
-| **VR** | Meta Quest: the menus on a large virtual screen, races in stereo from the driver's seat, Touch controllers (sticks and analog triggers, or grab a steering wheel) |
-| **Controllers** | keyboard, any gamepad, wheels and pedals, all remappable; analog pressure buttons, DualSense adaptive triggers, Xbox impulse triggers, wheel force feedback, tilt steering, touch controls on phones and tablets (move, resize or hide each one) |
-| **Mods** | replace any game file, add music, add new cars (electric ones too) to the dealers, texture packs at any resolution (PCSX2 packs convert) |
-| **Event creator** | your own GT Mode events: courses, laps, skill and a pool of up to 32 opponents for each race (stock, the disc's tuned versions, or your own tunes), single races or a championship, car rules, prize money, a prize car and a picture; shared as a .zip |
+A native C++ port of GT3. Each part of the game was ported or rewritten to run
+on modern hardware:
 
-## How it's built
+- **Physics, AI and race rules** are ported from GT3 routine by routine, in
+  the same order of operations, with the PS2's single-precision float rounding
+  reproduced in software. They're checked step by step against the original,
+  with identical results on x86-64 and ARM.
+- **Rendering** is a native renderer on Vulkan and Metal through SDL_GPU, with
+  OpenGL ES for GPUs without Vulkan. GT3's models, courses, lighting,
+  reflections and effects are drawn at your resolution and aspect ratio, not
+  upscaled from 640×448. Physics ticks at GT3's 60 Hz, and frames between
+  ticks are interpolated for higher refresh rates.
+- **Menus, GT Mode, the HUD, cameras, replays and sound** are rewritten to
+  match the original, using the disc's own layouts, text, fonts and audio.
 
-GT3 Revisited is an independent reimplementation. The disc's file formats
-are documented in [FORMATS](docs/FORMATS.md) and
-[docs/formats/](docs/formats/), and how the game behaves is described per
-system in [docs/behaviour/](docs/behaviour/) (physics, AI, GT Mode, menus,
-race presentation, sound, music), with implementation notes in
-[docs/dev/](docs/dev/). It is verified against the original, side by side
-and with automated tests. It contains no game data or assets; all game
-content is read from your own disc at runtime. The rules for contributions
-are in [CONTRIBUTING](CONTRIBUTING.md).
+Open your disc image to start at the opening movie and title screen, as on a
+PS2.
+
+## Features
+
+- The full game: GT Mode, Arcade, licenses, championships, endurance races
+  with pit stops, 2-player split screen, the Replay Theater
+- Any resolution, widescreen, high refresh rates and MSAA, or the original
+  640×448 if you prefer it
+- Online races for up to 16 players on PC, Mac, Linux, Android and Quest, with
+  a session code and no port forwarding. The host can fill the grid with CPU
+  cars up to 32 in all and set car rules, and everyone picks tires and tunes
+  their car in the lobby. Players without someone's mod car can download it
+  from the lobby.
+- VR on the Meta Quest (standalone, no PC) and PC VR headsets: stereo 3D with
+  head tracking, the HUD in front of you, and the menus on a big screen
+- Phones and tablets: touch controls you can move and resize, tilt steering,
+  or a controller
+- Wheels with force feedback, DualSense adaptive triggers, Xbox impulse
+  triggers, and every control remappable
+- Quick race: any event with any car, nothing to unlock. In a custom race you
+  pick the track, the laps, up to 31 opponents with their cars, colors and
+  skill, and your grid slot.
+- Custom cameras: build your own race views in the camera editor (chase, hood,
+  cockpit) with your own field of view and mirror, and share them
+- NTSC-U, PAL and NTSC-J discs, the *Gran Turismo Concept* discs, and modded
+  discs like GT3: Concept
+- Playable on budget phones, 90 fps on the Quest 3, and an OpenGL ES renderer
+  for old PCs without Vulkan
+
+### Mods
+
+- Texture packs at any resolution. Dump the game's textures from the Mods
+  screen, edit them, and reload them live without restarting. You can convert
+  PCSX2 texture packs too.
+- New cars at the dealers, in the arcade and online, electric ones too
+- Your own GT Mode events and championships with the Event creator, with a
+  pool of up to 32 opponents per race, shared as a .zip
+- Your own music as race songs (MP3, FLAC, WAV or Ogg)
+- Import and export saves for a real PS2 or PCSX2 memory card, plus a save
+  editor
+
+### Smaller stuff
+
+- Extra views: bumper with no mirror, far chase, free look on the right stick,
+  and the driver's view of any car in replays
+- mph or km/h on any disc
+- Skip songs from the pause menu, or with a button combo mid-race
+- Full detail on distant cars, and the showroom's detailed wheels in races
+- Replay effects (blur, heat haze, vignette) on or off
+- A Car database with torque curves, a Movie theater and a Music jukebox
+- Background input, for playing with the game on a second monitor
+- A disc library for switching discs, and a save folder you can sync between
+  devices
+- In-game updates, Discord status, F12 screenshots
+
+All of it is optional. Turn it off and it's GT3 as it was.
+
+## FAQ
+
+**Is it an emulator or a recomp?** Neither. It's a native port with no PS2
+code in it at runtime ([What is this?](#what-is-this)).
+
+**Do I need a PS2 BIOS?** No, just your disc image.
+
+**Will it run on my PC or phone?** Probably. Most PCs from the last 15 years,
+Apple Silicon Macs (macOS 12 or later), Android 7 or later and iOS 16 or later.
+On phones the defaults are lighter settings.
+
+**Can I play online with friends on other devices?** Yes. PC, Mac, Linux,
+Android and Quest players can race together, on any region's GT3 disc
+([Online](#online)).
+
+**Can I use my PCSX2 texture packs and saves?** Yes. Convert packs from the
+Mods screen, and import saves or PCSX2 memory cards from the Load game page
+([Saves](#saves)).
+
+**Is it finished?** The whole game is playable. The few differences from the
+original are [listed below](#differences-from-the-original).
+
+**Found a bug?** Open an [issue](../../issues) and attach the log (Settings →
+Disc & saves → Show the log).
+
+**Is it free?** Yes. It's open source, with no account and nothing to buy.
 
 ## Installing
 
@@ -102,9 +172,9 @@ of the steps above.
 
 ## Running
 
-You need a disc image of *Gran Turismo 3 A-Spec*. The NTSC-U releases
-(SCUS-97102 and the PBPX-95503 bundle disc) are verified; other regions are
-untested ([COMPATIBILITY](docs/COMPATIBILITY.md)). Use a `.iso` image or a `.chd`
+You need a disc image of *Gran Turismo 3 A-Spec* or *Gran Turismo Concept*.
+The NTSC-U, PAL and NTSC-J releases of GT3 are verified; the list, and the
+Concept discs, are in [COMPATIBILITY](docs/COMPATIBILITY.md). Use a `.iso` image or a `.chd`
 created from it with `chdman createdvd`.
 
 ```bash
@@ -419,6 +489,17 @@ course viewers export models for Blender. See [MODDING](docs/MODDING.md).
 - Added on top, all optional: the main menu, Quick race, extra race views,
   widescreen and high refresh rates, touch controls, modern controller
   features and mods.
+
+## How it's built
+
+The disc's file formats are documented in [FORMATS](docs/FORMATS.md) and
+[docs/formats/](docs/formats/), and how the game behaves is described per
+system in [docs/behaviour/](docs/behaviour/) (physics, AI, GT Mode, menus,
+race presentation, sound, music), with implementation notes in
+[docs/dev/](docs/dev/). The engine is verified against the original, side by
+side and with automated tests. It contains no game data or assets; all game
+content is read from your own disc at runtime. The rules for contributions
+are in [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Building
 
