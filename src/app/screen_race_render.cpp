@@ -782,6 +782,9 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
                           smoke_view(camera_, box.w / box.h * CameraRig::kPixelAspect, camera_.fovy()));
             spark_pass_ = false;
             wheel_view_ = nullptr;
+            // The car's reflection map around the box's car, every frame as in the race (without it
+            // the box showed none before a run, then the map of wherever the last run ended).
+            update_env_cube();
             render::DrawOptions bo = draw_options();
             if (!licence_box) apply_depth_of_field(bo); // (the licence box: GT3's 2P-style pass, none)
             view_->draw(ui.renderer(), box, camera_.view(), camera_.projection(box.w / box.h), eye, items_, bo);
