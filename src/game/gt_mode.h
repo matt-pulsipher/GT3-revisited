@@ -426,7 +426,8 @@ public:
     std::vector<std::string> pick_opponents(const std::string& code, GameRandom& rng = race_info_random(),
                                             std::vector<int>* paints = nullptr);
     // The pool paints of opponents drawn earlier (a championship's field in its first round): each
-    // label's first entry not yet matched. Empty when no entry gives a paint.
+    // label's first entry not yet matched (a repeat of a car: its first entry's). Empty when no entry
+    // gives a paint.
     std::vector<int> pool_paints(const std::string& code, const std::vector<std::string>& labels) const;
     int pool_paint(const std::string& label, u32 color_id) const;
 

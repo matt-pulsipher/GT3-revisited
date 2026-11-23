@@ -559,7 +559,7 @@ with entry rules, prize money and a prize car.
   an **icon** (any PNG; cropped to the league page's 51 x 27 strip buttons, the
   picture squeezed into them when there is none), the **league** GT Mode lists it in, single races or a **championship**, the
   license it needs, the **car rules**, the **prizes** (per place, the champion's
-  bonus, a prize car) and the **opponents**.
+  bonus, a prize car in a color of your choice or a random one) and the **opponents**.
 - **Car rules** are GT3's own: the car type (race and rally cars, tuned cars,
   stock road cars), the drivetrain, the engine (NA or turbo) and the cars
   allowed. The cars allowed are a list, as the disc's one-make and era series
@@ -571,9 +571,11 @@ with entry rules, prize money and a prize car.
   the league's own races' driving or the arcade's Easy, Normal, Hard or
   Professional. As in GT3, one skill drives the whole field of a race. A race
   draws its opponents from a pool of up to 32 cars, as GT3's races do: as many
-  as it sets (one to five, as the course's start grid has room), in the draw's
+  as it sets (up to 31, as the course's start grid has room), in the draw's
   order, so a bigger pool gives a different field each time; you start behind
-  them. A race uses the event's opponents (every round of a championship does)
+  them. It can draw more cars than the pool has: once every car was drawn, the
+  rest are picked from the pool at random, so a pool of one car makes a
+  one-make race. A race uses the event's opponents (every round of a championship does)
   or, in single races, cars of its own.
 - Each car of a pool is **stock**, a **version from the disc** (a tuned car as
   one of the disc's races fields it: "As in Sunday Cup"), or **your tune**:
@@ -649,7 +651,7 @@ parts = sus_semi_racing, nat_2, wtr_1, tir_soft
 course = trialmt
 laps = 2
 skill = league         ; league, easy, normal, hard, professional
-cars = 3               ; opponents it draws from its pool, 1 to 31 (default: as many as the pool has, at most 5)
+cars = 3               ; opponents it draws, 1 to 31, repeating the pool's cars when it has fewer (default: as many as the pool has, at most 5)
 
 [race2]
 course = midfield

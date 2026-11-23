@@ -423,10 +423,11 @@ bool add_mod_event(CarDatabase& db, const ModEventDef& def, std::string* error) 
         put64(b, kRegulation, regulation.empty() ? none : db::id_hash(regulation));
         put8(b, kLaps, u8(std::clamp(r.laps, 1, 99)));
         put8(b, kLicense, u8(std::clamp(ev.def.license, 0, 6)));
-        // The cars it draws: the player and as many opponents as it asks for (cars =, up to 31), at most the pool's; five
-        // when it does not say (as GT3's races).
-        const int most = std::min<int>(int(lineup.size()), ModEventDef::kMaxOpponents);
-        put8(b, kCars, u8(std::clamp(r.cars > 0 ? r.cars : std::min(most, ModEventDef::kDefaultOpponents), 1, most) + 1));
+        // The cars it draws: the player and as many opponents as it asks for (cars =, up to 31), more than the pool
+        // holds too (GT3's draw repeats cars once every entry is taken: a one-make race from a pool of one); when it
+        // does not say, as many as the pool has, at most five (as GT3's races).
+        const int n = r.cars > 0 ? r.cars : std::min<int>(int(lineup.size()), ModEventDef::kDefaultOpponents);
+        put8(b, kCars, u8(std::clamp(n, 1, ModEventDef::kMaxOpponents) + 1));
         put8(b, kSpecial, course->surface == kSurfaceDirt ? kDirtTires : 0);
         for (size_t p = 0; p < 6; ++p) put16(b, kPrize + 2 * p, hundreds(ev.def.prizes[p]));
         put16(b, kBonus, ev.def.championship ? hundreds(ev.def.bonus) : 0);

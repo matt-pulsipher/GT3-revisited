@@ -142,9 +142,13 @@ TEST(random_pool_draw) {
         CHECK(s.size() == 3);
         for (int k : d) CHECK(!un[size_t(k)]);
     }
-    // More draws than available entries (the original would hang): ours ends, repeating.
-    GameRandom g{99};
-    CHECK(race::draw_pool(g, un, 6).size() == 6);
+    // More draws than available entries (the original would hang): ours ends, repeating available entries.
+    for (u32 seed = 1; seed < 200; ++seed) {
+        GameRandom g{seed};
+        std::vector<int> d = race::draw_pool(g, un, 9);
+        CHECK(d.size() == 9);
+        for (int k : d) CHECK(!un[size_t(k)]);
+    }
     GameRandom e{5};
     CHECK(race::draw_pool(e, {}, 3).size() == 3 || race::draw_pool(e, {}, 3).empty());
 }

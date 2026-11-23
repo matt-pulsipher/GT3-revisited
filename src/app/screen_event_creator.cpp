@@ -11,8 +11,8 @@
 // races or a championship, entry rules, prizes, its opponents and its races); a race (course,
 // laps, the event's opponents or a lineup of its own); the opponents of the event (the lineup
 // every race without its own runs, and every championship round); the prizes (per place, the
-// championship bonus, a prize car). Lineups are Quick race's (app/opponent_grid.h): one to five
-// cars, each with a colour and a skill, and the player's place on the grid.
+// championship bonus, a prize car in a colour or a random one). A race draws up to 31 opponents from
+// its pool (repeating its cars when it has fewer), the player behind them.
 //
 // Export .zip writes the event as a mod of its own (<id>/mod.ini, events/, pictures/): the Mods
 // screen's Install from .zip takes it on another player's game.
@@ -760,17 +760,25 @@ private:
         if (own)
             rows.push_back(action_row("Its cars", std::to_string(r.opponents.size()) + (r.opponents.size() == 1 ? " car" : " cars"),
                                       "{Cross}: the cars this race draws its opponents from", [this] { open_pool(race_); }, x, y, w));
-        const int most = std::min({data::ModEventDef::kMaxOpponents, int(race_pool(r).size()), grid_limit(app, r.course)});
-        const int n = r.cars > 0 ? std::min(r.cars, most) : std::min(most, data::ModEventDef::kDefaultOpponents);
+        // As many as the grid holds, more than the pool has too (its cars come up more than once).
+        const int most = std::min(data::ModEventDef::kMaxOpponents, grid_limit(app, r.course));
+        const int n = racing_you(r, most);
         rows.push_back(value_row("Racing you", std::to_string(n) + (n == 1 ? " car" : " cars"),
-                                 "How many cars it draws (" + course_name(r.course) + "'s grid has room for " +
-                                     std::to_string(grid_limit(app, r.course)) + ")",
+                                 "How many cars it draws; fewer cars to draw from come up more than once (" +
+                                     course_name(r.course) + "'s grid has room for " + std::to_string(grid_limit(app, r.course)) + ")",
                                  [this, &r, n, most](int h) { r.cars = std::clamp(n + (h < 0 ? -1 : 1), 1, std::max(most, 1)), dirty_ = true; },
                                  x, y, w));
         rows.push_back(button(armed_ ? "Press again" : "Remove race", {kLeftX, kButtonY, 120, kButtonH}, [this, &app] { remove_race(app); },
                               false, "Takes the race out of the event (press twice)"));
         editing_buttons(rows);
         return rows;
+    }
+
+    // How many opponents a race draws: its own count, else as many as its pool has, at most five (the loader's
+    // default); at most `most`.
+    int racing_you(const data::ModEventRace& r, int most) const {
+        const int n = r.cars > 0 ? r.cars : std::min(int(race_pool(r).size()), data::ModEventDef::kDefaultOpponents);
+        return std::clamp(n, 1, std::max(most, 1));
     }
 
     // The pool a race draws from: its own cars, else the event's.
@@ -897,6 +905,16 @@ private:
                                                    : "Given once, for winning every race. {Cross}: choose   {Left/Right}: none",
                                   [this, &app] { open_cars(app, Pick::PrizeCar, car_index(ed_.prize_car), prize_paint_index()); }, kLeftX, y));
         rows.back().change = [this](int) { ed_.prize_car.clear(), ed_.prize_paint = -1, dirty_ = true; };
+        if (!ed_.prize_car.empty()) {
+            const int n = data_->color_count(ed_.prize_car), pi = ed_.prize_paint < 0 ? -1 : prize_paint_index();
+            rows.push_back(value_row("Its color", pi < 0 ? "Random" : Ui::clip(data_->color_name_latin(u32(ed_.prize_paint)), 150),
+                                     "The prize car's paint, or one picked at random when it is given", [this, n, pi](int h) {
+                                         const int k = (pi + 1 + (h < 0 ? -1 : 1) + n + 1) % (n + 1) - 1;
+                                         const u32 id = k < 0 ? 0xFFFFFFFFu : data_->color_id(ed_.prize_car, k);
+                                         ed_.prize_paint = id == 0xFFFFFFFFu ? -1 : int(id);
+                                         dirty_ = true;
+                                     }, kLeftX, y));
+        }
         editing_buttons(rows);
         return rows;
     }
@@ -1369,9 +1387,8 @@ private:
         ed_.id = id_;
         // A race draws no more cars than its course's grid holds.
         for (data::ModEventRace& r : ed_.races) {
-            const int pool = int(race_pool(r).size()), room = grid_limit(app, r.course);
-            const int n = r.cars > 0 ? std::min(r.cars, pool) : std::min(pool, data::ModEventDef::kDefaultOpponents);
-            if (n > room) r.cars = room;
+            const int room = grid_limit(app, r.course);
+            if (racing_you(r, data::ModEventDef::kMaxOpponents) > room) r.cars = room;
         }
         // The tunes a pool still names (a car switched back to stock leaves its tune behind).
         std::erase_if(ed_.tunes, [this](const data::ModEventTune& t) {
