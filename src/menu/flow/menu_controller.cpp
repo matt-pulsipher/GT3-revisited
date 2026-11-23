@@ -1066,24 +1066,34 @@ void MenuController::add_level_draws(std::vector<ElementDraw>& out, const Level&
             d.box = window ? box_override.box : SDL_FRect{e.x, e.y, e.w, e.h};
             d.z = zbase + e.z + 0.0002f;
         }
-        if (fb && feedback_ == 0x40) {
-            ElementDraw& d = push(scene, &e, 1.0f);
+        // The decide glow (§5.4) over what was confirmed: the item, or a multi item's chosen
+        // child where its highlight is (the name entry's OK key, not its wider row).
+        auto glow = [&](const Element& on, const ElementDraw* over) {
+            ElementDraw& d = push(scene, &on, 1.0f);
             d.kind = ElementDraw::Kind::Glow;
             decide_alpha(fb_frame, d.level, d.level2);
             d.z = 100000.0f;
             place(d);
-        }
+            if (over) d.box = over->box, d.has_box = true;
+        };
         // Multi items: every choice is drawn, the current one in its alt look. Free
         // buttons (the name-entry key rows) show their key cursor only while the row has
         // the focus: one cursor over the whole grid, pulsing like a focused button.
         const bool free_row = s.multi && is_free_row(s);
         int ch = s.multi && (!free_row || (is_focus && is_top)) ? choice(s.flow->name) : -1;
+        const bool glow_child =
+            ch >= 0 && size_t(ch) < s.children.size() && s.children[size_t(ch)] && !s.children[size_t(ch)]->alt.empty();
+        if (fb && feedback_ == 0x40 && !glow_child) glow(e, nullptr);
         for (int c = 0; c < int(s.children.size()); ++c) {
             const Element* ce = s.children[size_t(c)];
             if (!ce) continue;
             if (c == ch && !ce->alt.empty()) {
                 const Element& alt = ce->alt[0];
-                highlight(*ce, alt, fade_alpha(alt, lv.built));
+                const ElementDraw& hd = highlight(*ce, alt, fade_alpha(alt, lv.built));
+                if (fb && feedback_ == 0x40) {
+                    const ElementDraw over = hd; // (push may grow the list)
+                    glow(*ce, &over);
+                }
                 if (free_row && focus_mode(*ce) == 2) { // the normal look over it: the pulse
                     ElementDraw& d = push(scene, ce, fade_alpha(*ce, lv.built) * 2.0f * (0.5f - pulse));
                     d.z = zbase + ce->z + 0.0001f;

@@ -528,7 +528,9 @@ Page flags 0xC0 choose what a confirmed item does before its effect runs
 | 0x80 | flicker | 30 | the focused look, with the normal look over it at alpha 1 − q[f mod 4], q = (0.4, 0.6, 0.8, 1.0) |
 | 0xC0 | blink | 30 | the focused look at alpha × q[f mod 5], q = (1, 0.8, 0.6, 0.4, 0.2) |
 
-Here f is the feedback frame, counted from 1. The feedback does not start
+Here f is the feedback frame, counted from 1. On a multi item the glow covers
+the chosen child where its highlight is drawn, not the whole row: the name
+entry's OK key, for example. The feedback does not start
 until a scrolling list has settled (§4.6). The title menu (flags 0x0A2) uses
 the flicker, and confirming an item there takes 30 frames before the control
 switch starts (measured on the disc).

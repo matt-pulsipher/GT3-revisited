@@ -1765,7 +1765,26 @@ TEST(gtmode_menu_disc_record_name_entry) {
     press(f, MenuKey::R1);
     CHECK(end_x > 0 && mid_x > 0 && mid_x < end_x && caret_x() == end_x && s->name_box.cursor == 3);
     CHECK(c->set_focus("free_command"));
-    press(f, MenuKey::Confirm); // OK
+    f.tick(key_bit(MenuKey::Confirm)); // OK
+    for (int i = 0; i < 8; ++i) f.tick(0);
+    {
+        // The decide glow lies over the OK key's highlight, not its wider row (issue 432).
+        const menu::ElementDraw *glow = nullptr, *hl = nullptr;
+        const std::vector<menu::ElementDraw> list = f.draw_list();
+        for (const menu::ElementDraw& d : list) {
+            if (d.kind == menu::ElementDraw::Kind::Glow) glow = &d;
+            else if (d.element && d.element->name == "|ok") hl = &d;
+        }
+        CHECK(glow && hl);
+        if (glow && hl) {
+            auto box = [](const menu::ElementDraw& d) {
+                const SDL_FRect b = d.has_box ? d.box : SDL_FRect{d.element->x, d.element->y, d.element->w, d.element->h};
+                return SDL_FRect{b.x + d.dx, b.y + d.dy, b.w, b.h};
+            };
+            const SDL_FRect g = box(*glow), h = box(*hl);
+            CHECK(g.x == h.x && g.y == h.y && g.w == h.w && g.h == h.h);
+        }
+    }
     settle(f);
     CHECK(f.control() == "gt_mode" && f.controller()->page_name() == "mt/mt");
     // The name is saved with the record once the page closes (the result was saved before it).
