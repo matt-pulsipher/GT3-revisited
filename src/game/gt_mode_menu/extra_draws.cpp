@@ -113,9 +113,10 @@ void draw_map_pointer(const MenuController& ctl, const std::string& page, DrawLi
     }
 }
 
-// Prize presentations: the 3D model goes over the page's art (its widget sits
-// under the full-page background in the layout's order).
-void raise_prize_model(const MenuController& ctl, const std::string& page, DrawList& out) {
+// Prize presentations: the 3D model draws at its widget's depth, over the page's background
+// and under its texts (lc_get: background z 1, card 4, messages 10 / 12, OK 32; trophy_get:
+// the trophy 9, the bonus box 4, the counters and messages 18 to 32).
+void place_prize_model(const MenuController& ctl, const std::string& page, DrawList& out) {
     if (page == "license_get" || page == "trophy_get") {
         auto it = std::find_if(out.begin(), out.end(), [](const menu::ElementDraw& d) {
             return d.element && d.element->widget_class && *d.element->widget_class == "render_model";
@@ -133,7 +134,8 @@ void raise_prize_model(const MenuController& ctl, const std::string& page, DrawL
         }
         if (d.element) {
             d.alpha = 1; // the marker itself may be transparent; the model fades by itself
-            out.push_back(d);
+            // (The list is in depth order here: after the last draw at or under its depth.)
+            out.insert(std::find_if(out.begin(), out.end(), [&](const menu::ElementDraw& x) { return x.z > d.z; }), d);
         }
     }
 }
@@ -654,7 +656,7 @@ void extra_draws(const MenuController& ctl, std::vector<menu::ElementDraw>& out)
     hide_ok_until_accepted(ctl, page, out);
     car_get_message(ctl, page, out);
     draw_map_pointer(ctl, page, out);
-    raise_prize_model(ctl, page, out);
+    place_prize_model(ctl, page, out);
     place_status_day(ctl, out);
     inset_tune_shop_texts(ctl, out);
     inset_concept_slider_texts(ctl, out);
