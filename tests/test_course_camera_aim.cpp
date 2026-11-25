@@ -259,6 +259,123 @@ TEST(replay_director_seam_lap) {
     CHECK(d.seam_lap(10.0f, 3) == 3);
     CHECK(d.seam_lap(900, 3) == 3);  // backwards over the line: the counter's own lap
     CHECK(d.seam_lap(500, 7) == 7);  // a jump (a warp): taken as it is
-    d.car_changed(0, false);
+    d.target_set(true);
     CHECK(d.seam_lap(999, 4) == 4);  // another car: taken as it is
+}
+
+// Issue 442: the replay cameras' car changes (presentation §G4e, §H8), on three records side by
+// side: two at the car along the first 900 m of lap variant 1 and a third after them.
+namespace {
+GtrcRecord at_car_record(float start, float end, float x, float z) {
+    GtrcRecord r;
+    r.kind = 4;
+    r.start = start, r.end = end;
+    r.zoom = GtrcCurve{{{0.0f, 4.0f}}}; // a view of about 22 degrees
+    r.pos[0] = GtrcCurve{{{0.0f, x}}}, r.pos[1] = GtrcCurve{{{0.0f, 5.0f}}}, r.pos[2] = GtrcCurve{{{0.0f, z}}};
+    return r;
+}
+GtrcScript car_change_script() {
+    GtrcScript g;
+    g.lap_length = 1000, g.script_end = 3000;
+    g.records = {at_car_record(1000, 1400, 0, 0), at_car_record(1400, 1900, 0, 60)};
+    return g;
+}
+float shot_yaw(const ReplayDirector::Shot& s) { return aim_yaw(s.target - s.eye); }
+float yaw_to(const render::Vec3& eye, const render::Vec3& p) { return aim_yaw(p - eye); }
+} // namespace
+
+// A new shot aims at its own target from its first frame, however far the aim's move from the
+// last car has come (it opened on that car and whipped across).
+TEST(replay_director_new_shot_ends_aim_move) {
+    const GtrcScript g = car_change_script();
+    ReplayDirector d(&g);
+    const render::Vec3 first{20, 0, 30}, second{-40, 0, 50};
+    for (int i = 0; i < 30; ++i) d.update(100, 1, first, 1.0 / 60, 16.0f / 9.0f);
+    CHECK(d.take_aim_cut()); // (the replay's first shot)
+    // The attract demo's change: searched at once, the move's first frame still on the first car.
+    d.target_set(true);
+    d.car_changed(0, true);
+    d.set_settled_aim(second);
+    d.set_aim_progress(0);
+    ReplayDirector::Shot s = d.update(500, 1, first, 1.0 / 60, 16.0f / 9.0f);
+    CHECK(s.record == 1 && d.take_aim_cut() && !d.take_aim_cut());
+    CHECK(std::fabs(angle_diff(shot_yaw(s), yaw_to(s.eye, second))) < 0.1f);
+    // ... and the shot starts still: the car left is no longer its filters' past.
+    for (int i = 0; i < 5; ++i) s = d.update(500, 1, second, 1.0 / 60, 16.0f / 9.0f);
+    CHECK(std::fabs(angle_diff(shot_yaw(s), yaw_to(s.eye, second))) < 0.5f);
+}
+
+// A manual change (modes 0, 3) to a car inside the shot keeps the shot: the aim moves over.
+TEST(replay_director_manual_change_keeps_shot) {
+    const GtrcScript g = car_change_script();
+    ReplayDirector d(&g);
+    for (int i = 0; i < 30; ++i) d.update(100, 1, {20, 0, 30}, 1.0 / 60, 16.0f / 9.0f);
+    d.take_aim_cut();
+    int serial = d.cut_serial();
+    d.target_set(true);
+    d.car_changed(15.0 / 60, false);
+    d.set_settled_aim({22, 0, 30});
+    d.update(120, 1, {20, 0, 30}, 1.0 / 60, 16.0f / 9.0f);
+    CHECK(d.cut_serial() == serial && !d.take_aim_cut());
+    // A car outside it: the shot ends.
+    d.target_set(true);
+    d.car_changed(15.0 / 60, false);
+    const ReplayDirector::Shot s = d.update(600, 1, {20, 0, 30}, 1.0 / 60, 16.0f / 9.0f);
+    CHECK(s.record == 1 && d.cut_serial() == serial + 1 && d.take_aim_cut());
+}
+
+// Mode 2's TOP / AUTO switch: a car near the view keeps the shot, one far off it gets a new one
+// (off across by twice 90 / zoom degrees, here 45); a battle's begin or end never ends a shot.
+TEST(replay_director_switch_far_off_view) {
+    const GtrcScript g = car_change_script();
+    const auto far_at = [&](float degrees) {
+        ReplayDirector d(&g);
+        d.set_view_mode(2);
+        d.set_cut_gate(4.0f, false);
+        const render::Vec3 car{0, 0, 40};
+        for (int i = 0; i < 30; ++i) d.update(100, 1, car, 1.0 / 60, 16.0f / 9.0f);
+        d.take_aim_cut();
+        const float a = degrees * 3.14159265f / 180.0f;
+        const render::Vec3 other{40 * std::sin(a), 0, 40 * std::cos(a)};
+        d.target_set(true);
+        d.target_switched();
+        d.set_settled_aim(other);
+        d.update(110, 1, car, 1.0 / 60, 16.0f / 9.0f);
+        return d.take_aim_cut();
+    };
+    CHECK(!far_at(10) && !far_at(40) && !far_at(-40));
+    CHECK(far_at(50) && far_at(-50) && far_at(170));
+    ReplayDirector d(&g);
+    d.set_view_mode(2);
+    for (int i = 0; i < 30; ++i) d.update(100, 1, {0, 0, 40}, 1.0 / 60, 16.0f / 9.0f);
+    d.take_aim_cut();
+    d.target_set(false);
+    d.update(101, 1, {0, 0, 40}, 1.0 / 60, 16.0f / 9.0f);
+    CHECK(!d.take_aim_cut());
+}
+
+// Mode 1's cut to another car: its first frames stay on the car (the filters had started with
+// the angle back to the car left as their speed, a swing of up to 180 degrees a second).
+TEST(replay_director_avant_garde_car_change) {
+    const GtrcScript g = car_change_script();
+    int checked = 0;
+    for (u32 seed = 1; seed < 400; ++seed) {
+        ReplayDirector d(&g);
+        d.set_view_mode(1);
+        d.seed(seed);
+        d.avant_garde_due(0, false, false);
+        const render::Vec3 first{20, 0, 30}, second{-30, 0, 80};
+        const std::vector<ReplayDirector::FieldCar> cars{{100, 1, 5, 0}, {450, 1, 5, 0}};
+        d.avant_garde_cut(cars, 1, true, 2.0f, 3, false, 1u); // car 0
+        d.update(100, 1, first, 1.0 / 60, 16.0f / 9.0f);
+        const ReplayDirector::Cut cut = d.avant_garde_cut(cars, 0, true, 2.0f, 3, false, 1u);
+        if (cut.car != 1) continue;
+        ReplayDirector::Shot s = d.update(450, 1, second, 1.0 / 60, 16.0f / 9.0f);
+        if (s.record != 1 || d.yaw_seeded()) continue; // (a procedural camera; the seeded swing)
+        s = d.update(450, 1, second, 1.0 / 60, 16.0f / 9.0f);
+        s = d.update(450, 1, second, 1.0 / 60, 16.0f / 9.0f);
+        CHECK(std::fabs(angle_diff(shot_yaw(s), yaw_to(s.eye, second))) < 0.1f);
+        ++checked;
+    }
+    CHECK(checked > 20);
 }

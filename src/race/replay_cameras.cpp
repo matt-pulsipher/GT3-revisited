@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace gt3r::race {
 
@@ -152,10 +153,15 @@ void ReplayDirector::reset() {
     if (mode_ == 1) proc_ = {}; // (mode 1 cuts at its next frame)
 }
 
-void ReplayDirector::car_changed(double manual_seconds, bool search_first) {
-    reset_flag_ = true, target_set_ = true;
-    aim_.forget_last_aim(); // (another car: target state +0x92 cleared)
+void ReplayDirector::target_set(bool new_car) {
+    manual_ = 0; // (target state +0x36)
+    if (!new_car) return;
+    target_set_ = true;     // (+0x34)
+    aim_.forget_last_aim(); // (+0x92 cleared)
     seam_known_ = false;
+}
+
+void ReplayDirector::car_changed(double manual_seconds, bool search_first) {
     if (manual_seconds > 0) manual_ = manual_seconds;
     attract_change_ = attract_change_ || search_first;
 }
@@ -237,7 +243,17 @@ void ReplayDirector::dissolve_out() {
     if (d > 0) pending_dissolve_ = d;
 }
 
-bool ReplayDirector::pick(int k, float s, float D) {
+bool ReplayDirector::off_view(const render::Vec3& target) const {
+    if (cur_ < 0 || onboard_ || !aim_.started()) return false;
+    const GtrcRecord& r = s_->records[size_t(cur_)];
+    if (r.mode() == 3) return false;
+    const render::Vec3 to = target - r.position(last_t_);
+    const float zoom = aim_.shown_zoom(), angle = zoom > 0 ? 90.0f / zoom : 1.0f;
+    return std::fabs(angle_diff(aim_.shown_yaw(), aim_yaw(to))) > angle + angle ||
+           std::fabs(angle_diff(aim_.shown_pitch(), aim_pitch(to))) > angle * 1.5f;
+}
+
+bool ReplayDirector::pick(int k, float s, float D, const render::Vec3& aim_at) {
     const bool forced = std::exchange(reset_flag_, false);
     const bool target = std::exchange(target_set_, false) || forced;
     bool attract = std::exchange(attract_change_, false);
@@ -251,7 +267,7 @@ bool ReplayDirector::pick(int k, float s, float D) {
     }
     const GtrcRecord& r = s_->records[size_t(cur_)];
     const bool ended = target && (onboard_ || (r.kind & 0x400) || D < r.start || D > r.end);
-    if (switched && ended) attract = true; // (mode 2's TOP / AUTO switch)
+    if (switched && (ended || off_view(aim_at))) attract = true; // (mode 2's TOP / AUTO switch)
     if (!attract) {
         if (forced || ended) {
             // The camera re-arms its record; run out at once (D outside it): the record at D
@@ -365,12 +381,14 @@ int ReplayDirector::seam_lap(float s, int lap) {
 ReplayDirector::Shot ReplayDirector::update(float s, int lap, const render::Vec3& car, double dt, float aspect,
                                             const Pair* pair) {
     lap = seam_lap(s, lap); // (issue 402: a frame's flicker as the followed car crossed the line)
-    Shot shot = update_shot(s, lap, car, dt, aspect, pair);
-    aim_.remember(car); // the target state's aim point, after the cameras (fn_001FF380)
+    render::Vec3 at = car;
+    Shot shot = update_shot(s, lap, at, dt, aspect, pair);
+    aim_.remember(at); // the target state's aim point, after the cameras (fn_001FF380)
+    settled_aim_.reset();
     return shot;
 }
 
-ReplayDirector::Shot ReplayDirector::update_shot(float s, int lap, const render::Vec3& car, double dt, float aspect,
+ReplayDirector::Shot ReplayDirector::update_shot(float s, int lap, render::Vec3& car, double dt, float aspect,
                                                  const Pair* pair) {
     (void)aspect;
     Shot shot;
@@ -400,10 +418,16 @@ ReplayDirector::Shot ReplayDirector::update_shot(float s, int lap, const render:
     // Modes 0, 2, 3: the course camera's shot picker, then the shot.
     const int k = s_->lap_variant(lap);
     const float D = float(k) * L + s;
-    if (pick(k, s, D) && mode_ == 2) {
+    if (pick(k, s, D, settled_aim_ ? *settled_aim_ : car)) {
+        // A new shot aims at its target at once (the handlers' fn_001FF3D8, issue 442): left
+        // moving there from the last car, the aim opened the shot on that car and whipped across.
+        aim_cut_ = true;
+        if (settled_aim_) car = *settled_aim_;
+        aim_progress_ = 1;
+        if (manual_ > 1e-9) manual_ = std::numeric_limits<double>::infinity(); // (only the move's last frame ends it)
         // Broadcast: at every new shot a draw; with p 0.07, while the followed car has a battle
         // partner, on board the partner's car.
-        if (draw() < 0.07f && pair_) turn_on_board(true);
+        if (mode_ == 2 && draw() < 0.07f && pair_) turn_on_board(true);
     }
     const GtrcRecord& r = s_->records[size_t(cur_)];
     const float Ds = shot_distance(D, k, s);
@@ -637,6 +661,8 @@ ReplayDirector::Cut ReplayDirector::avant_garde_cut(const std::vector<FieldCar>&
         }
     }
     cut.dissolve = roll_look(trail_bias, request == 3 ? -0.3f : 0.0f) ? 0.5f : 0.0f;
+    // Another car tried on the way is a new target, whichever car the cut ends on (+0x92).
+    if (n > 1 && (pick_other || tries > 1)) target_set(true);
     aim_restart_ = true;
     shot_time_ = 0;
     ++serial_;

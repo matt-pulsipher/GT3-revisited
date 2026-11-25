@@ -464,7 +464,10 @@ TEST(race_replay_broadcast_onboard_cut) {
     CHECK(shot.onboard && shot.on_partner && d.onboard_cut() && d.camera_fresh() && !d.settling());
     for (int i = 1; i < 300; ++i) shot = d.update(10.0f + float(i) * 0.1f, 1, {10, 0, 0}, 1.0 / 60, 16.0f / 9.0f);
     CHECK(shot.onboard && shot.on_partner && !d.onboard_cut() && !d.camera_fresh());
-    d.target_set();
+    d.target_set(false); // the followed car's battle begins or ends: the turn goes on
+    shot = d.update(39, 1, {39, 0, 0}, 1.0 / 60, 16.0f / 9.0f);
+    CHECK(shot.onboard && shot.on_partner && d.on_partner());
+    d.target_set(true); // another car
     shot = d.update(40, 1, {40, 0, 0}, 1.0 / 60, 16.0f / 9.0f);
     CHECK(!shot.onboard && !d.on_board() && shot.record == 0);
     // Past its end with no record and no other lap variant: on board, the followed car's in-car view.

@@ -853,9 +853,9 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     const bool hide_target = camera_.hides_car() || mount_in || car_fade <= 0;
     const bool followed_player = !(field_ && replay_focus_ >= 0);
     // The car the camera rides: 0 the player's, i the opponent i - 1.
-    const int ridden = field_ && camera_.replay_on_partner() && replay_partner_ >= 0 ? replay_partner_
-                       : followed_player                                             ? 0
-                                                                                     : replay_focus_ + 1;
+    const int ridden = field_ && camera_.replay_on_partner() && onboard_partner_ >= 0 ? onboard_partner_
+                       : followed_player                                                ? 0
+                                                                                        : replay_focus_ + 1;
     const bool own_car = !(hide_target && ridden == 0);
     const int hidden = hide_target && ridden > 0 ? ridden - 1 : -1;
     hidden_opponent_ = hidden;

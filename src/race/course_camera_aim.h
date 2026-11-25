@@ -81,6 +81,11 @@ public:
     // Every frame after the cameras: the target state's aim point (the followed car, or between
     // a pair; without the 0.4 m lift), for the next shot's first frame (target state +0x94).
     void remember(const render::Vec3& point) { last_aim_ = point; }
+    // The shown angles and zoom of the last 60 Hz frame; started: the shot has had its first.
+    bool started() const { return started_; }
+    float shown_yaw() const { return yaw_.out; }
+    float shown_pitch() const { return pitch_.out; }
+    float shown_zoom() const { return cur_.zoom; }
 
     struct In {
         render::Vec3 eye, aim;       // the camera and the point it aims at
