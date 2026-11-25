@@ -261,6 +261,37 @@ TEST(big_field_online) {
     }
 }
 
+// The pit boxes: a stop line has boxes for six cars; a bigger field's other cars share them (but the player's), so every car
+// sent in for tyres gets its stop and leaves the lane. A field of six keeps its own boxes.
+TEST(big_field_pit_stops) {
+    if (!database() || !program()) SKIP("needs GT3R_DISC");
+    BigField f = make_field("Gsunday_e_0001", 15, true, "midfield");
+    CHECK(f.race != nullptr);
+    if (!f.race) return;
+    const std::span<const ex::Car> cars = f.race->cars();
+    const int boxes = int(f.race->course().ai.lines[4].size()) - 6;
+    for (size_t i = 0; i < cars.size(); ++i) {
+        if (int(i) < boxes) CHECK(cars[i].pit_box == boxes + 2 - int(i));
+        else CHECK(cars[i].pit_box >= 3 && cars[i].pit_box < cars[0].pit_box);
+    }
+    run(f, 60 * 45);
+    std::vector<bool> stopped(cars.size(), false);
+    for (size_t i = 1; i < cars.size(); ++i) { // (every CPU car asks for its pit stop, a wheel to be changed)
+        ex::Car& c = const_cast<ex::Car&>(cars[i]);
+        c.x535 = u8(c.x535 | 8);
+        for (ex::Wheel& w : c.w) w.x28 = 1;
+    }
+    for (int k = 0; k < 60 * 200; ++k) {
+        run(f, 1);
+        for (size_t i = 1; i < cars.size(); ++i) stopped[i] = stopped[i] || cars[i].hold != 0;
+    }
+    for (size_t i = 1; i < cars.size(); ++i) {
+        if (!stopped[i]) std::printf("  car %zu had no stop\n", i);
+        CHECK(stopped[i]);
+        CHECK(cars[i].driver_kind < 2 || cars[i].driver_kind > 4); // (out of the lane again)
+    }
+}
+
 // A race record of a big field: its cars and the made grid survive the file. One without a grid made as today's races make it
 // keeps version 7, which v0.8.0 reads.
 TEST(big_field_race_record) {

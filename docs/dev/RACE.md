@@ -1355,6 +1355,8 @@ too: `race_hash` takes GT3's eight places of the order, or every car of a bigger
 - **Free practice (QUALIFY)** runs the same field. Past what the lap holds at GT3's 200 m a car (300 m + 200 m a car
   behind the line), the cars start it closer together. The quick menus' six-row lists show the player's own row, with its
   place, in the sixth when they are further down.
+- **Pit boxes.** A stop line has boxes for six cars, counted back from its end by the car's index. The cars past them
+  share the boxes behind the player's, in turn (GT3's count gives them points before the boxes, and no stop).
 - **HUD place.** GT3's rank strings stop at "12th"; past it the place is made of the same rank-font glyphs
   (`rank_ordinal`: "13th", "21st", "32nd").
 - **Results.** The board shows the first seven rows and the player's own (`ResultsOverlay::kShownRows`). Places

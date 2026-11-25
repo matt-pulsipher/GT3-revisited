@@ -810,6 +810,10 @@ void setup(Car& c, Record& img, Spec& spec, const StartRace& race, const StartEn
     { // 0x1F9D90: the car's pit box, a point of the stop line (4) from its end
         const AiCourse& k = *race.ai;
         c.pit_box = s8(k.lines[4].empty() ? 0 : s32(k.lines[4].size()) - (i + 4));
+        // Our bigger fields: the stop line has boxes for six cars (its points 3 .. count - 4); the cars past them share the
+        // boxes behind the player's.
+        const s32 boxes = s32(k.lines[4].size()) - 6;
+        if (race.made_grid == MadeGrid::On && boxes > 1 && i >= boxes) c.pit_box = s8(boxes + 2 - (1 + (i - boxes) % (boxes - 1)));
     }
     c.rank = s8(i + 1);
     driver_start(c, race, u32(mode - 2) < 4 ? 6 : mode == 8 ? -1 : c.control == 0 ? 7 : -1);
