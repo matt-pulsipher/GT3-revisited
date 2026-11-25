@@ -11,6 +11,7 @@
 #include "vfs/vfs.h"
 
 #include <cmath>
+#include <cstring>
 #include <future>
 #include <mutex>
 #include <system_error>
@@ -22,6 +23,28 @@ namespace {
 u64 hash_bytes(ByteSpan b) {
     u64 h = 1469598103934665603ull;
     for (u8 c : b) h = (h ^ c) * 1099511628211ull;
+    return h;
+}
+
+// 8 bytes a step, for the course cache's check that a file is the one it holds. Never stored, so free to differ from
+// hash_bytes (which the race records' data fingerprint keeps).
+u64 quick_hash(ByteSpan b) {
+    u64 h = 0x9E3779B97F4A7C15ull ^ u64(b.size());
+    auto mix = [&h](u64 w) {
+        w *= 0x87C37B91114253D5ull;
+        w = (w << 31) | (w >> 33);
+        h ^= w * 0x4CF5AD432745937Full;
+        h = ((h << 27) | (h >> 37)) * 5 + 0x52DCE729;
+    };
+    size_t i = 0;
+    for (; i + 8 <= b.size(); i += 8) {
+        u64 w;
+        std::memcpy(&w, b.data() + i, 8);
+        mix(w);
+    }
+    u64 tail = 0;
+    if (i < b.size()) std::memcpy(&tail, b.data() + i, b.size() - i);
+    mix(tail);
     return h;
 }
 
@@ -152,7 +175,7 @@ std::shared_ptr<const ex::RaceCourse> exact_course(ByteSpan file, const std::str
     static const ex::ProgramData* key_data = nullptr;
     static std::shared_ptr<const ex::RaceCourse> course;
     std::lock_guard<std::mutex> lock(g_mutex);
-    const u64 k = hash_bytes(file) ^ hash_bytes(ByteSpan(reinterpret_cast<const u8*>(label.data()), label.size()));
+    const u64 k = quick_hash(file) ^ hash_bytes(ByteSpan(reinterpret_cast<const u8*>(label.data()), label.size()));
     // (and the program by its fingerprint: another disc's program data may be made where a closed one's was)
     const u64 program = d.fingerprint();
     if (k != key || key_data != &d || key_program != program || !course) {
