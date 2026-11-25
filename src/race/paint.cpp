@@ -66,7 +66,7 @@ u32 mod_paint_id(size_t mod_car, int paint) {
 }
 
 namespace {
-const data::ModCar* mod_with_paints(const data::CarDatabase& db, const std::string& car) {
+const data::ModCar* mod_of(const data::CarDatabase& db, const std::string& car) {
     std::string base = car;
     if (!db.car(car)) {
         if (const data::CarVariant* v = db.variant(car)) base = v->car;
@@ -74,22 +74,31 @@ const data::ModCar* mod_with_paints(const data::CarDatabase& db, const std::stri
             for (const data::CarVariant& a : db.arcade_cars())
                 if (a.label == car) base = a.car;
     }
-    const data::ModCar* m = db.mod_car(base);
-    return m && !m->paints.empty() ? m : nullptr;
+    return db.mod_car(base);
 }
 } // namespace
 
 std::string paint_key(const data::CarDatabase& db, const std::string& car, const std::string& model) {
-    const data::ModCar* m = mod_with_paints(db, car);
-    return m ? "mod:" + m->label : model;
+    const data::ModCar* m = mod_of(db, car);
+    return m ? kModPaintKey + m->label : model;
+}
+
+const data::ModCar* mod_car_of_key(const data::CarDatabase& db, const std::string& key) {
+    const std::string prefix = kModPaintKey;
+    return key.rfind(prefix, 0) == 0 ? db.mod_car(key.substr(prefix.size())) : nullptr;
 }
 
 void CarColors::add_mod_cars(const data::CarDatabase& db) {
     auto byte = [](float v) { return u32(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
     const std::vector<data::ModCar>& mods = db.mod_cars();
     for (size_t c = 0; c < mods.size(); ++c) {
-        if (mods[c].paints.empty()) continue;
-        std::vector<u32>& ids = models_[db::id_hash("mod:" + mods[c].label)];
+        const std::string key = kModPaintKey + mods[c].label;
+        if (mods[c].paints.empty()) {
+            const data::Car* car = db.car(mods[c].label);
+            if (const std::vector<u32>* body = car ? this->ids(db.model_of(*car)) : nullptr) models_[db::id_hash(key)] = std::vector<u32>(*body);
+            continue;
+        }
+        std::vector<u32>& ids = models_[db::id_hash(key)];
         ids.clear();
         for (size_t i = 0; i < mods[c].paints.size(); ++i) {
             const u32 id = mod_paint_id(c, int(i));

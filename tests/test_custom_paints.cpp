@@ -3,8 +3,12 @@
 #include "disc/disc.h"
 #include "formats/db/gt_db.h"
 #include "formats/model/car_model.h"
+#include "formats/model/gltf.h"
 #include "formats/model/gtm1.h"
+#include "formats/model/wheel_spec.h"
+#include "game/data/car_database.h"
 #include "game/livery_package.h"
+#include "game/mod_package.h"
 #include "game/net_car.h"
 #include "base/sha256.h"
 #include "formats/png_reader.h"
@@ -21,6 +25,8 @@
 #include <cstdio>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <set>
 #include <algorithm>
 
@@ -249,8 +255,8 @@ TEST(custom_paint_online_car) {
         CHECK(std::equal(old.begin(), old.end() - 1, b.begin()));
         CHECK(old.back() == 0 && b[old.size() - 1] == 2);
     }
-    // Garage and mod cars wear the disc's paints: no colour sent.
-    for (game::OnlineCar::Kind k : {game::OnlineCar::Kind::Garage, game::OnlineCar::Kind::Mod}) {
+    // Garage cars wear their own paints: no colour sent.
+    for (game::OnlineCar::Kind k : {game::OnlineCar::Kind::Garage}) {
         game::OnlineCar o = c;
         o.kind = k;
         o.package = std::string(64, 'a');
@@ -499,4 +505,282 @@ TEST(livery_online_car) {
     c.livery = "not a hash";
     d = game::decode_online_car(game::encode_online_car(c));
     CHECK(d && d->livery.empty()); // (not sent)
+}
+
+namespace {
+
+// A mod car's body: a paint material and a plain one (base colour 1, 0.5, 0.5) sharing one 4x4 picture, and a
+// textureless paint material, each one triangle with UVs.
+std::vector<u32> glb_picture() {
+    std::vector<u32> px(16);
+    for (size_t i = 0; i < px.size(); ++i) px[i] = rgb(200, 100 + int(i), 50) | 0xFF000000u;
+    return px;
+}
+Bytes livery_glb(const std::vector<u32>& px = glb_picture()) {
+    const float pos[9] = {0.5f, 0.2f, 1, 1, 0.2f, 1, 0.5f, 1, 1}, uv[6] = {0.1f, 0.1f, 0.9f, 0.1f, 0.1f, 0.9f};
+    const u16 idx[4] = {0, 1, 2, 0};
+    const Bytes png = encode_png(4, 4, px);
+    Bytes bin(68 + png.size());
+    std::memcpy(bin.data(), pos, 36), std::memcpy(bin.data() + 36, uv, 24), std::memcpy(bin.data() + 60, idx, 8);
+    std::memcpy(bin.data() + 68, png.data(), png.size());
+    while (bin.size() % 4) bin.push_back(0);
+    const std::string attr = R"({"attributes":{"POSITION":0,"TEXCOORD_0":1},"indices":2,"material":)";
+    std::string js = R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[)" +
+                     attr + "0}," + attr + "1}," + attr + "2}" +
+                     R"(]}],"materials":[{"name":"car_paint","pbrMetallicRoughness":{"baseColorTexture":{"index":0}}},)"
+                     R"({"name":"trim","pbrMetallicRoughness":{"baseColorFactor":[1,0.5,0.5,1],"baseColorTexture":{"index":0}}},)"
+                     R"({"name":"roof paint","pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1]}}],)"
+                     R"("textures":[{"source":0}],"images":[{"name":"skin main","mimeType":"image/png","bufferView":3}],"buffers":[{"byteLength":)" +
+                     std::to_string(bin.size()) + R"(}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},)"
+                     R"({"buffer":0,"byteOffset":36,"byteLength":24},{"buffer":0,"byteOffset":60,"byteLength":6},)"
+                     R"({"buffer":0,"byteOffset":68,"byteLength":)" + std::to_string(png.size()) +
+                     R"(}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},)"
+                     R"({"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"},)"
+                     R"({"bufferView":2,"componentType":5123,"count":3,"type":"SCALAR"}]})";
+    while (js.size() % 4) js += ' ';
+    Bytes out;
+    auto put32 = [&](u32 v) { for (int k = 0; k < 4; ++k) out.push_back(u8(v >> (8 * k))); };
+    out.insert(out.end(), {'g', 'l', 'T', 'F'});
+    put32(2), put32(u32(28 + js.size() + bin.size())), put32(u32(js.size())), put32(0x4E4F534A);
+    out.insert(out.end(), js.begin(), js.end());
+    put32(u32(bin.size())), put32(0x004E4942);
+    out.insert(out.end(), bin.begin(), bin.end());
+    return out;
+}
+
+bool write_text(const std::filesystem::path& p, const std::string& t) {
+    std::filesystem::create_directories(p.parent_path());
+    return write_host_file(p.string(), Bytes(t.begin(), t.end()));
+}
+
+} // namespace
+
+// Issue 445: a livery on a mod car's glTF body (GlbOptions::livery).
+TEST(livery_glb_textures) {
+    const Bytes glb = livery_glb();
+    const std::array<float, 3> blue{0, 0.5f, 1};
+    const u64 key = texture_pack::key_of(4, 4, glb_picture().data());
+    // The template's textures: the picture as the paint draws it (one for both its materials) and the textureless paint.
+    const std::vector<GlbLiveryTexture> ts = glb_livery_textures(glb, blue);
+    CHECK(ts.size() == 2);
+    if (ts.size() != 2) return;
+    CHECK(ts[0].key == key && ts[0].paint && !ts[0].blank && ts[0].name == "skin main" && ts[0].triangles.size() == 2);
+    CHECK((ts[0].rgba[0] & 0xFFFFFF) == rgb(0, 50, 50));
+    CHECK(ts[1].blank && ts[1].paint && ts[1].name == "roof paint" && (ts[1].rgba[0] & 0xFFFFFF) == rgb(0, 128, 255));
+    // glTF's front (+Z) is the nose, -Z in GT3's axes.
+    CHECK(ts[0].triangles[0].normal[2] < -2.9f);
+    std::string err;
+    std::optional<race::LiveryTemplate> t = race::make_glb_livery_template({glb, glb}, "mod:my_car", blue, 2, 4, &err);
+    CHECK(t && t->canvases.size() == 2 && t->guides.size() == 2);
+    if (!t) return;
+    CHECK(t->canvases[0].file == "body-skin-main-" + texture_pack::key_name(key) + ".png" && t->canvases[0].width == 16);
+    CHECK(t->canvases[1].width == race::kGlbCanvas);
+    CHECK(t->ini.find("model = mod:my_car\npaint = 2 ") != std::string::npos);
+    // Filled as front faces (red), not rear ones (purple).
+    CHECK(std::any_of(t->guides[0].rgba.begin(), t->guides[0].rgba.end(),
+                      [](u32 c) { return (c >> 24) && ch(c, 0) > ch(c, 2) + 100; }));
+
+    auto pack_of = [&](const std::vector<race::LiveryTemplate::Picture>& pics, const char* name) {
+        const std::filesystem::path dir = test::temp_dir(name);
+        auto pack = std::make_shared<texture_pack::Pack>();
+        for (const race::LiveryTemplate::Picture& p : pics) {
+            CHECK(write_host_file((dir / p.file).string(), encode_png(p.width, p.height, p.rgba)));
+            CHECK(pack->add_file(*texture_pack::key_in_file_name(p.file), (dir / p.file).string()));
+        }
+        return pack;
+    };
+    GlbOptions o;
+    o.paint = blue;
+    const scene::Model plain = load_glb(glb, o);
+    o.livery_paint = blue;
+    // The untouched template changes nothing.
+    auto untouched = pack_of(t->canvases, "livery_glb_untouched");
+    o.livery = untouched.get();
+    scene::Model m = load_glb(glb, o);
+    CHECK(m.textures.size() == plain.textures.size());
+    for (size_t i = 0; i < m.meshes[0].vertices.size(); ++i) CHECK(m.meshes[0].vertices[i].color == plain.meshes[0].vertices[i].color);
+    // Painted yellow over its left half: that half is yellow whatever the paint, the rest the paint's.
+    race::LiveryTemplate::Picture p = t->canvases[0];
+    for (u32 y = 0; y < p.height; ++y)
+        for (u32 x = 0; x < p.width / 2; ++x) p.rgba[size_t(y) * p.width + x] = rgb(255, 230, 0) | 0xFF000000u;
+    auto painted = pack_of({p}, "livery_glb_painted");
+    o.livery = painted.get();
+    m = load_glb(glb, o);
+    const scene::Mesh& b = m.meshes[0];
+    const scene::Texture& paint_tex = m.textures[size_t(b.primitives[0].texture)];
+    const scene::Texture& trim_tex = m.textures[size_t(b.primitives[1].texture)];
+    CHECK(paint_tex.width == 16 && (paint_tex.rgba[0] & 0xFFFFFF) == rgb(255, 230, 0));
+    CHECK(ch(paint_tex.rgba[15], 0) == 0 && ch(paint_tex.rgba[15], 2) == 50 && ch(paint_tex.rgba[15], 1) >= 50);
+    CHECK((trim_tex.rgba[0] & 0xFFFFFF) == rgb(255, 230, 0) && ch(trim_tex.rgba[15], 0) == 200 && ch(trim_tex.rgba[15], 2) == 25);
+    CHECK(b.vertices[0].color == 0xFFFFFFFFu && b.vertices[3].color == 0xFFFFFFFFu); // (in the texture now)
+    CHECK(b.primitives[2].texture == 0 && b.vertices[6].color == plain.meshes[0].vertices[6].color); // the other paint: as it was
+    // The same pictures over another colour (`color =`): the unpainted parts in it.
+    o.paint = std::array<float, 3>{1, 0, 0};
+    m = load_glb(glb, o);
+    const scene::Texture& red = m.textures[size_t(m.meshes[0].primitives[0].texture)];
+    CHECK((red.rgba[0] & 0xFFFFFF) == rgb(255, 230, 0) && (red.rgba[15] & 0xFFFFFF) == rgb(200, 0, 0));
+    // A textureless paint's picture.
+    race::LiveryTemplate::Picture roof = t->canvases[1];
+    roof.rgba[0] = rgb(1, 2, 3) | 0xFF000000u;
+    auto roofs = pack_of({roof}, "livery_glb_roof");
+    o.paint = blue, o.livery = roofs.get();
+    m = load_glb(glb, o);
+    const scene::Texture& rt = m.textures[size_t(m.meshes[0].primitives[2].texture)];
+    CHECK(rt.width == race::kGlbCanvas && (rt.rgba[0] & 0xFFFFFF) == rgb(1, 2, 3) && (rt.rgba[1] & 0xFFFFFF) == rgb(0, 128, 255));
+    CHECK(m.meshes[0].primitives[0].texture == plain.meshes[0].primitives[0].texture);
+}
+
+TEST(livery_mod_car_names) {
+    std::string err;
+    std::optional<race::CustomPaint> p = race::parse_custom_paint("[livery]\nname = Team A\nmodel = mod:my_wtcc_car_2007\npaint = 1\n", &err);
+    CHECK(p && p->model == "mod:my_wtcc_car_2007" && p->finish == 1 && !p->colour);
+    CHECK(!race::parse_custom_paint("[livery]\nmodel = mod:\npaint = 0\n", &err));
+    CHECK(!race::parse_custom_paint("[livery]\nmodel = mod:a/../b\npaint = 0\n", &err));
+    CHECK(!race::parse_custom_paint("[livery]\nmodel = mod:" + std::string(41, 'a') + "\npaint = 0\n", &err));
+    CHECK(!race::parse_custom_paint("[livery]\nmodel = not:a_mod\npaint = 0\n", &err));
+    // Not installed: refused, by its name.
+    race::CustomPaints none;
+    CHECK(!none.add(*p, &err) && err == "mod car my_wtcc_car_2007: not installed");
+    // Online: a mod car's colour and livery are flags of their own, which older games pass over.
+    game::OnlineCar c;
+    c.kind = game::OnlineCar::Kind::Mod;
+    c.car = "my_wtcc_car_2007", c.donor = "r34_gtr_v_99";
+    c.package = std::string(64, 'a'), c.package_size = 10;
+    c.paint = 1;
+    c.tires = 0;
+    c.digest.emplace();
+    c.digest->fill(0x33);
+    const Bytes old = game::encode_online_car(c);
+    c.color = rgb(9, 8, 7);
+    c.livery = std::string(64, 'b'), c.livery_size = 99;
+    const Bytes b = game::encode_online_car(c);
+    CHECK(b.size() > old.size() && std::equal(old.begin(), old.end() - 1, b.begin()) && old.back() == 0 && b[old.size() - 1] == 24);
+    std::optional<game::OnlineCar> d = game::decode_online_car(b);
+    CHECK(d && d->color == c.color && d->livery == c.livery && d->livery_size == 99 && d->paint == 1 && d->tires == 0);
+    Bytes bad = b;
+    bad[old.size() - 1] = 2; // (a disc car's flags)
+    CHECK(!game::decode_online_car(bad));
+}
+
+// Issue 445, end to end: a mod car with two liveries in its paint list, drawn, shared and downloaded.
+TEST(livery_mod_car_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    const std::filesystem::path mods = test::temp_dir("livery_mod_car");
+    data::CarDatabase plain_db;
+    CHECK(plain_db.load(disc->volume()));
+    const data::Car* donor = nullptr;
+    for (const data::Car& c : plain_db.cars())
+        if (!donor && plain_db.model_of(c) == "ni0137") donor = &c;
+    CHECK(donor != nullptr);
+    if (!donor) return;
+    const std::string head = "name = Livery Car\ndonor = " + donor->label + "\n";
+    CHECK(write_text(mods / "cars_mod/cars/livery_car.ini",
+                     "[car]\nlabel = livery_car\n" + head + "[model]\nfile = models/body.glb\n[paints]\nWhite = #FFFFFF\nBlue = #0080FF\n"));
+    CHECK(write_text(mods / "cars_mod/cars/livery_shell.ini", // a borrowed shell, in the donor's paints, stretched
+                     "[car]\nlabel = livery_shell\n" + head + "[body]\nlength_mm = 4800\nwheelbase_mm = 2800\n"));
+    std::filesystem::create_directories(mods / "cars_mod/models");
+    CHECK(write_host_file((mods / "cars_mod/models/body.glb").string(), livery_glb()));
+    Vfs vfs(&disc->volume());
+    vfs.scan_mods(mods.string(), nullptr);
+    data::CarDatabase db;
+    CHECK(db.load(vfs));
+    CHECK(db.mod_car("livery_car") && db.mod_car("livery_shell"));
+    if (!db.mod_car("livery_car") || !db.mod_car("livery_shell")) return;
+    const std::string key = race::paint_key(db, "livery_car", "ni0137"), shell = race::paint_key(db, "livery_shell", "ni0137");
+    CHECK(key == "mod:livery_car" && shell == "mod:livery_shell");
+
+    // Two liveries of the glTF car and one of the shell, painted on their templates.
+    std::string err;
+    auto paint = [&](const std::string& model, int base, const std::string& folder, u32 colour) {
+        std::optional<race::LiveryTemplate> t = race::make_livery_template(vfs, db, model, base, 2, &err);
+        CHECK(t && !t->canvases.empty());
+        if (!t) return;
+        race::LiveryTemplate::Picture p = t->canvases[0];
+        for (u32 y = 0; y < p.height; ++y)
+            for (u32 x = 0; x < p.width / 2; ++x) p.rgba[size_t(y) * p.width + x] = colour | 0xFF000000u;
+        CHECK(write_text(mods / "team_liveries/liveries" / folder / "livery.ini", t->ini));
+        for (const race::LiveryTemplate::Picture& c : t->canvases) // (the whole template, one canvas painted)
+            CHECK(write_host_file((mods / "team_liveries/liveries" / folder / c.file).string(),
+                                  encode_png(c.width, c.height, c.file == p.file ? p.rgba : c.rgba)));
+    };
+    paint(key, 0, "a_team", rgb(255, 230, 0));
+    paint(key, 1, "b_team", rgb(220, 0, 120));
+    paint(shell, 0, "c_team", rgb(255, 230, 0));
+    vfs.scan_mods(mods.string(), nullptr);
+    std::shared_ptr<race::CustomPaints> paints = race::load_custom_paints(vfs);
+    CHECK(paints->errors().empty());
+    CHECK(paints->disc_count(key) == 2 && paints->of(key).size() == 2);
+    const int disc_paints = paints->disc_count("ni0137");
+    CHECK(paints->disc_count(shell) == disc_paints && paints->of(shell).size() == 1 && paints->of("ni0137").empty());
+    race::set_custom_paints(paints);
+
+    // Drawn: paint 2 and 3 are the liveries, 0 and 1 the paints.
+    const Bytes file = disc->volume().read(*disc->volume().find("cars/day/ni0137"));
+    auto shows = [&](const std::string& car, int index, u32 colour) {
+        CarModelOptions o;
+        o.lod = -1, o.wheels = false, o.paint = index;
+        o.body_mod = body_mod_for_car(db, car, index, data::CarScene::Day);
+        const scene::Model m = load_car_model(file, o, "ni0137");
+        std::set<int> lods;
+        for (const scene::Mesh& mesh : m.meshes)
+            for (const scene::Primitive& pr : mesh.primitives)
+                if (pr.texture >= 0)
+                    if (const scene::Texture& t = m.textures[size_t(pr.texture)]; t.livery_cover)
+                        for (u32 c : t.rgba)
+                            if ((c & 0xFFFFFF) == colour) {
+                                lods.insert(mesh.lod);
+                                break;
+                            }
+        return lods;
+    };
+    CHECK(shows("livery_car", 0, rgb(255, 230, 0)).empty() && shows("livery_car", 1, rgb(220, 0, 120)).empty());
+    CHECK(shows("livery_car", 2, rgb(255, 230, 0)).count(0) && shows("livery_car", 2, rgb(220, 0, 120)).empty());
+    CHECK(shows("livery_car", 3, rgb(220, 0, 120)).size() == 3);
+    const std::set<int> on_shell = shows("livery_shell", disc_paints, rgb(255, 230, 0));
+    CHECK(on_shell.count(0) && on_shell.count(1) && on_shell.count(2)); // carried over to the stretched body's other levels
+    const CarBodyMod b1 = body_mod_for_car(db, "livery_car", 3, data::CarScene::Menu);
+    CHECK(b1.livery && b1.paint && (*b1.paint)[0] == 0 && (*b1.paint)[2] == 1); // on its paint 1
+
+    // Online: the car as its paint and its livery's package, which the other side checks against its copy of the car.
+    game::OnlineCar oc = game::online_car_from_db(db, "livery_car", 0);
+    CHECK(oc.kind == game::OnlineCar::Kind::Mod);
+    game::set_online_car_paint(db, oc, 3);
+    CHECK(oc.paint == 1 && !oc.color);
+    const race::CustomPaint* lp = paints->at(key, 3);
+    CHECK(lp && lp->id == "team_liveries/b_team");
+    if (!lp) return;
+    std::optional<Bytes> blob = game::build_livery_package(*lp, vfs, &err, &db);
+    std::optional<game::LiveryPackage> pkg = blob ? game::parse_livery_package(*blob, &err) : std::nullopt;
+    CHECK(pkg && pkg->files.size() == 2); // livery.ini and the one painted picture
+    if (!pkg) return;
+    const bool ok = game::validate_livery_package(*pkg, vfs, key, &err, &db);
+    if (!ok) std::printf("  refused: %s\n", err.c_str());
+    CHECK(ok);
+    CHECK(!game::validate_livery_package(*pkg, vfs, shell, &err, &db));  // another car's
+    CHECK(!game::validate_livery_package(*pkg, vfs, key, &err, &plain_db)); // the car is not installed
+    // The car as another player gets it (its images encoded again): the same textures.
+    const Bytes sent = reencode_glb_images(livery_glb(), 2048);
+    CHECK(glb_livery_textures(sent, std::nullopt)[0].key == glb_livery_textures(livery_glb(), std::nullopt)[0].key);
+    // A changed picture on their copy: refused.
+    std::vector<u32> other = glb_picture();
+    other[0] ^= 0xFF;
+    CHECK(write_host_file((mods / "cars_mod/models/body.glb").string(), livery_glb(other)));
+    CHECK(!game::validate_livery_package(*pkg, vfs, key, &err, &db));
+    // Found again by its package's hash, downloaded.
+    const std::string hash = sha256_hex(*blob);
+    CHECK(game::install_livery_package(*pkg, hash, mods.string(), "Pat", &err).has_value());
+    vfs.scan_mods(mods.string(), nullptr);
+    race::set_custom_paints(race::load_custom_paints(vfs));
+    oc.livery = hash, oc.livery_size = u32(blob->size());
+    const int here = game::online_car_local_paint(db, oc);
+    CHECK(race::custom_paints()->at(key, here) && race::custom_paints()->at(key, here)->id == game::downloaded_livery_id(hash));
+    // Not installed: its paint. A colour: added for the session.
+    oc.livery = std::string(64, 'c');
+    CHECK(game::online_car_local_paint(db, oc) == 1);
+    oc.livery.clear(), oc.color = rgb(10, 20, 30);
+    const int colour = game::online_car_local_paint(db, oc, "Pat");
+    const CarBodyMod b2 = body_mod_for_car(db, "livery_car", colour, data::CarScene::Day);
+    CHECK(colour >= 4 && b2.paint && std::abs((*b2.paint)[2] - 30 / 255.0f) < 1e-6f && !b2.livery);
+    race::set_custom_paints(nullptr);
 }

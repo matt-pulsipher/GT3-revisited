@@ -36,6 +36,7 @@ CarBodyMod body_mod_for_car(const data::CarDatabase& db, const std::string& car_
     CarBodyMod out;
     const data::ModCar* m = db.mod_car(car_label);
     if (!m) return out;
+    out.paint_key = "mod:" + m->label; // (race::paint_key)
     const auto& f = m->fit;
     BodyFit fit{f.donor_length, f.donor_wheelbase, f.donor_width, f.donor_height, f.length, f.wheelbase, f.width, f.height};
     if (const std::string& file = m->model_file(scene); !file.empty()) {
@@ -48,7 +49,15 @@ CarBodyMod body_mod_for_car(const data::CarDatabase& db, const std::string& car_
         if (!out.glb) LOG_WARN("Mod car %s: cannot read %s; using the donor's body", car_label.c_str(), file.c_str());
         else if (f.active()) out.fit = BodyFit{fit.from_length, fit.from_wheelbase, fit.from_width, fit.from_height,
                                                fit.to_length, fit.to_wheelbase, fit.to_width, fit.to_height}; // shadows
-        if (!m->paints.empty()) out.paint = m->paints[size_t(std::max(paint, 0)) % m->paints.size()].second;
+        // A custom colour or livery (paint indices past its own, race/custom_paints.h) over one of its paints.
+        const std::optional<ResolvedPaint> custom = resolve_paint(out.paint_key, paint);
+        const int own = std::max(custom ? custom->paint : paint, 0);
+        if (!m->paints.empty()) out.paint = m->paints[size_t(own) % m->paints.size()].second;
+        if (custom && custom->livery) out.livery = custom->livery, out.livery_paint = out.paint;
+        if (custom && custom->computed) {
+            out.paint.emplace();
+            for (int k = 0; k < 3; ++k) (*out.paint)[size_t(k)] = float(custom->computed->rgb >> (8 * k) & 0xFF) / 255.0f;
+        }
         // Stock front ride height (suspension +0x54, mm): the race lifts the body frame by it.
         if (const data::Car* c = db.car(car_label))
             if (const ByteSpan* su = db.record(data::TableId::Suspension, part_id(*c, data::TableId::Suspension));

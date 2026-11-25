@@ -2,13 +2,13 @@
 
 #include "base/config.h"
 #include "base/file.h"
-#include "formats/model/car_model.h"
 #include "formats/model/gtm1.h"
 #include "formats/png_reader.h"
 #include "formats/png_writer.h"
 #include "formats/texture_pack.h"
 #include "net/protocol.h"
 #include "race/custom_paints.h"
+#include "race/livery_template.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -34,23 +34,6 @@ bool safe_name(const std::string& n) {
     });
 }
 
-// A car's textures in a paint, by key: every Tex1 set of cars/day/<model> (the template's, and any other a livery may name).
-std::map<u64, scene::Texture> textures_by_key(const Vfs& vfs, const std::string& model, int paint) {
-    std::map<u64, scene::Texture> out;
-    std::optional<Bytes> data = vfs.read("cars/day/" + model);
-    if (!data || !CarFile::is_car(*data)) return out;
-    const CarFile f = CarFile::parse(*data);
-    const gtm1::Gtm1 g = gtm1::Gtm1::parse(f.body);
-    for (u32 off : g.texsets) {
-        ByteSpan set = f.body.subspan(off);
-        if (!Tex1::is_tex1(set)) continue;
-        std::vector<scene::Texture> ts;
-        gtm1::decode_texture_set(set, ts, "", paint, nullptr, false);
-        for (scene::Texture& t : ts) out.emplace(texture_pack::key_of(t.width, t.height, t.rgba.data()), std::move(t));
-    }
-    return out;
-}
-
 std::string clean(std::string s) {
     for (char& c : s)
         if (c == '\n' || c == '\r' || c == '[' || c == ']' || c == '=' || c == ';' || c == '#') c = ' ';
@@ -67,15 +50,16 @@ std::string livery_ini(const race::CustomPaint& p, const std::string& from) {
 
 } // namespace
 
-std::optional<Bytes> build_livery_package(const race::CustomPaint& p, const Vfs& vfs, std::string* error) {
+std::optional<Bytes> build_livery_package(const race::CustomPaint& p, const Vfs& vfs, std::string* error,
+                                          const data::CarDatabase* db) {
     const size_t slash = p.file.rfind('/');
     if (!p.pictures || slash == std::string::npos) {
         fail(error, "not a livery");
         return std::nullopt;
     }
-    const std::map<u64, scene::Texture> textures = textures_by_key(vfs, p.model, p.finish);
+    const std::map<u64, scene::Texture> textures = race::livery_textures(vfs, db, p.model, p.finish);
     if (textures.empty()) {
-        fail(error, "cars/day/" + p.model + " cannot be read");
+        fail(error, p.model + "'s textures cannot be read");
         return std::nullopt;
     }
     LiveryPackage pkg;
@@ -166,7 +150,8 @@ std::optional<LiveryPackage> parse_livery_package(ByteSpan blob, std::string* er
     return p;
 }
 
-bool validate_livery_package(const LiveryPackage& p, const Vfs& vfs, const std::string& model, std::string* error) {
+bool validate_livery_package(const LiveryPackage& p, const Vfs& vfs, const std::string& model, std::string* error,
+                             const data::CarDatabase* db) {
     const LiveryPackage::File* ini = nullptr;
     std::vector<std::pair<u64, const LiveryPackage::File*>> pictures;
     for (const LiveryPackage::File& f : p.files) {
@@ -190,11 +175,12 @@ bool validate_livery_package(const LiveryPackage& p, const Vfs& vfs, const std::
     const int paint = cp->finish < 0 ? 0 : cp->finish;
     race::CarColors colors;
     colors.load(vfs);
+    if (db) colors.add_mod_cars(*db);
     const std::vector<u32>* ids = colors.ids(cp->model);
-    if (!ids || size_t(paint) >= ids->size()) return fail(error, cp->model + " has no paint " + std::to_string(paint) + " on this disc");
-    const std::map<u64, scene::Texture> textures = textures_by_key(vfs, cp->model, paint);
+    if (!ids || size_t(paint) >= ids->size()) return fail(error, cp->model + " has no paint " + std::to_string(paint) + " here");
+    const std::map<u64, scene::Texture> textures = race::livery_textures(vfs, db, cp->model, paint);
     for (const auto& [key, f] : pictures) {
-        if (!textures.count(key)) return fail(error, f->name + ": not one of " + cp->model + "'s textures on this disc");
+        if (!textures.count(key)) return fail(error, f->name + ": not one of " + cp->model + "'s textures here");
         const std::optional<std::pair<u32, u32>> size = png_size(f->data);
         if (!size) return fail(error, f->name + ": not a PNG");
         if (size->first == 0 || size->second == 0 || size->first > texture_pack::Pack::kMaxSide ||

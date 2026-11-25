@@ -381,6 +381,7 @@ private:
 #endif
         if (app.vfs()) {
             db_.load(*app.vfs());
+            car_picker_.set_database(db_);
             colors_.load(*app.vfs());
             build_car_list(app);
             for (const data::Course& c : db_.courses())
@@ -574,7 +575,7 @@ private:
         game::OnlineCar oc = current_car();
         const bool mod = oc.kind == game::OnlineCar::Kind::Mod || (oc.kind == game::OnlineCar::Kind::Garage && db_.mod_car(oc.car));
         if (mod && app_ && app_->vfs()) offer_own_package(oc); // (a garage mod car's package travels after the digest)
-        if (!mod && app_ && app_->vfs() && !cars_.empty()) offer_own_livery(oc, cars_[size_t(car_sel_)].model, paint_);
+        if (oc.kind != game::OnlineCar::Kind::Garage && app_ && app_->vfs() && !cars_.empty()) offer_own_livery(oc, paint_);
         ns.set_car(oc.car, oc.paint);
         ns.set_car_info(game::encode_online_car(oc));
     }
@@ -608,15 +609,17 @@ private:
     // Our car's livery (race/custom_paints.h): its package, built once per livery (only what was painted,
     // game/livery_package.h), offered to the session, its hash in our descriptor. One that cannot be shared: others see
     // its paint.
-    void offer_own_livery(game::OnlineCar& oc, const std::string& model, int paint) {
-        const race::CustomPaint* lp = race::custom_paints()->at(model, paint);
+    void offer_own_livery(game::OnlineCar& oc, int paint) {
+        const std::string model = game::online_paint_key(db_, oc);
+        const std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+        const race::CustomPaint* lp = custom->at(model, paint);
         if (!lp || !lp->pictures) return;
         auto it = own_packages_.find("livery:" + lp->id);
         if (it == own_packages_.end()) {
             std::string err;
-            std::optional<Bytes> blob = game::build_livery_package(*lp, *app_->vfs(), &err);
+            std::optional<Bytes> blob = game::build_livery_package(*lp, *app_->vfs(), &err, &db_);
             std::optional<game::LiveryPackage> pkg = blob ? game::parse_livery_package(*blob, &err) : std::nullopt;
-            if (!pkg || !game::validate_livery_package(*pkg, *app_->vfs(), model, &err)) { // others would refuse it too
+            if (!pkg || !game::validate_livery_package(*pkg, *app_->vfs(), model, &err, &db_)) { // others would refuse it too
                 LOG_WARN("Online: livery %s cannot be shared: %s", lp->id.c_str(), err.c_str());
                 status(lp->name + " cannot be shared (" + err + "); others see its paint", true);
                 own_packages_["livery:" + lp->id] = {};
@@ -639,12 +642,11 @@ private:
         return v == "show" || v == "off" ? v : "ask";
     }
     bool livery_installed(const game::OnlineCar& oc) const {
-        const std::string base = game::online_car_base(db_, oc);
-        const data::Car* c = db_.car(base);
-        if (!c) return true; // (no car here to wear it)
+        const std::string model = game::online_paint_key(db_, oc);
+        if (model.empty()) return true; // (no car here to wear it: a mod car's waits until the car is installed)
         std::string id = race::livery_id_for_hash(oc.livery);
         if (id.empty()) id = game::downloaded_livery_id(oc.livery);
-        return race::custom_paints()->index_of_livery(db_.model_of(*c), id) >= 0;
+        return race::custom_paints()->index_of_livery(model, id) >= 0;
     }
 
     // Other players' mod cars we lack (from their car list or garage) whose donor car is on this disc: ask once per
@@ -670,13 +672,9 @@ private:
     void start_download(u8 player, const std::string& from, const game::OnlineCar& car, bool livery) {
         const std::string& hash = livery ? car.livery : car.package;
         const std::string name = car.name.empty() ? car.car : car.name;
-        downloading_[hash] = {livery ? from + "'s livery" : name, car.car, from, livery, livery ? car_model_of(car) : ""};
+        downloading_[hash] = {livery ? from + "'s livery" : name, car.car, from, livery, livery ? game::online_paint_key(db_, car) : ""};
         net::online().request_package(hash, player);
         status("Downloading " + downloading_[hash].name + (livery ? "" : " from " + from) + "...", false);
-    }
-    std::string car_model_of(const game::OnlineCar& car) const {
-        const data::Car* c = db_.car(game::online_car_base(db_, car));
-        return c ? db_.model_of(*c) : std::string();
     }
 
     void update_prompt(App& app) {
@@ -733,7 +731,7 @@ private:
         std::string err;
         if (d.livery) {
             std::optional<game::LiveryPackage> lp = game::parse_livery_package(*blob, &err);
-            if (!lp || !game::validate_livery_package(*lp, *app.vfs(), d.model, &err)) {
+            if (!lp || !game::validate_livery_package(*lp, *app.vfs(), d.model, &err, &db_)) {
                 LOG_WARN("Online: refused %s: %s", d.name.c_str(), err.c_str());
                 status("Refused " + d.name + ": " + err, true);
                 return;

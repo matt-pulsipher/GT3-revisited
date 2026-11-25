@@ -234,7 +234,7 @@ std::vector<std::pair<std::string, u32>> arcade_colors(const std::string& entry)
     }
     // The model's custom colours after the disc's (race/custom_paints.h): paint index disc count + k.
     if (const data::Car* c = s->gt().db().car(car)) {
-        const std::string model = s->gt().db().model_of(*c);
+        const std::string model = race::paint_key(s->gt().db(), car, s->gt().db().model_of(*c)); // (a mod car's own list)
         std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
         if (custom->disc_count(model) == int(out.size()))
             for (const race::CustomPaint& p : custom->of(model))

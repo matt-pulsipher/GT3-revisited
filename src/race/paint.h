@@ -29,6 +29,7 @@ class Vfs;
 }
 namespace gt3r::data {
 class CarDatabase;
+struct ModCar;
 }
 
 namespace gt3r::race {
@@ -41,8 +42,8 @@ public:
     u32 rgb(u32 id) const; // bytes R, G, B (0 when unknown)
     int index_of(const std::string& model, u32 id) const; // -1 if absent
     u32 id_at(const std::string& model, int index) const;  // 0xFFFFFFFF if out of range
-    // Lists the mod cars' own paints ([paints]) under their paint_key, with mod_paint_id ids and the
-    // files' colours, so a mod car's chosen paint and the opponents' draw work as for disc cars.
+    // Lists the mod cars' paints under their paint_key, so a mod car's chosen paint and the opponents' draw work
+    // as for disc cars: their own ([paints]), with mod_paint_id ids and the files' colours, else their body's.
     void add_mod_cars(const data::CarDatabase& db);
 
 private:
@@ -55,10 +56,13 @@ private:
 constexpr u32 kModPaint = 0xF0000000u;
 u32 mod_paint_id(size_t mod_car, int paint);
 
-// The name a car's colour list is kept under: its model (the disc's carcolor.db), or for a mod car with
-// paints of its own "mod:<car label>" (mod cars may share a body with a disc car or with each other).
-// `car` may be a variant's label.
+// The name a car's colour list is kept under (its custom colours and liveries too, race/custom_paints.h): its
+// model (the disc's carcolor.db), or for a mod car "mod:<car label>" (mod cars may share a body with a disc car
+// or with each other). `car` may be a variant's label.
 std::string paint_key(const data::CarDatabase& db, const std::string& car, const std::string& model);
+inline constexpr const char* kModPaintKey = "mod:";
+// The mod car of a paint key, null for a disc model's (or a mod car not installed).
+const data::ModCar* mod_car_of_key(const data::CarDatabase& db, const std::string& key);
 
 // The race module's generator state (base/game_random.h); a race takes
 // race_info_random(), which the opponent pool draw has used before it.

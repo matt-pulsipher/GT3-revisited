@@ -9,7 +9,7 @@
 //   [livery]
 //   name = Sunday Cup Blue
 //   author = you
-//   model = am0006      ; the body it is for: every car on it (carcolor.db's model)
+//   model = am0006      ; the body it is for: every car on it (carcolor.db's model), or "mod:<label>", a mod car
 //   color = #1E3A8A
 //   finish = 4          ; the car's paint (0 = its first) whose finish it takes; none = the nearest in colour
 //
@@ -19,6 +19,9 @@
 // go over the paint (their alpha is how much they cover; the car keeps its reflectivity and
 // cut-outs), on every copy of the car with those textures (race, evening and night models, the
 // showroom's). `color` with a livery paints a computed colour under the pictures.
+//
+// A mod car's paints are its own list ("mod:<label>", race::paint_key): its [paints], else its body's, then its
+// custom colours and liveries. On a glTF body a livery's keys are the embedded images' (formats/model/gltf.h).
 //
 // Every list of a car's paints shows the model's custom colours after the disc's: paint index
 // disc count + k is custom colour k of the model (in mod priority, then file order). Online a
@@ -45,7 +48,7 @@ namespace gt3r::race {
 
 struct CustomPaint {
     std::string name, author;
-    std::string model; // the body it is for
+    std::string model; // the body it is for; a mod car's: its race::paint_key ("mod:<label>")
     u32 rgb = 0;       // bytes R, G, B (a livery without a colour: its paint's carcolor.db colour, for the chips)
     bool colour = true; // a computed colour (rgb); false: a livery on the disc paint `finish`
     int finish = -1;   // the car's paint whose finish it takes; -1 = the nearest in colour (resolved when added)

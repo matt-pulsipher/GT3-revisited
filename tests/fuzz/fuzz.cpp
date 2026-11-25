@@ -208,6 +208,9 @@ std::vector<Target> targets() {
                  o.max_texture_dim = 2048;
                  load_glb(d, o, "fuzz");
              } catch (const std::exception&) {}
+             try { // the textures a livery is checked against
+                 glb_livery_textures(d, std::nullopt, 2048);
+             } catch (const std::exception&) {}
              try { // a downloaded body's images as ours; what it writes loads
                  const Bytes ours = reencode_glb_images(d, 2048);
                  try {

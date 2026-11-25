@@ -380,6 +380,7 @@ private:
             error_ = db_.player_error();
             return;
         }
+        car_picker_.set_database(db_);
         auto data = std::make_shared<game::GtData>();
         if (!data->load(menu::flow::vfs_reader(*app.vfs()))) LOG_WARN("Quick race: GT mode data: %s", data->error().c_str());
         gt_ = std::make_unique<game::GtMode>(data);

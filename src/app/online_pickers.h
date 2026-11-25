@@ -162,6 +162,8 @@ public:
     // car may be chosen; the pages then offer to list only those.
     void open(App& app, PickerArt& art, const data::CarDatabase& db, const std::vector<PickerCar>& cars, int selected,
               int paint, std::function<std::string(int, int)> note, std::function<bool(int)> allowed = {});
+    // The cars' database, for paints() before the picker is opened.
+    void set_database(const data::CarDatabase& db) { db_ = &db; }
     Result update(App& app);
     void render(App& app, Ui& ui);
     void event(const SDL_Event& e) { pointer_.event(e); }

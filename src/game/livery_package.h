@@ -12,9 +12,10 @@
 // (validate_livery_package):
 // - structure: magic "GT3RLIV1", at most kMaxLiveryFiles files, kMaxLiveryBytes in all; plain file
 //   names (letters, digits, '.', '_', '-'; no folders);
-// - exactly one livery.ini, which parses (race::parse_custom_paint), names a model of this disc
-//   with that paint, and nothing else but PNGs named by a key ("<name>-<16 hex digits>.png");
-// - every key is one of that car's textures in that paint on this disc;
+// - exactly one livery.ini, which parses (race::parse_custom_paint), names a model of this disc (or a
+//   mod car installed here, "mod:<label>") with that paint, and nothing else but PNGs named by a key
+//   ("<name>-<16 hex digits>.png");
+// - every key is one of that car's textures in that paint here (race::livery_textures);
 // - pictures: PNG, at most texture_pack::Pack::kMaxSide per side (read from the header before
 //   decoding), and decode cleanly.
 // The pictures are written as our own encoding of what they decode to, never the sender's bytes, so
@@ -34,6 +35,9 @@ class Vfs;
 namespace gt3r::race {
 struct CustomPaint;
 }
+namespace gt3r::data {
+class CarDatabase;
+}
 
 namespace gt3r::game {
 
@@ -50,15 +54,18 @@ constexpr size_t kMaxLiveryFiles = 64;
 // The mod downloaded liveries install into, as liveries/dl-<first 12 hash digits>/.
 inline constexpr const char* kDownloadedLiveriesMod = "downloaded_liveries";
 
-// The package of an installed livery (`p` with pictures), from this disc's car; nullopt with *error when the car or a
-// picture cannot be read, or nothing is painted.
-std::optional<Bytes> build_livery_package(const race::CustomPaint& p, const Vfs& vfs, std::string* error = nullptr);
+// The package of an installed livery (`p` with pictures), from this disc's car (a mod car's: from `db`); nullopt with
+// *error when the car or a picture cannot be read, or nothing is painted.
+std::optional<Bytes> build_livery_package(const race::CustomPaint& p, const Vfs& vfs, std::string* error = nullptr,
+                                          const data::CarDatabase* db = nullptr);
 
 Bytes serialize_livery_package(const LiveryPackage& p);
 // Structure only (magic, counts, sizes, names).
 std::optional<LiveryPackage> parse_livery_package(ByteSpan blob, std::string* error = nullptr);
-// Everything (see above), against this machine's disc. `model`: the one the lobby advertised (empty: any).
-bool validate_livery_package(const LiveryPackage& p, const Vfs& vfs, const std::string& model, std::string* error = nullptr);
+// Everything (see above), against this machine's disc and, for a mod car's livery, its mod cars (`db`). `model`: the one
+// the lobby advertised (empty: any).
+bool validate_livery_package(const LiveryPackage& p, const Vfs& vfs, const std::string& model, std::string* error = nullptr,
+                             const data::CarDatabase* db = nullptr);
 
 // Writes a validated package as <mods_dir>/downloaded_liveries/liveries/dl-<first 12 hash digits>/ (the mod made when
 // missing), its livery.ini noting who it came from. Returns the folder.

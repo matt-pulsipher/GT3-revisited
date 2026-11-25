@@ -1,6 +1,6 @@
 // New livery (docs/MODDING.md "Liveries"): the car picker (app/online_pickers.h) chooses a car and the
 // paint to paint over; the livery template of that car (race/livery_template.h) is written from this
-// disc into the mod "my_liveries" as liveries/<car>/, so it is installed at once (an untouched
+// disc (a mod car's from its own model) into the mod "my_liveries" as liveries/<car>/, so it is installed at once (an untouched
 // template changes nothing on the car) and listed with the car's paints. Then the folder opens in
 // the system's file manager for painting; the game picks the changes up the next time the car loads
 // (after the Mods screen is opened again, or the game restarts).
@@ -105,10 +105,9 @@ private:
             return;
         }
         for (const data::Car& c : db_.cars()) {
-            if (db_.mod_car(c.label)) continue; // (a mod car wears its own paints)
             const std::string model = db_.model_of(c);
             if (model.empty() || !app.vfs()->exists("cars/day/" + model)) continue;
-            cars_.push_back({c.label, ascii(c.name.empty() ? c.label : c.name), model, -1, false, c.maker, 0, {}, {}, 0, {}});
+            cars_.push_back({c.label, ascii(c.name.empty() ? c.label : c.name), model, -1, db_.mod_car(c.label) != nullptr, c.maker, 0, {}, {}, 0, {}});
         }
         std::sort(cars_.begin(), cars_.end(), [](const PickerCar& a, const PickerCar& b) { return a.name < b.name; });
         if (cars_.empty()) {
@@ -128,16 +127,16 @@ private:
         int paint = picker_.paint();
         std::string colour;
         // A custom colour or livery from the list: the template on the disc paint under it (a colour stays in the ini).
-        if (const race::CustomPaint* cp = race::custom_paints()->at(c.model, paint)) {
+        const std::string key = race::paint_key(db_, c.label, c.model);
+        const std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+        if (const race::CustomPaint* cp = custom->at(key, paint)) {
             paint = cp->finish;
             if (cp->colour) colour = race::rgb_text(cp->rgb);
         }
-        std::optional<Bytes> file = app.vfs()->read("cars/day/" + c.model);
         std::string err;
-        std::optional<race::LiveryTemplate> t =
-            file ? race::make_livery_template(*file, c.model, paint, 4, &err) : std::nullopt;
+        std::optional<race::LiveryTemplate> t = race::make_livery_template(*app.vfs(), db_, key, paint, 4, &err);
         if (!t) {
-            fail(file ? err : "cars/day/" + c.model + " cannot be read");
+            fail(err);
             return;
         }
         const std::string mod = app.mods_dir() + "/" + kModId;
@@ -172,7 +171,7 @@ private:
             return;
         }
         app.rescan_mods(); // (installed: an untouched template changes nothing)
-        LOG_INFO("New livery: %s (%s, paint %d) in %s", c.label.c_str(), c.model.c_str(), paint, folder_.c_str());
+        LOG_INFO("New livery: %s (%s, paint %d) in %s", c.label.c_str(), key.c_str(), paint, folder_.c_str());
         message_ = {"The template for the " + c.name + " is in", folder_, "",
                     "Paint over the body-... pictures (any editor, this size or larger), keeping their names.",
                     "guides/ shows which part of the car is where: blue left, orange right, green top,",

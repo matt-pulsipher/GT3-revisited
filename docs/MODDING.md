@@ -496,7 +496,7 @@ file = models/my_car.glb       ; relative to the mod folder
 wheel = ozw004_b               ; optional: a rim from the disc (gt3r --browse wheel/)
 lower_mm = 10                  ; optional: move the body down (negative = up) to fine-tune ride height
 
-[paints]                       ; in menu order; applied to the paint materials
+[paints]                       ; in menu order; applied to the paint materials (pictures: "Liveries")
 Pearl White = #E9E9E6
 Ultra Red = #9B1B22
 ```
@@ -724,6 +724,10 @@ finish = 4              ; optional: the car's paint (0 = its first) whose finish
   The **Car viewer** (Developer options) lists every model with the name of a
   car on it (`ni0137  SKYLINE GT-R Vspec`). Several cars share a body (a car
   and its race versions); they all get the colour.
+- For a car added by a mod, **model** is `mod:` and the car's label
+  (`model = mod:my_car`): its colours follow its own `[paints]`, and **finish**
+  is one of those (0 = the first). On a glTF body the colour is simply its paint
+  materials' colour.
 - **color** reads like the colours of the disc's own paint chips: the car's
   paints show on the body somewhat darker than their chips, and so does a new
   colour, by the same amount for that car.
@@ -753,8 +757,9 @@ is skipped, and the log says why.
 ## Liveries
 
 A livery is pictures painted over a car's paint: stripes, numbers, logos, or a
-whole new design. It goes on the player's own disc car, picked like a paint, and
-holds only what its author painted.
+whole new design. It goes on the player's own disc car, or on a car added by a
+mod (see "On mod cars"), picked like a paint, and holds only what its author
+painted.
 
 1. **Make a template** from your disc: **New livery** on the Mods screen
    (choose the car and the paint to paint over). It writes a livery folder into
@@ -806,6 +811,47 @@ paint = 0              ; the paint the template was made in: keep it
   Download, Ask (the default: a prompt for each one), or Off (their cars show the livery's paint).
 - **Replays** keep the livery while it's installed.
 
+### On mod cars
+
+A mod car can have any number of liveries: one car, one model, and a livery per
+team, each picked from the car's paint list after its `[paints]`. They can ship in
+the car's own mod (`mods/my_car/liveries/<name>/`) or in another one, and new ones
+can be added later without touching the car.
+
+```ini
+[livery]
+name = Team Blue #7
+author = you
+model = mod:my_car     ; mod: and the car's label
+paint = 0              ; one of the car's [paints] (0 = the first): what shows where nothing is painted
+```
+
+The template comes from the car's own model: choose the car in **New livery**, or
+
+```bash
+gt3tool livery-template game.iso mod:my_car my_livery --mods=mods
+```
+
+- A **glTF body**'s pictures are named `body-<texture>-<key>.png`: one per embedded
+  PNG the model draws with texture coordinates, at its own size (small ones are
+  enlarged), `body-` for the textures paint materials use. Paint materials without a
+  texture get a blank 1024x1024 picture when their texture coordinates are a layout.
+  The menu, race, evening and night models are all covered: a texture they share is
+  painted once.
+- A picture shows as it is painted: the paint colour tints only what the livery
+  leaves unpainted. For a complete design (a car converted with several team
+  textures), save each team's texture under the template's file name, at any size up
+  to 4096x4096.
+- The key is the embedded picture's, whatever the paint. A new version of the car
+  whose texture changed needs new templates; changing `[paints]` or the geometry
+  doesn't.
+- A car on a **shell borrowed from the disc** (no `[model]`) takes liveries the way
+  disc cars do, on `mod:<label>` and on that car only; the donor's own liveries stay
+  on the donor.
+- **Online**, the livery follows the car: a player without the car is offered the
+  car first, then the livery. Games before this version show the car in the
+  livery's `paint`.
+
 ## Menu music
 
 The menu tunes aren't recordings: the game plays them from notes
@@ -852,7 +898,7 @@ tune playing (the log says why).
 | New cars (`cars/*.ini`) | Works now: data-only cars on a disc car's shell or their own glTF body, including electric ones, sold at GT Mode dealers, new makers included (see above) |
 | Cars from your other discs | Works now: any disc car, Gran Turismo Concept's included, exported whole as a mod (see "Exporting cars") |
 | Paint colours (`liveries/*.ini`) | Works now: new colours for any car, computed from its own paints, shown online and kept in replays (see "Paint colours") |
-| Liveries (`liveries/<name>/`) | Works now: pictures painted over a car on a template from your disc (New livery on the Mods screen), any size, shown at every distance and sent to the players you race online (see "Liveries") |
+| Liveries (`liveries/<name>/`) | Works now: pictures painted over a disc or mod car on a template of it (New livery on the Mods screen), any size, shown at every distance and sent to the players you race online (see "Liveries") |
 | GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes and a prize car, listed on a league page; made with the Event creator or by hand (see "Adding events") |
 | Any other file | Overrides are loaded wherever the game reads the file (menus, models, courses, sounds, databases, movies) |
 

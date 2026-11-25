@@ -94,7 +94,10 @@ Bytes encode_online_car(const OnlineCar& c) {
     // them (their digest of the car then differs from ours).
     // Flag 2: a custom colour follows the settings (u8 R, G, B); games before it stop reading after the settings.
     // Flag 4: a livery's package follows (string hash, u32 size).
-    const bool paintable = c.kind == OnlineCar::Kind::Disc || c.kind == OnlineCar::Kind::Arcade;
+    // A mod car's are flags 8 (colour) and 16 (livery): games before them refuse a mod car with flags 2 or 4, and pass
+    // over these (they show its own paint).
+    const bool mod = c.kind == OnlineCar::Kind::Mod;
+    const bool paintable = c.kind != OnlineCar::Kind::Garage;
     const bool color = c.color && paintable;
     const bool livery = paintable && package_hash(c.livery);
     const bool lobby =
@@ -109,7 +112,7 @@ Bytes encode_online_car(const OnlineCar& c) {
     if (lobby) {
         w.u8_(c.tires >= 0 ? u8(c.tires) : u8(0xFF));
         const bool tune = c.tune && c.kind != OnlineCar::Kind::Arcade;
-        w.u8_((tune ? 1 : 0) | (color ? 2 : 0) | (livery ? 4 : 0));
+        w.u8_((tune ? 1 : 0) | (color ? (mod ? 8 : 2) : 0) | (livery ? (mod ? 16 : 4) : 0));
         if (tune) {
             sim::CarSettings t = *c.tune;
             each_setting(t, [&](int& v) { w.u32_(u32(s32(v))); });
@@ -178,14 +181,14 @@ std::optional<OnlineCar> decode_online_car(ByteSpan data) {
             each_setting(tune, [&](int& v) { v = int(s32(r.u32_())); });
             c.tune = tune;
         }
-        if (flags & 2) {
-            if (c.kind == OnlineCar::Kind::Mod) return std::nullopt; // (mod cars wear their own paints)
+        const bool mod = c.kind == OnlineCar::Kind::Mod;
+        if (mod && (flags & 6)) return std::nullopt; // (a mod car's are flags 8 and 16)
+        if (flags & (mod ? 8 : 2)) {
             u32 rgb = 0;
             for (int k = 0; k < 3; ++k) rgb |= u32(r.u8_()) << (8 * k);
             c.color = rgb;
         }
-        if (flags & 4) {
-            if (c.kind == OnlineCar::Kind::Mod) return std::nullopt;
+        if (flags & (mod ? 16 : 4)) {
             c.livery = r.str();
             c.livery_size = r.u32_();
             if (!package_hash(c.livery) || c.livery_size == 0 || c.livery_size > kMaxLiveryBytes + 64 * 1024) return std::nullopt;
@@ -445,18 +448,17 @@ std::optional<sim::CarSpec> online_car_spec(const data::CarDatabase& db, const O
     return s;
 }
 
-namespace {
-std::string online_car_model(const data::CarDatabase& db, const OnlineCar& c) {
+std::string online_paint_key(const data::CarDatabase& db, const OnlineCar& c) {
     const data::Car* car = db.car(online_car_base(db, c));
-    return car ? db.model_of(*car) : std::string();
+    return car ? race::paint_key(db, car->label, db.model_of(*car)) : std::string();
 }
-} // namespace
 
 void set_online_car_paint(const data::CarDatabase& db, OnlineCar& c, int paint) {
     c.color.reset();
     c.paint = u8(std::clamp(paint, 0, 255));
-    if (c.kind != OnlineCar::Kind::Disc && c.kind != OnlineCar::Kind::Arcade) return;
-    if (const race::CustomPaint* p = race::custom_paints()->at(online_car_model(db, c), paint)) {
+    if (c.kind == OnlineCar::Kind::Garage) return;
+    const std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+    if (const race::CustomPaint* p = custom->at(online_paint_key(db, c), paint)) {
         c.paint = u8(p->finish);
         if (p->colour) c.color = p->rgb; // (a livery's pictures stay here: the others see its paint)
     }
@@ -467,10 +469,10 @@ int online_car_local_paint(const data::CarDatabase& db, const OnlineCar& c, cons
         const std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
         std::string id = race::livery_id_for_hash(c.livery);
         if (id.empty()) id = downloaded_livery_id(c.livery);
-        if (const int k = custom->index_of_livery(online_car_model(db, c), id); k >= 0) return k;
+        if (const int k = custom->index_of_livery(online_paint_key(db, c), id); k >= 0) return k;
     }
     if (!c.color) return c.paint;
-    const int k = race::received_paint(online_car_model(db, c), *c.color, c.paint, owner);
+    const int k = race::received_paint(online_paint_key(db, c), *c.color, c.paint, owner);
     return k >= 0 ? k : c.paint;
 }
 
