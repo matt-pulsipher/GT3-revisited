@@ -2,6 +2,7 @@
 
 #include "base/bytes.h"
 
+#include <memory>
 #include <vector>
 
 namespace gt3r {
@@ -56,13 +57,18 @@ public:
 
     // Reads a texel's raw value (index for T8/T4, color for CT formats).
     u32 read_texel(u32 bp, u32 bw, u32 psm, u32 x, u32 y) const;
+    // The raw values of a w*h rect at (x0, y0), row by row, as read_texel gives them (the format is
+    // picked once for the rect, not per texel).
+    void read_texels(u32 bp, u32 bw, u32 psm, u32 x0, u32 y0, u32 w, u32 h, u32* out) const;
 
     // Decodes a texture to RGBA8 (alpha rescaled from GS 0..128 to 0..255).
     std::vector<u32> decode_rgba(const Tex0& tex0, u32 width, u32 height, u32 x0 = 0, u32 y0 = 0) const;
 
 private:
+    static constexpr u32 kBlocks = kBytes / 256;
     u32 clut_color(const Tex0& tex0, u32 index) const;
-    std::vector<u8> mem_;
+    std::unique_ptr<u8[]> mem_;     // not cleared up front: see written_
+    std::unique_ptr<u8[]> written_; // per 256-byte block: 0 = never written, reads as zeros
 };
 
 } // namespace gt3r
