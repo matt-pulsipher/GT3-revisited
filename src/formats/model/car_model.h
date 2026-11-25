@@ -71,6 +71,13 @@ struct CarBodyMod {
     // so the glTF body is moved down by this much (metres).
     float glb_ground = 0;
     std::optional<std::array<float, 3>> paint; // colour of the glTF paint materials (0..1)
+    // A mod car's paints are its own (race::paint_key: "mod:<label>"): the name load_car_model asks the paint
+    // resolver under, in place of the body's. Empty: not a mod car.
+    std::string paint_key;
+    // A livery on the glTF body (GlbOptions::livery, livery_paint); a body from the disc's files takes its own
+    // from the resolver, as a disc car does.
+    std::shared_ptr<const texture_pack::Pack> livery;
+    std::optional<std::array<float, 3>> livery_paint;
     std::string wheel;                         // a rim to fit by default (wheel/<label>), empty = the car file's
     bool active() const { return fit || glb; }
 };
@@ -86,7 +93,7 @@ struct CarModelOptions {
     std::optional<gtm1::ComputedPaint> computed_paint;
     // A livery's pictures over the paint (gtm1::Options::livery); unset: as the resolver says.
     std::shared_ptr<const texture_pack::Pack> livery;
-    bool resolve_paint = true; // false: `paint` is a disc paint, whatever the resolver says
+    bool resolve_paint = true; // false: `paint` is a disc (or mod car's own) paint, whatever the resolver says
     bool wheels = true;        // add wheels + generated tyres
     bool menu_tyres = false;   // the menus' tyres (30 segments) and brake parts; else the race's tyres for each LOD (tyre_model.h)
     // Another wheel to fit instead of the car's own: the contents of a wheel/<label>
@@ -135,7 +142,7 @@ void mark_car_glass(scene::Model& model);
 // Number of distinct LOD branches node `node` takes (1 when it has no LOD switch).
 int gtm1_lod_count(const gtm1::Gtm1& g, u32 node);
 
-// Paint indices past a model's disc colours name the custom colours installed for it
+// Paint indices past a model's disc colours (a mod car's own paints) name the custom colours installed for it
 // (race/custom_paints.h, docs/dev/CUSTOM_PAINTS.md). The app sets the resolver that turns
 // (model, paint) into one; none set, or none for that index: the index as it is.
 struct ResolvedPaint {

@@ -229,7 +229,7 @@ which tires and whether tuned cars may race ("Lobby car rules").
   settings no longer fit it (a garage car changed since).
 
 ### Custom colours
-A disc or arcade car in a custom paint colour (`race/custom_paints.h`, docs/dev/CUSTOM_PAINTS.md)
+A disc, mod or arcade car in a custom paint colour (`race/custom_paints.h`, docs/dev/CUSTOM_PAINTS.md)
 sends the colour, not its index: indices past the disc's paints differ between machines.
 `game::set_online_car_paint` puts the colour's finish in `paint` (what a game without the
 colour shows) and its RGB in `OnlineCar::color`, which travels in the lobby block after the
@@ -239,11 +239,13 @@ colour into its own paint index with `game::online_car_local_paint` (`race::rece
 the installed colour with that RGB and finish, else one added for the session, not listed in
 the pickers), for the lobby's chips, the race (`configure_online_field`, `resolve_online`) and
 the host's CPU cars (their `net::Settings` paint is the finish; the colour is in their
-descriptor). Garage and mod cars wear the disc's paints. Tests: `custom_paint_online_car`, the
+descriptor). Garage cars wear their own paints. A mod car's colour is flag 8 instead, and its
+livery flag 16: 0.8 games refuse a mod car's descriptor with flags 2 or 4 and pass over unknown
+ones, so they show its paint. Tests: `custom_paint_online_car`, the
 `online_car` fuzz target.
 
 ### Liveries
-A disc or arcade car wearing a livery (race/custom_paints.h) sends its package's SHA-256 and size
+A disc, mod or arcade car wearing a livery (race/custom_paints.h) sends its package's SHA-256 and size
 in the lobby block after the colour (flag 4; older games stop before it). The package
 (`game/livery_package.h`) is built once per livery from the installed folder and holds only what
 was painted: each picture's coverage against the template (`gtm1::livery_coverage`) as its alpha,
@@ -254,10 +256,12 @@ picture keyed by one of that car's textures in that paint, PNGs within `Pack::kM
 16 MB and 64 files) and installed as `mods/downloaded_liveries/liveries/dl-<12 hash digits>/`, each
 picture written as our own re-encoding of it (never the sender's bytes: the system's thumbnailers
 and media scan then only read our encoder's output).
+A mod car's livery (`mod:<label>`, flag 16) is checked against the installed copy of the car
+(`race::livery_textures`), so it is asked about only once that car is here.
 `online_car_local_paint` finds it by hash (our own by `race::note_livery_hash`); until then, or
 when refused, the car shows the livery's paint (and colour). Measured on localhost: a stripe and
 roundel on the R34's side, 5,844 bytes, installed and raced by the guest. Tests:
-`livery_package_disc`, `livery_online_car`, fuzz `livery_package` and `online_car`.
+`livery_package_disc`, `livery_mod_car_disc`, `livery_online_car`, fuzz `livery_package` and `online_car`.
 
 ### Regional discs
 

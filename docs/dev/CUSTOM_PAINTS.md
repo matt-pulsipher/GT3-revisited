@@ -81,12 +81,34 @@ livery's colour and coverage at that point. The side texture serving both sides 
 both, being found in 3D. R34, three levels of detail: 156 ms for the whole model with the transfer
 (`livery_template_round_trip_disc`).
 
+### Mod cars (`mod:<label>`, issue 445)
+
+A mod car's paints are a list of its own, kept under `race::paint_key` = "mod:<label>"
+(`CarColors::add_mod_cars`: its `[paints]`, else its body's disc paints). Custom colours and
+liveries are kept under the same name: `CustomPaint::model`, `CustomPaints`, replays
+(`CustomColor::model`), online (`game::online_paint_key`). `load_custom_paints` loads the car
+database for them when an enabled mod has cars (5 ms on the US disc).
+`CarBodyMod::paint_key` carries the name to `load_car_model`, which asks the resolver under it.
+
+- **A shell from the disc's files** (borrowed, stretched, or an exported car's own): the disc
+  path, the paint the Tex1 variant; the lower-detail models take the livery from a reference
+  stretched alike (`BodyFit`).
+- **A glTF body**: `body_mod_for_car` resolves the paint (`CarBodyMod::paint`, `livery`,
+  `livery_paint`) and `load_glb` lays the pictures over (`GlbOptions::livery`). Keys are the
+  embedded images' as they decode, so `[paints]` can change. The template (and the coverage's
+  reference) is the image times the base colour of the first paint material drawing it in the
+  livery's paint. Where a picture covers anything, the texture is copied once per base colour
+  its primitives draw it in, with that colour in its texels under the picture and out of the
+  vertex colours, so a picture shows untinted. Every LOD draws the same body: no transfer.
+- `race::livery_textures` gives the textures a livery can cover (templates' reference, package
+  building and validation) for both kinds.
+
 The app's **New livery** (Mods screen, `app/screen_new_livery.cpp`) writes the template into the
 mod `my_liveries`. Online: `game/livery_package.h`, docs/dev/ONLINE.md "Liveries".
 
 ## Paint indices
 
-Paint index disc count + k of a model is its custom colour k (`race::CustomPaints`): installed
+Paint index disc count + k of a model (a mod car's own paints + k) is its custom colour k (`race::CustomPaints`): installed
 ones first (mods in priority order, files by name), then those added for the session (received
 online, or a replay's). Every paint list shows the installed ones after the disc's
 (`CarPicker::paints`, `arcade_colors`), so the pickers, configs and race requests carry plain
@@ -97,5 +119,5 @@ after. Replays (v14) store each custom paint's RGB, finish and livery id, which 
 this game's index (the installed livery, else the colour, else the finish). Online, see docs/dev/ONLINE.md "Custom colours".
 
 Not yet: GT Mode (dealers and the garage keep the disc's paints: a garage car's colour is
-written to PS2 saves), mod cars (their own `[paints]`), texture packs (a computed colour's
+written to PS2 saves), texture packs (a computed colour's
 pixels are new, so pack pictures keyed on the disc's paints do not match them).

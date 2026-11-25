@@ -306,6 +306,8 @@ void apply_body_mod(scene::Model& m, const CarBodyMod& mod, const std::string& n
     if (!mod.glb) return;
     GlbOptions go;
     go.paint = mod.paint;
+    go.livery = mod.livery.get();
+    go.livery_paint = mod.livery_paint;
     scene::Model own = load_glb(*mod.glb, go, name);
     std::vector<int> lods;
     std::vector<scene::Mesh> kept;
@@ -544,18 +546,24 @@ std::optional<ResolvedPaint> resolve_paint(const std::string& model, int paint) 
 scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt_in, const std::string& name) {
     // A custom colour's index: resolved once for every LOD (the finish paint where none is installed).
     CarModelOptions resolved;
-    const bool resolve = opt_in.resolve_paint && !opt_in.computed_paint && !opt_in.livery && !opt_in.body_mod.active();
-    std::optional<ResolvedPaint> rp = resolve ? resolve_paint(name, opt_in.paint) : std::nullopt;
+    // A mod car's are under its own name; a glTF body has taken its colour and livery already (body_mod_for_car).
+    const CarBodyMod& bm = opt_in.body_mod;
+    const bool resolve =
+        opt_in.resolve_paint && !opt_in.computed_paint && !opt_in.livery && (!bm.active() || !bm.paint_key.empty());
+    std::optional<ResolvedPaint> rp =
+        resolve ? resolve_paint(bm.paint_key.empty() ? name : bm.paint_key, opt_in.paint) : std::nullopt;
     if (rp) {
         resolved = opt_in;
         resolved.paint = rp->paint;
-        resolved.computed_paint = std::move(rp->computed);
-        resolved.livery = std::move(rp->livery);
+        if (!bm.glb) {
+            resolved.computed_paint = std::move(rp->computed);
+            resolved.livery = std::move(rp->livery);
+        }
     }
     const CarModelOptions& opt = rp ? resolved : opt_in;
     // A livery reaches the lower-detail models through the full-detail body (formats/model/livery_transfer.h).
     auto carry_livery = [&](scene::Model& m) {
-        if (!opt.livery || opt.body_mod.active()) return;
+        if (!opt.livery || opt.body_mod.glb) return;
         if (std::none_of(m.meshes.begin(), m.meshes.end(), [](const scene::Mesh& x) { return x.lod >= 1; })) return;
         CarModelOptions r;
         r.lod = 0;
@@ -565,6 +573,7 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt_in, const 
         r.computed_paint = opt.computed_paint;
         r.livery = opt.livery;
         r.resolve_paint = false;
+        r.body_mod.fit = opt.body_mod.fit; // (a stretched shell: both in the same shape)
         livery_transfer::apply(m, load_car_model(data, r, name));
     };
     CarFile f = CarFile::parse(data);

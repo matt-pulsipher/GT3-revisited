@@ -758,10 +758,11 @@ std::vector<PaintInfo> CarPicker::paints(App& app, const PickerCar& c) const {
     }
     if (out.empty()) out.push_back({0x808080, ""});
     // The model's custom colours after the disc's (race/custom_paints.h): paint index disc count + k.
-    if (c.garage < 0 && !c.mod) {
+    if (c.garage < 0) {
         std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
-        if (custom->disc_count(c.model) == int(out.size()))
-            for (const race::CustomPaint& p : custom->of(c.model))
+        const std::string key = db_ ? race::paint_key(*db_, c.label, c.model) : c.model; // (a mod car's own list)
+        if (custom->disc_count(key) == int(out.size()))
+            for (const race::CustomPaint& p : custom->of(key))
                 if (p.listed()) out.push_back({p.rgb, p.name});
     }
     return out;

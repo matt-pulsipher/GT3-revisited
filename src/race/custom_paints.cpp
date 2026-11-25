@@ -5,8 +5,10 @@
 #include "base/log.h"
 #include "formats/model/car_model.h"
 #include "formats/texture_pack.h"
+#include "game/data/car_database.h"
 #include "vfs/vfs.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -74,8 +76,13 @@ std::optional<CustomPaint> parse_custom_paint(std::string_view ini_text, std::st
             p.finish = int(f);
         }
     }
-    if (p.model.empty() || p.model.size() > 16) return fail("[livery] model: missing");
-    for (char c : p.model)
+    // A mod car's: "mod:" and its label (game/data/mod_cars.cpp valid_label).
+    const std::string prefix = kModPaintKey;
+    const bool mod = p.model.rfind(prefix, 0) == 0;
+    const std::string body = mod ? p.model.substr(prefix.size()) : p.model;
+    if (body.empty()) return fail("[livery] model: missing");
+    if (body.size() > (mod ? 40u : 16u)) return fail("model: not a model name: " + p.model);
+    for (char c : body)
         if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) return fail("model: not a model name: " + p.model);
     p.colour = has_rgb;
     if (p.name.empty() && has_rgb) p.name = rgb_text(p.rgb);
@@ -111,7 +118,9 @@ int CustomPaints::disc_count(const std::string& model) const {
 bool CustomPaints::add(CustomPaint p, std::string* error, int* index) {
     const std::vector<u32> rgb = paint_rgb(p.model);
     if (rgb.empty()) {
-        if (error) *error = "model " + p.model + ": no paints on this disc";
+        if (error)
+            *error = p.model.rfind(kModPaintKey, 0) == 0 ? "mod car " + p.model.substr(std::string(kModPaintKey).size()) + ": not installed"
+                                                         : "model " + p.model + ": no paints on this disc";
         return false;
     }
     if (p.finish >= int(rgb.size())) {
@@ -186,6 +195,11 @@ size_t CustomPaints::size() const {
 std::shared_ptr<CustomPaints> load_custom_paints(const Vfs& vfs) {
     CarColors colors;
     colors.load(vfs);
+    // Mod cars' paints (colours and liveries for "mod:<label>").
+    if (std::any_of(vfs.mods().begin(), vfs.mods().end(), [](const ModInfo& m) { return m.active() && !m.cars.empty(); })) {
+        data::CarDatabase db;
+        if (db.load(vfs)) colors.add_mod_cars(db);
+    }
     auto out = std::make_shared<CustomPaints>(std::move(colors));
     for (const ModInfo& m : vfs.mods()) {
         if (!m.active()) continue;

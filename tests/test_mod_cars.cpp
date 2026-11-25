@@ -349,7 +349,7 @@ TEST(modcar_race_paints) {
     const std::string model = db->model_of(*db->car("syn_painted"));
     CHECK(model == "zz0001"); // the donor's body
     CHECK(race::paint_key(*db, "syn_donor", model) == model);
-    CHECK(race::paint_key(*db, "syn_plain", model) == model); // no paints of its own: the body's list
+    CHECK(race::paint_key(*db, "syn_plain", model) == "mod:syn_plain"); // (the body's list, when the disc has one)
     const std::string key = race::paint_key(*db, "syn_painted", model);
     CHECK(key == "mod:syn_painted");
     size_t mod_no = size_t(db->mod_car("syn_painted") - db->mod_cars().data());

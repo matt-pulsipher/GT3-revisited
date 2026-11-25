@@ -1,8 +1,10 @@
 #include "formats/model/gltf.h"
 
 #include "formats/json.h"
+#include "formats/model/gtm1.h"
 #include "formats/png_reader.h"
 #include "formats/png_writer.h"
+#include "formats/texture_pack.h"
 
 #include <algorithm>
 #include <cmath>
@@ -152,9 +154,81 @@ u32 rgba8(float r, float g, float b, float a) {
     return c(r) | c(g) << 8 | c(b) << 16 | c(a) << 24;
 }
 
-} // namespace
+// What a livery needs of a body primitive (apply_livery, glb_livery_textures).
+struct LiveryPart {
+    size_t primitive = 0;       // in the body mesh
+    u32 first = 0, count = 0;   // its vertices
+    Role role = Role::Plain;
+    std::string material;
+    float own[3] = {1, 1, 1};  // the material's base colour without GlbOptions::paint
+    float base[3] = {1, 1, 1}; // ... as drawn
+    bool uv = false;
+    std::vector<u32> plain; // its vertex colours without the base colour (with a livery)
+};
 
-scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name) {
+u32 tinted(u32 c, const float* f) {
+    u32 v = c & 0xFF000000u;
+    for (int k = 0; k < 3; ++k)
+        v |= u32(std::lround(std::clamp(float((c >> (8 * k)) & 0xFF) * f[k], 0.0f, 255.0f))) << (8 * k);
+    return v;
+}
+
+// The body's primitives by the key of their texture, in file order: those a livery can cover.
+std::vector<std::pair<u64, std::vector<const LiveryPart*>>> livery_groups(const scene::Model& m, const scene::Mesh& body,
+                                                                          const std::vector<LiveryPart>& parts) {
+    std::map<int, u64> keys; // by texture
+    std::vector<std::pair<u64, std::vector<const LiveryPart*>>> out;
+    for (const LiveryPart& p : parts) {
+        const int tex = body.primitives[p.primitive].texture;
+        // (untextured materials all share the white texture: a picture on it is the paint's)
+        if (!p.uv || tex < 0 || (tex == 0 && p.role != Role::Paint)) continue;
+        const scene::Texture& t = m.textures[size_t(tex)];
+        auto it = keys.find(tex);
+        if (it == keys.end()) it = keys.emplace(tex, texture_pack::key_of(t.width, t.height, t.rgba.data())).first;
+        auto g = std::find_if(out.begin(), out.end(), [&](const auto& e) { return e.first == it->second; });
+        if (g == out.end()) out.push_back({it->second, {}}), g = out.end() - 1;
+        g->second.push_back(&p);
+    }
+    return out;
+}
+
+// The part whose base colour the group's template shows: the first paint material's, else the first.
+const LiveryPart& shown_part(const std::vector<const LiveryPart*>& g) {
+    for (const LiveryPart* p : g)
+        if (p->role == Role::Paint) return *p;
+    return *g.front();
+}
+
+void apply_livery(scene::Model& m, scene::Mesh& body, const std::vector<LiveryPart>& parts, const GlbOptions& opt) {
+    for (const auto& [key, group] : livery_groups(m, body, parts)) {
+        std::shared_ptr<const texture_pack::Image> pic = opt.livery->find(key);
+        if (!pic) continue;
+        // The picture's template: the texture in the paint it was painted over.
+        const LiveryPart& shown = shown_part(group);
+        const float* under = shown.role == Role::Paint && opt.livery_paint ? opt.livery_paint->data() : shown.own;
+        const scene::Texture raw = m.textures[size_t(body.primitives[shown.primitive].texture)];
+        std::vector<u32> templ(raw.rgba.size());
+        for (size_t i = 0; i < templ.size(); ++i) templ[i] = tinted(raw.rgba[i], under);
+        // One copy per base colour the texture is drawn in, the colour in its texels.
+        std::map<std::array<float, 3>, int> copies; // -1: the picture covers nothing
+        for (const LiveryPart* p : group) {
+            const std::array<float, 3> base{p->base[0], p->base[1], p->base[2]};
+            auto it = copies.find(base);
+            if (it == copies.end()) {
+                scene::Texture t = raw;
+                for (u32& c : t.rgba) c = tinted(c, p->base);
+                gtm1::overlay_livery(t, *pic, {templ.data(), raw.width, raw.height});
+                it = copies.emplace(base, t.livery_cover ? int(m.textures.size()) : -1).first;
+                if (t.livery_cover) m.textures.push_back(std::move(t));
+            }
+            if (it->second < 0) continue;
+            body.primitives[p->primitive].texture = it->second;
+            for (u32 i = 0; i < p->count; ++i) body.vertices[p->first + i].color = p->plain[i];
+        }
+    }
+}
+
+scene::Model load(ByteSpan d, const GlbOptions& opt, const std::string& name, std::vector<LiveryPart>* parts) {
     if (d.size() < 20 || std::memcmp(d.data(), "glTF", 4) != 0) throw FormatError("not a binary glTF (.glb) file");
     if (rd32(d, 4) != 2) throw FormatError("glTF: only version 2 is supported");
     Glb g;
@@ -224,6 +298,8 @@ scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name
         float base[4] = {1, 1, 1, 1};
         for (int k = 0; k < 4; ++k)
             if (pbr["baseColorFactor"].size() == 4) base[k] = float(pbr["baseColorFactor"][size_t(k)].number());
+        LiveryPart part;
+        std::copy(base, base + 3, part.own);
         if (role == Role::Paint && opt.paint)
             for (int k = 0; k < 3; ++k) base[k] = (*opt.paint)[size_t(k)];
         int tex = pbr["baseColorTexture"].is_object() ? texture_for(pbr["baseColorTexture"]["index"].integer()) : 0;
@@ -254,6 +330,12 @@ scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name
                 for (size_t k = 0; k < std::min<size_t>(col->comps, 4); ++k) c[k] *= col->get(i, k);
             v.color = rgba8(c[0], c[1], c[2], c[3]);
             body.vertices.push_back(v);
+            if (parts) {
+                float w[3] = {1, 1, 1};
+                if (col)
+                    for (size_t k = 0; k < std::min<size_t>(col->comps, 3); ++k) w[k] = col->get(i, k);
+                part.plain.push_back(rgba8(w[0], w[1], w[2], c[3]));
+            }
         }
         if (!nrm) { // smooth normals from the faces
             for (size_t t = 0; t + 2 < idx.size(); t += 3) {
@@ -300,6 +382,15 @@ scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name
         if (role == Role::BrakeLamp) p.material.lamp_emission[0] = 1.2f, p.material.lamp_emission[1] = 0.25f;
         p.material.shininess = role == Role::Paint ? 24 : role == Role::Glass ? 48 : 8 + 40 * (1 - rough);
         if (p.index_count) body.primitives.push_back(p);
+        if (parts && p.index_count) {
+            part.primitive = body.primitives.size() - 1;
+            part.first = first, part.count = u32(body.vertices.size()) - first;
+            part.role = role;
+            part.material = mat["name"].string();
+            std::copy(base, base + 3, part.base);
+            part.uv = uv.has_value();
+            parts->push_back(std::move(part));
+        }
 
         // Reflection pass (paint and glass), like GT3's car env-map packets.
         if (opt.reflections && (role == Role::Paint || role == Role::Glass) && p.index_count) {
@@ -337,10 +428,58 @@ scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name
         for (size_t i = 0; i < g.doc["nodes"].size(); ++i) visit(int(i), Mat4{}, 0);
     }
     if (body.indices.empty()) throw FormatError("glTF: no triangles");
+    if (opt.livery && parts) apply_livery(model, body, *parts, opt);
     model.meshes.push_back(std::move(body));
     if (!env.indices.empty()) model.meshes.push_back(std::move(env));
     model.compute_bounds();
     return model;
+}
+
+} // namespace
+
+scene::Model load_glb(ByteSpan d, const GlbOptions& opt, const std::string& name) {
+    std::vector<LiveryPart> parts;
+    return load(d, opt, name, opt.livery ? &parts : nullptr);
+}
+
+std::vector<GlbLiveryTexture> glb_livery_textures(ByteSpan d, const std::optional<std::array<float, 3>>& paint, u32 max_texture_dim) {
+    GlbOptions opt;
+    opt.paint = paint;
+    opt.reflections = false;
+    opt.max_texture_dim = max_texture_dim;
+    std::vector<LiveryPart> parts;
+    const scene::Model m = load(d, opt, {}, &parts);
+    const scene::Mesh& body = m.meshes.front();
+    std::vector<GlbLiveryTexture> out;
+    for (const auto& [key, group] : livery_groups(m, body, parts)) {
+        const LiveryPart& shown = shown_part(group);
+        const int tex = body.primitives[shown.primitive].texture;
+        const scene::Texture& t = m.textures[size_t(tex)];
+        GlbLiveryTexture& g = out.emplace_back();
+        g.key = key;
+        g.paint = shown.role == Role::Paint;
+        g.blank = tex == 0;
+        g.name = g.blank || t.name.empty() ? shown.material : t.name;
+        g.width = t.width, g.height = t.height;
+        for (u32 c : t.rgba) g.rgba.push_back(tinted(c, shown.base));
+        float area = 0; // (a textureless paint whose UVs are all one point has no layout to paint on)
+        for (const LiveryPart* p : group) {
+            const scene::Primitive& pr = body.primitives[p->primitive];
+            for (u32 i = pr.first_index; i + 2 < pr.first_index + pr.index_count; i += 3) {
+                GlbLiveryTexture::Triangle tri{};
+                for (u32 k = 0; k < 3; ++k) {
+                    const scene::Vertex& v = body.vertices[body.indices[i + k]];
+                    tri.uv[k][0] = v.uv[0], tri.uv[k][1] = v.uv[1];
+                    for (int a = 0; a < 3; ++a) tri.normal[a] += v.normal[a];
+                }
+                area += std::fabs((tri.uv[1][0] - tri.uv[0][0]) * (tri.uv[2][1] - tri.uv[0][1]) -
+                                  (tri.uv[1][1] - tri.uv[0][1]) * (tri.uv[2][0] - tri.uv[0][0]));
+                g.triangles.push_back(tri);
+            }
+        }
+        if (g.blank && !(area > 1e-4f)) out.pop_back();
+    }
+    return out;
 }
 
 Bytes reencode_glb_images(ByteSpan d, u32 max_dim) {

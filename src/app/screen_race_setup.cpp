@@ -509,12 +509,13 @@ void RaceScreen::restart() {
     { // the custom colours among those paints, so the replay keeps them (Replay v14)
         std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
         std::vector<race::Replay::CustomColor> colors;
-        auto note = [&](u8 car, const std::string& model, int paint) {
+        auto note = [&](u8 car, const std::string& label, const std::string& body, int paint) {
+            const std::string model = paint_key(db_, label, body); // (a mod car's own list)
             if (const race::CustomPaint* c = custom->at(model, paint)) colors.push_back({car, model, c->colour, c->rgb, u8(c->finish), c->id});
         };
-        note(0, launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_, preset_.paint);
+        note(0, car_.label, launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_, preset_.paint);
         for (size_t i = 0; field_ && i < race_opponent_paints_.size() && i < 64 && int(i) < field_->opponents(); ++i)
-            note(u8(i + 1), field_->opponent_model(int(i)), race_opponent_paints_[i]);
+            note(u8(i + 1), field_->opponent_label(int(i)), field_->opponent_model(int(i)), race_opponent_paints_[i]);
         recorder_.set_custom_colors(std::move(colors));
     }
     begin_license();
@@ -790,7 +791,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     std::vector<PaintEntry> entries;
     std::string player_model = launch_model_.empty() ? cars_[size_t(car_sel_)].model : launch_model_;
     // A custom colour (race/custom_paints.h) enters the draw as its finish paint, so the others keep away from it, and
-    // comes back after it. Custom colours are keyed by disc model, which is a disc car's paint_key.
+    // comes back after it.
     std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
     std::vector<int> custom_paint; // entry -> its custom colour's paint index, -1 = none
     auto paint_id = [&](const std::string& key, int paint) {
@@ -858,7 +859,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         if (base.empty())
             if (const data::CarVariant* cv = db_.variant(l)) base = cv->car;
         CarBodyMod bm = db_.mod_car(base) ? body_mod_for_car(db_, base, paint, car_scene()) : CarBodyMod{};
-        std::shared_ptr<CarVisual>& v = by_model[{bm.active() ? base : model, paint}];
+        std::shared_ptr<CarVisual>& v = by_model[{bm.paint_key.empty() ? model : base, paint}];
         if (!v) {
             std::optional<Bytes> f = read_car(app, model);
             WheelSpec ws;
