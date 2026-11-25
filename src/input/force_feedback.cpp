@@ -292,7 +292,7 @@ namespace {
 // Both wheel effects act on the steering axis alone (DirectInput's single-axis form: one axis,
 // Cartesian, direction 0) and play once for an infinite length. (Not SDL_HAPTIC_INFINITY plays:
 // SDL's Logitech HIDAPI driver takes that count as -1 and stops the effect.) On Windows and macOS
-// that length isn't infinite on the wheel: ffb::wheel_rerun_due.
+// that length is only infinite with our SDL patch (sdl-haptic-infinite.patch): ffb::wheel_rerun_due.
 SDL_HapticEffect wheel_spring(int coef) {
     SDL_HapticEffect e{};
     e.type = SDL_HAPTIC_SPRING;
@@ -341,6 +341,13 @@ bool ForceFeedback::has_wheel_forces(SDL_Joystick* joystick) {
     return forces;
 }
 
+// Logs the first failure each time feedback resumes: the steering force goes out many times a second.
+void ForceFeedback::check_effect(Dev& d, bool ok, const char* what) {
+    if (ok || d.effects_failed) return;
+    d.effects_failed = true;
+    LOG_WARN("Force feedback: could not %s an effect: %s", what, SDL_GetError());
+}
+
 void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, double time, bool restart) {
     if (!d.haptic && !d.haptic_tried) {
         d.haptic_tried = true;
@@ -360,12 +367,13 @@ void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedb
         if (features & SDL_HAPTIC_CONSTANT) d.constant_id = start_effect(d.haptic, wheel_constant(0), "constant force");
         d.effects_at = time;
     } else if (d.haptic && (restart || ffb::wheel_rerun_due(d.effects_at, time))) {
+        if (restart) d.effects_failed = false;
         // Each time feedback resumes (a race, after a pause): anything that reset the device's
         // force feedback meanwhile (its driver, another program) stopped the effects. And every few
         // seconds where the wheel's driver ends an "infinite" effect: playing it again starts it
         // over with the same force (no envelope), before it runs out.
         for (int id : {d.spring_id, d.constant_id})
-            if (id >= 0) SDL_RunHapticEffect(d.haptic, id, 1);
+            if (id >= 0) check_effect(d, SDL_RunHapticEffect(d.haptic, id, 1), "play");
         d.effects_at = time;
     }
     if (!d.haptic) return;
@@ -375,13 +383,13 @@ void ForceFeedback::apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedb
     int coef = ffb::wheel_spring_coefficient(s, cfg_);
     if (d.spring_id >= 0 && std::abs(coef - d.spring_coef) > 300) {
         SDL_HapticEffect e = wheel_spring(coef);
-        SDL_UpdateHapticEffect(d.haptic, d.spring_id, &e);
+        check_effect(d, SDL_UpdateHapticEffect(d.haptic, d.spring_id, &e), "change");
         d.spring_coef = coef;
     }
     int level = ffb::wheel_constant_level(s, cfg_);
     if (d.constant_id >= 0 && level != d.constant_level) {
         SDL_HapticEffect e = wheel_constant(level);
-        SDL_UpdateHapticEffect(d.haptic, d.constant_id, &e);
+        check_effect(d, SDL_UpdateHapticEffect(d.haptic, d.constant_id, &e), "change");
         d.constant_level = level;
     }
 }

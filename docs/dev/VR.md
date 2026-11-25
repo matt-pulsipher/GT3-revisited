@@ -66,7 +66,8 @@ headers), which goes next to `gt3r.exe` with `LICENSE-OpenXR.txt`. It stays a
 package of its own while VR takes SDL's development branch: wheels and every other
 Windows player keep the tested SDL 3.4. The AMD fullscreen fix goes with it
 (`cmake/patches/sdl-main-vulkan-amd-fullscreen.patch`), because the window has a
-swapchain here too. When SDL 3.6 is released and the main package moves to it, the
+swapchain here too, and so does the wheel effects' length (`sdl-haptic-infinite.patch`, the
+same file for both SDLs). When SDL 3.6 is released and the main package moves to it, the
 two packages can become one; `[vr] enabled` would then have to default to off, since
 opening OpenXR starts SteamVR on any computer that has it. The package's own
 **Download update** asks for `gt3r-windows-x64-vr.zip`.

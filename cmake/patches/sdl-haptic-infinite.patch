@@ -1,0 +1,126 @@
+SDL: an effect of infinite length (SDL_HAPTIC_INFINITY) is infinite on DirectInput (Windows) and on
+macOS. Both multiplied it by 1000 into a 32-bit number of microseconds, 4294966296, which isn't the
+API's INFINITE; a wheel's driver fits that into its own duration field, and force feedback stopped
+about 30 s into a race (issues 276 and 444). The code is the same in SDL 3.4.12 and on SDL main.
+Applied by cmake/Dependencies.cmake.
+
+diff --git a/src/haptic/darwin/SDL_syshaptic.c b/src/haptic/darwin/SDL_syshaptic.c
+index 4034320..831fe24 100644
+--- a/src/haptic/darwin/SDL_syshaptic.c
++++ b/src/haptic/darwin/SDL_syshaptic.c
+@@ -765,6 +765,9 @@ static bool SDL_SYS_SetDirection(FFEFFECT *effect, const SDL_HapticDirection *di
+ #define CCONVERT(x) (((x) > 0x7FFF) ? 10000 : ((x)*10000) / 0x7FFF)
+ // Just converts.
+ #define CONVERT(x) (((x)*10000) / 0x7FFF)
++
++/* An effect's length in microseconds: SDL_HAPTIC_INFINITY times 1000 wraps, and is not FF_INFINITE. */
++#define DURATION(length) (((length) == SDL_HAPTIC_INFINITY) ? FF_INFINITE : (length) * 1000)
+ /*
+  * Creates the FFEFFECT from a SDL_HapticEffect.
+  */
+@@ -835,7 +838,7 @@ static bool SDL_SYS_ToFFEFFECT(SDL_Haptic *haptic, FFEFFECT *dest, const SDL_Hap
+         dest->lpvTypeSpecificParams = constant;
+ 
+         // Generics
+-        dest->dwDuration = hap_constant->length * 1000; // In microseconds.
++        dest->dwDuration = DURATION(hap_constant->length); // In microseconds.
+         dest->dwTriggerButton = FFGetTriggerButton(hap_constant->button);
+         dest->dwTriggerRepeatInterval = hap_constant->interval;
+         dest->dwStartDelay = hap_constant->delay * 1000; // In microseconds.
+@@ -879,7 +882,7 @@ static bool SDL_SYS_ToFFEFFECT(SDL_Haptic *haptic, FFEFFECT *dest, const SDL_Hap
+         dest->lpvTypeSpecificParams = periodic;
+ 
+         // Generics
+-        dest->dwDuration = hap_periodic->length * 1000; // In microseconds.
++        dest->dwDuration = DURATION(hap_periodic->length); // In microseconds.
+         dest->dwTriggerButton = FFGetTriggerButton(hap_periodic->button);
+         dest->dwTriggerRepeatInterval = hap_periodic->interval;
+         dest->dwStartDelay = hap_periodic->delay * 1000; // In microseconds.
+@@ -932,7 +935,7 @@ static bool SDL_SYS_ToFFEFFECT(SDL_Haptic *haptic, FFEFFECT *dest, const SDL_Hap
+         dest->lpvTypeSpecificParams = condition;
+ 
+         // Generics
+-        dest->dwDuration = hap_condition->length * 1000; // In microseconds.
++        dest->dwDuration = DURATION(hap_condition->length); // In microseconds.
+         dest->dwTriggerButton = FFGetTriggerButton(hap_condition->button);
+         dest->dwTriggerRepeatInterval = hap_condition->interval;
+         dest->dwStartDelay = hap_condition->delay * 1000; // In microseconds.
+@@ -962,7 +965,7 @@ static bool SDL_SYS_ToFFEFFECT(SDL_Haptic *haptic, FFEFFECT *dest, const SDL_Hap
+         dest->lpvTypeSpecificParams = ramp;
+ 
+         // Generics
+-        dest->dwDuration = hap_ramp->length * 1000; // In microseconds.
++        dest->dwDuration = DURATION(hap_ramp->length); // In microseconds.
+         dest->dwTriggerButton = FFGetTriggerButton(hap_ramp->button);
+         dest->dwTriggerRepeatInterval = hap_ramp->interval;
+         dest->dwStartDelay = hap_ramp->delay * 1000; // In microseconds.
+@@ -1005,7 +1008,7 @@ static bool SDL_SYS_ToFFEFFECT(SDL_Haptic *haptic, FFEFFECT *dest, const SDL_Hap
+         dest->lpvTypeSpecificParams = custom;
+ 
+         // Generics
+-        dest->dwDuration = hap_custom->length * 1000; // In microseconds.
++        dest->dwDuration = DURATION(hap_custom->length); // In microseconds.
+         dest->dwTriggerButton = FFGetTriggerButton(hap_custom->button);
+         dest->dwTriggerRepeatInterval = hap_custom->interval;
+         dest->dwStartDelay = hap_custom->delay * 1000; // In microseconds.
+diff --git a/src/haptic/windows/SDL_dinputhaptic.c b/src/haptic/windows/SDL_dinputhaptic.c
+index fa374e4..37b29a6 100644
+--- a/src/haptic/windows/SDL_dinputhaptic.c
++++ b/src/haptic/windows/SDL_dinputhaptic.c
+@@ -578,6 +578,11 @@ static bool SDL_SYS_SetDirection(DIEFFECT *effect, const SDL_HapticDirection *di
+ #define CCONVERT(x) (((x) > 0x7FFF) ? 10000 : ((x)*10000) / 0x7FFF)
+ // Just converts.
+ #define CONVERT(x) (((x)*10000) / 0x7FFF)
++
++/* An effect's length in microseconds. SDL_HAPTIC_INFINITY times 1000 wraps to 4294966296, which is
++ * not INFINITE: the driver then fits it into the device's own duration field, and it can come out
++ * as about 30 seconds. */
++#define DURATION(length) (((length) == SDL_HAPTIC_INFINITY) ? INFINITE : (length) * 1000UL)
+ /*
+  * Creates the DIEFFECT from a SDL_HapticEffect.
+  */
+@@ -649,7 +654,7 @@ static bool SDL_SYS_ToDIEFFECT(SDL_Haptic *haptic, DIEFFECT *dest,
+         dest->lpvTypeSpecificParams = constant;
+ 
+         // Generics
+-        dest->dwDuration = hap_constant->length * 1000UL; // In microseconds.
++        dest->dwDuration = DURATION(hap_constant->length); // In microseconds.
+         dest->dwTriggerButton = DIGetTriggerButton(hap_constant->button);
+         dest->dwTriggerRepeatInterval = hap_constant->interval;
+         dest->dwStartDelay = hap_constant->delay * 1000UL; // In microseconds.
+@@ -693,7 +698,7 @@ static bool SDL_SYS_ToDIEFFECT(SDL_Haptic *haptic, DIEFFECT *dest,
+         dest->lpvTypeSpecificParams = periodic;
+ 
+         // Generics
+-        dest->dwDuration = hap_periodic->length * 1000UL; // In microseconds.
++        dest->dwDuration = DURATION(hap_periodic->length); // In microseconds.
+         dest->dwTriggerButton = DIGetTriggerButton(hap_periodic->button);
+         dest->dwTriggerRepeatInterval = hap_periodic->interval;
+         dest->dwStartDelay = hap_periodic->delay * 1000UL; // In microseconds.
+@@ -743,7 +748,7 @@ static bool SDL_SYS_ToDIEFFECT(SDL_Haptic *haptic, DIEFFECT *dest,
+         dest->lpvTypeSpecificParams = condition;
+ 
+         // Generics
+-        dest->dwDuration = hap_condition->length * 1000UL; // In microseconds.
++        dest->dwDuration = DURATION(hap_condition->length); // In microseconds.
+         dest->dwTriggerButton = DIGetTriggerButton(hap_condition->button);
+         dest->dwTriggerRepeatInterval = hap_condition->interval;
+         dest->dwStartDelay = hap_condition->delay * 1000UL; // In microseconds.
+@@ -773,7 +778,7 @@ static bool SDL_SYS_ToDIEFFECT(SDL_Haptic *haptic, DIEFFECT *dest,
+         dest->lpvTypeSpecificParams = ramp;
+ 
+         // Generics
+-        dest->dwDuration = hap_ramp->length * 1000UL; // In microseconds.
++        dest->dwDuration = DURATION(hap_ramp->length); // In microseconds.
+         dest->dwTriggerButton = DIGetTriggerButton(hap_ramp->button);
+         dest->dwTriggerRepeatInterval = hap_ramp->interval;
+         dest->dwStartDelay = hap_ramp->delay * 1000UL; // In microseconds.
+@@ -815,7 +820,7 @@ static bool SDL_SYS_ToDIEFFECT(SDL_Haptic *haptic, DIEFFECT *dest,
+         dest->lpvTypeSpecificParams = custom;
+ 
+         // Generics
+-        dest->dwDuration = hap_custom->length * 1000UL; // In microseconds.
++        dest->dwDuration = DURATION(hap_custom->length); // In microseconds.
+         dest->dwTriggerButton = DIGetTriggerButton(hap_custom->button);
+         dest->dwTriggerRepeatInterval = hap_custom->interval;
+         dest->dwStartDelay = hap_custom->delay * 1000UL; // In microseconds.

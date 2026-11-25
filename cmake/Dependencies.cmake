@@ -57,13 +57,17 @@ if(NOT SDL3_FOUND)
   # Our fixes to SDL (cmake/patches; the VR builds' pinned commit has its own copy). A source tree
   # given with FETCHCONTENT_SOURCE_DIR_SDL3 is used as it is.
   find_package(Git REQUIRED)
-  set(_sdl_patch sdl-vulkan-amd-fullscreen.patch)
+  set(_sdl_patches sdl-vulkan-amd-fullscreen.patch sdl-haptic-infinite.patch)
   if(GT3R_XR)
-    set(_sdl_patch sdl-main-vulkan-amd-fullscreen.patch)
+    set(_sdl_patches sdl-main-vulkan-amd-fullscreen.patch sdl-haptic-infinite.patch)
   endif()
-  set(GT3R_SDL_PATCH PATCH_COMMAND "${CMAKE_COMMAND}" "-DGIT=${GIT_EXECUTABLE}"
-      "-DPATCHES=${CMAKE_CURRENT_LIST_DIR}/patches/${_sdl_patch}"
-      -P "${CMAKE_CURRENT_LIST_DIR}/ApplyPatches.cmake")
+  set(GT3R_SDL_PATCH PATCH_COMMAND)
+  foreach(_sdl_patch IN LISTS _sdl_patches) # (a command each: PATCHES' own semicolons wouldn't survive here)
+    list(APPEND GT3R_SDL_PATCH COMMAND "${CMAKE_COMMAND}" "-DGIT=${GIT_EXECUTABLE}"
+        "-DPATCHES=${CMAKE_CURRENT_LIST_DIR}/patches/${_sdl_patch}"
+        -P "${CMAKE_CURRENT_LIST_DIR}/ApplyPatches.cmake")
+  endforeach()
+  list(REMOVE_AT GT3R_SDL_PATCH 1) # the first COMMAND: PATCH_COMMAND starts it
   FetchContent_Declare(SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
     GIT_TAG ${GT3R_SDL_TAG}
