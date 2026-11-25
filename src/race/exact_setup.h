@@ -32,6 +32,11 @@ namespace ex = sim::exact;
 // The program data of the disc in `vfs` (its CORE.GT3), checked once per program; null with *error set only when the disc
 // has no program that decodes.
 std::shared_ptr<const ex::ProgramData> exact_program_data(const Vfs& vfs, std::string* error = nullptr);
+// Starts working out the open disc's program data on a thread (App::open_disc), so the first race does not wait for it:
+// exact_program_data gives it for that disc. The thread decodes its own copy of CORE.GT3. forget_program_data
+// (App::close_disc) waits for it and drops it.
+void prepare_program_data(const Vfs& vfs);
+void forget_program_data();
 // The program data a race record plays on: `d` when the record has its fingerprint, else `d`'s GT3 tables
 // (ProgramData::gt3_tables: an online race's or one of the game's demos on a disc with changed tables); null for another
 // program's or tables' record.

@@ -11,7 +11,9 @@
 #include "vfs/vfs.h"
 
 #include <cmath>
+#include <future>
 #include <mutex>
+#include <system_error>
 
 namespace gt3r::race {
 
@@ -25,9 +27,71 @@ u64 hash_bytes(ByteSpan b) {
 
 std::mutex g_mutex;
 
+struct Decoded {
+    std::shared_ptr<const ex::ProgramData> data;
+    std::string error;
+};
+
+Decoded decode_program(const Bytes& core) {
+    Decoded d;
+    try {
+        d.data = std::make_shared<const ex::ProgramData>(ex::ProgramData::load(CoreImage::decode(core)));
+        const RacePhysics how = race_physics(*d.data);
+        LOG_INFO("Race: %s physics%s", race_core_name(how.core), how.own ? "" : " (this disc's own physics isn't supported yet)");
+    } catch (const std::exception& e) {
+        d.error = e.what();
+    }
+    if (!d.data) LOG_WARN("Race: exact physics unavailable: %s", d.error.c_str());
+    return d;
+}
+
+// The open disc's program data (prepare_program_data), keyed by its volume. CORE.GT3 is read from the volume, never
+// from a mod (Vfs::read), so changing mods keeps it.
+const Volume* g_prepared_volume = nullptr;
+std::shared_future<Decoded> g_prepared;
+
 } // namespace
 
+void prepare_program_data(const Vfs& vfs) {
+    std::optional<Bytes> core = vfs.read(Vfs::kProgramFile);
+    if (!core || core->empty()) return; // exact_program_data says why
+    std::shared_future<Decoded> work;
+    try {
+        work = std::async(std::launch::async, [b = std::move(*core)]() mutable {
+                   Decoded d = decode_program(b);
+                   Bytes().swap(b); // (the result is kept as long as the disc: not the program)
+                   return d;
+               }).share();
+    } catch (const std::system_error&) {
+        return; // no thread: the first race works it out
+    }
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_prepared_volume = vfs.base();
+    g_prepared = std::move(work);
+}
+
+void forget_program_data() {
+    std::shared_future<Decoded> work;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        work = std::move(g_prepared);
+        g_prepared_volume = nullptr;
+    }
+    if (work.valid()) work.wait();
+}
+
 std::shared_ptr<const ex::ProgramData> exact_program_data(const Vfs& vfs, std::string* error) {
+    std::shared_future<Decoded> prepared;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        if (g_prepared.valid() && g_prepared_volume == vfs.base()) prepared = g_prepared;
+    }
+    if (prepared.valid()) {
+        const Decoded& d = prepared.get();
+        if (!d.data && error) *error = d.error;
+        return d.data;
+    }
+    // Without one (a Vfs of no opened disc: the tests), or with no thread: worked out here, once per program.
     static u64 key = 0;
     static std::shared_ptr<const ex::ProgramData> data;
     static std::string err;
@@ -40,16 +104,9 @@ std::shared_ptr<const ex::ProgramData> exact_program_data(const Vfs& vfs, std::s
     const u64 k = hash_bytes(*core);
     if (k != key) {
         key = k;
-        data.reset();
-        err.clear();
-        try {
-            data = std::make_shared<const ex::ProgramData>(ex::ProgramData::load(CoreImage::decode(*core)));
-            const RacePhysics how = race_physics(*data);
-            LOG_INFO("Race: %s physics%s", race_core_name(how.core), how.own ? "" : " (this disc's own physics isn't supported yet)");
-        } catch (const std::exception& e) {
-            err = e.what();
-        }
-        if (!data) LOG_WARN("Race: exact physics unavailable: %s", err.c_str());
+        Decoded d = decode_program(*core);
+        data = std::move(d.data);
+        err = std::move(d.error);
     }
     if (!data && error) *error = err;
     return data;
@@ -91,14 +148,16 @@ const char* race_core_name(RaceCore c) {
 }
 
 std::shared_ptr<const ex::RaceCourse> exact_course(ByteSpan file, const std::string& label, const ex::ProgramData& d) {
-    static u64 key = 0;
+    static u64 key = 0, key_program = 0;
     static const ex::ProgramData* key_data = nullptr;
     static std::shared_ptr<const ex::RaceCourse> course;
     std::lock_guard<std::mutex> lock(g_mutex);
     const u64 k = hash_bytes(file) ^ hash_bytes(ByteSpan(reinterpret_cast<const u8*>(label.data()), label.size()));
-    if (k != key || key_data != &d || !course) {
+    // (and the program by its fingerprint: another disc's program data may be made where a closed one's was)
+    const u64 program = d.fingerprint();
+    if (k != key || key_data != &d || key_program != program || !course) {
         course = ex::RaceCourse::load(file, d);
-        key = k, key_data = &d;
+        key = k, key_data = &d, key_program = program;
     }
     return course;
 }
