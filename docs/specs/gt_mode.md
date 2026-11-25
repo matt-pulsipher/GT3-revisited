@@ -238,17 +238,25 @@ every arcade Single Race win adds one. Prize cars do not count as trophies.
 | Off (record) | Meaning |
 |---|---|
 | 0x000 u64 | car id (table 30 code) |
-| 0x00C s32 | colour index in the model's carcolor list (M: the two colour words at +0x08/+0x0C are an id and an index; their order differs between two readings of the code) |
+| 0x008 u32 | paint: carcolor.db colour id (C, `gt_save_garage_car`) |
+| 0x00C s32 | paint: the id's place in the model's carcolor list |
 | 0x010 u16 | car category copy (car +0xF1: 0 production, 1 race, 2 rally) |
 | 0x018..0x0E7 | 26 fitted part ids; slot → table: 0 brake, 1 brake ctrl, 3 chassis, 6 engine, 13 drivetrain, 17 gear, 18 suspension, 21 LSD, 28 front tire, 29 rear tire, 2 steer, 4 lightweight, 5 body, 7 port polish, 8 balance, 9 displacement, 10 computer, 11 NA tune, 12 turbo, 14 flywheel, 15 clutch, 16 shaft, 20 muffler, 19 intercooler, 23 ASCC, 22 TCSC |
 | 0x0E8 u64 | fitted wheel (hash of the wheel label; 0 = stock) |
-| 0x0F0..0x1CF | user settings, the CarEquipments words of [physics.md §6.6](physics.md) |
+| 0x0F0..0x1CF | user settings, the CarEquipments words of [physics.md §6.6](physics.md); the gear words hold the record's u16 ("no gear" −999 = 0xFC19), and after a computed gearbox's own gears whatever the work area held |
 | 0x1D0 | 87-bit **owned-parts** set (bit = goods id, §6) |
 | 0x1DC u32 | odometer, **2 m units** (display ÷ 50 = km with one decimal) |
 | 0x1E0 f32 | engine wear E (m) |
 | 0x1E4 f32 | oil O (m) |
 | 0x1E8 f32 | dirt 0..0.8 |
 | 0x1FC / 0x200 | in use / acquisition serial |
+
+The paint words are set together: `0x235F88` from a place in the list (the dealer), `0x235F30` from an
+id (prizes, event entries). The menus use the place, a race the id. The race's colour draw (`0x176C28`,
+from `RaceInformation::vf13`) takes every entry with an id other than 0xFFFFFFFF as it is and reads its
+definition (`0x176900`, the lookup `0x2391A0`) without checking that there is one. No colour has the id
+0, so a record with 0 there reads the address 0xC: a fault on the console, nothing on an emulator that
+lets the read through (issue 308). The car's paint index in the race (`0x177430`) is then 0.
 
 A new car owns the goods of its stock parts (0x237DB8, 0x237E18: one getter per
 category, 0x234E00–0x2353D0). A getter takes the part's stage from the record's
@@ -1833,8 +1841,6 @@ European language). Besides the menus, units and money (disc/region.h), it decid
 
 ## 13. Open points
 
-- The paint colour words (+0x08/+0x0C) order; carcolor.db colour lists
-  decode for most models but not all.
 - Unknown scalar fields and award bitmasks. (The ending-movie conditions: §10, H.)
 - Event bytes 0x19C–0x1C3 (AI strength / catch-up / tire wear, see the AI
   workstream) are not used by GT mode.

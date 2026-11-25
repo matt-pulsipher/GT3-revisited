@@ -857,6 +857,10 @@ imported save keeps its 0x888-byte options block (`GameState::ps2_options`,
 native `ps2opt` line) so an export restores the player's options. Our own options,
 the race playlist (the block's music list, `race::RacePlaylist`) included, live in
 config.ini `[options]` and are not read from or written into that block.
+A car's record is checked against the original's purchase (diff harness `gt_save_garage_car`: every car in every
+paint). Its paint is a disc paint: a custom colour or livery is written as the paint whose finish it takes, since
+the original reads an unknown paint's definition without a check (gt_mode §3.1, issue 308). Mod cars are left out of
+the file (their records are not on the disc); the ride car is then none if it was one.
 
 File level (`import_ps2_save_path`, `export_ps2_save_path`, `gt3tool
 save-import` / `save-export`, user steps in the README): the data file (under

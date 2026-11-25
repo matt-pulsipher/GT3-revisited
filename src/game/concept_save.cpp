@@ -148,12 +148,6 @@ GameState import_concept_ps2_save(ByteSpan file, const GtData& data) {
     size_t o = kBlock;
     for (u32 i = 0; i < ncars; ++i, o += kCarRec) {
         GarageCar c = read_garage_car(d.subspan(o, kCarRec), db);
-        // (This game's records hold the gear ratios as 16-bit words: "no gear" is 0xFC19, not GT3's -999.)
-        for (int& g : c.settings.gears) g = s16(g);
-        // (A gearbox whose ratios are computed fills its own gears; the game leaves whatever its work area held in
-        // the words after them.)
-        if (const std::optional<sim::GearGenerator> gg = sim::gear_generator(db, c.parts))
-            for (size_t g = size_t(gg->n) + 1; g < c.settings.gears.size(); ++g) c.settings.gears[g] = -999;
         if (i >= entries.size()) continue;
         const std::optional<GarageCar> fresh = concept_new_car(gt, entries[i]);
         if (!fresh || fresh->car != c.car) continue; // (not this disc's car: a save of another release)
@@ -240,13 +234,11 @@ Bytes export_concept_ps2_save(const GameState& s, const GtData& data) {
     for (size_t i = 0; i < cars.size(); ++i, o += kCarRec) {
         GarageCar c = cars[i];
         c.serial = u32(i);
-        write_garage_car(p, o, c, db);
+        write_garage_car(p, o, c, data);
         // What this game's record holds besides (the car built from its arcade row, 0x233CF0 and 0x2361D8, and
-        // painted, 0x2382C8): the paint's color, the row's kind word 3, the gear ratios as 16-bit words and the row's engine
+        // painted, 0x2382C8): the row's kind word 3, the gear ratios as 16-bit words and the row's engine
         // output factor (row +0x10A).
-        wr32(p, o + 0x08, data.color_id(c.car, c.color));
         wr16(p, o + 0x10, 3);
-        for (size_t g = 0; g < 8; ++g) wr32(p, o + 0xF0 + 4 * g, u32(u16(c.settings.gears[g])));
         for (const data::CarVariant& v : db.arcade_cars())
             if (v.label == c.origin && v.bytes.size() >= 0x10C) wr32(p, o + 0x1B8, rd16(v.bytes, 0x10A));
     }

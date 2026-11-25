@@ -5,6 +5,7 @@
 #include "formats/ps2/memcard.h"
 #include "game/concept_game.h"
 #include "game/ps2_save_parts.h"
+#include "race/custom_paints.h"
 #include "race/race_playlist.h"
 
 #include <SDL3/SDL_error.h>
@@ -17,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <memory>
 #include <sstream>
 
 namespace gt3r::game {
@@ -728,6 +730,25 @@ std::string set_aside_save(const std::string& path, std::string* error) {
 
 // --- PS2 import / export ------------------------------------------------------------
 
+namespace {
+// The settings words of a car record (gt_mode §3.1). The gear words hold the 16-bit ratio ("no gear" is 0xFC19).
+void read_settings(ByteSpan r, const data::CarDatabase& db, const std::array<u64, 27>& parts, sim::CarSettings& st) {
+    std::vector<int*> f = settings_fields(st);
+    for (size_t k = 0; k < f.size(); ++k) *f[k] = s32(rd32(r, kEqSettingOffsets[k]));
+    for (int& g : st.gears) g = s16(g);
+    // (A gearbox whose ratios are computed fills its own gears; the game leaves whatever its work area held in the words
+    // after them.)
+    if (const std::optional<sim::GearGenerator> gg = sim::gear_generator(db, parts))
+        for (size_t g = size_t(gg->n) + 1; g < st.gears.size(); ++g) st.gears[g] = -999;
+}
+
+void write_settings(Bytes& p, size_t o, sim::CarSettings st) {
+    std::vector<int*> f = settings_fields(st);
+    for (size_t k = 0; k < f.size(); ++k) wr32(p, o + kEqSettingOffsets[k], u32(*f[k]));
+    for (size_t g = 0; g < st.gears.size(); ++g) wr32(p, o + 0xF0 + 4 * g, u32(u16(st.gears[g])));
+}
+} // namespace
+
 // Car setup record (0x1D0) <-> car label, parts, settings.
 void decode_car_equipments(ByteSpan r, const data::CarDatabase& db, std::string& car, std::array<u64, 27>& parts,
                sim::CarSettings& st, int& ref_final) {
@@ -736,8 +757,7 @@ void decode_car_equipments(ByteSpan r, const data::CarDatabase& db, std::string&
         int slot = part_slot(kEqSlotTables[k]);
         if (slot >= 0) parts[size_t(slot)] = rd64(r, 0x18 + 8 * size_t(k));
     }
-    std::vector<int*> f = settings_fields(st);
-    for (size_t k = 0; k < f.size(); ++k) *f[k] = s32(rd32(r, kEqSettingOffsets[k]));
+    read_settings(r, db, parts, st);
     ref_final = s32(rd32(r, 0x1AC));
 }
 
@@ -749,9 +769,7 @@ void encode_eq(Bytes& p, size_t o, const std::string& car, const std::array<u64,
         int slot = part_slot(kEqSlotTables[k]);
         if (slot >= 0) wr64(p, o + 0x18 + 8 * size_t(k), parts[size_t(slot)]);
     }
-    sim::CarSettings st = settings;
-    std::vector<int*> f = settings_fields(st);
-    for (size_t k = 0; k < f.size(); ++k) wr32(p, o + kEqSettingOffsets[k], u32(*f[k]));
+    write_settings(p, o, settings);
     wr32(p, o + 0x1AC, u32(ref_final));
 }
 
@@ -791,8 +809,7 @@ GarageCar ps2save::read_garage_car(ByteSpan r, const data::CarDatabase& db) {
         if (slot >= 0) c.parts[size_t(slot)] = rd64(r, 0x18 + 8 * size_t(k));
     }
     c.wheel = rd64(r, 0xE8) ? label_of(db, data::TableId::Wheel, rd64(r, 0xE8)) : std::string();
-    std::vector<int*> f = settings_fields(c.settings);
-    for (size_t k = 0; k < f.size(); ++k) *f[k] = s32(rd32(r, kEqSettingOffsets[k]));
+    read_settings(r, db, c.parts, c.settings);
     c.ref_final = s32(rd32(r, 0x1AC));
     for (int b = 0; b < 87; ++b)
         if (r[0x1D0 + size_t(b >> 3)] & (1 << (b & 7))) c.owned.set(size_t(b));
@@ -804,18 +821,36 @@ GarageCar ps2save::read_garage_car(ByteSpan r, const data::CarDatabase& db) {
     return c;
 }
 
-void ps2save::write_garage_car(Bytes& p, size_t o, const GarageCar& c, const data::CarDatabase& db) {
+namespace {
+// A garage car's paint as a place in the disc's list of its model's paints. A custom color or livery (they come after
+// the disc's) is the disc paint whose finish it takes; a paint no longer there is the first.
+int disc_paint(const GarageCar& c, const GtData& data) {
+    const int n = data.color_count(c.car);
+    if (c.color >= 0 && c.color < n) return c.color;
+    if (const data::Car* car = data.db.car(c.car)) {
+        const std::shared_ptr<const race::CustomPaints> custom = race::custom_paints();
+        const race::CustomPaint* p = custom->at(race::paint_key(data.db, c.car, data.db.model_of(*car)), c.color);
+        if (p && p->finish >= 0 && p->finish < n) return p->finish;
+    }
+    return 0;
+}
+} // namespace
+
+void ps2save::write_garage_car(Bytes& p, size_t o, const GarageCar& c, const GtData& data) {
+    const data::CarDatabase& db = data.db;
+    const int paint = disc_paint(c, data);
     wr64(p, o, db::id_hash(c.car));
-    wr32(p, o + 0x0C, u32(c.color));
+    // The paint's carcolor.db id, then its place in the model's list. The race's color draw (0x176C28) looks the id up and
+    // does not check the result: an id the disc does not have ends in a null read, a crash on the console (issue 308).
+    wr32(p, o + 0x08, data.color_id(c.car, paint));
+    wr32(p, o + 0x0C, u32(paint));
     if (const data::Car* car = db.car(c.car); car && car->bytes.size() > 0xF1) wr16(p, o + 0x10, car->bytes[0xF1]);
     for (int k = 0; k < 26; ++k) {
         int slot = part_slot(kEqSlotTables[k]);
         if (slot >= 0) wr64(p, o + 0x18 + 8 * size_t(k), c.parts[size_t(slot)]);
     }
     wr64(p, o + 0xE8, c.wheel.empty() ? 0 : db::id_hash(c.wheel));
-    sim::CarSettings st = c.settings;
-    std::vector<int*> f = settings_fields(st);
-    for (size_t k = 0; k < f.size(); ++k) wr32(p, o + kEqSettingOffsets[k], u32(*f[k]));
+    write_settings(p, o, c.settings);
     wr32(p, o + 0x1AC, u32(c.ref_final));
     for (int b = 0; b < 87; ++b)
         if (c.owned.test(size_t(b))) p[o + 0x1D0 + size_t(b >> 3)] |= u8(1 << (b & 7));
@@ -970,11 +1005,27 @@ GameState import_ps2_save(ByteSpan file, const GtData& data) {
     return s;
 }
 
+namespace {
+// The garage's cars the original has (a mod car's records are not on its disc, installed or not), and the ride car's
+// place among them.
+std::vector<const GarageCar*> disc_cars(const GameState& s, const GtData& data, int* ride = nullptr) {
+    std::vector<const GarageCar*> cars;
+    for (size_t i = 0; i < s.garage.size(); ++i) {
+        if (!data.db.car(s.garage[i].car) || data.db.mod_car(s.garage[i].car)) continue;
+        if (ride && int(i) == s.ride) *ride = int(cars.size());
+        cars.push_back(&s.garage[i]);
+    }
+    return cars;
+}
+} // namespace
+
 Bytes export_ps2_save(const GameState& s, const GtData& data) {
     if (data.game == GameKind::Concept) return export_concept_ps2_save(s, data);
     const data::CarDatabase& db = data.db;
+    int ride = -1;
+    const std::vector<const GarageCar*> garage = disc_cars(s, data, &ride);
     size_t nwheels = s.wheels.size() + 1; // + the stock-wheel placeholder
-    size_t psize = kBlock + s.garage.size() * kCarRec + nwheels * kWheelRec + kLicenses + kRaceBest + kCourseBest +
+    size_t psize = kBlock + garage.size() * kCarRec + nwheels * kWheelRec + kLicenses + kRaceBest + kCourseBest +
                    kArcade + kAt + kTimeTrial + kMachine + kPrizeFlags + kChamp + kOptions;
     Bytes p(psize, 0);
     wr32(p, 0x00, s.day);
@@ -984,9 +1035,9 @@ Bytes export_ps2_save(const GameState& s, const GtData& data) {
     wr64(p, 0x18, u64(s.prize_money));
     wr32(p, 0x20, u32(s.distance_m / 2));
     wr32(p, 0x24, s.next_serial);
-    wr32(p, 0x28, u32(s.ride));
-    wr32(p, 0x2C, u32(s.ride)); // M: the original writes the ride index here too (-1 in a new game)
-    wr32(p, 0x30, u32(s.garage.size()));
+    wr32(p, 0x28, u32(ride));
+    wr32(p, 0x2C, u32(ride)); // M: the original writes the ride index here too (-1 in a new game)
+    wr32(p, 0x30, u32(garage.size()));
     wr32(p, 0x34, u32(nwheels));
     wr32(p, 0xB0, s.trophies);
     wr32(p, 0xB4, s.ending_short_seen ? 1 : 0);
@@ -1002,8 +1053,8 @@ Bytes export_ps2_save(const GameState& s, const GtData& data) {
     wr32(p, 0xC4, s.arcade.awards);
     wr32(p, 0xC0, s.trophy_flags);
     size_t o = kBlock;
-    for (const GarageCar& c : s.garage) {
-        write_garage_car(p, o, c, db);
+    for (const GarageCar* c : garage) {
+        write_garage_car(p, o, *c, data);
         o += kCarRec;
     }
     for (size_t i = 0; i < nwheels; ++i, o += kWheelRec) {
@@ -1123,7 +1174,7 @@ Bytes ps2_thumbnail(const GameState& s, std::shared_ptr<const GtData> data) {
     view.state() = s;
     Bytes t(0x60, 0);
     wr64(t, 0x08, u64(s.credits));
-    wr32(t, 0x10, u32(s.garage.size()));
+    wr32(t, 0x10, u32(disc_cars(s, *view.data_ptr()).size()));
     wr32(t, 0x14, u32(view.highest_license())); // -1 = none
     wr32(t, 0x18, s.day);
     wrf(t, 0x1C, view.completion_percent()); // per cent (2.0992 shown as "2.0%")
