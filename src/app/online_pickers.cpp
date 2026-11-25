@@ -4,6 +4,7 @@
 
 #include "app/app.h"
 #include "app/ui.h"
+#include "base/frame_clock.h"
 #include "base/log.h"
 #include "formats/course/ai_lines.h"
 #include "formats/course/course_file.h"
@@ -563,12 +564,12 @@ void CarTurntable::draw(App& app, const SDL_FRect& dst, const data::CarDatabase&
             s.yaw_v = 0;
             s.dist = 0.4f, s.dist_v = 0;
             s.frames = 0;
-            s.ticks = SDL_GetTicksNS();
+            s.ticks = frame_clock::now_ns();
         }
     }
     if (!s.model) return;
     // 60 Hz steps of the showroom's integrator: v += a / 60, v -= v c / 60, x += v / 60.
-    u64 now = SDL_GetTicksNS();
+    u64 now = frame_clock::now_ns();
     int steps = std::clamp(int(double(now - s.ticks) / 1e9 * 60.0 + 0.5), 0, 30);
     if (steps > 0) s.ticks = now;
     const float yaw_a = s.cam.valid ? s.cam.key(0x42) : -10, damp = s.cam.valid ? s.cam.key(0x43) : 0.5f;

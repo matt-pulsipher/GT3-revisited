@@ -20,6 +20,7 @@
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
+#include "base/frame_clock.h"
 #include "game/gt_catalog.h"
 #include "game/language_rules.h"
 #include "platform/render_scale.h"
@@ -237,7 +238,7 @@ void RaceScreen::render_loading(App& app, Ui& ui) {
             loading_.transition.start(menu::flow::TransitionType::Fadeout);
         }
     }
-    const u64 now = SDL_GetTicksNS();
+    const u64 now = frame_clock::now_ns();
     const int frames = loading_drawn_ ? menu::flow::LoadingPicture::frames_for(now - loading_ns_) : 1;
     loading_ns_ = now;
     loading_drawn_ = true;

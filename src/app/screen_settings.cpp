@@ -623,7 +623,7 @@ private:
         else
             toggle("VSync", "Wait for the display refresh: no tearing. Off: lower input latency.", vsync, [a](bool v) {
                 a->config().set("video", "vsync", v ? "1" : "0");
-                SDL_SetRenderVSync(a->renderer(), v ? 1 : 0);
+                if (!a->windowless()) SDL_SetRenderVSync(a->renderer(), v ? 1 : 0); // (windowless: --pace)
                 a->save_config();
             });
         if (vr)

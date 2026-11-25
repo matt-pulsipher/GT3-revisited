@@ -15,6 +15,7 @@
 #include "formats/texture_pack.h"
 #include "game/data/car_database.h"
 #include "platform/ios_files.h"
+#include "platform/windowless.h"
 #include "platform/music_folder.h"
 #include "platform/user_files.h"
 #include "vfs/mod_archive.h"
@@ -470,7 +471,7 @@ private:
     }
 
     void pick(App& app) {
-        if (!can_install() || pick_ || job_) return;
+        if (!can_install() || pick_ || job_ || platform::windowless()) return; // (windowless: no dialog; GT3R_MOD_ZIP)
         pick_ = std::make_shared<PickSlot>();
         // iOS: the system's document picker (SDL has no file dialog there).
         if (platform::show_document_picker(app.window(), kZipFilters, SDL_arraysize(kZipFilters),

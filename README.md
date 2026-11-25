@@ -557,6 +557,7 @@ read [CONTRIBUTING](CONTRIBUTING.md) before sending changes.
 
 ```text
 gt3r [disc.iso] [--hub] [--screen <id>] [--browse <vol path>] [--shot <out.png>]
+     [--visible] [--headless] [--pace <n>|display|off]
      [--msaa <n>] [--render-scale <s>] [--no-gpu] [--gles] [--gles-driver] [--help]
 ```
 
@@ -567,7 +568,9 @@ gt3r [disc.iso] [--hub] [--screen <id>] [--browse <vol path>] [--shot <out.png>]
   `database`, `saveeditor`, or a developer tool (`browser`, `gt3menu`, `cars`,
   `courses`, `menu`, `text`, `sound`, `viewer`, ...).
 - `--browse <path>` opens the asset browser on a file in `GT3.VOL`.
-- `--shot out.png` saves a screenshot after a few frames and exits.
+- `--shot out.png` saves a screenshot after a few frames and exits. Scripted runs like this one
+  run without a window; `--visible` shows it, `--headless` hides any run
+  ([TESTING](docs/dev/TESTING.md#scripted-runs)).
 
 On Android and iOS, put one argument per line in `args.txt` in the user data folder.
 

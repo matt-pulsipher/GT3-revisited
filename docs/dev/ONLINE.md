@@ -1022,8 +1022,8 @@ x·10000 + y·100 + z. A local build may add `-DGT3R_VERSION_SUFFIX=-dev`.
   macos, linux, android), nothing else.
 - Cache: the answer is kept in config.ini (`update_latest`,
   `update_min_online`, `update_url`, `update_checked`), so a start without a
-  network still knows. `--shot` runs (screenshots, scripted tests) use only
-  the cache unless `GT3R_UPDATE_CHECK=1`, so they never reach a live server.
+  network still knows. `--shot` and other scripted runs ([TESTING.md](TESTING.md#scripted-runs))
+  use only the cache unless `GT3R_UPDATE_CHECK=1`, so they never reach a live server.
 
 **The update dialog** (`src/app/updates.*`; drawn by App over any screen,
 modal; pad, keyboard, mouse and touch):

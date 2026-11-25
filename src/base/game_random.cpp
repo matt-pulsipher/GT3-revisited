@@ -1,5 +1,7 @@
 #include "base/game_random.h"
 
+#include "base/frame_clock.h"
+
 #include <chrono>
 #include <cstring>
 
@@ -57,6 +59,7 @@ u32 (*g_hardware_source)() = nullptr;
 
 u32 hardware_random() {
     if (g_hardware_source) return g_hardware_source();
+    if (frame_clock::fixed()) return u32(frame_clock::now_ns() % 48u); // (--shot: the same on every run)
     auto t = std::chrono::high_resolution_clock::now().time_since_epoch();
     return u32(u64(std::chrono::duration_cast<std::chrono::nanoseconds>(t).count()) % 48u);
 }

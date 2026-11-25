@@ -4,6 +4,7 @@
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
+#include "base/frame_clock.h"
 
 #include "sim/exact/race_record.h"
 
@@ -294,7 +295,7 @@ void RaceScreen::apply_replay_settings(App& app, const ReplaySettings& rs) {
     if (target_changed && field_ && !attract_ && !backdrop_) {
         const std::vector<ReplayFocus::Car> cars = focus_cars();
         if (rs.mode != 2) follow(replay_focus_ + 1, -1, 1);
-        focus_.reset_interest(replay_focus_ + 1, rs.current_target(), cars, u32(SDL_GetPerformanceCounter()));
+        focus_.reset_interest(replay_focus_ + 1, rs.current_target(), cars, u32(frame_clock::counter()));
     }
 }
 
@@ -304,7 +305,7 @@ void RaceScreen::apply_replay_settings(App& app, const ReplaySettings& rs) {
 // presentation §G3); the start's dissolve from the last picture (§G16).
 void RaceScreen::restart_director() {
     director_.setup();
-    director_.seed(u32(SDL_GetPerformanceCounter())); // the game seeds it from a clock value
+    director_.seed(u32(frame_clock::counter())); // the game seeds it from a clock value
     director_.clear_look();
     cut_clock_.setup(replay_settings_.level, attract_ || backdrop_ ? 0.0f : replay_settings_.music_cuts);
     cut_acc_ = 0;
@@ -390,7 +391,7 @@ void RaceScreen::avant_garde_frame() {
     const ReplayDirector::Cut cut =
         director_.avant_garde_cut(cars, field ? replay_focus_ + 1 : 0,
                                   field && view_settings().current_target() == ReplayFocus::Auto,
-                                  cut_clock_.shot_length(), request, hold, u32(SDL_GetPerformanceCounter()));
+                                  cut_clock_.shot_length(), request, hold, u32(frame_clock::counter()));
     if (field) follow(cut.car, cut.pair ? focus_.partner(cut.car) : -1, 1);
     if (cut.dissolve > 0) start_dissolve(cut.dissolve);
     if (debug_)
@@ -452,7 +453,7 @@ void RaceScreen::begin_replay_focus() {
     focus_cut_ = false;
     driver_view_ = false;
     attract_car_frames_ = 0;
-    if (field_) focus_.reset_interest(0, view_settings().current_target(), focus_cars(), u32(SDL_GetPerformanceCounter()));
+    if (field_) focus_.reset_interest(0, view_settings().current_target(), focus_cars(), u32(frame_clock::counter()));
 }
 
 // The field for the focus: the player's car first, then the opponents, with their race places.

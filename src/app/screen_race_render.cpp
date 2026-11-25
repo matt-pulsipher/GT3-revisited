@@ -4,6 +4,7 @@
 // (Race screen code map: docs/dev/RACE.md.)
 
 #include "app/screen_race_impl.h"
+#include "base/frame_clock.h"
 
 namespace gt3r::race_screen {
 
@@ -129,7 +130,7 @@ void RaceScreen::draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const ren
 }
 
 float RaceScreen::own_car_fade(bool blocks) {
-    const Uint64 now = SDL_GetTicksNS();
+    const Uint64 now = frame_clock::now_ns();
     const double dt = car_fade_ns_ ? std::min(double(now - car_fade_ns_) * 1e-9, 0.1) : 0.0;
     car_fade_ns_ = now;
     const float step = float(dt / kCarFade);

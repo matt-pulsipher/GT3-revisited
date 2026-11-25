@@ -1671,7 +1671,8 @@ GT3R_GT3MENU_SCRIPT="cross,wait:90,down,cross,wait:90,cross,wait:90,cross,wait:9
 
 With `--shot` the app steps exactly 1/60 s per frame (not wall-clock time), so a
 shot of frame N (`GT3R_SHOT_FRAME`) is identical on every run: same simulation
-time, AI positions, interpolation and reflection cube.
+time, AI positions, interpolation and reflection cube (and the car fades and replay cameras: the frame clock,
+`base/frame_clock.h`). Scripted runs have no window ([TESTING.md](TESTING.md#scripted-runs)).
 
 ```bash
 GT3R_RACE="course=trialmt,car=r34_gtr_v_99,cam=0,auto=1,warp=20" \

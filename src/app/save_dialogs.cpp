@@ -22,6 +22,7 @@
 #include "base/log.h"
 #include "menu/flow/save_page.h"
 #include "platform/ios_files.h"
+#include "platform/windowless.h"
 #include "platform/mac_dialog.h"
 #include "platform/user_files.h"
 
@@ -108,6 +109,10 @@ void install_save_dialogs(App& app) {
         }
         if (const char* env = std::getenv("GT3R_FILE_DIALOG"); env && *env) {
             answer(ticket, std::string(env) == "-" ? std::string() : std::string(env));
+            return;
+        }
+        if (platform::windowless()) { // no dialog: cancelled (GT3R_FILE_DIALOG answers one)
+            answer(ticket, std::string());
             return;
         }
         const bool cameras = kind == menu::flow::FileDialogs::Kind::OpenCameras;

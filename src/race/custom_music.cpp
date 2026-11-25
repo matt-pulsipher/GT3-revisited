@@ -3,6 +3,7 @@
 #include "audio/bgm.h"
 #include "audio/music_file.h"
 #include "base/file.h"
+#include "base/frame_clock.h"
 #include "base/log.h"
 
 #include <SDL3/SDL_thread.h>
@@ -241,7 +242,7 @@ bool MusicLibrary::take(std::vector<CustomSong> songs, const ScanInfo& info, boo
         } else {
             // A new list as the disc's starts (shuffle on), on a seed of its own: the game's
             // shared generator is the original's and stays untouched.
-            playlist_ = RacePlaylist::with_songs({}, u16(std::random_device{}() & 0x7FFF), RacePlaylist::kMaxCustomSongs);
+            playlist_ = RacePlaylist::with_songs({}, u16(frame_clock::random_seed() & 0x7FFF), RacePlaylist::kMaxCustomSongs);
             save = true;
         }
     }

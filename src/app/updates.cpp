@@ -3,6 +3,7 @@
 #include "app/app.h"
 #include "app/screen_online.h"
 #include "base/log.h"
+#include "platform/windowless.h"
 #include "net/session.h"
 
 #include <algorithm>
@@ -129,6 +130,10 @@ std::string Updates::status_text() const {
 
 static bool open_url(const std::string& url) {
     if (url.empty()) return false;
+    if (platform::windowless()) { // a scripted run opens no browser
+        LOG_INFO("Windowless run: not opening %s", url.c_str());
+        return true;
+    }
     if (!SDL_OpenURL(url.c_str())) {
         LOG_WARN("Could not open %s: %s", url.c_str(), SDL_GetError());
         return false;

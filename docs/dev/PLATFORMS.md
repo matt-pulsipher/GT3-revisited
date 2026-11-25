@@ -266,7 +266,9 @@ gamepad keeps the touch controls hidden until the screen is touched.
 
 `GT3R_POINTER_SCRIPT` feeds a screen scripted pointer events, in UI units (640 × 360),
 routed as the VR controller's pointer is (`App::pointer_script`). It tests mouse and
-touch handling without a person at the machine, and `--shot` shows the pointer's arrow.
+touch handling without a person at the machine, and `--shot` shows the pointer's arrow. Such a run
+has no window and takes none of the player's own input ([TESTING.md](TESTING.md#scripted-runs));
+the script's `blur` and `focus` still reach the app.
 Steps are separated by `;`:
 
 | Step | Event |

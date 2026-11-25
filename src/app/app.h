@@ -20,6 +20,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -172,6 +173,8 @@ public:
     MenuInput& menu() { return menu_; }
     SDL_Renderer* renderer() { return renderer_; }
     SDL_Window* window() { return window_; }
+    // A scripted run without a window (platform/windowless.h, docs/dev/TESTING.md "Scripted runs").
+    bool windowless() const { return windowless_; }
     // The UI as laid out for the frame being drawn (the last one while screens update).
     const Ui& ui() const { return *ui_; }
     // Frames drawn so far (counted after each one).
@@ -312,6 +315,16 @@ private:
 
     bool screenshot_requested_ = false;
     std::string auto_shot_path_; // --shot: capture after a few frames, then exit
+    // Windowless (platform/windowless.h): the window hidden and never presented, the player's
+    // input dropped (on_event_filter), frames paced by --pace.
+    bool windowless_ = false;
+    std::atomic<bool> pushing_scripted_{false}; // a scripted event on its way through SDL_PushEvent
+    static bool SDLCALL on_event_filter(void* app, SDL_Event* e);
+    void wait_for_gpu(); // the frame's GPU work finished without a present
+    void apply_pace(const std::vector<std::string>& args);
+    void pace_frame(); // sleeps until the next frame's time
+    Uint64 pace_ns_ = 0, pace_next_ = 0; // a frame's time with --pace (0: unpaced), the next frame's start
+    Uint64 hitch_prev_end_ = 0; // GT3R_HITCH: the previous frame's end (after the pace's sleep)
     int frame_ = 0;
     // 3D resolution: [video] render_scale (or --render-scale) and the dynamic scale under it.
     float configured_scale_ = 1;
