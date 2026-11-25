@@ -100,8 +100,11 @@ F688/S and pd0001 of NTSC-U and NTSC-J make no sparks.
 Flags: bit 0 the race's tread blur (the texture redrawn as shifted copies while
 the wheel turns, see "Wheel spin blur"), bit 1 a symmetric tyre (below). On the disc
 (repeats, flags) are (2, 0) on 227 cars, (1, 1) on 52 and (1, 3) on 7. The
-`tire/n1..n49` files have the same structure; the embedded one equals
-`tire/n1`. There is no tyre geometry: the game builds it (see "Tyres" below,
+`tire/n1..n49` files have the same structure, and `menu/tire/n1..n49` hold the
+same pictures at the menus' size. On NTSC-U 1.10 each car's two embedded
+textures are those of one number (`tire/n1` on most), but for `fo0007` and
+`fo0030`, whose pair is in neither folder. A texture pack's picture for one of
+a car's two shows on both (ours; `CarModelOptions::other_tyre`). There is no tyre geometry: the game builds it (see "Tyres" below,
 `tyre_model.*`).
 
 ### GTTW (wheel) — also `wheel/<id>`

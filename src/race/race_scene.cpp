@@ -315,7 +315,8 @@ void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::
 
 CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::string& model, const WheelSpec& ws,
                      int paint, ByteSpan wheel_file, const CarBodyMod& body_mod, ByteSpan showroom_car,
-                     ByteSpan showroom_wheel, std::function<std::optional<Bytes>()> stand_in_rim)
+                     ByteSpan showroom_wheel, std::function<std::optional<Bytes>()> stand_in_rim,
+                     std::function<std::optional<Bytes>()> other_tyre)
     : ctx_(&ctx) {
     mounts_ = car_camera_mounts(car_file);
     CarModelOptions opt;
@@ -324,6 +325,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
     opt.showroom_car = showroom_car;
     opt.showroom_wheel = showroom_wheel;
     opt.stand_in_rim = std::move(stand_in_rim);
+    opt.other_tyre = std::move(other_tyre);
     opt.even_menu_rim_light = true; // the rims turn (issue 272)
     showroom_rims_ = CarFile::is_car(showroom_car); // (load_car_model's test for LOD 0's menu wheels)
     opt.lod = -1;
@@ -447,7 +449,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
     if (showroom_rims_) {
         CarModelOptions ro = opt;
         ro.lod = 0, ro.effects = false, ro.morphs = nullptr;
-        ro.showroom_car = {}, ro.showroom_wheel = {};
+        ro.showroom_car = {}, ro.showroom_wheel = {}, ro.other_tyre = {};
         race_wheels = scene::extract(load_car_model(car_file, ro, model),
                                      [](const scene::Mesh& m) { return m.name.rfind("wheel_", 0) == 0; });
     }

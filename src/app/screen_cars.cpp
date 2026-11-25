@@ -82,6 +82,7 @@ public:
                 static std::optional<Bytes> rim;
                 rim = opt.body_mod.wheel.empty() ? std::nullopt : a.vfs()->read("wheel/" + opt.body_mod.wheel);
                 if (rim) opt.wheel_override = *rim;
+                opt.other_tyre = [&a, &model] { return menu_tyre([&a](const std::string& p) { return a.vfs()->read(p); }, model); };
                 scene::Model m = load_car_model(*data, opt, label);
                 if (auto spec = sim::build_car_spec(*db, label); spec && spec->axle[0].ride_height > 0) {
                     for (scene::Mesh& mesh : m.meshes)
@@ -97,6 +98,7 @@ public:
             CarModelOptions opt;
             opt.lod = -1; // all LODs: the viewer switches between them
             if (have_db) opt.wheel_spec = wheel_spec_from_database(*db, ids[i]);
+            opt.other_tyre = [&a, &model = ids[i]] { return menu_tyre([&a](const std::string& p) { return a.vfs()->read(p); }, model); };
             scene::Model m = load_car_model(*data, opt, ids[i]);
             // Showroom pose (as the game's menus): the body rides q (ride height) above the
             // floor, the wheels stay on it.

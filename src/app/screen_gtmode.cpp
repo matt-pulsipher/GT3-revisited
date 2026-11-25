@@ -746,6 +746,10 @@ private:
                 opt.stand_in_rim = [&app, model, rim = menu_wheel ? wheel : std::string()] {
                     return race_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model, rim);
                 };
+            if (menu_model) // (a texture pack's picture for the race's tyre)
+                opt.other_tyre = [&app, model = model] {
+                    return race_tyre([&app](const std::string& p) { return app.vfs()->read(p); }, model);
+                };
             scene::Model m = load_car_model(*file, opt, model);
             // The floor shadow (node 6) is drawn on its own, on the floor: it stays out of the
             // ride-height lift, the floor mirror and the car's framing (menus §9.5).

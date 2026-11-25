@@ -302,6 +302,7 @@ private:
     struct ShowroomFiles {
         std::optional<Bytes> car, wheel;
         std::function<std::optional<Bytes>()> stand_in;
+        std::function<std::optional<Bytes>()> tyre; // CarModelOptions::other_tyre
         ByteSpan car_span() const { return car ? ByteSpan(*car) : ByteSpan{}; }
         ByteSpan wheel_span() const { return wheel ? ByteSpan(*wheel) : ByteSpan{}; }
     };

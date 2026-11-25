@@ -109,6 +109,11 @@ struct CarModelOptions {
     // at its full detail (a modified game's wheel that only its other kind of model has), read
     // only then: in races the menus' (menu_rim), in the menus the race's (race_rim).
     std::function<std::optional<Bytes>()> stand_in_rim;
+    // The tyre (a GTTR section) of the car's other file: in races the menus' (menu_tyre), in the
+    // menus the race's (race_tyre). Both hold the same picture, at two sizes: a texture pack's
+    // picture for either one shows on both, unless each has its own. Read only when a pack is set
+    // that has none for the tyre drawn (and `showroom_car`, when given, does not answer it).
+    std::function<std::optional<Bytes>()> other_tyre;
     // Races (ours, issue 272): the rims turn with the wheels, so a menus' rim (showroom wheels, or
     // one standing in) has the light painted into its images evened out round its axis
     // (formats/model/rim_light.h). The menus never turn their rims and leave them as they are.
@@ -163,5 +168,9 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt = {}, cons
 using FileReader = std::function<std::optional<Bytes>(const std::string&)>;
 std::optional<Bytes> race_rim(const FileReader& read, const std::string& model, const std::string& wheel = {});
 std::optional<Bytes> menu_rim(const FileReader& read, const std::string& model, const std::string& wheel = {});
+// The tyre (GTTR section) of a car's race file (cars/day/<model>) and of its menu file
+// (menu/cars/<model>); none when `read` has no such car.
+std::optional<Bytes> race_tyre(const FileReader& read, const std::string& model);
+std::optional<Bytes> menu_tyre(const FileReader& read, const std::string& model);
 
 } // namespace gt3r

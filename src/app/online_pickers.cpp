@@ -540,6 +540,10 @@ void CarTurntable::draw(App& app, const SDL_FRect& dst, const data::CarDatabase&
                     opt.stand_in_rim = [&app, model = car.model] {
                         return race_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model);
                     };
+                if (menu_model) // (a texture pack's picture for the race's tyre)
+                    opt.other_tyre = [&app, model = car.model] {
+                        return race_tyre([&app](const std::string& p) { return app.vfs()->read(p); }, model);
+                    };
                 scene::Model m = load_car_model(*file, opt, car.model);
                 // Showroom pose: the body rides q (ride height) above the floor, the wheels on it.
                 if (auto spec = sim::build_car_spec(db, car.label); spec && spec->axle[0].ride_height > 0) {

@@ -5,11 +5,13 @@
 #include "formats/model/rim_light.h"
 #include "formats/model/tyre_model.h"
 #include "formats/model/wheel_model.h"
+#include "formats/texture_pack.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <mutex>
 #include <utility>
 
@@ -134,6 +136,35 @@ std::vector<std::array<u32, 3>> car_spark_points(ByteSpan g) {
 
 namespace {
 
+// A GTTR section's texture set; empty when it has none.
+ByteSpan tyre_set(ByteSpan gttr) {
+    return gttr.size() > 0x20 && rd32(gttr, 0x1C) < gttr.size() ? gttr.subspan(rd32(gttr, 0x1C)) : ByteSpan{};
+}
+
+// Texture pack pictures for the tyre's textures (those from `first` on, as decoded): the picture
+// of the texture's own key, else the one of the same texture in the car's other file (`other`,
+// its GTTR: CarModelOptions::other_tyre), asked for only when a texture has none of its own.
+void replace_tyre(std::vector<scene::Texture>& textures, size_t first, const std::function<std::optional<Bytes>()>& other) {
+    const std::shared_ptr<const texture_pack::Pack> pack = texture_pack::current_pack();
+    if (!pack) return;
+    std::optional<std::vector<u64>> other_keys;
+    for (size_t i = first; i < textures.size(); ++i) {
+        scene::Texture& t = textures[i];
+        std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(t.width, t.height, t.rgba.data());
+        if (!r) {
+            if (!other_keys) {
+                other_keys.emplace();
+                try {
+                    if (std::optional<Bytes> gttr = other()) other_keys = texture_pack::keys_of_set(tyre_set(*gttr));
+                } catch (const std::exception&) { // no tyre there to go by
+                }
+            }
+            if (i - first < other_keys->size()) r = pack->find((*other_keys)[i - first]);
+        }
+        if (r) t.width = r->width, t.height = r->height, t.rgba = r->rgba, t.nearest = false;
+    }
+}
+
 // Appends `src` to `dst`, remapping texture indices.
 void merge(scene::Model& dst, scene::Model&& src) {
     int base = int(dst.textures.size());
@@ -239,9 +270,17 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
         if (opt.even_menu_rim_light && from_menus) even_rim_light(wheel);
         int tyre_tex = -1;
         TyreShape tyre;
-        if (src.tire.size() > 0x20 && rd32(src.tire, 0x1C) < src.tire.size()) {
+        if (!tyre_set(src.tire).empty()) {
             size_t first = m.textures.size();
-            tyre_tex = gtm1::decode_texture_set(src.tire.subspan(rd32(src.tire, 0x1C)), m.textures, "tyre_");
+            tyre_tex = gtm1::decode_texture_set(tyre_set(src.tire), m.textures, "tyre_", 0, nullptr, false);
+            // The car's other file's tyre, when it is at hand (showroom wheels) or can be read.
+            replace_tyre(m.textures, first, [&]() -> std::optional<Bytes> {
+                if (menu_car) {
+                    const ByteSpan t = showroom ? f.tire : CarFile::parse(opt.showroom_car).tire;
+                    return Bytes(t.begin(), t.end());
+                }
+                return opt.other_tyre ? opt.other_tyre() : std::nullopt;
+            });
             // The game samples it repeating round the tyre, clamped across, without mipmaps.
             for (size_t t = first; t < m.textures.size(); ++t) {
                 m.textures[t].clamp_u = false, m.textures[t].clamp_v = true;
@@ -339,11 +378,15 @@ void apply_body_mod(scene::Model& m, const CarBodyMod& mod, const std::string& n
 
 namespace {
 
-std::optional<Bytes> car_rim(const FileReader& read, const std::string& path) {
+std::optional<Bytes> car_section(const FileReader& read, const std::string& path, ByteSpan CarFile::* section) {
     std::optional<Bytes> car = read(path);
     if (!car || !CarFile::is_car(*car)) return std::nullopt;
-    const ByteSpan w = CarFile::parse(*car).wheel;
-    return Bytes(w.begin(), w.end());
+    const ByteSpan s = CarFile::parse(*car).*section;
+    return Bytes(s.begin(), s.end());
+}
+
+std::optional<Bytes> car_rim(const FileReader& read, const std::string& path) {
+    return car_section(read, path, &CarFile::wheel);
 }
 
 } // namespace
@@ -354,6 +397,14 @@ std::optional<Bytes> race_rim(const FileReader& read, const std::string& model, 
 
 std::optional<Bytes> menu_rim(const FileReader& read, const std::string& model, const std::string& wheel) {
     return wheel.empty() ? car_rim(read, "menu/cars/" + model) : read("menu/wheel/" + wheel);
+}
+
+std::optional<Bytes> race_tyre(const FileReader& read, const std::string& model) {
+    return car_section(read, "cars/day/" + model, &CarFile::tire);
+}
+
+std::optional<Bytes> menu_tyre(const FileReader& read, const std::string& model) {
+    return car_section(read, "menu/cars/" + model, &CarFile::tire);
 }
 
 void mark_car_glass(scene::Model& model) {
