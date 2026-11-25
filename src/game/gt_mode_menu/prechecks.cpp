@@ -151,6 +151,10 @@ bool enabled(const std::string& page, const MblItem& it) {
         return !real || goods < 0 || real->owned.test(size_t(goods));
     }
     if (starts(page, "r/") && starts(it.name, "G")) return s->gt().series_unlocked(it.name);
+    // The tune shop's Others list: weight reduction is bought in order, stage 2 once stage 1 is owned
+    // (0x119130) and stage 3 once stage 2 is (0x119170).
+    if (page == "ts/ts_ot" && it.name == "item2") return s->gt().owns(goods_id(int(data::TableId::Lightweight), 1));
+    if (page == "ts/ts_ot" && it.name == "item3") return s->gt().owns(goods_id(int(data::TableId::Lightweight), 2));
     return true;
 }
 

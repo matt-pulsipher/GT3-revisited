@@ -389,6 +389,10 @@ the matching rear tire. Rally cars (car category 2, car +0xF1) also own dirt tir
    +0x08 must equal the car (`ts/not_exist`). A turbo car, for example, has no NA tune;
 4. the credits cover the part's price (`00cmn/no_money`).
 
+The weight reduction stages are bought in order: on the shop's Others page (`ts/ts_ot`)
+stage 2's button refuses, at half brightness, until stage 1 is owned, and stage 3's until
+stage 2 is (`enabled`, `src/game/gt_mode_menu/prechecks.cpp`). No other part has an order.
+
 Buying takes the price and marks the goods owned. A front tire also marks its rear
 tire. A tire set costs the front record's price, and the rear record counts as free.
 The shop's price widgets show "Purchased" for goods the car owns and "----" for parts

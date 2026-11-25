@@ -2785,6 +2785,20 @@ TEST(gtmode_synth_hook_branches) {
     CHECK(!h.enabled("arcade_mini", item("ok", "", "")) && !h.enabled("license_get", item("ok", "", "")));
     CHECK(!h.enabled("ar/select_ending", item("long", "go_ending_normal", "")));
     CHECK(h.enabled("ar/select_ending", item("short", "go_ending_short", "")) && h.enabled("map", item("x", "", "")));
+    {
+        // Weight reduction in order: stage 2's button needs stage 1 (goods 27) owned, stage 3's stage 2 (28).
+        auto lit = [&](const char* name) { return h.enabled("ts/ts_ot", item(name, "", "")); };
+        std::bitset<88>& owned = gt.state().ride_car()->owned;
+        const std::bitset<88> before = owned;
+        CHECK(lit("item1") && !lit("item2") && !lit("item3") && lit("item6") && lit("item7"));
+        owned.set(27);
+        CHECK(lit("item1") && lit("item2") && !lit("item3"));
+        owned.set(28);
+        CHECK(lit("item2") && lit("item3"));
+        owned.reset(27);
+        CHECK(!lit("item2") && lit("item3")); // (only the stage before counts)
+        owned = before;
+    }
     // Actions: wash (its sound plays on the next frames) and oil, wheels, codes, sorts.
     std::vector<std::string> log;
     auto action = [&](const std::string& a, const std::string& it = {}, const std::string& pg = "at/at") {

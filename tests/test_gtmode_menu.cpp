@@ -337,6 +337,63 @@ TEST(gtmode_menu_disc_tune_shop_flow) {
     CHECK(f.controller()->page_name() == "ts/ts_eg");
 }
 
+// The tune shop's weight reduction stages are bought in order (issue 441): the later stages' buttons refuse, darkened,
+// until the stage before is owned. Any region's disc.
+TEST(gtmode_menu_disc_weight_reduction_order) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    set_env("GT3R_GTMODE_SAVE", "/nonexistent-gt3r-test/gtmode.sav");
+    set_env("GT3R_GTMODE_NOSAVE", "1");
+    game::reset_gt_mode_menu_for_tests();
+    game::install_gt_mode_menu();
+    Vfs vfs(&disc->volume());
+    const Language lang = vfs.region().default_language();
+    vfs.set_language(lang);
+    GameFlow f(vfs_reader(vfs), text::language_code(lang));
+    f.start();
+    settle(f);
+    game::GtModeSession* s = game::gt_mode_session();
+    CHECK(s != nullptr);
+    if (!s) return;
+    game::GtMode& gt = s->gt();
+    gt.state().credits = 1000000 * (lang == Language::JP ? 100 : 1);
+    CHECK(gt.buy_car("r34_gtr_v_99") == 0);
+    choose(f, "gt_mode");
+    settle(f);
+    choose(f, "ts_ts");
+    choose(f, "bg6");
+    CHECK(f.controller()->page_name() == "ts/ts_ot");
+    auto dark = [&](const std::string& name) {
+        for (const menu::ElementDraw& d : f.draw_list())
+            if (d.element && d.element->name == name) return d.brightness == 0.5f;
+        return false;
+    };
+    auto refused = [&](const char* name) {
+        f.take_sounds();
+        choose(f, name);
+        const std::vector<std::string> se = f.take_sounds();
+        return f.controller()->page_name() == "ts/ts_ot" && std::find(se.begin(), se.end(), "disable") != se.end();
+    };
+    auto buy = [&](const char* row, const char* part) {
+        choose(f, row);
+        choose(f, part);
+        CHECK(f.controller()->page_name() == "ts/ts_buy_sure4");
+        choose(f, "yes1");
+        settle(f);
+        press(f, MenuKey::Cancel);
+        if (f.controller()->page_name() != "ts/ts_ot") press(f, MenuKey::Cancel);
+        CHECK(f.controller()->page_name() == "ts/ts_ot");
+    };
+    CHECK(!dark("item1") && dark("item2") && dark("item3") && !dark("item6"));
+    CHECK(refused("item3") && refused("item2"));
+    buy("item1", "wtr_1");
+    CHECK(gt.owns(27) && !dark("item2") && dark("item3") && refused("item3"));
+    buy("item2", "wtr_2");
+    CHECK(gt.owns(28) && !dark("item2") && !dark("item3"));
+    buy("item3", "wtr_3");
+    CHECK(gt.owns(29));
+}
+
 // The car spec pages' weight, torque and ratios: the built car's weight (spec +0x2A, with the weight reduction parts) and
 // its peak, "%.3t" ratios; the dealer's catalog torque, the garage's built one. The dealer's Viper GTS as the original's
 // dealer page shows it (1531 kg, 449 HP: 3.409 and 0.229; 489.66 ft.lb);

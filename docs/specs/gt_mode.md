@@ -390,6 +390,12 @@ racing modification has no shop item.
   pays; `already_you_have` if that exact bit is set (owning a higher stage
   does not block a lower one; there is no refund). Buying a front tire also
   owns the rear one.
+- **Weight reduction is bought in order** (the buttons' enable hooks, menus.md §5.3: table
+  `0x2959E8`, page → one hook per button): on `ts/ts_ot` the second button (stage 2) needs goods
+  27 owned (`0x119130`) and the third (stage 3) goods 28 (`0x119170`); without it the button is
+  drawn at half brightness and OK plays SE `disable`. No other part has an order. PAL (`0x119218`,
+  `0x119258`) and NTSC-J (`0x118FA8`, `0x118FE8`) run the same tests. The table's other page is
+  `r/pro/pro` (the series' licence, `0x1190E0`).
 - Flows: buy then "fit now?" for most parts; buy and fit at once for port
   polish, engine balance, displacement and weight reduction; dirt tires are
   bought only (never fitted by the shop). The questions are popups that
