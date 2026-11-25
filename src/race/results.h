@@ -342,6 +342,7 @@ std::vector<ResultRow> result_menu_list(ResultList kind, bool finished, std::vec
 // car of the field runs it, and each keeps its best lap of that practice (ms; kPracticeNoTime for none). `best` is by
 // entry: 0 the player, k opponent k - 1.
 constexpr u32 kPracticeNoTime = 0x157529FF; // GT3's "no time" (359,999,999 ms)
+constexpr int kQuickMenuRows = 6; // the places the quick menus' layouts list
 // Whether the practice re-grids the field (0x133B38, and fn_0012E920's own test): the player set a lap.
 bool practice_regrids(std::span<const u32> best);
 // The grid after it (GT race fn_0012E920, championship fn_0018DFA8): each pair of entries with different best laps counts

@@ -755,9 +755,23 @@ void QuickMenu::draw(SDL_Renderer*, const SDL_FRect& dst) {
     if (!ctl_ || !renderer_) return;
     std::vector<menu::ElementDraw> list = ctl_->draw_list();
     // Code-filled widgets: named texts, class texts, then the list (quick_menu_column).
+    // The layouts list six rows with their places ("no1" .. "no6"), GT3's whole field. In a bigger one the sixth is the player's
+    // when they are further down, with their place.
+    size_t last = size_t(kQuickMenuRows) - 1;
+    if (rows_.size() > size_t(kQuickMenuRows)) {
+        const auto mine = std::find_if(rows_.begin(), rows_.end(), [](const ResultRow& w) { return w.player; });
+        const bool placed = std::any_of(list.begin(), list.end(), [](const menu::ElementDraw& d) {
+            return d.element && d.element->name == "no6" && (d.element->type & menu::Element::kText);
+        });
+        if (mine != rows_.end() && placed) last = std::max(last, size_t(mine - rows_.begin()));
+    }
     for (menu::ElementDraw& d : list) {
         if (!d.element || d.kind != menu::ElementDraw::Kind::Element) continue;
         const std::string& n = d.element->name;
+        if (last >= size_t(kQuickMenuRows) && n == "no6" && (d.element->type & menu::Element::kText)) {
+            d.text = std::make_shared<const std::string>(std::to_string(last + 1));
+            continue;
+        }
         if (auto it = texts_.find(n); it != texts_.end()) {
             d.text = std::make_shared<const std::string>(it->second);
             continue;
@@ -770,7 +784,8 @@ void QuickMenu::draw(SDL_Renderer*, const SDL_FRect& dst) {
         int i = -1;
         const QmColumn col = quick_menu_column(*d.element, i);
         if (col == QmColumn::None) continue;
-        const ResultRow* r = size_t(i) < rows_.size() ? &rows_[size_t(i)] : nullptr;
+        const size_t at = i == kQuickMenuRows - 1 ? last : size_t(i);
+        const ResultRow* r = at < rows_.size() ? &rows_[at] : nullptr;
         d.text = std::make_shared<const std::string>(!r                      ? std::string()
                                                      : col == QmColumn::Name ? r->name
                                                      : col == QmColumn::Time ? r->time

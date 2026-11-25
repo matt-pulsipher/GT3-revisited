@@ -191,7 +191,7 @@ ExactRace::ExactRace(const RaceSetup& s) {
     r.rules = cfg_, r.wear = race_.prep.wear, r.category = category_, r.config = s.config;
     r.start_type = s.start_type, r.kind = kind_, r.handicap = s.handicap, r.mark_pit = has_pits(kind_);
     r.info = s.info, r.conductor = s.conductor, r.course_addr = s.course_addr, r.road = s.road_addr;
-    r.made_grid = s.made_grid;
+    r.made_grid = s.made_grid, r.walls = course_->collision.get();
     const StartResult sr = start_cars(r, s.entries);
     cars_.resize(n);
     for (size_t i = 0; i < n; ++i) {

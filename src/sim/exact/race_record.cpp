@@ -482,7 +482,7 @@ PadFrame RaceRecord::pad(int i, u32 t) const {
 Bytes RaceRecord::serialize() const {
     Writer w;
     w.bytes(ByteSpan(reinterpret_cast<const u8*>(kMagic), 4));
-    w.put<u32>(kVersion);
+    w.put<u32>(made_grid == MadeGrid::On ? kVersion : 7); // (an older game reads the others)
     w.put<u64>(program);
     w.put<u64>(data);
     w.put<u8>(u8(behaviour.rules));
@@ -543,7 +543,7 @@ Bytes RaceRecord::serialize() const {
         w.var(u32(e.size()));
         for (const SparkPoint& p : e) w.put<u32>(p.x.bits), w.put<u32>(p.y.bits), w.put<u32>(p.z.bits);
     }
-    w.put<u8>(made_grid ? 1 : 0);
+    w.put<u8>(u8(made_grid));
     w.put<u64>(final_hash);
     return std::move(w.out);
 }
@@ -658,7 +658,11 @@ RaceRecord RaceRecord::parse(ByteSpan data) {
             r.sparks.push_back(std::move(e));
         }
     }
-    if (version >= 7) r.made_grid = rd.get<u8>() != 0;
+    if (version >= 7) {
+        const u8 made = rd.get<u8>();
+        if (made > u8(version >= 8 ? MadeGrid::On : MadeGrid::V080)) throw FormatError("race record: unknown made grid");
+        r.made_grid = MadeGrid(made);
+    }
     r.final_hash = rd.get<u64>();
     if (!rd.at_end()) throw FormatError("race record: bytes past the end");
     return r;

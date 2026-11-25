@@ -622,7 +622,7 @@ bool RaceScreen::build_vehicle(App& app) {
             demo_start_kmh_ = es.type == 0 && es.initial_kmh > 0 ? es.initial_kmh : 0.0f;
             // Ours (Quick race's custom race, a mod event: data::kModEventPrefix): the field as big as the player or the mod
             // made it, up to 32 cars; GT3's races: six at most.
-            const bool ours = race_big_field_ || (!race_event_.empty() && race_event_[0] == data::kModEventPrefix);
+            const bool ours = own_field();
             const int most = ours ? int(sim::exact::kMaxCars) - 1 : 5;
             if (es.cars > 1) cfg.max_opponents = std::min(es.cars - 1, most);
             if (!race_opponent_paints_.empty()) cfg.max_opponents = race_big_field_ ? int(race_opponents_.size()) : most;
