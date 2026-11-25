@@ -85,7 +85,9 @@ float eased_indicator(float felt, float indicator, float dt);
 // Whether the wheel's effects, started at `started` seconds, play them again at `now`. SDL's DirectInput
 // (Windows) and macOS backends turn an infinite length into 4294966296 microseconds, not the API's
 // INFINITE; each wheel's driver then fits that into its own duration field, where it can come out
-// ~30 s (issue 276). Linux and SDL's Logitech driver play it as infinite: never due there.
+// ~30 s (issue 276). Our SDL patch makes the length infinite (playing the effects again alone still left a
+// wheel without force after ~30 s, issue 444); this stays for an SDL without the patch. Linux and SDL's Logitech driver play it as
+// infinite: never due there.
 constexpr double kWheelRerunSeconds = 5.0;
 bool wheel_rerun_due(double started, double now);
 
@@ -136,12 +138,14 @@ private:
         float understeer = 0, oversteer = 0; // ffb::eased_indicator
         double eased_at = 0;                 // their time
         double effects_at = 0;               // when the wheel's effects last (re)started (ffb::wheel_rerun_due)
+        bool effects_failed = false;         // a refused effect call is logged (check_effect)
         int spring_id = -1, constant_id = -1;
         int spring_coef = -1, constant_level = 0x7fffffff;
     };
     Dev& dev(SDL_JoystickID id);
     void stop(Dev& d);
     void send_triggers(Dev& d, const ffb::TriggerEffect& left, const ffb::TriggerEffect& right);
+    static void check_effect(Dev& d, bool ok, const char* what);
     void apply_wheel(Dev& d, SDL_Joystick* joystick, const ForceFeedbackState& s, double time, bool restart = false);
 
     ForceFeedbackConfig cfg_;
