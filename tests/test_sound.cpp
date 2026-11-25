@@ -291,6 +291,34 @@ TEST(sound_engine_model) {
     CHECK(m.active_voices() == 0);
 }
 
+// A race's cars share their engine banks (EngineBanks): each file parsed once, and the same banks as a car's own.
+TEST(sound_engine_banks_shared) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    EngineBanks banks;
+    EngineSound own, first, second;
+    CHECK(own.load(vfs, 1, 0));
+    CHECK(first.load(vfs, 1, 0, nullptr, {}, &banks));
+    const size_t files = banks.size();
+    CHECK(second.load(vfs, 1, 0, nullptr, {}, &banks));
+    CHECK(files > 0 && banks.size() == files);
+    CHECK(first.engine_bank() && first.engine_bank() == second.engine_bank());
+    CHECK(first.exhaust_bank() == second.exhaust_bank());
+    CHECK(own.engine_bank() && own.engine_bank() != first.engine_bank());
+    if (own.engine_bank() && first.engine_bank()) CHECK(*own.engine_bank()->adpcm == *first.engine_bank()->adpcm);
+    EngineUnit wind, wind2, missing;
+    CHECK(wind.load(vfs, EngineUnit::kWindBank, nullptr, &banks));
+    CHECK(wind2.load(vfs, EngineUnit::kWindBank, nullptr, &banks));
+    CHECK(wind.bank() && wind.bank() == wind2.bank());
+    const size_t with_wind = banks.size();
+    std::string err;
+    CHECK(!missing.load(vfs, "sound/no-such-bank", &err, &banks));
+    CHECK(!err.empty() && banks.size() == with_wind); // a missing file is not kept
+    banks.clear(); // the next start's: the cars keep theirs
+    CHECK(first.loaded() && first.engine_bank() == second.engine_bank());
+}
+
 // The output device setting on SDL's dummy driver (one device): a device that isn't connected
 // plays on the default; a named one opens explicitly; choosing the default again moves back.
 TEST(sound_output_device_choice) {

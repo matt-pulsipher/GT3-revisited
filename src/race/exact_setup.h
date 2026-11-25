@@ -29,8 +29,9 @@ namespace gt3r::race {
 
 namespace ex = sim::exact;
 
-// The program data of the disc in `vfs` (its CORE.GT3), checked once per program; null with *error set only when the disc
-// has no program that decodes.
+// The program data of the disc in `vfs` (its CORE.GT3): the open disc's as prepare_program_data worked it out (waiting for
+// it when it is not done), the same object until the disc closes; a disc not prepared has its program checked here, on
+// first use. Null with *error set only when the disc has no program that decodes.
 std::shared_ptr<const ex::ProgramData> exact_program_data(const Vfs& vfs, std::string* error = nullptr);
 // Starts working out the open disc's program data on a thread (App::open_disc), so the first race does not wait for it:
 // exact_program_data gives it for that disc. The thread decodes its own copy of CORE.GT3. forget_program_data
