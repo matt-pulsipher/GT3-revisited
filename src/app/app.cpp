@@ -23,6 +23,7 @@
 #include "platform/render_scale.h"
 #include "platform/mac_layer.h"
 #include "race/custom_paints.h"
+#include "race/exact_setup.h"
 #include "race/replay_library.h"
 
 #include <algorithm>
@@ -428,6 +429,7 @@ std::string App::open_disc(const std::string& path) {
         disc_ = std::move(disc);
         vfs_ = std::make_unique<Vfs>(&disc_->volume());
         vfs_->scan_mods(mods_dir(), &config_);
+        race::prepare_program_data(*vfs_); // on a thread, while the menus open
         texture_pack::set_pack(vfs_->textures());
         race::set_custom_paints(race::load_custom_paints(*vfs_));
         apply_language();
@@ -700,6 +702,7 @@ void App::close_disc() {
     game::close_gt_mode(); // its data, reader and save library belong to this disc
     texture_pack::set_pack(nullptr);
     race::set_custom_paints(nullptr);
+    race::forget_program_data();
     vfs_.reset();
     disc_.reset();
 }

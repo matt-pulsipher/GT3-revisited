@@ -853,7 +853,8 @@ Retry and the quick menus' Start are unchanged: the original restarts under its 
 `EngineSound` with the car's `CarDatabase::engine_sound()` id and variant
 (e.g. R34: 21609, turbo0), updated every frame with the interpolated rpm and
 effective throttle; the view gain follows the camera (onboard / chase).
-Stopped on pause and when leaving the screen.
+Stopped on pause and when leaving the screen. The banks a start's cars load are read once and shared
+(`EngineBanks`, `RaceScreen::engine_banks_`); a mod car's own in its folder are read by that car.
 
 ## Replays
 
@@ -1162,8 +1163,9 @@ theater's demonstrations, the licence preview) follow NTSC-U's on every disc
 (`ExactFieldOptions::rules`: a copy of the program data with that `sim::Behaviour`). The log's
 "Race (exact)" line names the rules, the program and the rate.
 
-- **Set-up** (`race/exact_setup.*`): the program data once per CORE.GT3 (`exact_program_data`: GT3's tables, the disc's
-  program checked; `race_physics` the one place a disc's physics is chosen: GT3's, `own` false for a program that is not a
+- **Set-up** (`race/exact_setup.*`): the program data once per open disc (`exact_program_data`: GT3's tables, the disc's
+  program checked; `App::open_disc` starts it on a thread while the menus open, `prepare_program_data`, and `App::close_disc`
+  drops it, `forget_program_data`; a disc not prepared, as in the tests, is checked on first use; `race_physics` the one place a disc's physics is chosen: GT3's, `own` false for a program that is not a
   GT3 release, logged and shown under Settings > Disc & saves; a program that cannot be read cannot race), the course once per course file (`exact_course`, `sim::exact::RaceCourse`), the
   event record (no event: an empty one, the laps set), the course category, the race mode (single
   player, or the split-screen battle), the start type and countdown from the event (+0x1F3 / +0x1F2;

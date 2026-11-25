@@ -407,17 +407,17 @@ float OpponentEngines::doppler(const sim::Vec3& dir, const sim::Vec3& v_src, con
     return std::clamp((c + vl) / (c + vs), 0.25f, 3.99f);
 }
 
-void OpponentEngines::load(Vfs& vfs, const std::vector<Car>& cars) {
+void OpponentEngines::load(Vfs& vfs, const std::vector<Car>& cars, EngineBanks* banks) {
     engines_.clear();
     winds_.clear();
     cd_.clear();
     active_.assign(cars.size(), false);
     for (const Car& c : cars) {
         auto e = std::make_unique<EngineSound>();
-        if (c.sound_id) e->load(vfs, c.sound_id, c.variant, nullptr, c.sound_dir);
+        if (c.sound_id) e->load(vfs, c.sound_id, c.variant, nullptr, c.sound_dir, banks);
         engines_.push_back(std::move(e));
         auto w = std::make_unique<EngineUnit>();
-        w->load(vfs, EngineUnit::kWindBank);
+        w->load(vfs, EngineUnit::kWindBank, nullptr, banks);
         winds_.push_back(std::move(w));
         cd_.push_back(c.cd);
     }

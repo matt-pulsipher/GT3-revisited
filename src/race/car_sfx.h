@@ -154,7 +154,7 @@ public:
         bool wind = true;      // the wind unit (other cars: OpponentEngines plays theirs)
         SoundView view = SoundView::ChaseTarget;
     };
-    bool load(Vfs& vfs);
+    bool load(Vfs& vfs, EngineBanks* banks = nullptr); // (banks: EngineUnit::load)
     // Binds the loops to their effects' first regions (as CarSfx::bind); update() does it on first use.
     bool bind(const std::vector<std::shared_ptr<const sound::InstBank>>& banks, const std::vector<sound::SoundEffect>& index);
     // The turbo model's inputs after a physics step of `v` (sound §7.5): the processed
