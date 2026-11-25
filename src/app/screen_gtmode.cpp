@@ -8,6 +8,7 @@
 #include "app/screen_registry.h"
 #include "game/gt_mode_menu.h"
 #include "game/gt_save.h"
+#include "base/frame_clock.h"
 #include "base/log.h"
 #include "formats/model/car_model.h"
 #include "formats/text/charset.h"
@@ -245,14 +246,14 @@ private:
             show_ = Showroom{};
             show_.key = entry;
             show_.look[0] = cam.key(0x34), show_.look[1] = cam.key(0x35), show_.look[2] = cam.key(0x36);
-            show_.ticks = SDL_GetTicksNS();
+            show_.ticks = frame_clock::now_ns();
             show_.yaw = cam.key(0x3E);
             show_.elev = cam.key(0x3D);
             show_.dist = cam.key(0x3F);
             if (spin) show_.spin_serial = spin->serial, show_.spin_pushes = spin->pushes; // (pushes before it: gone)
         }
         if (spin && spin->serial != show_.spin_serial) show_.spin_serial = spin->serial, show_.spin_pushes = 0;
-        u64 now = SDL_GetTicksNS();
+        u64 now = frame_clock::now_ns();
         double dt = double(now - show_.ticks) / 1e9;
         show_.ticks = now;
         int steps = dt < 0.001 ? 1 : std::min(30, int(dt * 60.0 + 0.5));
@@ -497,12 +498,12 @@ private:
             if (!pv->load(*file, path)) return;
             prize_ = std::move(pv);
             prize_serial_ = serial;
-            prize_ticks_ = SDL_GetTicksNS();
+            prize_ticks_ = frame_clock::now_ns();
         }
         if (prize_serial_ != serial) {
             prize_->restart();
             prize_serial_ = serial;
-            prize_ticks_ = SDL_GetTicksNS();
+            prize_ticks_ = frame_clock::now_ns();
         }
         // Screenshots: GT3R_GTMODE_PRIZE_FRAME=<n> skips the first n frames of the animation.
         if (prize_skip_ != serial) {
@@ -512,7 +513,7 @@ private:
         }
         // Real time, at most 0.1 s per call; menu frames stepped faster than real time
         // (scripted screenshots) still advance one 60 Hz frame each.
-        u64 now = SDL_GetTicksNS();
+        u64 now = frame_clock::now_ns();
         double dt = double(now - prize_ticks_) / 1e9;
         prize_->tick(dt < 0.001 ? 1.0 / 60 : std::min(dt, 0.1));
         prize_ticks_ = now;
@@ -589,7 +590,7 @@ private:
         cam.distance *= zoom * std::tan(cam.fovy * 0.5f) / std::tan(fovy * 0.5f); // same framing, longer lens
         cam.fovy = fovy;
         cam.pitch = pitch;
-        cam.yaw = yaw > -999 ? yaw : 0.6f + float(double(SDL_GetTicks() % 18000) / 18000.0 * 6.283185307); // 1 turn / 18 s
+        cam.yaw = yaw > -999 ? yaw : 0.6f + float(double(frame_clock::now_ns() / 1000000 % 18000) / 18000.0 * 6.283185307); // 1 turn / 18 s
         composite(r, dst, [&](SDL_Texture*, int w, int h) {
             render::DrawOptions o;
             (void)lights;

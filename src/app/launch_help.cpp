@@ -24,6 +24,9 @@ const char kOptions[] = R"(Usage: gt3r [disc.iso|disc.chd] [options]
   --hub                  start in Developer options ([app] start = hub)
   --browse <vol path>    open the asset browser on a file in GT3.VOL
   --shot <out.png>       save frame 30 (GT3R_SHOT_FRAME) as a PNG and quit
+  --visible              show the window in a scripted run (--shot, the GT3R_* scripts)
+  --headless             no window, sound or input from the player, in any run
+  --pace <n>|display|off windowless runs: n frames a second (default 60), the display's rate, or unpaced
   --msaa <n>             MSAA sample count ([video] msaa)
   --render-scale <s>     auto or 0.5..4.0 ([video] render_scale)
   --no-gpu               the 2D renderer only, no 3D ([video] gpu = 0)
@@ -48,7 +51,9 @@ Testing variables (in the environment, or --env NAME=value):
                                drag:<x0> <y0> <x1> <y1> wheel:<n> <x> <y> tap:<x> <y>
                                pinch:<x> <y> <from> <to>
   GT3R_FILE_DIALOG=<path>      answer file dialogs with this path ("-": cancel)
-  GT3R_UPDATE_CHECK=1          --shot runs check for updates too (otherwise the cached answer)
+  GT3R_UPDATE_CHECK=1          scripted runs check for updates too (otherwise the cached answer)
+  GT3R_VISIBLE=1               scripted runs show the window (--visible)
+  GT3R_HEADLESS=1              no window in any run (--headless)
 
  General
   GT3R_DATA_DIR=<dir>          the user data folder (config.ini, saves, replays, mods)

@@ -2,6 +2,7 @@
 
 #include "platform/android_activity.h"
 #include "platform/ios_files.h"
+#include "platform/windowless.h"
 
 #include <SDL3/SDL.h>
 
@@ -67,7 +68,7 @@ std::optional<FolderAnswer> android_answer() {
 } // namespace
 
 bool start_folder_pick(SDL_Window* window, const std::string& start, FolderUse use) {
-    if (g_pick) return false;
+    if (g_pick || windowless()) return false; // (a windowless run shows no picker)
     auto pick = std::make_shared<Pick>();
 #if defined(SDL_PLATFORM_ANDROID)
     (void)window;

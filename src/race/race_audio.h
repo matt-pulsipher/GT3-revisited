@@ -15,6 +15,7 @@
 #include "audio/bgm.h"
 #include "audio/engine_sound.h"
 #include "base/bytes.h"
+#include "base/frame_clock.h"
 #include "race/custom_music.h"
 #include "race/music_markers.h"
 #include "race/race_playlist.h"
@@ -242,7 +243,7 @@ private:
     bool song_changed_ = false;   // a race song started (take_song_change)
     sound::MadsMarkers fallback_; // the markers of a race song without its own (follow_piece)
     Cues last_;
-    std::mt19937 rng_{std::random_device{}()};
+    std::mt19937 rng_{frame_clock::random_seed()}; // (--shot: the same songs on every run)
 };
 
 // Engine notes of the other cars, placed like GT3 does: volume

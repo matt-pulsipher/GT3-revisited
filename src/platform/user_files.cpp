@@ -2,12 +2,18 @@
 
 #include "platform/android_activity.h"
 #include "platform/recent_discs.h"
+#include "platform/windowless.h"
+#include "base/log.h"
 
 #include <SDL3/SDL.h>
 
 namespace gt3r::platform {
 
 bool open_user_folder(const std::string& dir, const std::string& data_dir) {
+    if (windowless()) { // a scripted run opens nothing on the desktop
+        LOG_INFO("Windowless run: not opening %s", dir.c_str());
+        return true;
+    }
 #if defined(SDL_PLATFORM_ANDROID)
     // GT3Activity.openUserFolder(relative path inside the user data folder).
     std::string rel = dir.rfind(data_dir, 0) == 0 ? dir.substr(data_dir.size()) : std::string();

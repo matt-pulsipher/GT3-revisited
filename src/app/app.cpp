@@ -5,6 +5,7 @@
 #include "app/presence.h"
 #include "app/updates.h"
 
+#include "base/frame_clock.h"
 #include "base/log.h"
 #include "base/log_file.h"
 #include "platform/crash_handlers.h"
@@ -22,6 +23,7 @@
 #include "platform/recent_discs.h"
 #include "platform/render_scale.h"
 #include "platform/mac_layer.h"
+#include "platform/windowless.h"
 #include "race/custom_paints.h"
 #include "race/exact_setup.h"
 #include "race/replay_library.h"
@@ -71,6 +73,35 @@ bool App::init(int argc, char** argv) {
         log_file::open(dir);
     }
     if (const char* c = SDL_getenv("GT3R_CRASH_TEST")) platform::crash_test(c); // platform/crash_handlers.h
+    // gt3r [disc.iso] [--browse <path in GT3.VOL>] [--screen <name>] [--shot <out.png>]
+    // Platforms without a command line (Android) can put one argument per line
+    // in <user data>/args.txt. --env NAME=value sets the testing variables where there are none.
+    std::vector<std::string> args(argv + 1, argv + argc);
+    if (auto extra = read_host_file(game::user_data_dir() + "args.txt")) {
+        std::string_view text(reinterpret_cast<const char*>(extra->data()), extra->size());
+        for (std::string_view line : split(text, '\n'))
+            if (!trim(line).empty()) args.emplace_back(trim(line));
+    }
+    for (size_t i = 0; i + 1 < args.size(); ++i) {
+        if (args[i] == "--shot") frame_clock::set_fixed(); // frame N: the same picture on every run
+        if (args[i] != "--env") continue;
+        const std::string& kv = args[++i];
+        size_t eq = kv.find('=');
+        if (eq != std::string::npos && eq > 0)
+            SDL_SetEnvironmentVariable(SDL_GetEnvironment(), kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), true);
+    }
+    // Scripted runs without a window (platform/windowless.h; desktop, not VR): decided before SDL starts.
+#if !GT3R_XR
+    windowless_ = !platform::is_mobile() && platform::windowless_run(args, [](const char* n) { return SDL_getenv(n); });
+#endif
+    platform::set_windowless(windowless_);
+    if (windowless_) {
+        SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, "1");       // macOS: never made the active app
+        platform::run_without_dock_icon();                   // macOS: no Dock icon or menu bar
+        SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");  // no keep-the-display-awake assertion
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");         // silent (SDL_AUDIO_DRIVER in the environment wins)
+        LOG_INFO("Windowless run (--visible shows the window)");
+    }
 #if GT3R_XR
     // In a headset the window doesn't have keyboard focus (on the Quest it is invisible, on a PC
     // the headset's software may take it), and SDL drops joystick input without it: the
@@ -99,10 +130,13 @@ bool App::init(int argc, char** argv) {
         SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, InputManager::xbox_rawinput(cfg ? *cfg : IniDocument{}) ? "1" : "0");
     }
 #endif
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_SENSOR)) {
+    // Windowless: no gamepads, joysticks or sensors opened (the player's own stay theirs).
+    const SDL_InitFlags input_flags = windowless_ ? 0 : SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_SENSOR;
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | input_flags)) {
         LOG_ERROR("SDL_Init failed: %s", SDL_GetError());
         return false;
     }
+    if (windowless_) SDL_SetEventFilter(on_event_filter, this); // keys, mouse, touch, pads, focus: not ours
 
     // Portable mode: a portable.ini next to the executable keeps all user
     // data beside it (handy for USB sticks); otherwise use the OS location
@@ -146,6 +180,8 @@ bool App::init(int argc, char** argv) {
         win_flags &= ~SDL_WINDOW_FULLSCREEN;
     }
     touch_ui_ = platform::is_mobile() || phone_sim_;
+    // Windowless: never shown, never focused, never fullscreen (the picture is the same size as a window's).
+    if (windowless_) win_flags = (win_flags & ~SDL_WINDOW_FULLSCREEN) | SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE;
     window_ = SDL_CreateWindow("GT3 Revisited", phone_sim_ ? 1170 : 1280, phone_sim_ ? 540 : 720, win_flags);
     if (!window_) {
         LOG_ERROR("Window creation failed: %s", SDL_GetError());
@@ -170,6 +206,7 @@ bool App::init(int argc, char** argv) {
     if (auto v = config_.get("video", "msaa")) gpu_opts.msaa = std::atoi(v->c_str());
     if (auto v = config_.get("video", "anisotropy")) gpu_opts.anisotropy = std::atoi(v->c_str());
     if (auto v = config_.get("video", "vsync")) gpu_opts.vsync = *v != "0";
+    if (windowless_) gpu_opts.vsync = false; // nothing presented: --pace paces the frames
     if (auto v = config_.get("video", "gpu_debug")) gpu_opts.debug = *v == "1";
     show_fps_ = to_lower(config_.get("video", "show_fps").value_or("off")) == "on";
     gamma_ = render::parse_gamma(config_.get("video", "gamma").value_or(""));
@@ -220,7 +257,7 @@ bool App::init(int argc, char** argv) {
         // macOS switches a fullscreen window between direct-to-display and composited now and
         // then, and each switch stalls presentation for up to half a second (measured: 0 frames
         // over 40 ms per minute composited vs up to 13 direct). GT3R_DIRECT=1 for comparisons.
-        if (!SDL_getenv("GT3R_DIRECT")) platform::keep_composited(window_);
+        if (!SDL_getenv("GT3R_DIRECT") && !windowless_) platform::keep_composited(window_);
     } else {
         if (use_gpu) LOG_WARN("3D rendering unavailable; continuing with the 2D renderer only");
         renderer_ = SDL_CreateRenderer(window_, nullptr); // nullptr: platform's native backend
@@ -233,6 +270,7 @@ bool App::init(int argc, char** argv) {
     layout_ui(false);
     LOG_INFO("Renderer: %s", SDL_GetRendererName(renderer_));
     if (limit_60fps()) apply_frame_limit();
+    if (windowless_) apply_pace(args);
     ui_ = std::make_unique<Ui>(renderer_);
 
     input_ = std::make_unique<InputManager>();
@@ -248,15 +286,6 @@ bool App::init(int argc, char** argv) {
     if (auto v = config_.get("audio", "surround_cue")) audio_->voices().set_surround_cue(*v == "on");
     dialog_mutex_ = SDL_CreateMutex();
 
-    // gt3r [disc.iso] [--browse <path in GT3.VOL>] [--screen <name>] [--shot <out.png>]
-    // Platforms without a command line (Android) can put one argument per line
-    // in <user data>/args.txt.
-    std::vector<std::string> args(argv + 1, argv + argc);
-    if (auto extra = read_host_file(data_dir_ + "args.txt")) {
-        std::string_view text(reinterpret_cast<const char*>(extra->data()), extra->size());
-        for (std::string_view line : split(text, '\n'))
-            if (!trim(line).empty()) args.emplace_back(trim(line));
-    }
     std::string disc_path, browse, screen;
     bool hub = to_lower(config_.get("app", "start").value_or("")) == "hub";
     for (size_t i = 0; i < args.size(); ++i) {
@@ -265,14 +294,8 @@ bool App::init(int argc, char** argv) {
         if (a == "--browse" && has_value) browse = args[++i];
         else if (a == "--shot" && has_value) auto_shot_path_ = args[++i];
         else if (a == "--screen" && has_value) screen = args[++i];
-        else if ((a == "--msaa" || a == "--render-scale") && has_value) ++i;
+        else if ((a == "--msaa" || a == "--render-scale" || a == "--env" || a == "--pace") && has_value) ++i;
         else if (a == "--hub") hub = true;
-        else if (a == "--env" && has_value) { // NAME=value: the testing variables on platforms without them (Android)
-            const std::string& kv = args[++i];
-            size_t eq = kv.find('=');
-            if (eq != std::string::npos && eq > 0)
-                SDL_SetEnvironmentVariable(SDL_GetEnvironment(), kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), true);
-        }
         else if (!a.empty() && a[0] != '-') disc_path = a;
     }
     if (!disc_path.empty()) last_error_ = open_disc(disc_path);
@@ -287,13 +310,16 @@ bool App::init(int argc, char** argv) {
     if (!screen.empty())
         for (const ScreenEntry& entry : screen_registry())
             if (screen == entry.id && (disc_ || !entry.needs_disc)) push(entry.factory());
-    // The Discord status (app/presence.h; [discord] status): --shot runs leave Discord alone unless GT3R_DISCORD=1.
+    // The Discord status (app/presence.h; [discord] status): --shot and windowless runs leave Discord alone
+    // unless GT3R_DISCORD=1.
+    const bool scripted = !auto_shot_path_.empty() || windowless_;
     const char* dc = SDL_getenv("GT3R_DISCORD");
-    discord_status().startup(*this, auto_shot_path_.empty() || (dc && *dc == '1'));
+    discord_status().startup(*this, !scripted || (dc && *dc == '1'));
     // The update check (README "Online"; [online] update_check): in the background, never waited for.
-    // --shot runs use only the cached answer (no traffic to a live server) unless GT3R_UPDATE_CHECK=1.
+    // --shot and windowless runs use only the cached answer (no traffic to a live server) unless
+    // GT3R_UPDATE_CHECK=1.
     const char* uc = SDL_getenv("GT3R_UPDATE_CHECK");
-    updates().startup(*this, auto_shot_path_.empty() || (uc && *uc == '1'));
+    updates().startup(*this, !scripted || (uc && *uc == '1'));
     reset_dynamic_scale();
     last_ticks_ = SDL_GetTicksNS();
     return true;
@@ -469,11 +495,14 @@ void App::forget_recent_disc(const std::string& path) {
     save_config();
 }
 
-bool App::fullscreen() const { return window_ && (SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN); }
+bool App::fullscreen() const {
+    if (windowless_) return to_lower(config_.get("video", "fullscreen").value_or("off")) == "on"; // (the setting only)
+    return window_ && (SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN);
+}
 
 void App::set_fullscreen(bool on) {
     if (platform::is_mobile()) return; // always fullscreen
-    SDL_SetWindowFullscreen(window_, on);
+    if (!windowless_) SDL_SetWindowFullscreen(window_, on);
     config_.set("video", "fullscreen", on ? "on" : "off");
     save_config();
 }
@@ -487,6 +516,7 @@ void App::apply_frame_limit() {
     // for a 72 Hz headset) made it miss frames, a judder.
     if (xr_) return;
 #endif
+    if (windowless_) return; // --pace sets the rate
     const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_));
     const double hz = mode ? mode->refresh_rate : 0;
     if (hz <= 0) return;
@@ -708,6 +738,10 @@ void App::close_disc() {
 }
 
 void App::show_open_dialog() {
+    if (windowless_) { // (no window of the system's either)
+        LOG_INFO("Windowless run: no file dialog");
+        return;
+    }
     // iOS: SDL has no file dialog there; the system's document picker opens the image in place.
     if (platform::show_document_picker(window_, kDiscFilters, SDL_arraysize(kDiscFilters), [this](std::string path) {
             if (!path.empty()) set_dialog_result(std::move(path));
@@ -791,6 +825,7 @@ SDL_AppResult App::iterate() {
     // --shot: step exactly one 60 Hz frame per iteration, so a shot of frame N shows the same
     // simulation time on every run (comparison screenshots are repeatable).
     if (!auto_shot_path_.empty()) dt = 1.0 / 60.0;
+    frame_clock::step(16'666'667); // (with --shot: animations on the wall clock step 1/60 s too)
 
     // Pick up a file chosen in the (possibly asynchronous) dialog.
     std::string chosen;
@@ -922,7 +957,8 @@ SDL_AppResult App::iterate() {
     }
     if (gamma_frame_) gamma_pass_->end(gamma_); // (after the screenshots: they keep GT3's colours)
     const Uint64 present_start = SDL_GetTicksNS();
-    SDL_RenderPresent(renderer_);
+    if (windowless_) wait_for_gpu(); // nothing shown: the frame's GPU work finished instead
+    else SDL_RenderPresent(renderer_);
     if (gpu_) gpu_->frame_presented();
     const double present_ms = double(SDL_GetTicksNS() - present_start) / 1e6;
     // A lost GPU (Vulkan's VK_ERROR_DEVICE_LOST, which SDL only reports in its error text) never
@@ -930,9 +966,10 @@ SDL_AppResult App::iterate() {
     // until the system kills us: close with a message instead.
     if (gpu_ && std::strstr(SDL_GetError(), "DEVICE_LOST")) {
         LOG_ERROR("GPU device lost: %s", SDL_GetError());
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "GT3 Revisited",
-                                 "The graphics driver stopped responding (GPU device lost), so the game has to close.",
-                                 window_);
+        if (!windowless_)
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "GT3 Revisited",
+                                     "The graphics driver stopped responding (GPU device lost), so the game has to close.",
+                                     window_);
         return SDL_APP_FAILURE;
     }
     if (dyn_on_) {
@@ -952,7 +989,7 @@ SDL_AppResult App::iterate() {
 #endif
     {
         static const double thr = [] { const char* e = SDL_getenv("GT3R_HITCH"); return e ? std::atof(e) : 0.0; }();
-        static Uint64 h_prev_end = 0;
+        const Uint64 h_prev_end = hitch_prev_end_;
         Uint64 h_end = SDL_GetTicksNS();
         if (thr > 0 && h_prev_end) {
             double wall = double(h_end - h_prev_end) / 1e6;
@@ -962,13 +999,57 @@ SDL_AppResult App::iterate() {
                          hitch::ticks, hitch::ticks_ms, double(h_r1 - h_r0) / 1e6, hitch::env_ms, hitch::collect_ms,
                          hitch::draw_ms, double(h_end - h_r1) / 1e6, hitch::race_t, hitch::x, hitch::z, hitch::smoke, hitch::meshes);
         }
-        h_prev_end = h_end;
     }
+    if (windowless_ && !quit_) pace_frame(); // (not counted in GT3R_HITCH's frame times)
+    hitch_prev_end_ = SDL_GetTicksNS();
     return quit_ ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
 }
 
+// A windowless frame: nothing presented, so one pixel read back (SDL_RenderReadPixels submits the
+// frame and waits for it) lets the GPU finish the frame and SDL recycle what finished frames held,
+// as a present would; frames don't pile up. Screenshots read the same picture before this.
+void App::wait_for_gpu() {
+    int w = 0, h = 0;
+    SDL_GetCurrentRenderOutputSize(renderer_, &w, &h);
+    const SDL_Rect middle{w / 2, h / 2, 1, 1};
+    SDL_Surface* px = SDL_RenderReadPixels(renderer_, &middle);
+    if (!px) px = SDL_RenderReadPixels(renderer_, nullptr); // (outside a letterboxed viewport: the whole picture)
+    if (px) SDL_DestroySurface(px);
+}
+
+// Windowless: --pace <n> | display | off paces the frames (default 60: a --shot frame's 1/60 s of
+// game time takes 1/60 s again, as movies, music and the network expect).
+void App::apply_pace(const std::vector<std::string>& args) {
+    const platform::Pace pace = platform::pace_from_args(args);
+    double fps = pace.fps;
+    if (pace.kind == platform::Pace::Kind::Off) fps = 0;
+    if (pace.kind == platform::Pace::Kind::Display) {
+        const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_));
+        fps = mode && mode->refresh_rate > 0 ? mode->refresh_rate : 60;
+    }
+    pace_ns_ = fps > 0 ? Uint64(1e9 / fps + 0.5) : 0;
+    if (fps > 0) LOG_INFO("Windowless: %.0f frames a second", fps);
+    else LOG_INFO("Windowless: as fast as frames draw");
+}
+
+// Windowless: sleeps to the next frame's time, after GT3R_HITCH has timed the frame (the wait is
+// not part of it); a frame that ran late starts the count again.
+void App::pace_frame() {
+    if (!pace_ns_) return;
+    const Uint64 now = SDL_GetTicksNS();
+    if (pace_next_ > now && pace_next_ - now <= pace_ns_) SDL_DelayNS(pace_next_ - now);
+    else pace_next_ = now;
+    pace_next_ += pace_ns_;
+}
+
+// Windowless: the player's keyboard, mouse, touch, pens, controllers, clipboard, dropped files
+// and window focus never reach the game; scripted events (pointer_script's) pass.
+bool SDLCALL App::on_event_filter(void* app, SDL_Event* e) {
+    return static_cast<App*>(app)->pushing_scripted_.load() || !platform::is_real_input(e->type);
+}
+
 void App::idle_cursor(Uint64 now) {
-    if (platform::is_mobile() || cursor_hidden_) return; // phones and tablets: no cursor
+    if (platform::is_mobile() || cursor_hidden_ || windowless_) return; // phones and tablets: no cursor
     if (mouse_used_ns_ == 0) mouse_used_ns_ = now;
     if (now - mouse_used_ns_ < 2'000'000'000) return; // 2 s
     SDL_HideCursor();
@@ -1283,7 +1364,9 @@ void App::pointer_script() {
             SDL_Event e{};
             e.type = verb == "blur" ? SDL_EVENT_WINDOW_FOCUS_LOST : SDL_EVENT_WINDOW_FOCUS_GAINED;
             e.window.windowID = SDL_GetWindowID(window_);
+            pushing_scripted_ = true; // (past a windowless run's filter of the player's input)
             SDL_PushEvent(&e);
+            pushing_scripted_ = false;
         } else {
             LOG_WARN("GT3R_POINTER_SCRIPT: unknown step '%s'", step.c_str());
         }

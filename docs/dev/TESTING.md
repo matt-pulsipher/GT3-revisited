@@ -87,6 +87,30 @@ x86-64 for the platform hashes: an x86-64 build on the Mac, run under Rosetta (`
 build's _deps/sdl3-src>`, then `./build-x86/gt3r_tests`); or an `ubuntu:24.04` container with `--platform linux/amd64`
 and the CI's packages ([PLATFORMS.md](PLATFORMS.md)), or the Windows build PC.
 
+## Scripted runs
+
+A scripted run runs without a window on the desktop (`platform/windowless.h`), so it can go while someone works at
+the machine: `--shot`, or any of `GT3R_POINTER_SCRIPT`, `GT3R_GT3MENU_SCRIPT`, `GT3R_GT3MENU_OPEN`,
+`GT3R_GTSETTING_SCRIPT`, `GT3R_GTMODE_FAKE_RACE`, `GT3R_RACE`, `GT3R_QUICKRACE`, `GT3R_ONLINE`, `GT3R_MENU`,
+`GT3R_VIEWER`, `GT3R_MOD_ZIP`, `GT3R_PCSX2_PACK` or `GT3R_SAVE_TEXTURES` set. It shows no window and no Dock icon,
+takes no focus, plays no sound (SDL's dummy audio driver, unless `SDL_AUDIO_DRIVER` is set) and reads none of the
+player's keyboard, mouse, touch, pens or controllers (they are never opened), clipboard, dropped files or window
+focus. It opens no file dialog (answered as cancelled; `GT3R_FILE_DIALOG` still answers them), browser, folder or
+message box, and leaves Discord and the update server alone (`GT3R_DISCORD=1`, `GT3R_UPDATE_CHECK=1`). Each frame
+is drawn as with a window and read back instead of presented, so the pictures are the same.
+
+- `--visible` (or `GT3R_VISIBLE=1`) shows the window; `--headless` (or `GT3R_HEADLESS=1`) hides any run. The
+  command line comes before the environment. Phones, tablets and VR builds always show theirs.
+- `--pace <n>|display|off`: a windowless run draws 60 frames a second by default (a `--shot` frame is 1/60 s of
+  game time, so movies, music and the network keep real time); `off` as fast as the machine draws (long `--shot`
+  runs), `display` at the display's refresh rate.
+- With `--shot`, what follows the clock in the pictures follows the frames instead: car fades, showroom and prize
+  models, the loading fade, and the clock-value seeds (replay cameras, GT Mode's random state, song order). Frame N
+  is then the same picture on every run, with a window or without. Movies follow the real clock and may land a
+  frame either way.
+- `GT3R_HITCH`'s `present` column is the wait for the GPU in a windowless run.
+- A run ends as it always has (`--shot`, `quit=`), or with SIGTERM / Ctrl+C.
+
 ## Running suites in parallel
 
 Every `gt3r_tests` process writes only in its own folder, `$TMPDIR/gt3r-tests-<pid>-<random>/`

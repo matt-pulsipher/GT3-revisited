@@ -15,6 +15,7 @@
 // as the sequencer's music volume (sequence_volume) and the Music volume setting
 // scales the mixer's music bus.
 
+#include "base/frame_clock.h"
 #include "formats/sound/mads.h"
 
 #include <random>
@@ -111,7 +112,7 @@ private:
     std::string what_;
     const sound::MadsTrack* track_ = nullptr;
     u32 generation_ = 0;
-    std::mt19937 rng_{std::random_device{}()};
+    std::mt19937 rng_{frame_clock::random_seed()}; // (--shot: the same songs on every run)
 };
 
 } // namespace bgm
