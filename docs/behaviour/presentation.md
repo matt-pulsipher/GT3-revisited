@@ -1662,7 +1662,7 @@ keep each player's car: none of this applies to them.
 opens the pause, §E2):
 
 - **Up / Down** (modes 0 and 3, and mode 2 with TARGET MANUAL): the next /
-  previous car, wrapping, with a new shot for the new car (below, §H8).
+  previous car, wrapping (below, §H8).
 - **Cross** (modes 0, 2 and 3): the driver's view on the followed car (the view
   the player last drove with) and back. The view sits at that car's own camera
   points (its in-car eye, its chase point: `CameraRig::set_car_mounts`, bound
@@ -1691,10 +1691,12 @@ trigger bound to accelerate is still R2 in a replay.
 **By view mode.**
 
 - **Modes 0 and 3.** MANUAL only, never a partner. A new car is aimed at over
-  15 frames and held 15 frames. Up / Down re-arm the shot for the new car (§H8):
-  a shot that has run out for it gives way to the record at the new car's D
-  whatever its progress, else the camera turns on board; for 15 frames after the
-  change a cut may take a record at any progress. The attract demo in mode 0 moves to
+  15 frames and held 15 frames. Up / Down: a shot the new car is inside of goes
+  on, the aim moving to it; one it is outside of gives way to the record at the new
+  car's D whatever its progress, else the camera turns on board (§H8). In the
+  standing-start hold the shot is always re-armed. For the aim's 15 frames a cut may
+  take a record at any progress; once a new shot has ended the move, until the next
+  change of target (`ReplayDirector::car_changed`). The attract demo in mode 0 moves to
   the next car once 300 frames (5 s) have passed and
   the current shot's gate is open (§H8: in mode 0, once the shot has run out
   and any 3 s hold is over), then counts the 300 frames again; its new shot is
@@ -1705,8 +1707,8 @@ trigger bound to accelerate is still R2 in a replay.
   frames.
 - **Mode 2.** MANUAL: Up / Down change the car; the new car is framed with its
   partner, aimed at over 60 frames and held 120 frames, and its new shot is
-  searched at once (§H8), the current record included, at any progress for the
-  next 120 frames. TOP / AUTO: when the interest scores want another car (below),
+  searched at once (§H8), the current record included, at any progress until the
+  next change of target. TOP / AUTO: when the interest scores want another car (below),
   the cameras switch to it once the course camera's shot (or its turn on board)
   is 180 frames (3 s) old (`ReplayDirector::camera_fresh`), the followed car's
   hold is over, and the switch gate is open: the shot is over, or the shot length
@@ -1714,9 +1716,18 @@ trigger bound to accelerate is still R2 in a replay.
   §G14). The aim moves to the new car (and its partner) over 60 frames, and the
   new car is held 120 frames (2 s). The switch sets a new target: a shot the new
   car is outside of, an on-board shot or a 0x400 record ends and a new one is
-  searched at once (§H8); otherwise the shot goes on. When the followed car's
-  battle begins or ends, the aim moves likewise, the car is held 120 frames and
-  the new target ends an on-board or 0x400 shot (re-armed, §H8).
+  searched at once (§H8), and so does one the new car is far off the view of
+  (`ReplayDirector::off_view`: more than 180 / zoom degrees across or 135 / zoom up
+  or down from where the camera looks); otherwise the shot goes on. When the followed
+  car's battle begins or ends, the aim moves likewise and the car is held 120 frames;
+  the shot goes on (an on-board cut stays on the car it took).
+
+**The aim's move and the shots** (issue 442). A new shot of modes 0, 2 and 3 ends the
+aim's move: its first frame aims at the new target itself (`set_settled_aim`,
+`take_aim_cut`). A new target while the aim still moves re-arms the shot. Another car as
+the target (`target_set(true)`, or any other car tried by a mode-1 cut) forgets the last
+aim point, so the next shot's filters start still (§H6a). The move runs between its 60 Hz
+frames at other frame rates (`RaceScreen::aim_replay_camera`).
 
 A held car's battle state stands still, and in mode 2 a held car is not left
 for a TOP / AUTO pick. The aim moves from the last target eased by 3t^2 - 2t^3.

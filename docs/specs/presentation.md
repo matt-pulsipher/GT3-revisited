@@ -9,6 +9,12 @@ logic and the display once per frame with dt = 1/60 [C, `RaceBase::vf2`
 
 ## Changelog
 
+- 2026-11-25 (public issue 442): §G4c / §G4e / §G5 the aim's move and the shots [C]: a new shot ends the move
+  (`fn_001FF3D8`) and forgets nothing else; a target set while a move runs forces the shot's re-set (the answer of
+  `fn_001FF490` / `fn_001FF4F8`); +0x34 and the cleared +0x92 belong to another car only, so a battle's begin or end
+  never ends a shot; modes 0 / 3's Up / Down is not forced; the manual flag +0x36 outlives a move a shot cut short;
+  `fn_00202760`'s thresholds. Ours had let the move run into the new shot and kept the last aim point of the car left
+  (mode 1's cuts, mode 2's switches), so the shots opened with a whip across or a swing of up to 180 degrees a second.
 - 2026-11-21 (public issue 366): §G4d the replay pad works in demonstrations (play mode 2) too: Cross
   turns the driver's view on and off in a licence / time-trial DEMONSTRATION as in a replay; the "driver
   mode" handler `fn_0020D208` checks the same bit (0x400000, 0x20D414). Checked in PCSX2 (B-1 DEMO: TV shot,
@@ -1685,7 +1691,7 @@ current camera CM + 0x5D4 + 0x24C0 v):
   `ReplayDirector::setup` / `reset` / `car_changed` / `target_set` / `target_switched` /
   `set_cut_gate` / `shot_state` / `gate_open` / `shot_gate` / `camera_fresh`; on-board records
   and turns on the car's mount through `race::ProceduralCamera` (kind 4; no in-car shake).
-  Not reproduced: `fn_002009F0`, `fn_00202760`, mode 2's cut on a random on-board mount of the
+  Not reproduced: `fn_002009F0`, mode 2's cut on a random on-board mount of the
   partner (ours: a bumper view), the driver mode 5.
 
 **§G6 The shot look and the grade** [C unless marked]:
@@ -1955,16 +1961,20 @@ footage fits the timer. Drawn at (620.0, 420.0), right / bottom aligned. Ours:
   (`fn_001FF490` / `fn_001FF4F8`), hold 120; a manual change sets the state's +0x36 and forces
   a new shot (the picker's bits 1 and 0: search first); an AUTO / TOP switch keeps the shot
   unless it ends it (`vf17` for the new target, §G5) or the new car is far off the view
-  (`fn_00202760`: its direction more than twice the half view angle off, or 1.5 x vertically;
-  debug "ilegal target reset."), which search first. Otherwise, when the followed car's battle state changed this
+  (`fn_00202760`, on the car's unblended aim +0x64..+0x6C, the record's eye at the last t, the
+  shown angles +0x5A0 / +0x9F0 and zoom +0x88: the yaw more than 180 / zoom degrees off, or the
+  pitch more than 135 / zoom (90 / zoom is about the view's angle); never in the shot's first
+  frame, on board, or with an on-board record; debug "ilegal target reset."), which search
+  first. Otherwise, when the followed car's battle state changed this
   frame: target set again with its partner (or alone), 120, hold 120. Cross: the driver's
   view word (+0x96E0 per view; 0 at set-up) toggles; on, `fn_002096C0` puts the live driving
   camera (+0x600, the view the player last drove with, settings +0x11C) on the followed car,
   at that car's own GTCI mount (in-car mount 0, chase mount 1: `OnBoardCamera::vf9` keeps the
   target's car, `fn_00201150` reads its model's table), the followed car not drawn in the in-car view;
   off, the course shots (a new one). Modes 0 / 3 (`fn_0020B8E8`): Up / Down as above, target
-  set with 15, hold 15, never a partner (0x20BB44); Cross as mode 2; a forced new shot (§G5;
-  +0x36 for the 15 frames). The attract demo (race +0x3C -> +0x9784 ==
+  set with 15, hold 15, never a partner (0x20BB44), +0x36 set, the 1 s dissolve; Cross as mode 2.
+  Forced (§G5) only in the driver's view, in the start hold or while a move ran (0x20BAEC,
+  0x20BB04, 0x20BBAC): else a shot the new car is inside of goes on and the aim moves there. The attract demo (race +0x3C -> +0x9784 ==
   2, race +0x7C == 0): a counter (+0x960C) + 1 a frame; over 299, and `fn_0020ABF0(..., 1)`:
   0, the next car (a simulated Up) and a new shot. Mode 1 (`fn_0020C580`): Cross, Circle, R1,
   L1 cut as the timer does; the cut's car with its partner, except a cut of request 1 (the
@@ -1994,7 +2004,16 @@ footage fits the timer. Drawn at (620.0, 420.0), right / bottom aligned. Ours:
   min(n, 60) frames (+0xD0 / +0xD2); `fn_001FF068` aims at the car (`fn_001FEE18`) or the
   midpoint of the pair with the first car's track distance (`fn_001FEF10`), blended with the
   last target's (live) aim by e = 3 t^2 - 2 t^3, t = frames left / total (curve
-  `fn_00206330(0, 0, 3)` from the constructor `fn_001FED38`). `DesignerCamera::vf13`
+  `fn_00206330(0, 0, 3)` from the constructor `fn_001FED38`). Another car (and +0x92 1) also sets +0x34 (one frame,
+  §G5's "target set") and clears +0x92; every target set clears the manual flag +0x36.
+  `fn_001FF490` / `fn_001FF4F8` answer whether a move was still running: then modes 0, 2 and 3
+  force the shot's re-set (§G5, 0x20BBAC / 0x20C110 / 0x20C268). A new shot ends the move: when
+  the picker answers 1 (or is forced) modes 0, 2 and 3 call `fn_001FF3D8` (+0xD0 = 0 and the aim
+  again, 0x20BD6C / 0x20C39C; the re-set itself 0x20AEFC, before it), mode 1 at every cut
+  (0x20D148), REPLAY OPTIONS' apply too, so the shot's first frame aims at the new target.
+  +0x36 is cleared only as +0xD0 counts down to 0, so a move a shot ended leaves it set until
+  the next target set. Mode 1's search sets the target of every car it tries, so +0x92 is
+  cleared whenever another car was tried. `DesignerCamera::vf13`
   (0x201D6C..0x201FD0) widens a pair's zoom: need = 1.1 (0x33E408) x the cars' yaw apart
   (`fn_00207248`, `fn_00206260`) + the angle of 5 m at the second car's distance (when it is
   the nearer one: that distance - 60 x the difference, at least 1); a view narrower than need

@@ -788,6 +788,7 @@ void RaceScreen::update_drive(App& app, double dt) {
     if (replaying_ || attract_) update_replay_focus(dt); // the followed car (TARGET), the pad's views and cuts
     update_camera_manager(dt);                           // the music's cut requests, view mode 1's cuts
     update_race_camera(pad, dt);
+    if (director_.take_aim_cut()) aim_left_ = aim_total_ = 0; // a new shot ends the aim's move (presentation §G4e)
     update_shot_filter();
     if (const float d = director_.take_dissolve(); d > 0) start_dissolve(d); // a course record's own
 

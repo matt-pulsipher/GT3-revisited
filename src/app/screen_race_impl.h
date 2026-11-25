@@ -889,6 +889,7 @@ private:
     // 1 / Down -1) for the next focus frame, Cross's driver's view, the attract demo's car clock
     // (modes 0 / 3).
     int replay_partner_ = -1;
+    int onboard_partner_ = -1; // the car mode 2's on-board cut rides (the partner while none runs)
     race::ReplayFocus focus_;
     double focus_acc_ = 0;
     int aim_from_ = -1, aim_from_partner_ = -1, aim_left_ = 0, aim_total_ = 0;
