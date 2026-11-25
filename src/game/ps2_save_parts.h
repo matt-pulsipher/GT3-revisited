@@ -34,7 +34,7 @@ Bytes close_payload(Bytes payload, u16 major, u16 minor);
 
 // A garage car record (0x204 bytes: the car setup record, the owned goods, the car's condition and serial).
 GarageCar read_garage_car(ByteSpan r, const data::CarDatabase& db);
-void write_garage_car(Bytes& p, size_t o, const GarageCar& c, const data::CarDatabase& db);
+void write_garage_car(Bytes& p, size_t o, const GarageCar& c, const GtData& data);
 
 // A course time-trial or machine-test ranking (0x300 bytes, 12 entries).
 std::vector<RankEntry> read_ranking(ByteSpan d, size_t r, bool speed, const data::CarDatabase& db);

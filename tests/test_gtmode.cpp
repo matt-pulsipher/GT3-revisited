@@ -6,7 +6,9 @@
 #include "disc/volume.h"
 #include "game/gt_mode.h"
 #include "game/gt_save.h"
+#include "game/data/mod_cars.h"
 #include "game/gt_setting.h"
+#include "race/custom_paints.h"
 #include "race/pool_draw.h"
 #include "race/time_text.h"
 #include "base/file.h"
@@ -1043,6 +1045,67 @@ TEST(gtmode_disc_ps2_save_roundtrip) {
         threw = true;
     }
     CHECK(threw);
+}
+
+// The paint words of the exported cars (issue 308): the color's id, which the original looks up without a check, then its
+// place in the model's list. The gear words are 16-bit.
+TEST(gtmode_disc_ps2_save_paints) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    auto data = std::make_shared<GtData>(); // (its own: a mod car is added to it)
+    CHECK(data->load([&](const std::string& p) { return vfs.read(p); }));
+    const std::string label = "r34_gtr_v_99";
+    if (data->game == GameKind::Concept || !data->db.car(label)) SKIP("a Gran Turismo 3 disc");
+    // Every car has a paint list, and every paint an id.
+    for (const data::Car& c : data->db.cars()) {
+        const int n = data->color_count(c.label);
+        CHECK(n > 0);
+        for (int k = 0; k < n; ++k) CHECK(data->color_id(c.label, k) != 0 && data->color_id(c.label, k) != 0xFFFFFFFFu);
+    }
+    const int n = data->color_count(label);
+    CHECK(n > 2);
+    const size_t cars = 0x130;
+    auto words = [&](const GtMode& gt) {
+        const Bytes p = ps2_payload(export_ps2_save(gt.state(), *data));
+        return std::pair<u32, int>(rd32(p, cars + 0x08), int(rd32(p, cars + 0x0C)));
+    };
+    GtMode gt(data);
+    gt.state().credits = 1000000000; // (yen on NTSC-J)
+    CHECK(gt.buy_car(label, 2) == 0);
+    CHECK(words(gt) == std::make_pair(data->color_id(label, 2), 2));
+    const Bytes p = ps2_payload(export_ps2_save(gt.state(), *data));
+    CHECK(gt.state().garage[0].settings.gears[7] == -999 && rd32(p, cars + 0x10C) == 0xFC19);
+    CHECK(import_ps2_save(export_ps2_save(gt.state(), *data), *data).garage[0].settings.gears == gt.state().garage[0].settings.gears);
+    // A custom color is the disc paint whose finish it takes; one that is gone is the first.
+    race::CarColors colors;
+    CHECK(colors.load(vfs));
+    race::CustomPaints custom(colors);
+    race::CustomPaint paint;
+    paint.model = data->db.model_of(*data->db.car(label)), paint.rgb = 0x123456, paint.finish = 1;
+    int index = -1;
+    CHECK(custom.add(paint, nullptr, &index) && index == n);
+    gt.state().garage[0].color = index;
+    CHECK(words(gt) == std::make_pair(data->color_id(label, 0), 0));
+    race::set_custom_paints(std::make_shared<race::CustomPaints>(custom));
+    CHECK(words(gt) == std::make_pair(data->color_id(label, 1), 1));
+    race::set_custom_paints(nullptr);
+    // A mod car stays out of the file; the ride car is still the ride car.
+    std::string err;
+    auto def = data::parse_mod_car("[car]\nlabel = syn_mod\nname = Mod\ndonor = r34_gtr_v_99\n", &err);
+    CHECK(def && data::add_mod_car(data->db, *def, &err));
+    data->db.rebuild();
+    CHECK(gt.add_car("syn_mod", 0) == 0); // (newest first)
+    CHECK(gt.state().garage.size() == 2 && gt.state().ride == 1);
+    const Bytes file = export_ps2_save(gt.state(), *data);
+    CHECK(rd32(file, 4) == 0x112BC + 0x204 * 1 + 0x44 * (gt.state().wheels.size() + 1));
+    const GameState s = import_ps2_save(file, *data);
+    CHECK(s.garage.size() == 1 && s.garage[0].car == label && s.ride == 0);
+    gt.state().garage[0].car = "gone_mod"; // (a mod no longer installed)
+    CHECK(import_ps2_save(export_ps2_save(gt.state(), *data), *data).garage.size() == 1);
+    gt.state().garage[0].car = "syn_mod";
+    gt.ride(0);
+    CHECK(import_ps2_save(export_ps2_save(gt.state(), *data), *data).ride == -1);
 }
 
 // Verified against a new game saved by the original (PCSX2): exporting the imported
