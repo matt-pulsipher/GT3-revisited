@@ -161,6 +161,13 @@ or upscale it.
 
 - Car colours: the textures a paint colour changes are saved once per colour (`-paint3` in the
   name), each with its own key; the rest are saved once.
+- Cars have two models: the menus' (`menu/cars/`, `menu/wheel/`) and the race's (`cars/`,
+  `wheel/`), with mostly different textures, each with its own key. A body or wheel picture changes
+  only the models that use that texture (`textures.txt` lists them).
+- Tires: each tire's picture is in the race files (`tire/`, `cars/`: 128x64) and in the menu files
+  (`menu/tire/`, `menu/cars/`: 256x128), the tread in the top half and the sidewall below. A
+  picture for either one shows in both places; with a picture for each, each shows its own (with
+  "Showroom wheels in races" on, close cars in races use the menus').
 - Animated textures (course lights and signs that change colour) are saved with their first
   colours and `-anim` in the name (`set2-14-anim-0123456789abcdef.png`; `textures.txt` too). A
   replaced one shows the picture and no longer animates, so leave them out of a pack (an

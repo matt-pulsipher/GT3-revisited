@@ -720,7 +720,7 @@ bool RaceScreen::build_vehicle(App& app) {
                         const ShowroomFiles sh2 = read_showroom(app, m2, w2 ? bm2.wheel : "");
                         car2_visual_ = std::make_unique<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
                                                                    w2 ? ByteSpan(*w2) : ByteSpan{}, bm2,
-                                                                   sh2.car_span(), sh2.wheel_span(), sh2.stand_in);
+                                                                   sh2.car_span(), sh2.wheel_span(), sh2.stand_in, sh2.tyre);
                         car2_visual_->set_full_detail(full_car_detail_);
                         if (brake_parts_) car2_visual_->set_brake_parts(*brake_parts_);
                     }
@@ -754,7 +754,7 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
     const ShowroomFiles showroom = read_showroom(app, model, wheel_file ? wheel_label : "");
     car_visual_ = std::make_unique<CarVisual>(*app.gpu(), car_file, model, car_.wheels, preset_.paint,
                                               wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod,
-                                              showroom.car_span(), showroom.wheel_span(), showroom.stand_in);
+                                              showroom.car_span(), showroom.wheel_span(), showroom.stand_in, showroom.tyre);
     car_visual_->set_full_detail(full_car_detail_);
     if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
     camera_car_.reset();
@@ -869,7 +869,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
                 if (f && !f->empty()) {
                     const ShowroomFiles sh = read_showroom(app, model, wf ? bm.wheel : "");
                     v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm,
-                                                    sh.car_span(), sh.wheel_span(), sh.stand_in);
+                                                    sh.car_span(), sh.wheel_span(), sh.stand_in, sh.tyre);
                     v->set_full_detail(full_car_detail_);
                     if (brake_parts_) v->set_brake_parts(*brake_parts_);
                 }
@@ -1002,6 +1002,11 @@ RaceScreen::ShowroomFiles RaceScreen::read_showroom(App& app, const std::string&
     ShowroomFiles s;
     s.stand_in = [&app, model, wheel] {
         return menu_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model, wheel);
+    };
+    // The menus' tyre (each LOD may ask: read once).
+    s.tyre = [&app, model, tyre = std::make_shared<std::optional<std::optional<Bytes>>>()] {
+        if (!*tyre) *tyre = menu_tyre([&app](const std::string& p) { return app.vfs()->read(p); }, model);
+        return **tyre;
     };
     if (!showroom_wheels_) return s;
     s.car = app.vfs()->read("menu/cars/" + model);
