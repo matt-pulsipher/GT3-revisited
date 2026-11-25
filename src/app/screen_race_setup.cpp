@@ -5,6 +5,7 @@
 
 #include "app/screen_race_impl.h"
 
+#include "formats/texture_pack.h"
 #include "game/data/mod_event_def.h"
 #include "sim/exact/race_flow.h"
 #include "sim/exact/race_record.h"
@@ -19,6 +20,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     reset_session_best(); // a new visit: the runs and retries that follow share it
     qm_items_ = {};       // ... and its quick menus' item switches (menus §11)
     practice_best_.clear(), practice_grid_.clear(), practice_entry_best_.clear(); // ... and its free practices' times and grid
+    kept_opponents_.clear(); // ... and its opponents' models (built with its settings and course: race/kept_models.h)
     // Speed unit: the game language's (language_units: mph in US English, else km/h, like the
     // menus) unless the player picked one ([race] units, speed_unit()).
     imperial_ = !app.vfs() || language_units(app.vfs()->language()).mph;
@@ -848,6 +850,8 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         }
     }
     std::map<std::pair<std::string, int>, std::shared_ptr<CarVisual>> by_model;
+    const auto pack = texture_pack::current_pack();
+    const auto last_built = kept_opponents_.take(custom, pack);
     for (int i = 0; i < f.opponents(); ++i) {
         const std::string& model = f.opponent_model(i);
         int paint = std::max(0, paints[size_t(i) + 1]);
@@ -860,7 +864,10 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         if (base.empty())
             if (const data::CarVariant* cv = db_.variant(l)) base = cv->car;
         CarBodyMod bm = db_.mod_car(base) ? body_mod_for_car(db_, base, paint, car_scene()) : CarBodyMod{};
-        std::shared_ptr<CarVisual>& v = by_model[{bm.paint_key.empty() ? model : base, paint}];
+        const std::pair<std::string, int> key{bm.paint_key.empty() ? model : base, paint};
+        std::shared_ptr<CarVisual>& v = by_model[key];
+        if (!v)
+            if (auto k = last_built.find(key); k != last_built.end()) v = k->second;
         if (!v) {
             std::optional<Bytes> f = read_car(app, model);
             WheelSpec ws;
@@ -880,6 +887,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         }
         opp_visuals_.push_back(v);
     }
+    kept_opponents_.keep(std::move(by_model), custom, pack);
     // Engine notes of the opponents (their base car's sound bank) and their extra sounds.
     std::vector<OpponentEngines::Car> sounds;
     for (OpponentSound& o : opp_sound_) o.extra.stop(app.audio().voices());
