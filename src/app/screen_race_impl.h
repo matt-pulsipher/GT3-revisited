@@ -1074,6 +1074,8 @@ private:
     // 2P battle (split screen): player 2 drives the field's second car with pad 2.
     bool two_player_ = false;
     OpponentEngines opp_engines_;
+    // This start's engine bank files, each read once (start, load_opponent_cars).
+    EngineBanks engine_banks_;
     RaceSfx sfx_;
     CarSfx car_sfx_, car_sfx2_;
     std::vector<CarSfx> opp_sfx_; // every other car's tyre loops (sound §7.6)

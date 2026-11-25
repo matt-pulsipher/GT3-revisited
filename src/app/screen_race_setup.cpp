@@ -15,6 +15,7 @@ namespace gt3r::race_screen {
 // (optional) is played back instead of driving.
 void RaceScreen::start(App& app, const Replay* replay) {
     error_.clear();
+    engine_banks_.clear(); // read again for each start (players still holding a bank keep it)
     reset_session_best(); // a new visit: the runs and retries that follow share it
     qm_items_ = {};       // ... and its quick menus' item switches (menus §11)
     practice_best_.clear(), practice_grid_.clear(), practice_entry_best_.clear(); // ... and its free practices' times and grid
@@ -233,7 +234,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     }
     engine_.stop(app.audio().voices());
     std::string err;
-    if (car_.sound_id && !engine_.load(*app.vfs(), car_.sound_id, car_.sound_variant, &err, car_.sound_dir))
+    if (car_.sound_id && !engine_.load(*app.vfs(), car_.sound_id, car_.sound_variant, &err, car_.sound_dir, &engine_banks_))
         LOG_WARN("Race: engine sound %u/%u: %s", car_.sound_id, car_.sound_variant, err.c_str());
     if (const data::ModCar* mc = db_.mod_car(car_.label); mc && mc->electric) {
         motor_ = make_motor_banks({mc->whine_order, mc->whine_level, mc->inverter_level});
@@ -251,8 +252,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
     extra2_.stop(app.audio().voices());
     extra_.reset();
     extra2_.reset();
-    extra_.load(*app.vfs());
-    if (two_player_) extra2_.load(*app.vfs());
+    extra_.load(*app.vfs(), &engine_banks_);
+    if (two_player_) extra2_.load(*app.vfs(), &engine_banks_);
     sound_car_ = car_sound_facts(car_.label);
     sound_car2_ = car_sound_facts(preset_.car2.empty() ? car_.label : preset_.car2);
     if (from_menu_ || online_) // GT mode: the garage car's fitted gearbox
@@ -266,7 +267,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
              sound_car_.whine ? "on" : "off", crss_ok_ ? "on" : "none");
     if (!results_loaded_) results_loaded_ = results_.load(*app.vfs(), app.renderer(), lang_) || true;
     engine2_.stop(app.audio().voices());
-    if (two_player_ && car_.sound_id) engine2_.load(*app.vfs(), car_.sound_id, car_.sound_variant, nullptr, car_.sound_dir);
+    if (two_player_ && car_.sound_id) engine2_.load(*app.vfs(), car_.sound_id, car_.sound_variant, nullptr, car_.sound_dir, &engine_banks_);
     if (two_player_ && motor_.whine) engine2_.set_banks(motor_.whine, motor_.inverter);
     if (engine_.loaded()) LOG_INFO("Race: engine sound %05u variant %u (%s)", car_.sound_id, car_.sound_variant,
                                    EngineSound::variant_dir(car_.sound_variant).c_str());
@@ -903,7 +904,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         sounds.push_back(c);
     }
     opp_engines_.stop(app.audio().voices());
-    opp_engines_.load(*app.vfs(), sounds);
+    opp_engines_.load(*app.vfs(), sounds, &engine_banks_);
 }
 
 // A 2P battle as launched: the Options menu's catch-up, handicap and tyre damage (not on dirt), player 2's model and wheels;

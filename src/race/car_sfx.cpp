@@ -203,9 +203,9 @@ void CarSfx::stop(VoiceMixer& mixer) {
 
 // --- CarExtraSounds ---------------------------------------------------------------------
 
-bool CarExtraSounds::load(Vfs& vfs) {
+bool CarExtraSounds::load(Vfs& vfs, EngineBanks* banks) {
     std::string err;
-    if (!wind_.load(vfs, EngineUnit::kWindBank, &err)) {
+    if (!wind_.load(vfs, EngineUnit::kWindBank, &err, banks)) {
         LOG_WARN("Race: wind bank: %s", err.c_str());
         return false;
     }
