@@ -113,7 +113,7 @@ struct RaceSetup {
     u32 road_addr = 0;
     // Grid places past the course's table made along its main line (start.h StartRace::made_grid): our own bigger fields
     // (Quick race's custom race, mod events, online), never one of GT3's races.
-    bool made_grid = false;
+    MadeGrid made_grid = MadeGrid::Off;
     // The solo race modes' recorders as the run starts (race_flow.h SoloRecorders: the race object's input devices and their
     // recordings; the race keeps its own copy). With them car 0 is the player's car, whose frames (pads[0]) its device
     // records, and `ghost_car` (if any) the ghost car, whose frames its device plays, both when their phases run, and the

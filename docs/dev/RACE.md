@@ -1341,14 +1341,20 @@ too: `race_hash` takes GT3's eight places of the order, or every car of a bigger
 - **Grid.** Courses keep six grid places (Trial Mountain eight, Smokey Mountain North five). With
   `FieldConfig::made_grid` (`RaceSetup::made_grid`, kept in the race record from version 7) a place past the
   course's table is made along the main line (`made_grid_slot`, sim/exact/start.cpp): the table's places measured
-  against the line, then its pattern continued behind the last row (the last two places' offsets across the line in
-  turn, each half a row behind the one before: staggered two by two on a wide road, single file on a narrow one),
-  each car at the same share of the road's width as the table place it copies (the road measured across the line
-  to where its surface ends, so a grid running back round a corner stays centred), facing along the line. In GT3's floats, so every machine of an online race places them alike. A
+  against the line at their race distance (the line's own points lie up to hundreds of metres apart), then its pattern
+  continued behind the last row: two lanes as far apart as the last two places, each car 8 m behind the one before
+  (half a row where the table's rows are closer; at least 6 m), closing up where the road is narrow and facing along the line. The road is the grid's own surface (not a kerb the line
+  cuts across), to the first wall, and half way to the pit lane line where that leaves the main one; no wall may stand
+  between a place and the line, there or up to 30 m on. v0.8.0's grid (nearest line point, no walls; on many courses it
+  put cars elsewhere on the lap) stays as `MadeGrid::V080` for the replays recorded on it (record version 7; a record with
+  today's grid is version 8). In GT3's floats, so every machine of an online race places them alike. A
   course without racing lines keeps its grid's size (`course_field_size`). GT3's races never set it: a place past
   their table still reads what follows it, as the program does.
 - **Field.** `GameRequest::big_field` (Quick race's custom race) or a mod event's code (`X…`) lets the field take
   31 opponents; GT Mode's and the arcade's races stay at five.
+- **Free practice (QUALIFY)** runs the same field. Past what the lap holds at GT3's 200 m a car (300 m + 200 m a car
+  behind the line), the cars start it closer together. The quick menus' six-row lists show the player's own row, with its
+  place, in the sixth when they are further down.
 - **HUD place.** GT3's rank strings stop at "12th"; past it the place is made of the same rank-font glyphs
   (`rank_ordinal`: "13th", "21st", "32nd").
 - **Results.** The board shows the first seven rows and the player's own (`ResultsOverlay::kShownRows`). Places

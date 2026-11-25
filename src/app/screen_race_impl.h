@@ -1122,6 +1122,9 @@ private:
     bool race_no_rubber_band_ = false;
     int race_chosen_laps_ = 0, race_player_slot_ = -1;
     bool race_big_field_ = false; // GameRequest::big_field
+    // A field of ours (Quick race's custom race, a mod event: data::kModEventPrefix), as big as the player or the mod made it, up
+    // to sim::exact::kMaxCars cars, the grid past the course's made (FieldConfig::made_grid).
+    bool own_field() const { return race_big_field_ || (!race_event_.empty() && race_event_[0] == data::kModEventPrefix); }
     bool field_grid_by_power_ = false; // the field's rules (recorded in replays)
     ReplayBattle battle_; // 2P battle: the field's set-up (recorded in replays)
     int race_laps_ = 0;

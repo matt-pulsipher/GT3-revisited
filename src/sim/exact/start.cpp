@@ -7,6 +7,7 @@
 #include "sim/exact/start.h"
 
 #include "base/ee_math.h"
+#include "sim/collision_exact.h"
 #include "sim/exact/ai_setup.h"
 #include "sim/exact/build_math.h"
 #include "sim/exact/hybrid.h"
@@ -290,16 +291,21 @@ int place_on_line(const StartRace& race, s32 dist, s32& seg, F& x, F& y, F& z, F
 }
 
 // Not GT3's (StartRace::made_grid): grid slot `slot`, at or past the course's grid table, made along the main line (6). The
-// table's places are measured against the line: each one's race distance, and where it stands across the road (its share of
-// the road's width there, road_span). The made places continue the pattern behind the last row: the last two places' shares
-// in turn, each half the rows' mean spacing (a place to the one two behind it; 16 m when the table gives none between 4 and
-// 60 m; at least 6 m) behind the one before, each at its share of the road where it lands (a grid running back round a corner stays on the road across it, not at
-// the line's offset, which lies by one edge in a corner). A place keeps on the road: its front, its back (4 m) and its sides
-// (1 m either way, 2 m back) on the same surface as the line there, brought toward the road's middle (a quarter at a time)
-// until they are. Every car faces along the line. In GT3's own arithmetic, so every machine of an online race places them
-// alike. False (the caller takes a table slot) without a line, a table or room on the lap.
+// table's places are measured against the line: each one's race distance (the course's checkpoints), where it stands across
+// the road (its share of the road's width there) and how far across from the one before it. The made places continue the
+// pattern behind the last row: two lanes as far apart as the table's last two places, in turn, round the share of the road's
+// width those two have between them; each 8 m behind the one before (closer than most of GT3's grids, 12 to 15 m a car, so a
+// long field keeps to the start straight as far as it goes), or half the rows' mean spacing (a place to the one two behind
+// it) where the table's are closer, at least 6 m. The road is the grid's own surface (not the kerb the
+// line may cut across), to the first wall, and half way to the pit lane line where that runs apart from the line (the road
+// widened for the pit lane's mouth). The lanes close up where the road is narrower. A place keeps its outline on that surface
+// and off the walls, with no wall between it and the line there or up to 30 m on (an island's blind end): brought toward the
+// road's middle, a quarter at a time, until it does. Every car faces along the line. In GT3's own arithmetic, so every
+// machine of an online race places them alike. False (the caller takes a table slot) without a line, a table or room on the
+// lap.
 namespace {
 const F kSpanStep = F::raw(0x3F000000), kSpanMax = F::raw(0x41C80000); // (0.5 m steps, out to 25 m)
+const F kWallRoom = F::raw(0x3E99999A);                                 // (0.3 m kept between a place's outline and a wall)
 
 // The ground's material at (px, py) near height h (miss: no road triangle there).
 u8 ground_material(const StartRace& race, F px, F py, F h, s32 hint, bool& miss) {
@@ -310,9 +316,240 @@ u8 ground_material(const StartRace& race, F px, F py, F h, s32 hint, bool& miss)
     return g.material;
 }
 
+// The walls by a place on road segment `hint` (that segment's and its neighbours', as the collision step takes them).
+struct Walls {
+    struct Line {
+        F ax, ay, bx, by;
+    };
+    std::vector<Line> lines;
+
+    Walls(const StartRace& race, F x, F y, F reach, s32 hint) {
+        if (!race.walls) return;
+        std::vector<int> found;
+        race.walls->wall_candidates(x - reach, -(y + reach), x + reach, -(y - reach), hint, found);
+        const collide::exact::WallPt* w = race.walls->walls();
+        for (int i : found) {
+            if (w[i].flags & 2) continue; // (a sensor edge)
+            const collide::exact::WallPt &a = w[i], &b = w[collide::exact::wall_next(w, i)];
+            lines.push_back({a.x, -a.z, b.x, -b.z});
+        }
+    }
+    // Whether a wall crosses (or touches) the straight from a to b.
+    bool between(F ax, F ay, F bx, F by) const {
+        auto side = [](F ox, F oy, F px, F py, F qx, F qy) { return (px - ox) * (qy - oy) - (py - oy) * (qx - ox); };
+        auto apart = [](F u, F v) { return (k0 < u && k0 < v) || (u < k0 && v < k0); };
+        for (const Line& l : lines) {
+            if (apart(side(ax, ay, bx, by, l.ax, l.ay), side(ax, ay, bx, by, l.bx, l.by))) continue;
+            if (apart(side(l.ax, l.ay, l.bx, l.by, ax, ay), side(l.ax, l.ay, l.bx, l.by, bx, by))) continue;
+            return true;
+        }
+        return false;
+    }
+};
+
+// The road across the line at race distance `dist`: the line's point and heading, the road's reach either way of it (metres
+// along (cos h, sin h): lo < hi, none when hi <= lo), and the surface it is of.
+struct Across {
+    F x, y, z, h, lo, hi;
+    s32 seg = -1;
+    u8 road = 0;
+    bool miss = false;
+};
+
+// `road`: the grid's surface. Where the line itself is off it (a kerb), the nearest of it within 6 m; none there: the line's
+// own surface.
+bool road_across(const StartRace& race, F dist, u8 road, Across& o) {
+    if (!line_position(race, 6, dist, o.seg, o.x, o.y, o.z, o.h)) return false;
+    const F sx = ee::cos(o.h), sy = ee::sin(o.h);
+    auto material = [&](F a, bool& miss) { return ground_material(race, o.x + sx * a, o.y + sy * a, o.z + k1, o.seg, miss); };
+    o.lo = o.hi = k0;
+    o.road = material(k0, o.miss);
+    if (o.miss) return true;
+    F from = k0;
+    if (o.road != road)
+        for (F d = kSpanStep; !(F::raw(0x40C00000) < d); d = d + kSpanStep) {
+            bool left = false, right = false;
+            const bool a = material(-d, left) == road && !left, b = material(d, right) == road && !right;
+            if (!a && !b) continue;
+            from = b ? d : -d, o.road = road;
+            break;
+        }
+    const Walls walls(race, o.x, o.y, kSpanMax, o.seg);
+    for (int side = -1; side <= 1; side += 2) {
+        F reach = from;
+        for (F d = kSpanStep; !(kSpanMax < d); d = d + kSpanStep) {
+            const F a = side < 0 ? from - d : from + d;
+            bool miss = false;
+            const u8 m = material(a, miss);
+            if (miss || m != o.road || walls.between(o.x, o.y, o.x + sx * a, o.y + sy * a)) break;
+            reach = a;
+        }
+        (side < 0 ? o.lo : o.hi) = reach;
+    }
+    // The pit lane line (3), where it has left the line: 4 m or more across from it.
+    const AiCourse& k = *race.ai;
+    F px = k0, py = k0, pz = k0, ph = k0;
+    s32 pseg = -1;
+    if (k.resolve(3) == 3 && line_position(race, 3, dist, pseg, px, py, pz, ph)) {
+        const F a = ((px - o.x) * sx + (py - o.y) * sy) * kHalf;
+        const F two = F::raw(0x40000000);
+        if (two < a && a < o.hi) o.hi = a;
+        if (a < -two && o.lo < a) o.lo = a;
+    }
+    return true;
+}
+} // namespace
+
+bool made_grid_slot(const StartRace& race, int slot, s32& seg, F& x, F& y, F& z, F& heading) {
+    const std::vector<CourseQuery::Slot>& grid = race.course->grid();
+    const int n = int(grid.size());
+    if (race.ai->resolve(6) == -1 || n == 0 || slot < n) return false;
+    const F lap = race.course->lap_length(), two = F::raw(0x40000000);
+    struct Place {
+        F dist, lat, share; // race distance; across from the line; across the road, 0 its left reach .. 1 its right
+    };
+    std::vector<Place> places;
+    u8 road = 0;
+    for (const CourseQuery::Slot& g : grid) {
+        // At the place's progress on the checkpoints, then moved on by what is left along the line, where the checkpoints do
+        // not stand square to it.
+        Ground at;
+        at.x = g.x, at.h = g.y, at.z = g.z, at.seg = -1;
+        race.course->ground(at);
+        if (places.empty()) road = at.material;
+        F d = race.course->progress(g.x, g.y, g.z, at.seg), lat = k0;
+        for (int pass = 0; pass < 3; ++pass) {
+            F px, py, pz, h;
+            s32 s = -1;
+            if (!line_position(race, 6, d, s, px, py, pz, h)) return false;
+            const F dx = g.x - px, dy = -g.z - py, sh = ee::sin(h), ch = ee::cos(h);
+            lat = dx * ch + dy * sh;
+            if (pass < 2) d = d + (dx * -sh + dy * ch);
+        }
+        Across o;
+        if (!road_across(race, d, road, o)) return false;
+        F share = kHalf;
+        if (k1 < o.hi - o.lo) share = (lat - o.lo) / (o.hi - o.lo);
+        if (share < k0) share = k0;
+        if (k1 < share) share = k1;
+        if (lap * kHalf < d) d = d - lap;
+        places.push_back({d, lat, share});
+    }
+    std::stable_sort(places.begin(), places.end(), [](const Place& a, const Place& b) { return b.dist < a.dist; });
+    F gap = F::raw(0x41800000); // 16 m
+    if (n >= 3) {
+        F sum = k0;
+        for (int i = 0; i + 2 < n; ++i) sum = sum + (places[size_t(i)].dist - places[size_t(i + 2)].dist);
+        gap = sum / int_to_f(n - 2);
+    } else if (n == 2)
+        gap = (places[0].dist - places[1].dist) * two;
+    if (gap < F::raw(0x40800000) || F::raw(0x42700000) < gap) gap = F::raw(0x41800000); // (4 .. 60 m)
+    F step = gap * kHalf;
+    if (step < F::raw(0x40C00000)) step = F::raw(0x40C00000); // (6 .. 8 m)
+    if (F::raw(0x41000000) < step) step = F::raw(0x41000000);
+    // The lane: the place the made one copies, a row ahead, against the two lanes' middle.
+    const int e = slot - n;
+    const Place& last = places[size_t(n - 1)];
+    F centre = last.share, offset = k0; // (the middle's share of the road; metres from it)
+    if (n >= 2) {
+        const Place& other = places[size_t(n - 2)];
+        centre = (last.share + other.share) * kHalf;
+        offset = ((e % 2 ? last.lat - other.lat : other.lat - last.lat)) * kHalf;
+    }
+    const F dist = last.dist - int_to_f(e + 1) * step;
+    if (dist < -(lap - F::raw(0x41F00000))) return false; // (30 m short of a lap behind)
+    Across o;
+    if (!road_across(race, dist, road, o)) return false;
+    const F fx = -ee::sin(o.h), fy = ee::cos(o.h), sx = ee::cos(o.h), sy = ee::sin(o.h);
+    // The lanes within the road, a car's half width (1.2 m) in from either reach: their middle moved in, and closed up where
+    // there is no room.
+    const F margin = F::raw(0x3F99999A), mid = (o.lo + o.hi) * kHalf;
+    F room = (o.hi - o.lo) * kHalf - margin; // (either way of the road's middle)
+    if (room < k0) room = k0;
+    if (room < offset) offset = room;
+    if (offset < -room) offset = -room;
+    F want = o.lo + centre * (o.hi - o.lo);
+    const F reach = room - (offset < k0 ? -offset : offset);
+    if (want < mid - reach) want = mid - reach;
+    if (mid + reach < want) want = mid + reach;
+    want = want + offset;
+    const Walls walls(race, o.x, o.y, F::raw(0x42480000), o.seg); // (50 m)
+    // The line's points beside the place and 10, 20 and 30 m on, with the way across the road there.
+    struct Along {
+        F x, y, sx, sy;
+    };
+    std::array<Along, 4> on{};
+    on.fill({o.x, o.y, sx, sy});
+    if (!walls.lines.empty())
+        for (size_t c = 1; c < on.size(); ++c) {
+            F ax = o.x, ay = o.y, az = o.z, ah = o.h;
+            s32 aseg = o.seg;
+            line_position(race, 6, dist + int_to_f(s32(c)) * F::raw(0x41200000), aseg, ax, ay, az, ah);
+            on[c] = {ax, ay, ee::cos(ah), ee::sin(ah)};
+        }
+    auto at = [&](F along, F across, F& px, F& py) { px = o.x + fx * along + sx * across, py = o.y + fy * along + sy * across; };
+    // No wall through the place's outline (4.5 m long, 2 m wide, with kWallRoom round it), nor between the line and the
+    // place's far side, beside it and on ahead.
+    auto clear_of_walls = [&](F lat) {
+        if (walls.lines.empty()) return true;
+        const F half = k1 + kWallRoom, back = F::raw(0xC0900000) - kWallRoom;
+        const std::array<std::array<F, 2>, 4> corner = {{{kWallRoom, lat - half}, {kWallRoom, lat + half}, {back, lat + half}, {back, lat - half}}};
+        F px, py, qx, qy;
+        for (size_t c = 0; c < 4; ++c) {
+            at(corner[c][0], corner[c][1], px, py), at(corner[(c + 1) & 3][0], corner[(c + 1) & 3][1], qx, qy);
+            if (walls.between(px, py, qx, qy)) return false;
+        }
+        const F side = lat < k0 ? lat - half : lat + half;
+        for (const Along& l : on)
+            if (walls.between(l.x, l.y, l.x + l.sx * side, l.y + l.sy * side)) return false;
+        return true;
+    };
+    // Its nose and tail, middle and corners, on the road's surface.
+    auto on_road = [&](F lat) {
+        for (const F along : {k0, F::raw(0xC0900000)})
+            for (const F across : {k0, F::raw(0xBF800000), k1}) {
+                F px, py;
+                at(along, lat + across, px, py);
+                bool miss = false;
+                if (ground_material(race, px, py, o.z + k1, o.seg, miss) != o.road || miss) return false;
+            }
+        return true;
+    };
+    static const F kShares[] = {k1, F::raw(0x3F400000), kHalf, F::raw(0x3E800000), k0};
+    F lat = k0;
+    if (!o.miss) {
+        bool placed = false;
+        for (const F s : kShares) {
+            lat = mid + (want - mid) * s;
+            if ((placed = clear_of_walls(lat) && on_road(lat))) break;
+        }
+        // Nowhere whole on the road: clear of the walls at least, else on the line.
+        for (size_t i = 0; !placed && i < std::size(kShares); ++i) {
+            lat = mid + (want - mid) * kShares[i];
+            placed = clear_of_walls(lat);
+        }
+        if (!placed) lat = k0;
+    }
+    x = o.x + lat * sx, y = o.y + lat * sy, heading = o.h;
+    s32 sg = o.seg;
+    bool m = false;
+    z = road_height(*race.course, sg, m, x, y, o.z + k1);
+    if (m) {
+        sg = -1;
+        z = road_height(*race.course, sg, m, x, y, o.z + k1);
+        if (m) z = o.z;
+    }
+    seg = sg;
+    return true;
+}
+
+// MadeGrid::V080: made_grid_slot as v0.8.0 had it, for the replays recorded on it. The places measured against the line's
+// nearest point record (on a long straight or beside another part of the lap not abreast of them), each at its share of the
+// road's width; no wall looked at.
+namespace {
 // How far the road (the line's own surface, `road`) reaches across from the line's point (x, y), heading h, either way: lo
-// (<= 0) and hi (>= 0), metres along (cos h, sin h).
-void road_span(const StartRace& race, F x, F y, F z, F h, s32 hint, u8 road, F& lo, F& hi) {
+// (<= 0) and hi (>= 0), metres along (cos h, sin h). (v0.8.0)
+void v080_road_span(const StartRace& race, F x, F y, F z, F h, s32 hint, u8 road, F& lo, F& hi) {
     const F sx = ee::cos(h), sy = ee::sin(h);
     for (int side = -1; side <= 1; side += 2) {
         F reach = k0;
@@ -328,7 +565,7 @@ void road_span(const StartRace& race, F x, F y, F z, F h, s32 hint, u8 road, F& 
 }
 } // namespace
 
-bool made_grid_slot(const StartRace& race, int slot, s32& seg, F& x, F& y, F& z, F& heading) {
+bool v080_made_grid_slot(const StartRace& race, int slot, s32& seg, F& x, F& y, F& z, F& heading) {
     const AiCourse& k = *race.ai;
     const int l = k.resolve(6);
     const std::vector<CourseQuery::Slot>& grid = race.course->grid();
@@ -360,7 +597,7 @@ bool made_grid_slot(const StartRace& race, int slot, s32& seg, F& x, F& y, F& z,
         bool miss = false;
         const u8 road = ground_material(race, px, py, q.height + k1, q.seg, miss);
         F lo = k0, hi = k0;
-        if (!miss) road_span(race, px, py, q.height, q.heading, q.seg, road, lo, hi);
+        if (!miss) v080_road_span(race, px, py, q.height, q.heading, q.seg, road, lo, hi);
         F share = kHalf;
         if (k1 < hi - lo) share = (across - lo) / (hi - lo);
         if (share < k0) share = k0;
@@ -389,7 +626,7 @@ bool made_grid_slot(const StartRace& race, int slot, s32& seg, F& x, F& y, F& z,
     bool miss = false;
     const u8 road = ground_material(race, lx, ly, lz + k1, lseg, miss);
     F lo = k0, hi = k0;
-    if (!miss) road_span(race, lx, ly, lz, lh, lseg, road, lo, hi);
+    if (!miss) v080_road_span(race, lx, ly, lz, lh, lseg, road, lo, hi);
     // The place's share of the road, a car's half width (1.2 m) in from either reach.
     const F margin = F::raw(0x3F99999A), mid = (lo + hi) * kHalf;
     F want = lo + share * (hi - lo);
@@ -851,7 +1088,7 @@ Record start_car(const StartRace& race, const StartEntry& e, int i, Car::Later* 
     // Our bigger fields: a slot past the table made along the main line (made_grid_slot; none there: a table slot, cars
     // side by side).
     const int table = int(race.course->grid().size());
-    const bool made = race.made_grid && e.grid_slot >= table;
+    const bool made = race.made_grid != MadeGrid::Off && e.grid_slot >= table;
     if (u32(e.grid_slot) >= (made ? kMaxCars : kGt3Cars)) throw std::runtime_error("race start: a grid slot outside the grid");
     const int slot = made && table > 0 ? e.grid_slot % table : e.grid_slot;
     const CourseQuery::Slot s = race.course->slot(slot, race.road);
@@ -860,7 +1097,8 @@ Record start_car(const StartRace& race, const StartEntry& e, int i, Car::Later* 
     if (made) {
         s32 seg = -1;
         F mx, my, mz, mh;
-        if (made_grid_slot(race, e.grid_slot, seg, mx, my, mz, mh)) x = mx, y = my, z = mz, heading = mh;
+        const auto place = race.made_grid == MadeGrid::V080 ? v080_made_grid_slot : made_grid_slot;
+        if (place(race, e.grid_slot, seg, mx, my, mz, mh)) x = mx, y = my, z = mz, heading = mh;
     }
     // Virtual 25.
     s32 mode = 0, dist = 0, speed = 0;
@@ -898,7 +1136,13 @@ Record start_car(const StartRace& race, const StartEntry& e, int i, Car::Later* 
     }
     case Conductor::FreePractice: // 0x1F2070: car 0 in its pit box, the others on the line behind at 120 km/h
         if (i == 0) mode = 6;
-        else mode = 5, dist = -(200 * i + 300), speed = 120;
+        else {
+            // (a bigger field of ours than the lap holds at 200 m a car: closer together, the last 100 m short of a lap behind)
+            s32 apart = 200;
+            if (const s32 room = ee::to_int(race.course->lap_length()) - 400; race.made_grid == MadeGrid::On && race.cars > 1 && room < apart * (race.cars - 1))
+                apart = std::max(room / (race.cars - 1), s32(1));
+            mode = 5, dist = -(apart * i + 300), speed = 120;
+        }
         break;
     case Conductor::Battle2P: // 0x1F0010: with a handicap, car 0 and the others apart on the line at the event's speed
         if (race.data && race.data->behaviour().rule(Rule::BattleStart) == Program::NtscJ && race.cars != 2) break; // NTSC-J's 0x1ED888: two cars only

@@ -31,9 +31,17 @@
 #include <span>
 #include <vector>
 
+namespace gt3r::sim::collide::exact {
+class Course;
+}
+
 namespace gt3r::sim::exact {
 
 using Record = std::array<u8, kCarSize>;
+
+// How grid slots past the course's table are made (made_grid_slot): not at all (GT3), as v0.8.0 made them (its replays; the
+// value a race record keeps is 1), or as races make them now.
+enum class MadeGrid : u8 { Off, V080, On };
 
 // What every car's start reads of the race.
 struct StartRace {
@@ -60,7 +68,8 @@ struct StartRace {
     u32 road = 0;
     // Not GT3's: a grid slot at or past the course's grid table is made along the course's main line (made_grid_slot) instead
     // of read from what follows the table. Our own bigger fields only (RaceSetup::made_grid); GT3's races read the table.
-    bool made_grid = false;
+    MadeGrid made_grid = MadeGrid::Off;
+    const collide::exact::Course* walls = nullptr; // the course's walls, which the made places keep clear of
 };
 
 // A race entry (the race info's entry list, i).

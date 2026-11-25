@@ -35,6 +35,9 @@ bool RaceScreen::build_exact_solo(App& app) {
     if (*kind == sim::exact::Conductor::FreePractice) {
         cfg.opponents = race_opponents_;
         cfg.max_opponents = int(race_opponents_.size());
+        cfg.made_grid = own_field();
+        cfg.opponent_skills = race_opponent_skills_;
+        cfg.no_rubber_band = race_no_rubber_band_;
         cfg.grid_by_power = field_grid_by_power_;
         cfg.grid_hp = app.vfs() && language_units(app.vfs()->language()).power_hp;
         cfg.grid_slots = practice_grid_;
