@@ -37,18 +37,27 @@ struct Tri {
     render::Vec3 a, b, c;
 };
 
-std::vector<render::Vec3> clipped(const std::vector<render::Vec3>& poly, const render::Vec3& n, float d) {
-    std::vector<render::Vec3> out;
-    if (poly.empty()) return out;
-    render::Vec3 a = poly.back();
+// A triangle clipped by up to four planes, in fixed arrays: the profile clips every body triangle for every
+// mount, and a std::vector per clip allocated each time. Each input vertex adds at most two, so
+// 3 -> 6 -> 12 -> 24 -> 48 bounds it whatever the rounding.
+struct Poly {
+    render::Vec3 v[48];
+    int n = 0;
+};
+
+// The part of `in` where dot(v, n) + d >= 0.
+void clip(const Poly& in, Poly& out, const render::Vec3& n, float d) {
+    out.n = 0;
+    if (in.n == 0) return;
+    render::Vec3 a = in.v[in.n - 1];
     float da = render::dot(a, n) + d;
-    for (const render::Vec3& b : poly) {
+    for (int i = 0; i < in.n; ++i) {
+        const render::Vec3& b = in.v[i];
         const float db = render::dot(b, n) + d;
-        if ((da >= 0) != (db >= 0)) out.push_back(a + (b - a) * (da / (da - db)));
-        if (db >= 0) out.push_back(b);
+        if ((da >= 0) != (db >= 0)) out.v[out.n++] = a + (b - a) * (da / (da - db));
+        if (db >= 0) out.v[out.n++] = b;
         a = b, da = db;
     }
-    return out;
 }
 
 bool skip_mesh(const scene::Mesh& m) {
@@ -114,13 +123,14 @@ HoodCameraProfile make_hood_camera_profile(const scene::Model& body, float wheel
         const float offset = kForwardMin + float(i) * kForwardStep;
         const float z = std::clamp(base - offset, z_lo, z_hi);
         float top = -std::numeric_limits<float>::infinity();
+        Poly p, q;
         for (const Tri& t : tris) {
-            std::vector<render::Vec3> poly{t.a, t.b, t.c};
-            poly = clipped(poly, {1, 0, 0}, strip);
-            poly = clipped(poly, {-1, 0, 0}, strip);
-            poly = clipped(poly, {0, 0, 1}, -front_z);
-            poly = clipped(poly, {0, 0, -1}, z);
-            for (const render::Vec3& v : poly) top = std::max(top, v.y);
+            p.v[0] = t.a, p.v[1] = t.b, p.v[2] = t.c, p.n = 3;
+            clip(p, q, {1, 0, 0}, strip);
+            clip(q, p, {-1, 0, 0}, strip);
+            clip(p, q, {0, 0, 1}, -front_z);
+            clip(q, p, {0, 0, -1}, z);
+            for (int k = 0; k < p.n; ++k) top = std::max(top, p.v[k].y);
         }
         profile.surface_y[i] = top;
         profile.eyes[i] = {0, top + kClearance, z};
@@ -138,13 +148,14 @@ HoodCameraProfile make_hood_camera_profile(const scene::Model& body, float wheel
     for (size_t i = 0; i < HoodCameraProfile::kMountCount; ++i) {
         const render::Vec3 eye = profile.eyes[i];
         float alpha = std::numeric_limits<float>::infinity();
+        Poly p, q;
         for (const Tri& t : tris) {
-            std::vector<render::Vec3> poly{t.a, t.b, t.c};
-            poly = clipped(poly, {0, 0, -1}, eye.z - kTiltDepth);
-            poly = clipped(poly, {-1, 0, -tx}, tx * eye.z);
-            poly = clipped(poly, {1, 0, -tx}, tx * eye.z);
-            for (const render::Vec3& v : poly)
-                if (const float a = std::atan2(eye.y - v.y, eye.z - v.z); std::isfinite(a) && a >= 0)
+            p.v[0] = t.a, p.v[1] = t.b, p.v[2] = t.c, p.n = 3;
+            clip(p, q, {0, 0, -1}, eye.z - kTiltDepth);
+            clip(q, p, {-1, 0, -tx}, tx * eye.z);
+            clip(p, q, {1, 0, -tx}, tx * eye.z);
+            for (int k = 0; k < q.n; ++k)
+                if (const float a = std::atan2(eye.y - q.v[k].y, eye.z - q.v[k].z); std::isfinite(a) && a >= 0)
                     alpha = std::min(alpha, a);
         }
         profile.pitch_down[i] = std::isfinite(alpha) ? std::clamp(alpha - kTiltMargin, 0.0f, kTiltMax) : 0.0f;

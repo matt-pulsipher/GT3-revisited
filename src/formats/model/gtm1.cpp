@@ -1418,9 +1418,13 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         };
         std::set<Corners> reflected; // the triangles reflection passes drew (frame alpha 0x80)
         int pass = -1;               // the draw being emitted (Written::pass)
-        // Base-pass vertex alpha by position, for the road sheen mask.
+        // Base-pass vertex alpha by position, for the road sheen mask. Made from these draws the first time a pass
+        // needs it: most nodes have no sheen, and making it decodes each of their packets once more.
         std::map<std::array<float, 3>, u32> base_alpha;
-        if (opt.road_sheen)
+        bool base_alpha_made = false;
+        auto make_base_alpha = [&] {
+            if (base_alpha_made) return;
+            base_alpha_made = true;
             for (const Draw& d : draws) {
                 if ((g.chunks[d.chunk].flags & 0x1F) == 4 || d.fb_mask) continue; // not the sheen itself
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
@@ -1431,6 +1435,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                     for (const scene::Vertex& v : bp.vertices) base_alpha[{v.pos[0], v.pos[1], v.pos[2]}] = v.color >> 24;
                 }
             }
+        };
         // static_env_maps: the last alpha-only textured pass (a destination-alpha mask) as a
         // white texture carrying the mask alpha plus one triangle of its geometry for the
         // planar position -> UV mapping.
@@ -1536,6 +1541,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 // Laguna / Rome road base passes) are ordinary opaque geometry.
                 const bool sheen = opt.road_sheen && kind == 4;
                 const bool dest_add = opt.road_sheen && (sheen || (d.alpha_mode == 0x58 && dp.prim.abe));
+                if (dest_add) make_base_alpha();
                 // Cars: specular passes drawn with ALPHA 0x58 add over the body weighted by the
                 // alpha its pass wrote (the per-vertex Written weight): the kind-4 glints and the lit
                 // textured overlays lit by their specular term only (Ma = Md = 0: the Calsonic's

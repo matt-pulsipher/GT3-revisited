@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <unordered_set>
 
 namespace gt3r::render {
 
@@ -86,13 +85,24 @@ void assemble(const std::vector<scene::Mesh>& meshes, size_t texture_count, bool
         // Unique edges for the wireframe view.
         info.line_first = u32(indices.size()) - info.index_offset;
         if (lines) {
-            std::unordered_set<u64> edges;
-            size_t tri_count = indices.size() - info.index_offset;
-            for (size_t i = info.index_offset; i < info.index_offset + tri_count; i += 3)
+            // The mesh's edges, each once, in the order the triangles first name them, through an open-addressing
+            // table (an unordered_set allocated a node per edge). A mesh has no more edges than indices, so the
+            // table, at least 1.5 slots per index, is never more than two thirds full.
+            const size_t index_count = indices.size() - info.index_offset;
+            int bits = 4;
+            while ((size_t(1) << bits) < index_count + index_count / 2 + 16) ++bits;
+            std::vector<u64> table(size_t(1) << bits, ~u64(0)); // ~0: empty (no edge joins vertex 0xFFFFFFFF to itself)
+            const size_t mask = table.size() - 1;
+            for (size_t i = info.index_offset; i < info.index_offset + index_count; i += 3)
                 for (int e = 0; e < 3; ++e) {
                     u32 a = indices[i + e], b = indices[i + (e + 1) % 3];
                     if (a > b) std::swap(a, b);
-                    if (edges.insert((u64(a) << 32) | b).second) indices.insert(indices.end(), {a, b});
+                    const u64 key = (u64(a) << 32) | b;
+                    size_t h = size_t((key * 0x9E3779B97F4A7C15ull) >> (64 - bits));
+                    while (table[h] != ~u64(0) && table[h] != key) h = (h + 1) & mask;
+                    if (table[h] == key) continue;
+                    table[h] = key;
+                    indices.insert(indices.end(), {a, b});
                 }
         }
         info.line_count = u32(indices.size()) - info.index_offset - info.line_first;
