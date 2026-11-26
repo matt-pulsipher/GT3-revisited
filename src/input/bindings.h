@@ -57,13 +57,14 @@ struct BindingOptions {
     float threshold = 0.0f;  // digital press threshold for analog -> button (0 = auto)
 };
 
-// Where a binding writes to.
+// Where a binding writes to. Extra: one of an app's own controls (input/extra_controls.h).
 struct PadTarget {
-    enum class Kind : u8 { None, Button, Axis };
+    enum class Kind : u8 { None, Button, Axis, Extra };
     Kind kind = Kind::None;
     PadButton button = PadButton::Cross;
     PadAxis axis = PadAxis::LX;
     InputSource::Half half = InputSource::Half::Full; // for axes: LX+ / LX-
+    u8 extra = 0;                                     // Extra: 0 .. kExtraControlCount - 1
 
     std::string to_string() const;
     static bool parse(std::string_view token, PadTarget& out);

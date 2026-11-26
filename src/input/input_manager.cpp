@@ -1,4 +1,5 @@
 #include "input/input_manager.h"
+#include "input/extra_controls.h"
 
 #include "base/config.h"
 #include "base/log.h"
@@ -72,7 +73,9 @@ std::string initial_race_layout(const IniDocument& cfg, const std::string& sec, 
 
 // The pad's layout, keyboard included: any_device_pad() reads every controller and the keyboard with it.
 const Profile& pad_layout(bool vr_pad = false) {
-    static const Profile prof = make_preset(pad_preset()), vr = make_preset("quest");
+    static Profile prof, vr;
+    static std::optional<unsigned> made; // (the extra controls' defaults they hold: extra_controls_generation)
+    if (made != extra_controls_generation()) made = extra_controls_generation(), prof = make_preset(pad_preset()), vr = make_preset("quest");
     return vr_pad ? vr : prof;
 }
 
@@ -822,6 +825,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
     float button_val[kPadButtonCount] = {};
     bool button_digital[kPadButtonCount] = {};
     float axis_val[kPadAxisCount] = {};
+    u8 extra = 0; // the app's own controls (input/extra_controls.h)
     if (ramps.size() != prof.bindings.size()) ramps.assign(prof.bindings.size(), 0.0f);
     const float steer_deadzone = race ? steering_deadzone(p) : 0.0f;
 
@@ -863,7 +867,10 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
             v = cur;
         }
 
-        if (b.target.kind == PadTarget::Kind::Button) {
+        if (b.target.kind == PadTarget::Kind::Extra) {
+            const float thr = o.threshold > 0.0f ? o.threshold : !b.source.is_analog() ? 0.0f : race && o.pedal ? kRacePedalPress : kPressThreshold;
+            if (std::clamp(v, 0.0f, 1.0f) > thr && b.target.extra < 8) extra = u8(extra | (1u << b.target.extra));
+        } else if (b.target.kind == PadTarget::Kind::Button) {
             size_t i = static_cast<size_t>(b.target.button);
             float bv = std::clamp(v, 0.0f, 1.0f);
             button_val[i] = std::max(button_val[i], bv);
@@ -890,6 +897,7 @@ void InputManager::evaluate_profile(const Player& p, const Device* dev, bool key
     }
 
     s.connected = dev != nullptr || p.keyboard || p.overlay.connected;
+    s.extra = extra;
     s.buttons = 0;
     for (size_t i = 0; i < kPadButtonCount; ++i) {
         bool pressed = button_digital[i];
@@ -1069,6 +1077,7 @@ PadState merge_pads(const std::vector<PadState>& pads) {
     for (const PadState& p : pads) {
         out.connected |= p.connected;
         out.buttons |= p.buttons;
+        out.extra |= p.extra;
         for (size_t i = 0; i < kPadButtonCount; ++i) out.pressure[i] = std::max(out.pressure[i], p.pressure[i]);
         for (size_t i = 0; i < kPadAxisCount; ++i) {
             const PadAxis a = static_cast<PadAxis>(i);

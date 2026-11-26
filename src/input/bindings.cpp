@@ -1,4 +1,5 @@
 #include "input/bindings.h"
+#include "input/extra_controls.h"
 
 #include "base/config.h"
 
@@ -171,11 +172,16 @@ bool InputSource::parse(std::string_view tok, InputSource& out) {
 std::string PadTarget::to_string() const {
     if (kind == Kind::Button) return std::string(pad_button_name(button));
     if (kind == Kind::Axis) return std::string(pad_axis_name(axis)) + half_suffix(half);
+    if (kind == Kind::Extra) return "Extra" + std::to_string(extra + 1);
     return "none";
 }
 
 bool PadTarget::parse(std::string_view tok, PadTarget& out) {
     out = PadTarget{};
+    if (tok.size() == 6 && tok.substr(0, 5) == "Extra" && tok[5] >= '1' && tok[5] < char('1' + kExtraControlCount)) {
+        out = extra_control(size_t(tok[5] - '1'));
+        return true;
+    }
     if (auto b = pad_button_from_name(tok)) {
         out.kind = Kind::Button;
         out.button = *b;
@@ -540,7 +546,49 @@ void add_modern_race_keyboard(Profile& p) {
     p.add("RY+", "key.PageDown");
 }
 
+// The app's defaults for its extra controls (add_extra_control_default).
+struct ExtraDefault {
+    size_t control;
+    std::string preset, sources;
+    bool race;
+};
+std::vector<ExtraDefault>& extra_defaults() {
+    static std::vector<ExtraDefault> v;
+    return v;
+}
+unsigned extra_generation = 0;
+std::array<std::string, kExtraControlCount>& extra_names() {
+    static std::array<std::string, kExtraControlCount> v;
+    return v;
+}
+// The extra controls' defaults of a layout: its own, and the keyboard's in every layout (as its keys are).
+void add_extra_defaults(Profile& p, std::string_view preset, bool race) {
+    for (const ExtraDefault& d : extra_defaults())
+        if (d.race == race && (d.preset == preset || d.preset == "keyboard"))
+            p.add(extra_control(d.control).to_string(), d.sources);
+}
+
 } // namespace
+
+PadTarget extra_control(size_t i) {
+    PadTarget t;
+    t.kind = PadTarget::Kind::Extra;
+    t.extra = u8(std::min(i, kExtraControlCount - 1));
+    return t;
+}
+void name_extra_control(size_t i, std::string_view name) {
+    if (i < kExtraControlCount) extra_names()[i] = std::string(name);
+}
+std::string_view extra_control_name(size_t i) { return i < kExtraControlCount ? std::string_view(extra_names()[i]) : std::string_view(); }
+void add_extra_control_default(size_t i, std::string_view preset, bool race, std::string_view sources) {
+    if (i < kExtraControlCount) extra_defaults().push_back({i, std::string(preset), std::string(sources), race}), ++extra_generation;
+}
+void clear_extra_controls() {
+    if (!extra_defaults().empty()) ++extra_generation;
+    extra_defaults().clear();
+    for (std::string& n : extra_names()) n.clear();
+}
+unsigned extra_controls_generation() { return extra_generation; }
 
 Profile make_preset(std::string_view name) {
     Profile p;
@@ -558,6 +606,7 @@ Profile make_preset(std::string_view name) {
         p.add("L2", "pad.paddle2");
     }
     add_keyboard(p);
+    add_extra_defaults(p, name, false);
     return p;
 }
 
@@ -579,6 +628,7 @@ Profile make_race_preset(std::string_view layout, std::string_view device_preset
         add_modern_race_pad(p);
     }
     add_modern_race_keyboard(p);
+    add_extra_defaults(p, device_preset, true);
     return p;
 }
 
@@ -712,19 +762,23 @@ Profile player2_race() {
 // keyboard's around I / J / K / L for player 2.
 const Profile& layout(DeviceKind kind, bool race, BindingSet s, bool player2, bool vr_pad) {
     static const Profile none;
-    static const Profile vr_menu = part_of(make_preset("quest"), BindingSet::Controller);
-    static const std::array<Profile, 8> layouts = [] {
+    static Profile vr_menu;
+    static std::array<Profile, 8> layouts;
+    static std::optional<unsigned> made; // (the extra controls' defaults they hold: extra_controls_generation)
+    if (made != extra_controls_generation()) {
+        made = extra_controls_generation();
+        vr_menu = part_of(make_preset("quest"), BindingSet::Controller);
         auto menu = [](DeviceKind k) { return make_preset(device_kind_preset(k)); };
         auto racing = [](DeviceKind k) { return make_race_preset("modern", device_kind_preset(k)); };
-        return std::array<Profile, 8>{part_of(menu(DeviceKind::Pad), BindingSet::Controller),
-                                      part_of(menu(DeviceKind::Wheel), BindingSet::Controller),
-                                      part_of(menu(DeviceKind::Keyboard), BindingSet::Keyboard),
-                                      part_of(racing(DeviceKind::Pad), BindingSet::Controller),
-                                      part_of(racing(DeviceKind::Wheel), BindingSet::Controller),
-                                      part_of(racing(DeviceKind::Keyboard), BindingSet::Keyboard),
-                                      player2_menu(),
-                                      player2_race()};
-    }();
+        layouts = {part_of(menu(DeviceKind::Pad), BindingSet::Controller),
+                   part_of(menu(DeviceKind::Wheel), BindingSet::Controller),
+                   part_of(menu(DeviceKind::Keyboard), BindingSet::Keyboard),
+                   part_of(racing(DeviceKind::Pad), BindingSet::Controller),
+                   part_of(racing(DeviceKind::Wheel), BindingSet::Controller),
+                   part_of(racing(DeviceKind::Keyboard), BindingSet::Keyboard),
+                   player2_menu(),
+                   player2_race()};
+    }
     if (s == BindingSet::Keyboard) return layouts[player2 ? (race ? 7 : 6) : (race ? 5 : 2)];
     if (kind == DeviceKind::Keyboard || kind == DeviceKind::Joystick) return none; // no defaults
     if (vr_pad && kind == DeviceKind::Pad && !race) return vr_menu; // (its race layout is any pad's)
