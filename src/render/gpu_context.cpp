@@ -91,6 +91,8 @@ bool GpuContext::open_sdl_gpu(SDL_Window* window, const GpuOptions& options) {
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
         SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, aniso);
+        if (!options.pipeline_cache.empty())
+            SDL_SetStringProperty(props, "SDL.gpu.device.create.vulkan.pipeline_cache_file", options.pipeline_cache.c_str());
         device_ = SDL_CreateGPUDeviceWithProperties(props);
         SDL_DestroyProperties(props);
         if (device_) {

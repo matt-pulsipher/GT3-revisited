@@ -208,6 +208,7 @@ bool App::init(int argc, char** argv) {
     if (auto v = config_.get("video", "vsync")) gpu_opts.vsync = *v != "0";
     if (windowless_) gpu_opts.vsync = false; // nothing presented: --pace paces the frames
     if (auto v = config_.get("video", "gpu_debug")) gpu_opts.debug = *v == "1";
+    gpu_opts.pipeline_cache = data_dir_ + "vulkan_pipelines.cache";
     show_fps_ = to_lower(config_.get("video", "show_fps").value_or("off")) == "on";
     gamma_ = render::parse_gamma(config_.get("video", "gamma").value_or(""));
     // [video] render_scale = auto | 0.5..4.0 (auto: native on desktop, capped on mobile)

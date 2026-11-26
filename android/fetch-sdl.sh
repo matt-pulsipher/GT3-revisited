@@ -19,3 +19,7 @@ fi
 if [ ! -d third_party/SDL ]; then
   git clone --depth 1 --branch "$TAG" https://github.com/libsdl-org/SDL.git third_party/SDL
 fi
+# SDL's Vulkan device with a pipeline cache file (sdl-pipeline-cache.patch, GpuOptions::pipeline_cache).
+if ! git -C third_party/SDL apply --reverse --check ../../sdl-pipeline-cache.patch 2>/dev/null; then
+  git -C third_party/SDL apply ../../sdl-pipeline-cache.patch
+fi

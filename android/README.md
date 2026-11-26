@@ -20,6 +20,11 @@ checkout supplies both SDL's Java glue (`org.libsdl.app`) and the native
 library, so the two always match. The engine's root `CMakeLists.txt` builds
 `libmain.so`, which `GT3Activity` loads.
 
+It applies one change to SDL, `sdl-pipeline-cache.patch`: the Vulkan device
+keeps the pipelines it builds in a file in the user data folder
+(`vulkan_pipelines.cache`), so later starts skip building them again. A file
+from another GPU or driver version is not used.
+
 ## Using it
 
 1. Copy your GT3 `.iso` or `.chd` to the device (or keep it on an SD card or USB drive). Create the CHD from the ISO with `chdman createdvd`.
