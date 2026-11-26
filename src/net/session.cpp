@@ -1,5 +1,6 @@
 #include "net/session.h"
 
+#include "base/app_identity.h"
 #include "base/log.h"
 #include "base/sha256.h"
 #include "gt3r_version.h"
@@ -57,7 +58,7 @@ std::string protocol_mismatch(u16 theirs) {
     const std::string t = std::to_string(theirs), h = std::to_string(kProtocolVersion);
     if (theirs < kProtocolVersion)
         return "update required: the host has a newer version of the game (online protocol " + h + ", yours " + t +
-               "). Please update GT3 Revisited to play online";
+               "). Please update " + app_identity().name + " to play online";
     return "the host has an older version of the game (online protocol " + h + ", yours " + t + "): the host needs to update";
 }
 

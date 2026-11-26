@@ -2,6 +2,7 @@
 
 #include "xr/xr_internal.h"
 
+#include "base/app_identity.h"
 #include "base/config.h"
 #include "base/log.h"
 #include "render/shaders/generated/present_frag.h"
@@ -137,7 +138,7 @@ public:
         gipa_ = reinterpret_cast<PFN_xrGetInstanceProcAddr>(SDL_OpenXR_GetXrGetInstanceProcAddr());
         PFN_xrCreateInstance create_instance = nullptr;
         auto ci = xr_init<XrInstanceCreateInfo>(XR_TYPE_INSTANCE_CREATE_INFO);
-        std::strcpy(ci.applicationInfo.applicationName, "GT3 Revisited");
+        std::snprintf(ci.applicationInfo.applicationName, sizeof(ci.applicationInfo.applicationName), "%s", app_identity().name.c_str());
         ci.applicationInfo.apiVersion = XR_API_VERSION_1_0;
         const XrResult r = fn(XR_NULL_HANDLE, "xrCreateInstance", create_instance) ? create_instance(&ci, &inst_)
                                                                                    : XR_ERROR_RUNTIME_UNAVAILABLE;
@@ -288,8 +289,8 @@ bool Session::prepare_device(SDL_PropertiesID props, DeviceRequest& req) {
     SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_ENABLE_BOOLEAN, true);
     SDL_SetPointerProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_INSTANCE_POINTER, &req.instance);
     SDL_SetPointerProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_SYSTEM_ID_POINTER, &req.system);
-    SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_APPLICATION_NAME_STRING, "GT3 Revisited");
-    SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_ENGINE_NAME_STRING, "GT3 Revisited");
+    SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_APPLICATION_NAME_STRING, app_identity().name.c_str());
+    SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_ENGINE_NAME_STRING, app_identity().name.c_str());
     if (!req.names.empty()) {
         SDL_SetNumberProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_EXTENSION_COUNT_NUMBER, Sint64(req.names.size()));
         SDL_SetPointerProperty(props, SDL_PROP_GPU_DEVICE_CREATE_XR_EXTENSION_NAMES_POINTER, req.names.data());

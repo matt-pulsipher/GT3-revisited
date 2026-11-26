@@ -2,7 +2,8 @@
 
 // The game's log as a file a player can attach to a bug report: gt3r.log in the user data
 // folder, this session's, and gt3r.prev.log, the one before (the session that crashed, when
-// the player relaunches). Every SDL_Log line goes there as well as to the console or logcat:
+// the player relaunches); other apps on the engine name them after themselves
+// (base/app_identity.h). Every SDL_Log line goes there as well as to the console or logcat:
 // ours (base/log.h) and SDL's own.
 //
 // What reaches the file:
@@ -71,6 +72,8 @@ namespace log_file {
 // installs the crash handlers (platform/crash_handlers.h). Once per process; false (and the
 // console only) when the file can't be opened.
 bool open(const std::string& dir);
+// "gt3r.log", or the session before's "gt3r.prev.log" (the app's file stem).
+std::string file_name(bool previous);
 // The session ended normally: writes the pending repeats and "Closed normally", and closes.
 void close();
 std::string path(); // "" when no file is open
