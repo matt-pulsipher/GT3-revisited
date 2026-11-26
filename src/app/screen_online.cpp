@@ -174,7 +174,7 @@ public:
     OnlineScreen() : script_(read_script()) {}
 
     ~OnlineScreen() override {
-        if (editing_ && window_) SDL_StopTextInput(window_);
+        if (editing_) stop_text_input(window_);
         net::online().close(); // leaving the lobby ends the session
     }
 
@@ -305,6 +305,9 @@ public:
         return true;
     }
 
+    // (the game's keyboard is tapped directly: no pad over its keys)
+    TouchLayout touch_layout() const override { return keyboard_.is_open() ? TouchLayout::None : TouchLayout::Menu; }
+
     bool clickable(float x, float y) const override {
         if (page_ == Page::Cars) return car_picker_.clickable(x, y);
         if (page_ == Page::Courses) return course_picker_.clickable(x, y);
@@ -376,9 +379,6 @@ private:
         if (updates().required() && !script_.have) updates().open_dialog(net::UpdatePrompt::Required);
         app_ = &app;
         window_ = app.window();
-#if GT3R_XR
-        vr_ = app.xr() != nullptr;
-#endif
         if (app.vfs()) {
             db_.load(*app.vfs());
             car_picker_.set_database(db_);
@@ -1101,7 +1101,7 @@ private:
     enum class After { Nothing, JoinCode, JoinAddress } after_edit_ = After::Nothing;
     bool editing_ = false;
     std::string edit_backup_;
-    TextKeyboard keyboard_; // in VR (vr_)
+    TextKeyboard keyboard_; // in a headset, on a phone or tablet (use_game_keyboard)
     std::string& edit_target() {
         switch (edit_) {
         case Edit::Address: return address_;
@@ -1124,9 +1124,10 @@ private:
         after_edit_ = then;
         editing_ = true;
         edit_backup_ = edit_target();
-        if (window_) SDL_StartTextInput(window_);
+        const bool ours = app_ && use_game_keyboard(*app_);
+        start_text_input(window_, ours);
         static const char* const kTitles[] = {"Address", "Name", "Session code", "Relay server"};
-        if (vr_) keyboard_.open(kTitles[int(which)], then == After::Nothing ? "OK" : "Join", which == Edit::Code);
+        if (ours) keyboard_.open(kTitles[int(which)], then == After::Nothing ? "OK" : "Join", which == Edit::Code);
     }
 
     void end_edit(App& app, bool keep) {
@@ -1134,7 +1135,7 @@ private:
         if (edit_ == Edit::Name && name_.empty()) name_ = "Player";
         editing_ = false;
         keyboard_.close();
-        if (window_) SDL_StopTextInput(window_);
+        stop_text_input(window_);
         app.menu().suppress(); // the keys typed are no menu input
         remember(app);
         const After then = std::exchange(after_edit_, After::Nothing);
@@ -2596,7 +2597,6 @@ private:
 
     App* app_ = nullptr;
     SDL_Window* window_ = nullptr;
-    bool vr_ = false; // in a headset: no system keyboard, no D-pad (keyboard_ types)
     bool init_ = false, in_race_ = false;
     std::string core_problem_; // this machine cannot run online races (init)
     std::shared_ptr<const sim::exact::ProgramData> program_; // this disc's program tables (the cars' digests)

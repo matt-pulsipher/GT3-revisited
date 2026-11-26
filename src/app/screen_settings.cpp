@@ -1966,23 +1966,22 @@ private:
         press_ = Press{};
     }
 
-    // A camera's name: a real keyboard, the system's screen keyboard or a pad's letter-by-letter
-    // typing (text_field_event), our keyboard in a headset.
+    // A camera's name: a real keyboard or a pad's letter-by-letter typing (text_field_event), our
+    // keyboard in a headset or on a phone or tablet (use_game_keyboard).
     void begin_naming(App& app, int id, const std::string& name) {
         naming_.active = true;
         naming_.id = id;
         naming_.text = name;
         naming_.blink = 0;
-        if (SDL_Window* w = app.window()) SDL_StartTextInput(w);
-#if GT3R_XR
-        if (app.xr()) naming_.keyboard.open("Camera name", "OK", false); // (no system keyboard in a headset)
-#endif
+        const bool ours = use_game_keyboard(app);
+        start_text_input(app.window(), ours);
+        if (ours) naming_.keyboard.open("Camera name", "OK", false);
     }
 
     void end_naming(App& app, bool keep) {
         naming_.active = false;
         naming_.keyboard.close();
-        if (SDL_Window* w = app.window()) SDL_StopTextInput(w);
+        stop_text_input(app.window());
         app.menu().suppress(); // the keys typed are no menu input
         std::string name(trim(naming_.text));
         if (name.size() > race::CustomCamera::kMaxName) name.resize(race::CustomCamera::kMaxName);
@@ -2681,7 +2680,7 @@ private:
         std::string text;
         double blink = 0;                  // the caret's clock (s)
         UiRect field, clear, ok, cancel; // drawn last frame
-        TextKeyboard keyboard; // in VR
+        TextKeyboard keyboard; // in a headset, on a phone or tablet
         PointerInput pointer;
     } naming_;
     int rumble_player_ = 0;

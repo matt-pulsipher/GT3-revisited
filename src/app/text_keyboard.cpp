@@ -1,6 +1,10 @@
 #include "app/text_keyboard.h"
 
+#include "app/app.h"
+
 #include <SDL3/SDL_clipboard.h>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_stdinc.h>
 
 #include <algorithm>
@@ -205,6 +209,25 @@ TextKeyboard::Result text_field_event(const SDL_Event& e, std::string& s, bool p
         }
     }
     return R::None;
+}
+
+bool use_game_keyboard(App& app, bool via_pad) {
+#if GT3R_XR
+    if (app.xr()) return true;
+#endif
+    return via_pad || app.touch_ui();
+}
+
+void start_text_input(SDL_Window* window, bool game_keyboard, SDL_PropertiesID props) {
+    if (!window) return;
+    // SDL reads the hint as text input starts: "0" leaves the screen keyboard closed.
+    if (game_keyboard) SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+    else SDL_ResetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD);
+    SDL_StartTextInputWithProperties(window, props);
+}
+
+void stop_text_input(SDL_Window* window) {
+    if (window) SDL_StopTextInput(window);
 }
 
 } // namespace gt3r

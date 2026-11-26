@@ -187,6 +187,8 @@ public:
     xr::Session* xr() { return xr_.get(); }
     void set_xr_settings(const xr::Settings& s);
 #endif
+    // Phone and tablet sizing: mobile builds, or GT3R_PHONE on the desktop (not in a headset).
+    bool touch_ui() const { return touch_ui_; }
     const std::string& data_dir() const { return data_dir_; }
     std::string mods_dir() const { return data_dir_ + "mods"; }
     // The save folder (game/save_folder.h): [saves] folder, by default the user data folder;

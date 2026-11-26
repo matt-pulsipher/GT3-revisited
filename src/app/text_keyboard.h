@@ -1,9 +1,11 @@
 #pragma once
 
-// The keyboard the online start page types on in a VR headset (the session code, name, address
-// and relay server): no system keyboard opens over an immersive app, and the Touch controllers
-// have no D-pad for the page's letter-by-letter pad typing. Everywhere else the page types as
-// before (the system's screen keyboard, a real keyboard, the pad).
+// The game's own keyboard for text fields (the online start page's session code, name, address
+// and relay server; race, camera and event names; event sums). It types where the system's would
+// not do: in a VR headset no system keyboard opens over an immersive app, and the Touch
+// controllers have no D-pad for letter-by-letter pad typing; on a phone or tablet the system's
+// keyboard covers the field, and a controller that calls itself a keyboard keeps it from opening
+// at all (issue 471). Elsewhere the fields type as before (a real keyboard, the pad).
 //
 //   Pad: Up/Down/Left/Right (the left stick) move between the keys, Cross types the key,
 //   Square deletes, Start finishes, Triangle / Circle cancel.
@@ -15,10 +17,15 @@
 
 #include "app/ui.h"
 
+#include <SDL3/SDL_properties.h>
+#include <SDL3/SDL_video.h>
+
 #include <string>
 #include <vector>
 
 namespace gt3r {
+
+class App;
 
 class TextKeyboard {
 public:
@@ -64,5 +71,13 @@ private:
 // keyboard (Enter finishes, Esc cancels), and with `pad_typing` a controller's: up/down change the last character, right adds
 // one, left deletes, A or Start finishes, B cancels.
 TextKeyboard::Result text_field_event(const SDL_Event& e, std::string& s, bool pad_typing);
+
+// Whether a text field types on TextKeyboard: in a VR headset, on a phone or tablet (App::touch_ui), or `via_pad`
+// (the field was chosen with a controller, where a screen asks for that).
+bool use_game_keyboard(App& app, bool via_pad = false);
+// SDL text input for a field. With `game_keyboard` the system's screen keyboard stays closed while
+// a real keyboard still types into the field (text_field_event).
+void start_text_input(SDL_Window* window, bool game_keyboard, SDL_PropertiesID props = 0);
+void stop_text_input(SDL_Window* window);
 
 } // namespace gt3r

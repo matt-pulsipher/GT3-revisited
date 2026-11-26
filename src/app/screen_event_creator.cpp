@@ -275,6 +275,7 @@ public:
     }
 
     TouchLayout touch_layout() const override {
+        if (name_keyboard_.is_open()) return TouchLayout::None; // (its keys are tapped directly)
         return page_ == Page::Cars || page_ == Page::Courses ? TouchLayout::Menu : TouchLayout::None;
     }
 
@@ -1462,16 +1463,9 @@ private:
 
     // --- text -----------------------------------------------------------------------------------
 
-    // The game's own keyboard when the field was chosen with a controller (it has no keys to type with) or in a headset
-    // (no system keyboard there); else the field types in place: a real keyboard, a phone's own screen keyboard.
-    bool game_keyboard(App& app) const {
-#if GT3R_XR
-        if (app.xr()) return true;
-#else
-        (void)app;
-#endif
-        return via_pad_;
-    }
+    // The game's own keyboard when the field was chosen with a controller (it has no keys to type with), in a headset or on
+    // a phone or tablet (use_game_keyboard); else the field types in place from a real keyboard.
+    bool game_keyboard(App& app) const { return use_game_keyboard(app, via_pad_); }
 
     void begin_naming(App& app, Text which) {
         picker_sound(app, "ok");
@@ -1480,11 +1474,12 @@ private:
         name_text_ = which == Text::Title ? ed_.title : ed_.description;
         text_label_ = which == Text::Title ? "Title" : "Description";
         edit_key_ = which == Text::Title ? "title" : "description";
-        if (game_keyboard(app)) name_keyboard_.open(text_label_, "Done", false);
-        else if (SDL_Window* w = app.window()) SDL_StartTextInput(w);
+        const bool ours = game_keyboard(app);
+        start_text_input(app.window(), ours);
+        if (ours) name_keyboard_.open(text_label_, "Done", false);
     }
 
-    // A sum typed in (credits): digits only, at most `cap`. A phone shows its number pad; a headset the game's keyboard.
+    // A sum typed in (credits): digits only, at most `cap`. The game's keyboard shows its number pad.
     void begin_number(App& app, std::string label, std::string key, u32* value, u32 cap) {
         picker_sound(app, "ok");
         naming_ = true;
@@ -1493,14 +1488,12 @@ private:
         edit_key_ = std::move(key);
         number_ = value, number_cap_ = cap;
         name_text_ = std::to_string(*value);
-        if (game_keyboard(app)) {
-            name_keyboard_.open(text_label_, "Done", false, TextKeyboard::Layout::Number);
-        } else if (SDL_Window* w = app.window()) {
-            SDL_PropertiesID props = SDL_CreateProperties();
-            SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_TYPE_NUMBER, SDL_TEXTINPUT_TYPE_NUMBER);
-            SDL_StartTextInputWithProperties(w, props);
-            SDL_DestroyProperties(props);
-        }
+        const bool ours = game_keyboard(app);
+        SDL_PropertiesID props = SDL_CreateProperties();
+        SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_TYPE_NUMBER, SDL_TEXTINPUT_TYPE_NUMBER);
+        start_text_input(app.window(), ours, props);
+        SDL_DestroyProperties(props);
+        if (ours) name_keyboard_.open(text_label_, "Done", false, TextKeyboard::Layout::Number);
     }
     static void digits_only(std::string& s) {
         std::erase_if(s, [](char c) { return !std::isdigit(static_cast<unsigned char>(c)); });
@@ -1511,7 +1504,7 @@ private:
         naming_ = false;
         edit_key_.clear();
         name_keyboard_.close();
-        if (SDL_Window* w = app.window()) SDL_StopTextInput(w);
+        stop_text_input(app.window());
         app.menu().suppress(); // the keys typed are no menu input
         if (!keep) return;
         const std::string t(trim(name_text_));
