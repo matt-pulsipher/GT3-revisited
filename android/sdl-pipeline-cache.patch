@@ -1,0 +1,210 @@
+diff --git a/src/gpu/vulkan/SDL_gpu_vulkan.c b/src/gpu/vulkan/SDL_gpu_vulkan.c
+index ae19a13..d056bd7 100644
+--- a/src/gpu/vulkan/SDL_gpu_vulkan.c
++++ b/src/gpu/vulkan/SDL_gpu_vulkan.c
+@@ -1117,6 +1117,15 @@ typedef struct VulkanFeatures
+ 
+ struct VulkanRenderer
+ {
++    // The pipeline cache kept in a file between runs (SDL_PROP_GPU_DEVICE_CREATE_VULKAN_PIPELINE_CACHE_FILE)
++    VkPipelineCache pipelineCache;
++    char *pipelineCacheFile;
++    SDL_Mutex *pipelineCacheLock;
++    SDL_Thread *pipelineCacheSaver;
++    SDL_AtomicInt pipelineCacheSaving;
++    SDL_AtomicInt pipelinesUnsaved;
++    SDL_AtomicU32 lastPipelineTicks;
++
+     VkInstance instance;
+     VkPhysicalDevice physicalDevice;
+     VkPhysicalDeviceProperties2KHR physicalDeviceProperties;
+@@ -4965,6 +4974,135 @@ static bool VULKAN_INTERNAL_EndCommandBuffer(
+     return true;
+ }
+ 
++// Pipeline cache file. The device builds every pipeline through one VkPipelineCache, loaded from
++// the file at creation and written back once pipeline creation has been quiet for a while, and
++// at destruction. Data from another GPU or driver (the header's vendor, device and cache UUID) is
++// not used.
++
++#define PIPELINE_CACHE_FILE_PROPERTY "SDL.gpu.device.create.vulkan.pipeline_cache_file"
++#define PIPELINE_CACHE_QUIET_MS 2000
++
++static bool VULKAN_INTERNAL_PipelineCacheDataMatches(VulkanRenderer *renderer, const Uint8 *data, size_t size)
++{
++    const VkPhysicalDeviceProperties *props = &renderer->physicalDeviceProperties.properties;
++    Uint32 headerSize, headerVersion, vendorID, deviceID;
++    if (size < 16 + VK_UUID_SIZE) {
++        return false;
++    }
++    SDL_memcpy(&headerSize, data, 4);
++    SDL_memcpy(&headerVersion, data + 4, 4);
++    SDL_memcpy(&vendorID, data + 8, 4);
++    SDL_memcpy(&deviceID, data + 12, 4);
++    return headerSize >= 16 + VK_UUID_SIZE && headerSize <= size &&
++           headerVersion == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
++           vendorID == props->vendorID && deviceID == props->deviceID &&
++           SDL_memcmp(data + 16, props->pipelineCacheUUID, VK_UUID_SIZE) == 0;
++}
++
++static void VULKAN_INTERNAL_CreatePipelineCache(VulkanRenderer *renderer, SDL_PropertiesID props)
++{
++    const char *file = SDL_GetStringProperty(props, PIPELINE_CACHE_FILE_PROPERTY, NULL);
++    VkPipelineCacheCreateInfo info;
++    size_t size = 0;
++    void *data;
++    bool matches;
++    if (!file || !*file) {
++        return;
++    }
++    data = SDL_LoadFile(file, &size);
++    matches = data && VULKAN_INTERNAL_PipelineCacheDataMatches(renderer, (const Uint8 *)data, size);
++    SDL_zero(info);
++    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
++    info.initialDataSize = matches ? size : 0;
++    info.pInitialData = matches ? data : NULL;
++    if (renderer->vkCreatePipelineCache(renderer->logicalDevice, &info, NULL, &renderer->pipelineCache) != VK_SUCCESS && matches) {
++        info.initialDataSize = 0;
++        info.pInitialData = NULL;
++        renderer->vkCreatePipelineCache(renderer->logicalDevice, &info, NULL, &renderer->pipelineCache);
++    }
++    SDL_free(data);
++    if (renderer->pipelineCache == VK_NULL_HANDLE) {
++        return;
++    }
++    renderer->pipelineCacheFile = SDL_strdup(file);
++    renderer->pipelineCacheLock = SDL_CreateMutex();
++    SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "Vulkan: pipeline cache %s (%s)", file,
++                matches ? "loaded" : data ? "from another GPU or driver, not used" : "new");
++}
++
++static void VULKAN_INTERNAL_SavePipelineCache(VulkanRenderer *renderer)
++{
++    size_t size = 0;
++    void *data = NULL;
++    char *tmp = NULL;
++    SDL_LockMutex(renderer->pipelineCacheLock);
++    if (renderer->vkGetPipelineCacheData(renderer->logicalDevice, renderer->pipelineCache, &size, NULL) == VK_SUCCESS && size > 0) {
++        data = SDL_malloc(size);
++    }
++    if (data && renderer->vkGetPipelineCacheData(renderer->logicalDevice, renderer->pipelineCache, &size, data) == VK_SUCCESS &&
++        SDL_asprintf(&tmp, "%s.tmp", renderer->pipelineCacheFile) > 0) {
++        // Written beside it, then renamed over it: a process killed while writing leaves the last one whole.
++        if (!SDL_SaveFile(tmp, data, size) || !SDL_RenamePath(tmp, renderer->pipelineCacheFile)) {
++            SDL_RemovePath(tmp);
++        }
++    }
++    SDL_free(tmp);
++    SDL_free(data);
++    SDL_UnlockMutex(renderer->pipelineCacheLock);
++}
++
++static int SDLCALL VULKAN_INTERNAL_PipelineCacheSaverThread(void *data)
++{
++    VulkanRenderer *renderer = (VulkanRenderer *)data;
++    VULKAN_INTERNAL_SavePipelineCache(renderer);
++    SDL_SetAtomicInt(&renderer->pipelineCacheSaving, 0);
++    return 0;
++}
++
++static void VULKAN_INTERNAL_PipelineCreated(VulkanRenderer *renderer)
++{
++    if (renderer->pipelineCache != VK_NULL_HANDLE) {
++        SDL_SetAtomicU32(&renderer->lastPipelineTicks, (Uint32)SDL_GetTicks());
++        SDL_AddAtomicInt(&renderer->pipelinesUnsaved, 1);
++    }
++}
++
++// Called with each submission: once no pipeline has been created for a while, the new ones are
++// written to the file on a thread of its own.
++static void VULKAN_INTERNAL_SavePipelineCacheWhenQuiet(VulkanRenderer *renderer)
++{
++    if (renderer->pipelineCache == VK_NULL_HANDLE || SDL_GetAtomicInt(&renderer->pipelinesUnsaved) == 0 ||
++        (Uint32)SDL_GetTicks() - SDL_GetAtomicU32(&renderer->lastPipelineTicks) < PIPELINE_CACHE_QUIET_MS ||
++        !SDL_CompareAndSwapAtomicInt(&renderer->pipelineCacheSaving, 0, 1)) {
++        return;
++    }
++    if (renderer->pipelineCacheSaver) {
++        SDL_WaitThread(renderer->pipelineCacheSaver, NULL); // (finished: saving was 0)
++    }
++    SDL_SetAtomicInt(&renderer->pipelinesUnsaved, 0);
++    renderer->pipelineCacheSaver = SDL_CreateThread(VULKAN_INTERNAL_PipelineCacheSaverThread, "SDLGPUPipelineCache", renderer);
++    if (!renderer->pipelineCacheSaver) {
++        SDL_SetAtomicInt(&renderer->pipelineCacheSaving, 0);
++    }
++}
++
++static void VULKAN_INTERNAL_DestroyPipelineCache(VulkanRenderer *renderer)
++{
++    if (renderer->pipelineCacheSaver) {
++        SDL_WaitThread(renderer->pipelineCacheSaver, NULL);
++    }
++    if (renderer->pipelineCache != VK_NULL_HANDLE) {
++        if (SDL_GetAtomicInt(&renderer->pipelinesUnsaved) > 0) {
++            VULKAN_INTERNAL_SavePipelineCache(renderer);
++        }
++        renderer->vkDestroyPipelineCache(renderer->logicalDevice, renderer->pipelineCache, NULL);
++    }
++    SDL_free(renderer->pipelineCacheFile);
++    if (renderer->pipelineCacheLock) {
++        SDL_DestroyMutex(renderer->pipelineCacheLock);
++    }
++}
++
+ static void VULKAN_DestroyDevice(
+     SDL_GPUDevice *device)
+ {
+@@ -5061,6 +5199,7 @@ static void VULKAN_DestroyDevice(
+     SDL_DestroyMutex(renderer->descriptorSetLayoutFetchLock);
+     SDL_DestroyMutex(renderer->windowLock);
+ 
++    VULKAN_INTERNAL_DestroyPipelineCache(renderer);
+     renderer->vkDestroyDevice(renderer->logicalDevice, NULL);
+     renderer->vkDestroyInstance(renderer->instance, NULL);
+ 
+@@ -6608,10 +6747,9 @@ static SDL_GPUGraphicsPipeline *VULKAN_CreateGraphicsPipeline(
+     vkPipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
+     vkPipelineCreateInfo.basePipelineIndex = 0;
+ 
+-    // TODO: enable pipeline caching
+     vulkanResult = renderer->vkCreateGraphicsPipelines(
+         renderer->logicalDevice,
+-        VK_NULL_HANDLE,
++        renderer->pipelineCache,
+         1,
+         &vkPipelineCreateInfo,
+         NULL,
+@@ -6632,6 +6770,7 @@ static SDL_GPUGraphicsPipeline *VULKAN_CreateGraphicsPipeline(
+     }
+ 
+     SDL_SetAtomicInt(&graphicsPipeline->referenceCount, 0);
++    VULKAN_INTERNAL_PipelineCreated(renderer);
+ 
+     if (renderer->debugMode && renderer->supportsDebugUtils && SDL_HasProperty(createinfo->props, SDL_PROP_GPU_GRAPHICSPIPELINE_CREATE_NAME_STRING)) {
+         VkDebugUtilsObjectNameInfoEXT nameInfo;
+@@ -6746,7 +6885,7 @@ static SDL_GPUComputePipeline *VULKAN_CreateComputePipeline(
+ 
+     vulkanResult = renderer->vkCreateComputePipelines(
+         renderer->logicalDevice,
+-        (VkPipelineCache)VK_NULL_HANDLE,
++        renderer->pipelineCache,
+         1,
+         &vkShaderCreateInfo,
+         NULL,
+@@ -10803,6 +10942,8 @@ static bool VULKAN_Submit(
+ {
+     VulkanCommandBuffer *vulkanCommandBuffer = (VulkanCommandBuffer *)commandBuffer;
+     VulkanRenderer *renderer = vulkanCommandBuffer->renderer;
++
++    VULKAN_INTERNAL_SavePipelineCacheWhenQuiet(renderer);
+     VkSubmitInfo submitInfo;
+     VkPresentInfoKHR presentInfo;
+     VulkanPresentData *presentData;
+@@ -12892,6 +13033,7 @@ static SDL_GPUDevice *VULKAN_CreateDevice(bool debugMode, bool preferLowPower, S
+         SDL_Vulkan_UnloadLibrary();
+         return NULL;
+     }
++    VULKAN_INTERNAL_CreatePipelineCache(renderer, props);
+ 
+     // FIXME: just move this into this function
+     result = (SDL_GPUDevice *)SDL_calloc(1, sizeof(SDL_GPUDevice));

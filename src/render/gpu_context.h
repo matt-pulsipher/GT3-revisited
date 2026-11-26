@@ -108,6 +108,9 @@ struct GpuOptions {
     // one; the 2D renderer then draws offscreen (canvases of xr::Session) instead of the window.
     bool xr = false;
     std::string xr_runtime = "auto"; // [vr] runtime (xr::Session::DeviceRequest::runtime)
+    // A file the Vulkan device keeps the pipelines it built in, for the next start (the Android
+    // build's SDL: android/sdl-pipeline-cache.patch; other builds' SDL ignores it). Empty: none.
+    std::string pipeline_cache;
 };
 
 class Uploader;
