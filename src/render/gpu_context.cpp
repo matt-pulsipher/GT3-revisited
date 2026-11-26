@@ -441,6 +441,24 @@ std::vector<PipelineKey> warm_keys() {
             k.clipped = true;
             add(k);
         }
+    // The coplanar overlays (PipelineKey::depth_bias), drawn plain: the main views' blends, culls
+    // and depth and frame-alpha writes, as they are and clipped at the guard band; the frame-alpha
+    // weighted ones also in the general variant. Courses drew 7-17 of these on first use in a
+    // race's first seconds.
+    for (PipelineKey k : grid) {
+        if (k.coverage || k.blend == BlendMode::MultiplyDest || k.blend == BlendMode::DestAlphaLerp ||
+            (k.alpha == AlphaWrite::Only && k.blend != BlendMode::Opaque))
+            continue;
+        k.depth_bias = k.plain = true;
+        keys.push_back(k);
+        if (k.blend == BlendMode::DestAlphaAdd) {
+            PipelineKey general = k;
+            general.plain = false;
+            keys.push_back(general);
+        }
+        k.clipped = true;
+        keys.push_back(k);
+    }
     // The rare sampling (PipelineKey::fx): the wheels' spin blurs in the main views' blends and
     // frame-alpha modes.
     for (PipelineKey k : grid) {
@@ -539,10 +557,11 @@ SDL_GPUGraphicsPipeline* GpuContext::pipeline(const PipelineKey& key) {
     SDL_GPUGraphicsPipeline* p = create_pipeline(key);
     LOG_INFO("3D pipeline built on first use in %.0f ms: blend %d, cull %d, depth write %d, lines %d, coverage %d, "
              "alpha %d, spin copy %d, spin mask %d, depth only %d, depth reset %d, fx %d, plain %d, gs filter %d, resample %d, "
-             "single %d, clipped %d",
+             "single %d, clipped %d, depth bias %d",
              double(SDL_GetTicksNS() - t0) / 1e6, int(key.blend), int(key.cull), int(key.depth_write), int(key.lines),
              int(key.coverage), int(key.alpha), int(key.spin_copy), int(key.spin_mask), int(key.depth_only), int(key.depth_reset),
-             int(key.fx), int(key.plain), int(key.gs_filter), int(key.resample), int(key.single), int(key.clipped));
+             int(key.fx), int(key.plain), int(key.gs_filter), int(key.resample), int(key.single), int(key.clipped),
+             int(key.depth_bias));
     std::lock_guard lock(pipelines_mutex_);
     auto [it, added] = pipelines_.emplace(key, p); // failures too, so we don't retry every frame
     if (!added && p) SDL_ReleaseGPUGraphicsPipeline(device_, p); // the warm-up made it meanwhile
