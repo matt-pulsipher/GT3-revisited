@@ -33,7 +33,16 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
+#include <set>
 #include <thread>
+
+#if defined(__APPLE__)
+#include <netinet/in.h>
+#include <sys/resource.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 using namespace gt3r;
 
@@ -220,6 +229,97 @@ TEST(net_resolve) {
     CHECK(a.port() == 99);
     CHECK(net::resolve("[::1]:7", 1234, a));
     CHECK(a.port() == 7 && a.to_string() == "[::1]:7");
+}
+
+#if defined(__APPLE__)
+namespace {
+// A plain IPv4 socket on `port` (0 = any) on every interface, as another program might hold one: its fd, or -1.
+int hold_ipv4(u16 port, u16* got = nullptr) {
+    int fd = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (fd < 0) return -1;
+    sockaddr_in s{};
+    s.sin_family = AF_INET;
+    s.sin_addr.s_addr = htonl(INADDR_ANY);
+    s.sin_port = htons(port);
+    socklen_t len = sizeof s;
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&s), len) != 0 || getsockname(fd, reinterpret_cast<sockaddr*>(&s), &len) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    if (got) *got = ntohs(s.sin_port);
+    return fd;
+}
+} // namespace
+#endif
+
+TEST(net_host_port_held_for_ipv4) {
+#if !defined(__APPLE__)
+    SKIP("macOS only");
+#else
+    // macOS does not check a dual-stack bind against IPv4 sockets: a host on a port another program holds for IPv4
+    // would never hear its IPv4 guests. Many held ports make a collision likely when it can happen.
+    rlimit lim{};
+    getrlimit(RLIMIT_NOFILE, &lim);
+    const rlim_t want = std::min<rlim_t>(lim.rlim_max, 4096);
+    if (lim.rlim_cur < want) {
+        lim.rlim_cur = want;
+        setrlimit(RLIMIT_NOFILE, &lim);
+        getrlimit(RLIMIT_NOFILE, &lim);
+    }
+    const int kHeld = std::min(1500, int(lim.rlim_cur) / 2 - 100), kHosts = std::min(400, kHeld / 3);
+    if (kHosts < 20) SKIP("too few file descriptors");
+    std::vector<int> fds;
+    std::set<u16> held;
+    for (int i = 0; i < kHeld; ++i) {
+        u16 p = 0;
+        int fd = hold_ipv4(0, &p);
+        if (fd < 0) break;
+        fds.push_back(fd);
+        held.insert(p);
+    }
+    if (held.empty()) SKIP("no UDP sockets here");
+    {
+        // A named port held for IPv4 is refused, like any port in use.
+        net::UdpSocket named;
+        std::string err;
+        CHECK(!named.open(*held.begin(), &err));
+        CHECK(!named.is_open() && !err.empty());
+        // Any free port never is one of them.
+        std::vector<std::unique_ptr<net::UdpSocket>> hosts;
+        int on_held = 0;
+        for (int i = 0; i < kHosts; ++i) {
+            auto h = std::make_unique<net::UdpSocket>();
+            if (!h->open(0)) break;
+            on_held += int(held.count(h->local_port()));
+            hosts.push_back(std::move(h));
+        }
+        CHECK(int(hosts.size()) == kHosts);
+        CHECK(on_held == 0);
+        // The host keeps its port for IPv4 too, and hears an IPv4 guest on 127.0.0.1.
+        net::UdpSocket& host = *hosts.front();
+        const u16 port = host.local_port();
+        CHECK(hold_ipv4(port) < 0);
+        net::Address to;
+        CHECK(net::resolve("127.0.0.1", port, to));
+        net::UdpSocket guest;
+        CHECK(guest.open_for(to));
+        const u8 hello[3] = {1, 2, 3};
+        CHECK(guest.send_to(to, ByteSpan(hello, sizeof hello)));
+        net::Address from;
+        u8 buf[16];
+        size_t n = 0;
+        settle([&] { return (n = host.recv_from(from, buf, sizeof buf)) != 0; });
+        CHECK(n == 3 && from.port() == guest.local_port());
+        // A named free port works (the one a fresh IPv4 socket got, now let go).
+        u16 free_port = 0;
+        int probe = hold_ipv4(0, &free_port);
+        CHECK(probe >= 0);
+        if (probe >= 0) ::close(probe);
+        net::UdpSocket free_host;
+        CHECK(free_host.open(free_port) && free_host.local_port() == free_port);
+    }
+    for (int fd : fds) ::close(fd);
+#endif
 }
 
 static void session_flow(float loss) {

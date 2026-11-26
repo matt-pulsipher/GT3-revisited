@@ -114,7 +114,10 @@ newest, and a lost datagram loses no frame (what a lockstep game would need).
 ## Session (`src/net/`)
 
 - `socket.*`: non-blocking UDP (BSD sockets / Winsock). The host socket is
-  dual-stack IPv6. Name resolution goes through `getaddrinfo`, preferring IPv4.
+  dual-stack IPv6. On macOS and iOS it takes the port for IPv4 first and binds the
+  dual-stack socket on it: there a dual-stack bind is not checked against IPv4 sockets,
+  so a host on a port another program holds for IPv4 would hear none of its IPv4 guests.
+  Name resolution goes through `getaddrinfo`, preferring IPv4.
 - `protocol.*`: the datagram format and messages (`Msg`). Every datagram is
   `"GT3N"`, protocol version, cumulative ack, then reliable messages
   (sequence numbered, resent until acked, delivered once in order) and

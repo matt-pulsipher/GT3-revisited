@@ -185,8 +185,26 @@ bool UdpSocket::setup(int family, u16 port, std::string* error) {
 }
 
 bool UdpSocket::open(u16 port, std::string* error) {
+#if defined(__APPLE__)
+    // Here a dual-stack bind is not checked against IPv4 sockets: if another program already holds the port for IPv4,
+    // that program gets every IPv4 datagram sent to it. So the IPv4 side is taken first (any free port for 0), and the
+    // dual-stack socket is bound on that port while it is held; once it is bound, no IPv4 socket can take the port.
+    close();
+    for (int tries = 0;; ++tries) {
+        UdpSocket v4;
+        if (!v4.setup(AF_INET, port, error)) return false; // in use for IPv4
+        const u16 got = v4.local_port();
+        if (got && setup(AF_INET6, got, nullptr)) return true; // v4 closes here, the dual-stack socket keeps the port
+        if (port != 0 || tries == 7) { // no dual-stack socket on it: IPv4 alone
+            fd_ = v4.fd_;
+            v4.fd_ = kInvalid;
+            return true;
+        }
+    }
+#else
     if (setup(AF_INET6, port, nullptr)) return true;
     return setup(AF_INET, port, error);
+#endif
 }
 
 bool UdpSocket::open_for(const Address& peer, std::string* error) {
