@@ -1594,9 +1594,10 @@ paints; GameResult::opponent_paints brings them back).
 The models follow the paints: `load_opponent_cars` builds one per model and paint and keeps
 them for the next build (`race::KeptModels`, `RaceScreen::kept_opponents_`). `start()` builds
 the field and the `restart()` that ends it builds it again, as does every retry; each build
-takes the last one's models it still has and builds the rest. They are built again at the
-next start (its settings and course), or when the custom paints or the texture pack in use
-are no longer those they were built with.
+takes the last one's models it still has (their looks, the morphs and CLUT animations, start
+again as a new model's would) and lets the others go before it builds the rest. They are built
+again at the next start (its settings and course), or when the custom paints or the texture
+pack in use are no longer those they were built with; a start or build that fails lets them go.
 
 ## Ghost
 

@@ -3,10 +3,11 @@
 // The opponents' models of a race's last build, for its next one (RaceScreen::load_opponent_cars): a start builds its
 // field twice (start() and the restart() that ends it) and a retry once more, mostly with the same models. Kept by
 // (model, paint) while the custom paints and the texture pack in use are those they were built with; the race screen
-// lets them go at the next start.
+// lets them go at the next start, and when a start or a build fails (with the field they were kept for).
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -19,11 +20,16 @@ public:
     using Key = std::pair<std::string, int>;
     using Map = std::map<Key, std::shared_ptr<Model>>;
 
-    // The kept models, handed over for a build with `paints` and `pack` (null: none): the last build's when it had the
-    // same ones, else none (and those are let go here, before the build makes new ones).
-    Map take(const std::shared_ptr<const void>& paints, const std::shared_ptr<const void>& pack) {
-        Map models = std::exchange(models_, {});
-        return same(paints_, paints) && same(pack_, pack) ? std::move(models) : Map{};
+    // The kept models of `wanted`, handed over for a build with `paints` and `pack` (null: none), when the last build had
+    // the same ones; the others (all of them with other paints or another pack) are let go here, before the build makes
+    // new ones, so the old and the new field are never held together.
+    Map take(const std::shared_ptr<const void>& paints, const std::shared_ptr<const void>& pack,
+             const std::set<Key>& wanted) {
+        Map kept = std::exchange(models_, {}), models;
+        if (same(paints_, paints) && same(pack_, pack))
+            for (const Key& k : wanted)
+                if (auto n = kept.extract(k)) models.insert(std::move(n));
+        return models; // (the rest of `kept` let go)
     }
     // A build's models (only those: the ones it no longer has are let go), and what they were built with.
     void keep(Map models, const std::shared_ptr<const void>& paints, const std::shared_ptr<const void>& pack) {
