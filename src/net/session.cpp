@@ -296,7 +296,7 @@ bool Session::join_code(const std::string& server, const std::string& code, cons
 
 void Session::close() {
     if (sock_.is_open() && host_ && registered_) {
-        Writer w = rv_request(Rv::Unregister, cookie_, version_);
+        Writer w = rv_request(Rv::Unregister, cookie_, relay_version());
         w.str(code_);
         put_u64(w, token_);
         send_server(w);
@@ -1004,7 +1004,7 @@ void Session::server_tick(double t) {
         if (!registered_) {
             if (t - server_started_ > 10000) return fail("the relay server does not answer");
             if (t - server_sent_ > 500) {
-                Writer w = rv_request(Rv::Register, cookie_, version_);
+                Writer w = rv_request(Rv::Register, cookie_, relay_version());
                 put_u64(w, token_);
                 put_endpoints(w, local_eps_, 4);
                 send_server(w);
@@ -1013,7 +1013,7 @@ void Session::server_tick(double t) {
         } else if (t - server_sent_ > (wait_.waiting ? 2000 : 5000)) {
             // Keeps the session and our NAT mapping alive (and a queued race its place: the
             // server answers with where it stands).
-            Writer w = rv_request(Rv::Keepalive, cookie_, version_);
+            Writer w = rv_request(Rv::Keepalive, cookie_, relay_version());
             w.str(code_);
             put_u64(w, token_);
             send_server(w);
@@ -1032,7 +1032,7 @@ void Session::server_tick(double t) {
                 roster_dirty_ = true;
                 start_load();
             } else if (need != reserve_links_ || (t - reserve_sent_ > 1000 && t - reserve_heard_ > 3000)) {
-                Writer w = rv_request(Rv::Reserve, cookie_, version_);
+                Writer w = rv_request(Rv::Reserve, cookie_, relay_version());
                 w.str(code_);
                 put_u64(w, token_);
                 w.u8_(u8(need));
@@ -1064,7 +1064,7 @@ void Session::server_tick(double t) {
         if (!join_nonce_) {
             if (t - server_started_ > 10000) return fail("the relay server does not answer");
             if (t - server_sent_ > 500) {
-                Writer w = rv_request(Rv::Lookup, cookie_, version_);
+                Writer w = rv_request(Rv::Lookup, cookie_, relay_version());
                 w.str(lookup_code_);
                 w.u16_(kProtocolVersion);
                 put_endpoints(w, local_eps_, 4);
@@ -1086,7 +1086,7 @@ void Session::server_tick(double t) {
     for (auto& [key, bd] : binds_) {
         if (bd.bound && t - bd.last < 20000) continue; // re-bind now and then (keeps the channel)
         if (!bd.bound && t - bd.last < 1000) continue;
-        Writer w = rv_request(Rv::Bind, cookie_, version_);
+        Writer w = rv_request(Rv::Bind, cookie_, relay_version());
         put_u64(w, key);
         w.str(host_ ? code_ : lookup_code_);
         put_u64(w, bd.token);
@@ -1771,7 +1771,7 @@ void Session::cancel_start() {
 
 void Session::release_slots() {
     if (!server_.valid() || !registered_) return;
-    Writer w = rv_request(Rv::Release, cookie_, version_);
+    Writer w = rv_request(Rv::Release, cookie_, relay_version());
     w.str(code_);
     put_u64(w, token_);
     send_server(w);

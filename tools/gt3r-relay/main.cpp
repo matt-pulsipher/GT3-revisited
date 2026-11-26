@@ -31,7 +31,9 @@
 //   --versions-file PATH     the same as "latest = ...", "min_online = ...", "release_url = ..."
 //                            lines (over the flags); re-read on SIGHUP (systemctl reload
 //                            gt3r-relay) without dropping anything. tools/gt3r-relay/set-versions.sh
-//                            writes it. A missing file is fine (the flags apply).
+//                            writes it. A missing file is fine (the flags apply). "[id]" lines
+//                            in it start another game's keys: requests carrying that game tag
+//                            get that game's versions (ONLINE.md "Other games on one relay").
 //
 // Logs to stdout (one line per session event with the code and a tag for the host's /
 // joining player's IP: a keyed hash, new key each UTC day; a stats line every minute).
@@ -68,13 +70,19 @@ void line(const std::string& s) {
     std::fflush(stdout);
 }
 
-std::string describe(const gt3r::net::RelayServer::Versions& v) {
+std::string describe_game(const gt3r::net::RelayServer::GameVersions& v) {
     if (!v.latest.known() && !v.min_online.known() && v.release_url.empty())
-        return "versions: not set (every game version may play online)";
-    std::string t = "versions: latest " + (v.latest.known() ? v.latest.number() : std::string("not set"));
+        return "not set (every game version may play online)";
+    std::string t = "latest " + (v.latest.known() ? v.latest.number() : std::string("not set"));
     t += v.min_online.known() ? ", min_online " + v.min_online.number() + " (older games cannot play online)"
                               : ", no min_online (every game version may play online)";
     t += ", release page " + (v.release_url.empty() ? std::string("not set") : v.release_url);
+    return t;
+}
+
+std::string describe(const gt3r::net::RelayServer::Versions& v) {
+    std::string t = "versions: " + describe_game(v);
+    for (const auto& [id, g] : v.games) t += "; [" + id + "] " + describe_game(g);
     return t;
 }
 

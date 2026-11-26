@@ -30,6 +30,27 @@ void rv_pad(Writer& w, size_t size) {
     if (w.data.size() < size) w.data.resize(size, 0);
 }
 
+bool valid_game_id(std::string_view id) {
+    if (id.empty() || id.size() > kMaxGameId) return false;
+    for (char c : id)
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) return false;
+    return true;
+}
+
+void put_game_tag(Writer& w, const GameTag& tag) {
+    w.str(tag.id);
+    put_version(w, tag.version);
+}
+
+std::optional<GameTag> get_game_tag(Reader r) {
+    if (r.remaining() == 0) return std::nullopt;
+    GameTag t;
+    t.id = r.str();
+    t.version = get_version(r);
+    if (!r.ok() || !valid_game_id(t.id)) return std::nullopt;
+    return t;
+}
+
 const char* platform_name(RvPlatform p) {
     switch (p) {
     case RvPlatform::Windows: return "windows";

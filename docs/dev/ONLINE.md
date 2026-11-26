@@ -843,6 +843,9 @@ game datagram.
   below): the game sends its version and a platform tag, padded to 160 bytes;
   the server answers the latest release, min_online and the release page URL
   (at most 128 characters, so at most 148 bytes).
+- **Game tag** (optional, after any request's fields: "Other games on one
+  relay" below): another app's id and version. Its own minimum then applies;
+  a tagged VersionQuery is padded to 199 bytes and answered with the id too.
 - **Cookie.** SipHash-2-4 over (source IP, source port, 30 s time window),
   keyed with a random per-process secret. It is valid for the current and the
   previous window. A request with a missing or stale cookie gets only a
@@ -1129,6 +1132,60 @@ on both sides (the suffix does not count), on top of the game protocol check.
    The script writes the file, reloads the relay, and prints its "reload:" log
    line with the new values. Games older than min_online can no longer create
    or join sessions; they show the update dialog.
+
+### Other games on one relay
+
+A relay can serve other apps built on the engine, each with versions of its
+own (`net::GameTag`; tested in `net_game_tag_wire`,
+`net_relay_versions_per_game`, `net_relay_versions_file_games`,
+`net_version_check_game_tag`, `net_session_game_tag`).
+
+**The game tag.** Any request may end with `str id, ver` after its own
+fields and before the padding: the game's id (1 to 32 of `a-z 0-9 . _ -`)
+and that game's version.
+- A request without one is the relay's **main game**'s: the padding's zero
+  byte reads as an empty id. Requests from this game carry none.
+- A tagged request is held to **that game's** min_online, by the tag's
+  version. A game the relay does not list has no versions: every version of
+  it may play.
+- Its header still carries the engine's version (`net::this_game_version()`).
+  A relay from before game tags ignores the tag and judges that version
+  against the main game's min_online, so another app reaches older relays
+  while its engine is current.
+- An app sets it with `Session::set_game_tag` (and its own version for
+  direct-IP checks with `Session::set_game_version`).
+
+**VersionQuery with a tag** is padded to `kTaggedVersionQuerySize` (199
+bytes). The VersionInfo then carries that game's versions and the id after
+the page, so the reply is still smaller than the query.
+- `VersionCheck::start(..., tag)` sends it.
+- An answer without the id comes from a relay without games and counts as
+  no answer ("announces no versions for this game"), so the app shows no
+  notice instead of the main game's.
+
+**The versions file.** A `[id]` line starts another game's keys. Keys before
+the first one are the main game's.
+
+```
+latest = 0.9.0
+min_online = 0.9.0
+release_url = https://github.com/<owner>/<repo>/releases/latest/download/{asset}
+
+[example]
+latest = 0.1.0
+min_online = 0.1.0
+release_url = https://github.com/<owner>/<other-repo>/releases/latest/download/{asset}
+```
+
+- A game's keys left out are 0.0.0 / none, never the main game's.
+- The flags set only the main game. The games are the file's alone, so a
+  reload drops a game taken out of the file.
+- Each id appears once. A bad id fails like any other bad line: the
+  previous values stay.
+- `set-versions.sh --game <id> ...` writes one game's section and keeps the
+  rest of the file.
+- The relay's log names the game of a tagged session: "session X registered
+  by a1b2c3d4 (BR) for example".
 
 ### Running your own relay
 

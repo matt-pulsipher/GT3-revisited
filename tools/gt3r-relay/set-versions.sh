@@ -5,7 +5,11 @@
 #   tools/gt3r-relay/set-versions.sh root@203.0.113.7 0.2.0                 # latest = min_online = 0.2.0
 #   tools/gt3r-relay/set-versions.sh root@203.0.113.7 0.2.0 0.2.0 'https://github.com/<owner>/<repo>/releases/latest/download/{asset}'
 #   tools/gt3r-relay/set-versions.sh root@203.0.113.7 0.2.0 0.0.0           # announce only: anyone may play
+#   tools/gt3r-relay/set-versions.sh --game example root@203.0.113.7 0.1.0 0.1.0 'https://...'  # another game
 #
+# --game <id>: another app on the engine (docs/dev/ONLINE.md "Other games on one relay"): sets the
+#   versions of requests tagged with that id, in the file's [id] section. Without it: the main
+#   game's. Either way the rest of the file is kept.
 # latest: the newest release (older games show "version x.y.z is available").
 # min_online: games below it cannot create or join sessions (default: latest). 0.0.0 = no minimum.
 # url: where "Download update" goes (default: keep the one already set; the first run needs it).
@@ -16,7 +20,14 @@
 # `systemctl reload gt3r-relay`, and shows the relay's log line that confirms the new values.
 set -eu
 
-usage() { echo "usage: $0 user@host <latest> [min_online] [release_url]" >&2; exit 2; }
+usage() { echo "usage: $0 [--game <id>] user@host <latest> [min_online] [release_url]" >&2; exit 2; }
+game=""
+if [ "${1:-}" = --game ]; then
+    [ $# -ge 2 ] || usage
+    game=$2
+    shift 2
+    echo "$game" | grep -Eq '^[a-z0-9._-]{1,32}$' || { echo "a game id is 1 to 32 of a-z 0-9 . _ - (got '$game')" >&2; exit 2; }
+fi
 [ $# -ge 2 ] && [ $# -le 4 ] || usage
 target=$1
 latest=$2
@@ -37,20 +48,42 @@ if [ -n "$url" ]; then
     case "$url" in *[\'\"\$\`\\]*) echo "release_url must not contain quotes, \$, \` or \\" >&2; exit 2 ;; esac
 fi
 
-ssh -o ConnectTimeout=20 "$target" "LATEST='$latest' MIN='$min' URL='$url' sh -s" <<'REMOTE'
+ssh -o ConnectTimeout=20 "$target" "GAME='$game' LATEST='$latest' MIN='$min' URL='$url' sh -s" <<'REMOTE'
 set -eu
 SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO=sudo
 conf=/etc/gt3r-relay/versions.conf
-if [ -z "$URL" ] && [ -f "$conf" ]; then
-    URL=$(sed -n 's/^[[:space:]]*release_url[[:space:]]*=[[:space:]]*//p' "$conf" | tail -n 1)
+# Lines of one section ("": the main game's, before the first [id]); and the file without it.
+section() {
+    [ -f "$conf" ] || return 0
+    awk -v g="$1" '/^[[:space:]]*\[/ { s = $0; gsub(/^[[:space:]]*\[[[:space:]]*|[[:space:]]*\][[:space:]]*$/, "", s); cur = s; next } cur == g' "$conf"
+}
+others() {
+    [ -f "$conf" ] || return 0
+    awk -v g="$1" '/^[[:space:]]*\[/ { s = $0; gsub(/^[[:space:]]*\[[[:space:]]*|[[:space:]]*\][[:space:]]*$/, "", s); cur = s } cur != g' "$conf"
+}
+if [ -z "$URL" ]; then
+    URL=$(section "$GAME" | sed -n 's/^[[:space:]]*release_url[[:space:]]*=[[:space:]]*//p' | tail -n 1)
 fi
-[ -n "$URL" ] || { echo "no release_url set yet: pass it as the 4th argument (see the header of set-versions.sh)" >&2; exit 2; }
+[ -n "$URL" ] || { echo "no release_url set yet: pass it as the last argument (see the header of set-versions.sh)" >&2; exit 2; }
 $SUDO install -d -m 755 /etc/gt3r-relay
-{
-    echo "# gt3r-relay game versions (tools/gt3r-relay/set-versions.sh, $(date -u '+%Y-%m-%d %H:%M UTC'))"
+keys() {
     echo "latest = $LATEST"
     echo "min_online = $MIN"
     echo "release_url = $URL"
+}
+{
+    if [ -z "$GAME" ]; then
+        echo "# gt3r-relay game versions (tools/gt3r-relay/set-versions.sh, $(date -u '+%Y-%m-%d %H:%M UTC'))"
+        keys
+        rest=$(others "")
+        [ -z "$rest" ] || printf '\n%s\n' "$rest"
+    else
+        others "$GAME" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' # (trailing blank lines dropped)
+        echo
+        echo "[$GAME]"
+        echo "# (set-versions.sh --game, $(date -u '+%Y-%m-%d %H:%M UTC'))"
+        keys
+    fi
 } | $SUDO tee "$conf.new" >/dev/null
 $SUDO chmod 644 "$conf.new"
 $SUDO mv "$conf.new" "$conf"

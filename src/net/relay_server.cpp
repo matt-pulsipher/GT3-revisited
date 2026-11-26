@@ -264,28 +264,39 @@ void RelayServer::handle(const Address& from, ByteSpan data, double now) {
     handle_control(from, type, r, game, now, ip);
 }
 
+const RelayServer::GameVersions& RelayServer::versions_for(const std::optional<GameTag>& tag) const {
+    static const GameVersions kNone;
+    if (!tag) return versions_;
+    auto it = versions_.games.find(tag->id);
+    return it != versions_.games.end() ? it->second : kNone;
+}
+
 void RelayServer::version_info(const Address& from, Reader& r, size_t request_size) {
     if (request_size < kVersionQuerySize) return; // unpadded: the reply could be larger
     get_u64(r);    // cookie (not checked)
     get_version(r); // the game's (not kept)
     u8 platform = r.u8_();
     if (!r.ok()) return;
+    std::optional<GameTag> tag = get_game_tag(r);
     ++stats_.version_queries;
     ++stats_.queries_by_platform[platform < kPlatformCount ? platform : 0];
+    const GameVersions& v = versions_for(tag);
     Writer w = rv_begin(Rv::VersionInfo);
-    put_version(w, versions_.latest);
-    put_version(w, versions_.min_online);
-    w.str(versions_.release_url.size() <= kMaxReleaseUrl ? versions_.release_url : "");
+    put_version(w, v.latest);
+    put_version(w, v.min_online);
+    w.str(v.release_url.size() <= kMaxReleaseUrl ? v.release_url : "");
+    if (tag) w.str(tag->id); // whose versions these are (a relay without games answers with its own)
     if (w.data.size() <= request_size) send(from, w);
 }
 
-void RelayServer::update_required(const Address& to) {
+void RelayServer::update_required(const Address& to, const std::optional<GameTag>& tag) {
     ++stats_.outdated;
+    const GameVersions& v = versions_for(tag);
     Writer w = rv_begin(Rv::Error);
     w.u8_(u8(RvError::UpdateRequired));
     w.str("update required to play online");
-    put_version(w, versions_.latest);
-    w.str(versions_.release_url.size() <= kMaxReleaseUrl ? versions_.release_url : "");
+    put_version(w, v.latest);
+    w.str(v.release_url.size() <= kMaxReleaseUrl ? v.release_url : "");
     send(to, w);
 }
 
@@ -293,9 +304,10 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
                                  IpSlot& ip) {
     switch (type) {
     case Rv::Register: {
-        if (outdated(game)) return update_required(from);
         u64 token = get_u64(r);
         std::vector<std::string> eps = get_endpoints(r, 4);
+        std::optional<GameTag> tag = get_game_tag(r);
+        if (outdated(game, tag)) return update_required(from, tag);
         if (!r.ok() || token == 0) return error(from, RvError::BadRequest, "malformed register");
         // A resent request (only the host knows its token): the session keeps its code.
         if (auto t = by_token_.find(token); t != by_token_.end()) {
@@ -322,7 +334,7 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
         sessions_[code] = s;
         by_token_[token] = code;
         ++sessions_per_ip_[key];
-        log("session " + code + " registered by " + who(from));
+        log("session " + code + " registered by " + who(from) + (tag ? " for " + tag->id : std::string()));
         return registered(from, code);
     }
     case Rv::Keepalive:
@@ -358,10 +370,11 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
         return;
     }
     case Rv::Reserve: {
-        if (outdated(game)) return update_required(from);
         std::string code = r.str();
         u64 token = get_u64(r);
         size_t links = r.u8_();
+        std::optional<GameTag> tag = get_game_tag(r);
+        if (outdated(game, tag)) return update_required(from, tag);
         if (!r.ok() || links == 0 || links > size_t(kMaxLinks)) return error(from, RvError::BadRequest, "malformed reserve");
         auto it = sessions_.find(code);
         if (it == sessions_.end() || it->second.token != token) return refused(from, "no such session");
@@ -370,10 +383,11 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
         return reserve(from, it->second, links, now);
     }
     case Rv::Lookup: {
-        if (outdated(game)) return update_required(from);
         std::string code = normalize_code(r.str());
         r.u16_(); // the game's protocol (the host checks it in Hello)
         std::vector<std::string> eps = get_endpoints(r, 5);
+        std::optional<GameTag> tag = get_game_tag(r);
+        if (outdated(game, tag)) return update_required(from, tag);
         if (!r.ok()) return error(from, RvError::BadRequest, "malformed lookup");
         // Guessing codes: refused before the lookup, so a refusal tells nothing about the code.
         if (!trusted(from) && (!ip.misses.has(limits_.ip_misses_per_s, limits_.ip_misses_burst, now) ||
@@ -418,6 +432,7 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
         std::string code = r.str();
         u64 token = get_u64(r);
         u8 a = r.u8_(), b = r.u8_();
+        std::optional<GameTag> tag = get_game_tag(r);
         if (!r.ok() || key == 0) return error(from, RvError::BadRequest, "malformed bind");
         bool ok = false;
         u64 owner = 0; // the session a new channel belongs to (its link slots)
@@ -425,7 +440,7 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
         // couple of minutes, its channel lives on while used).
         if (auto ch = channels_.find(key); ch != channels_.end())
             for (const Address& e : ch->second.end) ok = ok || (e.valid() && e == from);
-        if (!ok && outdated(game)) return update_required(from); // a new channel or end: creates state
+        if (!ok && outdated(game, tag)) return update_required(from, tag); // a new channel or end: creates state
         if (auto n = nonces_.find(key); n != nonces_.end() && n->second.code == code)
             ok = true, owner = n->second.serial; // a join pair
         if (auto s = sessions_.find(code); !ok && s != sessions_.end() && token == s->second.token && a != b &&
@@ -728,9 +743,11 @@ void RelayServer::slot_status(const Address& to, const Session& s, double now) {
 
 // --- versions file ---
 
-bool check_relay_versions(const RelayServer::Versions& v, std::string* error) {
+namespace {
+
+bool check_game_versions(const RelayServer::GameVersions& v, const std::string& game, std::string* error) {
     auto fail = [&](const std::string& why) {
-        if (error) *error = why;
+        if (error) *error = game.empty() ? why : "[" + game + "] " + why;
         return false;
     };
     if (!v.latest.suffix.empty() || !v.min_online.suffix.empty()) return fail("versions are x.y.z (no suffix)");
@@ -745,8 +762,24 @@ bool check_relay_versions(const RelayServer::Versions& v, std::string* error) {
     return true;
 }
 
+} // namespace
+
+bool check_relay_versions(const RelayServer::Versions& v, std::string* error) {
+    if (!check_game_versions(v, "", error)) return false;
+    for (const auto& [id, g] : v.games) {
+        if (!valid_game_id(id)) {
+            if (error) *error = "not a game id: " + id.substr(0, 40);
+            return false;
+        }
+        if (!check_game_versions(g, id, error)) return false;
+    }
+    return true;
+}
+
 bool parse_relay_versions(std::string_view text, RelayServer::Versions& out, std::string* error) {
     RelayServer::Versions v = out;
+    v.games.clear(); // the file's alone
+    RelayServer::GameVersions* cur = &v; // the main game's keys until a [game] line
     auto trim = [](std::string_view t) {
         while (!t.empty() && (t.front() == ' ' || t.front() == '\t' || t.front() == '\r')) t.remove_prefix(1);
         while (!t.empty() && (t.back() == ' ' || t.back() == '\t' || t.back() == '\r')) t.remove_suffix(1);
@@ -759,8 +792,21 @@ bool parse_relay_versions(std::string_view text, RelayServer::Versions& out, std
         text = nl == std::string_view::npos ? std::string_view{} : text.substr(nl + 1);
         ++line_no;
         if (line.empty() || line[0] == '#') continue;
-        size_t eq = line.find('=');
         std::string where = "line " + std::to_string(line_no) + ": ";
+        if (line.front() == '[') {
+            std::string_view id = line.back() == ']' ? trim(line.substr(1, line.size() - 2)) : std::string_view{};
+            if (!valid_game_id(id)) {
+                if (error) *error = where + "not a game id (a-z 0-9 . _ -, at most " + std::to_string(kMaxGameId) + "): " + std::string(line.substr(0, 40));
+                return false;
+            }
+            if (v.games.count(std::string(id))) {
+                if (error) *error = where + "game " + std::string(id) + " is listed twice";
+                return false;
+            }
+            cur = &v.games[std::string(id)];
+            continue;
+        }
+        size_t eq = line.find('=');
         if (eq == std::string_view::npos) {
             if (error) *error = where + "expected key = value";
             return false;
@@ -772,9 +818,9 @@ bool parse_relay_versions(std::string_view text, RelayServer::Versions& out, std
                 if (error) *error = where + "not a version (x.y.z): " + std::string(value.substr(0, 40));
                 return false;
             }
-            (key == "latest" ? v.latest : v.min_online) = *g;
+            (key == "latest" ? cur->latest : cur->min_online) = *g;
         } else if (key == "release_url") {
-            v.release_url = std::string(value);
+            cur->release_url = std::string(value);
         } else {
             if (error) *error = where + "unknown key " + std::string(key.substr(0, 40));
             return false;

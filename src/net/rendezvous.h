@@ -36,6 +36,11 @@
 //              zero-padded to kVersionQuerySize                                        -> VersionInfo
 //   VersionInfo S -> game  ver latest, ver min_online (0.0.0: none), str release page URL (at
 //              most kMaxReleaseUrl characters, so the reply is never larger than the query)
+//              [, str game id: the query's game tag, when it had one]
+// Game tag (optional; docs/dev/ONLINE.md "Other games on one relay"): any request may end with
+// str id, ver (another game's id and version) after its own fields, before the padding. The
+// relay then answers and enforces that game's versions instead of its main game's; a request
+// without one (the padding's zero byte reads as an empty id) is the main game's.
 // A request with another protocol version gets Error(Version) in its own version's header
 // (the Error layout is the same in every version), so an old game can show "update".
 // Relayed data: "GT3R", u64 key, then one game datagram ("GT3N..."), forwarded unchanged
@@ -58,6 +63,9 @@ constexpr u16 kDefaultRelayPort = 47631;
 constexpr size_t kMinRequest = 64;    // requests are padded to this (every reply to an unverified source is smaller)
 constexpr size_t kVersionQuerySize = 160; // a VersionQuery is padded to this; its VersionInfo is smaller
 constexpr size_t kMaxReleaseUrl = 128;    // the release page URL a server hands out (VersionInfo fits the query)
+constexpr size_t kMaxGameId = 32;         // a game tag's id: 1 to 32 of a-z 0-9 . _ -
+// A VersionQuery with a game tag is padded to this, so its VersionInfo (with the id) is smaller.
+constexpr size_t kTaggedVersionQuerySize = kVersionQuerySize + 1 + kMaxGameId + 6;
 constexpr size_t kRvHeader = 7;       // magic + version + type
 
 enum class Rv : u8 {
@@ -127,6 +135,17 @@ void rv_pad(Writer& w, size_t size = kMinRequest); // zero padding up to `size`
 bool rv_parse(ByteSpan data, Rv& type, Reader& body);
 // The version of a control datagram (0: not one).
 u16 rv_version(ByteSpan data);
+
+// Another game on the same relay (docs/dev/ONLINE.md "Other games on one relay").
+struct GameTag {
+    std::string id;      // valid_game_id
+    GameVersion version; // that game's (x.y.z)
+};
+bool valid_game_id(std::string_view id);
+void put_game_tag(Writer& w, const GameTag& tag); // str id, ver
+// The tag at the reader's position (a copy: `r` itself does not move). nullopt: none (the
+// padding, the end of the datagram) or not a valid one.
+std::optional<GameTag> get_game_tag(Reader r);
 
 void put_u64(Writer& w, u64 v);
 u64 get_u64(Reader& r);

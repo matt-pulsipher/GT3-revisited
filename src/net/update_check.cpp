@@ -25,7 +25,7 @@ struct VersionCheck::State {
 namespace {
 
 VersionCheck::Result run(const std::string& server, const GameVersion& ours, RvPlatform platform, int timeout_ms,
-                         const std::atomic<bool>& cancel) {
+                         const std::optional<GameTag>& tag, const std::atomic<bool>& cancel) {
     using Clock = std::chrono::steady_clock; // real time (tests may stop now_ms())
     VersionCheck::Result res;
     Address to;
@@ -41,7 +41,8 @@ VersionCheck::Result run(const std::string& server, const GameVersion& ours, RvP
     }
     Writer q = rv_request(Rv::VersionQuery, 0, ours);
     q.u8_(u8(platform));
-    rv_pad(q, kVersionQuerySize);
+    if (tag) put_game_tag(q, *tag);
+    rv_pad(q, tag ? kTaggedVersionQuerySize : kVersionQuerySize);
     const auto start = Clock::now(), end = start + std::chrono::milliseconds(timeout_ms);
     const auto every = std::chrono::milliseconds(std::max(1, timeout_ms / 3));
     auto next = start;
@@ -71,6 +72,11 @@ VersionCheck::Result run(const std::string& server, const GameVersion& ours, RvP
             res.min_online = get_version(r);
             res.url = r.str();
             if (!r.ok()) continue;
+            if (tag && (r.remaining() == 0 || r.str() != tag->id)) { // the relay's own game's versions, not ours
+                res = {};
+                res.error = server + " announces no versions for this game";
+                return res;
+            }
             if (res.url.size() > kMaxReleaseUrl || (res.url.rfind("https://", 0) != 0 && res.url.rfind("http://", 0) != 0))
                 res.url.clear(); // only web pages are opened
             res.answered = true;
@@ -171,14 +177,15 @@ VersionCheck::~VersionCheck() {
     if (state_) state_->cancel = true;
 }
 
-void VersionCheck::start(const std::string& server, const GameVersion& ours, RvPlatform platform, int timeout_ms) {
+void VersionCheck::start(const std::string& server, const GameVersion& ours, RvPlatform platform, int timeout_ms,
+                         std::optional<GameTag> tag) {
     if (state_) state_->cancel = true;
     auto st = std::make_shared<State>();
     state_ = st;
     // Detached: a slow name lookup never holds up the game (or its exit). The thread only
     // touches its own shared state.
-    std::thread([st, server, ours, platform, timeout_ms] {
-        Result r = run(server, ours, platform, timeout_ms, st->cancel);
+    std::thread([st, server, ours, platform, timeout_ms, tag = std::move(tag)] {
+        Result r = run(server, ours, platform, timeout_ms, tag, st->cancel);
         std::lock_guard<std::mutex> lock(st->mu);
         st->result = std::move(r);
         st->done = true;

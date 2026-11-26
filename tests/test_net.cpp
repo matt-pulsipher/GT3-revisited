@@ -2156,6 +2156,7 @@ struct SlotHost {
     std::string code;
     u64 token = 0;
     net::GameVersion version; // sent in every request
+    std::optional<net::GameTag> tag; // added to every request when set
     net::RvSlot state{};
     int links = 0, position = 0, wait_s = -1;
     std::string text;
@@ -2166,6 +2167,7 @@ struct SlotHost {
     void send(net::Rv type, double now, const std::function<void(net::Writer&)>& fill) {
         net::Writer w = net::rv_request(type, srv.cookie_for(addr, now), version);
         fill(w);
+        if (tag) net::put_game_tag(w, *tag);
         net::rv_pad(w);
         srv.receive(addr, w.data, now);
     }
@@ -2989,6 +2991,258 @@ TEST(net_version_check_roundtrip) {
         CHECK(n == net::kVersionQuerySize);
     }
     CHECK(got >= 1 && got <= 3);
+}
+
+// --- other games on one relay (docs/dev/ONLINE.md "Other games on one relay") ----------
+
+namespace {
+
+net::GameTag game_tag(const char* id, const char* version) { return {id, ver(version)}; }
+
+Bytes tagged_query(const net::GameTag& tag, size_t pad = net::kTaggedVersionQuerySize) {
+    net::Writer w = net::rv_request(net::Rv::VersionQuery, 0, ver("0.1.0"));
+    w.u8_(u8(net::RvPlatform::Linux));
+    net::put_game_tag(w, tag);
+    net::rv_pad(w, pad);
+    return w.data;
+}
+
+} // namespace
+
+TEST(net_game_tag_wire) {
+    CHECK(net::valid_game_id("other") && net::valid_game_id("a.b_c-9") && net::valid_game_id(std::string(net::kMaxGameId, 'x')));
+    for (const char* bad : {"", "Other", "o ther", "o/t", "\xc3\xa9"}) CHECK(!net::valid_game_id(bad));
+    CHECK(!net::valid_game_id(std::string(net::kMaxGameId + 1, 'x')));
+    net::Writer w;
+    net::put_game_tag(w, game_tag("other", "1.2.3"));
+    net::Reader r(w.data);
+    std::optional<net::GameTag> t = net::get_game_tag(r);
+    CHECK(t && t->id == "other" && t->version.number() == "1.2.3");
+    CHECK(r.remaining() == w.data.size()); // the reader passed in does not move
+    // The padding (an empty id), the end of the datagram, a cut or invalid tag: none.
+    Bytes zeros(16, 0);
+    CHECK(!net::get_game_tag(net::Reader(zeros)) && !net::get_game_tag(net::Reader(ByteSpan{})));
+    Bytes cut(w.data.begin(), w.data.end() - 1);
+    CHECK(!net::get_game_tag(net::Reader(cut)));
+    net::Writer bad;
+    net::put_game_tag(bad, game_tag("Other", "1.0.0"));
+    CHECK(!net::get_game_tag(net::Reader(bad.data)));
+    // The tagged query's padding leaves room for the longest answer with the id.
+    CHECK(net::kRvHeader + 12 + 1 + net::kMaxReleaseUrl + 1 + net::kMaxGameId <= net::kTaggedVersionQuerySize);
+}
+
+TEST(net_relay_versions_per_game) {
+    net::RelayServer srv;
+    net::RelayServer::Limits lim;
+    lim.ip_msgs_burst = 1000; // every test host is 127.0.0.1, at one instant
+    srv.set_limits(lim);
+    use_mailboxes(srv);
+    net::RelayServer::Versions v = versions("0.9.0", "0.9.0", kUrl);
+    v.games["other"] = versions("0.2.0", "0.1.0", "https://example.org/other/releases/latest");
+    CHECK(net::check_relay_versions(v));
+    srv.set_versions(v);
+    double t = 1e6;
+    SlotHost q(srv);
+    auto info = [&](const Bytes& query, net::GameVersion* latest, net::GameVersion* min_online, std::string* url,
+                    std::string* echo) {
+        g_mail[q.addr.to_string()].clear();
+        srv.receive(q.addr, query, t);
+        Bytes a;
+        if (!q.reply(net::Rv::VersionInfo, &a) || a.size() > query.size()) return false;
+        net::Rv type;
+        net::Reader r(a);
+        net::rv_parse(a, type, r);
+        *latest = net::get_version(r), *min_online = net::get_version(r), *url = r.str();
+        *echo = r.remaining() ? r.str() : "";
+        return r.ok();
+    };
+    net::GameVersion latest, min_online;
+    std::string url, echo;
+    // Untagged: the main game's, as before (no id after the page).
+    CHECK(info(version_query(ver("0.1.0"), net::RvPlatform::Linux), &latest, &min_online, &url, &echo));
+    CHECK(latest.number() == "0.9.0" && min_online.number() == "0.9.0" && url == kUrl && echo.empty());
+    // Tagged: that game's, with its id.
+    CHECK(info(tagged_query(game_tag("other", "0.1.0")), &latest, &min_online, &url, &echo));
+    CHECK(latest.number() == "0.2.0" && min_online.number() == "0.1.0" && url == "https://example.org/other/releases/latest" &&
+          echo == "other");
+    // A game the relay does not list: none (0.0.0 / 0.0.0 / no page), with its id.
+    CHECK(info(tagged_query(game_tag("unknown", "0.1.0")), &latest, &min_online, &url, &echo));
+    CHECK(!latest.known() && !min_online.known() && url.empty() && echo == "unknown");
+    // The longest page and id: a query padded only to the untagged size gets nothing (the reply would be larger), one padded
+    // to the tagged size its answer.
+    const std::string longest_id(net::kMaxGameId, 'x');
+    net::RelayServer::Versions longest = v;
+    longest.games[longest_id] = versions("0.2.0", "0.1.0", "");
+    longest.games[longest_id].release_url = "https://" + std::string(net::kMaxReleaseUrl - 8, 'a');
+    CHECK(net::check_relay_versions(longest));
+    srv.set_versions(longest);
+    g_mail[q.addr.to_string()].clear();
+    srv.receive(q.addr, tagged_query({longest_id, ver("0.1.0")}, net::kVersionQuerySize), t);
+    CHECK(!q.reply(net::Rv::VersionInfo));
+    CHECK(info(tagged_query({longest_id, ver("0.1.0")}), &latest, &min_online, &url, &echo) && echo == longest_id);
+    srv.set_versions(v);
+
+    // Enforcement: a tagged request is held to its game's min_online by the tag's version; the header's does not count.
+    auto refused_with = [&](SlotHost& h, const char* want_latest) {
+        Bytes b;
+        if (!h.reply(net::Rv::Error, &b)) return false;
+        net::Rv type;
+        net::Reader r(b);
+        net::rv_parse(b, type, r);
+        if (r.u8_() != u8(net::RvError::UpdateRequired)) return false;
+        r.str();
+        return net::get_version(r).number() == want_latest && r.ok();
+    };
+    u64 token = 500;
+    {
+        SlotHost h(srv); // the main game's version in the header, its own game's below that game's minimum
+        h.version = ver("0.9.0"), h.tag = game_tag("other", "0.0.9");
+        h.send(net::Rv::Register, t, [&](net::Writer& w) { net::put_u64(w, ++token), net::put_endpoints(w, {}); });
+        CHECK(refused_with(h, "0.2.0") && srv.stats().sessions == 0);
+    }
+    SlotHost h(srv), j(srv), old(srv), main_old(srv), stranger(srv);
+    h.version = j.version = old.version = ver("0.1.0"); // below the main game's 0.9.0
+    h.tag = j.tag = game_tag("other", "0.1.0");
+    CHECK(h.reg(++token, t)); // its own game's minimum met
+    CHECK(srv.stats().sessions == 1);
+    j.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(h.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+    CHECK(j.reply(net::Rv::HostInfo));
+    j.send(net::Rv::Bind, t, [&](net::Writer& w) { fill_bind(w, net::pair_key(h.token, 1, 2), h.code, h.token, 1, 2); });
+    CHECK(j.reply(net::Rv::Bound));
+    CHECK(h.reserve(1, t) && h.state == net::RvSlot::Granted);
+    h.release(t);
+    old.tag = game_tag("other", "0.0.1");
+    old.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(h.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+    CHECK(refused_with(old, "0.2.0"));
+    old.send(net::Rv::Bind, t, [&](net::Writer& w) { fill_bind(w, net::pair_key(h.token, 1, 3), h.code, h.token, 1, 3); });
+    CHECK(refused_with(old, "0.2.0"));
+    // Untagged, the same header version is the main game's and below its minimum.
+    main_old.version = ver("0.1.0");
+    main_old.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(h.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+    CHECK(refused_with(main_old, "0.9.0"));
+    // A game the relay does not list: every version may play.
+    stranger.version = ver("0.0.1"), stranger.tag = game_tag("unknown", "0.0.1");
+    CHECK(stranger.reg(++token, t));
+    // A reload that drops the game: its requests have no minimum, the main game's stays.
+    srv.set_versions(versions("0.9.0", "0.9.0", kUrl));
+    old.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(h.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+    CHECK(old.reply(net::Rv::HostInfo));
+}
+
+TEST(net_relay_versions_file_games) {
+    net::RelayServer::Versions v = versions("0.1.0", "0.0.0", ""); // the flags
+    v.games["stale"] = versions("9.0.0", "9.0.0", "");
+    CHECK(net::parse_relay_versions("latest = 0.9.0\nmin_online = 0.9.0\nrelease_url = https://e.org/a\n"
+                                    "\n[other]\nlatest = 0.2.0\n min_online = 0.1.0 \nrelease_url = https://e.org/b/{asset}\n"
+                                    "[third.game]\nlatest = 1.0.0\n",
+                                    v));
+    CHECK(v.latest.number() == "0.9.0" && v.min_online.number() == "0.9.0" && v.release_url == "https://e.org/a");
+    CHECK(v.games.size() == 2 && !v.games.count("stale")); // the file's alone
+    CHECK(v.games["other"].latest.number() == "0.2.0" && v.games["other"].min_online.number() == "0.1.0" &&
+          v.games["other"].release_url == "https://e.org/b/{asset}");
+    CHECK(v.games["third.game"].latest.number() == "1.0.0" && !v.games["third.game"].min_online.known() &&
+          v.games["third.game"].release_url.empty()); // a game's keys left out: none (not the main game's)
+    // A file without games leaves none; keys before the first [id] are the main game's.
+    CHECK(net::parse_relay_versions("latest = 0.9.1\n", v) && v.games.empty() && v.latest.number() == "0.9.1");
+    net::RelayServer::Versions w = v;
+    std::string err;
+    for (const char* bad : {"[Other]\n", "[o ther]\n", "[]\n", "[other\n", "[other]\n[other]\n",
+                            "[other]\nlatest = 0.1.0\nmin_online = 0.2.0\n", "[other]\nrelease_url = ftp://x\n",
+                            "[other]\ncolor = red\n"}) {
+        err.clear();
+        CHECK(!net::parse_relay_versions(bad, w, &err) && !err.empty());
+        CHECK(w.latest.number() == v.latest.number() && w.games.empty()); // unchanged
+    }
+    CHECK(net::parse_relay_versions("[other]\nlatest = 0.1.0\nmin_online = 0.2.0\n", w, &err) == false &&
+          err.find("[other]") != std::string::npos);
+}
+
+TEST(net_version_check_game_tag) {
+    // A check with a game tag: that game's versions; a relay that answers without the id (one
+    // without games: tested by answering untagged here) counts as no answer.
+    net::RelayServer srv;
+    if (!srv.open(0)) SKIP("no UDP sockets here");
+    net::RelayServer::Versions v = versions("0.9.0", "0.9.0", kUrl);
+    v.games["other"] = versions("0.2.0", "0.1.0", "https://example.org/other");
+    srv.set_versions(v);
+    const std::string server = "127.0.0.1:" + std::to_string(srv.port());
+    auto run = [&](std::optional<net::GameTag> tag) {
+        net::VersionCheck check;
+        check.start(server, ver("0.1.0"), net::RvPlatform::MacOS, 3000, tag);
+        std::optional<net::VersionCheck::Result> r;
+        CHECK(settle([&] {
+            srv.step(1);
+            return (r = check.take()).has_value();
+        }));
+        return r.value_or(net::VersionCheck::Result{});
+    };
+    net::VersionCheck::Result r = run(game_tag("other", "0.1.0"));
+    CHECK(r.answered && r.latest.number() == "0.2.0" && r.min_online.number() == "0.1.0" && r.url == "https://example.org/other");
+    r = run(game_tag("unknown", "0.1.0"));
+    CHECK(r.answered && !r.latest.known() && !r.min_online.known() && r.url.empty());
+    r = run(std::nullopt);
+    CHECK(r.answered && r.latest.number() == "0.9.0");
+    // A relay without games (an answer with no id): no answer for the tagged game.
+    net::UdpSocket fake;
+    CHECK(fake.open(0));
+    net::VersionCheck check;
+    check.start("127.0.0.1:" + std::to_string(fake.local_port()), ver("0.1.0"), net::RvPlatform::MacOS, 3000, game_tag("other", "0.1.0"));
+    std::optional<net::VersionCheck::Result> res;
+    CHECK(settle([&] {
+        u8 buf[512];
+        net::Address from;
+        while (size_t n = fake.recv_from(from, buf, sizeof buf)) {
+            CHECK(n == net::kTaggedVersionQuerySize);
+            net::Writer a = net::rv_begin(net::Rv::VersionInfo);
+            net::put_version(a, ver("0.9.0")), net::put_version(a, ver("0.9.0")), a.str(kUrl);
+            fake.send_to(from, a.data);
+        }
+        return (res = check.take()).has_value();
+    }));
+    CHECK(res && !res->answered && !res->latest.known() && res->error.find("no versions for this game") != std::string::npos);
+}
+
+TEST(net_session_game_tag) {
+    // A session with a game tag: the relay holds it to its game's versions, its header carries the
+    // engine's version (what a relay without games checks).
+    FakeClock clock;
+    net::RelayServer srv;
+    if (!srv.open(0)) SKIP("no UDP sockets here");
+    net::GameVersion above = net::this_game_version();
+    above.suffix.clear();
+    ++above.major;
+    net::RelayServer::Versions v;
+    v.latest = v.min_online = above; // the main game: this build is too old
+    v.release_url = kUrl;
+    v.games["other"] = versions("0.2.0", "0.2.0", "https://example.org/other");
+    srv.set_versions(v);
+    std::string server = "127.0.0.1:" + std::to_string(srv.port());
+    {
+        net::Session s; // untagged: refused
+        CHECK(s.host_via(server, "H", "a", 0));
+        CHECK(pump_rv(srv, {&s}, [&] { return s.update_required().has_value(); }));
+    }
+    {
+        net::Session s; // tagged, below its game's minimum: refused with that game's release
+        s.set_game_tag(game_tag("other", "0.1.0"));
+        CHECK(s.host_via(server, "H", "a", 0));
+        CHECK(pump_rv(srv, {&s}, [&] { return s.update_required().has_value(); }));
+        CHECK(s.update_required()->latest.number() == "0.2.0" && s.update_required()->url == "https://example.org/other");
+    }
+    net::Session h, j; // tagged and current: host and join
+    h.set_game_version(ver("0.2.0")), j.set_game_version(ver("0.2.0"));
+    h.set_game_tag(game_tag("other", "0.2.0")), j.set_game_tag(game_tag("other", "0.2.0"));
+    CHECK(h.host_via(server, "H", "a", 0));
+    CHECK(pump_rv(srv, {&h}, [&] { return !h.code().empty(); }) && !h.update_required());
+    CHECK(j.join_code(server, h.code(), "J", "b", 0));
+    CHECK(pump_rv(srv, {&h, &j}, [&] { return h.players().size() == 2; }) && !j.update_required());
+    // A relay that does not read the tag (here: one it cannot read) judges the header: the engine's version, not the game's.
+    srv.set_versions(versions(net::this_game_version().number().c_str(), net::this_game_version().number().c_str(), kUrl));
+    net::Session k;
+    k.set_game_version(ver("0.0.1"));
+    k.set_game_tag(game_tag("Not Read", "0.0.1"));
+    CHECK(k.host_via(server, "K", "a", 0));
+    CHECK(pump_rv(srv, {&k}, [&] { return !k.code().empty(); }) && !k.update_required());
 }
 
 TEST(net_direct_ip_needs_same_version) {

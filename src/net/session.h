@@ -173,8 +173,13 @@ public:
     // Set when the relay server answered UpdateRequired (the session then ends with Disconnected /
     // Rejected, or, at a race start, a Queue event); kept after it closed until the next start.
     const std::optional<UpdateRequired>& update_required() const { return update_required_; }
-    // Tests: play as another game version (default: this build's).
+    // Play as another game version (default: this build's): tests, and another app on the engine (with
+    // set_game_tag: its own version, which players then need the same of for direct-IP sessions).
     void set_game_version(const GameVersion& v) { version_ = v; }
+    // Another app on the engine that shares relay servers (docs/dev/ONLINE.md "Other games on one relay"): every
+    // request to the relay ends with this game tag, so the relay holds it to that game's versions. The requests'
+    // header then carries the engine's own version (this_game_version(): what a relay without games checks).
+    void set_game_tag(std::optional<GameTag> tag) { tag_ = std::move(tag); }
     // This machine's disc (default: a Gran Turismo 3 release); set it before host / join.
     void set_disc(OnlineDisc d) { disc_ = std::move(d); }
     // Tests: play as a game that supports only `caps` (kCap*; 0 = a game from before them).
@@ -298,7 +303,8 @@ private:
     bool alive(const Conn* c) const;
     void handle_server(Rv type, Reader& r);
     void server_tick(double now);
-    void send_server(Writer w) { // a request: padded (the server ignores short ones)
+    void send_server(Writer w) { // a request: the game tag, padded (the server ignores short ones)
+        if (tag_) put_game_tag(w, *tag_);
         rv_pad(w);
         sock_.send_to(server_, w.data);
     }
@@ -329,6 +335,8 @@ private:
 
     UdpSocket sock_;
     GameVersion version_ = this_game_version();
+    std::optional<GameTag> tag_;
+    const GameVersion& relay_version() const { return tag_ ? this_game_version() : version_; } // requests' header
     OnlineDisc disc_;
     u8 caps_ = kCaps; // sent in Hello
     std::optional<UpdateRequired> update_required_;
