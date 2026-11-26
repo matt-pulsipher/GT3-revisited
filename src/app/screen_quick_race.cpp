@@ -199,7 +199,10 @@ public:
     }
 
     // (the pages are tapped directly; the pickers keep the pad)
-    TouchLayout touch_layout() const override { return page_ == Page::Cars || page_ == Page::Courses ? TouchLayout::Menu : TouchLayout::None; }
+    TouchLayout touch_layout() const override {
+        if (name_keyboard_.is_open()) return TouchLayout::None; // (its keys are tapped directly)
+        return page_ == Page::Cars || page_ == Page::Courses ? TouchLayout::Menu : TouchLayout::None;
+    }
 
     bool clickable(float x, float y) const override {
         if (naming_) return name_keyboard_.is_open() && name_keyboard_.clickable(x, y);
@@ -1272,16 +1275,15 @@ private:
         picker_sound(app, "ok");
         naming_ = true;
         name_text_ = race_name();
-        if (SDL_Window* w = app.window()) SDL_StartTextInput(w);
-#if GT3R_XR
-        if (app.xr()) name_keyboard_.open("Save race as", "Save", false); // (no system keyboard in a headset)
-#endif
+        const bool ours = use_game_keyboard(app);
+        start_text_input(app.window(), ours);
+        if (ours) name_keyboard_.open("Save race as", "Save", false);
     }
 
     void end_naming(App& app, bool keep) {
         naming_ = false;
         name_keyboard_.close();
-        if (SDL_Window* w = app.window()) SDL_StopTextInput(w);
+        stop_text_input(app.window());
         app.menu().suppress(); // the keys typed are no menu input
         const std::string name(trim(name_text_));
         if (keep && !name.empty()) save_race(app, name);
@@ -1716,7 +1718,7 @@ private:
     bool delete_armed_ = false;
     bool naming_ = false;                    // typing a saved race's name
     std::string name_text_;
-    TextKeyboard name_keyboard_;             // in VR
+    TextKeyboard name_keyboard_;             // in a headset, on a phone or tablet
     PointerInput name_pointer_;
     PointerInput pointer_; // the list, the setup and the custom race (the pickers have their own)
     HitList hits_;
