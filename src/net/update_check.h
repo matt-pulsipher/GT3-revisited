@@ -59,8 +59,11 @@ public:
     VersionCheck(const VersionCheck&) = delete;
     VersionCheck& operator=(const VersionCheck&) = delete;
 
-    // Starts a check (an earlier one still running is abandoned).
-    void start(const std::string& server, const GameVersion& ours, RvPlatform platform, int timeout_ms = 3000);
+    // Starts a check (an earlier one still running is abandoned). With a game tag (another app on the
+    // engine: docs/dev/ONLINE.md "Other games on one relay") it asks for that game's versions; a relay
+    // that answers without the tag's id (one without games) counts as no answer.
+    void start(const std::string& server, const GameVersion& ours, RvPlatform platform, int timeout_ms = 3000,
+               std::optional<GameTag> tag = std::nullopt);
     bool running() const;
     std::optional<Result> take(); // the answer, once (nullopt while running or when none started)
 

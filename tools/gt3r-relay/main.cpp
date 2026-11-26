@@ -31,7 +31,9 @@
 //   --versions-file PATH     the same as "latest = ...", "min_online = ...", "release_url = ..."
 //                            lines (over the flags); re-read on SIGHUP (systemctl reload
 //                            gt3r-relay) without dropping anything. tools/gt3r-relay/set-versions.sh
-//                            writes it. A missing file is fine (the flags apply).
+//                            writes it. A missing file is fine (the flags apply). "[id]" lines
+//                            in it start another game's keys: requests carrying that game tag
+//                            get that game's versions (ONLINE.md "Other games on one relay").
 //
 // Logs to stdout (one line per session event with the code and a tag for the host's /
 // joining player's IP: a keyed hash, new key each UTC day; a stats line every minute).
@@ -39,7 +41,10 @@
 //   --geoip PATH             add each player's country: a "first IP,last IP,country" CSV such as
 //                            DB-IP's IP to Country Lite (tools/gt3r-relay/update-geoip.sh fetches
 //                            it); re-read on SIGHUP. Missing: "??" until a reload finds it.
-// Nothing else is kept. Version queries are only counted (in the stats line), never logged.
+// Nothing else is kept. Version queries are only counted (in the stats line), never logged. The
+// stats line's counts of version checks and refusals are the main game's; other games' follow it
+// ("; [id] 2 sessions, 40 version checks, 0 refused as outdated"); its first count of sessions is
+// every game's.
 
 #include "net/geoip.h"
 #include "net/relay_server.h"
@@ -68,13 +73,19 @@ void line(const std::string& s) {
     std::fflush(stdout);
 }
 
-std::string describe(const gt3r::net::RelayServer::Versions& v) {
+std::string describe_game(const gt3r::net::RelayServer::GameVersions& v) {
     if (!v.latest.known() && !v.min_online.known() && v.release_url.empty())
-        return "versions: not set (every game version may play online)";
-    std::string t = "versions: latest " + (v.latest.known() ? v.latest.number() : std::string("not set"));
+        return "not set (every game version may play online)";
+    std::string t = "latest " + (v.latest.known() ? v.latest.number() : std::string("not set"));
     t += v.min_online.known() ? ", min_online " + v.min_online.number() + " (older games cannot play online)"
                               : ", no min_online (every game version may play online)";
     t += ", release page " + (v.release_url.empty() ? std::string("not set") : v.release_url);
+    return t;
+}
+
+std::string describe(const gt3r::net::RelayServer::Versions& v) {
+    std::string t = "versions: " + describe_game(v.main());
+    for (const auto& [id, g] : v.games) t += "; [" + id + "] " + describe_game(g);
     return t;
 }
 
@@ -255,7 +266,12 @@ int main(int argc, char** argv) {
                           (unsigned long long)s.version_queries, q(gt3r::net::RvPlatform::Windows),
                           q(gt3r::net::RvPlatform::MacOS), q(gt3r::net::RvPlatform::Linux),
                           q(gt3r::net::RvPlatform::Android), (unsigned long long)s.outdated);
-            line(buf);
+            // Other games after it (the line above stays the main game's alone, as before they shared the relay).
+            std::string other;
+            for (const auto& [id, g] : s.games)
+                other += "; [" + id + "] " + std::to_string(g.sessions) + " sessions, " + std::to_string(g.version_queries) +
+                         " version checks, " + std::to_string(g.outdated) + " refused as outdated";
+            line(buf + other);
             srv.reset_peak();
         }
     }

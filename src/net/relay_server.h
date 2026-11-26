@@ -21,6 +21,9 @@
 //   latest release, min_online and the release page; requests that create state from a
 //   game below min_online are refused with Error(UpdateRequired). Unconfigured, every
 //   version is allowed. Queries are only counted, never logged.
+// - Other games (ONLINE.md "Other games on one relay"): requests may carry a game tag. Each
+//   game has its own versions, its own sessions (a code is found only by players of the game
+//   that registered it) and its own counts; requests without a tag are the main game's.
 //
 // The server never sees game state it needs to understand; it keeps no data on disk.
 // Single threaded: call step() in a loop.
@@ -73,14 +76,32 @@ public:
     };
     // Game versions: what VersionQuery answers and the oldest game that may create or join
     // sessions (0.0.0: any). Release versions only (no suffix).
-    struct Versions {
+    struct GameVersions {
         GameVersion latest, min_online;
         std::string release_url; // at most kMaxReleaseUrl characters, http(s)://; may hold {asset} (net::update_links)
     };
+    // The main game's (requests without a game tag), and other games' by their tag's id
+    // (ONLINE.md "Other games on one relay"). A tag whose id is not listed has none: every
+    // version of it may play, and its VersionQuery is answered with 0.0.0 / 0.0.0 / no page.
+    struct Versions {
+        GameVersion latest, min_online;
+        std::string release_url;
+        std::map<std::string, GameVersions> games;
+        GameVersions main() const { return {latest, min_online, release_url}; }
+    };
+    // Another game's share (by its game tag's id; the games the versions do not list together under kUnlisted).
+    static constexpr const char* kUnlisted = "(unlisted)";
+    struct GameStats {
+        size_t sessions = 0;      // open now
+        u64 version_queries = 0;  // VersionQuery answered
+        u64 outdated = 0;         // requests refused with UpdateRequired
+    };
     struct Stats {
-        size_t sessions = 0, channels = 0, pending = 0;
+        size_t sessions = 0, channels = 0, pending = 0; // every game's
+        // The main game's (requests without a game tag), as before other games shared the relay.
         u64 version_queries = 0, queries_by_platform[kPlatformCount] = {}; // VersionQuery answered
         u64 outdated = 0; // requests refused with UpdateRequired
+        std::map<std::string, GameStats> games; // the others: those the versions list, and "(unlisted)" for the rest
         size_t links_used = 0, links_capacity = 0, reservations = 0, queued = 0;
         u64 relayed_datagrams = 0, relayed_bytes = 0, dropped = 0;
         u64 challenges = 0, limited = 0; // cookie challenges sent; datagrams refused by a rate limit
@@ -142,6 +163,7 @@ private:
         u64 token = 0;
         u64 serial = 0; // tells a reused code apart
         std::vector<std::string> host_eps; // LAN
+        std::string game; // the host's game tag's id ("" the main game): only that game's players find the code
         double last_seen = 0;
         size_t pending = 0; // its joins in nonces_
         Bucket joins;
@@ -179,8 +201,17 @@ private:
     void handle(const Address& from, ByteSpan data, double now);
     void handle_control(const Address& from, Rv type, Reader& r, const GameVersion& game, double now, IpSlot& ip);
     void version_info(const Address& from, Reader& r, size_t request_size);
-    bool outdated(const GameVersion& game) const { return !meets_minimum(game, versions_.min_online); }
-    void update_required(const Address& to);
+    // The versions a request is held to: its game tag's game (none listed: no versions), else the main game's.
+    GameVersions versions_for(const std::optional<GameTag>& tag) const;
+    // Below that game's min_online: the tag's version, else the request header's.
+    bool outdated(const GameVersion& game, const std::optional<GameTag>& tag) const {
+        return !meets_minimum(tag ? tag->version : game, versions_for(tag).min_online);
+    }
+    void update_required(const Address& to, const std::optional<GameTag>& tag);
+    static std::string game_of(const std::optional<GameTag>& tag) { return tag ? tag->id : std::string(); }
+    // A game's counts: a game the versions list, else all unlisted ones together (kUnlisted), so made-up ids cost no memory.
+    std::string stats_key(const std::string& id) const { return versions_.games.count(id) ? id : std::string(kUnlisted); }
+    GameStats& game_stats(const std::string& id) { return stats_.games[stats_key(id)]; }
     void relay(const Address& from, ByteSpan data, double now);
     void send(const Address& to, const Writer& w) { send_to(to, w.data); }
     void send_to(const Address& to, ByteSpan data) {
@@ -248,8 +279,10 @@ private:
 
 // The relay's versions file (gt3r-relay --versions-file; tools/gt3r-relay/set-versions.sh writes
 // it): "key = value" lines, '#' comments. Keys: latest, min_online, release_url. A key left out
-// keeps the value `out` has (the flags, else 0.0.0 / none: every version allowed). Fails on
-// unknown keys, bad versions, a bad URL, or min_online above latest; `out` is then unchanged.
+// keeps the value `out` has (the flags, else 0.0.0 / none: every version allowed). A "[id]"
+// line starts another game's keys (a game tag's id; each id once; its keys left out are 0.0.0 /
+// none); the games are the file's alone. Fails on unknown keys, bad versions, a bad URL, a bad
+// or repeated id, or min_online above latest; `out` is then unchanged.
 bool parse_relay_versions(std::string_view text, RelayServer::Versions& out, std::string* error = nullptr);
 // Checks values from flags the same way.
 bool check_relay_versions(const RelayServer::Versions& v, std::string* error = nullptr);
