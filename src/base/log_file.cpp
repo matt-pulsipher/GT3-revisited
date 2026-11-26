@@ -1,7 +1,7 @@
 #include "base/log_file.h"
 
+#include "base/app_identity.h"
 #include "base/log.h"
-#include "gt3r_version.h"
 #include "platform/crash_handlers.h"
 
 #include <SDL3/SDL_filesystem.h>
@@ -263,20 +263,22 @@ std::string format_line(double seconds, LogLevel level, std::string_view text) {
     return line;
 }
 
+std::string file_name(bool previous) { return app_identity().file_stem + (previous ? ".prev.log" : ".log"); }
+
 bool open(const std::string& dir) {
     if (dir.empty()) return false;
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         if (file_open()) return true;
-        const std::string path = dir + "gt3r.log";
-        SDL_RenamePath(path.c_str(), (dir + "gt3r.prev.log").c_str()); // none the first time
+        const std::string path = dir + file_name(false);
+        SDL_RenamePath(path.c_str(), (dir + file_name(true)).c_str()); // none the first time
         if (!raw_open(path)) return false;
         g_path = path;
         g_redactor = make_redactor();
         g_last_flush = SDL_GetTicks();
         SDL_GetLogOutputFunction(&g_default, &g_default_data);
         SDL_SetLogOutputFunction(output, nullptr);
-        const std::string head = "GT3 Revisited " + std::string(GT3R_VERSION) + " on " + SDL_GetPlatform() +
+        const std::string head = app_identity().name + " " + app_identity().version + " on " + SDL_GetPlatform() +
                                  ", started " + timestamp() + "\n";
         append_locked(head, true);
     }

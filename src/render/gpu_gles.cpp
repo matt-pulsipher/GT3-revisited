@@ -14,6 +14,7 @@
 
 #if GT3R_GLES
 
+#include "base/app_identity.h"
 #include "base/log.h"
 
 #define GL_GLES_PROTOTYPES 0 // the functions come from the context (load_gl)
@@ -891,7 +892,7 @@ namespace gt3r::render::gles {
 bool probe(bool angle) {
     if (!SDL_Init(SDL_INIT_VIDEO)) return false;
     bool ok = false;
-    if (SDL_Window* window = SDL_CreateWindow("GT3 Revisited", 64, 64, SDL_WINDOW_HIDDEN)) {
+    if (SDL_Window* window = SDL_CreateWindow(app_identity().name.c_str(), 64, 64, SDL_WINDOW_HIDDEN)) {
         SDL_GPUDevice* device = create_device(false, angle);
         if (SDL_Renderer* r = gt3r_gl_CreateGPURenderer(device, window)) {
             ok = (device->description.find("(ANGLE") != std::string::npos) == angle;

@@ -5,29 +5,30 @@
 #include "disc/iso9660.h"
 
 #include <set>
+#include <utility>
 
 namespace gt3r {
 
-Volume::Volume(Reader& file, u64 base_offset, u64 length) : file_(file) {
+Volume::Volume(Reader& file, u64 base_offset, u64 length, std::string name) : file_(file), name_(std::move(name)) {
     parts_.push_back({base_offset, length});
     read_toc(0);
-    LOG_INFO("GT3.VOL: %zu files", entries_.size());
+    LOG_INFO("%s: %zu files", name_.c_str(), entries_.size());
 }
 
 void Volume::add_part(u64 base_offset, u64 length) {
-    if (parts_.size() >= 255) throw FormatError("GT3.VOL: too many volumes");
+    if (parts_.size() >= 255) throw FormatError(name_ + ": too many volumes");
     parts_.push_back({base_offset, length});
     const size_t before = entries_.size();
     read_toc(u8(parts_.size() - 1));
-    LOG_INFO("GT3.VOL: %zu more files from volume %zu", entries_.size() - before, parts_.size() - 1);
+    LOG_INFO("%s: %zu more files from volume %zu", name_.c_str(), entries_.size() - before, parts_.size() - 1);
 }
 
 void Volume::read_toc(u8 part) {
     const Part& p = parts_[part];
     Bytes hdr = file_.read_at(p.base, 0x14);
-    if (rd32(hdr, 0) != kMagic) throw FormatError("GT3.VOL: bad magic");
+    if (rd32(hdr, 0) != kMagic) throw FormatError(name_ + ": bad magic");
     u32 toc_size = rd32(hdr, 0x08);
-    if (toc_size < 0x14 || toc_size > p.length) throw FormatError("GT3.VOL: bad toc size");
+    if (toc_size < 0x14 || toc_size > p.length) throw FormatError(name_ + ": bad toc size");
     Bytes toc = file_.read_at(p.base, toc_size);
     const size_t first = entries_.size();
     walk(toc, 0x14, "", 0, part);
@@ -45,7 +46,7 @@ std::string Volume::node_name(ByteSpan toc, u32 offset) {
 }
 
 void Volume::walk(ByteSpan toc, u32 node, const std::string& prefix, int depth, u8 part) {
-    if (depth > 32) throw FormatError("GT3.VOL: directory tree too deep");
+    if (depth > 32) throw FormatError(name_ + ": directory tree too deep");
     u32 count = rd32(toc, node + 4);
     for (u32 i = 1; i < count; ++i) { // child 0 is the parent link
         u32 child = rd32(toc, node + 8 + i * 4);
@@ -64,7 +65,7 @@ void Volume::walk(ByteSpan toc, u32 node, const std::string& prefix, int depth, 
         e.stored_size = e.compressed ? rd32(toc, child + 12) : e.size;
         e.part = part;
         if (u64(e.sector) * kSectorSize + e.stored_size > parts_[part].length)
-            throw FormatError("GT3.VOL: entry out of range: " + e.path);
+            throw FormatError(name_ + ": entry out of range: " + e.path);
         entries_.push_back(std::move(e));
     }
 }

@@ -40,8 +40,9 @@ public:
         u8 part = 0; // which of the set's volumes holds it (add_part)
     };
 
-    // `base_offset` is the byte offset of GT3.VOL within the disc Reader `file`.
-    Volume(Reader& file, u64 base_offset, u64 length);
+    // `base_offset` is the byte offset of GT3.VOL within the disc Reader `file`. `name` is what its log lines and
+    // errors call it.
+    Volume(Reader& file, u64 base_offset, u64 length, std::string name = "GT3.VOL");
     // Another volume of the set in the same disc Reader (whose files are spread over several *.VOL files): its entries
     // join this one's, a path already here staying this one's.
     void add_part(u64 base_offset, u64 length);
@@ -84,6 +85,7 @@ private:
     static std::string node_name(ByteSpan toc, u32 offset);
 
     Reader& file_;
+    std::string name_;
     struct Part {
         u64 base, length;
     };

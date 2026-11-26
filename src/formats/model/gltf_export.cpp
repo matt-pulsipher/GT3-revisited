@@ -1,5 +1,6 @@
 #include "formats/model/gltf_export.h"
 
+#include "base/app_identity.h"
 #include "formats/png_writer.h"
 
 #include <algorithm>
@@ -257,7 +258,7 @@ Bytes export_glb(const scene::Model& model, const GlbExportOptions& opt) {
         roots += std::string(roots.empty() ? "" : ",") + std::to_string(node_count++);
     }
 
-    std::string json = "{\"asset\":{\"version\":\"2.0\",\"generator\":\"GT3 Revisited\"}";
+    std::string json = "{\"asset\":{\"version\":\"2.0\",\"generator\":" + quoted(app_identity().name) + "}";
     if (unlit_used) json += ",\"extensionsUsed\":[\"KHR_materials_unlit\"]";
     json += ",\"scene\":0,\"scenes\":[{\"name\":" + quoted(model.name) + ",\"nodes\":[" + roots + "]}]";
     if (node_count) json += ",\"nodes\":[" + nodes + "]";
