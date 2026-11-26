@@ -52,7 +52,10 @@ on its own worker thread. `File::read_at` is
 mutex-protected, so the disc can be read from both threads. A background
 thread creates the 3D pipelines at start-up
 (`GpuContext::warm_pipelines`, [dev/RENDERING.md](dev/RENDERING.md)); the
-pipeline cache is mutex-protected. Online sessions receive on their own
+pipeline cache is mutex-protected. A race's load builds the opponents' car
+models on up to five threads (`parallel_for`); their GPU uploads wait for the
+main thread (`render::DeferredUploads`,
+[dev/RACE.md](dev/RACE.md)). Online sessions receive on their own
 thread, and the update check runs on a detached one.
 
 ## Modules

@@ -5,10 +5,17 @@
 
 #include "app/screen_race_impl.h"
 
+#include "base/parallel_for.h"
 #include "formats/texture_pack.h"
 #include "game/data/mod_event_def.h"
+#include "render/deferred_uploads.h"
 #include "sim/exact/race_flow.h"
 #include "sim/exact/race_record.h"
+
+#include <exception>
+#include <functional>
+#include <mutex>
+#include <thread>
 
 namespace gt3r::race_screen {
 
@@ -885,30 +892,70 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     std::map<std::pair<std::string, int>, std::shared_ptr<CarVisual>> by_model = kept_opponents_.take(custom, pack, keys);
     for (const auto& [key, v] : by_model)
         if (v) v->reset_looks();
-    for (const Opponent& o : opponents) {
-        const std::string& model = o.model;
-        const int paint = o.paint;
-        const CarBodyMod& bm = o.bm;
-        std::shared_ptr<CarVisual>& v = by_model[o.key];
-        if (!v) {
-            std::optional<Bytes> f = read_car(app, model);
+    // The models not kept are built on as many threads as there are cores (0, not known: one), at most five, a group of
+    // that many at a time: each group's uploads, left for this thread (render::DeferredUploads), run before the next
+    // starts, so only a group's textures wait for them. The disc is read by one builder at a time (a mod's files come
+    // from its archive).
+    const unsigned threads = std::clamp(std::thread::hardware_concurrency(), 1u, 5u);
+    std::vector<const Opponent*> todo;
+    std::set<race::KeptModels<CarVisual>::Key> queued;
+    for (const Opponent& o : opponents)
+        if (!by_model[o.key] && queued.insert(o.key).second) todo.push_back(&o);
+    std::vector<std::shared_ptr<CarVisual>> built(todo.size());
+    std::vector<render::DeferredUploads> uploads(todo.size());
+    std::mutex disc;
+    std::exception_ptr failed; // (a car or wheel file that cannot be read fails the race's start)
+    const auto in_turn = [&disc](std::function<std::optional<Bytes>()> read) -> std::function<std::optional<Bytes>()> {
+        if (!read) return read;
+        return [&disc, read = std::move(read)] {
+            std::lock_guard lock(disc);
+            return read();
+        };
+    };
+    auto build = [&](size_t k) {
+        const Opponent& o = *todo[k];
+        render::DeferredUploads::Scope scope(uploads[k]);
+        std::optional<Bytes> f, wf;
+        try {
+            std::lock_guard lock(disc);
+            f = read_car(app, o.model);
+            if (!o.bm.wheel.empty()) wf = app.vfs()->read("wheel/" + o.bm.wheel);
+        } catch (...) {
+            std::lock_guard lock(disc);
+            failed = std::current_exception();
+            return;
+        }
+        if (!f || f->empty()) return;
+        try {
             WheelSpec ws;
-            if (auto w = wheel_spec_from_database(db_, model)) ws = *w;
-            std::optional<Bytes> wf = bm.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm.wheel);
+            if (auto w = wheel_spec_from_database(db_, o.model)) ws = *w;
+            std::unique_lock lock(disc);
+            const ShowroomFiles sh = read_showroom(app, o.model, wf ? o.bm.wheel : "");
+            lock.unlock();
+            built[k] = std::make_shared<CarVisual>(*app.gpu(), *f, o.model, ws, o.paint, wf ? ByteSpan(*wf) : ByteSpan{},
+                                                   o.bm, sh.car_span(), sh.wheel_span(), in_turn(sh.stand_in),
+                                                   in_turn(sh.tyre));
+        } catch (const std::exception& e) {
+            LOG_WARN("Race: opponent model %s: %s", o.model.c_str(), e.what());
+        }
+    };
+    for (size_t first = 0; first < todo.size(); first += threads) {
+        const size_t n = std::min<size_t>(threads, todo.size() - first);
+        parallel_for(n, threads, [&](size_t k) { build(first + k); });
+        if (failed) std::rethrow_exception(failed);
+        for (size_t k = first; k < first + n; ++k) {
+            if (!built[k]) continue;
             try {
-                if (f && !f->empty()) {
-                    const ShowroomFiles sh = read_showroom(app, model, wf ? bm.wheel : "");
-                    v = std::make_shared<CarVisual>(*app.gpu(), *f, model, ws, paint, wf ? ByteSpan(*wf) : ByteSpan{}, bm,
-                                                    sh.car_span(), sh.wheel_span(), sh.stand_in, sh.tyre);
-                    v->set_full_detail(full_car_detail_);
-                    if (brake_parts_) v->set_brake_parts(*brake_parts_);
-                }
+                uploads[k].run();
+                std::shared_ptr<CarVisual>& v = by_model[todo[k]->key] = std::move(built[k]);
+                v->set_full_detail(full_car_detail_);
+                if (brake_parts_) v->set_brake_parts(*brake_parts_);
             } catch (const std::exception& e) {
-                LOG_WARN("Race: opponent model %s: %s", model.c_str(), e.what());
+                LOG_WARN("Race: opponent model %s: %s", todo[k]->model.c_str(), e.what());
             }
         }
-        opp_visuals_.push_back(v);
     }
+    for (const Opponent& o : opponents) opp_visuals_.push_back(by_model[o.key]);
     kept_opponents_.keep(std::move(by_model), custom, pack);
     // Engine notes of the opponents (their base car's sound bank) and their extra sounds.
     std::vector<OpponentEngines::Car> sounds;

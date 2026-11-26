@@ -1,6 +1,7 @@
 #include "render/gpu_model.h"
 
 #include "base/log.h"
+#include "render/deferred_uploads.h"
 
 #include <algorithm>
 #include <cmath>
@@ -135,23 +136,36 @@ GpuModel::GpuModel(GpuContext& ctx, const scene::Model& model, bool keep_geometr
     assemble(model.meshes, model.textures.size(), true, vertices, indices, meshes_);
     index_nodes();
     vertex_count_ = vertices.size();
-    Uploader up(device_);
-    if (!vertices.empty() && !indices.empty()) {
-        vertices_ = up.buffer(SDL_GPU_BUFFERUSAGE_VERTEX, vertices.data(), u32(vertices.size() * sizeof(scene::Vertex)));
-        indices_ = up.buffer(SDL_GPU_BUFFERUSAGE_INDEX, indices.data(), u32(indices.size() * sizeof(u32)));
-    }
-    if (keep_) geometry_ = {std::move(vertices), std::move(indices)};
     for (const scene::Texture& t : model.textures) {
         TextureInfo ti;
         ti.clamp_u = t.clamp_u;
         ti.clamp_v = t.clamp_v;
         ti.no_mips = t.no_mips;
-        if (t.width && t.height && t.rgba.size() >= size_t(t.width) * t.height) {
-            ti.texture = ctx.acquire_texture(up, t.width, t.height, t.rgba.data());
-            ti.width = t.width, ti.height = t.height;
-        }
-        if (!ti.texture) LOG_WARN("Texture '%s' (%ux%u) not uploaded", t.name.c_str(), t.width, t.height);
         textures_.push_back(ti);
+    }
+    if (DeferredUploads* d = DeferredUploads::current()) { // (uploaded later, by run() on the GPU's thread)
+        if (keep_) geometry_ = {vertices, indices};
+        d->add([this, v = std::move(vertices), i = std::move(indices), t = model.textures] { upload(v, i, t); });
+        return;
+    }
+    upload(vertices, indices, model.textures);
+    if (keep_) geometry_ = {std::move(vertices), std::move(indices)};
+}
+
+void GpuModel::upload(const std::vector<scene::Vertex>& vertices, const std::vector<u32>& indices,
+                      const std::vector<scene::Texture>& textures) {
+    Uploader up(device_);
+    if (!vertices.empty() && !indices.empty()) {
+        vertices_ = up.buffer(SDL_GPU_BUFFERUSAGE_VERTEX, vertices.data(), u32(vertices.size() * sizeof(scene::Vertex)));
+        indices_ = up.buffer(SDL_GPU_BUFFERUSAGE_INDEX, indices.data(), u32(indices.size() * sizeof(u32)));
+    }
+    for (size_t k = 0; k < textures.size(); ++k) {
+        const scene::Texture& t = textures[k];
+        if (t.width && t.height && t.rgba.size() >= size_t(t.width) * t.height) {
+            textures_[k].texture = ctx_->acquire_texture(up, t.width, t.height, t.rgba.data());
+            textures_[k].width = t.width, textures_[k].height = t.height;
+        }
+        if (!textures_[k].texture) LOG_WARN("Texture '%s' (%ux%u) not uploaded", t.name.c_str(), t.width, t.height);
     }
     if (!up.submit()) LOG_WARN("Model upload failed: %s", SDL_GetError());
 }

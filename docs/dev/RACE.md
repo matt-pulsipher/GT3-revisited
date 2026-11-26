@@ -1598,6 +1598,11 @@ takes the last one's models it still has (their looks, the morphs and CLUT anima
 again as a new model's would) and lets the others go before it builds the rest. They are built
 again at the next start (its settings and course), or when the custom paints or the texture
 pack in use are no longer those they were built with; a start or build that fails lets them go.
+The ones to build are built on as many threads as there are cores, at most five
+(`parallel_for`), a group of that many at a time. A `GpuModel` made while its thread has a
+`render::DeferredUploads` in scope leaves its upload there; the race screen's thread runs a
+group's uploads, in the field's order, before the next group is built, so no more than a
+group's textures wait for them. The builders read the disc one at a time.
 
 ## Ghost
 

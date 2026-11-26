@@ -103,6 +103,10 @@ public:
     SDL_GPUBuffer* index_buffer() const { return indices_; }
 
 private:
+    // The constructor's GPU part (deferred on a thread with a DeferredUploads installed).
+    void upload(const std::vector<scene::Vertex>& vertices, const std::vector<u32>& indices,
+                const std::vector<scene::Texture>& textures);
+
     // One write into a GPU buffer for stage().
     struct Upload {
         SDL_GPUBuffer* buffer;
