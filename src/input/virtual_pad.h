@@ -37,8 +37,12 @@ struct PadState {
     // reads as the byte (set_axis); whatever sets the byte alone leaves it stale.
     std::array<float, kPadAxisCount> fine{};
     bool connected = false;
+    // An app's own controls beyond the DualShock 2's buttons (input/extra_controls.h): bit i set =
+    // Extra i+1 is pressed.
+    u8 extra = 0;
 
     bool down(PadButton b) const { return buttons & (1u << static_cast<unsigned>(b)); }
+    bool extra_down(size_t i) const { return i < 8 && (extra & (1u << i)); }
     u8 press(PadButton b) const { return pressure[static_cast<size_t>(b)]; }
     u8 axis(PadAxis a) const { return axes[static_cast<size_t>(a)]; }
     // -1..1 convenience for engine code.
