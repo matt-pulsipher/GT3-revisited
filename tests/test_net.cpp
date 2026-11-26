@@ -3129,6 +3129,58 @@ TEST(net_relay_versions_per_game) {
     CHECK(old.reply(net::Rv::HostInfo));
 }
 
+TEST(net_relay_sessions_per_game) {
+    // A code is found only by players of the game that registered it (like an unknown code for the others: a refusal
+    // tells nothing); counts are kept per game, the main game's as before.
+    net::RelayServer srv;
+    net::RelayServer::Limits lim;
+    lim.ip_msgs_burst = 1000;
+    srv.set_limits(lim);
+    use_mailboxes(srv);
+    net::RelayServer::Versions v = versions("0.9.0", "0.0.0", kUrl);
+    v.games["other"] = versions("0.1.0", "0.0.0", "").main();
+    srv.set_versions(v);
+    double t = 1e6;
+    u64 token = 900;
+    auto lookup = [&](SlotHost& who, const std::string& code) {
+        who.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+        if (who.reply(net::Rv::HostInfo)) return true;
+        return false;
+    };
+    SlotHost main_host(srv), other_host(srv), main_player(srv), other_player(srv), third_player(srv), stranger_host(srv);
+    for (SlotHost* h : {&main_host, &other_host, &main_player, &other_player, &third_player, &stranger_host}) h->version = ver("0.9.0");
+    other_host.tag = other_player.tag = game_tag("other", "0.1.0");
+    third_player.tag = game_tag("third", "1.0.0");
+    stranger_host.tag = game_tag("third", "1.0.0");
+    CHECK(main_host.reg(++token, t) && other_host.reg(++token, t) && stranger_host.reg(++token, t));
+    // The main game's code: its own players only (a client from before game tags is the main game's).
+    CHECK(lookup(main_player, main_host.code));
+    CHECK(!lookup(other_player, main_host.code) && !lookup(third_player, main_host.code));
+    // Another game's code: that game's players only.
+    CHECK(lookup(other_player, other_host.code));
+    CHECK(!lookup(main_player, other_host.code) && !lookup(third_player, other_host.code));
+    CHECK(lookup(third_player, stranger_host.code));
+    // The refusal is the unknown code's.
+    {
+        Bytes b;
+        main_player.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(other_host.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+        CHECK(main_player.reply(net::Rv::Error, &b));
+        net::Rv type;
+        net::Reader r(b);
+        net::rv_parse(b, type, r);
+        CHECK(r.u8_() == u8(net::RvError::NotFound) && r.str() == "no session with that code");
+    }
+    // Counts: sessions of every game first, then each listed game's own and the unlisted ones together.
+    srv.receive(main_player.addr, version_query(ver("0.9.0"), net::RvPlatform::MacOS), t);
+    srv.receive(other_player.addr, tagged_query(game_tag("other", "0.1.0")), t);
+    srv.receive(other_player.addr, tagged_query(game_tag("other", "0.1.0")), t);
+    srv.receive(third_player.addr, tagged_query(game_tag("made.up", "0.1.0")), t);
+    net::RelayServer::Stats st = srv.stats();
+    CHECK(st.sessions == 3 && st.version_queries == 1 && st.queries_by_platform[int(net::RvPlatform::MacOS)] == 1);
+    CHECK(st.games.size() == 2 && st.games["other"].sessions == 1 && st.games["other"].version_queries == 2);
+    CHECK(st.games[net::RelayServer::kUnlisted].sessions == 1 && st.games[net::RelayServer::kUnlisted].version_queries == 1);
+}
+
 TEST(net_relay_versions_file_games) {
     net::RelayServer::Versions v = versions("0.1.0", "0.0.0", ""); // the flags
     v.games["stale"] = versions("9.0.0", "9.0.0", "").main();

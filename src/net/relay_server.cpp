@@ -35,6 +35,9 @@ RelayServer::Stats RelayServer::stats() const {
     s.reservations = reservations_.size();
     s.queued = queue_.size();
     s.race_estimate_ms = race_ms_;
+    for (const auto& [id, g] : versions_.games) s.games[id]; // (listed games appear with zeros)
+    for (const auto& [code, session] : sessions_)
+        if (!session.game.empty()) ++s.games[stats_key(session.game)].sessions;
     return s;
 }
 
@@ -277,8 +280,11 @@ void RelayServer::version_info(const Address& from, Reader& r, size_t request_si
     u8 platform = r.u8_();
     if (!r.ok()) return;
     std::optional<GameTag> tag = get_game_tag(r);
-    ++stats_.version_queries;
-    ++stats_.queries_by_platform[platform < kPlatformCount ? platform : 0];
+    if (tag) ++game_stats(tag->id).version_queries;
+    else {
+        ++stats_.version_queries;
+        ++stats_.queries_by_platform[platform < kPlatformCount ? platform : 0];
+    }
     const GameVersions v = versions_for(tag);
     Writer w = rv_begin(Rv::VersionInfo);
     put_version(w, v.latest);
@@ -289,7 +295,8 @@ void RelayServer::version_info(const Address& from, Reader& r, size_t request_si
 }
 
 void RelayServer::update_required(const Address& to, const std::optional<GameTag>& tag) {
-    ++stats_.outdated;
+    if (tag) ++game_stats(tag->id).outdated;
+    else ++stats_.outdated;
     const GameVersions v = versions_for(tag);
     Writer w = rv_begin(Rv::Error);
     w.u8_(u8(RvError::UpdateRequired));
@@ -329,6 +336,7 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
         s.token = token;
         s.serial = ++serial_;
         s.host_eps = eps;
+        s.game = game_of(tag);
         s.last_seen = now;
         sessions_[code] = s;
         by_token_[token] = code;
@@ -395,6 +403,7 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
             return error(from, RvError::Busy, "too many lookups: try again in a minute");
         }
         auto it = sessions_.find(code);
+        if (it != sessions_.end() && it->second.game != game_of(tag)) it = sessions_.end(); // another game's: not there
         if (it == sessions_.end()) {
             ip.misses.take(limits_.ip_misses_per_s, limits_.ip_misses_burst, now);
             all_misses_.take(limits_.misses_per_s, limits_.misses_per_s, now);

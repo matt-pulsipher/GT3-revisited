@@ -41,7 +41,10 @@
 //   --geoip PATH             add each player's country: a "first IP,last IP,country" CSV such as
 //                            DB-IP's IP to Country Lite (tools/gt3r-relay/update-geoip.sh fetches
 //                            it); re-read on SIGHUP. Missing: "??" until a reload finds it.
-// Nothing else is kept. Version queries are only counted (in the stats line), never logged.
+// Nothing else is kept. Version queries are only counted (in the stats line), never logged. The
+// stats line's counts of version checks and refusals are the main game's; other games' follow it
+// ("; [id] 2 sessions, 40 version checks, 0 refused as outdated"); its first count of sessions is
+// every game's.
 
 #include "net/geoip.h"
 #include "net/relay_server.h"
@@ -263,7 +266,12 @@ int main(int argc, char** argv) {
                           (unsigned long long)s.version_queries, q(gt3r::net::RvPlatform::Windows),
                           q(gt3r::net::RvPlatform::MacOS), q(gt3r::net::RvPlatform::Linux),
                           q(gt3r::net::RvPlatform::Android), (unsigned long long)s.outdated);
-            line(buf);
+            // Other games after it (the line above stays the main game's alone, as before they shared the relay).
+            std::string other;
+            for (const auto& [id, g] : s.games)
+                other += "; [" + id + "] " + std::to_string(g.sessions) + " sessions, " + std::to_string(g.version_queries) +
+                         " version checks, " + std::to_string(g.outdated) + " refused as outdated";
+            line(buf + other);
             srv.reset_peak();
         }
     }

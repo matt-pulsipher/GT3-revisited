@@ -1155,6 +1155,21 @@ and that game's version.
 - An app sets it with `Session::set_game_tag` (and its own version for
   direct-IP checks with `Session::set_game_version`).
 
+**Sessions are kept apart.** A session belongs to the game its host's
+Register named. A Lookup from another game, or from the main game for
+another game's code, gets the unknown code's answer ("no session with that
+code"), and counts against the lookup limits like one. So a code typed into
+the wrong game finds nothing, before the players' own disc check
+(Hello) would refuse the join (`net_relay_sessions_per_game`).
+
+**Counts.** The stats line's version checks (by platform) and "refused as
+outdated" stay the main game's, as before other games shared the relay;
+its sessions, channels and links are every game's. Each game the versions
+file lists follows at the end of the line, and the unlisted ids together as
+`(unlisted)` (made-up ids cost no memory):
+`; [example] 2 sessions, 40 version checks, 0 refused as outdated`. The
+line is unchanged while the file lists no games.
+
 **VersionQuery with a tag** is padded to `kTaggedVersionQuerySize` (199
 bytes). The VersionInfo then carries that game's versions and the id after
 the page, so the reply is still smaller than the query.
