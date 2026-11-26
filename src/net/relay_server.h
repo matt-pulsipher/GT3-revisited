@@ -82,8 +82,11 @@ public:
     // The main game's (requests without a game tag), and other games' by their tag's id
     // (ONLINE.md "Other games on one relay"). A tag whose id is not listed has none: every
     // version of it may play, and its VersionQuery is answered with 0.0.0 / 0.0.0 / no page.
-    struct Versions : GameVersions {
+    struct Versions {
+        GameVersion latest, min_online;
+        std::string release_url;
         std::map<std::string, GameVersions> games;
+        GameVersions main() const { return {latest, min_online, release_url}; }
     };
     struct Stats {
         size_t sessions = 0, channels = 0, pending = 0;
@@ -188,7 +191,7 @@ private:
     void handle_control(const Address& from, Rv type, Reader& r, const GameVersion& game, double now, IpSlot& ip);
     void version_info(const Address& from, Reader& r, size_t request_size);
     // The versions a request is held to: its game tag's game (none listed: no versions), else the main game's.
-    const GameVersions& versions_for(const std::optional<GameTag>& tag) const;
+    GameVersions versions_for(const std::optional<GameTag>& tag) const;
     // Below that game's min_online: the tag's version, else the request header's.
     bool outdated(const GameVersion& game, const std::optional<GameTag>& tag) const {
         return !meets_minimum(tag ? tag->version : game, versions_for(tag).min_online);

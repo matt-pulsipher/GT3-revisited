@@ -3038,7 +3038,7 @@ TEST(net_relay_versions_per_game) {
     srv.set_limits(lim);
     use_mailboxes(srv);
     net::RelayServer::Versions v = versions("0.9.0", "0.9.0", kUrl);
-    v.games["other"] = versions("0.2.0", "0.1.0", "https://example.org/other/releases/latest");
+    v.games["other"] = versions("0.2.0", "0.1.0", "https://example.org/other/releases/latest").main();
     CHECK(net::check_relay_versions(v));
     srv.set_versions(v);
     double t = 1e6;
@@ -3072,7 +3072,7 @@ TEST(net_relay_versions_per_game) {
     // to the tagged size its answer.
     const std::string longest_id(net::kMaxGameId, 'x');
     net::RelayServer::Versions longest = v;
-    longest.games[longest_id] = versions("0.2.0", "0.1.0", "");
+    longest.games[longest_id] = versions("0.2.0", "0.1.0", "").main();
     longest.games[longest_id].release_url = "https://" + std::string(net::kMaxReleaseUrl - 8, 'a');
     CHECK(net::check_relay_versions(longest));
     srv.set_versions(longest);
@@ -3131,7 +3131,7 @@ TEST(net_relay_versions_per_game) {
 
 TEST(net_relay_versions_file_games) {
     net::RelayServer::Versions v = versions("0.1.0", "0.0.0", ""); // the flags
-    v.games["stale"] = versions("9.0.0", "9.0.0", "");
+    v.games["stale"] = versions("9.0.0", "9.0.0", "").main();
     CHECK(net::parse_relay_versions("latest = 0.9.0\nmin_online = 0.9.0\nrelease_url = https://e.org/a\n"
                                     "\n[other]\nlatest = 0.2.0\n min_online = 0.1.0 \nrelease_url = https://e.org/b/{asset}\n"
                                     "[third.game]\nlatest = 1.0.0\n",
@@ -3163,7 +3163,7 @@ TEST(net_version_check_game_tag) {
     net::RelayServer srv;
     if (!srv.open(0)) SKIP("no UDP sockets here");
     net::RelayServer::Versions v = versions("0.9.0", "0.9.0", kUrl);
-    v.games["other"] = versions("0.2.0", "0.1.0", "https://example.org/other");
+    v.games["other"] = versions("0.2.0", "0.1.0", "https://example.org/other").main();
     srv.set_versions(v);
     const std::string server = "127.0.0.1:" + std::to_string(srv.port());
     auto run = [&](std::optional<net::GameTag> tag) {
@@ -3214,7 +3214,7 @@ TEST(net_session_game_tag) {
     net::RelayServer::Versions v;
     v.latest = v.min_online = above; // the main game: this build is too old
     v.release_url = kUrl;
-    v.games["other"] = versions("0.2.0", "0.2.0", "https://example.org/other");
+    v.games["other"] = versions("0.2.0", "0.2.0", "https://example.org/other").main();
     srv.set_versions(v);
     std::string server = "127.0.0.1:" + std::to_string(srv.port());
     {

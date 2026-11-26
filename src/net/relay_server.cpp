@@ -264,11 +264,10 @@ void RelayServer::handle(const Address& from, ByteSpan data, double now) {
     handle_control(from, type, r, game, now, ip);
 }
 
-const RelayServer::GameVersions& RelayServer::versions_for(const std::optional<GameTag>& tag) const {
-    static const GameVersions kNone;
-    if (!tag) return versions_;
+RelayServer::GameVersions RelayServer::versions_for(const std::optional<GameTag>& tag) const {
+    if (!tag) return versions_.main();
     auto it = versions_.games.find(tag->id);
-    return it != versions_.games.end() ? it->second : kNone;
+    return it != versions_.games.end() ? it->second : GameVersions{};
 }
 
 void RelayServer::version_info(const Address& from, Reader& r, size_t request_size) {
@@ -280,7 +279,7 @@ void RelayServer::version_info(const Address& from, Reader& r, size_t request_si
     std::optional<GameTag> tag = get_game_tag(r);
     ++stats_.version_queries;
     ++stats_.queries_by_platform[platform < kPlatformCount ? platform : 0];
-    const GameVersions& v = versions_for(tag);
+    const GameVersions v = versions_for(tag);
     Writer w = rv_begin(Rv::VersionInfo);
     put_version(w, v.latest);
     put_version(w, v.min_online);
@@ -291,7 +290,7 @@ void RelayServer::version_info(const Address& from, Reader& r, size_t request_si
 
 void RelayServer::update_required(const Address& to, const std::optional<GameTag>& tag) {
     ++stats_.outdated;
-    const GameVersions& v = versions_for(tag);
+    const GameVersions v = versions_for(tag);
     Writer w = rv_begin(Rv::Error);
     w.u8_(u8(RvError::UpdateRequired));
     w.str("update required to play online");
@@ -765,7 +764,7 @@ bool check_game_versions(const RelayServer::GameVersions& v, const std::string& 
 } // namespace
 
 bool check_relay_versions(const RelayServer::Versions& v, std::string* error) {
-    if (!check_game_versions(v, "", error)) return false;
+    if (!check_game_versions(v.main(), "", error)) return false;
     for (const auto& [id, g] : v.games) {
         if (!valid_game_id(id)) {
             if (error) *error = "not a game id: " + id.substr(0, 40);
@@ -779,7 +778,8 @@ bool check_relay_versions(const RelayServer::Versions& v, std::string* error) {
 bool parse_relay_versions(std::string_view text, RelayServer::Versions& out, std::string* error) {
     RelayServer::Versions v = out;
     v.games.clear(); // the file's alone
-    RelayServer::GameVersions* cur = &v; // the main game's keys until a [game] line
+    RelayServer::GameVersions main = v.main();
+    RelayServer::GameVersions* cur = &main; // the main game's keys until a [game] line
     auto trim = [](std::string_view t) {
         while (!t.empty() && (t.front() == ' ' || t.front() == '\t' || t.front() == '\r')) t.remove_prefix(1);
         while (!t.empty() && (t.back() == ' ' || t.back() == '\t' || t.back() == '\r')) t.remove_suffix(1);
@@ -826,6 +826,7 @@ bool parse_relay_versions(std::string_view text, RelayServer::Versions& out, std
             return false;
         }
     }
+    v.latest = main.latest, v.min_online = main.min_online, v.release_url = main.release_url;
     if (!check_relay_versions(v, error)) return false;
     out = v;
     return true;

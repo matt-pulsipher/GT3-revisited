@@ -81,7 +81,7 @@ std::string describe_game(const gt3r::net::RelayServer::GameVersions& v) {
 }
 
 std::string describe(const gt3r::net::RelayServer::Versions& v) {
-    std::string t = "versions: " + describe_game(v);
+    std::string t = "versions: " + describe_game(v.main());
     for (const auto& [id, g] : v.games) t += "; [" + id + "] " + describe_game(g);
     return t;
 }
