@@ -138,8 +138,8 @@ bool App::init(int argc, char** argv) {
     }
     if (windowless_) SDL_SetEventFilter(on_event_filter, this); // keys, mouse, touch, pads, focus: not ours
 
-    // Portable mode: a portable.ini next to the executable keeps all user
-    // data beside it (handy for USB sticks); otherwise use the OS location
+    // Portable mode: a portable.ini next to the executable (on macOS, next to gt3r.app) keeps
+    // all user data beside it (handy for USB sticks); otherwise use the OS location
     // (GT3R_DATA_DIR overrides both; game::user_data_dir, shared with the saves).
     data_dir_ = game::user_data_dir();
     SDL_CreateDirectory(data_dir_.c_str());

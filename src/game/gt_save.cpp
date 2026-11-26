@@ -651,6 +651,14 @@ GameState load_from_text(const std::string& text) {
     return s;
 }
 
+std::string app_bundle_folder(const std::string& base) {
+    static const std::string inside = ".app/Contents/Resources/";
+    if (base.size() <= inside.size() || base.compare(base.size() - inside.size(), inside.size(), inside) != 0)
+        return {};
+    const size_t slash = base.find_last_of('/', base.size() - inside.size()); // the one before "<name>.app"
+    return slash == std::string::npos ? std::string() : base.substr(0, slash + 1);
+}
+
 std::string user_data_dir() {
     std::string dir;
     // GT3R_DATA_DIR=<dir> (tests, videos): a separate profile, the player's own left alone.
@@ -665,8 +673,15 @@ std::string user_data_dir() {
     // with Android's documents provider. SDL_GetPrefPath's Library folder is hidden from both.
     if (const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) return docs;
 #endif
-    const char* base = SDL_GetBasePath();
-    if (base && host_path_exists(std::string(base) + "portable.ini")) {
+    const std::string base = SDL_GetBasePath() ? SDL_GetBasePath() : "";
+#if defined(SDL_PLATFORM_MACOS)
+    // macOS: a portable.ini beside gt3r.app first, as a file added inside the bundle breaks its
+    // signature; the base path (the bundle's Resources) after it.
+    if (const std::string beside = app_bundle_folder(base);
+        !beside.empty() && host_path_exists(beside + "portable.ini"))
+        return beside;
+#endif
+    if (!base.empty() && host_path_exists(base + "portable.ini")) {
         dir = base;
     } else if (char* pref = SDL_GetPrefPath("GT3Revisited", "GT3Revisited")) {
         dir = pref;
