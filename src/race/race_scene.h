@@ -191,6 +191,10 @@ public:
     // as RacePS2Base's frame plays them (the callback's id 10, 0x220EE0 and 0x220D38 on Tokyo-Geneva Europe): a new value
     // of id 10 (the pod's mood) starts the animations of that group again, and that group plays for `seconds`.
     void step_look(int slot, const sim::VehicleState& s, float seconds) const;
+    // Lets go of every drawing's look (its morphs and CLUT animations, by slot): a model kept for a race's next build
+    // (race/kept_models.h) starts that build as a new one would, its animations from the start, and holds only the slots
+    // the new field draws it on.
+    void reset_looks() { morph_.clear(); }
     // The wet-road reflection's mirrored car (docs/dev/RACE.md "Wet-road reflection"): body and wheels only, reflected about
     // the road plane under the car (the four wheel contacts). False when the plane is unusable.
     bool add_mirror_items(std::vector<render::DrawItem>& items, const sim::VehicleState& s,

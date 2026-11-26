@@ -36,6 +36,7 @@
 #include "race/exact_setup.h"
 #include "race/car_sfx.h"
 #include "race/ghost.h"
+#include "race/kept_models.h"
 #include "audio/course_ambience.h"
 #include "formats/sound/crss.h"
 #include "race/demo_replay.h"
@@ -1041,6 +1042,7 @@ private:
     std::unique_ptr<RaceField> field_;
     std::unique_ptr<RaceField> solo_field_; // a solo run on the exact core (exact_solo)
     std::vector<std::shared_ptr<CarVisual>> opp_visuals_;
+    race::KeptModels<CarVisual> kept_opponents_; // the last build's opponent models, for the next (race/kept_models.h)
     bool race_mode_ = false;
     // --- online battle (docs/dev/ONLINE.md) ---
     bool online_ = false;

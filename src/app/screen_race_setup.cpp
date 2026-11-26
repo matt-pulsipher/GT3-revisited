@@ -5,6 +5,7 @@
 
 #include "app/screen_race_impl.h"
 
+#include "formats/texture_pack.h"
 #include "game/data/mod_event_def.h"
 #include "sim/exact/race_flow.h"
 #include "sim/exact/race_record.h"
@@ -19,6 +20,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     reset_session_best(); // a new visit: the runs and retries that follow share it
     qm_items_ = {};       // ... and its quick menus' item switches (menus §11)
     practice_best_.clear(), practice_grid_.clear(), practice_entry_best_.clear(); // ... and its free practices' times and grid
+    kept_opponents_.clear(); // ... and its opponents' models (built with its settings and course: race/kept_models.h)
     // Speed unit: the game language's (language_units: mph in US English, else km/h, like the
     // menus) unless the player picked one ([race] units, speed_unit()).
     imperial_ = !app.vfs() || language_units(app.vfs()->language()).mph;
@@ -219,6 +221,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         course_scene_.reset();
         car_visual_.reset();
         drop_vehicle();
+        kept_opponents_.clear();
         track_.reset();
         return;
     }
@@ -605,7 +608,10 @@ ExactFieldOptions RaceScreen::exact_options(App& app) {
 // it cannot be set up from the disc's data.
 bool RaceScreen::build_vehicle(App& app) {
     drop_vehicle();
-    if (!load_program_data(app)) return false;
+    if (!load_program_data(app)) {
+        kept_opponents_.clear(); // (no race to build them for)
+        return false;
+    }
     if (race_mode_) {
         FieldConfig cfg;
         cfg.event = race_event_;
@@ -694,6 +700,7 @@ bool RaceScreen::build_vehicle(App& app) {
             }
             error_ = (online_ ? "Online race: " : "This race cannot be set up: ") + err;
             LOG_WARN("Race: %s", error_.c_str());
+            kept_opponents_.clear(); // (no race to build them for)
             return false;
         }
         {
@@ -847,20 +854,42 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
                 build_player_visual(app, player_model, *cf);
         }
     }
-    std::map<std::pair<std::string, int>, std::shared_ptr<CarVisual>> by_model;
+    // Each opponent's model and paint, its mod body and the key its model is shared and kept by.
+    struct Opponent {
+        std::string model;
+        int paint = 0;
+        CarBodyMod bm;
+        race::KeptModels<CarVisual>::Key key;
+    };
+    std::vector<Opponent> opponents;
+    std::set<race::KeptModels<CarVisual>::Key> keys;
     for (int i = 0; i < f.opponents(); ++i) {
-        const std::string& model = f.opponent_model(i);
-        int paint = std::max(0, paints[size_t(i) + 1]);
+        Opponent& o = opponents.emplace_back();
+        o.model = f.opponent_model(i);
+        o.paint = std::max(0, paints[size_t(i) + 1]);
         if (online_ && size_t(i) < net_.paint.size())
-            LOG_INFO("Online: %s's %s in paint %d (chosen %d)", net_.names[size_t(i)].c_str(), model.c_str(),
-                     paint, net_.paint[size_t(i)]);
+            LOG_INFO("Online: %s's %s in paint %d (chosen %d)", net_.names[size_t(i)].c_str(), o.model.c_str(),
+                     o.paint, net_.paint[size_t(i)]);
         // A mod car's own body (glTF, or the stretched donor shell) and rim, as the player's
         // car gets them; disc cars have none.
         std::string l = f.opponent_label(i), base = db_.car(l) ? l : "";
         if (base.empty())
             if (const data::CarVariant* cv = db_.variant(l)) base = cv->car;
-        CarBodyMod bm = db_.mod_car(base) ? body_mod_for_car(db_, base, paint, car_scene()) : CarBodyMod{};
-        std::shared_ptr<CarVisual>& v = by_model[{bm.paint_key.empty() ? model : base, paint}];
+        if (db_.mod_car(base)) o.bm = body_mod_for_car(db_, base, o.paint, car_scene());
+        o.key = {o.bm.paint_key.empty() ? o.model : base, o.paint};
+        keys.insert(o.key);
+    }
+    // The last build's models this field draws again (the others let go before any is built), each starting its looks
+    // afresh, as a new model would.
+    const auto pack = texture_pack::current_pack();
+    std::map<std::pair<std::string, int>, std::shared_ptr<CarVisual>> by_model = kept_opponents_.take(custom, pack, keys);
+    for (const auto& [key, v] : by_model)
+        if (v) v->reset_looks();
+    for (const Opponent& o : opponents) {
+        const std::string& model = o.model;
+        const int paint = o.paint;
+        const CarBodyMod& bm = o.bm;
+        std::shared_ptr<CarVisual>& v = by_model[o.key];
         if (!v) {
             std::optional<Bytes> f = read_car(app, model);
             WheelSpec ws;
@@ -880,6 +909,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         }
         opp_visuals_.push_back(v);
     }
+    kept_opponents_.keep(std::move(by_model), custom, pack);
     // Engine notes of the opponents (their base car's sound bank) and their extra sounds.
     std::vector<OpponentEngines::Car> sounds;
     for (OpponentSound& o : opp_sound_) o.extra.stop(app.audio().voices());
