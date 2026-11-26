@@ -145,7 +145,13 @@ GpuModel::GpuModel(GpuContext& ctx, const scene::Model& model, bool keep_geometr
     }
     if (DeferredUploads* d = DeferredUploads::current()) { // (uploaded later, by run() on the GPU's thread)
         if (keep_) geometry_ = {vertices, indices};
-        d->add([this, v = std::move(vertices), i = std::move(indices), t = model.textures] { upload(v, i, t); });
+        pending_ = std::make_shared<char>();
+        d->add([this, alive = std::weak_ptr<char>(pending_), v = std::move(vertices), i = std::move(indices),
+                t = model.textures] {
+            if (alive.expired()) return; // (the model is gone)
+            pending_.reset();
+            upload(v, i, t);
+        });
         return;
     }
     upload(vertices, indices, model.textures);

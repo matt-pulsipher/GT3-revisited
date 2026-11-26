@@ -1,8 +1,8 @@
 #pragma once
 
 // GPU work left for the GPU's thread: a GpuModel made while its thread has a DeferredUploads installed (Scope) does its
-// CPU part at once and leaves its upload here, for run() on the GPU's thread, before the model is drawn. If the code that
-// made the models throws, run() must not be called: the models are gone.
+// CPU part at once and leaves its upload here, for run() on the GPU's thread, before the model is drawn. A model destroyed
+// before run() has its upload skipped.
 
 #include <functional>
 #include <utility>

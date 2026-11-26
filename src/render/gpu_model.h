@@ -9,6 +9,7 @@
 #include "render/math3d.h"
 #include "scene/model.h"
 
+#include <memory>
 #include <vector>
 
 namespace gt3r::render {
@@ -137,6 +138,9 @@ private:
     std::vector<u32> uploaded_indices_; // update_geometry: the index buffer's contents
     bool keep_ = false;
     Geometry geometry_;
+    // While the upload is left for DeferredUploads::run(): gone with the model, so a model destroyed before
+    // run() is skipped.
+    std::shared_ptr<char> pending_;
 };
 
 } // namespace gt3r::render

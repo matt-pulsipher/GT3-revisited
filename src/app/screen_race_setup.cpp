@@ -937,6 +937,8 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
                                                    in_turn(sh.tyre));
         } catch (const std::exception& e) {
             LOG_WARN("Race: opponent model %s: %s", o.model.c_str(), e.what());
+        } catch (...) { // (parallel_for's work must not throw)
+            LOG_WARN("Race: opponent model %s: unknown error", o.model.c_str());
         }
     };
     for (size_t first = 0; first < todo.size(); first += threads) {
