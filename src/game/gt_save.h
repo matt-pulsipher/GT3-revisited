@@ -28,9 +28,12 @@ std::string save_to_text(const GameState& s);
 GameState load_from_text(const std::string& text);
 
 // The user data folder (with a trailing separator): SDL_GetPrefPath, or the executable's
-// folder in portable mode (portable.ini beside it), or GT3R_DATA_DIR when set; the app keeps
-// mods, config, saves and replays there.
+// folder in portable mode (portable.ini beside it; on macOS the folder holding gt3r.app first),
+// or GT3R_DATA_DIR when set; the app keeps mods, config, saves and replays there.
 std::string user_data_dir();
+// The folder holding a macOS app bundle whose base path (SDL_GetBasePath) is `base`
+// (".../gt3r.app/Contents/Resources/"), with a trailing '/'; "" when `base` is not a bundle's.
+std::string app_bundle_folder(const std::string& base);
 bool write_save(const std::string& path, const GameState& s, std::string* error = nullptr);
 // nullopt when there is no save at `path` or it cannot be read (damaged, or from a newer
 // version); `error` says which, host_path_exists() tells them apart.

@@ -1,7 +1,8 @@
 // The save folder (game/save_folder.h): moving to another one copies the saves and replays in
 // where it has none, and the libraries follow it; the host file functions it uses
-// (base/file.h); the paths of Android's picked folders (platform/document_tree.h), as strings.
-// Works in the run's temporary folder only.
+// (base/file.h); the paths of Android's picked folders (platform/document_tree.h), as strings;
+// the folder beside a macOS app bundle that a portable.ini goes in (game/gt_save.h). Works in
+// the run's temporary folder only.
 
 #include "test_framework.h"
 
@@ -202,4 +203,17 @@ TEST(save_folder_document_tree_paths) {
     CHECK(!is_document_tree_path("/storage/emulated/0/GT3/saves"));
     CHECK(!is_document_tree_path("C:\\Users\\me\\tree\\saves"));
     CHECK(document_tree_of("/home/me/saves").empty());
+}
+
+// A portable.ini beside a macOS app bundle, not inside it (a file added there breaks the
+// signature): the folder holding gt3r.app from SDL's base path.
+TEST(app_bundle_folder_beside_the_app) {
+    CHECK(app_bundle_folder("/Volumes/Stick/GT3R/gt3r.app/Contents/Resources/") == "/Volumes/Stick/GT3R/");
+    CHECK(app_bundle_folder("/Applications/GT3 Revisited.app/Contents/Resources/") == "/Applications/");
+    CHECK(app_bundle_folder("/gt3r.app/Contents/Resources/") == "/");
+    CHECK(app_bundle_folder("/Users/me/build/").empty()); // a plain executable's folder
+    CHECK(app_bundle_folder("C:\\Games\\GT3R\\").empty());
+    CHECK(app_bundle_folder("/var/containers/Bundle/Application/X/gt3r.app/").empty()); // iOS
+    CHECK(app_bundle_folder(".app/Contents/Resources/").empty());
+    CHECK(app_bundle_folder("").empty());
 }

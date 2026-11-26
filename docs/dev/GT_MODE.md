@@ -686,10 +686,10 @@ files, any number of them (`game/save_library.*`):
 
 - **Library**: `<save folder>/saves/*.sav`. The save folder (`game/save_folder.h`) is the user
   data folder (`SDL_GetPrefPath("GT3Revisited", "GT3Revisited")`, or the executable's folder in
-  portable mode, or `GT3R_DATA_DIR`) unless the player chose another (below). A save's
-  name is its `fcomment` (the original's file name, Edit file name) or its file
-  name without `.sav`; file names follow the names (sanitised, made unique with
-  " 2", " 3"...). `saves/current.txt` holds the file name of the game being
+  portable mode (on macOS the folder holding `gt3r.app`), or `GT3R_DATA_DIR`) unless the
+  player chose another (below). A save's name is its `fcomment` (the original's file name,
+  Edit file name) or its file name without `.sav`; file names follow the names (sanitised,
+  made unique with " 2", " 3"...). `saves/current.txt` holds the file name of the game being
   played, which autosaves into it after every race (and on shop actions) as
   before; the next launch continues it.
 - **Regions**: each release has its own library, as each had its own memory

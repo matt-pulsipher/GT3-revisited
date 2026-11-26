@@ -232,9 +232,9 @@ Settings, saves, replays, mods and screenshots live in:
   Revisited** and in Finder when the device is connected (the Mods screen's
   **Open folder** goes there); a copy of the disc image can go there too
 
-If a `portable.ini` file sits next to the executable, all user data is kept
-beside it instead. Saves and replays can go in another folder of your choice
-([Saves](#saves)).
+If a `portable.ini` file sits next to the executable (on macOS, next to
+`gt3r.app`), all user data is kept beside it instead. Saves and replays can go
+in another folder of your choice ([Saves](#saves)).
 
 | In the folder | |
 |---|---|
