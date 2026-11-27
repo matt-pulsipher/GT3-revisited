@@ -2003,9 +2003,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
                 for (int i = 0; i < 3; ++i) vl.eye_dir[i] = rview.at(2, i);
                 vl.eye_dir[3] = 1;
                 if (sheen) {
-                    constexpr float kViewerUp = 2.0f; // GT3's light model viewer (0, 2, 0) in eye space
+                    const float up = opt.sheen_viewer_up; // the light model's viewer (0, up, 0) in eye space
                     const float s = v.item->modelview_scale;
-                    for (int i = 0; i < 3; ++i) vl.eye_dir[i] = s * s * fu.camera_pos[i] + kViewerUp * s * rview.at(1, i);
+                    for (int i = 0; i < 3; ++i) vl.eye_dir[i] = s * s * fu.camera_pos[i] + up * s * rview.at(1, i);
                     vl.eye_dir[3] = 2;
                 }
                 const float* dirs[4] = {fu.light_dir, fu.light2_dir, fu.light3_dir, fu.light4_dir};
