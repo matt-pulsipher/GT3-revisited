@@ -11,6 +11,7 @@
 #include "platform/crash_handlers.h"
 #include "disc/region.h"
 #include "gt3r_version.h"
+#include "formats/png_reader.h"
 #include "formats/png_writer.h"
 #include "formats/texture_pack.h"
 #include "game/gt_mode_menu.h"
@@ -32,11 +33,37 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 
 namespace gt3r {
 
+#ifdef GT3R_WINDOW_ICON
+namespace icon_data {
+extern const unsigned char kWindowIcon[]; // packaging/icon_256.png (cmake/Packaging.cmake)
+extern const std::size_t kWindowIcon_size;
+} // namespace icon_data
+#endif
+
 namespace {
+
+// The window's icon where the system takes none from the package (Linux: an extracted archive registers no
+// .desktop file). Windows, macOS and the phones show the package's icon.
+void set_window_icon(SDL_Window* window) {
+#ifdef GT3R_WINDOW_ICON
+    try {
+        PngImage png = decode_png(ByteSpan(icon_data::kWindowIcon, icon_data::kWindowIcon_size), 1024);
+        SDL_Surface* s = SDL_CreateSurfaceFrom(int(png.width), int(png.height), SDL_PIXELFORMAT_RGBA32, png.rgba.data(),
+                                               int(png.width * 4));
+        if (!s || !SDL_SetWindowIcon(window, s)) LOG_WARN("Window icon: %s", SDL_GetError());
+        SDL_DestroySurface(s);
+    } catch (const std::exception& e) {
+        LOG_WARN("Window icon: %s", e.what());
+    }
+#else
+    (void)window;
+#endif
+}
 
 const SDL_DialogFileFilter kDiscFilters[] = {
     {"PS2 disc images", "iso;chd"},
@@ -187,6 +214,7 @@ bool App::init(int argc, char** argv) {
         LOG_ERROR("Window creation failed: %s", SDL_GetError());
         return false;
     }
+    set_window_icon(window_);
     if (phone_sim_) { // half the phone's 2340x1080 pixels (fits on laptop screens), whatever the density
         float d = SDL_GetWindowPixelDensity(window_);
         if (d > 0.1f) SDL_SetWindowSize(window_, int(std::lround(1170 / d)), int(std::lround(540 / d)));

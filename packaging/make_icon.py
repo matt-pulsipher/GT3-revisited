@@ -3,7 +3,8 @@
 
 Red, a sweeping right-hander seen from above with a yellow center line and a kerb, and a 3 in
 Barlow Condensed SemiBold (the UI font in third_party/fonts). Writes packaging/icon.png
-(1024x1024), packaging/icon.ico (Windows) and the Android launcher icons. Needs Pillow:
+(1024x1024), packaging/icon_256.png (the Linux window icon), packaging/icon.ico (Windows) and the
+Android launcher icons. Needs Pillow:
 python3 packaging/make_icon.py
 """
 import math
@@ -94,6 +95,7 @@ def draw(size=S):
 def main():
     icon = draw()
     icon.save(os.path.join(HERE, "icon.png"))
+    icon.resize((256, 256), Image.LANCZOS).save(os.path.join(HERE, "icon_256.png"))  # Linux window icon
     icon.save(os.path.join(HERE, "icon.ico"), sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
     res = os.path.join(ROOT, "android", "app", "src", "main", "res")
     for name, px in {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}.items():
