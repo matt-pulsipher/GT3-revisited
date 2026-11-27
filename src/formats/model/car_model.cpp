@@ -196,6 +196,7 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
     o.program_alpha_test = true;  // wheel-arch / grille cut-outs
     o.weighted_reflection = true; // reflection passes weighted by the body's texel alpha
     o.gs_mip_levels = true;       // the full-size images only, as the GS samples them (MXL 0)
+    o.node_fog = true;            // the lamp glows and glints fogged to black (op 0x21)
     scene::Model m = gtm1::build_model(g, o, name);
     std::array<std::vector<scene::Mesh>, 2> brake_parts;
     if (brakes || (opt.floor_shadow && !opt.effects)) {
@@ -217,6 +218,7 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
         wo.run.lod = lod;
         wo.program_alpha_test = true;
         wo.weighted_reflection = true;
+        wo.node_fog = true;
         wo.runtime_set = 1; // the rim image
         // Showroom wheels: LOD 0's rim and tyre texture from the menu car file.
         const bool menu_car = CarFile::is_car(opt.showroom_car);

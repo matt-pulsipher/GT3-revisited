@@ -486,7 +486,8 @@ fixed-function maths and these inputs, all from the course file:
   viewer), D = vertex - E, R = D - 2 (D.N) N with N from the UV slot, R_eye = the view rotation x
   R / |D|, m = |R_eye + (0, 0, 1)|, UV = (0.5 + 0.5 Rx / m, 0.5 - 0.5 Ry / m); colour = vertex
   colour x (C0 + C1 min(D.N / |D|, 0)) (node ops 0x36 / 0x37 and 0x32 / 0x33; on courses C0 = 1
-  and C1 = 0 except where op 0x33 sets it before a draw), not clamped, alpha too. The texture is
+  and C1 = 0 except where op 0x33 sets it before a draw), not clamped, alpha too. Fogged to black
+  (the program sets fog colour 0 around the pass, as for the sheen). The texture is
   the packet's own (mat low 9 bits - 1, its CLAMP from the texture record). Packets with the
   runtime slot 0x1FF (apricot, midfield: chunks 0x102) bind nothing while the course is drawn,
   so the texture the packet before bound stays. On the backdrop the 0.01 modelview scale squeezes
