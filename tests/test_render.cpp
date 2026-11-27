@@ -659,3 +659,20 @@ TEST(render_gamma_setting) {
     CHECK(!gamma_changes(parse_gamma("1.00")));
     CHECK(gamma_changes(1.05f) && gamma_changes(0.95f));
 }
+
+TEST(render_item_depth_scale) {
+    // The far plane as an item's depth: the backdrop's 0.01 modelview scale puts it 100 times as far,
+    // and so does a depth scale of 0.01 (with both, 10,000 times); none without a far plane.
+    render::DrawOptions o;
+    o.far_clip = 1000;
+    render::DrawItem it{};
+    CHECK(render::item_far(it, o) == 1000);
+    it.modelview_scale = 0.01f;
+    CHECK(std::abs(render::item_far(it, o) - 100000) < 1);
+    it.modelview_scale = 1, it.depth_scale = 0.01f;
+    CHECK(std::abs(render::item_far(it, o) - 100000) < 1);
+    it.modelview_scale = 0.01f;
+    CHECK(std::abs(render::item_far(it, o) - 1e7f) < 1e3f);
+    o.far_clip = 0;
+    CHECK(render::item_far(it, o) == 0);
+}

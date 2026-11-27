@@ -152,12 +152,9 @@ bool has_depth_reset(const std::vector<DrawItem>& items) {
     return std::any_of(items.begin(), items.end(), [](const DrawItem& i) { return i.depth_reset; });
 }
 
-// GT3's far plane as the item's depth from the eye (DrawOptions::far_clip; the backdrop's 0.01
-// modelview scale puts it 100 times as far), 0 for none.
-float item_far(const DrawItem& item, const DrawOptions& opt) {
-    if (opt.far_clip <= 0 || item.background || item.helper) return 0;
-    return opt.far_clip / std::max(item.modelview_scale, 1e-6f);
-}
+// How much nearer an item's depth is than its distance for the clip planes (DrawItem::modelview_scale
+// x DrawItem::depth_scale).
+float clip_scale(const DrawItem& item) { return std::max(item.modelview_scale * item.depth_scale, 1e-6f); }
 
 // The draw distance and frustum culling of encode, and GT3's far plane: its VU culls what lies
 // wholly beyond.
@@ -219,6 +216,11 @@ bool inside_guard_band(const Mat4& vp, const Vec3& c, float r, float near_w, flo
 }
 
 } // namespace
+
+float item_far(const DrawItem& item, const DrawOptions& opt) {
+    if (opt.far_clip <= 0 || item.background || item.helper) return 0;
+    return opt.far_clip / clip_scale(item);
+}
 
 void View3D::Streamed::release(SDL_GPUDevice* dev) {
     if (vb) SDL_ReleaseGPUBuffer(dev, vb);
@@ -899,7 +901,7 @@ bool View3D::upload_clipped(SDL_GPUCommandBuffer* cmd, const Mat4& view, const M
         const GpuModel* model = item.model;
         const GpuModel::Geometry* g = model ? model->geometry() : nullptr;
         if (!item.guard_band || !g || !model->valid() || item.late) continue;
-        const float near_w = opt.guard_near / std::max(item.modelview_scale, 1e-6f);
+        const float near_w = opt.guard_near / clip_scale(item);
         const float far_w = item_far(item, opt);
         const int lod = item_lod(item, opt);
         const std::vector<GpuModel::MeshInfo>& meshes = model->meshes();
@@ -1671,7 +1673,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         }
         // GT3's near plane in the item's eye space (the backdrop's modelview scale: s x the depth).
         if (guard_on_ && v.item->guard_band && !lines)
-            vu.fog[3] = opt.guard_near / std::max(v.item->modelview_scale, 1e-6f);
+            vu.fog[3] = opt.guard_near / clip_scale(*v.item);
         if (!lines) vu.far_clip[0] = item_far(*v.item, opt); // (GT3's far plane)
         flush();
         SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
