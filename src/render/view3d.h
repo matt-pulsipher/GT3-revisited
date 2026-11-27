@@ -170,10 +170,15 @@ struct DrawOptions {
     // under it), the mean of `samples` x `samples` points spaced `radius` / `samples` apart
     // around each place (`radius` a fraction of the picture's diagonal), drawn at half the
     // picture's width and a quarter of its height, times `sum` (held to full: that picture's
-    // levels), then added to the picture times `gain`. Off unless asked for.
+    // levels), then added to the picture times `gain`. Off unless asked for. `tent`: the points
+    // reach `radius` on each side instead (2 x `samples` - 1 across), weighted down linearly to
+    // nothing there (the sum of `samples` copies of the picture at that spacing, each sampled
+    // `radius` apart and stretched back linearly). `offset`: the points' middle that far from
+    // each place, right and down (fractions of the diagonal).
     struct Glow {
-        bool on = false;
+        bool on = false, tent = false;
         float threshold = 0, radius = 0, sum = 1, gain = 0;
+        float offset[2] = {0, 0};
         int samples = 1;
     } glow;
     struct DepthOfField {
@@ -551,7 +556,7 @@ private:
         float scale[2] = {1, 1}, offset[2] = {0, 0}; // texture coordinates = v_uv x scale + offset
         float clamp[4] = {0, 0, 1, 1};               // min u, min v, max u, max v
         float taps[2] = {1, 1}, step[2] = {0, 0};    // taps across / down, their spacing
-        float sigma[2] = {0, 0};                     // > 0: the taps weighted by a Gaussian (in taps), else equal
+        float sigma[2] = {0, 0};                     // > 0: the taps weighted by a Gaussian (in taps); < 0: a tent, 0 at -sigma taps out; else equal
         float threshold = 0;                         // > 0: every tap less it, held to 0 (DrawOptions::glow)
         float gain[3] = {1, 1, 1};                   // the result times these
         bool additive = false;                       // added to the target (at alpha) instead of laid over it

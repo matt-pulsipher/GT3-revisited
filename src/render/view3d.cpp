@@ -670,12 +670,15 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             SDL_SetGPUScissor(gp, &gsc);
             const float W = float(width_), H = float(height_);
             const int n = std::clamp(opt.glow.samples, 1, 16);
-            const float step = opt.glow.radius * std::sqrt(float(pw) * float(pw) + float(ph) * float(ph)) / float(n);
+            const float diag = std::sqrt(float(pw) * float(pw) + float(ph) * float(ph));
+            const float step = opt.glow.radius * diag / float(n);
             Resample r;
             r.scale[0] = float(pw) / W, r.scale[1] = float(ph) / H;
+            r.offset[0] = opt.glow.offset[0] * diag / W, r.offset[1] = opt.glow.offset[1] * diag / H;
             r.clamp[0] = 0.5f / W, r.clamp[1] = 0.5f / H;
             r.clamp[2] = (float(pw) - 0.5f) / W, r.clamp[3] = (float(ph) - 0.5f) / H;
-            r.taps[0] = r.taps[1] = float(n);
+            r.taps[0] = r.taps[1] = float(opt.glow.tent ? 2 * n - 1 : n);
+            if (opt.glow.tent) r.sigma[0] = r.sigma[1] = -float(n); // (weights n - |k|)
             r.step[0] = step / W, r.step[1] = step / H;
             r.threshold = std::max(opt.glow.threshold, 0.0f);
             r.gain[0] = r.gain[1] = r.gain[2] = std::max(opt.glow.sum, 0.0f);
