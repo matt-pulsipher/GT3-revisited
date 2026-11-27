@@ -2275,8 +2275,7 @@ filling the options each frame:
   (256x128) moving under the camera; the original shows the same grain. Our textures are
   mipmapped, so this is not minification aliasing.
 - Lamp glows (see "Lamp glows", "Car lamps"): the glow's box test is a 3 x 3 ray grid (GT3
-  counts the box's pixels); bar lamps' elliptical halos lie along the screen axes (GT3 turns them with
-  the lamp's projected x axis).
+  counts the box's pixels).
 - Wheels (see "Rendering"): the tyre and rim geometry keep the body's level (GT3 switches the
   tyre's segments, its level-2 hexagon and level-3 drum by the wheel's own level, which only the
   brake parts and blurs follow here); the mirrors' and the wet road's cars keep full wheels

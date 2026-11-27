@@ -2653,6 +2653,32 @@ TEST(race_flare_disc_mesh) {
     race::Flare::add_mesh(m, b, fr, {0, 0, 100, 100}, 0, 0, 10, 1, 1, {1, 1, 1}, 1);
     CHECK(b.verts.size() == 56);
     for (size_t i = 0; i < b.verts.size(); ++i) CHECK(b.verts[i].depth == (i < 28 ? 0.25f : 1.0f));
+    // Through a 2 x 2 matrix: a diagonal one as the scales; a turned one puts rim 0 along its first column.
+    render::ScreenBatch s1, s2, s3;
+    race::Flare::add_mesh(m, s1, fr, {0, 0, 100, 100}, 0.5f, -0.25f, 10, 2, 0.5f, {1, 1, 1}, 1);
+    race::Flare::add_mesh(m, s2, fr, {0, 0, 100, 100}, 0.5f, -0.25f, 10, std::array<float, 4>{2, 0, 0, 0.5f}, {1, 1, 1}, 1);
+    CHECK(s1.verts.size() == s2.verts.size());
+    for (size_t i = 0; i < std::min(s1.verts.size(), s2.verts.size()); ++i)
+        CHECK(s1.verts[i].x == s2.verts[i].x && s1.verts[i].y == s2.verts[i].y);
+    race::Flare::add_mesh(m, s3, fr, {0, 0, 100, 100}, 0, 0, 10, std::array<float, 4>{1, 1, -0.5f, 0.5f}, {1, 1, 1}, 1);
+    if (!s3.verts.empty()) // rim 0 at view (1, 1): right of and above the centre by as much
+        CHECK(std::fabs((s3.verts[0].x - 50) + (s3.verts[0].y - 50)) < 1e-3f && s3.verts[0].x > 50);
+}
+
+// A bar lamp's halo (fn_0019B6B0 / fn_002481F0): v = e ((a - b) + b / |e|), columns H v and H b / |v| (-v.y, v.x).
+TEST(race_bar_lamp_halo_turn) {
+    // The axis across the view: the halo a wide along it, b across.
+    std::array<float, 4> m = race::CarLampGlows::bar_halo(1, 0, 0.3f, 0.1f, 2);
+    CHECK(std::fabs(m[0] - 0.6f) < 1e-6f && m[1] == 0 && m[2] == 0 && std::fabs(m[3] - 0.2f) < 1e-6f);
+    // Tilted 30 degrees and half foreshortened: along e, H ((a - b)|e| + b) long; H b across.
+    const float c = 0.5f * std::cos(0.5236f), s = 0.5f * std::sin(0.5236f);
+    m = race::CarLampGlows::bar_halo(c, s, 0.3f, 0.1f, 2);
+    const float len = std::sqrt(m[0] * m[0] + m[1] * m[1]), across = std::sqrt(m[2] * m[2] + m[3] * m[3]);
+    CHECK(std::fabs(len - 2 * (0.2f * 0.5f + 0.1f)) < 1e-5f && std::fabs(across - 0.2f) < 1e-6f);
+    CHECK(std::fabs(m[0] * m[2] + m[1] * m[3]) < 1e-6f && std::fabs(m[1] / m[0] - s / c) < 1e-5f);
+    // Seen end on (no x or y): a wide across the view.
+    m = race::CarLampGlows::bar_halo(0, 0, 0.3f, 0.1f, 2);
+    CHECK(std::fabs(m[0] - 0.6f) < 1e-6f && m[1] == 0 && m[2] == 0 && std::fabs(m[3] - 0.2f) < 1e-6f);
 }
 
 // The glows' ray test against a car body (in its own frame): rays from far outside it still

@@ -3071,7 +3071,10 @@ of morph chunks: no program on the US disc draws its 1,919 morph chunks other th
   size) at the pulled point, depth test on (cap 5), `fn_00247DF0(rgb, halo gain)`, when the lamp
   is further than 1 m), the round car lamps' halos (also `fn_00247FE8`), the bar car lamps' halos
   (`fn_002481F0`: depth test on, a 2 x 2 matrix with columns H (vx, vy) and H b / |v| (-vy, vx)
-  in eye space at the pulled point, `fn_00247DF0(rgb, gain)`), and the glare's style 2
+  in eye space at the pulled point, `fn_00247DF0(rgb, gain)`; v from `fn_0019B6B0` (record +0x18):
+  e = the eye-space x and y of the lamp's x axis (+0x00, through the model-view matrix), v =
+  e ((a - b) + b / |e|), or (a, 0) when e is 0: a semi-axis H ((a - b)|e| + b) along e and H b
+  across it; a bar is |a - b| >= 0.01 (0x34FDC8, 0x34FDCC)), and the glare's style 2
   (`fn_0019BA38` picks `fn_002466F0` (style 0), `fn_00246D28` (style 1) or `fn_002469E0` (style 2)
   for `fn_00248458`). The "72-spike burst" is the glare's style 1 mesh, not the halo. All ALPHA
   0x48 FIX 0 (Cs As + Cd, As 0x80 = 1.0), depth writes off.
@@ -3086,9 +3089,8 @@ of morph chunks: no program on the US disc draws its 1,919 morph chunks other th
   `fn_0019BA38` draws both lists.
 - Ours: `race::Flare::disc_mesh`, `Flare::gs_color`, `Flare::add_mesh`; the halos go into the
   glow batch (two additive passes for As / 128) at the pulled point's depth, so the view's depth
-  test (GEQUAL, no depth writes) is the GS's (VR eyes: one ray at the halo's centre). Not exact:
-  the bar halo is an ellipse along the screen axes (its extents
-  `(a - b)|x_view| + b` and b), not turned with the lamp's projected axis.
+  test (GEQUAL, no depth writes) is the GS's (VR eyes: one ray at the halo's centre); the bar
+  halo through `fn_002481F0`'s matrix (`Flare::add_mesh` with a 2 x 2 matrix).
 
 ### Q2. The sun disc
 - vf45 @0x17E8FC and vf48 @0x17F300, right after the sky (`fn_001A91D8`) and before the backdrop
