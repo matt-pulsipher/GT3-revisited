@@ -1212,9 +1212,15 @@ private:
         r.tires = game::kAllTires;
         return game::car_meets_rules(car_at(index, 0), facts_at(index), r, &why) ? std::string() : why;
     }
-    // The chosen car's facts with its lobby tires and settings (rebuilt when they change).
+    // The chosen car's facts with its lobby tires and settings (rebuilt when they change). The key adds the tires and
+    // settings: the descriptor carries a disc, mod or arcade car's only after a digest, which lobby_car() has none of.
     const game::CarFacts& lobby_facts(const game::OnlineCar& c) const {
         Bytes key = game::encode_online_car(c);
+        key.push_back(u8(c.tires));
+        if (c.tune) {
+            const std::string s = game::settings_text(*c.tune);
+            key.insert(key.end(), s.begin(), s.end());
+        }
         if (!lobby_facts_ || lobby_facts_->first != key) lobby_facts_ = {std::move(key), game::online_car_facts(db_, gt_data(), c)};
         return lobby_facts_->second;
     }
