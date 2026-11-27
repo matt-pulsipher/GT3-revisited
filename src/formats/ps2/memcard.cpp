@@ -232,7 +232,7 @@ void ecc128(const u8* s, u8* out) {
 
 } // namespace
 
-Bytes make_card(const std::vector<McDir>& dirs) {
+Bytes make_card(const std::vector<McDir>& dirs, s64 root_time) {
     constexpr u32 kClusters = 8192, kIfc = 8, kFatClusters = 32;
     constexpr u32 kAllocOffset = kIfc + 1 + kFatClusters;       // 41
     constexpr u32 kAllocEnd = (1024 - 2) * 8 - kAllocOffset;    // two erase blocks kept for backups
@@ -253,18 +253,18 @@ Bytes make_card(const std::vector<McDir>& dirs) {
     auto write_chain = [&](u32 first, ByteSpan bytes) {
         std::memcpy(&data[at(first)], bytes.data(), bytes.size()); // chains are contiguous here
     };
-    const s64 now = s64(std::time(nullptr));
+    const s64 when = root_time > 0 ? root_time : s64(std::time(nullptr));
     // Root directory: ".", "..", one entry per save directory.
     Bytes root((2 + dirs.size()) * kEntry, 0);
     u32 root_first = alloc(root.size());
-    put_entry(root, 0, kModeDir, u32(2 + dirs.size()), now, 0, 0, ".");
-    put_entry(root, kEntry, kModeParent, 0, now, 0, 0, "..");
+    put_entry(root, 0, kModeDir, u32(2 + dirs.size()), when, 0, 0, ".");
+    put_entry(root, kEntry, kModeParent, 0, when, 0, 0, "..");
     for (size_t i = 0; i < dirs.size(); ++i) {
         const McDir& d = dirs[i];
         if (!valid_name(d.name)) throw FormatError("memory card: bad directory name");
         Bytes sub((2 + d.files.size()) * kEntry, 0);
         u32 sub_first = alloc(sub.size());
-        const s64 t = d.time > 0 ? d.time : now;
+        const s64 t = d.time > 0 ? d.time : when;
         put_entry(sub, 0, kModeDir, 0, t, root_first, u32(2 + i), ".");
         put_entry(sub, kEntry, kModeParent, 0, t, 0, 0, "..");
         for (size_t k = 0; k < d.files.size(); ++k) {

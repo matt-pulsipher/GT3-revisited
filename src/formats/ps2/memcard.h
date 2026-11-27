@@ -42,7 +42,8 @@ bool is_card_image(ByteSpan image);
 // Every directory in the card's root with its files. Throws FormatError.
 std::vector<McDir> read_card(ByteSpan image);
 // A freshly formatted 8 MB card image with ECC (the PCSX2 .ps2 layout) holding `dirs`.
-// Throws FormatError when they do not fit.
-Bytes make_card(const std::vector<McDir>& dirs);
+// `root_time` (seconds since 1970, UTC) is the root directory's time and that of every
+// directory without one; 0 = the clock's now. Throws FormatError when they do not fit.
+Bytes make_card(const std::vector<McDir>& dirs, s64 root_time = 0);
 
 } // namespace gt3r::ps2
