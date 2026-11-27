@@ -246,9 +246,24 @@ car never replaces a car of the disc it is loaded on. A car brings everything it
 | File | Holds |
 |---|---|
 | `cars/<label>.ini` | name, maker, year, price, category and its paints (the model's colour list, in order); a car file like any other, so `[dealer]`, `[arcade]` and `[raw.*]` work on it |
-| `cars/<label>.records` | every database record of the car: the stock parts, the upgrade parts the shops sell, the car record, and the shared records they use (steering, driving aids, tyre sizes and compounds). A shared record the other disc holds differently comes in under a label of the car's own |
+| `cars/<label>.records` | every database record of the car: the stock parts, the upgrade parts the shops sell (see "Tuning parts" below), the car record, and the shared records they use (steering, driving aids, tyre sizes and compounds). A shared record the other disc holds differently comes in under a label of the car's own |
 | `files/cars/{day,eve,night}/<model>_<disc>`, `files/menu/cars/<model>_<disc>` | its models for races and the showroom, with their stock rims, lamps and camera points |
 | `sounds/engine/<id>`, `sounds/<normal0-3, turbo0-3>/<id>` | its engine sounds |
+
+**Tuning parts.** Gran Turismo Concept sells no tuning, so most of its cars have none of the parts
+GT3's tune shop sells. The export gives such a car the shop of the most alike car on its disc that
+has one: the same category, drive layout and aspiration, then the nearest power, weight and gear
+count (a car with the same engine and chassis, such as the GT3 version of a Concept car, comes
+first). Each part is fitted to the car: brakes in the ratio of the two cars' stock brakes, gearboxes
+on its gear count and final drive, suspension kits scaled to its axle loads around its own ride
+heights, tyres on its own sizes. Parts the car already has on its disc without a price keep their
+values and take that car's price. The car's file names the car its shop came from. Cars exported
+from a GT3 disc keep the shop they have (GT3's own cars without one, the F1 cars among them, stay
+that way). `--shop=fill` gives every car without a shop one, `--shop=keep` none:
+
+```bash
+gt3tool car-export concept.iso all mods/ --shop=keep
+```
 
 The car then races on the physics of the disc it is loaded on. Gran Turismo Concept's longer chassis,
 engine and gear records are cut to GT3's sizes (their added bytes are not read). What GT3 itself does
