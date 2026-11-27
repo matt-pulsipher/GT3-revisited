@@ -56,6 +56,9 @@ struct DrawOptions {
     // ambient + (1 - ambient) x diffuse above. Primitives with a valid scene::Material always
     // use these light colours with their material (see scene::Material).
     bool gt3_lighting = false;
+    // The road sheen's viewer (the light model's, in eye space): this far along the camera's up axis.
+    // GT3's renderer has it at (0, 2, 0); 0 puts it at the camera itself.
+    float sheen_viewer_up = 2.0f;
     float light_ambient[3] = {0.3f, 0.3f, 0.3f};
     float light_diffuse[3] = {1.0f, 1.0f, 1.0f};
     float light_specular[3] = {0.7f, 0.7f, 0.7f}; // with scene::Material specular
@@ -254,7 +257,7 @@ DofBlur dof_level_blur(int level);
 
 // The road sheen's per-vertex colour (scene::Material::specular_local): model.vert's program on
 // the CPU (tests). `light` towards the light (normalised here), `light_spec` its specular colour,
-// `viewer` the viewer's position (the camera + 2 m along its up axis), `normal` as stored. Returns
+// `viewer` the viewer's position (the camera + DrawOptions::sheen_viewer_up along its up axis), `normal` as stored. Returns
 // the GS colour bytes (low 8 bits of s Ls Ms c, s = 128 x scale).
 std::array<u8, 3> sheen_vertex_bytes(const scene::Material& m, const Vec3& light, const float light_spec[3],
                                      const Vec3& viewer, const Vec3& pos, const Vec3& normal);
