@@ -61,6 +61,7 @@ struct RaceCourse {
     std::unique_ptr<CourseQuery> query;                // the race's progress, grid, sectors
     std::unique_ptr<sim::CourseCollision> collision;   // the collision step's walls
     AiCourse ai;                                       // the AI course object (ai_course_setup)
+    u64 file_hash = 0; // FNV-1a (64-bit) of the file's bytes: the race records' data fingerprint (race/exact_setup.h)
 
     // From the course file's bytes; throws std::runtime_error when it has no road block.
     static std::shared_ptr<const RaceCourse> load(ByteSpan file, const ProgramData& d);

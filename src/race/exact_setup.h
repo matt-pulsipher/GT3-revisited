@@ -87,7 +87,9 @@ u8 exact_course_category(const data::CarDatabase& db, const std::string& course)
 // A hash of the game data a race on the exact core is built from besides the program's tables: the course file and, for
 // every entry, the database records its equipment names (the car, each part, the tyre parts' compound, force and size
 // records). A replay keeps it and is refused on data that differ (another disc's cars or courses, a changed mod car).
-u64 exact_data_fingerprint(const data::CarDatabase& db, std::span<const ex::StartEntry> entries, ByteSpan course_file);
+// `course` (when given, the one `course_file` was loaded into): the file's hash it holds.
+u64 exact_data_fingerprint(const data::CarDatabase& db, std::span<const ex::StartEntry> entries, ByteSpan course_file,
+                           const std::shared_ptr<const ex::RaceCourse>& course = {});
 // Whether car 0 of a free practice on this course has a pit box (the stop line, AI line 4, has at least 4 points; with
 // fewer the program reads outside the line, and the race start refuses the race). GT3 offers no free practice on such a
 // course (every one on the discs is a dirt course, where its pre-race menu turns FREE RUN off).

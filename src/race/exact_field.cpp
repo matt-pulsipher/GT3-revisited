@@ -490,7 +490,7 @@ public:
         for (size_t j = 0; j < cfg_.remote.size(); ++j) race_->set_posed(first_remote_ + int(j), true);
         rs_ = rs;
         rec_ = std::make_shared<ex::RaceRecord>(ex::RaceRecord::of(rs, opts_.course));
-        rec_->data = exact_data_fingerprint(db, rs.entries, opts_.course_bytes());
+        rec_->data = exact_data_fingerprint(db, rs.entries, opts_.course_bytes(), course_);
         change({0, ex::RaceChange::StartCountdown});
         finish_build(db, rs, car_labels, n_opp, p1);
         return true;
@@ -514,7 +514,7 @@ public:
             d->set_behaviour(r.behaviour);
             data_ = d;
         }
-        if (r.data && r.data != exact_data_fingerprint(db, r.entries, opts_.course_bytes())) {
+        if (r.data && r.data != exact_data_fingerprint(db, r.entries, opts_.course_bytes(), course_)) {
             if (error) *error = "the replay was recorded with other car or course data";
             return false;
         }
