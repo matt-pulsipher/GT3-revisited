@@ -284,7 +284,7 @@ private:
     bool whole_run_ghost() const;
     bool lap_ghost() const;
     double ghost_run_time() const; // the time the whole-run ghost rules compare (s), < 0 = none
-    void restart();
+    void restart(bool built = false); // built: build_vehicle has just made this run's race
     void drop_vehicle();
     bool build_vehicle(App& app);
     ReplayBattle live_battle(App& app) const;
@@ -951,7 +951,6 @@ private:
     static constexpr int kExitHold = 10, kExitWash = 8;
     bool prerace_ = false;
     bool free_run_ = false;              // free run before a GT race (back to the pre-race menu)
-    int free_run_laps_ = 0;               // the pre-race quick menu (before the race starts)
     // The last free practice of the visit: each entry's best lap (0 the player, k opponent k - 1; empty before the first),
     // and the grid it left (race::practice_grid; empty: the event's), which the race and later practices start from.
     std::vector<u32> practice_best_;

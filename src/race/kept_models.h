@@ -1,7 +1,7 @@
 #pragma once
 
-// The opponents' models of a race's last build, for its next one (RaceScreen::load_opponent_cars): a start builds its
-// field twice (start() and the restart() that ends it) and a retry once more, mostly with the same models. Kept by
+// The opponents' models of a race's last build, for its next one (RaceScreen::load_opponent_cars): a retry builds the
+// field again, mostly with the same models. Kept by
 // (model, paint) while the custom paints and the texture pack in use are those they were built with; the race screen
 // lets them go at the next start, and when a start or a build fails (with the field they were kept for).
 

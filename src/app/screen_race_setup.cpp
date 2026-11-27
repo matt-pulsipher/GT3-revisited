@@ -143,7 +143,16 @@ void RaceScreen::start(App& app, const Replay* replay) {
         }
         // (The pace-car test is a licence run, a solo mode with one computer car.)
         race_mode_ = two_player_ || !race_event_.empty() || (!race_opponents_.empty() && !pace_car_) || online_;
-        if (!build_vehicle(app)) throw FormatError(error_);
+        // The run starts afresh before its race is built: restart() runs on this build.
+        replaying_ = false;
+        ghost_record_.reset(), best_run_record_.reset(); // (a new visit has no best run and no ghost)
+        ghost_time_ = -1;
+        best_run_time_ = -1;
+        best_run_replay_.reset();
+        best_lap_in_run_ = ghost_ask_ = false;
+        ghost_shown_ = true;
+        const bool plays = replay && can_play(*replay, nullptr); // (a replay's race is built from its record: start_playback)
+        if (!plays && !build_vehicle(app)) throw FormatError(error_);
         build_tv_cameras();
         gtrc_.reset();
         director_ = ReplayDirector(); // (not left pointing at the old script)
@@ -219,9 +228,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         } catch (const std::exception& e) {
             LOG_WARN("Race: replay cameras: %s", e.what());
         }
-        LOG_INFO("Race: %s with %s (%s); track %s, vehicle %s, %zu scenery meshes, %zu triangles", ce.label.c_str(),
-                 ca.label.c_str(), ca.model.c_str(), track_->backend_name(), vehicle_->backend_name(),
-                 course_scene_->stats().meshes, course_scene_->stats().triangles);
+        LOG_INFO("Race: %s with %s (%s); track %s, %zu scenery meshes, %zu triangles", ce.label.c_str(), ca.label.c_str(),
+                 ca.model.c_str(), track_->backend_name(), course_scene_->stats().meshes, course_scene_->stats().triangles);
     } catch (const std::exception& e) {
         error_ = e.what();
         LOG_WARN("Race: could not start: %s", e.what());
@@ -282,15 +290,10 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (engine_.loaded()) LOG_INFO("Race: engine sound %05u variant %u (%s)", car_.sound_id, car_.sound_variant,
                                    EngineSound::variant_dir(car_.sound_variant).c_str());
     stage_ = Stage::Drive;
-    ghost_record_.reset(), best_run_record_.reset(); // (a new visit has no best run and no ghost)
-    ghost_time_ = -1;
-    best_run_time_ = -1;
-    best_run_replay_.reset();
-    best_lap_in_run_ = ghost_ask_ = false;
-    ghost_shown_ = true;
     // (No ghost to start with: a visit's first comes from its runs or LOAD GHOST, as the original.)
     if (replay) start_playback(*replay);
-    else restart();
+    else restart(true);
+    if (!vehicle_) return; // (no race could be built: error_)
     if (attract_) pick_attract_view(); // the demo's own view mode and target (presentation §G13)
     music_.reset(); // the race music starts with the first music_cues()
     // GT races, machine tests, licence tests, time trials and free runs open with their
@@ -485,7 +488,7 @@ void RaceScreen::take_best_run_ghost() {
     LOG_INFO("Race: ghost updated, the best run %.3f s (%u steps)", ghost_time_, ghost_record_->frames);
 }
 
-void RaceScreen::restart() {
+void RaceScreen::restart(bool built) {
     take_live_condition(); // the previous live run hands its engine condition on
     replaying_ = false;
     // A live run follows the player's car: a replay that ended on an opponent would otherwise
@@ -497,7 +500,9 @@ void RaceScreen::restart() {
     result_latch_.reset(); // a new live run
     latched_rows_.reset();
     run_replay_.reset();
-    if (app_) build_vehicle(*app_); // a new race: every car back on its start
+    // A new race: every car back on its start (`built`: build_vehicle has just made it).
+    if (app_ && !built) build_vehicle(*app_);
+    if (!vehicle_) return; // (it cannot be built: error_)
     const RaceField* f = exact_field();
     const TrackPose p = f ? f->player_grid() : track_->grid_pose(0);
     // The start speed (the title clock's form, the replay's start): a rolling start's 80 km/h (GT endurance), a demo race's

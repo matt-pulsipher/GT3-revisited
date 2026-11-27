@@ -562,7 +562,7 @@ void RaceScreen::update_drive(App& app, double dt) {
                 launch_source_ = ExactCarSource{launch_.request.car, launch_.request.car_parts, launch_.request.car_settings};
                 LOG_INFO("Race: the car's settings changed; the car is built again");
                 if (build_vehicle(app)) {
-                    restart();
+                    restart(true);
                     qm_items_ = {};
                     open_prerace_menu(app);
                 }
@@ -574,7 +574,7 @@ void RaceScreen::update_drive(App& app, double dt) {
                 // again; START then starts the race, which counts); after a run (machine test, free run) the next
                 // START builds it and the last run stays to replay.
                 if (prerace_ && build_vehicle(app)) {
-                    restart();
+                    restart(true);
                     quick_ = true;
                 }
                 toast("Settings applied");
