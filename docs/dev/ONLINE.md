@@ -1017,6 +1017,10 @@ x·10000 + y·100 + z. A local build may add `-DGT3R_VERSION_SUFFIX=-dev`.
 - Online play needs x.y.z ≥ the relay's **min_online**. The suffix does not
   count: a 0.2.0-dev build plays where 0.2.0 does. A min_online of 0.0.0 (not
   set) allows every version.
+- Through a relay, players race together when their **x.y** match
+  (`net::same_online_line`): every 0.9.z races every other 0.9.z, never a 0.8.z
+  or a 0.10.z. Patch releases keep online play compatible, so a new x.y is
+  released only for changes that break it (physics, race rules, the protocol).
 - The **update notice** shows when the relay's **latest** is newer: latest >
   x.y.z for a release, latest ≥ x.y.z for a suffixed build (0.2.0-dev is older
   than the 0.2.0 release).
@@ -1097,6 +1101,25 @@ The relay's `release_url` may hold an `{asset}` placeholder
   text. The lobby then switches to its "update required" state, with the
   release page from the error.
 
+**Players join hosts of their own x.y** (`net_relay_same_line_join`,
+`net_relay_same_line_client`):
+- Register keeps the host's version (its tag's, for another game). A Lookup
+  from another x.y is refused after the code is found, before the join limits
+  (it creates no pending join):
+  - older than a host on the latest release's x.y: Error(UpdateRequired), the
+    same answer as below min_online, so the update dialog opens;
+  - older than a host on an older x.y: Error(Denied) "the host has version
+    0.9.1 (you have 0.8.0): update to join" (the latest release would not
+    match that host either);
+  - newer than the host: Error(Denied) "the host has version 0.9.1 (you have
+    0.10.0): the host needs to update".
+- Every released game shows the relay's text when a join fails ("Disconnected:
+  ..."), so the rule needs no game update.
+- So min_online stays at the oldest release of the current online protocol
+  (0.8.0 for protocol 6). After a new x.y, players who have not updated keep
+  racing each other; they are only kept out of lobbies of the other x.y.
+- An unknown version (0.0.0) matches any, like min_online 0.0.0.
+
 **Direct-IP sessions** (Host / Join by address, no relay) need the same x.y.z
 on both sides (the suffix does not count), on top of the game protocol check.
 - The host refuses a different version in Hello. The joiner's message says
@@ -1104,7 +1127,8 @@ on both sides (the suffix does not count), on top of the game protocol check.
   0.1.0)", or "the host has an older version (…): the host needs to update".
 - Welcome carries the host's version (older games ignore the extra string). A
   joiner leaves a host whose version differs, or a host too old to send one.
-- Through a relay, the relay's min_online decides instead (`net_direct_ip_needs_same_version`).
+- Through a relay, the relay decides instead: min_online and the same x.y
+  (`net_direct_ip_needs_same_version`).
 
 **Relay configuration:**
 - Flags `--latest`, `--min-online`, `--release-url`, or a versions file
@@ -1126,12 +1150,14 @@ on both sides (the suffix does not count), on top of the game protocol check.
    `tools/gt3r-relay/deploy.sh root@<server>`. An update keeps
    `/etc/gt3r-relay/versions.conf`.
 3. `tools/gt3r-relay/set-versions.sh root@<server> <x.y.z> [min_online] [url]`.
-   min_online defaults to the new version. The URL is kept when left out; the
-   first run needs it, e.g.
-   `https://github.com/<owner>/<repo>/releases/latest/download/{asset}`.
-   The script writes the file, reloads the relay, and prints its "reload:" log
-   line with the new values. Games older than min_online can no longer create
-   or join sessions; they show the update dialog.
+   min_online and the URL are kept when left out (the first run sets
+   min_online to the new version and needs the URL, e.g.
+   `https://github.com/<owner>/<repo>/releases/latest/download/{asset}`).
+   Raise min_online only when the online protocol or the rendezvous changes:
+   the same-x.y rule already keeps different lines apart. The script writes
+   the file, reloads the relay, and prints its "reload:" log line with the new
+   values. Games older than min_online can no longer create or join sessions;
+   they show the update dialog.
 
 ### Other games on one relay
 
@@ -1146,7 +1172,7 @@ and that game's version.
 - A request without one is the relay's **main game**'s: the padding's zero
   byte reads as an empty id. Requests from this game carry none.
 - A tagged request is held to **that game's** min_online, by the tag's
-  version. A game the relay does not list has no versions: every version of
+  version, and joins hosts of the same x.y of that game. A game the relay does not list has no versions: every version of
   it may play.
 - Its header still carries the engine's version (`net::this_game_version()`).
   A relay from before game tags ignores the tag and judges that version
@@ -1162,12 +1188,13 @@ code"), and counts against the lookup limits like one. So a code typed into
 the wrong game finds nothing, before the players' own disc check
 (Hello) would refuse the join (`net_relay_sessions_per_game`).
 
-**Counts.** The stats line's version checks (by platform) and "refused as
-outdated" stay the main game's, as before other games shared the relay;
+**Counts.** The stats line's version checks (by platform), "refused as
+outdated" and "joins refused as another version" stay the main game's, as before other games shared the relay;
 its sessions, channels and links are every game's. Each game the versions
 file lists follows at the end of the line, and the unlisted ids together as
 `(unlisted)` (made-up ids cost no memory):
-`; [example] 2 sessions, 40 version checks, 0 refused as outdated`. The
+`; [example] 2 sessions, 40 version checks, 0 refused as outdated, 0 joins
+refused as another version`. The
 line is unchanged while the file lists no games.
 
 **VersionQuery with a tag** is padded to `kTaggedVersionQuerySize` (199
@@ -1267,7 +1294,7 @@ sudo systemctl enable --now gt3r-relay
   (sessions, channels, pending joins, links in use / capacity, racing and
   queued lobbies, relayed / dropped, the busiest channel, challenges, rate
   limited, the typical race length, version checks per platform, requests
-  refused as outdated). At startup and on each reload it logs the versions in
+  refused as outdated, joins refused as another x.y). At startup and on each reload it logs the versions in
   force. Limits are flags (`gt3r-relay --help`); the systemd unit passes the
   main ones. Read the log with `journalctl --namespace=gt3r-relay`.
 - It asks for 4 MB socket buffers (`--buffers-kb`). Linux caps that at

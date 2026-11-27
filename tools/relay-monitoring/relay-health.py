@@ -62,6 +62,7 @@ COUNTERS = {
     "versionChecksLinux": r"linux (\d+)",
     "versionChecksAndroid": r"android (\d+)",
     "refusedOutdated": r"(\d+) refused as outdated",
+    "refusedOtherVersion": r"(\d+) joins refused as another version",
 }
 
 # Session codes are 8 characters of the relay's alphabet (no 0, 1, I, L, O). The tag is

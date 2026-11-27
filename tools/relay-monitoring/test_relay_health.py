@@ -38,7 +38,7 @@ def test_parse_stats_absolutes():
     assert counters == {
         "relayedDatagrams": 1000, "relayedKB": 80, "dropped": 2, "challenges": 5, "rateLimited": 1,
         "versionChecks": 40, "versionChecksWindows": 10, "versionChecksMacos": 5,
-        "versionChecksLinux": 3, "versionChecksAndroid": 22, "refusedOutdated": 4,
+        "versionChecksLinux": 3, "versionChecksAndroid": 22, "refusedOutdated": 4, "refusedOtherVersion": 1,
     }, counters
     # Every pattern has to hit. A renamed stats field would show up here.
     assert set(gauges) == set(rh.GAUGES)
@@ -64,7 +64,7 @@ def test_dry_run_deltas_and_players():
     assert out["versionChecks"] == 15
     assert out["versionChecksWindows"] == 2 and out["versionChecksMacos"] == 1
     assert out["versionChecksLinux"] == 1 and out["versionChecksAndroid"] == 11
-    assert out["refusedOutdated"] == 2
+    assert out["refusedOutdated"] == 2 and out["refusedOtherVersion"] == 2
     missing = [name for name in (*rh.GAUGES, *rh.COUNTERS) if name not in out]
     assert not missing, missing
     players = [json.loads(line) for line in proc.stderr.splitlines() if line.startswith("{")]

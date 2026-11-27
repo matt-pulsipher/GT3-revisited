@@ -20,7 +20,9 @@
 // - Game versions (ONLINE.md "Versions and updates"): VersionQuery is answered with the
 //   latest release, min_online and the release page; requests that create state from a
 //   game below min_online are refused with Error(UpdateRequired). Unconfigured, every
-//   version is allowed. Queries are only counted, never logged.
+//   version is allowed. Queries are only counted, never logged. A player joins only a host
+//   of the same x.y (same_online_line): an older line is told to update (UpdateRequired when
+//   the host has the latest line, else Denied with both versions), a newer one gets Denied.
 // - Other games (ONLINE.md "Other games on one relay"): requests may carry a game tag. Each
 //   game has its own versions, its own sessions (a code is found only by players of the game
 //   that registered it) and its own counts; requests without a tag are the main game's.
@@ -95,12 +97,14 @@ public:
         size_t sessions = 0;      // open now
         u64 version_queries = 0;  // VersionQuery answered
         u64 outdated = 0;         // requests refused with UpdateRequired
+        u64 other_line = 0;       // joins refused: the host has another x.y
     };
     struct Stats {
         size_t sessions = 0, channels = 0, pending = 0; // every game's
         // The main game's (requests without a game tag), as before other games shared the relay.
         u64 version_queries = 0, queries_by_platform[kPlatformCount] = {}; // VersionQuery answered
         u64 outdated = 0; // requests refused with UpdateRequired
+        u64 other_line = 0; // joins refused: the host has another x.y (of these, those told to update also count as outdated)
         std::map<std::string, GameStats> games; // the others: those the versions list, and "(unlisted)" for the rest
         size_t links_used = 0, links_capacity = 0, reservations = 0, queued = 0;
         u64 relayed_datagrams = 0, relayed_bytes = 0, dropped = 0;
@@ -164,6 +168,7 @@ private:
         u64 serial = 0; // tells a reused code apart
         std::vector<std::string> host_eps; // LAN
         std::string game; // the host's game tag's id ("" the main game): only that game's players find the code
+        GameVersion version; // the host's (its tag's for another game): players of another x.y cannot join
         double last_seen = 0;
         size_t pending = 0; // its joins in nonces_
         Bucket joins;
@@ -208,6 +213,8 @@ private:
         return !meets_minimum(tag ? tag->version : game, versions_for(tag).min_online);
     }
     void update_required(const Address& to, const std::optional<GameTag>& tag);
+    // A join from another x.y than the host's (ours: the joining game's).
+    void other_line(const Address& to, const GameVersion& ours, const GameVersion& host, const std::optional<GameTag>& tag);
     static std::string game_of(const std::optional<GameTag>& tag) { return tag ? tag->id : std::string(); }
     // A game's counts: a game the versions list, else all unlisted ones together (kUnlisted), so made-up ids cost no memory.
     std::string stats_key(const std::string& id) const { return versions_.games.count(id) ? id : std::string(kUnlisted); }

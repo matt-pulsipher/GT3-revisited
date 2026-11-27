@@ -24,7 +24,8 @@ relay's SSH target (`user@host`).
     (`journalctl --namespace=gt3r-relay -u gt3r-relay`). Its gauges (sessions, links
     used/capacity, racing, queued, peak channel) are reported as they are. Its
     cumulative counters (relayed datagrams/KB, dropped, challenges, rate limited,
-    version checks per platform, refused as outdated) become per-minute deltas,
+    version checks per platform, refused as outdated, joins refused as another
+    version) become per-minute deltas,
     so `sum()` gives real totals across restarts. If that namespace has no stats
     line in the last 15 minutes, the default journal is tried once (a host that
     has not picked up `LogNamespace=` yet). No line: `statsAgeSeconds` is 9999 and
@@ -82,6 +83,7 @@ SELECT sum(versionChecksAndroid), sum(versionChecksWindows), sum(versionChecksMa
   FROM GT3RelaySample SINCE 1 week ago TIMESERIES 1 day      -- launches by platform
 SELECT max(linksUsed), max(racing), max(queued) FROM GT3RelaySample SINCE 1 day ago TIMESERIES
 SELECT sum(refusedOutdated) FROM GT3RelaySample SINCE 1 day ago   -- games told to update
+SELECT sum(refusedOtherVersion) FROM GT3RelaySample SINCE 1 day ago   -- joins into another x.y
 ```
 
 ## Install or update

@@ -43,7 +43,7 @@
 //                            it); re-read on SIGHUP. Missing: "??" until a reload finds it.
 // Nothing else is kept. Version queries are only counted (in the stats line), never logged. The
 // stats line's counts of version checks and refusals are the main game's; other games' follow it
-// ("; [id] 2 sessions, 40 version checks, 0 refused as outdated"); its first count of sessions is
+// ("; [id] 2 sessions, 40 version checks, 0 refused as outdated, 0 joins refused as another version"); its first count of sessions is
 // every game's.
 
 #include "net/geoip.h"
@@ -258,19 +258,22 @@ int main(int argc, char** argv) {
                           "stats: %zu sessions, %zu channels, %zu pending joins, links %zu/%zu in use, %zu racing, "
                           "%zu queued, %llu datagrams / %llu KB relayed, peak channel %.0f kbit/s, %llu dropped, "
                           "%llu challenges, %llu rate limited, typical race %.1f min, %llu version checks "
-                          "(windows %llu, macos %llu, linux %llu, android %llu), %llu refused as outdated",
+                          "(windows %llu, macos %llu, linux %llu, android %llu), %llu refused as outdated, "
+                          "%llu joins refused as another version",
                           s.sessions, s.channels, s.pending, s.links_used, s.links_capacity, s.reservations, s.queued,
                           (unsigned long long)s.relayed_datagrams, (unsigned long long)(s.relayed_bytes / 1024),
                           s.peak_channel_bytes_per_s * 8 / 1e3, (unsigned long long)s.dropped,
                           (unsigned long long)s.challenges, (unsigned long long)s.limited, s.race_estimate_ms / 60000,
                           (unsigned long long)s.version_queries, q(gt3r::net::RvPlatform::Windows),
                           q(gt3r::net::RvPlatform::MacOS), q(gt3r::net::RvPlatform::Linux),
-                          q(gt3r::net::RvPlatform::Android), (unsigned long long)s.outdated);
+                          q(gt3r::net::RvPlatform::Android), (unsigned long long)s.outdated,
+                          (unsigned long long)s.other_line);
             // Other games after it (the line above stays the main game's alone, as before they shared the relay).
             std::string other;
             for (const auto& [id, g] : s.games)
                 other += "; [" + id + "] " + std::to_string(g.sessions) + " sessions, " + std::to_string(g.version_queries) +
-                         " version checks, " + std::to_string(g.outdated) + " refused as outdated";
+                         " version checks, " + std::to_string(g.outdated) + " refused as outdated, " +
+                         std::to_string(g.other_line) + " joins refused as another version";
             line(buf + other);
             srv.reset_peak();
         }
