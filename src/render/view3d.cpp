@@ -606,8 +606,11 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
                       ensure_dof_texture(haze_low_, std::max(1, int(std::lround(480.0f * aspect))), 224);
     // The glow (DrawOptions::glow) is drawn from the picture the scene (or the depth of field)
     // left, at the start of the second pass.
+    // Its picture is half as wide and a quarter as tall as the picture at most 448 lines tall (its
+    // points lie radius / samples apart, wider than its texels: finer adds only work).
+    const float glow_k = std::min(1.0f, 448.0f / float(std::max(ph, 1)));
     const bool glow = opt.glow.on && opt.glow.gain > 0 && opt.glow.samples > 0 && opt.glow.radius > 0 && ensure_quad() &&
-                      ensure_dof_texture(glow_, std::max(1, pw / 2), std::max(1, ph / 4));
+                      ensure_dof_texture(glow_, std::max(1, int(float(pw) * glow_k) / 2), std::max(1, int(float(ph) * glow_k) / 4));
     const bool after_pass = lenses || dof || glow;
     // A glow alone (multisampled, without the lenses or the depth of field) keeps no multisampled picture between the
     // passes: the scene's samples are resolved into the lenses' copy (free then), the glow's picture is taken from it,

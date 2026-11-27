@@ -169,7 +169,8 @@ struct DrawOptions {
     // (presentation §L6's order): each channel of the picture less `threshold` (0..1; nothing
     // under it), the mean of `samples` x `samples` points spaced `radius` / `samples` apart
     // around each place (`radius` a fraction of the picture's diagonal), drawn at half the
-    // picture's width and a quarter of its height, times `sum` (held to full: that picture's
+    // picture's width and a quarter of its height (of the picture scaled to 448 lines when it is
+    // taller), times `sum` (held to full: that picture's
     // levels), then added to the picture times `gain`. Off unless asked for. `tent`: the points
     // reach `radius` on each side instead (2 x `samples` - 1 across), weighted down linearly to
     // nothing there (the sum of `samples` copies of the picture at that spacing, each sampled
