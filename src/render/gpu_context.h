@@ -19,6 +19,7 @@
 #include "render/gpu_gles.h" // the OpenGL ES fallback (GT3R_GLES): routes the SDL_GPU calls
 #include "xr/xr_session.h"   // VR builds (GT3R_XR)
 
+#include <array>
 #include <SDL3/SDL.h>
 
 #include <atomic>
@@ -195,7 +196,9 @@ public:
     // counted per holder (GpuModel). GT3 repeats most textures across LOD sets and models (a
     // race: 3,674 uploads, 839 distinct), and the Galaxy A15's Mali driver spends ~185 KB of
     // memory on every texture object besides its texels. New ones upload with `up`.
-    SDL_GPUTexture* acquire_texture(Uploader& up, u32 width, u32 height, const u32* rgba);
+    // `hash` (when known): texel_hash of the width x height texels.
+    SDL_GPUTexture* acquire_texture(Uploader& up, u32 width, u32 height, const u32* rgba,
+                                    const std::array<u64, 2>* hash = nullptr);
     // Drops a hold from acquire_texture; other textures are released outright.
     void release_texture(SDL_GPUTexture* texture);
     // Before rewriting a texture's texels: takes it out of the sharing when the caller is its

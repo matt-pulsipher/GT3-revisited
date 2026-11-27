@@ -151,7 +151,7 @@ void replace_tyre(std::vector<scene::Texture>& textures, size_t first, const std
     std::optional<std::vector<u64>> other_keys;
     for (size_t i = first; i < textures.size(); ++i) {
         scene::Texture& t = textures[i];
-        std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(t.width, t.height, t.rgba.data());
+        std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(t.width, t.height, t.rgba.vec().data());
         if (!r) {
             if (!other_keys) {
                 other_keys.emplace();

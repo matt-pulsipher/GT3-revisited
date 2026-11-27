@@ -338,7 +338,7 @@ TEST(texture_pack_disc_tyres) {
         for (const scene::Mesh& mesh : m.meshes)
             if (mesh.lod == lod && mesh.name.rfind("wheel_fl_tyre", 0) == 0)
                 for (const scene::Primitive& p : mesh.primitives)
-                    if (p.texture >= 0) return m.textures.at(size_t(p.texture)).rgba;
+                    if (p.texture >= 0) return m.textures.at(size_t(p.texture)).rgba.vec();
         return std::vector<u32>();
     };
     int asked = 0;

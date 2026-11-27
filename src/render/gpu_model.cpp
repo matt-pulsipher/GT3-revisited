@@ -168,7 +168,10 @@ void GpuModel::upload(const std::vector<scene::Vertex>& vertices, const std::vec
     for (size_t k = 0; k < textures.size(); ++k) {
         const scene::Texture& t = textures[k];
         if (t.width && t.height && t.rgba.size() >= size_t(t.width) * t.height) {
-            textures_[k].texture = ctx_->acquire_texture(up, t.width, t.height, t.rgba.data());
+            // (texels that are exactly the picture: their hash, made once for every model sharing them)
+            const std::array<u64, 2> hash = t.rgba.size() == size_t(t.width) * t.height ? t.rgba.hash()
+                                                                                       : texel_hash(t.rgba.data(), size_t(t.width) * t.height);
+            textures_[k].texture = ctx_->acquire_texture(up, t.width, t.height, t.rgba.data(), &hash);
             textures_[k].width = t.width, textures_[k].height = t.height;
         }
         if (!textures_[k].texture) LOG_WARN("Texture '%s' (%ux%u) not uploaded", t.name.c_str(), t.width, t.height);

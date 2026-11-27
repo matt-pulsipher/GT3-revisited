@@ -762,10 +762,10 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     return p;
 }
 
-SDL_GPUTexture* GpuContext::acquire_texture(Uploader& up, u32 w, u32 h, const u32* rgba) {
+SDL_GPUTexture* GpuContext::acquire_texture(Uploader& up, u32 w, u32 h, const u32* rgba, const std::array<u64, 2>* known) {
     if (w == 0 || h == 0) return nullptr;
     // A 128-bit content key over the texels.
-    const std::array<u64, 2> hash = texel_hash(rgba, size_t(w) * h);
+    const std::array<u64, 2> hash = known ? *known : texel_hash(rgba, size_t(w) * h);
     TextureKey key{w, h, {hash[0], hash[1]}};
     if (auto it = textures_by_key_.find(key); it != textures_by_key_.end()) {
         ++shared_textures_[it->second].holders;

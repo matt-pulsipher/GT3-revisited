@@ -53,9 +53,9 @@ int BuildCache::texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, con
 }
 
 void BuildCache::colour_cut(scene::Texture& t, bool wrap_u, bool wrap_v) {
-    const std::array<u64, 2> hash = texel_hash(t.rgba.data(), t.rgba.size());
+    const std::array<u64, 2> hash = t.rgba.hash();
     bool made = false;
-    const std::vector<u32>& texels =
+    const scene::Texels& texels =
         shared_->cuts.get({hash[0], hash[1], t.width, t.height, wrap_u, wrap_v}, [&] {
             colour_cut_texels(t, wrap_u, wrap_v);
             made = true;

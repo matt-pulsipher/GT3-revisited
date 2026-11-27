@@ -857,7 +857,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
         // The livery's key: the texture in the livery's paint (the computed colour's finish).
         if (livery) {
             const std::vector<u32>& in_paint =
-                !computed ? st.rgba
+                !computed ? st.rgba.vec()
                           : by_paint[i][by_paint[i].size() == 1 ? 0 : size_t(std::clamp(computed->finish, 0, int(by_paint[i].size()) - 1))];
             livery_keys.push_back(texture_pack::key_of(st.width, st.height, in_paint.data()));
             livery_templates.push_back(in_paint);
@@ -883,7 +883,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
     if (use_pack && texture_pack::current_pack())
         for (size_t i = size_t(first); i < out.size(); ++i) {
             scene::Texture& st = out[i];
-            std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(st.width, st.height, st.rgba.data());
+            std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(st.width, st.height, st.rgba.vec().data());
             if (!r) continue;
             st.width = r->width, st.height = r->height, st.rgba = r->rgba, st.nearest = false, st.no_mips = false;
             c.erase(u32(i - size_t(first)));
@@ -909,7 +909,7 @@ void colour_cut_texels(scene::Texture& t, bool wrap_u, bool wrap_v) {
     std::vector<u8> done(t.rgba.size());
     std::vector<size_t> todo;
     for (size_t i = 0; i < t.rgba.size(); ++i)
-        if (t.rgba[i] >> 24) done[i] = 1;
+        if (t.rgba.vec()[i] >> 24) done[i] = 1;
         else todo.push_back(i);
     if (todo.size() == t.rgba.size()) return;
     std::vector<std::pair<size_t, u32>> ring;
@@ -1154,7 +1154,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         auto mt = min_alpha.find(tex);
         if (mt == min_alpha.end()) {
             u32 lo = 255;
-            for (u32 c : model.textures[size_t(tex)].rgba) lo = std::min(lo, c >> 24);
+            for (u32 c : model.textures[size_t(tex)].rgba.vec()) lo = std::min(lo, c >> 24);
             mt = min_alpha.emplace(tex, lo).first;
         }
         return mt->second;

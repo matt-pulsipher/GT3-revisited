@@ -54,7 +54,7 @@ public:
     // By the bytes' hash (and the paint, the texture pack's use, the mips).
     Once<std::tuple<u64, u64, int, bool, bool>, Set> small_sets;
     // By the hash of the texels before colouring (and the size, the wrapping).
-    Once<std::tuple<u64, u64, u32, u32, bool, bool>, std::vector<u32>> cuts;
+    Once<std::tuple<u64, u64, u32, u32, bool, bool>, scene::Texels> cuts;
 
     void clear() { wheels.clear(), small_sets.clear(), cuts.clear(); }
 };
