@@ -36,6 +36,11 @@ struct TvCamera {
 };
 const char* camera_mode_name(CameraMode m);
 
+// The up axis of a view looking along `f` (unit) whose full-roll up is `u` (unit, across f),
+// rolled with `share` (0..1) of that roll about f and levelled out of the rest: 1 gives `u`, 0
+// the up of a level view along f. Pitch is untouched. (Custom cameras' body roll, [vr] body_roll.)
+render::Vec3 roll_share_up(const render::Vec3& f, const render::Vec3& u, float share);
+
 // GT3's pre-race shot (presentation §B3), by C = frames left to the start signal of a
 // standing-start hold: shown in every live view while C is 60 or more, at
 // t = 1 - (C - 60) / 600, with a 1 s dissolve from the last picture when C - 60 is 120 or 60

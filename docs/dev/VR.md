@@ -112,7 +112,7 @@ render pass have neither cost.
 
 **Eyes.** `RaceScreen::render_vr_eyes` (`screen_race_vr.cpp`) places the seated
 space in the world (`vr_base`): at the car's camera point 0 with the car's
-attitude (in-car; `[vr] level_horizon` keeps only its heading), or at the chase
+attitude (in-car; `[vr] body_roll` is the share of its roll kept, `level_horizon` keeps only its heading), or at the chase
 camera, level, along its lagged heading. One of the player's own cameras (Settings >
 Cameras) places it at the camera's eye, facing the camera's heading
 (`CameraRig::custom_seat`): the camera's yaw turns the seat, its pitch and tilt are left
@@ -279,6 +279,7 @@ the rates the headset offers (`XR_FB_display_refresh_rate`, 90 Hz default).
 | `runtime` | `auto` | desktops: `steamvr` or `meta` (Settings > VR > Headset software, when the PC has them); `auto`: the system's OpenXR runtime, then SteamVR while it runs. Restart |
 | `stereo` | `on` | races in 3D; `off`: on the virtual screen |
 | `level_horizon` | `off` | in-car view (and a custom camera on the car) follows the car's heading only |
+| `body_roll` | `100` | in-car views: the share (0..100) of the car's roll the view rolls with, its pitch kept; custom cameras have their own (Settings > VR > Body roll) |
 | `car_body` | `off` | the own car's body around the in-car view, and a custom camera on the car that hides it (see Status) |
 | `car_windows` | `clear` | that body, and an in-car custom camera's, without its windows (scene::kGlass, `mark_car_glass`: the glass, its reflection and depth passes and the dark panels just behind it); `tinted`: as GT3 draws them |
 | `steering` | `stick` | `wheel`: grips grab a steering wheel |

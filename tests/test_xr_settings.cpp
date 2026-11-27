@@ -49,6 +49,20 @@ TEST(xr_settings_seat_side) {
     CHECK(std::fabs(xr::Settings::load(IniDocument::parse("[vr]\nseat_offset = 0\n")).seat_offset - 0.1f) < 1e-6f);
 }
 
+// The in-car views' body roll (issue 428): all of it by default, a share 0..100, kept by a save.
+TEST(xr_settings_body_roll) {
+    CHECK(xr::Settings::load(IniDocument::parse("")).body_roll == 1);
+    CHECK(std::fabs(xr::Settings::load(IniDocument::parse("[vr]\nbody_roll = 40\n")).body_roll - 0.4f) < 1e-6f);
+    CHECK(xr::Settings::load(IniDocument::parse("[vr]\nbody_roll = 300\n")).body_roll == 1);
+    CHECK(xr::Settings::load(IniDocument::parse("[vr]\nbody_roll = -5\n")).body_roll == 0);
+    CHECK(xr::Settings::load(IniDocument::parse("[vr]\nbody_roll = nan\n")).body_roll == 1);
+    xr::Settings s;
+    s.body_roll = 0.3f;
+    IniDocument cfg;
+    s.save(cfg);
+    CHECK(cfg.get("vr", "body_roll") == "30" && std::fabs(xr::Settings::load(cfg).body_roll - 0.3f) < 1e-6f);
+}
+
 // The windows from inside (issue 320): clear by default, tinted on request, kept by a save.
 TEST(xr_settings_car_windows) {
     CHECK(xr::Settings::load(IniDocument::parse("")).clear_windows);

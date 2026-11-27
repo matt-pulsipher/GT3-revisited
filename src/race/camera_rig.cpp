@@ -391,14 +391,7 @@ void CameraRig::place(const sim::VehicleState& s, const sim::VehicleSetup& setup
         eye_ = origin + world(e);
         // Body roll (the car mounts): the eye stays on the car while the view rolls with that
         // share of the body's roll and levels the rest out (1: the in-car look, 0: the horizon).
-        const float lock = c->mount == CustomCamera::Mount::Follow ? 0.0f : 1.0f - c->body_roll;
-        if (lock > 0 && std::fabs(f.y) < 0.999f) {
-            const render::Vec3 w{0, 1, 0};
-            const render::Vec3 u0 = render::normalize(w - f * render::dot(w, f));
-            const render::Vec3 axis = render::cross(f, u0);
-            const float roll = std::atan2(render::dot(render::cross(u0, u), f), render::dot(u0, u));
-            u = render::normalize(u0 * std::cos(roll * (1.0f - lock)) + axis * std::sin(roll * (1.0f - lock)));
-        }
+        if (c->mount != CustomCamera::Mount::Follow) u = roll_share_up(f, u, c->body_roll);
         const render::Vec3 rv2 = render::normalize(render::cross(f, u));
         mount_frame_ = render::Mat4::from({rv2.x, rv2.y, rv2.z, 0, u.x, u.y, u.z, 0, -f.x, -f.y, -f.z, 0, 0, 0, 0, 1});
         auto vworld = [&](const render::Vec3& v) { return rv2 * v.x + u * v.y - f * v.z; };
@@ -565,6 +558,16 @@ CustomCamera CameraRig::preset(CameraMode m, const sim::VehicleSetup& setup) con
     }
     c.clamp();
     return c;
+}
+
+render::Vec3 roll_share_up(const render::Vec3& f, const render::Vec3& u, float share) {
+    if (share >= 1 || std::fabs(f.y) >= 0.999f) return u;
+    const render::Vec3 w{0, 1, 0};
+    const render::Vec3 u0 = render::normalize(w - f * render::dot(w, f));
+    const render::Vec3 axis = render::cross(f, u0);
+    const float roll = std::atan2(render::dot(render::cross(u0, u), f), render::dot(u0, u));
+    const float k = std::max(share, 0.0f);
+    return render::normalize(u0 * std::cos(roll * k) + axis * std::sin(roll * k));
 }
 
 render::Mat4 CameraRig::custom_seat(bool level, const render::Vec3& nudge) const {

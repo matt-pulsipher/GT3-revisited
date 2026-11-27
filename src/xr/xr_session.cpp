@@ -80,6 +80,7 @@ Settings Settings::load(const IniDocument& cfg) {
     Settings s;
     s.stereo = flag(cfg, "stereo", s.stereo);
     s.level_horizon = flag(cfg, "level_horizon", s.level_horizon);
+    if (auto v = number(cfg, "body_roll"); v && std::isfinite(*v)) s.body_roll = clampf(*v, 0, 100) / 100.0f;
     s.show_car = flag(cfg, "car_body", s.show_car);
     s.clear_windows = to_lower(cfg.get("vr", "car_windows").value_or("clear")) != "tinted";
     s.wheel = to_lower(cfg.get("vr", "steering").value_or("stick")) == "wheel";
@@ -102,6 +103,7 @@ Settings Settings::load(const IniDocument& cfg) {
 void Settings::save(IniDocument& cfg) const {
     cfg.set("vr", "stereo", stereo ? "on" : "off");
     cfg.set("vr", "level_horizon", level_horizon ? "on" : "off");
+    cfg.set("vr", "body_roll", std::to_string(int(std::lround(body_roll * 100))));
     cfg.set("vr", "car_body", show_car ? "on" : "off");
     cfg.set("vr", "car_windows", clear_windows ? "clear" : "tinted");
     cfg.set("vr", "steering", wheel ? "wheel" : "stick");

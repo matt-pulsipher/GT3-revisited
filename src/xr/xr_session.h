@@ -69,6 +69,7 @@ enum class SeatSide : u8 { Center, Left, Right, Car };
 struct Settings {
     bool stereo = true;          // stereo = on: races in 3D; off: on the virtual screen
     bool level_horizon = false;  // level_horizon = on: the in-car view ignores the car's pitch and roll
+    float body_roll = 1;         // body_roll = 0..100: the share of the car's roll the in-car views roll with (0 level)
     bool show_car = false;       // car_body = on: the own car's body around the in-car view
     bool clear_windows = true;   // car_windows = clear: that body (and an in-car custom camera's) without its tinted glass
     bool wheel = false;          // steering = wheel: both grips held, turn the controllers like a wheel
