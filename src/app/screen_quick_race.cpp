@@ -20,7 +20,8 @@
 // and the lineup (app/opponent_grid.h): one to 31 opponents, as many as the course's field holds
 // (course_field_size: its grid continued along its racing line), and the player's car and place among them. It runs on the arcade's Normal race (Class S's, on dirt the dirt race's):
 // that race's start and tyre wear, and its rubber band if the player turns catch-up on, which
-// would otherwise hold fast opponents back. Each opponent's skill is the driver overrides of
+// would otherwise hold fast opponents back. The grid is the lineup's order, or (Grid order: Fastest first) GT Mode's: the
+// opponents by weight per power, the best on pole (race::gt_grid_places), the player's place kept. Each opponent's skill is the driver overrides of
 // the arcade race of that difficulty; the values are the disc's. Custom races can be saved
 // under a name (the same name replaces one) and follow it in the list. The last one is kept in
 // [quickrace_custom], saved ones in [quickrace_race<n>], with the same keys.
@@ -34,7 +35,7 @@
 // selects the event (its id or race code) and car; `start` starts the race at once,
 // `page=setup` / `page=cars` opens that page; `level=0..3` (a Concept disc 0..2) and `course=<label>` set the
 // arcade difficulty and course. A custom race: `page=custom` or `race=<saved name>` opens it,
-// with `course`, `car`, `paint`, `mt`, `laps=<n>`, `place=<n>` (1 pole), `catchup=1`,
+// with `course`, `car`, `paint`, `mt`, `laps=<n>`, `place=<n>` (1 pole), `catchup=1`, `order=1` (fastest first),
 // `save=<name>`, `start` and `grid=<car>:<paint>:<skill>/...` (skill 0..3 easy .. professional; a Gran Turismo Concept
 // disc's levels 0..2 normal .. ace).
 
@@ -118,7 +119,7 @@ struct CustomSummary {
 struct Script {
     bool have = false, start = false;
     std::string event, car, page, course, race, save;
-    int paint = -1, mt = -1, level = -1, laps = -1, place = -1, catchup = -1;
+    int paint = -1, mt = -1, level = -1, laps = -1, place = -1, catchup = -1, order = -1;
     std::vector<OpponentGrid::Car> grid;
 };
 
@@ -146,6 +147,7 @@ Script read_script() {
         else if (k == "laps") s.laps = std::atoi(v.c_str());
         else if (k == "place") s.place = std::atoi(v.c_str());
         else if (k == "catchup") s.catchup = std::atoi(v.c_str());
+        else if (k == "order") s.order = std::atoi(v.c_str());
         else if (k == "race") s.race = v;
         else if (k == "save") s.save = v;
         else if (k == "grid") {
@@ -254,7 +256,7 @@ private:
     static constexpr int kListRows = 19;
     static constexpr float kSetupX = 12, kSetupR = 318, kSetupY = 234, kSetupH = 18; // the setup rows (under the car)
     // The custom race: the course, its rows and the car at the left, the lineup at the right, the buttons along the bottom.
-    static constexpr float kLeftX = 8, kLeftW = 232, kLeftY = 110, kLeftH = 24, kGridX = 248, kGridR = 632, kGridY = 26;
+    static constexpr float kLeftX = 8, kLeftW = 232, kLeftY = 108, kLeftH = 22, kGridX = 248, kGridR = 632, kGridY = 26;
     static constexpr float kButtonY = 316, kButtonH = 24;
     static constexpr float kGridBottom = kButtonY - 4; // the lineup's rows scroll between kGridY and here
     static constexpr int kSetupCar = -1, kCustomCar = -2; // what the car page chooses, or an opponent's (0 ..)
@@ -388,6 +390,7 @@ private:
         if (!data->load(menu::flow::vfs_reader(*app.vfs()))) LOG_WARN("Quick race: GT mode data: %s", data->error().c_str());
         gt_ = std::make_unique<game::GtMode>(data);
         concept_ = data->game == GameKind::Concept;
+        power_hp_ = app.vfs() && language_units(app.vfs()->language()).power_hp;
         for (const data::Car& c : db_.cars()) {
             std::string model = db_.model_of(c);
             if (model.empty() || !app.vfs()->exists("cars/day/" + model)) continue; // as the race screen lists them
@@ -1093,6 +1096,7 @@ private:
         custom_.paint = std::max(0, std::atoi(cfg.get(section, "paint").value_or("0").c_str()));
         custom_.manual = cfg.get(section, "gearbox").value_or("at") == "mt";
         custom_.catch_up = cfg.get(section, "catch_up").value_or("off") == "on";
+        custom_.fastest_first = cfg.get(section, "grid_order").value_or("listed") == "fastest";
         grid_.read(cfg, section);
     }
 
@@ -1103,6 +1107,7 @@ private:
         cfg.set(section, "paint", std::to_string(custom_.paint));
         cfg.set(section, "gearbox", custom_.manual ? "mt" : "at");
         cfg.set(section, "catch_up", custom_.catch_up ? "on" : "off");
+        cfg.set(section, "grid_order", custom_.fastest_first ? "fastest" : "listed");
         grid_.write(cfg, section);
     }
 
@@ -1345,7 +1350,7 @@ private:
     }
 
     // The page's rows: the race at the left, the lineup (OpponentGrid's rows) at the right, then what to do with it.
-    enum class CRow { Course, Laps, Gearbox, CatchUp, Grid, Save, Delete, Start };
+    enum class CRow { Course, Laps, Gearbox, CatchUp, Order, Grid, Save, Delete, Start };
     struct CustomRow {
         CRow kind;
         int grid; // Grid: the grid's row
@@ -1354,7 +1359,7 @@ private:
     std::vector<CustomRow> custom_rows() const {
         std::vector<CustomRow> rows;
         float y = kLeftY;
-        for (CRow k : {CRow::Course, CRow::Laps, CRow::Gearbox, CRow::CatchUp}) {
+        for (CRow k : {CRow::Course, CRow::Laps, CRow::Gearbox, CRow::CatchUp, CRow::Order}) {
             rows.push_back({k, -1, {kLeftX, y, kLeftW, kLeftH}});
             y += kLeftH;
         }
@@ -1417,6 +1422,7 @@ private:
         case CRow::Laps: custom_.laps = (custom_.laps - 1 + h + kMaxLaps) % kMaxLaps + 1; break;
         case CRow::Gearbox: custom_.manual = !custom_.manual; break;
         case CRow::CatchUp: custom_.catch_up = !custom_.catch_up; break;
+        case CRow::Order: custom_.fastest_first = !custom_.fastest_first; break;
         case CRow::Grid:
             if (const int who = grid_.action(row.grid, h, cross); who == OpponentGrid::kPlayer) {
                 open_car_page(app, kCustomCar, custom_.car, custom_.paint);
@@ -1451,6 +1457,9 @@ private:
     // What the row under the cursor does, for the footer.
     std::string custom_hint(const CustomRow& row) const {
         if (row.kind == CRow::CatchUp) return "Catch-up: cars far ahead of you slow down, cars far behind you speed up";
+        if (row.kind == CRow::Order)
+            return custom_.fastest_first ? "Opponents start by weight per " + power_unit() + ", the best on pole, as in GT Mode"
+                                         : "Opponents start in the lineup's order";
         if (row.kind != CRow::Grid) return "{Up/Down}: choose   {Left/Right}: change";
         if (row.grid == OpponentGrid::kSkillRow) return "Sets every opponent's skill at once";
         if (row.grid == OpponentGrid::kPlaceRow) return "Where you start, 1st on pole";
@@ -1491,6 +1500,7 @@ private:
             case CRow::Course: value = course_name(custom_.course); break;
             case CRow::Laps: label = "Laps", value = std::to_string(custom_.laps); break;
             case CRow::Gearbox: label = "Transmission", value = custom_.manual ? "Manual" : "Automatic"; break;
+            case CRow::Order: label = "Grid order", value = custom_.fastest_first ? "Fastest first" : "As listed"; break;
             default: label = "Catch-up", value = custom_.catch_up ? "On" : "Off"; break;
             }
             if (!label.empty()) ui.text(b.x + 6, b.y + (b.h - 2 - Ui::kChar) / 2, label, f ? colors::kAccent : colors::kText);
@@ -1505,7 +1515,7 @@ private:
         const int who = at.kind == CRow::Grid ? grid_.who(at.grid) : OpponentGrid::kNobody;
         const bool opponent = who >= 0 && who < OpponentGrid::kPlayer;
         const PickerCar& shown = cars_[size_t(opponent ? grid_.car(who).car : custom_.car)];
-        const SDL_FRect stage{kLeftX, 210, kLeftW, 102};
+        const SDL_FRect stage{kLeftX, kLeftY + 5 * kLeftH + 2, kLeftW, kGridBottom - (kLeftY + 5 * kLeftH + 2)};
         ui.fill_round(stage.x, stage.y, stage.w, stage.h, 6, colors::kPanel);
         turntable_.draw(app, stage, db_, shown, opponent ? grid_.car(who).paint : custom_.paint, art_);
         ui.text(stage.x + 8, stage.y + 6, Ui::clip(shown.name, stage.w - 16), colors::kText);
@@ -1545,6 +1555,7 @@ private:
                      OpponentGrid::skill_name(g.skill, concept_), rq.opponent_skills.back().c_str());
         }
         rq.no_rubber_band = !custom_.catch_up;
+        rq.grid_by_power = custom_.fastest_first;
         rq.player_slot = grid_.player_place();
         rq.big_field = true;
         LOG_INFO("Quick race: custom race at %s, %d laps, with %s", custom_.course.c_str(), custom_.laps, rq.car.c_str());
@@ -1672,6 +1683,7 @@ private:
         if (s.paint >= 0) custom_.paint = s.paint;
         if (s.mt >= 0) custom_.manual = s.mt != 0;
         if (s.catchup >= 0) custom_.catch_up = s.catchup != 0;
+        if (s.order >= 0) custom_.fastest_first = s.order != 0;
         if (!s.grid.empty()) {
             grid_.set_count(int(s.grid.size()));
             for (size_t k = 0; k < s.grid.size(); ++k) grid_.set_place(int(k), s.grid[k]);
@@ -1697,13 +1709,15 @@ private:
     int row_ = 0, list_first_ = 0, setup_sel_ = 0;
     int car_ = -1, paint_ = 0, level_ = 1;
     bool concept_ = false; // a Gran Turismo Concept disc (its skills: game::concept_car_race)
+    bool power_hp_ = false; // the language's power unit is HP (BHP, CV), as the race's grid order reads it (FieldConfig::grid_hp)
+    std::string power_unit() const { return power_hp_ ? "HP" : "PS"; }
     bool own_car_ = true, manual_ = false;
     std::string arcade_course_;
     // The custom race on the page (the last one or a saved one, in config.ini).
     struct CustomRace {
         std::string course;
         int laps = 3, car = -1, paint = 0;
-        bool manual = false, catch_up = false;
+        bool manual = false, catch_up = false, fastest_first = false;
     };
     bool has_custom_ = false; // (a disc without the arcade's races has none)
     CustomRace custom_;
