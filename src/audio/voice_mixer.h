@@ -65,8 +65,12 @@ struct VoiceParams {
 class VoiceMixer {
 public:
     // The SPU2 has 2 cores x 24 voices; the game's allocator hands out only
-    // the first 46 (what the last two are kept for is not known).
+    // the first 46 (what the last two are kept for is not known). key_on takes
+    // one of those 46; the last two (kSpareVoices) are keyed only by
+    // key_on_spare, for an app that keeps two voices of its own (a stream).
     static constexpr int kVoices = 46;
+    static constexpr int kSpareVoices = 2;
+    static constexpr int kAllVoices = kVoices + kSpareVoices;
     static constexpr u32 kRate = 48000;
     // Output trim of the mix (headroom: full-level voices sum past 0 dBFS as on the SPU2).
     // The game streams its music through SPU2 voices as well, so the music and the
@@ -79,11 +83,20 @@ public:
     VoiceMixer();
 
     VoiceId key_on(const VoiceParams& p);
+    // Keys spare voice `spare` (0 or 1: the SPU2's voices 46 and 47), cutting what
+    // it played; key_on never hands these out, so nothing else takes them.
+    VoiceId key_on_spare(int spare, const VoiceParams& p);
     void key_off(VoiceId v); // enters the release phase
     void stop(VoiceId v);    // silences immediately
     void stop_all();
     void set_pitch(VoiceId v, u16 pitch); // game units
     void set_volume(VoiceId v, s16 l, s16 r);
+    // Volume changes are eased to their level, full scale in about 5 ms (256
+    // samples), by default. Off: a change lands on the next sample, as the
+    // SPU2 takes a voice's level register, for an app whose own rules already
+    // ease what they need.
+    void set_volume_ramp(bool on) { volume_ramp_ = on; }
+    bool volume_ramp() const { return volume_ramp_; }
     // Stealing priority of a playing voice (VoiceParams::priority); the game re-sends a
     // held effect's priority every frame as its loudness changes.
     void set_priority(VoiceId v, u8 priority);
@@ -167,8 +180,10 @@ private:
         s32 master = 0;
         bool gauss = true;
         std::array<s32, 2> bus_gain{};
+        bool ramp = true;
     };
 
+    VoiceId key_on_at(int index, const VoiceParams& p); // (mutex_ held)
     Voice* find(VoiceId v);
     const Voice* find(VoiceId v) const;
     void change(Change c); // (mutex_ held)
@@ -180,8 +195,8 @@ private:
     static bool env_tick(Voice& v, int rate, int rate_mask, bool exponential, bool decrease);
 
     mutable std::mutex mutex_;
-    std::array<Voice, kVoices> voices_;
-    std::array<Voice, kVoices> block_;   // the block being rendered (mixing thread, without mutex_)
+    std::array<Voice, kAllVoices> voices_;
+    std::array<Voice, kAllVoices> block_;   // the block being rendered (mixing thread, without mutex_)
     bool rendering_ = false;             // a block renders: block_ and reverb_ are the mixing thread's
     std::vector<Change> changes_;        // made while it renders, replayed after it
     std::mutex mix_mutex_;               // one mix() at a time
@@ -190,6 +205,7 @@ private:
     std::array<s32, 2> bus_gain_{1 << 16, 1 << 16}; // per VoiceBus, 16.16 fixed point
     Interpolation interp_ = Interpolation::Gaussian;
     std::atomic<bool> surround_cue_{false};
+    std::atomic<bool> volume_ramp_{true};
     SpuReverb reverb_;
     int reverb_mode_ = SpuReverb::Off; // as last set (reverb_ takes it after a rendering block)
     s16 reverb_depth_ = 0;
