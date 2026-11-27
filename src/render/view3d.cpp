@@ -1283,8 +1283,9 @@ void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass,
 // (spin_copy_period's taps, from a copy of the picture): the mean of all the copies, at the weight
 // of how far apart a pixel's own copies lie at the rim's edge (1 from a pixel on), so a rim hardly
 // turning keeps its sharpness. The heat haze's copy of the picture is free by then and is reused.
-// With the copies' mask (`masked`, encode_spin_mask) the filter reads and changes only the pixels
-// the turn sweeps (any copy), at their coverage; without it, the whole rectangle (the body too).
+// With the rims' mask (`masked`, encode_spin_mask: their shapes, DrawItem::spin_mask_shape) the filter
+// reads and changes only the pixels of the rims' faces, at their coverage; without it, the whole
+// rectangle (the body too).
 void View3D::spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, int pw, int ph, bool cycle,
                           bool masked) {
     const int samples = ctx_.gles() ? 1 : ctx_.msaa(); // (the OpenGL ES variant has no sample masks)
@@ -1321,8 +1322,9 @@ void View3D::spin_resolve(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* picture, in
 }
 
 bool View3D::spin_mask_wanted(const std::vector<DrawItem>& items) const {
-    return ctx_.spin_copies() &&
-           std::any_of(items.begin(), items.end(), [](const DrawItem& i) { return i.spin_turn != 0 && !i.late; });
+    return ctx_.spin_copies() && std::any_of(items.begin(), items.end(), [](const DrawItem& i) {
+               return i.spin_mask_shape && !i.late;
+           });
 }
 
 bool View3D::spin_filter_wanted() const {
@@ -1634,7 +1636,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         const GpuModel* model = item.model;
         if (!model || !model->valid()) continue;
         if ((which == Items::Early && item.late) || (which == Items::Late && !item.late)) continue;
-        if (which == Items::SpinMask && (item.late || item.spin_turn == 0 || !ctx_.spin_copies())) continue;
+        // The rims' mask shapes go into their mask alone, and the mask has nothing else.
+        if (which == Items::SpinMask ? !item.spin_mask_shape || item.late || !ctx_.spin_copies() : item.spin_mask_shape)
+            continue;
         if (reaches_past_far(item, opt, view, eye)) {
             stats_.meshes_culled += int(model->meshes().size());
             continue;

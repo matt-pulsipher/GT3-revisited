@@ -5,6 +5,7 @@
 #include "formats/model/brake_model.h"
 #include "formats/model/car_model.h"
 #include "formats/model/gtm1.h"
+#include "formats/model/tyre_model.h"
 #include "formats/model/wheel_model.h"
 #include "formats/model/wheel_spec.h"
 #include "game/data/car_database.h"
@@ -260,6 +261,78 @@ TEST(wheel_rim_blur) {
     CHECK(race::rim_blur_lod(256) == 2.0f);
     // The other cars' spinning image: past 3 degrees of turn either way.
     CHECK(!race::rim_spinning_image(0.052f) && race::rim_spinning_image(0.0524f) && race::rim_spinning_image(-0.06f));
+}
+
+// Showroom wheels: the disc a spinning rim's filter mask draws, measured from the rim in the hub frame.
+TEST(wheel_rim_mask_disc) {
+    // A square face 3 cm out (x -0.03) with corners 0.1 from the axle each way, and a second mesh
+    // (a barrel) 9 cm in, moved by its transform: the radius is the corners' distance from the
+    // axle, the faces the two meshes' x.
+    scene::Model rim = rim_face(-0.03f, 0.1f);
+    scene::Model barrel = rim_face(0.04f, 0.05f);
+    barrel.meshes[0].transform[12] = 0.05f; // (column-major: x translation)
+    rim.meshes.push_back(barrel.meshes[0]);
+    const race::RimDisc d = race::rim_disc(rim);
+    CHECK(near(d.radius, std::sqrt(0.02f)));
+    CHECK(near(d.min_x, -0.03f) && near(d.max_x, 0.09f));
+    // A transform's turn moves the faces too: half a turn about y (a right wheel built turned).
+    scene::Model turned = rim_face(-0.03f, 0.1f);
+    turned.meshes[0].transform = {-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1};
+    const race::RimDisc t = race::rim_disc(turned);
+    CHECK(near(t.min_x, 0.03f) && near(t.max_x, 0.03f) && near(t.radius, std::sqrt(0.02f)));
+    // No vertices: no disc.
+    CHECK(race::rim_disc(scene::Model{}).radius == 0);
+}
+
+// The tyre's inner ring, from the race's own tyre: the outer sidewall's inner edge (radius
+// b = R - 0.75 H, at the outer face x_o), not the black disc closing the inner side to the axle.
+TEST(wheel_tyre_inner_ring) {
+    TyreShape shape;
+    shape.radius = 0.316f, shape.width = 0.205f, shape.sidewall = 0.113f;
+    const float b = shape.radius - 0.75f * shape.sidewall;
+    const float xo = -0.5f * shape.width + race_tyre_detail(0).outer_inset;
+    scene::Model tyre;
+    for (scene::Mesh& m : build_tyre(shape, race_tyre_detail(0), -1, false, 0))
+        if (m.name != "band") tyre.meshes.push_back(std::move(m));
+    const race::TyreRing ring = race::tyre_inner_ring(tyre);
+    CHECK(near(ring.radius, b, 1e-4f));
+    CHECK(near(ring.min_x, xo, 1e-4f) && near(ring.max_x, xo, 1e-4f)); // the outer side's only
+    // A symmetric tyre has its sidewall on the inner side too: a ring on each side.
+    shape.flags = 2;
+    scene::Model sym;
+    for (scene::Mesh& m : build_tyre(shape, race_tyre_detail(0), -1, false, 0))
+        if (m.name != "band") sym.meshes.push_back(std::move(m));
+    const race::TyreRing both = race::tyre_inner_ring(sym);
+    CHECK(near(both.radius, b, 1e-4f) && near(both.min_x, xo, 1e-4f) && both.max_x > 0.09f);
+    CHECK(race::tyre_inner_ring(scene::Model{}).radius == 0);
+}
+
+// The mask's shape: the disc `out` beyond the rim's face, and a sidewall from its edge to the
+// tyre's inner ring on the same side; the disc alone where the ring is on the other side.
+TEST(wheel_spin_mask_shape) {
+    race::RimDisc rim;
+    rim.radius = 0.2f, rim.min_x = -0.09f, rim.max_x = 0.05f;
+    race::TyreRing ring;
+    ring.radius = 0.21f, ring.min_x = ring.max_x = -0.07f; // outer side only (recessed 2 cm)
+    auto radius = [](const scene::Vertex& v) { return std::sqrt(v.pos[1] * v.pos[1] + v.pos[2] * v.pos[2]); };
+    const scene::Model minus = race::spin_mask_shape(rim, ring, true, 0.005f, 16);
+    CHECK(minus.meshes.size() == 1);
+    if (minus.meshes.size() != 1) return;
+    const scene::Mesh& m = minus.meshes[0];
+    CHECK(m.vertices.size() == 1 + 16 + 16);
+    CHECK(m.indices.size() == size_t(16 * 3 + 16 * 6) && m.primitives[0].index_count == m.indices.size());
+    CHECK(m.primitives[0].flags == (scene::kDoubleSided | scene::kUnlit));
+    CHECK(near(m.vertices[0].pos[0], -0.095f) && near(radius(m.vertices[0]), 0));
+    for (size_t k = 1; k <= 16; ++k) CHECK(near(m.vertices[k].pos[0], -0.095f) && near(radius(m.vertices[k]), 0.2f));
+    for (size_t k = 17; k < 33; ++k) CHECK(near(m.vertices[k].pos[0], -0.07f) && near(radius(m.vertices[k]), 0.21f));
+    // Every index in range, and the sidewall joins the disc's edge to the ring.
+    for (u32 i : m.indices) CHECK(i < m.vertices.size());
+    // The +x face: the ring lies across the rim's middle, so the disc alone, at max_x + out.
+    const scene::Model plus = race::spin_mask_shape(rim, ring, false, 0.005f, 16);
+    CHECK(plus.meshes[0].vertices.size() == 1 + 16 && plus.meshes[0].indices.size() == size_t(16 * 3));
+    CHECK(near(plus.meshes[0].vertices[5].pos[0], 0.055f));
+    // No ring at all: the disc alone.
+    CHECK(race::spin_mask_shape(rim, race::TyreRing{}, true, 0.005f, 16).meshes[0].vertices.size() == 17);
 }
 
 // race/brake.bin on the disc, and every car's brake records within its tables.
