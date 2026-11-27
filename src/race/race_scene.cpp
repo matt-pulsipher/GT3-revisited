@@ -452,6 +452,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         CarModelOptions ro = opt;
         ro.lod = 0, ro.effects = false, ro.morphs = nullptr;
         ro.showroom_car = {}, ro.showroom_wheel = {}, ro.other_tyre = {};
+        ro.body = false, ro.body_mod = {}, ro.livery.reset(), ro.resolve_paint = false; // (only the wheels are taken)
         race_wheels = scene::extract(load_car_model(car_file, ro, model),
                                      [](const scene::Mesh& m) { return m.name.rfind("wheel_", 0) == 0; });
     }

@@ -197,7 +197,10 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
     o.weighted_reflection = true; // reflection passes weighted by the body's texel alpha
     o.gs_mip_levels = true;       // the full-size images only, as the GS samples them (MXL 0)
     o.node_fog = true;            // the lamp glows and glints fogged to black (op 0x21)
-    scene::Model m = gtm1::build_model(g, o, name);
+    scene::Model m;
+    m.name = name;
+    if (opt.body || !opt.wheel_spec) m = gtm1::build_model(g, o, name); // (without a spec the body places the wheels)
+    if (!opt.body) m.meshes.clear();
     std::array<std::vector<scene::Mesh>, 2> brake_parts;
     if (brakes || (opt.floor_shadow && !opt.effects)) {
         std::vector<scene::Mesh> kept;
