@@ -48,6 +48,7 @@ scene::Model gtm1_model(ByteSpan block, const CourseModelOptions& opt, const std
     o.frame_alpha = opt.frame_alpha;
     o.alpha_test = true;
     o.gs_state = true;
+    o.node_fog = true; // the additive passes fogged to the black their programs set (op 0x21)
     o.carry_state = carry_state;
     o.clut_sets = clut_sets;
     o.animated = animated;

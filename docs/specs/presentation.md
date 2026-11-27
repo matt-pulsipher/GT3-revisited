@@ -2709,8 +2709,11 @@ Disable, caps 0x65 + i = light i; `fn_002557E8` Light; `fn_00255898` LightModel;
 Per vertex in every transform kernel (`fn_00253EF0` sets the constants): F = trunc(b' + 0.1 +
 (255 - b') min(W, A') / W), b' = clamp(255 b, 0, 255), A' = max(A k, 0) (k = 1, the backdrop
 0.01), W = clip w = -z_eye; FTOI4 into the XYZF2 FOG field (2048 added on strip-start vertices
-for ADC). The sheen's node program sets the fog colour to 0 (op 0x21, saved / restored by
-0x22 / 0x23).
+for ADC). The node programs set the fog colour to 0 (op 0x21, saved / restored by 0x22 / 0x23)
+around their passes that add to the frame, so those fade to nothing with distance instead of
+adding the fog colour a second time: the sheen, the kind 2 / 3 environment passes (US disc:
+about 9,600 course draws), and the cars' reflection, lamp-glow (ALPHA 0x48) and glint (0x58)
+passes. Ours: `gtm1::Options::node_fog` on course and car models.
 
 ### M4. Wet and dirt courses
 - vf48: slot 1 (base, then the sheen over the base pass's Ad) -> vf50 (when slot 13 exists: the
