@@ -155,6 +155,7 @@ struct Draw {
     //   ops 0x2D / 0x2E: back-face culling on / off (render state 0xF; on at stream entry).
     //     Course flags and banners turn it off around their animated chunks.
     bool cull = true;
+    bool operator==(const Draw&) const = default;
 };
 
 struct RunParams {
@@ -283,6 +284,9 @@ class BuildCache; // formats/model/build_cache.h
 struct Options {
     RunParams run;
     int node = -1;            // -1 = every node
+    // Car bodies: when set, receives node 0 built with the brake switch pressed (RunParams::brake), as a build of its
+    // own with `node` 0 would make it: the draws before the first one the switch changes are emitted once for both.
+    scene::Model* brake_variant = nullptr;
     // What the builds sharing it have worked out before (a car's: its LODs and wheels use the same texture sets again).
     BuildCache* cache = nullptr;
     bool reflection = true;   // include environment-map packets (normal in the UV slot)

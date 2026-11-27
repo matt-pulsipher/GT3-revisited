@@ -396,8 +396,13 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
     opt.morphs = &morphs_;
     std::vector<gtm1::ClutSet> cluts;
     opt.clut_sets = &cluts;
+    // The brake-lamp variant, made along with the car: the node programs' brake switch (selector id 0) takes its
+    // "pressed" branch (lit lens chunks with lamp materials).
+    scene::Model lit;
+    opt.brake_body = &lit;
     scene::Model car = load_car_model(car_file, opt, model);
     opt.clut_sets = nullptr; // (the other builds below: none)
+    opt.brake_body = nullptr;
     for (const scene::Mesh& m : car.meshes) lods_ = std::max(lods_, m.lod + 1);
     scene::Model body = scene::extract(car, [](const scene::Mesh& m) {
         return m.name.rfind("wheel_", 0) != 0 && m.name.rfind("node", 0) != 0;
@@ -465,15 +470,6 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
     } catch (const std::exception&) {
     }
     {
-        // The brake-lamp variant: the node programs' brake switch (selector id 0) takes its
-        // "pressed" branch (lit lens chunks with lamp materials).
-        CarModelOptions bo = opt;
-        bo.brake = true;
-        bo.wheels = false;
-        bo.effects = false;
-        std::vector<gtm1::MorphDraws> lit_morphs; // (left out as in body_; drawn from morphs_)
-        bo.morphs = &lit_morphs;
-        scene::Model lit = load_car_model(car_file, bo, model);
         scene::Model lit_body = scene::extract(lit, [](const scene::Mesh& m) { return m.name.rfind("node", 0) != 0; });
         if (!lit_body.meshes.empty()) body_brake_ = std::make_unique<render::GpuModel>(ctx, lit_body);
     }

@@ -19,7 +19,7 @@ class BuildCache {
 public:
     // Gtm1::parse(data)
     const Gtm1& model(ByteSpan data);
-    // g.decode_packet(pk, prelit): the passes and a model's LODs draw the same packets again.
+    // g.decode_packet(pk, prelit): the passes, a model's LODs and its brake variant draw the same packets again.
     const DecodedPacket& packet(const Gtm1& g, const Packet& pk, bool prelit);
     // A wheel's model for `lod`, made by `build` the first time its bytes are seen (a car's race rim is often its
     // menu one, from another file).

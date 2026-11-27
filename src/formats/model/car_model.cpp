@@ -179,7 +179,7 @@ void merge(scene::Model& dst, scene::Model&& src) {
 
 scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOptions& opt, int lod,
                      const std::string& name, gtm1::MorphDraws* morphs, std::vector<gtm1::ClutSet>* clut_sets,
-                     gtm1::BuildCache& cache) {
+                     gtm1::BuildCache& cache, scene::Model* brake_body = nullptr) {
     gtm1::Options o;
     o.run.lod = lod;
     o.run.brake = opt.brake;
@@ -199,11 +199,19 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
     o.weighted_reflection = true; // reflection passes weighted by the body's texel alpha
     o.gs_mip_levels = true;       // the full-size images only, as the GS samples them (MXL 0)
     o.node_fog = true;            // the lamp glows and glints fogged to black (op 0x21)
+    o.brake_variant = brake_body;
     o.cache = &cache;
     scene::Model m;
     m.name = name;
     if (opt.body || !opt.wheel_spec) m = gtm1::build_model(g, o, name); // (without a spec the body places the wheels)
     if (!opt.body) m.meshes.clear();
+    if (brake_body) {
+        for (scene::Mesh& mesh : brake_body->meshes) {
+            if (mesh.name == "node0") mesh.name = "body";
+            mesh.lod = lod;
+        }
+        brake_body->compute_bounds();
+    }
     std::array<std::vector<scene::Mesh>, 2> brake_parts;
     if (brakes || (opt.floor_shadow && !opt.effects)) {
         std::vector<scene::Mesh> kept;
@@ -349,15 +357,21 @@ void fit_body(scene::Model& m, const BodyFit& f) {
 namespace {
 
 // Mod cars: stretch the borrowed body, then (with a glTF body) put the mod's
-// body in place of the car file's, at every LOD the file has.
-void apply_body_mod(scene::Model& m, const CarBodyMod& mod, const std::string& name) {
+// body in place of the car file's, at every LOD the file has. `loaded`: the mod's body, read on first use and kept for
+// a second model (the brake body).
+void apply_body_mod(scene::Model& m, const CarBodyMod& mod, const std::string& name, std::optional<scene::Model>& loaded) {
     if (mod.fit) fit_body(m, *mod.fit);
     if (!mod.glb) return;
-    GlbOptions go;
-    go.paint = mod.paint;
-    go.livery = mod.livery.get();
-    go.livery_paint = mod.livery_paint;
-    scene::Model own = load_glb(*mod.glb, go, name);
+    if (!loaded) {
+        GlbOptions go;
+        go.paint = mod.paint;
+        go.livery = mod.livery.get();
+        go.livery_paint = mod.livery_paint;
+        loaded = load_glb(*mod.glb, go, name);
+        for (scene::Mesh& mesh : loaded->meshes)
+            for (scene::Vertex& v : mesh.vertices) v.pos[1] -= mod.glb_ground;
+    }
+    const scene::Model& own = *loaded;
     std::vector<int> lods;
     std::vector<scene::Mesh> kept;
     for (scene::Mesh& mesh : m.meshes) {
@@ -370,10 +384,8 @@ void apply_body_mod(scene::Model& m, const CarBodyMod& mod, const std::string& n
     }
     if (lods.empty()) lods.push_back(0);
     const int tex0 = int(m.textures.size());
-    for (scene::Texture& t : own.textures) m.textures.push_back(t);
+    for (const scene::Texture& t : own.textures) m.textures.push_back(t);
     m.meshes = std::move(kept);
-    for (scene::Mesh& mesh : own.meshes)
-        for (scene::Vertex& v : mesh.vertices) v.pos[1] -= mod.glb_ground;
     for (int lod : lods)
         for (const scene::Mesh& src : own.meshes) {
             scene::Mesh mesh = src;
@@ -625,6 +637,7 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt_in, const 
     gtm1::BuildCache own_cache;
     gtm1::BuildCache& cache = opt.cache ? *opt.cache : own_cache;
     // A livery reaches the lower-detail models through the full-detail body (formats/model/livery_transfer.h).
+    std::optional<scene::Model> full_detail, own_body; // (made once, for the model and its brake body)
     auto carry_livery = [&](scene::Model& m) {
         if (!opt.livery || opt.body_mod.glb) return;
         if (std::none_of(m.meshes.begin(), m.meshes.end(), [](const scene::Mesh& x) { return x.lod >= 1; })) return;
@@ -638,7 +651,8 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt_in, const 
         r.resolve_paint = false;
         r.cache = &cache;
         r.body_mod.fit = opt.body_mod.fit; // (a stretched shell: both in the same shape)
-        livery_transfer::apply(m, load_car_model(data, r, name));
+        if (!full_detail) full_detail = load_car_model(data, r, name);
+        livery_transfer::apply(m, *full_detail);
     };
     CarFile f = CarFile::parse(data);
     const gtm1::Gtm1& g = cache.model(f.body);
@@ -648,24 +662,31 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt_in, const 
     if (opt.clut_sets) opt.clut_sets->clear();
     if (opt.lod >= 0) {
         gtm1::MorphDraws md;
-        scene::Model m = car_lod(f, g, opt, opt.lod, name, morphs ? &md : nullptr, opt.clut_sets, cache);
+        scene::Model m = car_lod(f, g, opt, opt.lod, name, morphs ? &md : nullptr, opt.clut_sets, cache, opt.brake_body);
+        auto complete = [&](scene::Model& x) {
+            if (opt.body_mod.active()) apply_body_mod(x, opt.body_mod, name, own_body);
+            carry_livery(x);
+            x.compute_bounds();
+        };
         mark_car_glass(m);
-        if (opt.body_mod.active()) apply_body_mod(m, opt.body_mod, name);
-        carry_livery(m);
-        m.compute_bounds();
+        complete(m);
+        if (opt.brake_body) mark_car_glass(*opt.brake_body), complete(*opt.brake_body);
         if (!md.empty()) opt.morphs->push_back(std::move(md));
         return m;
     }
-    scene::Model all;
-    all.name = name;
+    scene::Model all, all_lit;
+    all.name = all_lit.name = name;
     int n = g.nodes.empty() ? 0 : gtm1_lod_count(g, 0);
     for (int lod = 0; lod < n; ++lod) {
         gtm1::MorphDraws md;
         const int base = int(all.textures.size());
         std::vector<gtm1::ClutSet> cluts;
-        scene::Model m = car_lod(f, g, opt, lod, name, morphs ? &md : nullptr, opt.clut_sets ? &cluts : nullptr, cache);
+        scene::Model lit;
+        scene::Model m = car_lod(f, g, opt, lod, name, morphs ? &md : nullptr, opt.clut_sets ? &cluts : nullptr,
+                                 cache, opt.brake_body ? &lit : nullptr);
         mark_car_glass(m);
         merge(all, std::move(m));
+        if (opt.brake_body) mark_car_glass(lit), merge(all_lit, std::move(lit));
         for (gtm1::ClutSet& c : cluts) {
             c.first += base;
             opt.clut_sets->push_back(std::move(c));
@@ -675,9 +696,16 @@ scene::Model load_car_model(ByteSpan data, const CarModelOptions& opt_in, const 
             opt.morphs->push_back(std::move(md));
         }
     }
-    if (opt.body_mod.active()) apply_body_mod(all, opt.body_mod, name);
-    carry_livery(all);
-    all.compute_bounds();
+    auto complete = [&](scene::Model& x) {
+        if (opt.body_mod.active()) apply_body_mod(x, opt.body_mod, name, own_body);
+        carry_livery(x);
+        x.compute_bounds();
+    };
+    complete(all);
+    if (opt.brake_body) {
+        complete(all_lit);
+        *opt.brake_body = std::move(all_lit);
+    }
     return all;
 }
 
