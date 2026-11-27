@@ -776,6 +776,8 @@ private:
             const float x = tx + ui.toggle_width() + 10;
             std::string right;
             if (!mod.cars.empty()) right = std::to_string(mod.cars.size()) + (mod.cars.size() == 1 ? " car" : " cars");
+            else if (!mod.wheels.empty())
+                right = std::to_string(mod.wheels.size()) + (mod.wheels.size() == 1 ? " wheel" : " wheels");
             else if (!mod.textures.empty())
                 right = std::to_string(mod.textures.size()) + (mod.textures.size() == 1 ? " texture" : " textures");
             const float rw = right.empty() ? 0 : Ui::text_width(right) + 10;
@@ -820,6 +822,7 @@ private:
         count(mod.files.size(), " game file", " game files");
         count(mod.cars.size(), " car", " cars");
         count(mod.makers.size(), " maker", " makers");
+        count(mod.wheels.size(), " wheel", " wheels");
         count(mod.textures.size(), " texture", " textures");
         count(mod.liveries.size(), " paint or livery", " paints and liveries");
         line((what.empty() ? std::string("Nothing to load") : what) + "   priority " + std::to_string(mod.priority) +
@@ -832,6 +835,10 @@ private:
         if (!mod.cars.empty()) {
             y += 5;
             render_cars(app, ui, mod, x, w, y, bottom);
+        }
+        if (!mod.wheels.empty()) {
+            y += 5;
+            render_wheels(app, ui, mod, x, w, y, bottom);
         }
         ui.button(lay_.remove, "Remove", false, pressed(Target::Remove));
     }
@@ -881,6 +888,30 @@ private:
                     ui.text(x + 16, y, Ui::clip(wn.substr(file.size() + 2), w - 16), colors::kAccent);
                     y += 11;
                 }
+        }
+    }
+
+    // The mod's wheels (mods/<id>/wheels/*.ini, vfs/mod_wheels.h): where each one is sold, or why it
+    // does not load.
+    void render_wheels(App& app, Ui& ui, const ModInfo& mod, float x, float w, float& y, float bottom) {
+        if (y + Ui::kChar > bottom) return;
+        ui.text(x, y, mod.active() ? "Wheels" : "Wheels (the mod is off)", colors::kText);
+        y += 12;
+        for (const std::string& file : mod.wheels) {
+            if (y + Ui::kChar > bottom) break;
+            const std::string base = file.substr(file.find_last_of('/') + 1);
+            const ModWheelDef* d = nullptr;
+            for (const ModWheelDef& m : app.vfs()->mod_wheels())
+                if (m.file == file) d = &m;
+            std::string text = base;
+            Color c = colors::kDim;
+            if (d && !d->error.empty()) text = base + ": " + d->error, c = colors::kBad;
+            else if (d) {
+                text = d->label + (d->for_sale ? ", at the wheel shop: " + d->brand : ", for mod cars only");
+                c = colors::kGood;
+            }
+            ui.text(x + 8, y, Ui::clip(text, w - 8), c);
+            y += 11;
         }
     }
 

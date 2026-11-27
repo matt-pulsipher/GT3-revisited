@@ -496,12 +496,14 @@ void install_mod_menu_patches() {
         if (set != "gt_mode") return;
         patch_gt_flow(read, mbl);
         patch_event_flow(read, mbl);
+        patch_wheel_flow(read, mbl);
         gt_flow() = mbl;
     };
     mp.layout = [](const std::string& set, int, const menu::flow::FileReader& read, MenuScene& scene) {
         if (set == "gt_mode") {
             patch_gt_layout(read, scene, &gt_flow());
             patch_event_layout(read, scene, gt_flow());
+            patch_wheel_layout(read, scene, gt_flow());
         }
         else if (set == "arcade") patch_arcade_layout(read, scene);
     };

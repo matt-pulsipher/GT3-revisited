@@ -53,6 +53,8 @@ mods/
       my_maker.ini                 <- a new maker with a dealer (see "Dealers and makers")
     events/
       my_event.ini                 <- a GT Mode event (see "Adding events")
+    wheels/
+      my_rim.ini                   <- a new wheel at the wheel shop (see "Adding wheels")
     liveries/
       sunday_blue.ini              <- a new paint colour for a car (see "Paint colours")
       sunday_cup_12/               <- a livery: livery.ini and its pictures (see "Liveries")
@@ -515,7 +517,7 @@ A car can bring a body of its own instead, as a binary glTF file:
 ```ini
 [model]
 file = models/my_car.glb       ; relative to the mod folder
-wheel = ozw004_b               ; optional: a rim from the disc (gt3r --browse wheel/)
+wheel = ozw004_b               ; optional: a rim from the disc (gt3r --browse wheel/) or a mod wheel's label
 lower_mm = 10                  ; optional: move the body down (negative = up) to fine-tune ride height
 
 [paints]                       ; in menu order; applied to the paint materials (pictures: "Liveries")
@@ -558,13 +560,100 @@ recognised by name:
 |---|---|
 | `paint`, `body` | car paint: takes the chosen paint colour, reflective |
 | `glass`, `window` | glass, reflective; alpha blended when its alpha is under 1 |
+| `chrome`, `metal` | its base colour, shiny and reflective |
 | `brake`, `tail` | rear lamps, lit while braking |
 | `head`, `lamp`, `light` | lamps, self-lit |
 | anything else | lit with its base colour (trim, grille, tyres...) |
 
+A material whose alpha mode is **Blend** is drawn see-through; one whose alpha
+mode is **Mask** (Blender: "Alpha Clip") is cut out where its texture's alpha
+is under the cutoff, for grilles and spokes.
+
 The body is lit with GT3's car lighting and gets GT3's reflection pass on paint
 and glass. Wheels, tyres, the ground shadow, lamp glows and camera points still
 come from the donor's car file; the shadow is stretched to the car's size.
+
+## Adding wheels
+
+New rims for the wheel shop, or for a mod car to wear. Each one is a file in
+the mod's `wheels/` folder with a model of the rim:
+
+```ini
+; mods/my_wheels/wheels/mesh_racer.ini
+[wheel]
+label = mesh_racer             ; optional: the file name without .ini
+brand = BBS                    ; the wheel shop maker it is sold by
+model = models/mesh_racer.glb  ; the rim, relative to the mod folder
+picture = pictures/mesh_racer.png ; its 52 x 52 tile in the shop and the garage
+```
+
+- **The label** names the wheel in saves, replays and `[model] wheel`: up to
+  32 lower case letters, digits and `_`. It must not be one of the disc's
+  wheels (`gt3r --browse wheel/` lists them); when two mods give the same
+  label, the higher priority one's wheel is used.
+- **The brand** puts the wheel on that maker's page of the wheel shop: one of
+  the disc's makers (Bridgestone, BBS, Dunlop, Falken, Enkei, OZ Racing, RAYS,
+  Speedline, Yokohama; "OZ" is enough). Any other name opens a new maker in the
+  shop, at the end of its list of makers, with the name written in the menu
+  font. Give it a logo for its page (480 x 144 PNG, shown above the list):
+
+  ```ini
+  [brand]
+  logo = pictures/my_brand.png
+  ```
+
+- **For sale:** `for_sale = no` keeps a wheel out of the shop, for a mod car
+  that wears it (`[model] wheel = mesh_racer` in the car's file). Such a wheel
+  needs no brand.
+- **Price:** every wheel costs what the disc's do (500 Cr).
+
+Bought mod wheels go to the garage's wheel list like the disc's, and the car
+wears them in the menus, in races and in its replays. When the mod is off or
+removed, the cars on its wheels show their own wheels again (a saved car keeps
+the label, so turning the mod back on brings the wheel back). In online races,
+players who do not have the wheel's mod see the car on its own wheels.
+
+### The rim model
+
+The rim is a binary glTF file (`.glb`), read as car bodies are (see "Car
+models": PNG textures, materials recognised by name, Blend and Mask alpha).
+The game draws it as it draws its own rims: it sizes it to each car's wheels,
+puts the tyre around it, turns it and mirrors it for the right side. So model
+it as the game's own rims are made:
+
+- **Unit size:** 1 unit is about the rim's radius (the game scales it by the
+  tyre's radius less three quarters of its sidewall; its own rims reach about
+  1.02 units from the axle).
+- **The axle along X**, the centre of the wheel at the origin, the outer face
+  of the rim on the plane x = 0 facing +X, the rest of it, the spokes' depth
+  and the barrel, from there towards -X (the game's own reach about 0.12 to
+  0.18 units deep).
+
+The easy way to get all of this right is to start from one of the disc's
+rims: export it, change it, and save it as your own:
+
+```
+gt3tool model <iso> wheel/enw001_s out/ --gltf          # the races' rim
+gt3tool model <iso> menu/wheel/enw001_s out/ --gltf     # the menus' rim, more detailed
+```
+
+The disc keeps two rims for each wheel: a detailed one for the menus and a
+simpler one for races (flat faces with cut-out spokes). A mod wheel can do the
+same; every key is optional and any one is enough:
+
+```ini
+model = models/rim.glb         ; everywhere
+menu = models/rim_menu.glb     ; dealers, garage, wheel shop (and "Showroom wheels in races")
+race = models/rim_race.glb     ; races
+```
+
+The menus take `menu`, else `model`, else `race`; races take `race`, else
+`model`, else `menu`. Name a material `chrome` or `metal` to give it the shine
+and reflections of polished rims, and `paint` or `body` for a painted, glossy finish in the colour you give it.
+The tyre comes from the car, as with the disc's wheels.
+
+The Mods screen lists each wheel under its mod, with its maker or why it did
+not load (a missing model, a label the disc already has...).
 
 ## Adding events
 
@@ -938,6 +1027,7 @@ tune playing (the log says why).
 | Cars from your other discs | Works now: any disc car, Gran Turismo Concept's included, exported whole as a mod (see "Exporting cars") |
 | Paint colours (`liveries/*.ini`) | Works now: new colours for any car, computed from its own paints, shown online and kept in replays (see "Paint colours") |
 | Liveries (`liveries/<name>/`) | Works now: pictures painted over a disc or mod car on a template of it (New livery on the Mods screen), any size, shown at every distance and sent to the players you race online (see "Liveries") |
+| Wheels (`wheels/*.ini`) | Works now: new rims as glTF models, sold at the wheel shop by its makers or new ones, or worn by mod cars (see "Adding wheels") |
 | GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes, prize cars (with the roulette), starts, tire wear and points, listed on a league page; made with the Event creator or by hand (see "Adding events") |
 | Any other file | Overrides are loaded wherever the game reads the file (menus, models, courses, sounds, databases, movies) |
 

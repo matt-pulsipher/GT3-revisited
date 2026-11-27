@@ -109,9 +109,12 @@ void Vfs::scan_mods(const std::string& mods_dir, const IniDocument* config) {
             else if (host_is_directory(path) && host_path_exists(path + "/livery.ini")) mod.liveries.push_back(path + "/livery.ini");
         }
         std::sort(mod.liveries.begin(), mod.liveries.end());
+        for (const std::string& name : list_host_dir(root + "/wheels"))
+            if (name.size() > 4 && to_lower(name.substr(name.size() - 4)) == ".ini") mod.wheels.push_back(root + "/wheels/" + name);
         mod.textures = texture_pack::pictures_in(root + "/textures");
-        LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, %zu events, %zu textures, priority %d, %s", mod.name.c_str(),
-                 mod.id.c_str(), mod.files.size(), mod.cars.size(), mod.events.size(), mod.textures.size(), mod.priority,
+        LOG_INFO("Mod '%s' (%s): %zu files, %zu cars, %zu events, %zu wheels, %zu textures, priority %d, %s",
+                 mod.name.c_str(), mod.id.c_str(), mod.files.size(), mod.cars.size(), mod.events.size(),
+                 mod.wheels.size(), mod.textures.size(), mod.priority,
                  !mod.for_disc ? "for other discs" : mod.enabled ? "enabled" : "disabled");
         mods_.push_back(std::move(mod));
     }
@@ -138,6 +141,33 @@ void Vfs::rebuild_index() {
             override_source_[f] = m.id;
         }
     }
+    // Mod wheels: their rims as the disc keeps its wheels. A label the disc has stays the disc's (the
+    // shop would list it twice); one two mods give is the higher priority's.
+    wheels_.clear();
+    for (const ModInfo& m : mods_) {
+        if (!m.active()) continue;
+        for (const std::string& f : m.wheels) {
+            ModWheelDef d = load_mod_wheel(f, m.id, m.root);
+            if (d.error.empty() && base_ && base_->find("wheel/" + d.label))
+                d.error = "label " + d.label + " is a wheel of the disc";
+            wheels_.push_back(std::move(d));
+        }
+    }
+    for (size_t i = 0; i < wheels_.size(); ++i) {
+        ModWheelDef& d = wheels_[i];
+        if (!d.error.empty()) continue;
+        for (size_t j = i + 1; j < wheels_.size(); ++j)
+            if (wheels_[j].error.empty() && wheels_[j].label == d.label) {
+                d.error = "label " + d.label + " is also " + wheels_[j].mod_id + "'s, which wins";
+                break;
+            }
+        if (!d.error.empty()) continue;
+        for (const char* dir : {"wheel/", "menu/wheel/"}) {
+            const std::string p = dir + d.label;
+            overrides_[p] = *dir == 'w' ? d.race_file() : d.menu_file();
+            override_source_[p] = d.mod_id;
+        }
+    }
     auto pack = std::make_shared<texture_pack::Pack>();
     for (auto m = mods_.rbegin(); m != mods_.rend(); ++m) // descending priority: the first file of a key stays
         if (m->active())
@@ -160,6 +190,16 @@ std::optional<Bytes> Vfs::read(const std::string& path) const {
                 for (const std::string& f : m.cars) text += m.id + "\t" + f + "\n";
                 for (const std::string& f : m.events) text += m.id + "\t" + f + "\n";
             }
+        return Bytes(text.begin(), text.end());
+    }
+    if (p == kModWheelsList) {
+        std::string text;
+        for (const ModWheelDef& d : wheels_) {
+            std::string root;
+            for (const ModInfo& m : mods_)
+                if (m.id == d.mod_id) root = m.root;
+            text += d.mod_id + "\t" + d.file + "\t" + root + "\t" + d.error + "\n";
+        }
         return Bytes(text.begin(), text.end());
     }
     if (p == kProgramFile) return base_ ? base_->read_program() : std::nullopt;

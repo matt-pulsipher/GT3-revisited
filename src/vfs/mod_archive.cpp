@@ -316,7 +316,7 @@ std::optional<ModArchivePlan> plan_mod_install(const ZipArchive& zip, std::strin
     if (roots.empty()) {
         auto has_mod_folders = [&](const std::string& prefix) {
             for (const Entry* e : files)
-                for (const char* sub : {"files/", "cars/", "makers/", "events/", "textures/", "liveries/"})
+                for (const char* sub : {"files/", "cars/", "makers/", "events/", "textures/", "liveries/", "wheels/"})
                     if (starts_with(e->name, prefix + sub)) return true;
             return false;
         };

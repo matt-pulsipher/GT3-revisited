@@ -8,6 +8,11 @@
 // The embedded GTM1 holds only the rim face, modelled at unit scale (radius
 // about 1.08, outer face towards -X, i.e. a right-hand wheel); the game scales it to the car's wheel size and the
 // tyre is not part of it. See docs/formats/car_model.md.
+//
+// A mod wheel's rim (vfs/mod_wheels.h) is a binary glTF model in the same frame, as
+// `gt3tool model <iso> wheel/<id> <dir> --gltf` exports a disc rim: unit scale, the outer face
+// on x = 0 (glTF axes: facing +X, the car's left), the axle along X. load_wheel_model reads
+// either kind.
 
 #include "formats/model/gtm1.h"
 #include "scene/model.h"
@@ -24,6 +29,13 @@ struct WheelFile {
     static WheelFile parse(ByteSpan data);
 };
 
+// A binary glTF rim (a mod wheel's).
+bool is_glb_rim(ByteSpan data);
+// A rim of either kind: a GTTW wheel or a binary glTF one.
+bool is_rim(ByteSpan data);
+
+// A GTTW wheel's rim, or a glTF one's (drawn the same at every LOD; `opt.reflection` gives its
+// reflection passes, formats/model/gltf.h).
 scene::Model load_wheel_model(ByteSpan data, const gtm1::Options& opt = {}, const std::string& name = {});
 
 } // namespace gt3r

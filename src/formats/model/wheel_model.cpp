@@ -1,5 +1,7 @@
 #include "formats/model/wheel_model.h"
 
+#include "formats/model/gltf.h"
+
 namespace gt3r {
 
 bool WheelFile::is_wheel(ByteSpan data) { return has_magic(data, "GTTW") && data.size() >= 0x20; }
@@ -16,7 +18,18 @@ WheelFile WheelFile::parse(ByteSpan data) {
     return w;
 }
 
+bool is_glb_rim(ByteSpan data) { return has_magic(data, "glTF") && data.size() >= 12; }
+
+bool is_rim(ByteSpan data) { return WheelFile::is_wheel(data) || is_glb_rim(data); }
+
 scene::Model load_wheel_model(ByteSpan data, const gtm1::Options& opt, const std::string& name) {
+    if (is_glb_rim(data)) {
+        GlbOptions g;
+        g.reflections = opt.reflection;
+        scene::Model m = load_glb(data, g, name);
+        for (scene::Mesh& mesh : m.meshes) mesh.name = name;
+        return m;
+    }
     return gtm1::decode_gtm1(WheelFile::parse(data).gtm1, opt, name);
 }
 
