@@ -226,8 +226,8 @@ vec3 gt3_grade(vec3 c) {
 vec4 dof_sample() {
     vec2 uv = v_uv * u.view_row0.xy + u.view_row0.zw;
     vec2 n = max(u.grade.xy, vec2(1.0));
-    // flat_color.xy > 0: the taps weighted by a Gaussian of that spread (in taps) per axis, else
-    // equally (a box mean).
+    // flat_color.xy > 0: the taps weighted by a Gaussian of that spread (in taps) per axis; < 0: by
+    // a tent reaching nothing at -flat_color.xy taps out; else equally (a box mean).
     vec2 s = u.flat_color.xy;
     bool masked = u.flat_color.z > 0.5;
     vec3 sum = vec3(0.0);
@@ -235,8 +235,8 @@ vec4 dof_sample() {
     for (float j = 0.0; j < n.y; j += 1.0)
         for (float i = 0.0; i < n.x; i += 1.0) {
             vec2 k = vec2(i, j) - 0.5 * (n - 1.0);
-            vec2 g = vec2(s.x > 0.0 ? exp(-0.5 * k.x * k.x / (s.x * s.x)) : 1.0,
-                          s.y > 0.0 ? exp(-0.5 * k.y * k.y / (s.y * s.y)) : 1.0);
+            vec2 g = vec2(s.x > 0.0 ? exp(-0.5 * k.x * k.x / (s.x * s.x)) : s.x < 0.0 ? max(1.0 + abs(k.x) / s.x, 0.0) : 1.0,
+                          s.y > 0.0 ? exp(-0.5 * k.y * k.y / (s.y * s.y)) : s.y < 0.0 ? max(1.0 + abs(k.y) / s.y, 0.0) : 1.0);
             float w = g.x * g.y;
             vec2 t = clamp(uv + k * u.grade.zw, u.view_row1.xy, u.view_row1.zw);
             if (masked) w *= 1.0 - texture(u_sphere, t).r;

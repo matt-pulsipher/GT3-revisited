@@ -606,8 +606,11 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
                       ensure_dof_texture(haze_low_, std::max(1, int(std::lround(480.0f * aspect))), 224);
     // The glow (DrawOptions::glow) is drawn from the picture the scene (or the depth of field)
     // left, at the start of the second pass.
+    // Its picture is half as wide and a quarter as tall as the picture at most 448 lines tall (its
+    // points lie radius / samples apart, wider than its texels: finer adds only work).
+    const float glow_k = std::min(1.0f, 448.0f / float(std::max(ph, 1)));
     const bool glow = opt.glow.on && opt.glow.gain > 0 && opt.glow.samples > 0 && opt.glow.radius > 0 && ensure_quad() &&
-                      ensure_dof_texture(glow_, std::max(1, pw / 2), std::max(1, ph / 4));
+                      ensure_dof_texture(glow_, std::max(1, int(float(pw) * glow_k) / 2), std::max(1, int(float(ph) * glow_k) / 4));
     const bool after_pass = lenses || dof || glow;
     // A glow alone (multisampled, without the lenses or the depth of field) keeps no multisampled picture between the
     // passes: the scene's samples are resolved into the lenses' copy (free then), the glow's picture is taken from it,
@@ -670,12 +673,15 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             SDL_SetGPUScissor(gp, &gsc);
             const float W = float(width_), H = float(height_);
             const int n = std::clamp(opt.glow.samples, 1, 16);
-            const float step = opt.glow.radius * std::sqrt(float(pw) * float(pw) + float(ph) * float(ph)) / float(n);
+            const float diag = std::sqrt(float(pw) * float(pw) + float(ph) * float(ph));
+            const float step = opt.glow.radius * diag / float(n);
             Resample r;
             r.scale[0] = float(pw) / W, r.scale[1] = float(ph) / H;
+            r.offset[0] = opt.glow.offset[0] * diag / W, r.offset[1] = opt.glow.offset[1] * diag / H;
             r.clamp[0] = 0.5f / W, r.clamp[1] = 0.5f / H;
             r.clamp[2] = (float(pw) - 0.5f) / W, r.clamp[3] = (float(ph) - 0.5f) / H;
-            r.taps[0] = r.taps[1] = float(n);
+            r.taps[0] = r.taps[1] = float(opt.glow.tent ? 2 * n - 1 : n);
+            if (opt.glow.tent) r.sigma[0] = r.sigma[1] = -float(n); // (weights n - |k|)
             r.step[0] = step / W, r.step[1] = step / H;
             r.threshold = std::max(opt.glow.threshold, 0.0f);
             r.gain[0] = r.gain[1] = r.gain[2] = std::max(opt.glow.sum, 0.0f);
