@@ -133,6 +133,10 @@ struct Primitive {
     // a texel of the mip level in use inside, so filtering never takes in the neighbour, where the
     // GS's bilinear filter shows it on a sub-pixel strip at its resolution (mark_inside_uvs).
     float uv_region[4] = {0, 0, 0, 0};
+    // The fog colour its node program set for it (gtm1::Options::node_fog; 0..1): fogged to this
+    // instead of render::DrawOptions::fog_color.
+    bool fog_own = false;
+    float fog_rgb[3] = {0, 0, 0};
 };
 
 struct Mesh {

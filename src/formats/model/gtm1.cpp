@@ -239,13 +239,16 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
     bool ate = true, date = false, zwrite = true, ztest = true, cull = true;
     u8 atst = 6, aref = 0x20, afail = 0;
     std::array<float, 4> env_c0{1, 1, 1, 1}, env_c1{0, 0, 0, 0}; // reflection weight rows; see Draw
+    std::optional<u32> fog_rgb;                                  // see Draw
     if (state) { // continue from the caller's state (Options::carry_state)
         alpha_mode = state->alpha_mode, fb_mask = state->fb_mask;
         ate = state->alpha_test, date = state->dest_alpha_test, zwrite = state->depth_write;
         ztest = state->depth_test, cull = state->cull;
         atst = state->alpha_test_method, aref = state->alpha_test_ref, afail = state->alpha_fail;
         env_c0 = state->env_c0, env_c1 = state->env_c1;
+        fog_rgb = state->fog_rgb;
     }
+    std::optional<u32> fog_kept = fog_rgb; // (the colour the node was entered with)
 
     bool pano_set = false;
     std::array<float, 3> pano{0, 0, 0}; // op 0x31; see Draw
@@ -293,6 +296,7 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         d.cull = cull;
         d.env_c0 = env_c0;
         d.env_c1 = env_c1;
+        d.fog_rgb = fog_rgb;
         d.pano_set = pano_set;
         d.pano = pano;
         d.when = when;
@@ -308,6 +312,7 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
         state->depth_test = ztest, state->cull = cull;
         state->alpha_test_method = atst, state->alpha_test_ref = aref, state->alpha_fail = afail;
         state->env_c0 = env_c0, state->env_c1 = env_c1;
+        state->fog_rgb = fog_rgb;
     };
     // Runs the program from `from` until it reaches `until` (true) or its end (false).
     int steps = 0;
@@ -415,6 +420,9 @@ void Gtm1::run_at(u32 node, const RunParams& p, std::vector<Matrix>& stack, std:
             continue;
         }
         case 0x20: alpha_mode = data[a]; pc = a + 2; continue;
+        case 0x21: fog_rgb = rd32(data, a) & 0xFFFFFF; pc = a + 4; continue;
+        case 0x22: fog_kept = fog_rgb; pc = a; continue;
+        case 0x23: fog_rgb = fog_kept; pc = a; continue;
         case 0x24: fb_mask = rd32(data, a); pc = a + 4; continue;
         case 0x1A: ate = true; pc = a; continue;
         case 0x1B: ate = false; pc = a; continue;
@@ -1271,6 +1279,8 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             p.env_rows = prim.env_rows;
             std::copy(std::begin(prim.env_c0), std::end(prim.env_c0), p.env_c0);
             std::copy(std::begin(prim.env_c1), std::end(prim.env_c1), p.env_c1);
+            p.fog_own = prim.fog_own;
+            std::copy(std::begin(prim.fog_rgb), std::end(prim.fog_rgb), p.fog_rgb);
             mesh.indices.insert(mesh.indices.end(), idx.begin(), idx.end());
             if (p.index_count) mesh.primitives.push_back(p);
         }
@@ -1596,6 +1606,10 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 }
                 prim.index_count = u32(mesh.indices.size()) - prim.first_index;
                 if (dp.prim.abe) prim.flags |= scene::kAlphaBlend;
+                if (opt.node_fog && d.fog_rgb) {
+                    prim.fog_own = true;
+                    for (int k = 0; k < 3; ++k) prim.fog_rgb[k] = float((*d.fog_rgb >> (8 * k)) & 0xFF) / 255.0f;
+                }
                 // ALPHA 0x89 = (Cd - 0) * As + 0: darkens what is behind by the fragment alpha.
                 if (dp.prim.abe && d.alpha_mode == 0x89) prim.flags = scene::kMultiplyDest | scene::kNoDepthWrite;
                 if (env) {
