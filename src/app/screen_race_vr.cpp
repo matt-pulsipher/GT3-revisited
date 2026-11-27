@@ -1,7 +1,7 @@
 // VR headsets (docs/dev/VR.md): the race in stereo while driving. The headset's seated space
 // (origin at the player's head, -z ahead) is placed in the world at the view's eye point: in
 // the in-car views at the car's camera point 0 ([vr] seat_side, seat_forward, seat_height from there),
-// turning with the car (or with its heading only, [vr] level_horizon); in the chase views at
+// turning with the car ([vr] body_roll: with that share of its roll; level_horizon: with its heading only); in the chase views at
 // the chase camera, level, turning with its lagged heading; in the player's own cameras at
 // the camera's eye, facing its heading (CameraRig::custom_seat). Each eye is that placement
 // times the eye's tracked pose. Replays, the pre-race shot, 2P split screen, the camera editor
@@ -37,10 +37,16 @@ render::Mat4 RaceScreen::vr_base(const xr::Settings& st) const {
         const bool seat = c->mount == CustomCamera::Mount::Incar;
         return camera_.custom_seat(st.level_horizon, seat ? render::Vec3{0, st.seat_height, -st.seat_forward} : render::Vec3{});
     }
-    if (camera_.car_mounted()) { // the car's full attitude or its heading, the seat moved within the car
+    if (camera_.car_mounted()) { // the car's attitude ([vr] body_roll's share of its roll) or its heading, the seat moved within the car
         const sim::Vec3 f = rotate(q, {0, 0, -1});
-        const render::Mat4 car = st.level_horizon ? render::rotate_y(std::atan2(-f.x, -f.z))
-                                                  : render::rotate_quat(q.w, q.x, q.y, q.z);
+        render::Mat4 car = render::rotate_y(std::atan2(-f.x, -f.z));
+        if (!st.level_horizon) {
+            const sim::Vec3 up = rotate(q, {0, 1, 0});
+            const render::Vec3 fw{f.x, f.y, f.z};
+            const render::Vec3 u = race::roll_share_up(fw, {up.x, up.y, up.z}, st.body_roll);
+            const render::Vec3 r = render::normalize(render::cross(fw, u));
+            car = render::Mat4::from({r.x, r.y, r.z, 0, u.x, u.y, u.z, 0, -fw.x, -fw.y, -fw.z, 0, 0, 0, 0, 1});
+        }
         const render::Mat4 seat = render::translate(eye) * car * render::translate(st.seat(driver_side_));
         return camera_.look_back() ? seat * render::rotate_y(kPi) : seat;
     }

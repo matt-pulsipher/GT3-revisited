@@ -374,6 +374,27 @@ TEST(hood_camera_rig_pose) {
     CHECK(!c.onboard() && !c.hides_car() && !c.shows_mirror() && c.sound_kind() == CameraSound::Other);
 }
 
+// The share of a view's roll (custom cameras' body roll, [vr] body_roll): all, none, half, and
+// a pitched view's level up stays across its forward axis with the pitch kept.
+TEST(roll_share_up_levels_roll_only) {
+    constexpr float kPi = 3.14159265f;
+    const float a = kPi / 6;
+    const render::Vec3 f{0, 0, -1}, u{std::sin(a), std::cos(a), 0}; // rolled 30 degrees
+    const render::Vec3 all = roll_share_up(f, u, 1), none = roll_share_up(f, u, 0), half = roll_share_up(f, u, 0.5f);
+    CHECK(near(all.x, u.x, 1e-5f) && near(all.y, u.y, 1e-5f));
+    CHECK(near(none.x, 0, 1e-5f) && near(none.y, 1, 1e-5f) && near(none.z, 0, 1e-5f));
+    CHECK(near(half.x, std::sin(a / 2), 1e-4f) && near(half.y, std::cos(a / 2), 1e-4f));
+    // Nose up 20 degrees, rolled: levelled, the up is the pitched view's own (across f, no sideways part).
+    const float p = kPi / 9;
+    const render::Vec3 pf{0, std::sin(p), -std::cos(p)};
+    const render::Vec3 pu0{0, std::cos(p), std::sin(p)};
+    const render::Vec3 side = render::cross(pf, pu0);
+    const render::Vec3 pu = render::normalize(pu0 * std::cos(a) + side * std::sin(a));
+    const render::Vec3 lv = roll_share_up(pf, pu, 0);
+    CHECK(near(lv.x, 0, 1e-5f) && near(lv.y, pu0.y, 1e-5f) && near(lv.z, pu0.z, 1e-5f));
+    CHECK(near(render::dot(roll_share_up(pf, pu, 0.3f), pf), 0, 1e-5f));
+}
+
 TEST(hood_camera_rig_horizon) {
     constexpr float kPi = 3.14159265f;
     sim::VehicleSetup setup;

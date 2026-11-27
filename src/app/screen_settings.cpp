@@ -920,6 +920,13 @@ private:
                    n.level_horizon = v;
                    apply(n);
                });
+        slider("Body roll", "In-car views: how much of the car's body roll you roll with. 0%: level side to side, "
+               "still pitching with the car.",
+               s.body_roll, 0, 1, 0.1f, std::to_string(int(std::lround(s.body_roll * 100))) + "%", [apply, s](float v) {
+                   xr::Settings n = s;
+                   n.body_roll = v;
+                   apply(n);
+               }).enabled = !s.level_horizon;
         toggle("Car body in the in-car view", "See your car's bonnet and body around you. Off: GT3's camera alone.",
                s.show_car, [apply, s](bool v) {
                    xr::Settings n = s;
