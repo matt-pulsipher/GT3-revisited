@@ -408,6 +408,40 @@ TEST(gtm1_state_carried_between_nodes) {
     CHECK(parsed.run(1).size() == 1 && parsed.run(1)[0].cull);
 }
 
+// gtm1::Options::node_fog: op 0x21 sets the GS fog colour for the draws after it, op 0x22 keeps the
+// one in force and op 0x23 puts the kept one back (the one the node was entered with until op 0x22).
+TEST(gtm1_node_fog_colour) {
+    // 21 <0x112233>, draw, 23, draw, 21 <0>, 22, 21 <0x445566>, 23, draw, end.
+    const Bytes program = {0x21, 0x33, 0x22, 0x11, 0x00, 0x04, 0x00, 0x23, 0x04, 0x00, 0x21, 0x00, 0x00, 0x00, 0x00,
+                           0x22, 0x21, 0x66, 0x55, 0x44, 0x00, 0x23, 0x04, 0x00, 0x00};
+    Bytes g = make_gtm1();
+    Bytes body(g.begin() + 0x60, g.end()); // the chunk and its packet
+    g.resize(0x50);
+    g.insert(g.end(), program.begin(), program.end());
+    while (g.size() % 16) g.push_back(0);
+    const u32 chunk_at = u32(g.size());
+    for (int i = 0; i < 4; ++i) g[0x44 + size_t(i)] = u8(chunk_at >> (8 * i));
+    g.insert(g.end(), body.begin(), body.end());
+    std::vector<gtm1::Draw> draws = gtm1::Gtm1::parse(g).run(0);
+    CHECK(draws.size() == 3);
+    CHECK(draws[0].fog_rgb && *draws[0].fog_rgb == 0x112233u);
+    CHECK(!draws[1].fog_rgb); // put back: the scene's
+    CHECK(draws[2].fog_rgb && *draws[2].fog_rgb == 0u);
+    gtm1::Options o;
+    auto fogs = [&](const scene::Model& m) {
+        std::vector<std::array<float, 4>> f;
+        for (const scene::Mesh& mesh : m.meshes)
+            for (const scene::Primitive& p : mesh.primitives) f.push_back({p.fog_own ? 1.0f : 0.0f, p.fog_rgb[0], p.fog_rgb[1], p.fog_rgb[2]});
+        return f;
+    };
+    for (const auto& f : fogs(gtm1::decode_gtm1(g, o))) CHECK(f[0] == 0); // off: the scene's everywhere
+    o.node_fog = true;
+    const auto f = fogs(gtm1::decode_gtm1(g, o));
+    CHECK(f.size() == 3);
+    CHECK(f[0][0] == 1 && std::fabs(f[0][1] - 0x33 / 255.0f) < 1e-6f && std::fabs(f[0][3] - 0x11 / 255.0f) < 1e-6f);
+    CHECK(f[1][0] == 0 && f[2][0] == 1 && f[2][1] == 0 && f[2][2] == 0 && f[2][3] == 0);
+}
+
 // The licence course line (course slot 27, course.md "Course line"): its own model with the state of
 // its node 0; none on a course file without the slot.
 TEST(course_line_synthetic) {

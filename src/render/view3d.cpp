@@ -1906,6 +1906,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             fu.mat_specular[3] = !spec && !sheen ? 0.0f : mt.shininess < 6 ? 4.0f : mt.shininess < 12 ? 8.0f : 16.0f;
         }
         fu.fog_color[3] = opt.fog && !background && !v.item->helper && !v.item->no_fog ? 1.0f : 0.0f;
+        for (int i = 0; i < 3; ++i) fu.fog_color[i] = p.fog_own ? p.fog_rgb[i] : opt.fog_color[i];
         // GT3's wheel spin blurs: the item's textured primitives only.
         fu.wheel_blur[0] = textured ? float(v.item->wheel_blur) : 0.0f;
         fu.wheel_blur[1] = v.item->wheel_blur_lod;

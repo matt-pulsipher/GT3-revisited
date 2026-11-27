@@ -129,6 +129,10 @@ struct Draw {
     //   (from the camera); it stays set for the rest of the run.
     bool pano_set = false;
     std::array<float, 3> pano{0, 0, 0};
+    //   op 0x21 u32: the GS fog colour (FOGCOL: R | G << 8 | B << 16) for the draws after it, in
+    //   place of the scene's; op 0x22 keeps the colour in force, op 0x23 puts the kept one back (a
+    //   node keeps the one it was entered with). Unset: the scene's (render::DrawOptions::fog_color).
+    std::optional<u32> fog_rgb;
     //   ops 0x1A / 0x1B: alpha test on / off (GS TEST.ATE; render flag 4).
     //   op 0x1C u8 method, u8 ref: TEST.ATST / AREF (ref in GS units, 0x80 = 1.0).
     //   ops 0x1D / 0x1E: destination alpha test on / off (TEST.DATE; render flag 3).
@@ -368,6 +372,10 @@ struct Options {
     // after it: the licence course line (course slot 27) turns culling and depth writes
     // off and masks the frame alpha in node 0, then draws in node 1.
     bool carry_state = false;
+    // The node programs' fog colour (op 0x21, Draw::fog_rgb) on the draws it is set for
+    // (scene::Primitive::fog_own); without it every draw fogs to the scene's colour (and the road
+    // sheen to black, as its program sets).
+    bool node_fog = false;
 };
 
 // The nodes the +0x3C animators move (flags, spinning parts, flip-book crowds and screens;
