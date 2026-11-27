@@ -63,6 +63,63 @@ int car_lod(float dist, int lods, bool full_detail) {
     return std::max(0, std::min(dist < 30 ? 0 : dist < 80 ? 1 : 2, lods - 1));
 }
 
+namespace {
+// A field added to these must be compared below (a new one the size does not show: placed in padding).
+static_assert(sizeof(scene::Vertex) == 36 && sizeof(scene::Material) == 72 && sizeof(scene::Primitive) == 184,
+              "scene::Primitive, Material or Vertex changed: compare the new fields in same_drawing");
+// Whether two models draw the same: their meshes' geometry and passes and their textures' texels and sampling (names
+// aside), so that one GPU model serves both.
+bool same_drawing(const scene::Model& a, const scene::Model& b) {
+    auto same = [](const auto& x, const auto& y) { return std::memcmp(&x, &y, sizeof(x)) == 0; }; // (no padding in these)
+    if (a.meshes.size() != b.meshes.size() || a.textures.size() != b.textures.size()) return false;
+    for (size_t i = 0; i < a.meshes.size(); ++i) {
+        const scene::Mesh &m = a.meshes[i], &n = b.meshes[i];
+        if (m.lod != n.lod || m.node != n.node || m.transform != n.transform || m.vertices.size() != n.vertices.size() ||
+            m.indices != n.indices || m.primitives.size() != n.primitives.size())
+            return false;
+        if (!m.vertices.empty() && std::memcmp(m.vertices.data(), n.vertices.data(), m.vertices.size() * sizeof(scene::Vertex)) != 0)
+            return false;
+        for (size_t k = 0; k < m.primitives.size(); ++k) {
+            const scene::Primitive &p = m.primitives[k], &q = n.primitives[k];
+            const scene::Material &s = p.material, &t = q.material;
+            if (p.first_index != q.first_index || p.index_count != q.index_count || p.texture != q.texture || p.flags != q.flags ||
+                p.alpha_ref != q.alpha_ref || !same(s.ambient, t.ambient) || !same(s.diffuse, t.diffuse) ||
+                !same(s.specular, t.specular) || !same(s.emission, t.emission) || !same(s.lamp_emission, t.lamp_emission) ||
+                s.shininess != t.shininess || s.scale != t.scale || s.valid != t.valid || s.specular_local != t.specular_local ||
+                p.env_rows != q.env_rows || !same(p.env_c0, q.env_c0) || !same(p.env_c1, q.env_c1) || p.env_kind != q.env_kind ||
+                p.env_point != q.env_point || !same(p.env_point_pos, q.env_point_pos) || !same(p.env_alpha, q.env_alpha) ||
+                p.under_ref != q.under_ref || p.under_alpha != q.under_alpha || !same(p.uv_region, q.uv_region) ||
+                p.fog_own != q.fog_own || !same(p.fog_rgb, q.fog_rgb))
+                return false;
+        }
+    }
+    for (size_t i = 0; i < a.textures.size(); ++i) {
+        const scene::Texture &s = a.textures[i], &t = b.textures[i];
+        if (s.width != t.width || s.height != t.height || s.clamp_u != t.clamp_u || s.clamp_v != t.clamp_v ||
+            s.no_mips != t.no_mips || s.nearest != t.nearest || s.rgba != t.rgba)
+            return false;
+    }
+    return true;
+}
+
+// One GPU model for a car's parts that draw the same (its left wheels' are, and often all four).
+class PartModels {
+public:
+    explicit PartModels(render::GpuContext& ctx) : ctx_(ctx) {}
+    std::shared_ptr<render::GpuModel> of(scene::Model&& m) {
+        for (const auto& [made, gpu] : made_)
+            if (same_drawing(made, m)) return gpu;
+        auto gpu = std::make_shared<render::GpuModel>(ctx_, m);
+        made_.push_back({std::move(m), gpu});
+        return gpu;
+    }
+
+private:
+    render::GpuContext& ctx_;
+    std::vector<std::pair<scene::Model, std::shared_ptr<render::GpuModel>>> made_;
+};
+} // namespace
+
 CourseScene::CourseScene(render::GpuContext& ctx, ByteSpan data, const std::string& name, bool sheen)
     : frame_alpha_(sheen) {
     course::CourseModelOptions o;
@@ -456,6 +513,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         race_wheels = scene::extract(load_car_model(car_file, ro, model),
                                      [](const scene::Mesh& m) { return m.name.rfind("wheel_", 0) == 0; });
     }
+    PartModels parts(ctx);
     for (int i = 0; i < 4; ++i) {
         std::string n = kWheelNames[i];
         int axle = i >> 1;
@@ -483,10 +541,9 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
                 rim_spin_texture_ = int(rim.textures.size()); // (the same index in every wheel's model)
                 rim.textures.push_back(*rim_spin);
             }
-            rims_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, rim);
+            rims_[size_t(i)] = parts.of(std::move(rim));
         }
         scene::Model tyre = hub_model(n + "_tyre");
-        if (!tyre.meshes.empty()) tyres_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, tyre);
         // Showroom wheels: the rim's filter mask for each face (spin_mask_shape), to LOD 0's tyre's
         // inner ring (the tyre the menus' rim sits in), kMaskOut beyond the rim's farthest vertex, so
         // the rim and the brake parts behind its spokes lie behind it and what covers the rim (the
@@ -499,20 +556,22 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
                 spin_masks_[size_t(i)][size_t(side)] =
                     std::make_unique<render::GpuModel>(ctx, spin_mask_shape(d, ring, side == 0, kMaskOut));
         }
+        if (!tyre.meshes.empty()) tyres_[size_t(i)] = parts.of(std::move(tyre));
         scene::Model band = hub_model(n + "_band");
-        if (!band.meshes.empty()) bands_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, band);
+        if (!band.meshes.empty()) bands_[size_t(i)] = parts.of(std::move(band));
     }
 }
 
 void CarVisual::set_brake_parts(const BrakeParts& bin) {
+    PartModels shared(*ctx_);
     for (int i = 0; i < 4; ++i) {
         const BrakeRecord& rec = brake_records_[size_t(i >> 1)];
         const bool right = (i & 1) != 0;
         brakes_[size_t(i)].reset(), glows_[size_t(i)].reset();
         scene::Model parts = build_brake_parts(bin, rec, right, tyre_shininess_);
-        if (!parts.meshes.empty()) brakes_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, parts);
+        if (!parts.meshes.empty()) brakes_[size_t(i)] = shared.of(std::move(parts));
         scene::Model glow = build_brake_glow(bin, rec, right);
-        if (!glow.meshes.empty()) glows_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, glow);
+        if (!glow.meshes.empty()) glows_[size_t(i)] = shared.of(std::move(glow));
         // Showroom wheels: the menus' rim is deeper than the race rim GTCI places the parts for.
         showroom_brakes_[size_t(i)].reset(), showroom_glows_[size_t(i)].reset();
         const scene::Model& menu_rim = showroom_rim_[size_t(i)];
@@ -521,9 +580,9 @@ void CarVisual::set_brake_parts(const BrakeParts& bin) {
                                                        0.5f * wheel_width_[size_t(i >> 1)] - 0.01f);
         if (in.offset == rec.offset) continue;
         scene::Model sp = build_brake_parts(bin, in, right, tyre_shininess_);
-        if (!sp.meshes.empty()) showroom_brakes_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, sp);
+        if (!sp.meshes.empty()) showroom_brakes_[size_t(i)] = shared.of(std::move(sp));
         scene::Model sg = build_brake_glow(bin, in, right);
-        if (!sg.meshes.empty()) showroom_glows_[size_t(i)] = std::make_unique<render::GpuModel>(*ctx_, sg);
+        if (!sg.meshes.empty()) showroom_glows_[size_t(i)] = shared.of(std::move(sg));
     }
 }
 

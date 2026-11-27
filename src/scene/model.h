@@ -99,6 +99,7 @@ struct Material {
     bool specular_local = false;
 };
 
+// (race_scene.cpp's same_drawing compares every field: a new one goes there too.)
 struct Primitive {
     u32 first_index = 0;
     u32 index_count = 0; // triangle list
