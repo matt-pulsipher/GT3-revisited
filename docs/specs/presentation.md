@@ -2917,6 +2917,11 @@ wet Route 5 and Tahiti dirt (same look; the grids are not like for like).
   RotX(-15) RotY(180) x the main view's rotation (translation cleared by `fn_00257B84`), then
   Translate(-pos) Translate(0, -0.8, 0): the map's camera sits 0.8 m above the focus car and looks
   back at the viewer, tilted 15 degrees up in the main camera's eye space (y up).
+- The focus car [C]: `fn_001D8968` takes pos from the race's view car, race +0x8000+0x16D8 ->
+  +0x24C0 k + 0x4B8, +0x18 (the camera view's target, as the HUD's display car): in a replay
+  the car the cameras follow, not car 0. `fn_001D8698` runs from vf45 (1P) and vf48 (each 2P
+  half), so each half has its own map around its own car. Ours: `RaceScreen::env_map_car`
+  (the followed opponent, else the player; player 2's half renders a second cube in `view2_`).
 - `fn_001D83A8`, three passes k = 0, 1, 2: Frustum(`fn_002555A8`: l -0.5, r 0.5, b -0.7537780,
   t 0.9045340 (0x3500BC / C0), near 0.005, far 200, x/y distance 0.1599 (0x3500C8): the x / y
   scale is 2 d / (r - l), 2 d / (t - b)), modelview RotX(79.97501) (0x3500CC) RotZ(-120 k) x the
