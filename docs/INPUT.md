@@ -621,14 +621,16 @@ screen's centre line, + = right) and `y` in from the top or bottom edge of
 the area the controls keep to (the screen less a 14-unit margin, the cutout
 and the rounded corners; the game area is 640×360 units, 480×360 or the
 screen's shape with Settings → Display → Aspect ratio). Measured from the
-nearest edge, a layout carries over to screens of other shapes; a control
-that would not fit is moved back inside. Positions are for the right-handed
+nearest edge, a layout carries over to screens of other shapes. A moved
+control may go past that area, right up to the screen's edges (beside a
+punch-hole camera or into a rounded corner, issue 468); one that would go off
+the screen is moved back onto it. Positions are for the right-handed
 layout: `left_handed` mirrors a custom layout too. Controls without a key
 stay where the layout puts them.
 
 Controls anchor to the edges of the whole screen, not the letterboxed
 16:9 game area, so on wide (20:9) phones they move into the side bars and on
-16:10 tablets into the top and bottom bars. They keep clear of the display
+16:10 tablets into the top and bottom bars. The default layout keeps clear of the display
 cutout (`SDL_GetWindowSafeArea`) and, on phones, of the rounded screen
 corners (`TouchControls::set_insets`, fed by `App::safe_area_window()`).
 `opacity`, `size`, `left_handed` and the custom layout are previewed live on

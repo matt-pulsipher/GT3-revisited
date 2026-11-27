@@ -54,6 +54,7 @@ struct TouchRect {
 // so a layout carries over to screens of other shapes:
 //   x: `x` units in from the left or right edge, or from the screen's centre line (+ = right)
 //   y: `y` units in from the top or bottom edge
+// (a control may sit closer to the screen's edge than that area, up to the edge itself)
 // Saved as `[touch] <key> = [left|center|right <x> top|bottom <y>] [size <scale>] [hidden]`.
 struct TouchPlacement {
     enum class AnchorX : u8 { Default, Left, Centre, Right }; // Default: where the layout puts it
@@ -169,7 +170,8 @@ public:
     std::string_view key_at(float x, float y) const;
     TouchRect group_bounds(std::string_view key) const;
     // The placement that puts `key`'s centre at (x, y) (UI units as drawn), keeping its size
-    // and kept inside the area the controls stay in.
+    // and kept on the screen (up to its very edges: past the margin and any cutout or
+    // rounded-corner inset, which only the default layout keeps clear of).
     TouchPlacement placement_at(std::string_view key, float x, float y) const;
 
     // Finger input in UI coordinates. `pressure` is 0..1 as reported by the
