@@ -130,11 +130,16 @@ struct DrawOptions {
     // the grade: levels (black / white stretched to 0 / 1), a curve t^2 + 2 g t (1 - t) per
     // output channel, then the saturation mix out_c = s L_c(in_c) + (1 - s) sum_k w_k L_c(in_k)
     // (w = 0.30 0.59 0.11), in GT3's 8-bit table arithmetic (model.frag gt3_grade);
+    // An app may give the tables themselves instead of the levels and curve (`own_table`):
+    // table[i][c] is output channel c's level for an input level i; the saturation mix follows
+    // as before.
     struct PostGrade {
         bool on = false;
         float black = 0, white = 1;
         float curve[3] = {0.5f, 0.5f, 0.5f}; // g per channel (0.5 = identity)
         float saturation = 1;
+        bool own_table = false;
+        std::array<std::array<u8, 3>, 256> table{};
     } post_grade;
     // the dissolve: the picture frozen by `snapshot` (the last one shown before this draw)
     // over it at weight `dissolve`; the trail: the last picture shown at weight `trail`
@@ -428,6 +433,9 @@ private:
     bool ensure_cube(int size);
     void release_cube();
     SDL_GPUTexture* placeholder_cube();
+    // The grade's own table (PostGrade::own_table) as a 256 x 1 texture, uploaded on `cmd` (outside
+    // a pass) when it changed.
+    SDL_GPUTexture* grade_table_texture(SDL_GPUCommandBuffer* cmd, const DrawOptions::PostGrade& g);
     // Records the draws of one view into an open render pass: every item, those without
     // DrawItem::late, or only those; SpinMask: only the early items' turned rim copies
     // (DrawItem::spin_turn), as their mask (PipelineKey::spin_mask, for spin_resolve).
@@ -477,7 +485,7 @@ private:
     bool post_wanted(const DrawOptions& o) const;
     bool ensure_post(SDL_GPUTexture** t);
     void encode_post(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* picture, int picture_w,
-                     int picture_h, float alpha, const DrawOptions::PostGrade* grade);
+                     int picture_h, float alpha, const DrawOptions::PostGrade* grade, SDL_GPUTexture* table = nullptr);
     // Copies the w x h corner (a picture) of `from` to `to` (cycling `to`: see draw).
     void copy_picture(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* from, SDL_GPUTexture* to, int w, int h, bool cycle);
     bool ensure_quad();
@@ -578,6 +586,9 @@ private:
     SDL_GPUTexture* cube_depth_ = nullptr;
     int cube_size_ = 0, cube_samples_ = 0;
     SDL_GPUTexture* placeholder_cube_ = nullptr; // 1x1 grey, bound when no cube is given
+    SDL_GPUTexture* grade_table_ = nullptr;      // PostGrade::table, 256 x 1
+    std::array<std::array<u8, 3>, 256> grade_table_bytes_{};
+    bool grade_table_valid_ = false;
     struct Offscreen {
         SDL_GPUTexture *color = nullptr, *msaa = nullptr, *depth = nullptr;
         int w = 0, h = 0, samples = 0;

@@ -185,8 +185,11 @@ vec3 env_color(vec3 dir) {
 // 256-entry table per output channel c: t = clamp((i / 255 - black) / (white - black), 0, 1)
 // (entry 0 unclamped), L_c[i] = trunc(255 (t^2 + 2 g_c t (1 - t))) clamped; a saturation
 // matrix M[c][k] = trunc(s' + m w_k) for c = k, trunc(m w_k) otherwise (s' = min(128 s, 255),
-// m = max(128 - s', 0), w = 0.30 0.59 0.11); out_c = min(255, sum_k (L_c[in_k] M[c][k]) >> 7).
+// m = max(128 - s', 0), w = 0.30 0.59 0.11); out_c = min(255, sum_k (L_c[in_k] M[c][k]) >> 7). With
+// grade2.z 2 the tables are the app's own (DrawOptions::PostGrade::table, texture u_sphere).
 vec3 grade_table(float i, float inv) {
+    // An app's own table (grade2.z 2): the three levels for input i, texel i of u_sphere.
+    if (u.grade2.z > 1.5) return floor(texelFetch(u_sphere, ivec2(int(i), 0), 0).rgb * 255.0 + 0.5);
     float t = (i / 255.0 - u.grade2.x) * inv;
     if (i > 0.5) t = clamp(t, 0.0, 1.0);
     vec3 g = clamp(u.grade.rgb, 0.0, 1.0);
