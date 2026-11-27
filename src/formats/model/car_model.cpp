@@ -456,10 +456,10 @@ void mark_car_glass(scene::Model& model) {
         Shade& s = shades[size_t(t)];
         if (!s.known) {
             const std::vector<u32>& px = model.textures[size_t(t)].rgba;
-            double sum[3] = {0, 0, 0};
-            for (u32 c : px)
-                for (int k = 0; k < 3; ++k) sum[k] += double((c >> (8 * k)) & 255);
-            for (double& v : sum) v /= double(px.size());
+            u64 total[3] = {0, 0, 0};
+            for (u32 c : px) total[0] += c & 255, total[1] += (c >> 8) & 255, total[2] += (c >> 16) & 255;
+            double sum[3];
+            for (int k = 0; k < 3; ++k) sum[k] = double(total[k]) / double(px.size());
             s.known = true, s.brightest = std::max({sum[0], sum[1], sum[2]});
             s.chroma = s.brightest - std::min({sum[0], sum[1], sum[2]});
             size_t kept = 0, grey = 0;
@@ -556,9 +556,11 @@ void mark_car_glass(scene::Model& model) {
         std::vector<scene::Primitive> out;
         out.reserve(mesh.primitives.size());
         for (const scene::Primitive& p : mesh.primitives) {
-            const Shade* sh = shade(p.texture);
-            if (!(p.flags & scene::kAlphaTest) || (p.flags & (kSkip | scene::kAlphaBlend | scene::kGlass)) || !sh ||
-                sh->brightest > kBackingDark || sh->shaded > kBackingFlat || !valid(p)) {
+            // (a texture is looked at only for a pass that could be a backing)
+            const bool cut_out =
+                (p.flags & scene::kAlphaTest) && !(p.flags & (kSkip | scene::kAlphaBlend | scene::kGlass));
+            const Shade* sh = cut_out ? shade(p.texture) : nullptr;
+            if (!sh || sh->brightest > kBackingDark || sh->shaded > kBackingFlat || !valid(p)) {
                 out.push_back(p);
                 continue;
             }
