@@ -1,4 +1,5 @@
 #include "race/race_scene.h"
+#include "formats/model/build_cache.h"
 
 #include "base/log.h"
 #include "formats/course/course_model.h"
@@ -376,7 +377,9 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
                      std::function<std::optional<Bytes>()> other_tyre)
     : ctx_(&ctx) {
     mounts_ = car_camera_mounts(car_file);
+    gtm1::BuildCache cache; // (shared by the car's builds below; the files' bytes outlive it)
     CarModelOptions opt;
+    opt.cache = &cache;
     opt.body_mod = body_mod;
     opt.wheel_override = wheel_file;
     opt.showroom_car = showroom_car;
@@ -488,13 +491,14 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         brake_records_ = parse_brake_records(f.info);
         // (A mod wheel's glTF rim has no texture table: no spinning picture, its turned copies blur it.)
         const ByteSpan rim_file = unwrap_rim(wheel_file.empty() ? f.wheel : ByteSpan(wheel_file)); // (a reshaped rim's own)
-        gtm1::Gtm1 g = is_glb_rim(rim_file) ? gtm1::Gtm1{} : gtm1::Gtm1::parse(WheelFile::parse(rim_file).gtm1);
+        const gtm1::Gtm1 none;
+        const gtm1::Gtm1& g = is_glb_rim(rim_file) ? none : cache.model(WheelFile::parse(rim_file).gtm1);
         auto set_image = [&](size_t entry) -> std::optional<scene::Texture> {
             if (g.texset_tables.empty() || g.texset_tables[0].size() <= entry) return std::nullopt;
             const u32 k = g.texset_tables[0][entry];
             if (k >= g.texsets.size() || g.texsets[k] >= g.data.size()) return std::nullopt;
             std::vector<scene::Texture> t;
-            gtm1::decode_texture_set(g.data.subspan(g.texsets[k]), t, "rim_");
+            cache.texture_set(g.data.subspan(g.texsets[k]), t, "rim_", 0, nullptr, true, nullptr, nullptr, false);
             if (t.empty()) return std::nullopt;
             return t[0];
         };

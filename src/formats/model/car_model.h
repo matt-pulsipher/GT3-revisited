@@ -121,6 +121,8 @@ struct CarModelOptions {
     std::optional<WheelSpec> wheel_spec; // placement; estimated from the body when absent
     bool brake = false;        // the brake-lamp branch of the node programs (lit lenses)
     bool body = true;          // false (with `wheel_spec`): the wheels alone
+    // Shared by the loads of one car (its buffers must outlive it); null: the load has its own.
+    gtm1::BuildCache* cache = nullptr;
     CarBodyMod body_mod;       // mod cars: stretched or replaced body
     // When set, the draws the car's callback morphs (mud flaps, aerials, steering, the later
     // builds' wings) and the draws under the callback's branches (the pod's tail, lamps and faces)

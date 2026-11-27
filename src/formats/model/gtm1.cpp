@@ -1,4 +1,5 @@
 #include "formats/model/gtm1.h"
+#include "formats/model/build_cache.h"
 
 #include "formats/clut_animation.h"
 #include "formats/gs_memory.h"
@@ -1107,8 +1108,11 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             // A set that is not a Tex1 has no textures. The game then binds none (0x24CF40 skips TEX0
             // without a texture table) and the GS keeps an earlier draw's texture.
             const std::string prefix = "set" + std::to_string(texset) + "_";
-            int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint, opt.livery,
-                                                                                                    opt.gs_mip_levels);
+            int first = set_without_textures(texset) ? -1
+                        : opt.cache ? opt.cache->texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint,
+                                                             opt.livery, opt.gs_mip_levels)
+                                    : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint,
+                                                         opt.livery, opt.gs_mip_levels);
             it = set_first.emplace(texset, first).first;
             set_size[texset] = u32(model.textures.size() - before);
             if (!clut.empty()) {
@@ -1287,6 +1291,10 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     };
 
     int gs_texture = -1; // the texture the GS holds (TEX0 stays set from packet to packet)
+    // Each packet is decoded once: passes draw the same chunks again (reflections, alpha).
+    BuildCache own_packets;
+    BuildCache& packets = opt.cache ? *opt.cache : own_packets;
+    auto decode = [&](const Packet& pk, bool prelit = false) -> const DecodedPacket& { return packets.packet(g, pk, prelit); };
     // Emits one node's draws into `mesh`, vertices placed by the draws' matrices. `ranges` (when
     // given) receives where each draw's vertices, indices and primitives start, `key1` every
     // vertex's key frame 1 (its key frame 0 where the packet has no second key).
@@ -1438,7 +1446,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             for (const Draw& d : draws) {
                 if ((g.chunks[d.chunk].flags & 0x1F) == 4 || d.fb_mask) continue; // not the sheen itself
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
-                    DecodedPacket bp = g.decode_packet(pk);
+                    const DecodedPacket& bp = decode(pk);
                     // ALPHA 0x58 only matters with blending on (PRIM.ABE): an opaque packet drawn
                     // while the register still holds 0x58 is an ordinary base pass.
                     if (d.alpha_mode == 0x58 && bp.prim.abe) continue;
@@ -1487,7 +1495,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             if (alpha_only && opt.weighted_reflection) {
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
                     u32 tex = pk.mat & 0x1FF;
-                    DecodedPacket dp = g.decode_packet(pk);
+                    const DecodedPacket& dp = decode(pk);
                     int t = dp.prim.tme && dp.has_uv && tex != 0 && tex != 0x1FF ? texture_for(d.texset, tex - 1) : -1;
                     std::vector<scene::Vertex> placed;
                     std::vector<Written> ws;
@@ -1519,7 +1527,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             if (alpha_only && !opt.frame_alpha) {
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
                     u32 tex = pk.mat & 0x1FF;
-                    DecodedPacket dp = g.decode_packet(pk);
+                    const DecodedPacket& dp = decode(pk);
                     if (!dp.prim.tme || !dp.has_uv || tex == 0 || tex == 0x1FF || dp.vertices.size() < 3) continue;
                     int src = texture_for(d.texset, tex - 1);
                     if (src < 0) continue;
@@ -1544,7 +1552,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 // passed through), 4 = the road sheen's specular-only lighting
                 // (scene::Material::specular_local).
                 const u32 kind = g.chunks[d.chunk].flags & 0x1F;
-                DecodedPacket dp = g.decode_packet(pk, kind == 0);
+                const DecodedPacket& dp = decode(pk, kind == 0);
                 // Course passes blended with ALPHA 0x58 (Cs*Ad + Cd): the road sheen (kind 4) and
                 // other blended packets drawn with it, added weighted by the frame-buffer alpha the
                 // base pass left. Opaque packets drawn while ALPHA still holds 0x58 (e.g. the
@@ -1968,7 +1976,8 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     for (int i : nearest_cuts) {
         scene::Texture& t = model.textures[size_t(i)];
         const std::array<bool, 2> r = repeats.count(i) ? repeats[i] : std::array<bool, 2>{false, false};
-        colour_cut_texels(t, r[0] && !t.clamp_u, r[1] && !t.clamp_v);
+        if (opt.cache) opt.cache->colour_cut(t, r[0] && !t.clamp_u, r[1] && !t.clamp_v);
+        else colour_cut_texels(t, r[0] && !t.clamp_u, r[1] && !t.clamp_v);
     }
     model.compute_bounds();
     return model;

@@ -278,10 +278,13 @@ struct ClutSet {
 class AnimatedNodes;
 class MorphDraws;
 struct ComputedPaint;
+class BuildCache; // formats/model/build_cache.h
 
 struct Options {
     RunParams run;
     int node = -1;            // -1 = every node
+    // What the builds sharing it have worked out before (a car's: its LODs and wheels use the same texture sets again).
+    BuildCache* cache = nullptr;
     bool reflection = true;   // include environment-map packets (normal in the UV slot)
     bool textures = true;     // decode texture sets into Model::textures
     int paint = 0;            // car colour index (Tex1 paint variant), 0 = default
