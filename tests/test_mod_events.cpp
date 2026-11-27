@@ -207,15 +207,11 @@ u32 g_vitz2 = 0, g_r34_1 = 0; // the colour ids the files name (the Vitz's third
 // `extra`: more event files of the mod (name, text), after the championship and the sprint.
 EventWorld event_world(Disc& disc, const std::vector<std::pair<std::string, std::string>>& extra = {}) {
     EventWorld w;
-    const Volume& vol = disc.volume();
+    // The game's own file names for the disc's region (paramdb_jp.db ...): a Vfs over it.
+    auto vfs = std::make_shared<Vfs>(&disc.volume());
     {
         game::GtData plain;
-        plain.load([&vol](const std::string& p) -> std::optional<Bytes> {
-            if (p == Vfs::kProgramFile) return vol.read_program();
-            const Volume::Entry* e = vol.find(p);
-            if (!e) return std::nullopt;
-            return vol.read(*e);
-        });
+        plain.load([vfs](const std::string& p) { return vfs->read(p); });
         g_vitz2 = plain.color_id("vitz_euro_00", 2), g_r34_1 = plain.color_id("r34_gtr_v_99", 1);
     }
     const std::filesystem::path mod = temp_dir("mod_events_disc") / "my_events";
@@ -231,12 +227,9 @@ EventWorld event_world(Disc& disc, const std::vector<std::pair<std::string, std:
         write_text(mod / "events" / (name + ".ini"), text);
         list += "my_events\t" + (mod / "events" / (name + ".ini")).generic_string() + "\n";
     }
-    menu::flow::FileReader read = [&vol, list](const std::string& p) -> std::optional<Bytes> {
+    menu::flow::FileReader read = [vfs, list](const std::string& p) -> std::optional<Bytes> {
         if (p == Vfs::kModCarsList) return Bytes(list.begin(), list.end());
-        if (p == Vfs::kProgramFile) return vol.read_program();
-        const Volume::Entry* e = vol.find(p);
-        if (!e) return std::nullopt;
-        return vol.read(*e);
+        return vfs->read(p);
     };
     game::install_mod_menu_patches();
     game::forget_mod_menu_plan();
@@ -632,10 +625,10 @@ const char* kRoulette = R"(
 title = Roulette Cup
 championship = yes
 prizes = 1000, 0, 0, 0, 0, 0
-prize_cars = vitz_euro_00, demio_glx_00
+prize_cars = {A}, {B}
 points = 1, 1, 1, 1, 1, 1, 9
 [field]
-opponents = vitz_euro_00, demio_glx_00, mira_tr_xx_avar_97, sun_e_beetle_20_00, sun_e_demio_glx_00, r34_gtr_v_99, vitz_euro_00
+opponents = {A}, {B}, {C}, {D}, {E}, {F}, {A}
 [race1]
 course = trialmt
 cars = 7
@@ -651,9 +644,9 @@ const char* kOneRace = R"(
 [event]
 title = One Race
 prizes = 1000, 0, 0, 0, 0, 0
-prize_cars = vitz_euro_00, vitz_euro_00, demio_glx_00
+prize_cars = {A}, {A}, {B}
 [field]
-opponents = demio_glx_00
+opponents = {B}
 [race1]
 course = trialmt
 )";
@@ -662,23 +655,52 @@ const char* kTwoRaces = R"(
 [event]
 title = Two Races
 prizes = 1000, 0, 0, 0, 0, 0
-prize_cars = vitz_euro_00, demio_glx_00
+prize_cars = {A}, {B}
 [field]
-opponents = demio_glx_00
+opponents = {B}
 [race1]
 course = trialmt
 [race2]
 course = super
 )";
 
+// A template with {A}..{F} as cars of the open disc (any region: the car labels differ).
+std::string with_cars(std::string text, const std::vector<std::string>& cars) {
+    for (size_t k = 0; k < 6; ++k) {
+        const std::string key = std::string("{") + char('A' + k) + "}";
+        for (size_t i; (i = text.find(key)) != std::string::npos;) text.replace(i, key.size(), cars[k % cars.size()]);
+    }
+    return text;
+}
+
+// Six cars the disc's own GT Mode races field (dealer cars, so prize cars too).
+std::vector<std::string> disc_cars(Disc& disc) {
+    Vfs vfs(&disc.volume());
+    game::GtData plain;
+    plain.load([&vfs](const std::string& p) { return vfs.read(p); });
+    std::vector<std::string> cars;
+    for (const data::Event& e : plain.db.events())
+        if (!e.label.empty() && e.label[0] == 'G')
+            for (const std::string& l : e.entries) {
+                const data::CarVariant* v = plain.db.variant(l); // (pools hold variants: their cars)
+                const std::string car = v ? v->car : l;
+                if (cars.size() < 6 && plain.db.car(car) && std::find(cars.begin(), cars.end(), car) == cars.end()) cars.push_back(car);
+            }
+    return cars;
+}
+
 } // namespace
 
 // A race's start and tire wear are a disc race's bytes: an endurance race's rolling start and wear, a series race's
 // standing start and none; a race that asks for neither keeps its base race's.
 TEST(mod_event_disc_start_wear) {
-    Disc* disc = test_disc();
+    Disc* disc = any_region_disc();
     if (!disc) SKIP("needs GT3R_DISC");
-    EventWorld w = event_world(*disc, {{"roulette", kRoulette}});
+    const std::vector<std::string> cars = disc_cars(*disc);
+    if (cars.empty()) SKIP("no GT Mode races on this disc"); // (GT Concept)
+    CHECK(cars.size() == 6);
+    if (cars.size() < 6) return;
+    EventWorld w = event_world(*disc, {{"roulette", with_cars(kRoulette, cars)}});
     CHECK(w.error.empty());
     const data::CarDatabase& db = w.data->db;
     const data::Event* r1 = db.event("Xmy_events_roulette_0501");
@@ -690,11 +712,11 @@ TEST(mod_event_disc_start_wear) {
     if (!r1 || !r2 || !endurance) return;
     CHECK(r1->bytes[0x1F3] == 3 && r1->bytes[0x198] == 0 && endurance->bytes[0x1F3] == 3);
     CHECK(std::equal(r1->bytes.begin() + 0x1BD, r1->bytes.begin() + 0x1C4, endurance->bytes.begin() + 0x1BD));
-    CHECK(r1->bytes[0x1BD] == 21); // (GT3's one wear curve, physics §8.1)
-    CHECK(r2->bytes[0x1F3] == 2 && r2->bytes[0x1BD] == 0 && r2->bytes[0x1BF] == 100);
+    CHECK(r1->bytes[0x1BD] != 0); // (wear on: its maximum wear, physics §8.1; 21 on the GT3 discs)
+    CHECK(r2->bytes[0x1F3] == 2 && r2->bytes[0x1BD] == 0); // (off: a maximum of 0, as a race without wear has)
     // The others keep their base race's: the Beginner championship's, standing and without wear.
-    const data::Event* h1 = db.event("Xmy_events_hatch_0501");
-    CHECK(h1 && h1->bytes[0x1F3] == 2 && h1->bytes[0x1BD] == 0);
+    if (const data::Event* h1 = test_disc() ? db.event("Xmy_events_hatch_0501") : nullptr) // (the NTSC-U disc's Beginner race)
+        CHECK(h1->bytes[0x1F3] == 2 && h1->bytes[0x1BD] == 0);
     // The race information shows it as GT3 does its own: wear on, the start rolling.
     game::GtMode gt(w.data);
     std::optional<game::EventRules> r = gt.rules("Xmy_events_roulette_0501");
@@ -704,9 +726,14 @@ TEST(mod_event_disc_start_wear) {
 // Two or more prize cars: the roulette, on every championship win and every win of a one-race event; single races of
 // more than one race give one car, once. The points: the event's, past 6th too.
 TEST(mod_event_disc_roulette_points) {
-    Disc* disc = test_disc();
+    Disc* disc = any_region_disc();
     if (!disc) SKIP("needs GT3R_DISC");
-    EventWorld w = event_world(*disc, {{"roulette", kRoulette}, {"one", kOneRace}, {"two", kTwoRaces}});
+    const std::vector<std::string> cars = disc_cars(*disc);
+    if (cars.empty()) SKIP("no GT Mode races on this disc"); // (GT Concept)
+    CHECK(cars.size() == 6);
+    if (cars.size() < 6) return;
+    EventWorld w = event_world(*disc, {{"roulette", with_cars(kRoulette, cars)}, {"one", with_cars(kOneRace, cars)},
+                                       {"two", with_cars(kTwoRaces, cars)}});
     CHECK(w.error.empty());
     const game::PrizeSet* champ = w.data->prize_set("Xmy_events_roulette_0500");
     const game::PrizeSet* one = w.data->prize_set("Xmy_events_one_0001");
@@ -715,7 +742,7 @@ TEST(mod_event_disc_roulette_points) {
     if (!champ || !one || !two) return;
     game::GtMode gt(w.data);
     CHECK(gt.points_table("Xmy_events_roulette_0501") == std::vector<int>({1, 1, 1, 1, 1, 1, 9}));
-    CHECK(gt.points_table("Xmy_events_hatch_0501").empty());
+    CHECK(gt.points_table("Xmy_events_two_0001").empty());
     // A championship of 8 cars: the player 7th in both rounds (9 points each), the others 1 or none.
     for (int title = 0; title < 2; ++title) {
         CHECK(gt.start_championship("Xmy_events_roulette_0501"));
@@ -729,7 +756,7 @@ TEST(mod_event_disc_roulette_points) {
         CHECK(a.new_cars.size() == 1); // (every title: the roulette's set)
         if (!a.new_cars.empty()) {
             const std::string& car = gt.state().garage[size_t(a.new_cars[0])].car;
-            CHECK(car == "vitz_euro_00" || car == "demio_glx_00");
+            CHECK(car == cars[0] || car == cars[1]);
         }
     }
     // A one-race event's roulette: every win.

@@ -521,7 +521,9 @@ bool add_mod_event(CarDatabase& db, const ModEventDef& def, std::string* error) 
             copy_bytes(b, src, kStartSpeed, kStartSpeed + 1);
             copy_bytes(b, src, kCountdown, kStartType + 1);
         }
-        if (r.wear >= 0) copy_bytes(b, r.wear == 1 ? worn : unworn, kWear, kWearEnd);
+        if (r.wear == 1) copy_bytes(b, worn, kWear, kWearEnd);
+        else if (r.wear == 0 && unworn) copy_bytes(b, unworn, kWear, kWearEnd);
+        else if (r.wear == 0) put8(b, kWear, 0); // (a disc whose races all wear, a mod's: a maximum wear of 0 is off, physics §8.1)
         db.add_label(code);
         db.put_record(TableId::Event, std::move(b));
         ev.races.push_back(code);
