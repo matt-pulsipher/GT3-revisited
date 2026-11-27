@@ -128,7 +128,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         }
         if (event_paint_id_ != 0xFFFFFFFFu)
             if (int k = colors_.index_of(paint_key(db_, ca.label, model), event_paint_id_); k >= 0) preset_.paint = k;
-        build_player_visual(app, model, *car_file);
+        // (An attract demo's own car is built once its colour is drawn: load_opponent_cars.)
+        if (!draw_player_paint_) build_player_visual(app, model, *car_file);
         course_name_ = ce.name;
         // The start title shows the course table's name as it is: licence sections have their
         // own ("Grand Valley Test Section"), and a course without one shows no title.
@@ -155,6 +156,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         ghost_shown_ = true;
         const bool plays = replay && can_play(*replay, nullptr); // (a replay's race is built from its record: start_playback)
         if (!plays && !build_vehicle(app)) throw FormatError(error_);
+        if (!car_visual_) build_player_visual(app, model, *car_file); // (a demo whose build drew no colour)
         build_tv_cameras();
         gtrc_.reset();
         director_ = ReplayDirector(); // (not left pointing at the old script)
@@ -883,11 +885,13 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     paint_seed_override_.reset();
     if (draw_player_paint_) {
         LOG_INFO("Race: the demo's own car %s in paint %d", player_model.c_str(), paints[0]);
-        if (paints[0] >= 0 && paints[0] != preset_.paint) { // (the car was built in paint 0 before the draw)
+        if (paints[0] >= 0 && paints[0] != preset_.paint) {
             preset_.paint = paints[0];
+            car_visual_.reset(); // (a run before drew another)
+        }
+        if (!car_visual_)
             if (const std::shared_ptr<const Bytes> cf = read_car(app, player_model); cf && !cf->empty())
                 build_player_visual(app, player_model, *cf);
-        }
     }
     // Each opponent's model and paint, its mod body and the key its model is shared and kept by.
     struct Opponent {
