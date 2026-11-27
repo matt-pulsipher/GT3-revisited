@@ -617,10 +617,13 @@ GT3 checks its own events.
 An event whose league the open disc doesn't have (or that names none) goes to
 **Custom Events**, a league added under the disc's own on the race map.
 
-Results are kept in the save. Prize money is paid like a disc race's. The
-prize car is given once: for winning the championship, or for winning every
-race of single races. Your events never count for a league, the endings or the
-game's completion.
+Results are kept in the save. Prize money is paid like a disc race's. Prize
+cars work like the disc's: one prize car is given once, for winning the
+championship, or for winning every race of single races. Two to four go to the
+roulette, which picks one on every win of a championship or of a one-race event,
+as the disc's championships and endurance races do. Single races of more than
+one race give one prize car. Your events never count for a league, the endings
+or the game's completion.
 
 ### The file
 
@@ -636,8 +639,8 @@ league = r/beginner/beginner           ; the league page on the race map (see be
 championship = yes                     ; no: single races
 prizes = 5000, 3000, 2000, 1000, 500, 250 ; credits for 1st .. 6th
 bonus = 10000                          ; the champion's bonus
-prize_car = r34_gtr_v_99               ; a car label (optional)
-prize_paint = -1                       ; its paint id, -1 = a random paint
+prize_cars = r34_gtr_v_99:3, vitz_euro_00 ; optional: up to 4 car labels, each :paint id (none: a random paint)
+points = 10, 6, 4, 3, 2, 1, 1, 1       ; optional, championships: points by place (default: GT3's 10, 6, 4, 3, 2, 1)
 base = Galtezza_e_0501                 ; optional: a disc race whose rules fill the rest
 
 [entry]
@@ -659,6 +662,8 @@ course = trialmt
 laps = 2
 skill = league         ; league, easy, normal, hard, professional
 cars = 3               ; opponents it draws, 1 to 31, repeating the pool's cars when it has fewer (default: as many as the pool has, at most 5)
+start = rolling        ; league, standing, rolling (default: league, the base race's)
+tire_wear = on         ; league, off, on (default: league, the base race's)
 
 [race2]
 course = midfield
@@ -670,7 +675,8 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
 - Up to 10 races, `[race1]` to `[race10]`, and up to 31 opponents per race (32
   cars with yours; a pool holds up to 32 cars). The original's races have 6 cars;
   a bigger field lines up behind the course's own grid, two by two along its
-  racing line. Places past 6th win no prize money and no championship points.
+  racing line. Places past 6th win no prize money, and no championship points
+  unless the event's `points` give them some.
 - A pool entry is a car label (`gt3tool car`, or the creator's car page; mod
   cars work too), a car variant of the disc (an opponent as its races field it,
   the labels in their pools), or `tune:<name>`. A colour is a `carcolor.db` id,
@@ -690,13 +696,24 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
   information, prize pages, results and championship points. A race's `skill` copies the driving percentages of the
   arcade race of that difficulty (Easy `AEST0001` .. Professional `APST0001`, on
   dirt `A?AD0001`) into the race; `league` keeps the base race's.
+- `start` and `tire_wear` copy the disc's own races' bytes: `rolling` an
+  endurance race's start (the field sets off at 80 km/h and you take the wheel
+  after 5 seconds), `standing` a series race's; `on` an endurance race's tire
+  wear (GT3 has one wear curve), `off` a race without wear. Races on dirt never
+  wear their tires, as in GT3.
+- `prize_cars` is a prize set as the disc's: a car listed twice comes up twice
+  as often in the roulette. An older file's `prize_car` and `prize_paint` still
+  read as one prize car.
+- `points` is the one value GT3's records can't hold: the original's points
+  table is part of its program. It is ours, for fields bigger than GT3's six
+  cars; places past the list score none.
 - Credits are written as a US or European disc counts them; a Japanese disc pays
   them 100 times larger, like its own prizes. They are stored in hundreds.
 - League pages are the disc's own names: `r/beginner/beginner`, `r/amateur/amateur`,
   `r/pro/pro`, `r/dirt/dirt`, `r/end/endurance` on the GT3 discs.
 - Each race is a copy of a disc race (`base`, or a GT Mode race of the disc)
-  with the file's values over it: its start, catch-up and tyre wear (and, with
-  `skill = league`, its opponents' driving) come from that race. A course with a dirt surface needs dirt tyres.
+  with the file's values over it: its catch-up (and, with `league`, its start,
+  tire wear and its opponents' driving) come from that race. A course with a dirt surface needs dirt tyres.
 - A course or a car the open disc lacks: a car is left out of its lineup; an
   event whose course is missing, or with no opponents left, isn't listed.
 - The race codes are `X<mod>_<name>_0001`... (a championship `..._0500`, its rounds
@@ -906,7 +923,7 @@ tune playing (the log says why).
 | Cars from your other discs | Works now: any disc car, Gran Turismo Concept's included, exported whole as a mod (see "Exporting cars") |
 | Paint colours (`liveries/*.ini`) | Works now: new colours for any car, computed from its own paints, shown online and kept in replays (see "Paint colours") |
 | Liveries (`liveries/<name>/`) | Works now: pictures painted over a disc or mod car on a template of it (New livery on the Mods screen), any size, shown at every distance and sent to the players you race online (see "Liveries") |
-| GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes and a prize car, listed on a league page; made with the Event creator or by hand (see "Adding events") |
+| GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes, prize cars (with the roulette), starts, tire wear and points, listed on a league page; made with the Event creator or by hand (see "Adding events") |
 | Any other file | Overrides are loaded wherever the game reads the file (menus, models, courses, sounds, databases, movies) |
 
 ## Planned

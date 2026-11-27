@@ -107,8 +107,9 @@ bool ResultsOverlay::load(const Vfs& vfs, SDL_Renderer* r, const std::string& la
 
 // --- Championship pages ----------------------------------------------------------------
 
-int championship_points(int place) {
+int championship_points(int place, std::span<const int> table) {
     static constexpr int kPoints[6] = {10, 6, 4, 3, 2, 1};
+    if (!table.empty()) return place >= 0 && size_t(place) < table.size() ? table[size_t(place)] : 0;
     return place >= 0 && place < 6 ? kPoints[place] : 0;
 }
 
@@ -118,11 +119,11 @@ std::string result_points_text(char sign, int points, std::string_view lang) {
     return s + (points < 2 ? "pt" : "pts");
 }
 
-std::vector<size_t> total_points_order(std::span<const int> before, std::vector<int>& totals) {
+std::vector<size_t> total_points_order(std::span<const int> before, std::vector<int>& totals, std::span<const int> table) {
     totals.assign(before.size(), 0);
     std::vector<size_t> order;
     for (size_t i = 0; i < before.size(); ++i) {
-        totals[i] = before[i] + championship_points(int(i));
+        totals[i] = before[i] + championship_points(int(i), table);
         // After every row with at least as many points: a tie stays in finishing order.
         size_t at = 0;
         while (at < order.size() && totals[order[at]] >= totals[i]) ++at;

@@ -560,19 +560,24 @@ bool GtData::load(const Reader& read) {
                 unlock_level[e.name] = int(e.u32_at(4));
             }
         // Mod events (game/data/mod_events.h): their result codes and their prize cars, a set named
-        // as the disc's are (a championship's own code, else the series' "_0000": every race won).
+        // as the disc's are: a championship's own code (its roulette on every win, one car once), else
+        // the series' "_0000" (every race won, once; the loader keeps one car for more than one race); a
+        // one-race event's roulette by its race code, as an endurance race's (every win).
         mod_race_codes.clear();
         for (const data::ModEvent& m : db.mod_events()) {
             mod_race_codes.insert(m.races.begin(), m.races.end());
             if (!m.champ.empty()) mod_race_codes.insert(m.champ);
-            if (m.def.prize_car.empty()) continue;
+            if (m.def.prize_cars.empty()) continue;
             PrizeSet p;
-            p.name = m.champ.empty() ? m.series + "_0000" : m.champ;
-            PrizeCar c;
-            c.id = -1;
-            c.car = m.def.prize_car;
-            c.color_id = m.def.prize_paint;
-            p.cars.push_back(std::move(c));
+            const bool roulette = m.def.prize_cars.size() > 1;
+            p.name = !m.champ.empty() ? m.champ : roulette && m.races.size() == 1 ? m.races.front() : m.series + "_0000";
+            for (const data::ModEventPrize& e : m.def.prize_cars) {
+                PrizeCar c;
+                c.id = -1;
+                c.car = e.car;
+                c.color_id = e.paint;
+                p.cars.push_back(std::move(c));
+            }
             prizes.push_back(std::move(p));
         }
     } catch (const std::exception& e) {
@@ -1516,9 +1521,10 @@ Award GtMode::record_round(int place, const std::vector<int>& order) {
     // points of its place in the order (no one moves up), the player none; a finished round
     // scores every car (0x18EAB8, 0x18E838).
     const bool player_scores = place >= 0;
-    for (size_t p = 0; p < finish.size() && p < 6; ++p)
+    const std::vector<int> table = points_table(code);
+    for (size_t p = 0; p < finish.size(); ++p)
         if (finish[p] >= 0 && finish[p] < n && (player_scores || finish[p] != 0))
-            ch.points[size_t(finish[p])] += race::championship_points(int(p));
+            ch.points[size_t(finish[p])] += race::championship_points(int(p), table);
     ++ch.next;
     if (ch.next >= int(ch.races.size())) {
         a.championship_over = true;
@@ -1597,6 +1603,11 @@ std::string GtMode::completion_file_text(float percent) {
     char b[32];
     std::snprintf(b, sizeof b, "%d.%01d%%", t / 10, t % 10);
     return b;
+}
+
+std::vector<int> GtMode::points_table(const std::string& code) const {
+    const data::ModEvent* m = data_->db.mod_event(code);
+    return m && m->def.championship ? m->def.points : std::vector<int>();
 }
 
 std::vector<int> GtMode::award_prizes(const std::string& code) {

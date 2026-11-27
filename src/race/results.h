@@ -89,15 +89,16 @@ struct ResultPanelView {
 
 // Championship points for a finishing place (0-based): the program's signed bytes 0x352D78 read by
 // place (0x238A80; after them the program's data holds zeros, so places 7 and 8 score none).
-// PAL 0x354710, NTSC-J 0x34CEF0: the same table.
-int championship_points(int place);
+// PAL 0x354710, NTSC-J 0x34CEF0: the same table. `table`: a mod event's own points by place (ours,
+// game::GtMode::points_table: past its end none), empty = the program's.
+int championship_points(int place, std::span<const int> table = {});
 // A points cell of the panel ("%c%d" + "pt" under 2, else "pts"; NTSC-J "%c%d pt", 0x1B1830):
 // `sign` '+' on the POINTS page, ' ' on TOTAL POINT. `lang` the game's language (JP: the NTSC-J text).
 std::string result_points_text(char sign, int points, std::string_view lang = "US");
 // TOTAL POINT's order (fn_00175790): the rows in finishing order, each with its points before the
 // round (`before`, same order) plus its place's; sorted by that total, highest first, a tie in
 // finishing order. Returns the row indices in panel order and fills `totals` by row.
-std::vector<size_t> total_points_order(std::span<const int> before, std::vector<int>& totals);
+std::vector<size_t> total_points_order(std::span<const int> before, std::vector<int>& totals, std::span<const int> table = {});
 
 // When the results panel turns its pages and when the race ends (ResultArcade::vf9 0x174EF8,
 // ResultChampionship::vf4 0x1753F8). Each page waits until its window is fully shown
