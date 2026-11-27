@@ -236,7 +236,7 @@ private:
         int rim = 0;            // 1: the rim blur by rim_angles, 2: the wheel's spinning image
         std::array<float, 4> rim_angles{};
         float turn = 0;         // the blur's turn (radians; 0: none), for showroom rims' copies
-        bool eye_minus_x = false; // the eye on the hub frame's -x side (a showroom rim's mask faces it)
+        bool eye_minus_x = false; // the eye on the -x side of the rim's middle (a showroom rim's mask faces it)
     };
     WheelLook wheel_look(int i, const render::Mat4& at, const render::Mat4& hub, const sim::WheelState& w,
                          const CarLook& look) const;

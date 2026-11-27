@@ -691,7 +691,9 @@ CarVisual::WheelLook CarVisual::wheel_look(int i, const render::Mat4& at, const 
     const render::Vec3 centre = at.transform_point({0, 0, 0});
     const int detail = wheel_detail(v.proj.at(0, 0), wheel_bound_[axle], -v.view.transform_point(centre).z);
     const render::Vec3 eye = render::inverse(hub).transform_point(v.eye);
-    out.eye_minus_x = eye.x < 0;
+    // (The rim's faces need not lie either side of the hub's origin: split them at its middle.)
+    const RimDisc& disc = rim_discs_[size_t(i)];
+    out.eye_minus_x = eye.x < 0.5f * (disc.min_x + disc.max_x);
     const float half_width = 0.5f * wheel_width_[axle];
     const bool outer = right ? eye.x > half_width : eye.x < -half_width;
     out.parts = detail < 2 && outer;

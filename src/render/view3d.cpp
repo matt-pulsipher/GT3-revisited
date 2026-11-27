@@ -1672,7 +1672,7 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             const int n = spin_px_ > 0 ? spin_copy_count(spread_px, radius_px, samples) : samples;
             const int cells = std::max(n / samples, 1);
             vis.push_back({&item, &mesh, m.world, m.dist, n, cells});
-            if (spin_px_ > 0 && in_front && which != Items::SpinMask) {
+            if (spin_px_ > 0 && in_front) { // (the SpinMask pass has no copies: only mask shapes)
                 const Vec3 cc = view_proj.transform_point(c);
                 const float rx = 1.1f * r * sx / (cw - r), ry = 1.1f * r * sy / (cw - r);
                 SpinRect s{&item, cc.x / cw - rx, cc.y / cw - ry, cc.x / cw + rx, cc.y / cw + ry, spread_px,
@@ -1824,6 +1824,9 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
             frame_alpha_written_ = frame_alpha_written_ || key.alpha != AlphaWrite::Keep;
         }
         key.transmission = opt.transmission && !key.depth_only;
+        // The mask's shapes are no copies (one instance, spin_axis.w 0: model.vert turns them by
+        // nothing), but take the copies' mask pipeline: no cells, so spin_copy_samples writes every
+        // sample (gl_SampleMask -1) and the blend leaves black wherever a shape is.
         if (spin_mask) {
             const CullMode cull = key.cull;
             key = PipelineKey{};

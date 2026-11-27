@@ -325,8 +325,16 @@ TEST(wheel_spin_mask_shape) {
     CHECK(near(m.vertices[0].pos[0], -0.095f) && near(radius(m.vertices[0]), 0));
     for (size_t k = 1; k <= 16; ++k) CHECK(near(m.vertices[k].pos[0], -0.095f) && near(radius(m.vertices[k]), 0.2f));
     for (size_t k = 17; k < 33; ++k) CHECK(near(m.vertices[k].pos[0], -0.07f) && near(radius(m.vertices[k]), 0.21f));
-    // Every index in range, and the sidewall joins the disc's edge to the ring.
+    // Every index in range, and the sidewall joins the disc's edge to the ring: after the disc's 16
+    // fans, quad k is edge k, ring k, ring k + 1 and edge k, ring k + 1, edge k + 1 (edge 1 + k,
+    // ring 17 + k), the last one closing on edge 0 and ring 0.
     for (u32 i : m.indices) CHECK(i < m.vertices.size());
+    const auto quad = [&](size_t k) {
+        const u32* q = m.indices.data() + 16 * 3 + 6 * k;
+        return std::array<u32, 6>{q[0], q[1], q[2], q[3], q[4], q[5]};
+    };
+    CHECK((quad(0) == std::array<u32, 6>{1, 17, 18, 1, 18, 2}));
+    CHECK((quad(15) == std::array<u32, 6>{16, 32, 17, 16, 17, 1}));
     // The +x face: the ring lies across the rim's middle, so the disc alone, at max_x + out.
     const scene::Model plus = race::spin_mask_shape(rim, ring, false, 0.005f, 16);
     CHECK(plus.meshes[0].vertices.size() == 1 + 16 && plus.meshes[0].indices.size() == size_t(16 * 3));
