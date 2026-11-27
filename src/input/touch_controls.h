@@ -80,7 +80,7 @@ struct TouchConfig {
     enum class Pedals : u8 { Position, Area, Full };
 
     Mode mode = Mode::Auto;
-    Steering steering = Steering::Drag;
+    Steering steering = Steering::Buttons;
     Pedals pedals = Pedals::Position;
     float pedal_min = 0.35f;
     float steer_range = 0.14f;

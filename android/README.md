@@ -37,7 +37,7 @@ from another GPU or driver version is not used.
 
 The Android back button acts as Triangle (back). Without a controller,
 on-screen touch controls appear: a D-pad and face buttons in menus, and a
-steering zone (drag, or tilt with `[touch] steering = tilt`), pressure
+Left / Right steering buttons (or drag / tilt with `[touch] steering`), pressure
 pedals and shift buttons while racing. They hide when a controller is used.
 See [docs/INPUT.md](../docs/INPUT.md#touch-controls-phones-and-tablets).
 **Settings → Controls → Phone vibration** (off by default) sends player 1's
