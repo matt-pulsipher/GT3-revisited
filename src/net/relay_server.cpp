@@ -306,6 +306,18 @@ void RelayServer::update_required(const Address& to, const std::optional<GameTag
     send(to, w);
 }
 
+void RelayServer::other_line(const Address& to, const GameVersion& ours, const GameVersion& host,
+                             const std::optional<GameTag>& tag) {
+    if (tag) ++game_stats(tag->id).other_line;
+    else ++stats_.other_line;
+    // Older than the host, which has the latest line: the update the player needs is the latest release.
+    const GameVersions v = versions_for(tag);
+    if (compare_core(ours, host) < 0 && v.latest.known() && same_online_line(host, v.latest)) return update_required(to, tag);
+    const std::string versions = "the host has version " + host.number() + " (you have " + ours.number() + ")";
+    if (compare_core(ours, host) < 0) return error(to, RvError::Denied, (versions + ": update to join").c_str());
+    return error(to, RvError::Denied, (versions + ": the host needs to update").c_str());
+}
+
 void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const GameVersion& game, double now,
                                  IpSlot& ip) {
     switch (type) {
@@ -337,6 +349,7 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
         s.serial = ++serial_;
         s.host_eps = eps;
         s.game = game_of(tag);
+        s.version = tag ? tag->version : game;
         s.last_seen = now;
         sessions_[code] = s;
         by_token_[token] = code;
@@ -410,6 +423,8 @@ void RelayServer::handle_control(const Address& from, Rv type, Reader& r, const 
             return error(from, RvError::NotFound, "no session with that code");
         }
         Session& s = it->second;
+        if (const GameVersion& ours = tag ? tag->version : game; !same_online_line(ours, s.version))
+            return other_line(from, ours, s.version, tag);
         if (nonces_.size() >= limits_.max_pending || s.pending >= limits_.max_pending_per_session ||
             (!trusted(from) && !s.joins.take(limits_.joins_per_s, limits_.joins_burst, now))) {
             ++stats_.limited;

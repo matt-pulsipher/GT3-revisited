@@ -2579,6 +2579,10 @@ TEST(net_version_compare) {
     CHECK(!net::update_available(ver("0.3.0"), ver("0.2.0")));
     CHECK(net::update_available(ver("0.2.0-dev"), ver("0.2.0")) && !net::update_available(ver("0.3.0-dev"), ver("0.2.0")));
     CHECK(!net::update_available(ver("0.1.0"), net::GameVersion{})); // no release announced
+    // Who races whom through a relay: the same x.y.
+    CHECK(net::same_online_line(ver("0.9.0"), ver("0.9.3")) && net::same_online_line(ver("0.9.3-dev"), ver("0.9.0")));
+    CHECK(!net::same_online_line(ver("0.8.2"), ver("0.9.0")) && !net::same_online_line(ver("1.9.0"), ver("0.9.0")));
+    CHECK(net::same_online_line(net::GameVersion{}, ver("0.9.0")) && net::same_online_line(ver("0.9.0"), net::GameVersion{}));
     // Wire: 6 bytes, the suffix stays home.
     net::Writer w;
     net::put_version(w, ver("1.2.3-dev"));
@@ -2892,6 +2896,115 @@ TEST(net_relay_unconfigured_allows_all) {
     CHECK(srv.stats().outdated == 0);
 }
 
+TEST(net_relay_same_line_join) {
+    // A player joins only a host of the same x.y. Older: told to update (UpdateRequired when the
+    // host has the latest line, else Denied with both versions); newer: Denied, the host must update.
+    net::RelayServer srv;
+    net::RelayServer::Limits lim;
+    lim.ip_msgs_burst = 1000; // every test host is 127.0.0.1, at one instant
+    srv.set_limits(lim);
+    use_mailboxes(srv);
+    srv.set_versions(versions("0.9.2", "0.8.0", kUrl));
+    double t = 1e6;
+    auto error = [&](SlotHost& p, u8* code, std::string* text) {
+        Bytes b;
+        if (!p.reply(net::Rv::Error, &b)) return false;
+        net::Rv type;
+        net::Reader r(b);
+        net::rv_parse(b, type, r);
+        *code = r.u8_();
+        *text = r.str();
+        return r.ok();
+    };
+    auto lookup = [&](SlotHost& p, const std::string& code) {
+        p.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+    };
+    SlotHost h(srv), old_host(srv);
+    h.version = ver("0.9.1");
+    CHECK(h.reg(200, t));
+    old_host.version = ver("0.8.3"); // an older line still hosts: min_online is 0.8.0
+    CHECK(old_host.reg(201, t));
+    // The same line, any patch: joins.
+    for (const char* v : {"0.9.0", "0.9.1", "0.9.2", "0.9.7"}) {
+        SlotHost j(srv);
+        j.version = ver(v);
+        lookup(j, h.code);
+        CHECK(j.reply(net::Rv::HostInfo));
+    }
+    SlotHost j8(srv);
+    j8.version = ver("0.8.0");
+    lookup(j8, old_host.code);
+    CHECK(j8.reply(net::Rv::HostInfo));
+    CHECK(srv.stats().other_line == 0);
+    u8 code = 0;
+    std::string text;
+    // Older than a host on the latest line: the update dialog (the latest release).
+    lookup(j8, h.code);
+    CHECK(error(j8, &code, &text) && code == u8(net::RvError::UpdateRequired) && text == "update required to play online");
+    // Older than a host that is not on the latest line: both versions (updating to the latest would not match it).
+    srv.set_versions(versions("0.10.0", "0.8.0", kUrl));
+    lookup(j8, h.code);
+    CHECK(error(j8, &code, &text) && code == u8(net::RvError::Denied) &&
+          text == "the host has version 0.9.1 (you have 0.8.0): update to join");
+    // Newer than the host: the host must update.
+    SlotHost j10(srv);
+    j10.version = ver("0.10.0");
+    lookup(j10, h.code);
+    CHECK(error(j10, &code, &text) && code == u8(net::RvError::Denied) &&
+          text == "the host has version 0.9.1 (you have 0.10.0): the host needs to update");
+    lookup(j10, old_host.code);
+    CHECK(error(j10, &code, &text) && code == u8(net::RvError::Denied));
+    CHECK(srv.stats().other_line == 4 && srv.stats().outdated == 1 && srv.stats().pending == 5);
+    // Another game: its tag's versions decide, the same way.
+    SlotHost gh(srv), gj(srv);
+    gh.version = gj.version = ver("0.9.1"); // the engine's (the header): not what counts
+    gh.tag = net::GameTag{"example", ver("0.1.0")};
+    CHECK(gh.reg(202, t));
+    gj.tag = net::GameTag{"example", ver("0.2.0")};
+    lookup(gj, gh.code);
+    CHECK(error(gj, &code, &text) && code == u8(net::RvError::Denied) &&
+          text == "the host has version 0.1.0 (you have 0.2.0): the host needs to update");
+    gj.tag = net::GameTag{"example", ver("0.1.4")};
+    lookup(gj, gh.code);
+    CHECK(gj.reply(net::Rv::HostInfo));
+    CHECK(srv.stats().other_line == 4 && srv.stats().games[net::RelayServer::kUnlisted].other_line == 1);
+}
+
+TEST(net_relay_same_line_client) {
+    // The game's side: an older line's player gets the update dialog; a newer one gets the reason.
+    FakeClock clock;
+    net::RelayServer srv;
+    if (!srv.open(0)) SKIP("no UDP sockets here");
+    srv.set_versions(versions("0.9.0", "0.8.0", kUrl));
+    std::string server = "127.0.0.1:" + std::to_string(srv.port());
+    net::Session h;
+    h.set_game_version(ver("0.9.0"));
+    CHECK(h.host_via(server, "H", "a", 0));
+    CHECK(pump_rv(srv, {&h}, [&] { return !h.code().empty(); }));
+    for (const char* v : {"0.8.4", "0.10.0", "0.9.3"}) {
+        net::Session j;
+        j.set_game_version(ver(v));
+        CHECK(j.join_code(server, h.code(), "J", "b", 0));
+        std::vector<net::Event> ev;
+        CHECK(pump_rv(srv, {&h, &j}, [&] {
+            for (auto& e : drain(j)) ev.push_back(e);
+            return has(ev, net::Event::Kind::Disconnected) || has(ev, net::Event::Kind::Joined);
+        }));
+        std::string text;
+        for (const net::Event& e : ev)
+            if (e.kind == net::Event::Kind::Disconnected) text = e.text;
+        if (std::string(v) == "0.8.4") {
+            CHECK(j.update_required() && text == "update required to play online: version 0.9.0");
+        } else if (std::string(v) == "0.10.0") {
+            CHECK(!j.update_required() && text == "the host has version 0.9.0 (you have 0.10.0): the host needs to update");
+        } else {
+            CHECK(has(ev, net::Event::Kind::Joined) && !j.update_required());
+        }
+        j.close();
+        pump_rv(srv, {&h}, [&] { return h.players().size() == 1; });
+    }
+}
+
 TEST(net_relay_update_required_client) {
     // The game below the relay's min_online: hosting and joining end at once with the reason,
     // and the session remembers the latest version and the page for the lobby.
@@ -3125,8 +3238,14 @@ TEST(net_relay_versions_per_game) {
     CHECK(stranger.reg(++token, t));
     // A reload that drops the game: its requests have no minimum, the main game's stays.
     srv.set_versions(versions("0.9.0", "0.9.0", kUrl));
-    old.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(h.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+    SlotHost old_host(srv);
+    old_host.version = ver("0.1.0"), old_host.tag = game_tag("other", "0.0.1");
+    CHECK(old_host.reg(++token, t));
+    old.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(old_host.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
     CHECK(old.reply(net::Rv::HostInfo));
+    // (still only into a host of its own x.y: net_relay_same_line_join)
+    old.send(net::Rv::Lookup, t, [&](net::Writer& w) { w.str(h.code), w.u16_(net::kProtocolVersion), net::put_endpoints(w, {}); });
+    CHECK(old.reply(net::Rv::Error) && srv.stats().games[net::RelayServer::kUnlisted].other_line == 1);
 }
 
 TEST(net_relay_sessions_per_game) {

@@ -103,6 +103,10 @@ bool meets_minimum(const GameVersion& ours, const GameVersion& min_online) {
     return !min_online.known() || compare_core(ours, min_online) >= 0;
 }
 
+bool same_online_line(const GameVersion& a, const GameVersion& b) {
+    return !a.known() || !b.known() || (a.major == b.major && a.minor == b.minor);
+}
+
 bool update_available(const GameVersion& ours, const GameVersion& latest) {
     if (!latest.known()) return false;
     int c = compare_core(latest, ours);

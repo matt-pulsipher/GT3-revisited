@@ -106,6 +106,8 @@ const char* platform_name(RvPlatform p); // "windows", ... ("unknown" for anythi
 // - the update notice shows when the server's latest release is newer: latest > x.y.z for a
 //   release, latest >= x.y.z for a suffixed build (a 0.2.0-dev build is older than the 0.2.0
 //   release) (update_available);
+// - players race together through a relay when their x.y match: the releases of one x.y line
+//   race each other, another x.y does not (same_online_line);
 // - 0.0.0 is "unknown": a min_online of 0.0.0 allows everything, a latest of 0.0.0 is no release.
 struct GameVersion {
     u16 major = 0, minor = 0, patch = 0;
@@ -119,6 +121,8 @@ std::optional<GameVersion> parse_game_version(std::string_view text);
 int compare_core(const GameVersion& a, const GameVersion& b); // x.y.z only: < 0, 0, > 0
 bool meets_minimum(const GameVersion& ours, const GameVersion& min_online);
 bool update_available(const GameVersion& ours, const GameVersion& latest);
+// The same x.y (0.9.0 and 0.9.3: yes; 0.8.2 and 0.9.0: no). An unknown version (0.0.0) matches any.
+bool same_online_line(const GameVersion& a, const GameVersion& b);
 void put_version(Writer& w, const GameVersion& v); // u16 major, minor, patch
 GameVersion get_version(Reader& r);
 
