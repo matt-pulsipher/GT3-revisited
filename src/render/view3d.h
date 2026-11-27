@@ -155,6 +155,17 @@ struct DrawOptions {
     // (GT3's far plane) gets more blur than at it. `pyramid`: GT3's own downsampled
     // pictures at any size, a fraction of the work on a phone, where the picture is otherwise
     // over 448 lines tall. Not drawn by draw_to.
+    // A glow over the finished 3D picture, before the heat haze, the late items and the overlay
+    // (presentation §L6's order): each channel of the picture less `threshold` (0..1; nothing
+    // under it), the mean of `samples` x `samples` points spaced `radius` / `samples` apart
+    // around each place (`radius` a fraction of the picture's diagonal), drawn at half the
+    // picture's width and a quarter of its height, times `sum` (held to full: that picture's
+    // levels), then added to the picture times `gain`. Off unless asked for.
+    struct Glow {
+        bool on = false;
+        float threshold = 0, radius = 0, sum = 1, gain = 0;
+        int samples = 1;
+    } glow;
     struct DepthOfField {
         bool on = false, pyramid = false;
         float f_number = 10, focal_mm = 35, focus = 10, far = 1000;
@@ -526,6 +537,9 @@ private:
         float clamp[4] = {0, 0, 1, 1};               // min u, min v, max u, max v
         float taps[2] = {1, 1}, step[2] = {0, 0};    // taps across / down, their spacing
         float sigma[2] = {0, 0};                     // > 0: the taps weighted by a Gaussian (in taps), else equal
+        float threshold = 0;                         // > 0: every tap less it, held to 0 (DrawOptions::glow)
+        float gain[3] = {1, 1, 1};                   // the result times these
+        bool additive = false;                       // added to the target (at alpha) instead of laid over it
     };
     // `mask` (spin_resolve): a picture-sized mask, black where the taps count (white: left out),
     // the result laid over the picture at `alpha` x the pixel's own coverage.
@@ -573,6 +587,7 @@ private:
     // display field (640 x 224, as wide as the picture at its spacing) for the haze lenses, which
     // displace that picture and keep this one's finer detail (encode_screen).
     DofLevel haze_low_;
+    DofLevel glow_; // DrawOptions::glow's picture
     bool haze_low_valid_ = false;
     bool ensure_dof_texture(DofLevel& l, int w, int h);
     SDL_GPUTexture* dof_ = nullptr;
