@@ -424,6 +424,29 @@ TEST(render_picture_multiply_as_the_gs_blend) {
         }
 }
 
+TEST(render_item_multiply_before_the_picture_scale) {
+    // An item's own full-frame multiply before the picture's scale (DrawItem::pre_fix): at FIX 127
+    // then 255, ((c x 127) >> 7) x 255) >> 7, the GS's two blends, on every level a half-strength
+    // frame holds; 127 alone, (c x 127) >> 7.
+    for (int v = 0; v <= 128; ++v) {
+        CHECK(int(std::lround(picture_multiply_level(u8(v), 2.0f, false, 127))) == ((((v * 127) >> 7) * 255) >> 7));
+        CHECK(int(std::lround(picture_multiply_level(u8(v), 1.0f, false, 127))) == ((v * 127) >> 7));
+    }
+    // 128 (none) changes nothing: the picture's scale alone.
+    for (int v = 0; v < 256; ++v)
+        for (float scale : {1.0f, 2.0f})
+            for (bool adds : {false, true})
+                CHECK(picture_multiply_level(u8(v), scale, adds, 128) == picture_multiply_level(u8(v), scale, adds));
+    // A pass adding to the frame adds its share at the two multiplies' slope: over a drawn pixel the
+    // rounded sum is the GS's result for the half-strength levels' sum, for shares below 64.
+    for (int d = 2; d < 128; d += 5)
+        for (int s = 0; s < 64; s += 3) {
+            if (d + s > 128) continue;
+            const float sum = picture_multiply_level(u8(d), 2.0f, false, 127) + picture_multiply_level(u8(s), 2.0f, true, 127);
+            CHECK(int(std::lround(sum)) == (((((d + s) * 127) >> 7) * 255) >> 7));
+        }
+}
+
 TEST(render_depth_of_field_layers) {
     // presentation §G17: the layers in drawing order, from the lens formula (in double here).
     DrawOptions::DepthOfField d;

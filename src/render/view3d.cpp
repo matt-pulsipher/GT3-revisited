@@ -306,11 +306,23 @@ std::array<u8, 3> gs_pixel(const float texel[3], const float color[3], const u8 
 // The FIX of DrawOptions::picture_scale's multiply: min(255, 128 x scale); 128 (none) below 1.
 static int picture_fix(float scale) { return std::clamp(int(std::floor(128.0f * scale)), 128, 255); }
 
-float picture_multiply_level(u8 level, float scale, bool adds) {
-    const int fix = picture_fix(scale);
+// The two multiplies on a pixel as model.frag does them, c + c x - y (c and y in 0..1): the item's own (Cd x pre) >> 7, then the
+// picture's (Cd x fix) >> 7. Exact where the GS's results lie on a line: fix 255 alone, 2 c - 1; pre 127 alone, c - 1; both,
+// 2 c - 3 (levels 0..128, all a half-strength frame holds). A pass that adds to the frame adds its share at the line's slope
+// (x 255 / 128 for a slope of 2: the rounded sum is the GS's for shares below 64). Otherwise the product, rounded where it is
+// stored.
+static void picture_coefficients(int pre, int fix, bool adds, float& x, float& y) {
+    if (pre == 127 && fix == 255) x = adds ? 127.0f / 128.0f : 1.0f, y = adds ? 0.0f : 3.0f / 255.0f;
+    else if (pre == 127 && fix == 128) x = 0, y = adds ? 0.0f : 1.0f / 255.0f;
+    else if (!adds && pre == 128 && fix == 255) x = 1, y = 1.0f / 255.0f;
+    else x = float(pre) * float(fix) / 16384.0f - 1.0f, y = 0;
+}
+
+float picture_multiply_level(u8 level, float scale, bool adds, int pre_fix) {
+    float x, y;
+    picture_coefficients(std::clamp(pre_fix, 0, 255), picture_fix(scale), adds, x, y);
     const float c = float(level);
-    if (fix == 255 && !adds) return std::clamp(2.0f * c - 1.0f, 0.0f, 255.0f); // (Cd x 255) >> 7 exactly
-    return std::min(c * float(fix) / 128.0f, 255.0f); // the product (rounded where it is stored)
+    return std::clamp(c + c * x - y * 255.0f, 0.0f, 255.0f);
 }
 
 u8 gs_bilinear_texel(const u8* px, int w, int h, float u, float v) {
@@ -1945,10 +1957,11 @@ void View3D::encode(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, const Ma
         fu.output[2] = v.item->texture && v.item->gs_bilinear ? 1.0f : 0.0f;
         fu.output[3] = (p.flags & scene::kDestAlphaTest) ? 1.0f : 0.0f;
         // The picture's scale, on the items before the late ones (picture_multiply_level).
-        const int fix = opt.picture_scale != 1.0f && !v.item->late && !spin_mask ? picture_fix(opt.picture_scale) : 128;
+        const bool multiplied = !v.item->late && !spin_mask;
+        const int fix = opt.picture_scale != 1.0f && multiplied ? picture_fix(opt.picture_scale) : 128;
+        const int pre = multiplied ? std::clamp(v.item->pre_fix, 0, 255) : 128;
         const bool adds = key.blend == BlendMode::Additive || key.blend == BlendMode::DestAlphaAdd;
-        fu.picture[0] = fix == 255 && !adds ? 1.0f : float(fix - 128) / 128.0f;
-        fu.picture[1] = fix == 255 && !adds ? 1.0f / 255.0f : 0.0f;
+        picture_coefficients(pre, fix, adds, fu.picture[0], fu.picture[1]);
         const bool region = textured && !v.item->texture && !v.item->wheel_blur; // (the spin blurs sample around the wheel)
         for (int i = 0; i < 4; ++i) fu.uv_region[i] = region ? p.uv_region[i] : 0.0f;
         // GT3's lighting runs per vertex (the VU), with the infinite viewer: the lights and
