@@ -28,6 +28,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     qm_items_ = {};       // ... and its quick menus' item switches (menus §11)
     practice_best_.clear(), practice_grid_.clear(), practice_entry_best_.clear(); // ... and its free practices' times and grid
     kept_opponents_.clear(); // ... and its opponents' models (built with its settings and course: race/kept_models.h)
+    kept_second_.clear();    // (and player 2's)
     // Speed unit: the game language's (language_units: mph in US English, else km/h, like the
     // menus) unless the player picked one ([race] units, speed_unit()).
     imperial_ = !app.vfs() || language_units(app.vfs()->language()).mph;
@@ -237,6 +238,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         car_visual_.reset();
         drop_vehicle();
         kept_opponents_.clear();
+        kept_second_.clear();
         track_.reset();
         return;
     }
@@ -622,6 +624,7 @@ bool RaceScreen::build_vehicle(App& app) {
     drop_vehicle();
     if (!load_program_data(app)) {
         kept_opponents_.clear(); // (no race to build them for)
+        kept_second_.clear();
         return false;
     }
     if (race_mode_) {
@@ -714,6 +717,7 @@ bool RaceScreen::build_vehicle(App& app) {
             error_ = (online_ ? "Online race: " : "This race cannot be set up: ") + err;
             LOG_WARN("Race: %s", error_.c_str());
             kept_opponents_.clear(); // (no race to build them for)
+            kept_second_.clear();
             return false;
         }
         {
@@ -737,14 +741,22 @@ bool RaceScreen::build_vehicle(App& app) {
                     CarBodyMod bm2 = body_mod_for_car(db_, car2, paint2, car_scene());
                     if (!wheel2.empty()) bm2.wheel = wheel2;
                     std::optional<Bytes> w2 = bm2.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm2.wheel);
-                    if (f2 && !f2->empty()) {
+                    // The last build's model, when it was of the same car, paint and wheels (as the opponents').
+                    const auto custom = race::custom_paints();
+                    const auto pack = texture_pack::current_pack();
+                    const race::KeptModels<CarVisual>::Key key{car2 + "/" + m2 + "/" + bm2.wheel, paint2};
+                    car2_visual_ = kept_second_.take(custom, pack, {key})[key];
+                    if (car2_visual_) {
+                        car2_visual_->reset_looks();
+                    } else if (f2 && !f2->empty()) {
                         const ShowroomFiles sh2 = read_showroom(app, m2, w2 ? bm2.wheel : "");
-                        car2_visual_ = std::make_unique<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
+                        car2_visual_ = std::make_shared<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
                                                                    w2 ? ByteSpan(*w2) : ByteSpan{}, bm2,
                                                                    sh2.car_span(), sh2.wheel_span(), sh2.stand_in, sh2.tyre);
                         car2_visual_->set_full_detail(full_car_detail_);
                         if (brake_parts_) car2_visual_->set_brake_parts(*brake_parts_);
                     }
+                    if (car2_visual_) kept_second_.keep({{key, car2_visual_}}, custom, pack);
                 }
             }
             field_->set_laps(race_laps_);

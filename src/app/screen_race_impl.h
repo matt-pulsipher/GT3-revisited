@@ -1048,6 +1048,7 @@ private:
     std::unique_ptr<RaceField> solo_field_; // a solo run on the exact core (exact_solo)
     std::vector<std::shared_ptr<CarVisual>> opp_visuals_;
     race::KeptModels<CarVisual> kept_opponents_; // the last build's opponent models, for the next (race/kept_models.h)
+    race::KeptModels<CarVisual> kept_second_;    // and its player 2's
     bool race_mode_ = false;
     // --- online battle (docs/dev/ONLINE.md) ---
     bool online_ = false;
@@ -1121,7 +1122,7 @@ private:
     int driver_side_ = 0; // the seat the player's car has its driver in: -1 left, 1 right, 0 unknown (build_player_visual; [vr] seat_side = car)
     std::vector<std::unique_ptr<render::View3D>> icon_views_; // car pictures (draw_car_icon), one per slot
     std::map<std::string, float> icon_heights_;              // car label -> chassis height (mm) for its picture
-    std::unique_ptr<CarVisual> car2_visual_;
+    std::shared_ptr<CarVisual> car2_visual_;
     bool finished2_ = false;
     int finish_position2_ = 0;
     u16 pad2_prev_ = 0;

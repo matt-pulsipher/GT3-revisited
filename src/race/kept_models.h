@@ -1,8 +1,8 @@
 #pragma once
 
-// The opponents' models of a race's last build, for its next one (RaceScreen::load_opponent_cars): a retry builds the
-// field again, mostly with the same models. Kept by
-// (model, paint) while the custom paints and the texture pack in use are those they were built with; the race screen
+// Car models of a race's last build, for its next one (the opponents': RaceScreen::load_opponent_cars; player 2's):
+// a retry builds the field again, mostly with the same models. Kept by their key (model and paint, for
+// player 2's car with its wheels) while the custom paints and the texture pack in use are those they were built with; the race screen
 // lets them go at the next start, and when a start or a build fails (with the field they were kept for).
 
 #include <map>
