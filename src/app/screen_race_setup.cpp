@@ -647,9 +647,10 @@ bool RaceScreen::build_vehicle(App& app) {
                      race_event_.c_str(), es.type, es.rolling() ? "rolling" : es.flying() ? "flying" : "standing",
                      es.rolling() || demo_start_kmh_ > 0 ? 0.0 : es.countdown, es.cars, es.laps, es.time_limit_s / 60.0);
         }
-        // GT mode orders the grid by whole kg per whole power in the language's power unit (lowest on pole, the player last);
-        // after a free practice in which the player set a lap, by its best laps (race::practice_grid).
-        cfg.grid_by_power = from_menu_ && launch_.request.mode.rfind("go_", 0) == 0;
+        // GT mode orders the grid by whole kg per whole power in the language's power unit (lowest on pole, the player last),
+        // and so does a custom race set to (GameRequest::grid_by_power; the player on its own place); after a free practice in
+        // which the player set a lap, by its best laps (race::practice_grid).
+        cfg.grid_by_power = from_menu_ && (launch_.request.mode.rfind("go_", 0) == 0 || race_grid_by_power_);
         cfg.grid_hp = app.vfs() && language_units(app.vfs()->language()).power_hp;
         cfg.grid_slots = practice_grid_;
         // A race replay's field as its run had it, wherever it is played (the theater has

@@ -1132,6 +1132,7 @@ private:
     std::vector<u32> race_opponent_color_ids_; // opponents drawn here from a pool: each entry's paint (race::pool_color_id)
     std::vector<std::string> race_opponent_skills_;
     bool race_no_rubber_band_ = false;
+    bool race_grid_by_power_ = false; // GameRequest::grid_by_power
     int race_chosen_laps_ = 0, race_player_slot_ = -1;
     bool race_big_field_ = false; // GameRequest::big_field
     // A field of ours (Quick race's custom race, a mod event: data::kModEventPrefix), as big as the player or the mod made it, up

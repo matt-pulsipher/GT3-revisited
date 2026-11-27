@@ -309,6 +309,12 @@ public:
                          g.size(), opps.size() + 1);
             }
         }
+        if (cfg_.grid_by_power) {
+            std::string grid;
+            for (size_t i = 0; i < opps.size(); ++i)
+                grid += (grid.empty() ? "" : ", ") + opps[i].label + " " + std::to_string(slot_of[i] + 1);
+            LOG_INFO("Race (exact): the grid by weight per power (place 1 pole): %s", grid.c_str());
+        }
         // The setup.
         ex::RaceSetup rs;
         rs.data = data_.get();
