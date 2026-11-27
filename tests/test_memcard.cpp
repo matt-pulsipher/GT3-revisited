@@ -5,6 +5,7 @@
 #include "formats/ps2/memcard.h"
 
 #include <cstring>
+#include <ctime>
 
 using namespace gt3r;
 using namespace gt3r::ps2;
@@ -80,4 +81,25 @@ TEST(memcard_card_image_roundtrip) {
         threw = true;
     }
     CHECK(threw);
+}
+
+// A card made at a time given: the root directory's entries and the directories without a
+// time of their own take it, so the same directories make the same card.
+TEST(memcard_card_image_time) {
+    std::vector<McDir> dirs = {sample_dir("BASCUS-97102GAMEDATA", 3000), sample_dir("BASCUS-97102S0001", 600)};
+    dirs[1].time = 0;
+    const s64 t = 1792250709; // 2026-10-17 15:25:09 UTC
+    const Bytes a = make_card(dirs, t), b = make_card(dirs, t);
+    CHECK(a == b);
+    const std::vector<McDir> back = read_card(a);
+    CHECK(back.size() == 2 && back[0].time == dirs[0].time && back[1].time == t);
+    // The root's "." entry and ".." (the root's first cluster: 41 + its cluster in the superblock; pages of 528 bytes): its
+    // modification time {0, sec, min, hour, day, month, year} in Japan time, 2026-10-18 00:25:09.
+    const size_t root = (41 + rd32(a, 0x3C)) * 2 * 528;
+    static const u8 kRootTime[8] = {0, 9, 25, 0, 18, 10, 0xEA, 0x07};
+    CHECK(std::memcmp(&a[root + 0x18], kRootTime, 8) == 0 && std::memcmp(&a[root + 528 + 0x18], kRootTime, 8) == 0);
+    // Without a time: the clock's, as before.
+    const s64 before = s64(std::time(nullptr));
+    const std::vector<McDir> now = read_card(make_card(dirs));
+    CHECK(now[1].time >= before && now[1].time <= s64(std::time(nullptr)));
 }
