@@ -269,6 +269,7 @@ bool View3D::Streamed::upload(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, con
 std::array<u8, 3> post_grade_pixel(const DrawOptions::PostGrade& g, u8 r, u8 gr, u8 b) {
     const float d = g.white - g.black, inv = d == 0 ? 0.0f : 1.0f / d;
     auto table = [&](float i, int c) {
+        if (g.own_table) return float(g.table[size_t(i)][size_t(c)]);
         float t = (i / 255.0f - g.black) * inv;
         if (i > 0.5f) t = std::clamp(t, 0.0f, 1.0f); // entry 0 unclamped
         const float k = std::clamp(g.curve[c], 0.0f, 1.0f);
@@ -423,6 +424,7 @@ View3D::~View3D() {
     release_cube();
     release_offscreen();
     if (placeholder_cube_) SDL_ReleaseGPUTexture(ctx_.device(), placeholder_cube_);
+    if (grade_table_) SDL_ReleaseGPUTexture(ctx_.device(), grade_table_);
 }
 
 void View3D::release_target() {
@@ -691,8 +693,9 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         pt.cycle = cycle;
         SDL_GPUDepthStencilTargetInfo pd = dt;
         pd.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        SDL_GPUTexture* table = opt.post_grade.on && opt.post_grade.own_table ? grade_table_texture(cmd, opt.post_grade) : nullptr;
         pass = SDL_BeginGPURenderPass(cmd, &pt, 1, &pd);
-        encode_post(cmd, pass, staged, pw, ph, 1.0f, opt.post_grade.on ? &opt.post_grade : nullptr);
+        encode_post(cmd, pass, staged, pw, ph, 1.0f, opt.post_grade.on ? &opt.post_grade : nullptr, table);
         if (vignette) encode_screen(cmd, pass, *opt.vignette, screen.vignette, false);
         if (opt.dissolve > 0 && snap_valid_)
             encode_post(cmd, pass, snap_, snap_w_, snap_h_, std::min(opt.dissolve, 1.0f), nullptr);
@@ -793,7 +796,7 @@ void View3D::copy_picture(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* from, SDL_G
 // (scaled when the dynamic scale changed since it was taken), graded when `grade` is given,
 // blended at `alpha` (1: replaces).
 void View3D::encode_post(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* picture, int picture_w,
-                         int picture_h, float alpha, const DrawOptions::PostGrade* grade) {
+                         int picture_h, float alpha, const DrawOptions::PostGrade* grade, SDL_GPUTexture* table) {
     if (picture_w <= 0 || picture_h <= 0) return;
     // The quad's texture coordinates span the whole texture: a viewport that many target-sizes
     // across puts the picture's corner over this frame's (the whole target when the sizes match);
@@ -829,7 +832,7 @@ void View3D::encode_post(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL
     SDL_PushGPUVertexUniformData(cmd, 1, &off, sizeof(off));
     SDL_GPUTextureSamplerBinding sbs[3] = {{picture, ctx_.sampler(true, true)},
                                            {placeholder_cube(), ctx_.sampler(true, true)},
-                                           {ctx_.white_texture(), ctx_.sampler(true, true)}};
+                                           {table ? table : ctx_.white_texture(), ctx_.sampler(true, true, true)}};
     SDL_BindGPUFragmentSamplers(pass, 0, sbs, 3);
     FragmentUniforms fu{};
     fu.params[0] = -1, fu.params[1] = 1, fu.params[3] = 5;
@@ -838,7 +841,7 @@ void View3D::encode_post(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL
     if (grade) {
         for (int i = 0; i < 3; ++i) fu.grade[i] = grade->curve[i];
         fu.grade[3] = grade->saturation;
-        fu.grade2[0] = grade->black, fu.grade2[1] = grade->white, fu.grade2[2] = 1;
+        fu.grade2[0] = grade->black, fu.grade2[1] = grade->white, fu.grade2[2] = table ? 2.0f : 1.0f;
     }
     SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
     SDL_DrawGPUIndexedPrimitives(pass, 6, 1, 0, 0, 0);
@@ -2139,6 +2142,46 @@ void View3D::write_capture() {
         SDL_ReleaseGPUTexture(dev, t);
     }
     capture_ = {};
+}
+
+SDL_GPUTexture* View3D::grade_table_texture(SDL_GPUCommandBuffer* cmd, const DrawOptions::PostGrade& g) {
+    SDL_GPUDevice* dev = ctx_.device();
+    if (!grade_table_) {
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type = SDL_GPU_TEXTURETYPE_2D;
+        ti.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        ti.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        ti.width = 256, ti.height = 1;
+        ti.layer_count_or_depth = 1, ti.num_levels = 1;
+        grade_table_ = SDL_CreateGPUTexture(dev, &ti);
+        if (!grade_table_) return nullptr;
+        grade_table_valid_ = false;
+    }
+    if (grade_table_valid_ && grade_table_bytes_ == g.table) return grade_table_;
+    SDL_GPUTransferBufferCreateInfo bi{};
+    bi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    bi.size = 256 * 4;
+    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &bi);
+    u8* p = tb ? static_cast<u8*>(SDL_MapGPUTransferBuffer(dev, tb, false)) : nullptr;
+    if (!p) {
+        if (tb) SDL_ReleaseGPUTransferBuffer(dev, tb);
+        return nullptr;
+    }
+    for (size_t i = 0; i < 256; ++i) p[4 * i] = g.table[i][0], p[4 * i + 1] = g.table[i][1], p[4 * i + 2] = g.table[i][2], p[4 * i + 3] = 255;
+    SDL_UnmapGPUTransferBuffer(dev, tb);
+    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureTransferInfo src{};
+    src.transfer_buffer = tb;
+    src.pixels_per_row = 256, src.rows_per_layer = 1;
+    SDL_GPUTextureRegion dst{};
+    dst.texture = grade_table_;
+    dst.w = 256, dst.h = 1, dst.d = 1;
+    SDL_UploadToGPUTexture(cp, &src, &dst, true); // (the last frame's pass may still read it)
+    SDL_EndGPUCopyPass(cp);
+    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    grade_table_bytes_ = g.table;
+    grade_table_valid_ = true;
+    return grade_table_;
 }
 
 SDL_GPUTexture* View3D::placeholder_cube() {

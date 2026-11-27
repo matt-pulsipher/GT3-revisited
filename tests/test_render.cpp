@@ -361,6 +361,22 @@ TEST(render_post_grade_formula) {
     CHECK(o[0] > 100 && o[0] < o[1] && o[1] < o[2]);
 }
 
+TEST(render_post_grade_own_table) {
+    using G = DrawOptions::PostGrade;
+    // An app's own tables replace the levels and curve; the saturation mix is the same.
+    G g;
+    g.on = true, g.own_table = true;
+    g.black = 0.5f, g.curve[0] = 0; // (ignored with a table)
+    for (int i = 0; i < 256; ++i) g.table[size_t(i)] = {u8(255 - i), u8(i / 2), u8(i)};
+    std::array<u8, 3> o = post_grade_pixel(g, 10, 100, 200);
+    CHECK(o[0] == 245 && o[1] == 50 && o[2] == 200);
+    // Saturation 0: every output channel is the weighted sum over the input channels of its table.
+    g.saturation = 0;
+    o = post_grade_pixel(g, 0, 0, 0);
+    // channel 0's table at 0 is 255 for all three inputs: (trunc(255 x 38 / 128) + trunc(255 x 75 / 128) + trunc(255 x 14 / 128))
+    CHECK(o[0] == 75 + 149 + 27);
+}
+
 TEST(render_gs_pixel_truncates) {
     auto px = [](float t, float c, u8 fog, float f) {
         const float tt[3] = {t, t, t}, cc[3] = {c, c, c};
