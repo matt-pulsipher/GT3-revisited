@@ -188,8 +188,12 @@ void RaceScreen::start(App& app, const Replay* replay) {
             }
             point_lights_.load(cf.section(*course, course::kSlotRoad)); // night lamp list (point-light courses)
             if (app.gpu()) smoke_.load(*app.gpu(), cf.section(*course, 32), cf.section(*course, 26)); // tyre smoke / dust
-            if (app.gpu() && !sparks_.loaded()) sparks_.load(*app.gpu(), *app.vfs()); // the sparks' glow (race/particle.img)
-            if (app.gpu() && !leaves_.loaded()) leaves_.load(*app.gpu(), *app.vfs()); // a later build's leaves (the same image)
+            // The sparks' glow and a later build's leaves: pictures of one file (race/particle.img).
+            if (app.gpu() && (!sparks_.loaded() || !leaves_.loaded())) {
+                const std::optional<Bytes> particles = app.vfs()->read("race/particle.img");
+                if (!sparks_.loaded()) sparks_.load(*app.gpu(), particles);
+                if (!leaves_.loaded()) leaves_.load(*app.gpu(), particles);
+            }
             spark_shot_.reset();
             pylons_.load(app.gpu(), *course); // pylons / cones (GTRW list + slot 36 types)
             if (sun_.params().has_shadow) pylons_.set_shadow(sun_.params().shadow_rgb, sun_.params().shadow_alpha);

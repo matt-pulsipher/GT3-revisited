@@ -5,7 +5,6 @@
 #include "formats/tex1.h"
 #include "formats/texture_pack.h"
 #include "render/gpu_model.h"
-#include "vfs/vfs.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,9 +48,8 @@ u32 leaf_color(const render::Vec3& n, bool near_side, float a, const LeafLight& 
 LeafDraw::LeafDraw() = default;
 LeafDraw::~LeafDraw() = default;
 
-bool LeafDraw::load(render::GpuContext& ctx, const Vfs& vfs) {
+bool LeafDraw::load(render::GpuContext& ctx, const std::optional<Bytes>& img) {
     gpu_.reset();
-    std::optional<Bytes> img = vfs.read("race/particle.img");
     if (!img) return false;
     scene::Model m;
     m.name = "leaves";

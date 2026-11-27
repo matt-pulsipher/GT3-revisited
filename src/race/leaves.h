@@ -24,10 +24,6 @@
 #include <memory>
 #include <vector>
 
-namespace gt3r {
-class Vfs;
-}
-
 namespace gt3r::race {
 
 // The light a leaf is drawn with: the course's Env0 car light 0 as the file has it (direction +0xD0, ambient +0xE0,
@@ -46,7 +42,7 @@ public:
     LeafDraw();
     ~LeafDraw();
     // race/particle.img's leaf pictures (1 .. 8); false when the file is missing or has fewer pictures (no leaves drawn).
-    bool load(render::GpuContext& ctx, const Vfs& vfs);
+    bool load(render::GpuContext& ctx, const std::optional<Bytes>& img);
     bool loaded() const { return gpu_ != nullptr; }
     // The leaves of `s` (none: nothing appended), blended `alpha` of the way from their last update, drawn with `view`
     // (world to eye).
