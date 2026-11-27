@@ -216,7 +216,8 @@ vec3 gt3_grade(vec3 c) {
 // every tap clamped to view_row1 (the used part of the texture, half a texel in from its edges: a
 // clamp to its edge), at the weight tint.a. flat_color.z = 1 (View3D::spin_resolve): u_sphere is a
 // mask, black where the taps count; each tap weighs by its coverage (1 - the mask), and the result
-// by the pixel's own (none: left as it is).
+// by the pixel's own (none: left as it is). flat_color.w > 0 (the glow): each tap less it, held to 0;
+// the mean times tint.rgb.
 vec4 dof_sample() {
     vec2 uv = v_uv * u.view_row0.xy + u.view_row0.zw;
     vec2 n = max(u.grade.xy, vec2(1.0));
@@ -234,13 +235,15 @@ vec4 dof_sample() {
             float w = g.x * g.y;
             vec2 t = clamp(uv + k * u.grade.zw, u.view_row1.xy, u.view_row1.zw);
             if (masked) w *= 1.0 - texture(u_sphere, t).r;
-            sum += w * texture(u_tex, t).rgb;
+            vec3 c = texture(u_tex, t).rgb;
+            if (u.flat_color.w > 0.0) c = max(c - u.flat_color.w, vec3(0.0)); // (the glow's threshold)
+            sum += w * c;
             total += w;
         }
-    if (!masked) return vec4(sum / total, u.tint.a);
+    if (!masked) return vec4(sum / total * u.tint.rgb, u.tint.a);
     float own = 1.0 - texture(u_sphere, clamp(uv, u.view_row1.xy, u.view_row1.zw)).r;
     if (own <= 0.0 || total <= 0.0) return vec4(0.0);
-    return vec4(sum / total, u.tint.a * own);
+    return vec4(sum / total * u.tint.rgb, u.tint.a * own);
 }
 #endif
 

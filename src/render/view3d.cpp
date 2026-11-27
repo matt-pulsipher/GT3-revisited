@@ -589,7 +589,11 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     // and hardly in wide ones.
     haze_low_valid_ = lenses && ph > 448 && ensure_quad() &&
                       ensure_dof_texture(haze_low_, std::max(1, int(std::lround(480.0f * aspect))), 224);
-    const bool after_pass = lenses || dof;
+    // The glow (DrawOptions::glow) is drawn from the picture the scene (or the depth of field)
+    // left, at the start of the second pass.
+    const bool glow = opt.glow.on && opt.glow.gain > 0 && opt.glow.samples > 0 && opt.glow.radius > 0 && ensure_quad() &&
+                      ensure_dof_texture(glow_, std::max(1, pw / 2), std::max(1, ph / 4));
+    const bool after_pass = lenses || dof || glow;
     // The spinning rims' mask is drawn over the finished scene's depth (spin_resolve).
     const bool spin_mask = spin_mask_wanted(items);
 
@@ -600,7 +604,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     if (msaa_) {
         ct.texture = msaa_;
         // (The second pass goes on in it, unless the depth of field composites into it afresh.)
-        ct.store_op = lenses && !dof ? SDL_GPU_STOREOP_RESOLVE_AND_STORE : SDL_GPU_STOREOP_RESOLVE;
+        ct.store_op = (lenses || glow) && !dof ? SDL_GPU_STOREOP_RESOLVE_AND_STORE : SDL_GPU_STOREOP_RESOLVE;
         ct.resolve_texture = scene_target;
         ct.cycle_resolve_texture = cycle;
     } else {
@@ -627,6 +631,31 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     SDL_EndGPURenderPass(pass);
     if (dof) encode_dof(cmd, opt, proj, aspect, staged, cycle);
     if (after_pass) {
+        if (glow) { // the glow's picture: the mean of the thresholded taps at half width, a quarter height
+            SDL_GPUColorTargetInfo gt{};
+            gt.texture = glow_.tex;
+            gt.load_op = SDL_GPU_LOADOP_DONT_CARE;
+            gt.store_op = SDL_GPU_STOREOP_STORE;
+            gt.cycle = cycle;
+            SDL_GPURenderPass* gp = SDL_BeginGPURenderPass(cmd, &gt, 1, nullptr);
+            const SDL_GPUViewport gvp{0, 0, float(glow_.w), float(glow_.h), 0, 1};
+            const SDL_Rect gsc{0, 0, glow_.w, glow_.h};
+            SDL_SetGPUViewport(gp, &gvp);
+            SDL_SetGPUScissor(gp, &gsc);
+            const float W = float(width_), H = float(height_);
+            const int n = std::clamp(opt.glow.samples, 1, 16);
+            const float step = opt.glow.radius * std::sqrt(float(pw) * float(pw) + float(ph) * float(ph)) / float(n);
+            Resample r;
+            r.scale[0] = float(pw) / W, r.scale[1] = float(ph) / H;
+            r.clamp[0] = 0.5f / W, r.clamp[1] = 0.5f / H;
+            r.clamp[2] = (float(pw) - 0.5f) / W, r.clamp[3] = (float(ph) - 0.5f) / H;
+            r.taps[0] = r.taps[1] = float(n);
+            r.step[0] = step / W, r.step[1] = step / H;
+            r.threshold = std::max(opt.glow.threshold, 0.0f);
+            r.gain[0] = r.gain[1] = r.gain[2] = std::max(opt.glow.sum, 0.0f);
+            encode_resample(cmd, gp, staged, r, 1.0f, 0.0f, true);
+            SDL_EndGPURenderPass(gp);
+        }
         if (lenses) copy_picture(cmd, staged, haze_src_, pw, ph, cycle);
         if (haze_low_valid_) { // the copy at the field's size: the mean of the texels under each texel
             SDL_GPUColorTargetInfo lt{};
@@ -665,6 +694,18 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
         hd.store_op = spin_mask ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
         hd.cycle = false;
         pass = SDL_BeginGPURenderPass(cmd, &ht, 1, &hd);
+        if (glow) { // added over the picture, stretched to it (at the nearest depth: over everything)
+            SDL_SetGPUViewport(pass, &used_viewport);
+            SDL_SetGPUScissor(pass, &used_rect);
+            const float gw = float(glow_.cap_w), gh = float(glow_.cap_h);
+            Resample r;
+            r.scale[0] = float(glow_.w) / gw, r.scale[1] = float(glow_.h) / gh;
+            r.clamp[0] = 0.5f / gw, r.clamp[1] = 0.5f / gh;
+            r.clamp[2] = (float(glow_.w) - 0.5f) / gw, r.clamp[3] = (float(glow_.h) - 0.5f) / gh;
+            r.gain[0] = r.gain[1] = r.gain[2] = opt.glow.gain;
+            r.additive = true;
+            encode_resample(cmd, pass, glow_.tex, r, 1.0f, 1.0f, msaa_ == nullptr); // (the pass's samples)
+        }
         if (lenses) encode_screen(cmd, pass, *opt.haze, screen.haze, true);
         encode_after_scene(cmd, pass, view, proj, eye, items, opt, screen);
         SDL_EndGPURenderPass(pass);
@@ -1078,7 +1119,7 @@ bool View3D::ensure_quad() {
 }
 
 void View3D::release_dof_levels() {
-    for (DofLevel* set : {dof_level_, dof_tmp_, &haze_low_})
+    for (DofLevel* set : {dof_level_, dof_tmp_, &haze_low_, &glow_})
         for (int k = 0; k < (set == dof_level_ ? 5 : set == dof_tmp_ ? 2 : 1); ++k) {
             if (set[k].tex) SDL_ReleaseGPUTexture(ctx_.device(), set[k].tex);
             set[k] = {};
@@ -1144,7 +1185,7 @@ bool View3D::ensure_dof_levels(float aspect, int pw, int ph, bool pyramid) {
 void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* src,
                              const Resample& r, float alpha, float depth, bool single, SDL_GPUTexture* mask) {
     PipelineKey key;
-    key.blend = alpha >= 1.0f && !mask ? BlendMode::Opaque : BlendMode::Alpha;
+    key.blend = r.additive ? BlendMode::Additive : alpha >= 1.0f && !mask ? BlendMode::Opaque : BlendMode::Alpha;
     key.cull = CullMode::None;
     key.depth_write = false;
     key.single = single;
@@ -1170,7 +1211,8 @@ void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass,
     FragmentUniforms fu{};
     fu.params[0] = -1, fu.params[1] = 1, fu.params[3] = 6;
     fu.flat_color[2] = mask ? 1.0f : 0.0f;
-    fu.tint[0] = fu.tint[1] = fu.tint[2] = 1, fu.tint[3] = alpha;
+    fu.flat_color[3] = r.threshold;
+    fu.tint[0] = r.gain[0], fu.tint[1] = r.gain[1], fu.tint[2] = r.gain[2], fu.tint[3] = alpha;
     fu.light_dir[1] = 1;
     fu.view_row0[0] = r.scale[0], fu.view_row0[1] = r.scale[1];
     fu.view_row0[2] = r.offset[0], fu.view_row0[3] = r.offset[1];
