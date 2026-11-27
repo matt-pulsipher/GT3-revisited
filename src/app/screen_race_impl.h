@@ -401,6 +401,7 @@ private:
     Uint64 car_fade_ns_ = 0;
     CarShadowParams shadow_params() const;
     void draw_car_icon(App& app, int car, const SDL_FRect& rc, size_t slot, bool on_bar = false);
+    float icon_chassis_height(int car);
     // `slot`: 0 the player, 1 player 2, 2 + i opponent i (as brake_lamps_).
     CarLook car_look(const sim::VehicleState& s, bool player, size_t slot) const;
     int car_lamp_index(const sim::VehicleState& s, size_t slot) const;
@@ -1119,7 +1120,8 @@ private:
     std::unique_ptr<render::View3D> vr_views_[2]; // the eyes (screen_race_vr.cpp)
 #endif
     int driver_side_ = 0; // the seat the player's car has its driver in: -1 left, 1 right, 0 unknown (build_player_visual; [vr] seat_side = car)
-    std::vector<std::unique_ptr<render::View3D>> icon_views_; // 2P results panel car pictures
+    std::vector<std::unique_ptr<render::View3D>> icon_views_; // car pictures (draw_car_icon), one per slot
+    std::map<std::string, float> icon_heights_;              // car label -> chassis height (mm) for its picture
     std::unique_ptr<CarVisual> car2_visual_;
     bool finished2_ = false;
     int finish_position2_ = 0;
