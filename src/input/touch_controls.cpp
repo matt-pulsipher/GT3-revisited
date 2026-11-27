@@ -404,8 +404,11 @@ void TouchControls::apply_placements(const Area& a) {
             nx = p.ax == AX::Left ? a.mL + p.x : p.ax == AX::Right ? a.mR - p.x : a.mid + p.x;
             ny = p.ay == TouchPlacement::AnchorY::Top ? a.mT + p.y : a.mB - p.y;
         }
-        // Never off the screen or under a cutout, wherever the screen's shape puts it.
-        nx = fit(nx, b.w * k / 2, a.mL, a.mR), ny = fit(ny, b.h * k / 2, a.mT, a.mB);
+        // Never off the screen, wherever its shape puts it. A control the player moved may go
+        // right up to the screen's edges (past the margin, beside a punch-hole camera, into a
+        // rounded corner); one left in place keeps the area the layout keeps to.
+        if (p.moved()) nx = fit(nx, b.w * k / 2, a.L, a.R), ny = fit(ny, b.h * k / 2, a.T, a.B);
+        else nx = fit(nx, b.w * k / 2, a.mL, a.mR), ny = fit(ny, b.h * k / 2, a.mT, a.mB);
         for (size_t j = i; j < widgets_.size(); ++j) {
             Widget& w = widgets_[j];
             if (key != w.key) continue;
@@ -437,7 +440,7 @@ TouchPlacement TouchControls::placement_at(std::string_view key, float x, float 
     if (b.w <= 0 || b.h <= 0) return p;
     const Area a = area();
     if (cfg_.left_handed) x = a.L + a.R - x; // placements are right-handed
-    x = fit(x, b.w / 2, a.mL, a.mR), y = fit(y, b.h / 2, a.mT, a.mB);
+    x = fit(x, b.w / 2, a.L, a.R), y = fit(y, b.h / 2, a.T, a.B);
     // Measured from the nearest edge (or the centre line), so the control keeps its
     // distance from the thumbs on screens of other shapes.
     using AX = TouchPlacement::AnchorX;

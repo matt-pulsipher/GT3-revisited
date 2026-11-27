@@ -1930,11 +1930,12 @@ TEST(touch_placement_moves_and_resizes) {
     t.update(0.016, 0);
     CHECK(t.pad().down(PadButton::Cross));
     CHECK(t.pad().axis_f(PadAxis::LX) == 0.0f);
-    // Too big to fit where it was put: pushed back inside the margin.
+    // Too big to fit where it was put: pushed back onto the screen (a moved control may
+    // reach past the margin, right up to the edges).
     cfg.set_placement("drive.gas", TouchPlacement::parse("left 0 bottom 0 size 2"));
     TouchControls big = driving(cfg);
     const TouchRect g2 = big.group_bounds("drive.gas");
-    CHECK(g2.x >= 14 - 0.01f && g2.y + g2.h <= 346 + 0.01f);
+    CHECK(std::fabs(g2.x) < 0.01f && std::fabs(g2.y + g2.h - 360) < 0.01f);
 }
 
 TEST(touch_placement_follows_screen_edges) {
@@ -1967,12 +1968,36 @@ TEST(touch_placement_at_roundtrip) {
             const TouchRect b = t.group_bounds("drive.handbrake");
             CHECK(std::fabs(cx(b) - x) <= 0.5f && std::fabs(cy(b) - y) <= 0.5f);
         }
-        // Off the screen or under the cutout: kept inside the area the controls keep to.
+        // Off the screen: kept on it, right up to its corner (past the margin and the cutout).
         cfg.set_placement("drive.handbrake", t.placement_at("drive.handbrake", -200, 500));
         t.configure(cfg);
         const TouchRect b = t.group_bounds("drive.handbrake");
-        CHECK(b.x >= -70 + 15 - 0.5f && b.y + b.h <= 360 - 15 + 0.5f);
+        CHECK(std::fabs(b.x + 70) <= 0.5f && std::fabs(b.y + b.h - 360) <= 0.5f);
     }
+}
+
+TEST(touch_placement_reaches_cutout_edge) {
+    // Issue 468: a phone with a punch-hole camera on the left. The default layout keeps
+    // clear of the cutout's whole strip, but the player can drag the steering buttons (or
+    // any control) into it, up to the screen's edge, and the layout keeps them there.
+    TouchConfig cfg;
+    cfg.steering = TouchConfig::Steering::Buttons;
+    TouchControls t = driving(cfg);
+    t.set_screen(-70, 0, 710, 360);
+    t.set_insets(27, 11, 11, 11);
+    const TouchRect def = t.group_bounds("drive.steer");
+    CHECK(def.x >= -70 + 31 - 0.01f); // default: clear of the cutout
+    const TouchPlacement p = t.placement_at("drive.steer", -70 + def.w / 2, 360 - def.h / 2);
+    CHECK(p.ax == TouchPlacement::AnchorX::Left && p.x < def.w / 2); // centre nearer the edge than the area
+    cfg.set_placement("drive.steer", TouchPlacement::parse(p.to_string()));
+    t.configure(cfg);
+    const TouchRect b = t.group_bounds("drive.steer");
+    CHECK(std::fabs(b.x + 70) <= 0.5f && std::fabs(b.y + b.h - 360) <= 0.5f);
+    // The moved buttons still steer.
+    t.note_touch();
+    CHECK(t.finger_down(1, b.x + 2, b.y + b.h - 2, 1.0f));
+    t.update(0.016, 0);
+    CHECK(t.pad().down(PadButton::Left));
 }
 
 TEST(touch_placement_groups_and_hidden) {
