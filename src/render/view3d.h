@@ -311,6 +311,11 @@ struct DrawItem {
     // the road sheen's viewer comes from a rigid inverse of that modelview and collapses towards
     // the model origin: viewer = s^2 x eye + 2 s x the camera's up axis.
     float modelview_scale = 1.0f;
+    // The item's depth as that of a point this times as far, for the clip planes alone: the near
+    // and far planes lie 1 / depth_scale times as far for it (with modelview_scale: 1 / both).
+    // Unlike modelview_scale, its lighting's viewer and its reflections' camera stay where they
+    // are (a backdrop drawn with only the projection's depth term scaled).
+    float depth_scale = 1.0f;
     // GT3 car lamp factor (0..1): lamp materials add Material::lamp_emission x this.
     float lamp = 0;
     // Samples this texture (bilinear, clamped) instead of the primitives' own, e.g. an
@@ -366,6 +371,10 @@ struct DrawItem {
     // view's visibility list changes (race::SceneryFade).
     float fade = 1.0f;
 };
+
+// GT3's far plane (DrawOptions::far_clip) as an item's depth from the eye: 1 / (modelview_scale x
+// depth_scale) times as far (the backdrop's 0.01 puts it 100 times as far); 0 for none.
+float item_far(const DrawItem& item, const DrawOptions& opt);
 
 class View3D {
 public:
