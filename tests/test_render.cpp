@@ -405,6 +405,25 @@ TEST(render_gs_pixel_truncates) {
     CHECK(b[0] + s[0] == 71 && b[1] + s[1] == 68 && b[2] + s[2] == 66);
 }
 
+TEST(render_picture_multiply_as_the_gs_blend) {
+    // A frame drawn at half strength and multiplied by 2: FIX = min(255, 128 x 2) = 255,
+    // (Cd x 255) >> 7, so each level but 0 comes out one below twice itself, and 128 on saturates.
+    const int half[] = {0, 1, 2, 5, 64, 127, 128, 255}, out[] = {0, 1, 3, 9, 127, 253, 255, 255};
+    for (size_t i = 0; i < 8; ++i) CHECK(int(std::lround(picture_multiply_level(u8(half[i]), 2.0f, false))) == out[i]);
+    for (int v = 0; v < 256; ++v) CHECK(int(std::lround(picture_multiply_level(u8(v), 2.0f, false))) == std::min((v * 255) >> 7, 255));
+    // Scale 1 (FIX 128) or below leaves a level as it is.
+    for (int v = 0; v < 256; ++v)
+        CHECK(picture_multiply_level(u8(v), 1.0f, false) == float(v) && picture_multiply_level(u8(v), 0.5f, true) == float(v));
+    // A pass adding to the frame adds its share at the multiply's slope: over a drawn pixel the
+    // blend's rounded sum is the multiply of the two half-strength levels' sum, for shares below 64.
+    for (int d = 1; d < 128; d += 7)
+        for (int s = 0; s < 64; s += 3) {
+            if (d + s > 127) continue;
+            const float sum = picture_multiply_level(u8(d), 2.0f, false) + picture_multiply_level(u8(s), 2.0f, true);
+            CHECK(int(std::lround(sum)) == (((d + s) * 255) >> 7));
+        }
+}
+
 TEST(render_depth_of_field_layers) {
     // presentation §G17: the layers in drawing order, from the lens formula (in double here).
     DrawOptions::DepthOfField d;

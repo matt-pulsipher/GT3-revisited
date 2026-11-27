@@ -81,6 +81,8 @@ layout(set = 3, binding = 0) uniform FragmentUniforms {
     // scene::Primitive::uv_region: the part of the texture the primitive shows (min u, min v,
     // max u, max v); an axis with max <= min: none (region_uv).
     vec4 uv_region;
+    // DrawOptions::picture_scale: the colour c leaves as c + c x picture.x - picture.y (0, 0: as it is).
+    vec4 picture;
 } u;
 
 // The texture coordinates kept inside the primitive's region of its texture (u.uv_region), half a
@@ -463,6 +465,7 @@ void main() {
     v_lit = v_lit_w * gl_FragCoord.w;
     v_fog = v_fog_w.x * gl_FragCoord.w;
     shade();
+    o_color.rgb = o_color.rgb + o_color.rgb * u.picture.x - u.picture.y;
     // GT3's reflection map is a PSMCT16 frame buffer: each write keeps c8 >> 3 (read back as
     // c5 << 3).
     if (u.output_mode.x > 0.5) o_color.rgb = floor(clamp(o_color.rgb, 0.0, 1.0) * (255.0 / 8.0) + 1e-4) * (8.0 / 255.0);

@@ -97,6 +97,16 @@ struct DrawOptions {
     // between quantised texels as the GS does, instead of quantising the filtered colour
     // (which draws hard contour bands that sweep over the car as it moves).
     bool quantize_rgb5 = false;
+    // The picture's scale (> 1): the scene's colours come at 1 / scale of their final strength
+    // and every pixel the items but the late ones draw is multiplied as the GS multiplies a whole
+    // frame with a blend, (Cd x FIX) >> 7 on the pixel's 8-bit level, FIX = min(255, 128 x scale):
+    // the dark levels keep the steps of the dimmer picture. Done as each pixel is drawn, in two
+    // instructions (no pass over the frame): at 2 (FIX 255) a level c leaves as 2 c - 1, exactly
+    // the GS's; a pass that adds to the frame (BlendMode::Additive, DestAlphaAdd) adds its share
+    // at the multiply's slope, c x 255 / 128 (exact for shares below 64 over a drawn pixel); other
+    // scales the product, rounded where it is stored. A blend's own rounding happens on the
+    // multiplied levels. 1: none.
+    float picture_scale = 1;
     // The view or projection mirrors the image (rear-view mirror, cube faces): front faces
     // wind the other way, so back-face culling is swapped.
     bool mirrored = false;
@@ -203,6 +213,11 @@ std::array<u8, 3> post_grade_pixel(const DrawOptions::PostGrade& g, u8 r, u8 gr,
 // texels), `color` the vertex colour in GS units (0x80 = 1.0, fractional where interpolated),
 // `fog` FOGCOL, `f` the fog coefficient F (255: no fog; 256 here: a pass without fog).
 std::array<u8, 3> gs_pixel(const float texel[3], const float color[3], const u8 fog[3], float f);
+
+// The picture's scale (DrawOptions::picture_scale) on one pixel's 8-bit level, as model.frag
+// leaves it (tests; not rounded: the target rounds it). `adds`: the share of a pass that adds to
+// the frame.
+float picture_multiply_level(u8 level, float scale, bool adds);
 
 // One layer of the depth of field (presentation §G17), in drawing order: level `level` (0..4) of
 // the downsampled pictures, or the sharp picture itself (-1), drawn at weight `alpha` wherever the
