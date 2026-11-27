@@ -8,12 +8,26 @@
 
 namespace gt3r::race_screen {
 
-// The car reflection map (GT3 renders the course around the focus car into a 256x256
-// sphere map every frame; we render a cube): course only, 0.8 m above the player's car,
-// scenery within 200 m. [video] car_reflections = off falls back to the sky/scenery gradient.
-bool RaceScreen::update_env_cube() {
-    if (!env_cube_on_ || !view_ || !course_scene_) return false;
-    const sim::Vec3& p = render_state_.position;
+// The car a view's reflection map is built around (GT3: the race's view car, the camera view's
+// target, race +0x8000+0x16D8, presentation §O): player 2's for the 2P lower / right half, else
+// the car the camera follows (a replay's or demonstration's followed opponent, or the player's).
+RaceScreen::MapCar RaceScreen::env_map_car(bool p2) const {
+    if (p2) return {render_state2_, 1};
+    const RaceField* f = exact_field();
+    if (f && field_ && replay_focus_ >= 0 && replay_focus_ < f->opponents())
+        return {interpolate(f->opponent_prev_state(replay_focus_), f->opponent_state(replay_focus_), step_.alpha()),
+                2 + size_t(replay_focus_)};
+    return {render_state_, 0};
+}
+
+// The car reflection map (GT3 renders the course around the view car into a 256x256 sphere map
+// every frame, one per 2P half; we render a cube): course only, 0.8 m above that car, scenery
+// within 200 m. [video] car_reflections = off falls back to the sky/scenery gradient.
+bool RaceScreen::update_env_cube(bool p2) {
+    render::View3D* view = (p2 ? view2_ : view_).get();
+    if (!env_cube_on_ || !view || !course_scene_) return false;
+    const MapCar car = env_map_car(p2);
+    const sim::Vec3& p = car.state.position;
     render::Vec3 pos{p.x, p.y + 0.8f, p.z};
     env_items_.clear();
     const SunParams& e = sun_.params();
@@ -31,13 +45,14 @@ bool RaceScreen::update_env_cube() {
     // towards the viewer, tilted 15 degrees up).
     if (gt3_scene && point_lights_.active() && e.has_env && app_ && app_->gpu()) {
         std::vector<ReflectionDisc> discs =
-            point_lights_.reflection_discs(e, {p.x, p.y, p.z}, car_lamp_index(render_state_, 0));
-        render::Mat4 v = camera_.view();
+            point_lights_.reflection_discs(e, {p.x, p.y, p.z}, car_lamp_index(car.state, car.slot));
+        render::Mat4 v = (p2 ? camera2_ : camera_).view();
         render::Vec3 x{v.at(0, 0), v.at(0, 1), v.at(0, 2)}, y{v.at(1, 0), v.at(1, 1), v.at(1, 2)};
         render::Vec3 z = render::cross(x, y);
         const render::Vec3 basis[3] = {x, y * 0.966f - z * 0.259f, y * 0.259f + z * 0.966f};
-        reflection_discs_.update(*app_->gpu(), discs, pos, basis);
-        reflection_discs_.add_item(env_items_);
+        ReflectionDiscMesh& mesh = p2 ? reflection_discs2_ : reflection_discs_;
+        mesh.update(*app_->gpu(), discs, pos, basis);
+        mesh.add_item(env_items_);
     }
     render::DrawOptions o = draw_options();
     o.env_cube = nullptr;
@@ -50,7 +65,7 @@ bool RaceScreen::update_env_cube() {
         o.quantize_rgb5 = true;
         for (int i = 0; i < 3; ++i) o.clear[i] = 0;
     }
-    return view_->render_env_cube(pos, env_items_, o, 128) != nullptr;
+    return view->render_env_cube(pos, env_items_, o, 128) != nullptr;
 }
 
 // The rear-view mirror's place in `frame` (GT3: rect (200, 20) 240x64 of the 640 x 448 picture).
@@ -906,12 +921,15 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
                       smoke_view(camera2_, rect2.w / rect2.h * CameraRig::kPixelAspect, camera2_.fovy()), ItemsView::Split,
                       1);
         wheel_view_ = nullptr;
-        render::DrawOptions o2 = o;
+        // Player 2's own map around player 2's car (GT3's vf48 builds one per half).
+        render::DrawOptions o_p2 = o;
+        if (update_env_cube(true)) o_p2.env_cube = view2_->env_cube(), o_p2.env_gt3_lookup = env_gt3_scene_;
+        render::DrawOptions o2 = o_p2;
         add_screen_passes(o2, rect2, camera2_, sun_visibility(eye2, camera2_.fovy(), rect2.h), true, true, nullptr);
         o2.guard_near = camera2_.gt3_near();
         view2_->draw(ui.renderer(), rect2, camera2_.view(), camera2_.projection(rect2.w / rect2.h), eye2, items_, o2);
         if (horizontal && !replaying_ && camera2_.shows_mirror())
-            draw_mirror(app, ui, rect2, o, true, true);
+            draw_mirror(app, ui, rect2, o_p2, true, true);
     }
     } // (the flat views)
     if (preset_.gpusync) SDL_WaitForGPUIdle(app.gpu()->device()); // measure: CPU + GPU time of the 3D pass

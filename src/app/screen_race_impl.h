@@ -384,7 +384,12 @@ private:
     void draw_event_icons(App& app, int half);
 
     // Drawing the race (screen_race_render.cpp)
-    bool update_env_cube();
+    struct MapCar {
+        sim::VehicleState state;
+        size_t slot; // car_look's slot: 0 the player, 1 player 2, 2 + i opponent i
+    };
+    MapCar env_map_car(bool p2) const;
+    bool update_env_cube(bool p2 = false);
     void draw_mirror(App& app, Ui& ui, const SDL_FRect& frame, const render::DrawOptions& main, bool p2 = false,
                      bool half = false);
     SDL_FRect mirror_rect(const SDL_FRect& frame, bool half, const CustomCamera* custom) const;
@@ -1234,7 +1239,7 @@ private:
     u32 lap_ticks_ = 0, lap_begin_tick_ = 0;
     bool was_started_ = false;
     std::unique_ptr<GtrcScript> gtrc_;
-    ReflectionDiscMesh reflection_discs_; // point-light courses: the lamps' discs in the reflection map
+    ReflectionDiscMesh reflection_discs_, reflection_discs2_; // point-light courses: the lamps' discs in the reflection maps (player 2's half: the second)
     ReplayDirector director_;
     ReverbAmbience ambience_;
     RaceMusic music_;
