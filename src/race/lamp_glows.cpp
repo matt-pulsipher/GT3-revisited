@@ -166,6 +166,24 @@ void Flare::add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustu
     b.add(nullptr, verts.data(), verts.size(), idx.data(), idx.size(), 2); // Cs As / 128: twice Cs As / 255
 }
 
+void Flare::add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect, float x,
+                     float y, float d, const std::array<float, 4>& mat, const std::array<float, 3>& col, float vis,
+                     float depth) {
+    std::vector<render::ScreenBatch::Vertex> verts;
+    verts.reserve(m.verts.size());
+    for (const Vertex& v : m.verts) {
+        float vx = x + v.x * mat[0] + v.y * mat[2], vy = y + v.x * mat[1] + v.y * mat[3], vd = d - v.z;
+        const std::array<u8, 4> c = gs_color(v, col, vis);
+        render::ScreenBatch::Vertex sv;
+        sv.x = fr.screen_x(vx, vd, rect.x, rect.w), sv.y = fr.screen_y(vy, vd, rect.y, rect.h);
+        for (int i = 0; i < 4; ++i) sv.rgba[i] = float(c[size_t(i)]) / 255.0f;
+        sv.depth = depth;
+        verts.push_back(sv);
+    }
+    std::vector<u32> idx(m.tris.begin(), m.tris.end());
+    b.add(nullptr, verts.data(), verts.size(), idx.data(), idx.size(), 2); // Cs As / 128: twice Cs As / 255
+}
+
 void Flare::add(render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect, float x, float y, float d,
                 float s, const std::array<float, 3>& col, float vis) const {
     for (const Mesh& m : meshes_) add_mesh(m, b, fr, rect, x, y, d, s, s, col, vis);
@@ -374,6 +392,17 @@ void CarLampGlows::load(SDL_Renderer* r, render::GpuContext* gpu, ByteSpan env, 
     active_ = glow_.valid() || !flare_.empty();
 }
 
+std::array<float, 4> CarLampGlows::bar_halo(float ex, float ey, float a, float b, float halo) {
+    const float e2 = ex * ex + ey * ey;
+    float vx = a, vy = 0;
+    if (e2 != 0) {
+        const float s = (a - b) + b / std::sqrt(e2);
+        vx = ex * s, vy = ey * s;
+    }
+    const float vl = std::sqrt(vx * vx + vy * vy), w = vl > 0 ? halo * b / vl : 0.0f;
+    return {halo * vx, halo * vy, -vy * w, vx * w};
+}
+
 void CarLampGlows::draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
                         const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked) const {
     render::ScreenBatch b;
@@ -448,19 +477,25 @@ void CarLampGlows::add(render::ScreenBatch& b, const SDL_FRect& rect, const rend
         }
         // Halo: the disc mesh at the pulled point (depth-tested there: by the view, or a ray at its
         // centre), colour x gain x 0.5 at full visibility, not scaled by D or I. Bar lamps: an
-        // ellipse along the lamp's projected x axis.
+        // ellipse turned with the lamp's x axis (fn_0019B6B0 / fn_002481F0): e = that axis' view-space
+        // x and y, v = e ((a - b) + b / |e|) (v = (a, 0) for e = 0), the disc through the matrix with
+        // columns H v and H b / |v| (-v.y, v.x).
         float hx = ty.halo * l.a, hy = hx; // metres
+        std::array<float, 4> turn{};
         if (bar) {
-            render::Vec3 xa = normalize(xdir(car.model, l.xaxis));
-            float pxv = view.at(0, 0) * xa.x + view.at(0, 1) * xa.y + view.at(0, 2) * xa.z;
-            hx = ty.halo * ((l.a - l.b) * std::fabs(pxv) + l.b);
-            hy = ty.halo * l.b;
+            const render::Vec3 xa = xdir(car.model, l.xaxis);
+            const float ex = view.at(0, 0) * xa.x + view.at(0, 1) * xa.y + view.at(0, 2) * xa.z;
+            const float ey = view.at(1, 0) * xa.x + view.at(1, 1) * xa.y + view.at(1, 2) * xa.z;
+            turn = bar_halo(ex, ey, l.a, l.b, ty.halo);
+            hx = std::sqrt(turn[0] * turn[0] + turn[1] * turn[1]), hy = ty.halo * l.b;
         }
         if (ty.halo_gain > 0 && z > 1 && (hx * per_m > 0.5f || hy * per_m > 0.5f) &&
             (proj || !blocked(eye, eye + (car.model.transform_point(l.pos) - eye) * f))) {
             const float k = ty.halo_gain * 0.5f;
-            Flare::add_mesh(Flare::disc_mesh(), b, fr, rect, gv.x * f, gv.y * f, zp, hx, hy,
-                            {col[0] * k, col[1] * k, col[2] * k}, 1.0f, proj ? clip_depth(*proj, zp) : 1.0f);
+            const std::array<float, 3> hc{col[0] * k, col[1] * k, col[2] * k};
+            const float depth = proj ? clip_depth(*proj, zp) : 1.0f;
+            if (bar) Flare::add_mesh(Flare::disc_mesh(), b, fr, rect, gv.x * f, gv.y * f, zp, turn, hc, 1.0f, depth);
+            else Flare::add_mesh(Flare::disc_mesh(), b, fr, rect, gv.x * f, gv.y * f, zp, hx, hy, hc, 1.0f, depth);
         }
     };
     for (const Car& car : cars) {

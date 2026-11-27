@@ -63,6 +63,11 @@ public:
     static void add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect,
                          float x, float y, float d, float sx, float sy, const std::array<float, 3>& col, float vis,
                          float depth = 1.0f);
+    // As above, the mesh's x and y taken through the 2 x 2 matrix with columns (m[0], m[1]) and
+    // (m[2], m[3]) in view space (x across, y up); z unscaled.
+    static void add_mesh(const Mesh& m, render::ScreenBatch& b, const render::Frustum& fr, const SDL_FRect& rect,
+                         float x, float y, float d, const std::array<float, 4>& mat, const std::array<float, 3>& col,
+                         float vis, float depth = 1.0f);
     // The vertex program's colour of a vertex as the GS gets it (0..255 per channel; the
     // alpha's 0x80 = 1.0): trunc(min(255, vertex RGB x col)), trunc(min(255, vertex alpha x
     // trunc(255 vis) / 255)).
@@ -133,7 +138,9 @@ private:
 // glow x a, colour lamp RGB x type colour x attenuation x D x I with D = (viewing axis .
 // normalize(test point - camera))^n (a negative product: no glow) and visibility from the
 // occlusion box at the test point. Every kept record gets a depth-tested halo, colour x gain
-// x 0.5 (not D or I); bar lamps an elliptical one along their projected x axis.
+// x 0.5 (not D or I); bar lamps (|a - b| >= 0.01) an elliptical one turned with their x axis:
+// with e the view-space x and y of that axis, v = (a - b) e + b e / |e| (v = (a, 0) for e = 0),
+// the disc through the matrix with columns halo x v and halo x b / |v| x (-v.y, v.x).
 struct CarLampRecord {
     render::Vec3 xaxis, view_axis, pos, test;
     float a = 0, b = 0;
@@ -171,6 +178,9 @@ public:
     }
     void draw(SDL_Renderer* r, const SDL_FRect& rect, const render::Mat4& view, const render::Vec3& eye,
               const render::Frustum& fr, const std::vector<Car>& cars, const Blocked& blocked) const;
+    // A bar lamp's halo matrix (Flare::add_mesh's columns) for the view-space x and y (ex, ey) of
+    // its x axis, its sizes a and b and the halo size.
+    static std::array<float, 4> bar_halo(float ex, float ey, float a, float b, float halo);
 
 private:
     bool active_ = false;
