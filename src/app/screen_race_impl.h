@@ -6,6 +6,7 @@
 // are in screen_race.h and screen_online.h.
 
 #include "app/app.h"
+#include "formats/model/build_cache.h"
 #include "app/camera_editor.h"
 #include "app/screen_gtmode.h"
 #include "app/screen_touch_overlay.h"
@@ -315,6 +316,7 @@ private:
     // The cars' files read for the build in hand, each once (two cars of one model; the menus' files); null: not there.
     std::shared_ptr<const Bytes> read_once(App& app, const std::string& path) const;
     mutable std::map<std::string, std::shared_ptr<const Bytes>> read_files_;
+    gtm1::SharedBuilds shared_builds_; // what the cars of the build in hand share (race::CarBuild::shared)
     // Flying start (physics §9.1, 9.4: licence tests and time trials with the event's
     // distance and speed): the race's AI drives the player's car until the first line crossing.
     bool flying_runup() const { return !race_mode_ && tt_start_.flying() && track_ && !track_->lap_started(); }

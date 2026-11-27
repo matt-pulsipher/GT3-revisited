@@ -280,6 +280,7 @@ class AnimatedNodes;
 class MorphDraws;
 struct ComputedPaint;
 class BuildCache; // formats/model/build_cache.h
+class SharedBuilds;
 
 struct Options {
     RunParams run;

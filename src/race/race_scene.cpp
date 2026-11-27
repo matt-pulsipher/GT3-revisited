@@ -374,10 +374,10 @@ void CourseScene::add_items(std::vector<render::DrawItem>& items, const render::
 CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::string& model, const WheelSpec& ws,
                      int paint, ByteSpan wheel_file, const CarBodyMod& body_mod, ByteSpan showroom_car,
                      ByteSpan showroom_wheel, std::function<std::optional<Bytes>()> stand_in_rim,
-                     std::function<std::optional<Bytes>()> other_tyre)
+                     std::function<std::optional<Bytes>()> other_tyre, const CarBuild& build)
     : ctx_(&ctx) {
     mounts_ = car_camera_mounts(car_file);
-    gtm1::BuildCache cache; // (shared by the car's builds below; the files' bytes outlive it)
+    gtm1::BuildCache cache(build.shared); // (shared by the car's builds below; the files' bytes outlive it)
     CarModelOptions opt;
     opt.cache = &cache;
     opt.body_mod = body_mod;

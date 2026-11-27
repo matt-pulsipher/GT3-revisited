@@ -117,7 +117,8 @@ scene::Model load_wheel_model(ByteSpan whole, const gtm1::Options& opt, const st
     }
     const ByteSpan g = WheelFile::parse(data).gtm1;
     if (!opt.cache) return gtm1::decode_gtm1(g, opt, name);
-    // (A car's wheels differ only in their LOD and reflections: car_model.cpp's other options are the same each time.)
+    // (The wheels of a car, and of the cars sharing a build, differ only in their LOD and reflections: car_model.cpp
+    // asks with the same other options for every car.)
     scene::Model m = opt.cache->wheel(g, opt.run.lod, opt.reflection,
                                       [&] { return gtm1::build_model(opt.cache->model(g), opt, name); });
     m.name = name;

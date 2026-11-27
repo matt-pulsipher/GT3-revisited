@@ -1599,8 +1599,7 @@ The models follow the paints: `load_opponent_cars` builds one per model and pain
 them for the next build (`race::KeptModels`, `RaceScreen::kept_opponents_`; player 2's car the
 same way, `kept_second_`). `start()` builds the field once, and the `restart(true)` that ends it
 runs on that build (a replay opened at the start builds the replay's field only,
-`start_playback`); every retry builds it again. A car file read during a build, for its spark
-points first, is the one its model is made from (`RaceScreen::read_files_`). Each build
+`start_playback`); every retry builds it again. Each build
 takes the last one's models it still has (their looks, the morphs and CLUT animations, start
 again as a new model's would) and lets the others go before it builds the rest. They are built
 again at the next start (its settings and course), or when the custom paints or the texture
@@ -1609,7 +1608,12 @@ The ones to build are built on as many threads as there are cores, at most five
 (`parallel_for`), a group of that many at a time. A `GpuModel` made while its thread has a
 `render::DeferredUploads` in scope leaves its upload there; the race screen's thread runs a
 group's uploads, in the field's order, before the next group is built, so no more than a
-group's textures wait for them. The builders read the disc one at a time.
+group's textures wait for them. The builders read the disc one at a time. A car file read
+during a build, for its spark points first, is the one its model is made from
+(`RaceScreen::read_files_`), and what the build's cars have alike (wheels, tyre textures,
+cut-out colouring, decided by their bytes alone) is made once for all of them
+(`gtm1::SharedBuilds`, keyed by the bytes' hash); a builder asking for a piece another is
+making waits for it. Both are let go when the build ends.
 
 ## Ghost
 

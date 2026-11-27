@@ -170,6 +170,11 @@ struct CarLook {
     bool focus = false;
 };
 
+// A car's build among the ones made with it.
+struct CarBuild {
+    gtm1::SharedBuilds* shared = nullptr; // what the field's cars share (none: this car's own)
+};
+
 class CarVisual {
 public:
     // `car_file` is cars/day/<model>; wheels are placed from `wheels`.
@@ -181,7 +186,7 @@ public:
     CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::string& model, const WheelSpec& wheels,
               int paint = 0, ByteSpan wheel_file = {}, const CarBodyMod& body_mod = {}, ByteSpan showroom_car = {},
               ByteSpan showroom_wheel = {}, std::function<std::optional<Bytes>()> stand_in_rim = {},
-              std::function<std::optional<Bytes>()> other_tyre = {});
+              std::function<std::optional<Bytes>()> other_tyre = {}, const CarBuild& build = {});
 
     // Car draw items for the (interpolated) state. LOD is picked from the
     // camera distance (car_lod).

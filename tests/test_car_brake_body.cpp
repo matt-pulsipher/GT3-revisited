@@ -1,6 +1,8 @@
 // The brake body made along with the car is the one a load of its own makes, and the wheels alone are the wheels of a
-// whole car.
+// whole car; cars built together, sharing what their bytes decide, are the cars built alone.
 #include "test_framework.h"
+#include "formats/model/build_cache.h"
+#include "base/parallel_for.h"
 #include "disc/disc.h"
 #include "formats/model/car_model.h"
 #include "formats/model/gltf_export.h"
@@ -131,4 +133,47 @@ TEST(car_brake_body_is_made_along_with_the_car_disc) {
     CHECK(bad_lit == 0);
     CHECK(bad_car == 0);
     CHECK(bad_wheels == 0);
+}
+
+TEST(cars_built_together_are_the_cars_built_alone_disc) {
+    Disc* disc = test::any_region_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    Vfs vfs(&disc->volume());
+    data::CarDatabase db;
+    CHECK(db.load(vfs));
+    // Every sixth model, each in two paints (one model's cars share the most).
+    struct Build {
+        std::string model;
+        Bytes file;
+        int paint = 0;
+    };
+    std::vector<Build> builds;
+    std::set<std::string> seen;
+    for (const data::Car& c : db.cars()) {
+        const std::string model = db.model_of(c);
+        if (!seen.insert(model).second || seen.size() % 6 != 0) continue;
+        std::optional<Bytes> file = vfs.read("cars/day/" + model);
+        if (!file || file->empty() || !CarFile::is_car(*file)) continue;
+        builds.push_back({model, *file, 0});
+        builds.push_back({model, *file, 1}); // (a copy: another address)
+    }
+    CHECK(builds.size() > 60);
+    auto load = [&](const Build& b, gtm1::BuildCache* cache) {
+        CarModelOptions opt;
+        opt.lod = -1, opt.wheels = true, opt.effects = true, opt.paint = b.paint, opt.even_menu_rim_light = true;
+        opt.wheel_spec = wheel_spec_from_database(db, b.model).value_or(WheelSpec{});
+        opt.cache = cache;
+        return load_car_model(b.file, opt, b.model);
+    };
+    gtm1::SharedBuilds shared;
+    std::vector<scene::Model> together(builds.size());
+    parallel_for(builds.size(), 5, [&](size_t i) {
+        gtm1::BuildCache cache(&shared);
+        together[i] = load(builds[i], &cache);
+    });
+    size_t differ = 0;
+    for (size_t i = 0; i < builds.size(); ++i)
+        if (!same_model(load(builds[i], nullptr), together[i]))
+            ++differ, std::fprintf(stderr, "  %s paint %d differs\n", builds[i].model.c_str(), builds[i].paint);
+    CHECK(differ == 0);
 }

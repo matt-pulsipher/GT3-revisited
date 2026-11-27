@@ -92,7 +92,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         // ... and its fitted wheels (issue 347: the theater's launch has no garage car, so its stock rims were drawn).
         if (replay && !replay->wheel.empty()) launch_.request.car_wheel = replay->wheel;
         std::string model = launch_model_.empty() ? ca.model : launch_model_;
-        read_files_.clear(); // (nothing from a build that stopped before its end)
+        read_files_.clear(), shared_builds_.clear(); // (nothing from a build that stopped before its end)
         const std::shared_ptr<const Bytes> car_file = read_car(app, model);
         if (!car_file || car_file->empty()) throw FormatError("car model cars/day/" + model + " is missing or empty");
 
@@ -628,11 +628,12 @@ ExactFieldOptions RaceScreen::exact_options(App& app) {
 // The run's race: a race with opponents (or a battle), else a solo run (screen_race_solo.cpp). False with error_ set when
 // it cannot be set up from the disc's data.
 bool RaceScreen::build_vehicle(App& app) {
-    // The car files read for this build are let go with it.
+    // The car files read for this build, and what its cars shared, are let go with it.
     struct LetGo {
         std::map<std::string, std::shared_ptr<const Bytes>>& files;
-        ~LetGo() { files.clear(); }
-    } let_go{read_files_};
+        gtm1::SharedBuilds& shared;
+        ~LetGo() { files.clear(), shared.clear(); }
+    } let_go{read_files_, shared_builds_};
     drop_vehicle();
     if (!load_program_data(app)) {
         kept_opponents_.clear(); // (no race to build them for)
@@ -764,7 +765,8 @@ bool RaceScreen::build_vehicle(App& app) {
                         const ShowroomFiles sh2 = read_showroom(app, m2, w2 ? bm2.wheel : "");
                         car2_visual_ = std::make_shared<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
                                                                    w2 ? ByteSpan(*w2) : ByteSpan{}, bm2,
-                                                                   sh2.car_span(), sh2.wheel_span(), sh2.stand_in, sh2.tyre);
+                                                                   sh2.car_span(), sh2.wheel_span(), sh2.stand_in, sh2.tyre,
+                                                                   race::CarBuild{&shared_builds_});
                         car2_visual_->set_full_detail(full_car_detail_);
                         if (brake_parts_) car2_visual_->set_brake_parts(*brake_parts_);
                     }
@@ -799,7 +801,8 @@ void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpa
     const ShowroomFiles showroom = read_showroom(app, model, wheel_file ? wheel_label : "");
     car_visual_ = std::make_unique<CarVisual>(*app.gpu(), car_file, model, car_.wheels, preset_.paint,
                                               wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod,
-                                              showroom.car_span(), showroom.wheel_span(), showroom.stand_in, showroom.tyre);
+                                              showroom.car_span(), showroom.wheel_span(), showroom.stand_in, showroom.tyre,
+                                              race::CarBuild{&shared_builds_});
     car_visual_->set_full_detail(full_car_detail_);
     if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
     camera_car_.reset();
@@ -973,7 +976,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
             lock.unlock();
             built[k] = std::make_shared<CarVisual>(*app.gpu(), *f, o.model, ws, o.paint, wf ? ByteSpan(*wf) : ByteSpan{},
                                                    o.bm, sh.car_span(), sh.wheel_span(), in_turn(sh.stand_in),
-                                                   in_turn(sh.tyre));
+                                                   in_turn(sh.tyre), race::CarBuild{&shared_builds_});
         } catch (const std::exception& e) {
             LOG_WARN("Race: opponent model %s: %s", o.model.c_str(), e.what());
         } catch (...) { // (parallel_for's work must not throw)
