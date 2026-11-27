@@ -3,7 +3,8 @@
 // Player-made GT Mode events (docs/MODDING.md "Adding events"): what a mods/<id>/events/<name>.ini
 // holds, and what loading it made (game/data/mod_events.h). The race records themselves live in the
 // ordinary event table (32), cloned from a disc event; this keeps what the disc format has no field
-// for (the title, the pictures, the league page, the skills and grid place of the field).
+// for (the title, the pictures, the league page, the skills and grid place of the field, the points
+// a championship scores past GT3's own table).
 
 #include <array>
 #include <string>
@@ -45,6 +46,18 @@ struct ModEventRace {
     // CPU car of a driveline class alike, ai §9.2), -1 the base race's, 0 .. 3 the arcade race of that
     // difficulty's (Easy .. Professional: A{E,N,H,P}ST0001, on dirt A?AD0001).
     int skill = -1;
+    // How it starts: the event record's start type (+0x1F3, with +0x198 and +0x1F2), copied from a disc race that
+    // starts so: -1 the base race's, 0 standing (a GT Mode series race's), 1 rolling (an endurance race's).
+    int start = -1;
+    // Tire wear: the record's wear bytes (+0x1BD .. +0x1C3; GT3 has one wear curve, physics §8.1), copied from a disc
+    // race: -1 the base race's, 0 off (a race without wear), 1 on (an endurance race's). Never on dirt courses (GT3).
+    int wear = -1;
+};
+
+// A prize car: a car label and its paint (a carcolor id, -1 = a random paint).
+struct ModEventPrize {
+    std::string car;
+    int paint = -1;
 };
 
 struct ModEventDef {
@@ -67,8 +80,14 @@ struct ModEventDef {
     // events: a Japanese disc pays them x100, as it does its own prizes).
     std::array<u32, 6> prizes{};
     u32 bonus = 0; // championship bonus
-    std::string prize_car; // car label: given once, for the championship or for every race won
-    int prize_paint = -1;  // carcolor id, -1 = a random paint
+    // The prize cars, a prize set as the disc's (gt_mode §10): one car is given once (for the championship, or for every
+    // race won); two to four go to GT3's roulette, which picks one of them on every win of a championship or of a
+    // one-race event (as the disc's championships and endurance races give theirs). A car listed twice comes up
+    // twice as often. Single races of more than one race give one car only (the disc's series give one).
+    std::vector<ModEventPrize> prize_cars;
+    // Championship points by place (1st first), our own: GT3's table (10, 6, 4, 3, 2, 1, then none) is the
+    // program's, not the event's; empty = GT3's. Fields of ours are up to 32 cars, so places past 6th may score.
+    std::vector<int> points;
 
     // [entry] the event's rules (the disc's numbering, gt_mode EventRules)
     int license = 0;    // 0 none, 1 B, 2 A, 3 IB, 4 IA, 5 S, 6 R
@@ -89,6 +108,11 @@ struct ModEventDef {
     static constexpr int kMaxOpponents = 31;    // in a race (a field of up to 32 cars, the player's included; GT3's races 5)
     static constexpr int kDefaultOpponents = 5; // a race without cars = (as GT3's races)
     static constexpr int kMaxPool = 32;     // in a pool (event +0x10)
+    static constexpr int kMaxPrizeCars = 4; // the car_get page shows at most four (0x13F010, game::CarGetRoulette::kMaxCars)
+    static constexpr int kMaxPoints = 32;   // a place each of a 32-car field
+    static constexpr int kMaxPointsValue = 999;
+    // The prize cars a set can give: four, or one for single races of more than one race.
+    size_t prize_room() const { return !championship && races.size() > 1 ? 1 : size_t(kMaxPrizeCars); }
 };
 
 // A loaded event: its definition and the race codes (event labels) it got.

@@ -9,9 +9,10 @@
 //
 // Pages: the list of the player's events; an event (title, description, picture, icon, league, single
 // races or a championship, entry rules, prizes, its opponents and its races); a race (course,
-// laps, the event's opponents or a lineup of its own); the opponents of the event (the lineup
-// every race without its own runs, and every championship round); the prizes (per place, the
-// championship bonus, a prize car in a colour or a random one). A race draws up to 31 opponents from
+// laps, how it starts, its tire wear, the event's opponents or a lineup of its own); the opponents of
+// the event (the lineup every race without its own runs, and every championship round); the prizes
+// (per place, the championship bonus, up to four prize cars, each in a colour or a random one: two or
+// more go to GT3's roulette); a championship's points per place. A race draws up to 31 opponents from
 // its pool (repeating its cars when it has fewer), the player behind them.
 //
 // Export .zip writes the event as a mod of its own (<id>/mod.ini, events/, pictures/): the Mods
@@ -41,6 +42,7 @@
 #include "game/net_car.h"
 #include "game/gt_parts.h"
 #include "race/pool_draw.h"
+#include "race/results.h"
 #include "sim/car_spec.h"
 #include "sim/exact/race_inputs.h"
 #include "menu/flow/menu_set.h"
@@ -328,7 +330,7 @@ public:
     }
 
 private:
-    enum class Page { List, Event, Race, Pool, Entry, Prizes, Rules, Allowed, Cars, Courses };
+    enum class Page { List, Event, Race, Pool, Entry, Prizes, Points, Rules, Allowed, Cars, Courses };
     enum Hit { kHitRow, kHitLeft, kHitRight, kHitButton, kHitFooter };
     enum Foot { kFootChoose, kFootBack };
     enum class Pick { None, PrizeCar, PoolAdd, EntryCar, AllowedCar };
@@ -596,6 +598,7 @@ private:
             return ed_.title + "  >  Opponents  >  " + (entry_ >= 0 && entry_ < int(p.size()) ? car_name(entry_car(p[size_t(entry_)])) : std::string());
         }
         case Page::Prizes: return ed_.title + "  >  Prizes";
+        case Page::Points: return ed_.title + "  >  Prizes  >  Points";
         case Page::Rules: return ed_.title + "  >  Car rules";
         case Page::Allowed: return ed_.title + "  >  Car rules  >  Cars allowed";
         default: return "";
@@ -610,6 +613,7 @@ private:
         case Page::Pool: return pool_rows(app);
         case Page::Entry: return entry_rows(app);
         case Page::Prizes: return prize_rows(app);
+        case Page::Points: return points_rows(app);
         case Page::Rules: return rule_rows(app);
         case Page::Allowed: return allowed_rows(app);
         default: return {};
@@ -769,6 +773,18 @@ private:
                                      course_name(r.course) + "'s grid has room for " + std::to_string(grid_limit(app, r.course)) + ")",
                                  [this, &r, n, most](int h) { r.cars = std::clamp(n + (h < 0 ? -1 : 1), 1, std::max(most, 1)), dirty_ = true; },
                                  x, y, w));
+        static const char* const kStarts[] = {"Standing", "Rolling"};
+        const bool league_rolling = league_rule(0x1F3) == 3;
+        rows.push_back(value_row("Start", r.start < 0 ? std::string(kStarts[league_rolling]) + " (league's)" : kStarts[r.start],
+                                 "Standing: from the grid, as the series races. Rolling: the field sets off at 80 km/h and you take the wheel after 5 seconds, as in the endurance races",
+                                 [this, &r](int h) { r.start = (r.start + 1 + (h < 0 ? -1 : 1) + 3) % 3 - 1, dirty_ = true; }, x, y, w));
+        static const char* const kWears[] = {"Off", "On"};
+        const bool dirt = course_dirt(r.course), league_wear = league_rule(0x1BD) != 0;
+        rows.push_back(value_row("Tire wear", dirt ? "Off (dirt course)"
+                                              : r.wear < 0 ? std::string(kWears[league_wear]) + " (league's)" : kWears[r.wear],
+                                 dirt ? "GT3 races on dirt have no tire wear"
+                                      : "On: tires wear, as in the endurance races and many of the later leagues' races; pit for fresh ones",
+                                 [this, &r](int h) { r.wear = (r.wear + 1 + (h < 0 ? -1 : 1) + 3) % 3 - 1, dirty_ = true; }, x, y, w));
         rows.push_back(button(armed_ ? "Press again" : "Remove race", {kLeftX, kButtonY, 120, kButtonH}, [this, &app] { remove_race(app); },
                               false, "Takes the race out of the event (press twice)"));
         editing_buttons(rows);
@@ -900,22 +916,36 @@ private:
         if (ed_.championship)
             rows.push_back(field_row("Champion's bonus", "bonus", amount(ed_.bonus), " Cr.", "Up to " + money(max_bonus_),
                                      [this, &app] { begin_number(app, "Champion's bonus", "bonus", &ed_.bonus, max_bonus_); }, kLeftX, y));
-        y += 8;
-        rows.push_back(action_row("Prize car", ed_.prize_car.empty() ? "None" : car_name(ed_.prize_car),
-                                  ed_.championship ? "Given once, for winning the championship. {Cross}: choose   {Left/Right}: none"
-                                                   : "Given once, for winning every race. {Cross}: choose   {Left/Right}: none",
-                                  [this, &app] { open_cars(app, Pick::PrizeCar, car_index(ed_.prize_car), prize_paint_index()); }, kLeftX, y));
-        rows.back().change = [this](int) { ed_.prize_car.clear(), ed_.prize_paint = -1, dirty_ = true; };
-        if (!ed_.prize_car.empty()) {
-            const int n = data_->color_count(ed_.prize_car), pi = ed_.prize_paint < 0 ? -1 : prize_paint_index();
-            rows.push_back(value_row("Its color", pi < 0 ? "Random" : Ui::clip(data_->color_name_latin(u32(ed_.prize_paint)), 150),
-                                     "The prize car's paint, or one picked at random when it is given", [this, n, pi](int h) {
-                                         const int k = (pi + 1 + (h < 0 ? -1 : 1) + n + 1) % (n + 1) - 1;
-                                         const u32 id = k < 0 ? 0xFFFFFFFFu : data_->color_id(ed_.prize_car, k);
-                                         ed_.prize_paint = id == 0xFFFFFFFFu ? -1 : int(id);
-                                         dirty_ = true;
-                                     }, kLeftX, y));
+        if (ed_.championship) {
+            y += 8;
+            rows.push_back(action_row("Points", points_summary(), "{Cross}: the points each place scores in a round",
+                                      [this] { open_sub(Page::Points); }, kLeftX, y));
         }
+        // The prize cars, at the right: one is given once; two or more go to the roulette on every win.
+        float ry = kTopY;
+        const size_t room = ed_.prize_room();
+        for (size_t i = 0; i < ed_.prize_cars.size(); ++i) {
+            const data::ModEventPrize& pc = ed_.prize_cars[i];
+            rows.push_back(action_row(i == 0 ? "Prize car" : "", car_name(pc.car), prize_hint() + "  {Cross}: another car   {Left/Right}: none",
+                                      [this, &app, i] { open_prize(app, int(i)); }, kRightX, ry, kRightW));
+            Row& car = rows.back();
+            if (i > 0) car.label = "or"; // (the roulette's other cars)
+            car.change = [this, i](int) { ed_.prize_cars.erase(ed_.prize_cars.begin() + std::ptrdiff_t(i)), dirty_ = true; };
+            const int n = data_->color_count(pc.car), pi = pc.paint < 0 ? -1 : data_->color_index(pc.car, pc.paint);
+            rows.push_back(value_row("Its color", pi < 0 ? "Random" : Ui::clip(data_->color_name_latin(u32(pc.paint)), 150),
+                                     "The prize car's paint, or one picked at random when it is given", [this, i, n, pi](int h) {
+                                         data::ModEventPrize& e = ed_.prize_cars[i];
+                                         const int k = (pi + 1 + (h < 0 ? -1 : 1) + n + 1) % (n + 1) - 1;
+                                         const u32 id = k < 0 ? 0xFFFFFFFFu : data_->color_id(e.car, k);
+                                         e.paint = id == 0xFFFFFFFFu ? -1 : int(id);
+                                         dirty_ = true;
+                                     }, kRightX, ry, kRightW));
+        }
+        if (ed_.prize_cars.size() < room)
+            rows.push_back(action_row(ed_.prize_cars.empty() ? "Prize car" : "", ed_.prize_cars.empty() ? "None" : "Add a car for the roulette",
+                                      ed_.prize_cars.empty() ? prize_hint() + "  {Cross}: choose" : prize_hint(),
+                                      [this, &app] { open_prize(app, int(ed_.prize_cars.size())); }, kRightX, ry, kRightW));
+        prize_rows_end_ = ry;
         editing_buttons(rows);
         return rows;
     }
@@ -1084,9 +1114,79 @@ private:
         dirty_ = true;
     }
 
-    int prize_paint_index() const {
-        if (ed_.prize_car.empty() || ed_.prize_paint < 0) return 0;
-        return data_->color_index(ed_.prize_car, ed_.prize_paint);
+    // What the prize cars do (gt_mode §10: a set of one car is given once, of more the roulette picks one on every win).
+    std::string prize_hint() const {
+        const size_t n = ed_.prize_cars.size();
+        const std::string won = ed_.championship ? "winning the championship" : ed_.races.size() == 1 ? "winning the race" : "winning every race";
+        if (ed_.prize_room() == 1) return "Given once, for " + won;
+        if (n <= 1) return "One car: given once, for " + won + ". More: the roulette picks one every time";
+        return "The roulette picks one for " + won + ", every time (a car listed twice comes up twice as often)";
+    }
+
+    void open_prize(App& app, int i) {
+        prize_ = i;
+        const bool have = i < int(ed_.prize_cars.size());
+        const data::ModEventPrize* pc = have ? &ed_.prize_cars[size_t(i)] : nullptr;
+        open_cars(app, Pick::PrizeCar, pc ? car_index(pc->car) : 0,
+                  pc && pc->paint >= 0 ? data_->color_index(pc->car, pc->paint) : 0);
+    }
+
+    // --- championship points (ours: GT3's table is its program's) ---
+
+    static std::string ordinal(int n) {
+        const char* sfx = (n % 100) / 10 == 1 ? "th" : n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th";
+        return std::to_string(n) + sfx;
+    }
+    // The places a round can have: the most cars any race runs (the player's included), at least GT3's six.
+    int point_places(App& app) {
+        int most = 0;
+        for (const data::ModEventRace& r : ed_.races)
+            most = std::max(most, racing_you(r, std::min(data::ModEventDef::kMaxOpponents, grid_limit(app, r.course))) + 1);
+        return std::clamp(most, 6, data::ModEventDef::kMaxPoints);
+    }
+    int place_points(size_t p) const {
+        if (ed_.points.empty()) return race::championship_points(int(p));
+        return p < ed_.points.size() ? ed_.points[p] : 0;
+    }
+    std::string points_summary() const {
+        if (ed_.points.empty()) return "GT3's (10, 6, 4, 3, 2, 1)";
+        std::string s;
+        for (size_t p = 0; p < ed_.points.size() && p < 6; ++p) s += (s.empty() ? "" : ", ") + std::to_string(ed_.points[p]);
+        return s + (ed_.points.size() > 6 ? ", ..." : "");
+    }
+
+    std::vector<Row> points_rows(App& app) {
+        std::vector<Row> rows;
+        const int places = point_places(app);
+        for (int p = 0; p < places; ++p) {
+            float y = kTopY + float(p % 16) * kRowH;
+            const int v = place_points(size_t(p));
+            rows.push_back(value_row(ordinal(p + 1), std::to_string(v) + (v == 1 ? " pt" : " pts"),
+                                     "{Left/Right}: points for this place ({L1}/{R1}: 10 at a time)", [this, p, places](int h) {
+                                         if (ed_.points.empty()) // (from GT3's)
+                                             for (int k = 0; k < places; ++k) ed_.points.push_back(race::championship_points(k));
+                                         if (int(ed_.points.size()) <= p) ed_.points.resize(size_t(p) + 1, 0);
+                                         int& e = ed_.points[size_t(p)];
+                                         e = std::clamp(e + h, 0, data::ModEventDef::kMaxPointsValue);
+                                         while (ed_.points.size() > 1 && ed_.points.back() == 0) ed_.points.pop_back();
+                                         dirty_ = true;
+                                     }, p < 16 ? kLeftX : kRightX, y, p < 16 ? kLeftW : kRightW));
+        }
+        rows.push_back(button("GT3's points", {kLeftX, kButtonY, 120, kButtonH}, [this] { ed_.points.clear(), dirty_ = true; }, false,
+                              "10, 6, 4, 3, 2, 1, and none past 6th"));
+        editing_buttons(rows);
+        return rows;
+    }
+
+    bool course_dirt(const std::string& course) const {
+        for (const data::Course& c : db_.courses())
+            if (c.label == course) return c.surface == 2;
+        return false;
+    }
+    // A byte of the race its league's races are built on (data::ModEventDef::base): its start (+0x1F3) or tire wear (+0x1BD).
+    int league_rule(size_t at) const {
+        const data::Event* ev = db_.event(base_for(ed_.league));
+        return ev && ev->bytes.size() > at ? int(ev->bytes[at]) : 0;
     }
 
     // --- actions --------------------------------------------------------------------------------
@@ -1153,6 +1253,7 @@ private:
         case Page::Pool: return pool_race_ < 0 ? Page::Event : Page::Race;
         case Page::Entry: return Page::Pool;
         case Page::Allowed: return Page::Rules;
+        case Page::Points: return Page::Prizes;
         default: return Page::Event;
         }
     }
@@ -1250,9 +1351,11 @@ private:
             if (std::find(ed_.allowed.begin(), ed_.allowed.end(), l) == ed_.allowed.end() && ed_.allowed.size() < list_room())
                 ed_.allowed.push_back(l);
         } else if (picking_ == Pick::PrizeCar) {
-            ed_.prize_car = cars_[size_t(car)].label;
-            const u32 id = data_->color_id(ed_.prize_car, paint);
-            ed_.prize_paint = id == 0xFFFFFFFFu ? -1 : int(id);
+            const std::string& l = cars_[size_t(car)].label;
+            const u32 id = data_->color_id(l, paint);
+            const data::ModEventPrize pc{l, id == 0xFFFFFFFFu ? -1 : int(id)};
+            if (prize_ >= 0 && prize_ < int(ed_.prize_cars.size())) ed_.prize_cars[size_t(prize_)] = pc;
+            else if (ed_.prize_cars.size() < ed_.prize_room()) ed_.prize_cars.push_back(pc);
         } else if (picking_ == Pick::PoolAdd) {
             if (pool().size() < size_t(data::ModEventDef::kMaxPool)) {
                 undo_.push_back(ed_); // (Cancel on its page takes it out again)
@@ -1400,6 +1503,7 @@ private:
             return std::none_of(ed_.races.begin(), ed_.races.end(), [&](const data::ModEventRace& r) { return named(r.opponents); });
         });
         ed_.base = base_for(league_on_disc(ed_.league) == game::kCustomLeaguePage ? std::string() : ed_.league);
+        if (ed_.prize_cars.size() > ed_.prize_room()) ed_.prize_cars.resize(ed_.prize_room()); // (single races of more than one race: one)
         // The pictures: new ones written, removed ones deleted.
         if (!picture_.save(ed_, dir, id_)) return note("Could not save the picture");
         if (!icon_.save(ed_, dir, id_)) return note("Could not save the icon");
@@ -1638,8 +1742,8 @@ private:
             y += 4;
             for (const std::string& l : Ui::wrap("In GT Mode: " + league_title(league_on_disc(ed_.league)), tw))
                 ui.text(tx, y, l, colors::kDim), y += 11;
-            if (!ed_.prize_car.empty())
-                for (const std::string& l : Ui::wrap("Prize car: " + car_name(ed_.prize_car), tw)) ui.text(tx, y, l, colors::kDim), y += 11;
+            if (!ed_.prize_cars.empty())
+                for (const std::string& l : Ui::wrap(prize_line(ed_), tw)) ui.text(tx, y, l, colors::kDim), y += 11;
             if (ed_.field.empty()) ui.text(tx, pic.y + pic.h - 10, "No opponents yet", colors::kBad);
             return;
         }
@@ -1703,11 +1807,27 @@ private:
                     colors::kText);
             return;
         }
-        if (page_ == Page::Prizes && !ed_.prize_car.empty()) {
-            const int i = car_index(ed_.prize_car);
-            if (i >= 0) art_.car_icon(app, car_icon_name(cars_[size_t(i)]), SDL_FRect{kRightX + 40, 60, 220, 118});
+        if (page_ == Page::Prizes && !ed_.prize_cars.empty()) { // the prize car in focus (else the first) under the list
+            size_t k = 0;
+            if (sel_ >= 0 && sel_ < int(rows.size()) && rows[size_t(sel_)].r.x == kRightX)
+                k = std::min(size_t(std::max(0, sel_ - first_prize_row(rows))) / 2, ed_.prize_cars.size() - 1);
+            const int i = car_index(ed_.prize_cars[k].car);
+            const float top = prize_rows_end_ + 4, h = std::min(118.f, kButtonY - 6 - top);
+            if (i >= 0 && h > 40) art_.car_icon(app, car_icon_name(cars_[size_t(i)]), SDL_FRect{kRightX + 40 + (220 - h * 220 / 118) / 2, top, h * 220 / 118, h});
         }
         (void)rows;
+    }
+
+    std::string prize_line(const data::ModEventDef& d) const {
+        std::string s;
+        for (size_t i = 0; i < d.prize_cars.size(); ++i)
+            s += (i == 0 ? "" : i + 1 == d.prize_cars.size() ? " or " : ", ") + car_name(d.prize_cars[i].car);
+        return (d.prize_cars.size() > 1 ? "Prize cars: " : "Prize car: ") + s;
+    }
+    int first_prize_row(const std::vector<Row>& rows) const {
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (rows[i].r.x == kRightX && rows[i].kind != Row::Kind::Button) return int(i);
+        return 0;
     }
 
     void render_summary(App& app, Ui& ui, const data::ModEventDef& d) {
@@ -1731,7 +1851,7 @@ private:
         for (const data::ModEventRace& r : d.races) races += (races.empty() ? "" : ", ") + course_name(r.course);
         line("Races", races);
         line("1st prize", money(d.prizes[0]));
-        if (!d.prize_car.empty()) line("Prize car", car_name(d.prize_car));
+        if (!d.prize_cars.empty()) line(d.prize_cars.size() > 1 ? "Prize cars" : "Prize car", prize_line(d).substr(prize_line(d).find(':') + 2));
     }
 
     // --- pointer --------------------------------------------------------------------------------
@@ -1793,6 +1913,8 @@ private:
     Page page_ = Page::List;
     int sel_ = 0;
     bool armed_ = false;
+    int prize_ = 0;               // the prize car the car picker chooses (one past the list: a new one)
+    float prize_rows_end_ = kTopY; // under the prize cars' rows (their car's picture there)
 
     data::ModEventDef ed_; // the event being edited
     std::string id_;       // its file name ("" = not saved yet)

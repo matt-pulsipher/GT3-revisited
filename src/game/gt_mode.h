@@ -417,6 +417,9 @@ public:
     // the player); empty = only the player's place is known (others keep
     // their grid order). Returns the award; championship_over when done.
     Award record_round(int place, const std::vector<int>& order = {});
+    // The points a championship's rounds score by place: a mod event's own (data::ModEventDef::points), else empty
+    // (GT3's table, race::championship_points).
+    std::vector<int> points_table(const std::string& code) const;
     // Opponents of the current championship (car variant labels).
     const std::vector<std::string>& championship_field() const { return state_.championship.entrants; }
     // Random opponents for a race (the original's pool draw, gt_mode §20.4), cars - 1 of them. `paints`

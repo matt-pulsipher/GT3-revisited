@@ -29,6 +29,8 @@ std::string prize_reason(const std::string& set) {
     if (set == "achieve_complete") return "achieve100";
     if (set.rfind("gtmode_", 0) == 0) return set;
     if (set.rfind("E", 0) == 0) return "enduro_win";
+    // A mod event's one-race roulette (its race code; gt_mode.cpp GtData::load): the race won.
+    if (!set.empty() && set[0] == data::kModEventPrefix && set.compare(set.size() - 5, 5, "_0500") != 0) return "solo_race_clear";
     if (set.size() > 5 && set.compare(set.size() - 5, 5, "_0000") == 0) return "solo_race_clear";
     return "championship_win";
 }
@@ -79,6 +81,7 @@ void prepare_request(GameRequest& r) {
             r.champ_rounds = int(ch.races.size());
             r.champ_last = r.champ_round == r.champ_rounds;
             r.champ_points = ch.points;
+            r.champ_table = gt.points_table(r.race_code);
         } else {
             r.race_code = s->race_code;
             r.opponents = gt.pick_opponents(r.race_code, race_info_random(), &r.opponent_paints);

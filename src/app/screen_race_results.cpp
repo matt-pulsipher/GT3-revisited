@@ -65,7 +65,7 @@ std::vector<ResultRow> RaceScreen::result_panel_rows(race::ResultPage page) cons
     std::vector<ResultRow> rows = result_rows(true);
     if (page == race::ResultPage::Points) { // the round's points by place (0x1756F0)
         for (size_t i = 0; i < rows.size(); ++i)
-            rows[i].time = race::result_points_text('+', race::championship_points(int(i)), lang_);
+            rows[i].time = race::result_points_text('+', race::championship_points(int(i), launch_.request.champ_table), lang_);
     } else if (page == race::ResultPage::TotalPoints) { // the totals, highest first (0x175790)
         const std::vector<int>& before_round = launch_.request.champ_points; // the player first, then the opponents
         std::vector<int> before;
@@ -74,7 +74,7 @@ std::vector<ResultRow> RaceScreen::result_panel_rows(race::ResultPage page) cons
             before.push_back(r.car >= -1 && e < before_round.size() ? before_round[e] : 0);
         }
         std::vector<int> totals;
-        const std::vector<size_t> order = race::total_points_order(before, totals);
+        const std::vector<size_t> order = race::total_points_order(before, totals, launch_.request.champ_table);
         std::vector<ResultRow> sorted;
         for (size_t i : order) {
             sorted.push_back(rows[i]);

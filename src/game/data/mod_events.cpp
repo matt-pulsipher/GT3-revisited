@@ -23,6 +23,9 @@ constexpr size_t kLaps = 0x199, kLicense = 0x19B, kCars = 0x1B5, kSpecial = 0x1D
 constexpr size_t kTimeLimit = 0x1E4, kLeague = 0x1E5, kClass = 0x1F4, kAspiration = 0x1F5, kDrive = 0x1F6;
 constexpr size_t kMinSize = 0x1F8;
 constexpr size_t kDriving = 0x19C, kDrivingEnd = 0x1B4; // CPU cars' grip and driver percentages per driveline class (ai §9.2)
+constexpr size_t kStartSpeed = 0x198, kCountdown = 0x1F2, kStartType = 0x1F3; // the start (docs/formats/database.md)
+constexpr size_t kWear = 0x1BD, kWearEnd = 0x1C4;                           // tire wear (physics §8.1)
+constexpr u8 kRollingStart = 3;
 constexpr size_t kPoolSize = 32;
 constexpr u8 kDirtTires = 9; // +0x1D2: dirt tyres required
 constexpr u8 kSurfaceDirt = 2; // course +0x08
@@ -74,6 +77,8 @@ const char* const kDrives[] = {"any", "ff", "fr", "4wd", "mr", "rr"};
 const char* const kAspirations[] = {"any", "na", "turbo"};
 const char* const kClasses[] = {"any", "race", "tuned", "stock"};
 const char* const kSkills[] = {"league", "easy", "normal", "hard", "professional"};
+const char* const kStarts[] = {"league", "standing", "rolling"};
+const char* const kWears[] = {"league", "off", "on"};
 
 // "car:color, car, tune:<name>:color" (a carcolor id; none = drawn at the race start).
 std::vector<ModEventCar> parse_lineup(const std::string& text) {
@@ -145,6 +150,22 @@ const Event* base_event(const CarDatabase& db, const ModEventDef& def) {
 
 bool known_car(const CarDatabase& db, const std::string& label) { return db.car(label) || db.variant(label); }
 
+// The disc race a race's start or tire wear is copied from: the first GT Mode race (a series race or an endurance
+// race) `want` takes.
+template <class F>
+const Event* rule_source(const CarDatabase& db, F want) {
+    for (const Event& e : db.events())
+        if (!e.label.empty() && (e.label[0] == 'G' || e.label[0] == 'E') && e.bytes.size() >= kMinSize &&
+            (e.race_mode == "RACE_MODE_SINGLE" || e.race_mode == "RACE_MODE_ENDULANCE") && want(e))
+            return &e;
+    return nullptr;
+}
+
+// Copies bytes [from, to) of a disc race over a record.
+void copy_bytes(Bytes& b, const Event* src, size_t from, size_t to) {
+    if (src && b.size() >= to) std::copy(src->bytes.begin() + std::ptrdiff_t(from), src->bytes.begin() + std::ptrdiff_t(to), b.begin() + std::ptrdiff_t(from));
+}
+
 } // namespace
 
 std::optional<std::array<u64, 27>> mod_event_tune_parts(const CarDatabase& db, const ModEventTune& t,
@@ -199,8 +220,33 @@ std::optional<ModEventDef> parse_mod_event(std::string_view text, const std::str
             if (k < d.prizes.size()) d.prizes[k++] = u32(std::max(0L, integer(std::string(trim(p))).value_or(0)));
     }
     d.bonus = u32(std::max(0L, integer(get("event", "bonus")).value_or(0)));
-    d.prize_car = get("event", "prize_car");
-    d.prize_paint = int(integer(get("event", "prize_paint")).value_or(-1));
+    // "car:paint, car" (a carcolor id; none = a random paint); files before the roulette name one car.
+    if (const std::string cars = get("event", "prize_cars"); !cars.empty()) {
+        for (std::string_view part : split(cars, ',')) {
+            std::vector<std::string_view> f = split(trim(part), ':');
+            if (f.empty() || trim(f[0]).empty()) continue;
+            if (d.prize_cars.size() >= size_t(ModEventDef::kMaxPrizeCars)) {
+                if (warnings) warnings->push_back("[event] prize_cars: at most 4 cars, the rest left out");
+                break;
+            }
+            ModEventPrize p{std::string(trim(f[0])), -1};
+            if (f.size() > 1) p.paint = int(integer(std::string(trim(f[1]))).value_or(-1));
+            d.prize_cars.push_back(std::move(p));
+        }
+    } else if (std::string car = get("event", "prize_car"); !car.empty()) {
+        d.prize_cars.push_back({std::move(car), int(integer(get("event", "prize_paint")).value_or(-1))});
+    }
+    {
+        const std::string points = get("event", "points");
+        for (std::string_view p : split(points, ',')) {
+            if (trim(p).empty()) continue;
+            if (d.points.size() >= size_t(ModEventDef::kMaxPoints)) {
+                if (warnings) warnings->push_back("[event] points: at most 32 places, the rest left out");
+                break;
+            }
+            d.points.push_back(int(std::clamp<long>(integer(std::string(trim(p))).value_or(0), 0, ModEventDef::kMaxPointsValue)));
+        }
+    }
     d.license = keyword(get("entry", "license"), kLicenses, "licence", "[entry] license", warnings);
     d.drivetrain = keyword(get("entry", "drivetrain"), kDrives, "drivetrain", "[entry] drivetrain", warnings);
     d.aspiration = keyword(get("entry", "aspiration"), kAspirations, "aspiration", "[entry] aspiration", warnings);
@@ -218,6 +264,8 @@ std::optional<ModEventDef> parse_mod_event(std::string_view text, const std::str
         r.opponents = parse_lineup(get(sec.c_str(), "opponents"));
         r.cars = int(std::clamp<long>(integer(get(sec.c_str(), "cars")).value_or(0), 0, ModEventDef::kMaxOpponents));
         r.skill = keyword(get(sec.c_str(), "skill"), kSkills, "skill", "[" + sec + "] skill", warnings) - 1;
+        r.start = keyword(get(sec.c_str(), "start"), kStarts, "start", "[" + sec + "] start", warnings) - 1;
+        r.wear = keyword(get(sec.c_str(), "tire_wear"), kWears, "tire wear", "[" + sec + "] tire_wear", warnings) - 1;
         d.races.push_back(std::move(r));
     }
     for (const IniDocument::Section& sec : ini.sections()) {
@@ -260,9 +308,16 @@ std::string format_mod_event(const ModEventDef& d) {
     for (u32 p : d.prizes) prizes += (prizes.empty() ? "" : ", ") + std::to_string(p);
     ini.set("event", "prizes", prizes);
     if (d.championship) ini.set("event", "bonus", std::to_string(d.bonus));
-    if (!d.prize_car.empty()) {
-        ini.set("event", "prize_car", d.prize_car);
-        if (d.prize_paint >= 0) ini.set("event", "prize_paint", std::to_string(d.prize_paint));
+    if (!d.prize_cars.empty()) {
+        std::string cars;
+        for (const ModEventPrize& p : d.prize_cars)
+            cars += (cars.empty() ? "" : ", ") + p.car + (p.paint >= 0 ? ":" + std::to_string(p.paint) : std::string());
+        ini.set("event", "prize_cars", cars);
+    }
+    if (d.championship && !d.points.empty()) {
+        std::string points;
+        for (int p : d.points) points += (points.empty() ? "" : ", ") + std::to_string(p);
+        ini.set("event", "points", points);
     }
     ini.set("entry", "license", license_key(d.license));
     ini.set("entry", "drivetrain", drivetrain_key(d.drivetrain));
@@ -280,6 +335,8 @@ std::string format_mod_event(const ModEventDef& d) {
         ini.set(sec, "course", r.course);
         ini.set(sec, "laps", std::to_string(r.laps));
         ini.set(sec, "skill", kSkills[std::clamp(r.skill, -1, 3) + 1]);
+        if (r.start >= 0) ini.set(sec, "start", kStarts[std::clamp(r.start, -1, 1) + 1]);
+        if (r.wear >= 0) ini.set(sec, "tire_wear", kWears[std::clamp(r.wear, -1, 1) + 1]);
         if (r.cars > 0) ini.set(sec, "cars", std::to_string(r.cars));
         if (!r.opponents.empty() && !d.championship) ini.set(sec, "opponents", format_lineup(r.opponents));
     }
@@ -360,9 +417,17 @@ bool add_mod_event(CarDatabase& db, const ModEventDef& def, std::string* error) 
     };
     keep(ev.def.field, "field");
     for (size_t k = 0; k < ev.def.races.size(); ++k) keep(ev.def.races[k].opponents, "race " + std::to_string(k + 1));
-    if (!ev.def.prize_car.empty() && !db.car(ev.def.prize_car)) {
-        LOG_WARN("Mod event %s: no prize car '%s' here, left out", def.id.c_str(), ev.def.prize_car.c_str());
-        ev.def.prize_car.clear();
+    {
+        std::vector<ModEventPrize> prizes;
+        for (ModEventPrize& p : ev.def.prize_cars) {
+            if (db.car(p.car)) prizes.push_back(std::move(p));
+            else LOG_WARN("Mod event %s: no prize car '%s' here, left out", def.id.c_str(), p.car.c_str());
+        }
+        if (prizes.size() > ev.def.prize_room()) {
+            LOG_WARN("Mod event %s: single races of more than one race give one prize car, the first", def.id.c_str());
+            prizes.resize(ev.def.prize_room());
+        }
+        ev.def.prize_cars = std::move(prizes);
     }
 
     // Every race must run here before any record goes in.
@@ -397,6 +462,15 @@ bool add_mod_event(CarDatabase& db, const ModEventDef& def, std::string* error) 
         db.put_record(TableId::Regulation, std::move(reg));
     }
     ev.def.allowed = allowed;
+
+    // The starts and the tire wear the races ask for, from the disc's own races: a series race's standing start
+    // and an endurance race's rolling one; a race without wear and an endurance race's (every disc race with wear has
+    // the same bytes, physics §8.1).
+    const Event* standing = rule_source(db, [](const Event& e) { return e.label[0] == 'G' && e.bytes[kStartType] != kRollingStart && e.bytes[kStartType] != 0; });
+    const Event* rolling = rule_source(db, [](const Event& e) { return e.bytes[kStartType] == kRollingStart && e.bytes[kStartSpeed] == 0; });
+    const Event* worn = rule_source(db, [](const Event& e) { return e.label[0] == 'E' && e.bytes[kWear] != 0; });
+    if (!worn) worn = rule_source(db, [](const Event& e) { return e.bytes[kWear] != 0; });
+    const Event* unworn = rule_source(db, [](const Event& e) { return e.label[0] == 'G' && e.bytes[kWear] == 0; });
 
     auto hundreds = [](u32 cr) { return u16(std::min<u32>((cr + 50) / 100, 0xFFFF)); };
     const u64 none = db::id_hash("-");
@@ -440,6 +514,16 @@ bool add_mod_event(CarDatabase& db, const ModEventDef& def, std::string* error) 
         if (r.skill >= 0)
             if (const Event* s = db.event(mod_event_skill_event(db, r.skill, course->surface == kSurfaceDirt)); s && s->bytes.size() >= kMinSize)
                 std::copy(s->bytes.begin() + kDriving, s->bytes.begin() + kDrivingEnd, b.begin() + kDriving);
+        // Its start and tire wear, when it asks for them (else the base race's).
+        if (r.start >= 0) {
+            const Event* src = r.start == 1 ? rolling : standing;
+            if (!src) LOG_WARN("Mod event %s: race %zu: this disc has no %s start to copy", def.id.c_str(), k + 1, r.start == 1 ? "rolling" : "standing");
+            copy_bytes(b, src, kStartSpeed, kStartSpeed + 1);
+            copy_bytes(b, src, kCountdown, kStartType + 1);
+        }
+        if (r.wear == 1) copy_bytes(b, worn, kWear, kWearEnd);
+        else if (r.wear == 0 && unworn) copy_bytes(b, unworn, kWear, kWearEnd);
+        else if (r.wear == 0) put8(b, kWear, 0); // (a disc whose races all wear, a mod's: a maximum wear of 0 is off, physics §8.1)
         db.add_label(code);
         db.put_record(TableId::Event, std::move(b));
         ev.races.push_back(code);
