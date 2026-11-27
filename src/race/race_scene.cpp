@@ -475,6 +475,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
             race_rim_[size_t(i)] = scene::extract(race_wheels, [&](const scene::Mesh& m) { return m.name == n; });
             for (scene::Mesh& m : race_rim_[size_t(i)].meshes)
                 for (scene::Vertex& v : m.vertices) v.pos[0] -= c.x, v.pos[1] -= c.y, v.pos[2] -= c.z;
+            rim_discs_[size_t(i)] = rim_disc(showroom_rim_[size_t(i)]);
         }
         if (!rim.meshes.empty()) {
             if (rim_spin) {
@@ -485,6 +486,18 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         }
         scene::Model tyre = hub_model(n + "_tyre");
         if (!tyre.meshes.empty()) tyres_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, tyre);
+        // Showroom wheels: the rim's filter mask for each face (spin_mask_shape), to LOD 0's tyre's
+        // inner ring (the tyre the menus' rim sits in), kMaskOut beyond the rim's farthest vertex, so
+        // the rim and the brake parts behind its spokes lie behind it and what covers the rim (the
+        // body, another car) in front.
+        if (const RimDisc& d = rim_discs_[size_t(i)]; showroom_rims_ && d.radius > 0) {
+            constexpr float kMaskOut = 0.005f; // (metres)
+            scene::Model tyre0 = scene::extract(tyre, [](const scene::Mesh& m) { return m.lod == 0; });
+            const TyreRing ring = tyre_inner_ring(tyre0.meshes.empty() ? tyre : tyre0);
+            for (int side = 0; side < 2; ++side)
+                spin_masks_[size_t(i)][size_t(side)] =
+                    std::make_unique<render::GpuModel>(ctx, spin_mask_shape(d, ring, side == 0, kMaskOut));
+        }
         scene::Model band = hub_model(n + "_band");
         if (!band.meshes.empty()) bands_[size_t(i)] = std::make_unique<render::GpuModel>(ctx, band);
     }
@@ -678,6 +691,9 @@ CarVisual::WheelLook CarVisual::wheel_look(int i, const render::Mat4& at, const 
     const render::Vec3 centre = at.transform_point({0, 0, 0});
     const int detail = wheel_detail(v.proj.at(0, 0), wheel_bound_[axle], -v.view.transform_point(centre).z);
     const render::Vec3 eye = render::inverse(hub).transform_point(v.eye);
+    // (The rim's faces need not lie either side of the hub's origin: split them at its middle.)
+    const RimDisc& disc = rim_discs_[size_t(i)];
+    out.eye_minus_x = eye.x < 0.5f * (disc.min_x + disc.max_x);
     const float half_width = 0.5f * wheel_width_[axle];
     const bool outer = right ? eye.x > half_width : eye.x < -half_width;
     out.parts = detail < 2 && outer;
@@ -800,6 +816,15 @@ void CarVisual::add_body_items(std::vector<render::DrawItem>& items, const sim::
                 it.texture = rim->textures()[size_t(rim_spin_texture_)].texture;
             }
             items.push_back(it);
+            // The copies' filter mask (ours): the rim's disc and sidewall for the face towards the
+            // eye (spin_masks_), not the copies drawn again; in the hub frame (steered and
+            // cambered, not spun).
+            const auto& mask = spin_masks_[k][wl.eye_minus_x ? 0 : 1];
+            if (modelled && wl.turn != 0 && mask) {
+                render::DrawItem m = styled({mask.get(), hub, 0});
+                m.spin_mask_shape = true;
+                items.push_back(m);
+            }
         }
         // The arch shade: turned by the camber, not by the steering (GT3).
         if (bands_[k]) items.push_back(styled({bands_[k].get(), at * render::rotate_z(camber), lod}));

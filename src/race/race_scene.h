@@ -236,6 +236,7 @@ private:
         int rim = 0;            // 1: the rim blur by rim_angles, 2: the wheel's spinning image
         std::array<float, 4> rim_angles{};
         float turn = 0;         // the blur's turn (radians; 0: none), for showroom rims' copies
+        bool eye_minus_x = false; // the eye on the -x side of the rim's middle (a showroom rim's mask faces it)
     };
     WheelLook wheel_look(int i, const render::Mat4& at, const render::Mat4& hub, const sim::WheelState& w,
                          const CarLook& look) const;
@@ -288,6 +289,11 @@ private:
     // Showroom wheels: LOD 0's rims are the menus' modelled ones (CarModelOptions::showroom_car),
     // blurred by turned copies of their geometry (add_body_items).
     bool showroom_rims_ = false;
+    // Showroom wheels: each LOD 0 rim's disc (rim_disc), and the shape each spinning rim's filter mask
+    // draws (DrawItem::spin_mask_shape): the disc on the face towards the eye with a sidewall to the
+    // tyre's inner ring (spin_mask_shape), for the -x face [0] and the +x face [1].
+    std::array<RimDisc, 4> rim_discs_{};
+    std::array<std::array<std::unique_ptr<render::GpuModel>, 2>, 4> spin_masks_;
     // Shadow nodes 1 (light) and 6 (contact), and node 5 (headlamp pool); all LODs; CPU copies
     // to recolour.
     std::array<std::unique_ptr<render::GpuModel>, 3> shadow_;

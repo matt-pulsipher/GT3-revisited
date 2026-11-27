@@ -11,6 +11,10 @@
 
 #include <array>
 
+namespace gt3r::scene {
+struct Model;
+}
+
 namespace gt3r::race {
 
 // The course's values (Env0, course slot 32).
@@ -47,6 +51,37 @@ std::array<float, 4> rim_blur_angles(float turn, bool right);
 
 // The mip level the rim blur reads: GT3 draws the copies into a square of min(width, 64) texels.
 float rim_blur_lod(u32 texture_width);
+
+// Showroom wheels (ours): the flat disc that stands for a modelled rim in the mask of its spin
+// blur's filter (render::DrawItem::spin_mask_shape), measured once from the rim's geometry in the
+// hub frame (the axle along x, each mesh's transform applied). `radius`: the farthest any vertex lies
+// from the axle; `min_x`, `max_x`: the rim's two faces along it. A rim without vertices: radius 0.
+struct RimDisc {
+    float radius = 0;
+    float min_x = 0, max_x = 0;
+};
+RimDisc rim_disc(const scene::Model& rim);
+
+// The tyre's inner ring (the sidewall's inner edge, where it meets the rim), in the hub frame like
+// rim_disc, from its lit pieces only (the black unlit faces close the inner side with a disc down
+// to the axle): `radius`, the least any of their vertices lies from the axle; `min_x`, `max_x`: how
+// far along the axle the ones within kTyreRingBand of that radius reach on each side. A tyre
+// without lit pieces: radius 0.
+inline constexpr float kTyreRingBand = 0.01f; // (metres)
+struct TyreRing {
+    float radius = 0;
+    float min_x = 0, max_x = 0;
+};
+TyreRing tyre_inner_ring(const scene::Model& tyre);
+
+// The shape a spinning rim's filter mask draws for the face on the axle's -x side (`minus_x`) or
+// its +x side, in the hub frame: the rim's disc (rim_disc) `out` beyond the rim's farthest vertex on
+// that side, and a sidewall from the disc's edge to the tyre's inner ring on that side (a cylinder,
+// or a shallow cone where the two radii differ), so that a rim seen from the side, its lip beyond
+// the disc's outline, is covered to the tyre. `segments` round; one mesh, double-sided,
+// untextured and unlit (the mask keeps only its coverage). Without a ring (radius 0), or with the
+// ring only across the rim's middle from that face: the disc alone.
+scene::Model spin_mask_shape(const RimDisc& rim, const TyreRing& tyre, bool minus_x, float out, int segments = 48);
 
 // The other cars' rims show the wheel's spinning image when the blur's turn passes 3 degrees.
 bool rim_spinning_image(float turn);
