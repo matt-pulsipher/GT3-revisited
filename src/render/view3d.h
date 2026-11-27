@@ -222,8 +222,8 @@ std::array<u8, 3> gs_pixel(const float texel[3], const float color[3], const u8 
 
 // The picture's scale (DrawOptions::picture_scale) on one pixel's 8-bit level, as model.frag
 // leaves it (tests; not rounded: the target rounds it). `adds`: the share of a pass that adds to
-// the frame.
-float picture_multiply_level(u8 level, float scale, bool adds);
+// the frame. `pre_fix`: the item's own multiply before it (DrawItem::pre_fix).
+float picture_multiply_level(u8 level, float scale, bool adds, int pre_fix = 128);
 
 // One layer of the depth of field (presentation §G17), in drawing order: level `level` (0..4) of
 // the downsampled pictures, or the sharp picture itself (-1), drawn at weight `alpha` wherever the
@@ -373,6 +373,11 @@ struct DrawItem {
     // Drawn after every other item, with their depth: GT3's tyre smoke pass comes after the
     // whole scene and the heat haze (DrawOptions::haze), before the glare (presentation §L6).
     bool late = false;
+    // A full-frame multiply the game puts on what this item draws before the picture's scale
+    // (DrawOptions::picture_scale): the GS's blend (Cd x pre_fix) >> 7 on the pixel's 8-bit level,
+    // done as the item's pixels are drawn, like the picture's scale (picture_multiply_level).
+    // 128: none. Late items get neither.
+    int pre_fix = 128;
     // GT3's wheel spin blurs (race/wheel_fx.h): the item's textured primitives sample their
     // texture as the mean of copies of it: 1 = shifted along S by every sum of a subset of
     // wheel_steps[0..2] (the tyre's tread), 2 = turned about the image centre by every sum of a
