@@ -4,15 +4,17 @@
 // their car (docs/dev/ONLINE.md "Mod wheels"), as a mod car travels (game/mod_package.h).
 //
 // A package is the wheel's definition (wheels/<label>.ini, written afresh: its label, brand,
-// models, tile, sale and maker's logo) and the files it references (its glTF rims, at most two,
-// and its pictures, at most two), as one blob whose SHA-256 is its identity.
+// rims, tile, sale, maker's logo and shape) and the files it references (its glTF rims, at most
+// two, and its pictures, at most two), as one blob whose SHA-256 is its identity. A rim that is
+// the disc's own ("disc:<wheel>") travels as that name only: the receiver's disc must have it.
 //
 // Packages come from other players, so everything is checked before it is written or loaded
 // (validate_wheel_package):
 // - structure: magic, at most 5 files, 32 MB in all, per-type caps, plain relative paths
 //   (safe_package_path); only wheels/<label>.ini (exactly one), .glb and .png;
-// - the definition parses, names the advertised label, a label that is no wheel of this disc,
-//   and the files it references are exactly the package's other files;
+// - the definition parses (its shape within range), names the advertised label, a label that is
+//   no wheel of this disc, its disc rims are on this disc, and the files it references are exactly
+//   the package's other files;
 // - pictures: PNG, at most 2048 x 2048; rims: GLBs that load with textures of at most
 //   2048 x 2048 and at most 500,000 vertices.
 // It installs as a mod car's package does (install_mod_package: mods/dl-<hash>/, priority -100,

@@ -608,11 +608,13 @@ through the host with the same calls (`offer_package` / `request_package` / `tak
   label, its package's hash and size), relayed and kept as `CarInfo` is. Older games ignore the
   message: their players see the car on its own wheels, as before.
 - **The package:** `wheels/<label>.ini` written afresh (label, brand, rims, tile, sale, the
-  maker's logo) and the files it names: at most two `.glb` rims and two `.png` pictures, 5 files
-  and 32 MB in all.
+  maker's logo, its `[shape]`) and the files it names: at most two `.glb` rims and two `.png`
+  pictures, 5 files and 32 MB in all. A rim that is the disc's own (`disc:<wheel>`) travels as
+  its name only, and the receiver's disc must have it.
 - **Validation** (before anything is written): the structure as a car package's
   (`safe_package_path`, per-type caps, exactly one definition); the definition parses and names
-  the advertised label, which is no wheel of this disc; the files it names are exactly the
+  the advertised label, which is no wheel of this disc, its shape is within range and its disc
+  rims are on this disc; the files it names are exactly the
   package's others; rims and pictures pass `check_package_contents` (the car packages' checks:
   PNGs and GLB textures at most 2048 × 2048, at most 500,000 vertices).
 - **Download.** When the lobby allows mods, a player whose car is on a mod wheel this machine

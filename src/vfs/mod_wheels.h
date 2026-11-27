@@ -13,6 +13,13 @@
 //   for_sale = yes          ; no: not at the wheel shop (a mod car's own, [model] wheel)
 //   [brand]
 //   logo = pictures/logo.png ; a new maker's 480 x 144 logo on the shop's list of makers
+//   [shape]                 ; optional: the rim reshaped (formats/model/wheel_model.h RimShape)
+//   depth = 1.3
+//   dish = 0.1
+//   lip = 1.5
+//
+// A rim can be the disc's own: "disc:<wheel>" (model = disc:enw001_s: the races' wheel/enw001_s and
+// the menus' menu/wheel/enw001_s), so a wheel can be a disc rim reshaped, with no model of its own.
 //
 // The Vfs serves each loaded wheel's rims as the disc's wheels are kept: wheel/<label> (the
 // races') and menu/wheel/<label> (the menus'), so everything that fits a wheel by label (GT
@@ -20,6 +27,7 @@
 // formats/model/wheel_model.h loads a .glb rim as it loads the disc's GTTW ones.
 
 #include "base/bytes.h"
+#include "formats/model/wheel_model.h"
 
 #include <functional>
 #include <optional>
@@ -34,10 +42,11 @@ struct ModWheelDef {
     std::string mod_id; // the mod holding it
     std::string label;  // lower case letters, digits and '_'
     std::string brand;  // as written
-    std::string model, menu, race; // host paths (empty when not given)
+    std::string model, menu, race; // host paths, or "disc:<wheel>" (empty when not given)
     std::string picture;           // host path of the tile (empty: none)
     std::string brand_logo;        // host path ([brand] logo; empty: the name in the menu font)
     bool for_sale = true;
+    RimShape shape; // [shape]
     std::string error; // why it does not load (empty: it does)
 
     // The rims the races and the menus draw (host paths, with the fallbacks above).
@@ -51,6 +60,9 @@ ModWheelDef load_mod_wheel(const std::string& file, const std::string& mod_id, c
 // The same from the file's text (`file` only names it); `check_files`: whether its models must exist.
 ModWheelDef parse_mod_wheel(std::string_view text, const std::string& file, const std::string& mod_id,
                             const std::string& root, bool check_files = true);
+
+// A rim that is one of the disc's: its wheel's label ("disc:enw001_s" -> "enw001_s"), else "".
+std::string disc_rim(const std::string& rim);
 
 // Whether `label` can name a mod wheel: 1-32 lower case letters, digits and '_'.
 bool valid_wheel_label(const std::string& label);

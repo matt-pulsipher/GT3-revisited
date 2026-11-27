@@ -144,12 +144,16 @@ void Vfs::rebuild_index() {
     // Mod wheels: their rims as the disc keeps its wheels. A label the disc has stays the disc's (the
     // shop would list it twice); one two mods give is the higher priority's.
     wheels_.clear();
+    rims_.clear();
     for (const ModInfo& m : mods_) {
         if (!m.active()) continue;
         for (const std::string& f : m.wheels) {
             ModWheelDef d = load_mod_wheel(f, m.id, m.root);
             if (d.error.empty() && base_ && base_->find("wheel/" + d.label))
                 d.error = "label " + d.label + " is a wheel of the disc";
+            for (const std::string* r : {&d.model, &d.menu, &d.race})
+                if (const std::string w = disc_rim(*r); d.error.empty() && !w.empty() && !exists("wheel/" + w))
+                    d.error = "the disc has no wheel " + w;
             wheels_.push_back(std::move(d));
         }
     }
@@ -163,9 +167,18 @@ void Vfs::rebuild_index() {
             }
         if (!d.error.empty()) continue;
         for (const char* dir : {"wheel/", "menu/wheel/"}) {
-            const std::string p = dir + d.label;
-            overrides_[p] = *dir == 'w' ? d.race_file() : d.menu_file();
+            const std::string p = dir + d.label, from = *dir == 'w' ? d.race_file() : d.menu_file();
             override_source_[p] = d.mod_id;
+            const std::string w = disc_rim(from);
+            if (w.empty() && !d.shape.any()) {
+                overrides_[p] = from;
+                continue;
+            }
+            ModRim r;
+            r.shape = d.shape;
+            if (w.empty()) r.host = from;
+            else r.vol = exists(dir + w) ? dir + w : "wheel/" + w; // (a car's own rim has no menus' file)
+            rims_[p] = r;
         }
     }
     auto pack = std::make_shared<texture_pack::Pack>();
@@ -177,7 +190,7 @@ void Vfs::rebuild_index() {
 
 bool Vfs::exists(const std::string& path) const {
     std::string p = normalize_vfs_path(path);
-    return overrides_.count(p) || (base_ && base_->find(p));
+    return overrides_.count(p) || rims_.count(p) || (base_ && base_->find(p));
 }
 
 std::optional<Bytes> Vfs::read(const std::string& path) const {
@@ -219,6 +232,11 @@ std::optional<Bytes> Vfs::read(const std::string& path) const {
         return Bytes(code.begin(), code.end());
     }
     if (auto it = overrides_.find(p); it != overrides_.end()) return read_host_file(it->second);
+    if (auto it = rims_.find(p); it != rims_.end()) {
+        std::optional<Bytes> rim = it->second.vol.empty() ? read_host_file(it->second.host) : read(it->second.vol);
+        if (rim && it->second.shape.any()) rim = wrap_shaped_rim(*rim, it->second.shape);
+        return rim;
+    }
     if (base_)
         if (const Volume::Entry* e = base_->find(p)) return base_->read(*e);
     return std::nullopt;
@@ -265,14 +283,17 @@ std::vector<std::string> Vfs::list_dir(const std::string& dir) const {
     std::vector<std::string> base_list = base_ ? base_->list_dir(prefix) : std::vector<std::string>{};
     std::set<std::string> dirs, files;
     for (auto& n : base_list) (n.back() == '/' ? dirs : files).insert(n);
-    for (auto it = overrides_.lower_bound(prefix); it != overrides_.end(); ++it) {
-        if (it->first.compare(0, prefix.size(), prefix) != 0) break;
-        std::string rest = it->first.substr(prefix.size());
+    auto add = [&](const std::string& path) {
+        std::string rest = path.substr(prefix.size());
         if (auto slash = rest.find('/'); slash != std::string::npos)
             dirs.insert(rest.substr(0, slash + 1));
         else
             files.insert(rest);
-    }
+    };
+    for (auto it = overrides_.lower_bound(prefix); it != overrides_.end() && it->first.compare(0, prefix.size(), prefix) == 0; ++it)
+        add(it->first);
+    for (auto it = rims_.lower_bound(prefix); it != rims_.end() && it->first.compare(0, prefix.size(), prefix) == 0; ++it)
+        add(it->first);
     std::vector<std::string> out(dirs.begin(), dirs.end());
     out.insert(out.end(), files.begin(), files.end());
     return out;

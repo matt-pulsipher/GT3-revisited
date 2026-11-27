@@ -6,6 +6,7 @@
 #include "vfs/vfs.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <set>
 
@@ -84,6 +85,10 @@ std::optional<Bytes> build_wheel_package(const Vfs& vfs, const std::string& labe
     auto add = [&](const std::string& host_path, std::string& rel) -> bool {
         rel.clear();
         if (host_path.empty()) return true;
+        if (!disc_rim(host_path).empty()) { // (the disc's own rim: every player's disc has it)
+            rel = host_path;
+            return true;
+        }
         rel = relative_to(root, host_path);
         if (rel.empty() || !safe_package_path(rel))
             return fail(error, host_path + " is outside the mod folder or has an unusual name");
@@ -105,6 +110,12 @@ std::optional<Bytes> build_wheel_package(const Vfs& vfs, const std::string& labe
     if (!picture.empty()) ini += "picture = " + picture + "\n";
     ini += std::string("for_sale = ") + (d->for_sale ? "yes" : "no") + "\n";
     if (!logo.empty()) ini += "[brand]\nlogo = " + logo + "\n";
+    if (d->shape.any()) {
+        char shape[160];
+        std::snprintf(shape, sizeof shape, "[shape]\ndepth = %.9g\ndish = %.9g\nlip = %.9g\n", double(d->shape.depth),
+                      double(d->shape.dish), double(d->shape.lip));
+        ini += shape;
+    }
     p.files.push_back({"wheels/" + label + ".ini", Bytes(ini.begin(), ini.end())});
     return serialize_wheel_package(p);
 }
@@ -168,13 +179,19 @@ bool validate_wheel_package(const ModPackage& p, const Vfs& vfs, const std::stri
     if (vfs.source_of("wheel/" + d.label) == "disc") return fail(error, d.label + " is a wheel of this disc");
     // The files it references are exactly the package's other files.
     std::set<std::string> refs, others;
-    for (const std::string* s : {&d.model, &d.menu, &d.race, &d.picture, &d.brand_logo})
-        if (!s->empty()) refs.insert(s->substr(1));
+    for (const std::string* s : {&d.model, &d.menu, &d.race, &d.picture, &d.brand_logo}) {
+        if (s->empty()) continue;
+        if (const std::string w = disc_rim(*s); !w.empty()) { // (the disc's own rim: none in the package)
+            if (!vfs.exists("wheel/" + w)) return fail(error, "its rim " + w + " is not on this disc");
+            continue;
+        }
+        refs.insert(s->substr(1));
+    }
     for (const ModPackage::File& f : p.files)
         if (&f != ini) others.insert(f.path);
     if (refs != others) return fail(error, "the package's files do not match what the definition references");
     for (const std::string* s : {&d.model, &d.menu, &d.race})
-        if (!s->empty() && ext_of(*s) != "glb") return fail(error, "rims must be .glb files");
+        if (!s->empty() && disc_rim(*s).empty() && ext_of(*s) != "glb") return fail(error, "rims must be .glb files");
     for (const std::string* s : {&d.picture, &d.brand_logo})
         if (!s->empty() && ext_of(*s) != "png") return fail(error, "pictures must be .png files");
     return check_package_contents(p, error);

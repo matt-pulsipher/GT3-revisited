@@ -430,7 +430,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
         }
         brake_records_ = parse_brake_records(f.info);
         // (A mod wheel's glTF rim has no texture table: no spinning picture, its turned copies blur it.)
-        const ByteSpan rim_file = wheel_file.empty() ? f.wheel : ByteSpan(wheel_file);
+        const ByteSpan rim_file = unwrap_rim(wheel_file.empty() ? f.wheel : ByteSpan(wheel_file)); // (a reshaped rim's own)
         gtm1::Gtm1 g = is_glb_rim(rim_file) ? gtm1::Gtm1{} : gtm1::Gtm1::parse(WheelFile::parse(rim_file).gtm1);
         auto set_image = [&](size_t entry) -> std::optional<scene::Texture> {
             if (g.texset_tables.empty() || g.texset_tables[0].size() <= entry) return std::nullopt;

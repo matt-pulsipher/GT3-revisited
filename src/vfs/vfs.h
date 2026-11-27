@@ -120,6 +120,13 @@ private:
     std::map<std::string, std::string> override_source_; // vol path -> mod id
     std::shared_ptr<const texture_pack::Pack> textures_;
     std::vector<ModWheelDef> wheels_;
+    // Mod wheels' rims that are not a file to read as it is (a disc rim, or one reshaped): vol path -> where it comes
+    // from (a host path, else a vol path of the disc's) and its shape. Read wraps them (formats/model/wheel_model.h).
+    struct ModRim {
+        std::string host, vol;
+        RimShape shape;
+    };
+    std::map<std::string, ModRim> rims_;
 };
 
 std::string normalize_vfs_path(std::string_view path);

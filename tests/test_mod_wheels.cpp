@@ -103,6 +103,17 @@ TEST(mod_wheel_parse) {
     CHECK(load("nobrand.ini").error.find("no brand") != std::string::npos);
     CHECK(!load("not_there.ini").error.empty());
 
+    write_text(root / "wheels" / "shaped.ini", "[wheel]\nmodel = Disc:ENW001_S\nfor_sale = no\n[shape]\ndepth = 1.5 ; deeper\nlip = 2\n");
+    write_text(root / "wheels" / "badshape.ini", "[wheel]\nmodel = disc:enw001_s\nfor_sale = no\n[shape]\ndish = 0.9\n");
+    write_text(root / "wheels" / "nanshape.ini", "[wheel]\nmodel = disc:enw001_s\nfor_sale = no\n[shape]\ndepth = deep\n");
+    write_text(root / "wheels" / "baddisc.ini", "[wheel]\nmodel = disc:../x\nfor_sale = no\n");
+    const ModWheelDef sh = load("shaped.ini");
+    CHECK(sh.error.empty() && sh.model == "disc:enw001_s" && disc_rim(sh.race_file()) == "enw001_s");
+    CHECK(sh.shape.depth == 1.5f && sh.shape.lip == 2.0f && sh.shape.dish == 0.0f);
+    CHECK(load("badshape.ini").error.find("out of range") != std::string::npos);
+    CHECK(load("nanshape.ini").error.find("no number") != std::string::npos);
+    CHECK(!load("baddisc.ini").error.empty());
+
     CHECK(valid_wheel_label("a_1") && !valid_wheel_label("") && !valid_wheel_label("A") && !valid_wheel_label("a-b"));
     CHECK(!valid_wheel_label(std::string(33, 'a')) && valid_wheel_label(std::string(32, 'a')));
     CHECK(wheel_brand_key("OZ Racing") == "ozracing" && wheel_brand_key("OZ Racing", true) == "oz");
@@ -233,6 +244,53 @@ TEST(mod_wheel_package) {
     CHECK(rim && !load_wheel_model(*rim, {}, "w").meshes.empty());
 }
 
+// A reshaped rim: the wrapper round trip, and what each setting does to the rim.
+TEST(mod_wheel_rim_shape) {
+    const Bytes glb = export_glb(synthetic_rim());
+    RimShape shape;
+    shape.depth = 2, shape.dish = 0.1f, shape.lip = 2;
+    CHECK(valid_rim_shape(shape) && shape.any() && !RimShape{}.any());
+    const Bytes wrapped = wrap_shaped_rim(glb, shape);
+    CHECK(is_shaped_rim(wrapped) && is_rim(wrapped) && !is_shaped_rim(glb));
+    RimShape back;
+    CHECK(unwrap_rim(wrapped, &back).size() == glb.size() && back == shape);
+    CHECK(unwrap_rim(glb, &back).size() == glb.size() && !back.any());
+    // Out of range, or cut short: refused.
+    RimShape wild = shape;
+    wild.depth = 9;
+    CHECK(!valid_rim_shape(wild));
+    bool threw = false;
+    try {
+        unwrap_rim(wrap_shaped_rim(glb, wild));
+    } catch (const FormatError&) {
+        threw = true;
+    }
+    CHECK(threw);
+    threw = false;
+    try {
+        unwrap_rim(ByteSpan(wrapped.data(), 12));
+    } catch (const FormatError&) {
+        threw = true;
+    }
+    CHECK(threw);
+    // The synthetic rim: its centre 0.1 deep, its edge (radius 1) at the face. Depth x2 puts the centre at 0.2, the dish
+    // 0.1 more; the edge stays on the face, at the same radius; the lip x2 (from 0.15 to 0.3 of the radius) brings a
+    // point at half the radius to 0.5 x 0.7 / 0.85.
+    const scene::Model plain = load_wheel_model(glb, {}, "w");
+    const scene::Model m = load_wheel_model(wrapped, {}, "w");
+    CHECK(std::fabs(m.bounds_max[0] - 0.3f) < 1e-4f && std::fabs(m.bounds_min[0]) < 1e-4f);
+    CHECK(std::fabs(m.bounds_max[1] - plain.bounds_max[1]) < 1e-4f);
+    scene::Model half = synthetic_rim();
+    for (scene::Vertex& v : half.meshes[0].vertices) v.pos[0] = 0;
+    half.meshes[0].vertices.push_back(half.meshes[0].vertices[0]);
+    half.meshes[0].vertices.back().pos[1] = 0.5f, half.meshes[0].vertices.back().pos[2] = 0;
+    RimShape lip;
+    lip.lip = 2;
+    apply_rim_shape(half, lip);
+    CHECK(std::fabs(half.meshes[0].vertices.back().pos[1] - 0.5f * 0.7f / 0.85f) < 1e-4f);
+    CHECK(std::fabs(half.meshes[0].vertices[0].pos[1] - 1.0f) < 1e-4f); // (the edge stays)
+}
+
 namespace {
 
 struct WheelWorld {
@@ -257,6 +315,9 @@ WheelWorld wheel_world(Disc& disc) {
     write_text(w.mod / "wheels" / "star.ini",
                "[wheel]\nbrand = Claude Forge\nmodel = models/rim.glb\npicture = pictures/tile.png\n[brand]\nlogo = pictures/logo.png\n");
     write_text(w.mod / "wheels" / "car_only.ini", "[wheel]\nmodel = models/rim.glb\nfor_sale = no\npicture = pictures/tile.png\n");
+    write_text(w.mod / "wheels" / "deep.ini",
+               "[wheel]\nbrand = BBS\nmodel = disc:bbw001_s\npicture = pictures/tile.png\n[shape]\ndepth = 2\n");
+    write_text(w.mod / "wheels" / "nodisc.ini", "[wheel]\nmodel = disc:zzz999_q\nfor_sale = no\n");
     write_text(w.mod / "wheels" / "taken.ini", "[wheel]\nlabel = enw001_s\nbrand = Enkei\nmodel = models/rim.glb\n");
     w.vfs = std::make_unique<Vfs>(&vol);
     w.vfs->scan_mods(mods.generic_string(), nullptr);
@@ -300,12 +361,42 @@ TEST(mod_wheel_disc_shop) {
     // The disc's own wheel stays the disc's; the mod's one by that label does not load.
     CHECK(w.vfs->source_of("wheel/enw001_s") == "disc");
     CHECK(w.vfs->source_of("wheel/mesh_racer") == "my_wheels" && w.vfs->read("wheel/mesh_racer") == std::optional<Bytes>(w.race_glb));
-    for (const ModWheelDef& d : w.vfs->mod_wheels())
+    for (const ModWheelDef& d : w.vfs->mod_wheels()) {
         if (d.label == "enw001_s") CHECK(d.error.find("disc") != std::string::npos);
+        if (d.label == "nodisc") CHECK(d.error == "the disc has no wheel zzz999_q");
+    }
+    // A disc rim reshaped: the disc's file inside the wrapper, the races' and the menus' own; deeper when loaded.
+    Volume& vol = disc->volume();
+    for (const char* dir : {"wheel/", "menu/wheel/"}) {
+        std::optional<Bytes> r = w.vfs->read(std::string(dir) + "deep");
+        CHECK(r && is_shaped_rim(*r));
+        if (!r) continue;
+        RimShape s;
+        const ByteSpan inner = unwrap_rim(*r, &s);
+        const Bytes own = vol.read(*vol.find(std::string(dir) + "bbw001_s"));
+        CHECK(s.depth == 2.0f && Bytes(inner.begin(), inner.end()) == own);
+        const scene::Model a = load_wheel_model(own, {}, "a"), b = load_wheel_model(*r, {}, "b");
+        CHECK(std::fabs(b.bounds_max[0] - 2 * a.bounds_max[0]) < 1e-3f);
+    }
+    CHECK(w.vfs->exists("menu/wheel/deep") && w.vfs->source_of("wheel/deep") == "my_wheels");
+    // Its package holds no rim (the receiver's disc has it): its definition and its tile.
+    std::string err;
+    std::optional<Bytes> blob = game::build_wheel_package(*w.vfs, "deep", &err);
+    std::optional<game::ModPackage> pkg = blob ? game::parse_wheel_package(*blob, &err) : std::nullopt;
+    CHECK(pkg && pkg->files.size() == 2);
+    if (pkg) {
+        CHECK(game::validate_wheel_package(*pkg, *w.vfs, "deep", &err));
+        std::string ini;
+        for (const game::ModPackage::File& f : pkg->files)
+            if (f.path == "wheels/deep.ini") ini.assign(f.data.begin(), f.data.end());
+        CHECK(ini.find("model = disc:bbw001_s") != std::string::npos && ini.find("depth = 2") != std::string::npos);
+        Vfs empty(nullptr); // (a machine without that disc wheel refuses it)
+        CHECK(!game::validate_wheel_package(*pkg, empty, "deep", &err) && err.find("not on this disc") != std::string::npos);
+    }
 
     // The flow: on BBS's page as its wheels are; a new maker with its page and button; none for the car-only one.
     const menu::MblPage* bbs = page(w.flow, "at/ws/ws_bbs");
-    CHECK(has_item(bbs, "mesh_racer_link") && has_item(bbs, "bbw001_s_link"));
+    CHECK(has_item(bbs, "mesh_racer_link") && has_item(bbs, "bbw001_s_link") && has_item(bbs, "deep_link"));
     if (bbs)
         for (const menu::MblItem& it : bbs->items)
             if (it.name == "mesh_racer_link") CHECK(it.action == "set_focus_wheel_code" && it.link == "00cmn/ws_buy_sure");

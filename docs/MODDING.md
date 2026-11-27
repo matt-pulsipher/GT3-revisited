@@ -654,8 +654,40 @@ The menus take `menu`, else `model`, else `race`; races take `race`, else
 and reflections of polished rims, and `paint` or `body` for a painted, glossy finish in the colour you give it.
 The tyre comes from the car, as with the disc's wheels.
 
+### Reshaping a rim
+
+A wheel can reshape its rim, its own model's or one of the disc's, with three
+settings. A disc rim needs no model at all: `disc:` and its name
+(`gt3r --browse wheel/` lists them) take the disc's race and menu rims of that
+wheel.
+
+```ini
+[wheel]
+label = enkei_deep
+brand = Enkei
+model = disc:enw001_s          ; the disc's own rim
+picture = pictures/enkei_deep.png
+
+[shape]
+depth = 1.8                    ; 0.25 to 4: the rim's depth (the spokes and barrel) times this
+dish = 0.15                    ; -0.5 to 0.5: the middle pushed in (negative: out), easing to nothing at the lip
+lip = 2                        ; 0.25 to 4: the lip (the outer 15 % of the rim) this many times as wide
+```
+
+- **depth** makes the whole rim deeper (more than 1) or flatter (less than 1).
+- **dish** moves the centre in towards the car, so the spokes slope from the lip
+  to the hub; a negative dish pushes the centre out.
+- **lip** widens the plain outer band of the rim and shrinks the spokes inside
+  it to make room (or the other way round, under 1).
+
+The distances are in units of the rim's radius, so a shape looks alike on every
+car. The game's race rims are nearly flat discs with the spokes cut out, so
+depth and dish show most on the menus' rims and with "Showroom wheels in
+races" on. Each setting may be left out (depth 1, dish 0, lip 1: as modelled).
+
 The Mods screen lists each wheel under its mod, with its maker or why it did
-not load (a missing model, a label the disc already has...).
+not load (a missing model, a label the disc already has, a shape out of
+range...).
 
 ## Adding events
 
@@ -1029,7 +1061,7 @@ tune playing (the log says why).
 | Cars from your other discs | Works now: any disc car, Gran Turismo Concept's included, exported whole as a mod (see "Exporting cars") |
 | Paint colours (`liveries/*.ini`) | Works now: new colours for any car, computed from its own paints, shown online and kept in replays (see "Paint colours") |
 | Liveries (`liveries/<name>/`) | Works now: pictures painted over a disc or mod car on a template of it (New livery on the Mods screen), any size, shown at every distance and sent to the players you race online (see "Liveries") |
-| Wheels (`wheels/*.ini`) | Works now: new rims as glTF models, sold at the wheel shop by its makers or new ones, or worn by mod cars (see "Adding wheels") |
+| Wheels (`wheels/*.ini`) | Works now: new rims as glTF models or the disc's rims reshaped (depth, dish, lip), sold at the wheel shop by its makers or new ones, worn by mod cars and shared online (see "Adding wheels") |
 | GT Mode events (`events/*.ini`) | Works now: your own series and championships on the disc's courses, with entry rules, prizes, prize cars (with the roulette), starts, tire wear and points, listed on a league page; made with the Event creator or by hand (see "Adding events") |
 | Any other file | Overrides are loaded wherever the game reads the file (menus, models, courses, sounds, databases, movies) |
 
