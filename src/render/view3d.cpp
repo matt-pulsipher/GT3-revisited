@@ -609,8 +609,19 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     const bool glow = opt.glow.on && opt.glow.gain > 0 && opt.glow.samples > 0 && opt.glow.radius > 0 && ensure_quad() &&
                       ensure_dof_texture(glow_, std::max(1, pw / 2), std::max(1, ph / 4));
     const bool after_pass = lenses || dof || glow;
+    // A glow alone (multisampled, without the lenses or the depth of field) keeps no multisampled picture between the
+    // passes: the scene's samples are resolved into the lenses' copy (free then), the glow's picture is taken from it,
+    // and the second pass lays it back over every sample before the glow and what follows it. Its depth is kept only
+    // when something after the scene tests against it (the late items, the overlay, the rims' mask); with nothing after
+    // the scene the glow is added to the resolved picture alone, one sample and no depth. Storing and loading the
+    // samples cost more than the glow's own work on tile GPUs; the picture is the same but where a pixel's samples
+    // saturate apart.
+    const bool reseed = glow && msaa_ && !lenses && !dof && ensure_post(&haze_src_);
     // The spinning rims' mask is drawn over the finished scene's depth (spin_resolve).
     const bool spin_mask = spin_mask_wanted(items);
+    const bool after_depth = !reseed || spin_mask || (screen.ok && opt.overlay && !opt.overlay->empty()) ||
+                             std::any_of(items.begin(), items.end(), [](const DrawItem& i) { return i.late; });
+    const bool flat = reseed && !after_depth;
 
     SDL_GPUColorTargetInfo ct{};
     ct.clear_color = {opt.clear[0], opt.clear[1], opt.clear[2], opt.clear[3]};
@@ -619,8 +630,8 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     if (msaa_) {
         ct.texture = msaa_;
         // (The second pass goes on in it, unless the depth of field composites into it afresh.)
-        ct.store_op = (lenses || glow) && !dof ? SDL_GPU_STOREOP_RESOLVE_AND_STORE : SDL_GPU_STOREOP_RESOLVE;
-        ct.resolve_texture = scene_target;
+        ct.store_op = (lenses || glow) && !dof && !reseed ? SDL_GPU_STOREOP_RESOLVE_AND_STORE : SDL_GPU_STOREOP_RESOLVE;
+        ct.resolve_texture = reseed && !flat ? haze_src_ : scene_target;
         ct.cycle_resolve_texture = cycle;
     } else {
         ct.texture = scene_target;
@@ -630,7 +641,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     dt.texture = depth_;
     dt.clear_depth = kFarDepth;
     dt.load_op = SDL_GPU_LOADOP_CLEAR;
-    dt.store_op = after_pass || spin_mask ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
+    dt.store_op = (after_pass && after_depth) || spin_mask ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
     dt.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
     dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
     dt.cycle = cycle && !opt.repeated;
@@ -668,7 +679,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             r.step[0] = step / W, r.step[1] = step / H;
             r.threshold = std::max(opt.glow.threshold, 0.0f);
             r.gain[0] = r.gain[1] = r.gain[2] = std::max(opt.glow.sum, 0.0f);
-            encode_resample(cmd, gp, staged, r, 1.0f, 0.0f, true);
+            encode_resample(cmd, gp, reseed && !flat ? haze_src_ : staged, r, 1.0f, 0.0f, true);
             SDL_EndGPURenderPass(gp);
         }
         if (lenses) copy_picture(cmd, staged, haze_src_, pw, ph, cycle);
@@ -695,8 +706,8 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             SDL_EndGPURenderPass(lp);
         }
         SDL_GPUColorTargetInfo ht{};
-        ht.load_op = SDL_GPU_LOADOP_LOAD;
-        if (msaa_) {
+        ht.load_op = reseed && !flat ? SDL_GPU_LOADOP_DONT_CARE : SDL_GPU_LOADOP_LOAD;
+        if (msaa_ && !flat) {
             ht.texture = msaa_;
             ht.store_op = SDL_GPU_STOREOP_RESOLVE;
             ht.resolve_texture = staged;
@@ -705,13 +716,21 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             ht.store_op = SDL_GPU_STOREOP_STORE;
         }
         SDL_GPUDepthStencilTargetInfo hd = dt;
-        hd.load_op = SDL_GPU_LOADOP_LOAD;
+        hd.load_op = after_depth ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
         hd.store_op = spin_mask ? SDL_GPU_STOREOP_STORE : SDL_GPU_STOREOP_DONT_CARE;
         hd.cycle = false;
-        pass = SDL_BeginGPURenderPass(cmd, &ht, 1, &hd);
+        pass = SDL_BeginGPURenderPass(cmd, &ht, 1, flat ? nullptr : &hd);
         if (glow) { // added over the picture, stretched to it (at the nearest depth: over everything)
             SDL_SetGPUViewport(pass, &used_viewport);
             SDL_SetGPUScissor(pass, &used_rect);
+            if (reseed && !flat) { // (the resolved scene over every sample first)
+                const float W = float(width_), H = float(height_);
+                Resample c;
+                c.clamp[0] = 0.5f / W, c.clamp[1] = 0.5f / H;
+                c.clamp[2] = (float(pw) - 0.5f) / W, c.clamp[3] = (float(ph) - 0.5f) / H;
+                c.scale[0] = float(pw) / W, c.scale[1] = float(ph) / H;
+                encode_resample(cmd, pass, haze_src_, c, 1.0f, 1.0f, false);
+            }
             const float gw = float(glow_.cap_w), gh = float(glow_.cap_h);
             Resample r;
             r.scale[0] = float(glow_.w) / gw, r.scale[1] = float(glow_.h) / gh;
@@ -719,10 +738,10 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             r.clamp[2] = (float(glow_.w) - 0.5f) / gw, r.clamp[3] = (float(glow_.h) - 0.5f) / gh;
             r.gain[0] = r.gain[1] = r.gain[2] = opt.glow.gain;
             r.additive = true;
-            encode_resample(cmd, pass, glow_.tex, r, 1.0f, 1.0f, msaa_ == nullptr); // (the pass's samples)
+            encode_resample(cmd, pass, glow_.tex, r, 1.0f, 1.0f, msaa_ == nullptr || flat); // (the pass's samples)
         }
         if (lenses) encode_screen(cmd, pass, *opt.haze, screen.haze, true);
-        encode_after_scene(cmd, pass, view, proj, eye, items, opt, screen);
+        if (!flat) encode_after_scene(cmd, pass, view, proj, eye, items, opt, screen);
         SDL_EndGPURenderPass(pass);
     }
     guard_on_ = false; // (the other entry points draw every triangle themselves)
