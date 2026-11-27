@@ -58,6 +58,7 @@
 #include "game/net_car.h"
 #include "menu/flow/game_hooks.h"
 #include "menu/flow/menu_set.h"
+#include "race/exact_setup.h"
 #include "race/field.h"
 #include "race/results.h"
 #include "sim/exact/race_inputs.h"
@@ -1374,7 +1375,33 @@ private:
         return rows;
     }
 
+    // The lineup in the race's grid order: with Fastest first, the race's own figures and ranking (race::exact_grid_figure,
+    // race::gt_grid_places), so the page shows the grid the race will have; else as chosen. Worked out again only when a car
+    // or the order changes.
+    void refresh_grid_order(App& app) {
+        const int n = grid_.shown();
+        std::string key = custom_.fastest_first ? "1" : "0";
+        for (int k = 0; custom_.fastest_first && k < n; ++k) key += "/" + grid_.car(k).label;
+        if (key == order_key_) return;
+        order_key_ = key;
+        grid_.set_order({});
+        if (!custom_.fastest_first || !app.vfs()) return;
+        const auto data = race::exact_program_data(*app.vfs());
+        if (!data) return;
+        std::vector<int> figure;
+        for (int k = 0; k < n; ++k) {
+            const std::optional<sim::exact::Equipment> eq = race::exact_equipment(db_, race::ExactCarSource{grid_.car(k).label});
+            if (!eq) return; // (a car the race would leave out: the page keeps the chosen order)
+            figure.push_back(race::exact_grid_figure(db_, *data, *eq, power_hp_));
+        }
+        const std::vector<int> place = race::gt_grid_places(figure);
+        std::vector<int> order(static_cast<size_t>(n));
+        for (int k = 0; k < n; ++k) order[size_t(place[size_t(k)])] = k;
+        grid_.set_order(std::move(order));
+    }
+
     void update_custom(App& app) {
+        refresh_grid_order(app);
         const MenuInput& m = app.menu();
         if (m.pressed(PadButton::Triangle)) {
             go_back(app);
@@ -1473,6 +1500,7 @@ private:
     }
 
     void render_custom(App& app, Ui& ui) {
+        refresh_grid_order(app);
         clamp_grid_scroll(); // (the lineup may have shrunk)
         ui.header("QUICK RACE", saved_name_.empty() ? "Custom race" : "Custom race: " + saved_name_);
         grid_.set_player(custom_.car, custom_.paint);
@@ -1546,7 +1574,9 @@ private:
         rq.car = car_key(cars_[size_t(custom_.car)]);
         rq.car_color = custom_.paint;
         rq.transmission = custom_.manual ? 1 : 0;
-        for (int k = 0; k < grid_.shown(); ++k) {
+        refresh_grid_order(app);
+        for (int at = 0; at < grid_.shown(); ++at) { // (in the lineup's order: with Fastest first, the grid's)
+            const int k = grid_.who(OpponentGrid::kLineup + (at < grid_.player_place() ? at : at + 1));
             const OpponentGrid::Car& g = grid_.car(k);
             rq.opponents.push_back(g.label);
             rq.opponent_paints.push_back(g.paint);
@@ -1709,6 +1739,7 @@ private:
     int row_ = 0, list_first_ = 0, setup_sel_ = 0;
     int car_ = -1, paint_ = 0, level_ = 1;
     bool concept_ = false; // a Gran Turismo Concept disc (its skills: game::concept_car_race)
+    std::string order_key_; // the lineup refresh_grid_order last ordered
     bool power_hp_ = false; // the language's power unit is HP (BHP, CV), as the race's grid order reads it (FieldConfig::grid_hp)
     std::string power_unit() const { return power_hp_ ? "HP" : "PS"; }
     bool own_car_ = true, manual_ = false;

@@ -1288,7 +1288,8 @@ that difficulty, read from the disc, so they differ by release. `FieldConfig::op
 and `sim::exact::StartEntry::driver` carries its overrides, in place of the race's. The rubber band is cleared
 (`clear_rubber_band`) unless the player turns catch-up on, since it would hold a Professional field back. The grid is the
 lineup's order, or with Grid order set to Fastest first GT mode's (`GameRequest::grid_by_power`, `FieldConfig::grid_by_power`:
-the opponents by whole kg per whole power, the player on the place chosen; replays keep the rule). Replays keep the
+the opponents by whole kg per whole power, the player on the place chosen; replays keep the rule). The page's lineup
+shows that grid, worked out with the race's own `exact_grid_figure` and `gt_grid_places` (`OpponentGrid::set_order`). Replays keep the
 overrides in the race record (version 5) and the paints in the file (format v13). A custom race can be saved under a name:
 `[quickrace_race<n>]` in config.ini, the same keys as the last one in `[quickrace_custom]`.
 

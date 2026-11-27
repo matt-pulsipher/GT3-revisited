@@ -85,6 +85,9 @@ public:
     void set_car(int k, int car, int paint); // from the car page
     void set_player(int car, int paint) { player_car_ = car, player_paint_ = paint; } // the car its row shows
     void set_player_place(int place) { place_ = std::clamp(place, 0, kMaxCars); }
+    // The order the lineup shows the opponents in, pole first (opponent indices, one per shown opponent: the race's grid when
+    // it orders them itself); empty or not one per shown opponent: as chosen. The player's place is kept.
+    void set_order(std::vector<int> order) { order_ = std::move(order); }
 
     int shown() const; // the opponents racing: those chosen, as many as the limit allows (0 with no room, or none chosen)
     int player_place() const { return std::min(place_, shown()); } // 0 pole; `shown()` last
@@ -109,6 +112,7 @@ public:
 
 private:
     std::array<Car, kMaxCars> cars_;
+    std::vector<int> order_;
     int count_ = 0, limit_ = kMaxCars, place_ = kMaxCars, min_ = 1;
     bool read_only_ = false;
     bool concept_ = false;

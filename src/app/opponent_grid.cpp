@@ -114,7 +114,9 @@ int OpponentGrid::paint_count(App& app, int car) const {
 int OpponentGrid::who(int row) const {
     if (row < kLineup) return kNobody;
     const int at = row - kLineup, place = player_place();
-    return at == place ? kPlayer : at < place ? at : at - 1;
+    if (at == place) return kPlayer;
+    const int k = at < place ? at : at - 1;
+    return int(order_.size()) == shown() && k < int(order_.size()) ? order_[size_t(k)] : k;
 }
 
 int OpponentGrid::action(int row, int h, bool cross) {
