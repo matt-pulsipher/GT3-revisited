@@ -215,7 +215,7 @@ TEST(touch_reverse_button) {
         for (const Widget& w : z.widgets()) {
             if (w.kind == Widget::Kind::Steering || w.button == PadButton::Triangle) continue;
             if (w.shape == Widget::Shape::Circle) CHECK(std::hypot(w.x - rz.x, w.y - rz.y) > hr + w.w * 1.2f);
-            else CHECK(rz.y + hr < w.y || rz.x + hr < w.x); // above or left of the pedals
+            else CHECK(rz.y + hr < w.y || rz.x + hr < w.x || rz.x - hr > w.x + w.w); // above, left or right of it
         }
     }
 
@@ -266,6 +266,7 @@ TEST(touch_reverse_button) {
 
 TEST(touch_drag_steering_and_multitouch) {
     TouchConfig cfg;
+    cfg.steering = TouchConfig::Steering::Drag;
     TouchControls t = driving(cfg);
     const Widget gas = *find_widget(t, Widget::Kind::Pedal, PadButton::Cross);
     const float range = cfg.steer_range * 640.0f;
@@ -295,7 +296,9 @@ TEST(touch_drag_steering_and_multitouch) {
 // screen), never in the menu layout, and [touch] look = off turns it off.
 TEST(touch_look_around) {
     constexpr float kRange = TouchControls::kLookRange;
-    TouchControls t = driving();
+    TouchConfig drag;
+    drag.steering = TouchConfig::Steering::Drag;
+    TouchControls t = driving(drag);
     // Between the steering zone and the pedals: open screen.
     CHECK(t.opens_look(400, 200));
     CHECK(t.finger_down(1, 400, 200, 1.0f));
@@ -471,6 +474,7 @@ TEST(touch_menu_dpad_and_face_buttons) {
 
 TEST(touch_left_handed_mirrors) {
     TouchConfig cfg;
+    cfg.steering = TouchConfig::Steering::Drag;
     cfg.left_handed = true;
     TouchControls t = driving(cfg);
     const Widget* gas = find_widget(t, Widget::Kind::Pedal, PadButton::Cross);
@@ -499,7 +503,7 @@ TEST(touch_config_roundtrip) {
     CHECK(std::fabs(d.size - 1.2f) < 1e-3f && std::fabs(d.opacity - 0.8f) < 1e-3f);
     CHECK(std::fabs(d.tilt_range - 30.0f) < 1e-3f && std::fabs(TouchConfig{}.tilt_range - 45.0f) < 1e-6f);
     TouchConfig def = TouchConfig::load(IniDocument{});
-    CHECK(def.mode == TouchConfig::Mode::Auto && def.steering == TouchConfig::Steering::Drag);
+    CHECK(def.mode == TouchConfig::Mode::Auto && def.steering == TouchConfig::Steering::Buttons);
 }
 
 TEST(touch_overlay_merges_into_player_pad) {
@@ -1714,7 +1718,9 @@ TEST(touch_tap_shorter_than_a_frame) {
 
 TEST(touch_controls_use_side_bars) {
     // 20:9 phone: the 16:9 game area leaves ~80 UI units on each side.
-    TouchControls t = driving();
+    TouchConfig drag;
+    drag.steering = TouchConfig::Steering::Drag;
+    TouchControls t = driving(drag);
     t.set_screen(-80, 0, 720, 360);
     const Widget gas = *find_widget(t, Widget::Kind::Pedal, PadButton::Cross);
     CHECK(gas.x + gas.w > 690); // anchored to the right edge of the screen
@@ -1757,7 +1763,9 @@ TEST(touch_controls_avoid_cutout_insets) {
 }
 
 TEST(touch_safe_area) {
-    TouchControls t = driving();
+    TouchConfig drag; // the drag zone
+    drag.steering = TouchConfig::Steering::Drag;
+    TouchControls t = driving(drag);
     TouchRect hidden = t.safe_area();
     CHECK(hidden.x == 0 && hidden.y == 0 && hidden.w == 640 && hidden.h == 360);
     t.note_touch();
@@ -1801,7 +1809,9 @@ TEST(touch_game_area_sizes) {
 }
 
 TEST(touch_control_bounds) {
-    TouchControls t = driving();
+    TouchConfig drag; // the drag zone
+    drag.steering = TouchConfig::Steering::Drag;
+    TouchControls t = driving(drag);
     CHECK(t.control_bounds().empty()); // hidden
     t.note_touch();
     const std::vector<TouchRect> b = t.control_bounds();
