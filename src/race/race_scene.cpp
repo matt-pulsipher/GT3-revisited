@@ -421,7 +421,7 @@ CarVisual::CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::stri
             }
     }
     hood_profile_ = make_hood_camera_profile(body, ws.wheelbase);
-    driver_seat_ = find_driver_seat(body);
+    if (build.driver_seat) driver_seat_ = find_driver_seat(body);
     body_ = std::make_unique<render::GpuModel>(ctx, body);
     occluder_.add(body);
     occluder_.build();

@@ -766,7 +766,7 @@ bool RaceScreen::build_vehicle(App& app) {
                         car2_visual_ = std::make_shared<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
                                                                    w2 ? ByteSpan(*w2) : ByteSpan{}, bm2,
                                                                    sh2.car_span(), sh2.wheel_span(), sh2.stand_in, sh2.tyre,
-                                                                   race::CarBuild{&shared_builds_});
+                                                                   race::CarBuild{&shared_builds_, false});
                         car2_visual_->set_full_detail(full_car_detail_);
                         if (brake_parts_) car2_visual_->set_brake_parts(*brake_parts_);
                     }
@@ -976,7 +976,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
             lock.unlock();
             built[k] = std::make_shared<CarVisual>(*app.gpu(), *f, o.model, ws, o.paint, wf ? ByteSpan(*wf) : ByteSpan{},
                                                    o.bm, sh.car_span(), sh.wheel_span(), in_turn(sh.stand_in),
-                                                   in_turn(sh.tyre), race::CarBuild{&shared_builds_});
+                                                   in_turn(sh.tyre), race::CarBuild{&shared_builds_, false});
         } catch (const std::exception& e) {
             LOG_WARN("Race: opponent model %s: %s", o.model.c_str(), e.what());
         } catch (...) { // (parallel_for's work must not throw)

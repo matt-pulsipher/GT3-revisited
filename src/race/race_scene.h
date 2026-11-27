@@ -173,6 +173,7 @@ struct CarLook {
 // A car's build among the ones made with it.
 struct CarBuild {
     gtm1::SharedBuilds* shared = nullptr; // what the field's cars share (none: this car's own)
+    bool driver_seat = true;              // find the body's driver seat (driver_seat(): the player's car's is asked for)
 };
 
 class CarVisual {
