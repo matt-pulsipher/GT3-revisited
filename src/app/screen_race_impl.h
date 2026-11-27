@@ -1060,6 +1060,7 @@ private:
         std::vector<int> player;     // opponent index -> player id (a CPU car's: net::kCpuId + k)
         std::vector<int> paint;      // opponent index -> paint
         std::vector<std::string> names;
+        std::vector<std::string> wheel; // opponent index -> the wheel its car wears (a garage car's fitted one), "" = its own
         // The host's CPU cars (docs/dev/ONLINE.md "CPU cars"), by opponent index: a CPU car, and one this machine runs (we
         // host it); our CPU cars' state ticks and whether their finishes went out.
         std::vector<bool> cpu, local;

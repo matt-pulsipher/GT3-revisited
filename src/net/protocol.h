@@ -58,6 +58,8 @@ enum class Msg : u8 {
                      //    car's hits go to and come from the host)
     Flag = 22,       // C->H u8 suspect, u8 FlagKind, f32 value (reliable); H->C u8 suspect, u8 kind, f32 value, u8 reporter
     Kick = 23,       // H->C str reason (the host removed us)
+    CarExtra = 24,   // C->H bytes (game::OnlineCarExtra: what the car descriptor does not carry, e.g. a mod wheel's
+                     //    package); H->* u8 id, bytes. Older games ignore it (their players see the car without it)
 };
 
 // The disc a player races on (docs/dev/ONLINE.md "Discs"): the host lets in only players whose disc matches its own.

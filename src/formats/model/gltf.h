@@ -1,9 +1,10 @@
 #pragma once
 
-// Binary glTF 2.0 (.glb) import for mod car bodies (docs/MODDING.md "Car
-// models"). Triangle meshes with positions, normals (computed when missing),
+// Binary glTF 2.0 (.glb) import for mod car bodies and rims (docs/MODDING.md "Car
+// models", "Adding wheels"). Triangle meshes with positions, normals (computed when missing),
 // one UV set, vertex colours, node transforms, and materials with a base
-// colour factor and an embedded PNG base colour texture.
+// colour factor, an embedded PNG base colour texture and an alpha mode (BLEND
+// blended, MASK cut out at alphaCutoff).
 //
 // Axes: glTF's convention (+Y up, the model faces +Z, metres) is turned into
 // GT3's (+Y up, nose towards -Z, +X to the car's right) by a half turn about
@@ -13,6 +14,7 @@
 // Materials are recognised by name (case-insensitive substring):
 //   paint, body        car paint: takes the chosen paint colour, reflective
 //   glass, window      tinted glass (alpha blended when its alpha < 1), reflective
+//   chrome, metal      its base colour, shiny and reflective (not where cut out)
 //   brake, tail        rear lamps: light up while braking
 //   head, lamp, light  lamps: self-lit
 //   anything else      lit with its base colour (trim, tyres, grille...)

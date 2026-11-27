@@ -20,6 +20,12 @@ void forget_mod_menu_plan();     // (gt_mode_menu/common.cpp: an updated mod can
 void patch_event_flow(const menu::flow::FileReader& read, menu::MblFile& mbl);
 void patch_event_layout(const menu::flow::FileReader& read, menu::MenuScene& scene, const menu::MblFile& mbl);
 
+// Mod wheels (gt_mode_wheels_menu.cpp): the flow patch puts each wheel for sale on its maker's
+// wheel shop page (a new maker gets a page and a button on the list of makers); the layout patch
+// gives them their tiles, logos and names, and the garage's wheel page every mod wheel's tile.
+void patch_wheel_flow(const menu::flow::FileReader& read, menu::MblFile& mbl);
+void patch_wheel_layout(const menu::flow::FileReader& read, menu::MenuScene& scene, const menu::MblFile& mbl);
+
 // The leagues of a disc's GT Mode menus, from the flow itself: the pages the series pages (items
 // with set_race_code) go back to, in the race map's order (the map: the page they go back to,
 // into *map). The Event creator offers them; an event names one (data::ModEventDef::league).

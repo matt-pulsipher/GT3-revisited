@@ -2,6 +2,7 @@
 
 #include "disc/volume.h"
 #include "formats/texture_pack.h"
+#include "vfs/mod_wheels.h"
 
 #include <functional>
 #include <map>
@@ -20,6 +21,7 @@ class IniDocument;
 //   events/   GT Mode events (*.ini, see game/data/mod_events.h)
 //   textures/ replacement textures (PNGs named by key, formats/texture_pack.h)
 //   liveries/ custom paint colours (*.ini or <name>/livery.ini, race/custom_paints.h)
+//   wheels/   rims of their own (*.ini, vfs/mod_wheels.h): served as wheel/<label>, menu/wheel/<label>
 // See docs/MODDING.md.
 struct ModInfo {
     std::string id; // directory name
@@ -41,6 +43,7 @@ struct ModInfo {
     std::vector<std::string> events; // host paths of events/*.ini (game/data/mod_events.h)
     std::vector<std::string> liveries; // host paths of liveries/*.ini and liveries/*/livery.ini (race/custom_paints.h)
     std::vector<std::pair<u64, std::string>> textures; // textures/: key and host path of each picture
+    std::vector<std::string> wheels; // host paths of wheels/*.ini (vfs/mod_wheels.h)
 };
 
 // Layered read-only filesystem: enabled mods (by priority) over GT3.VOL.
@@ -71,6 +74,8 @@ public:
     // The enabled mods' replacement textures, the higher priority's picture winning a key; null
     // when there are none.
     std::shared_ptr<const texture_pack::Pack> textures() const { return textures_; }
+    // The enabled mods' wheels, as kModWheelsList lists them (errors included).
+    const std::vector<ModWheelDef>& mod_wheels() const { return wheels_; }
     // Merged listing (mod-added files included). Dirs end with '/'.
     std::vector<std::string> list_dir(const std::string& dir) const;
 
@@ -90,6 +95,10 @@ public:
     // "<mod id>\t<host path>" line each (ascending priority), so loaders that only get a reader
     // (game/data/mod_cars.h, mod_events.h) still see them.
     static constexpr const char* kModCarsList = "mods/.cars";
+    // Virtual file listing the enabled mods' wheels (vfs/mod_wheels.h mod_wheels), one
+    // "<mod id>\t<host path>\t<mod folder>\t<error>" line each (ascending priority); the error
+    // is the Vfs's (a disc wheel's label, or one a higher priority mod also gives), else empty.
+    static constexpr const char* kModWheelsList = "mods/.wheels";
     // Virtual file: the disc's packed program (CORE.GT3, Volume::read_program), for loaders
     // that read a reference table from it. Not moddable.
     static constexpr const char* kProgramFile = "disc/.core.gt3";
@@ -110,6 +119,14 @@ private:
     std::map<std::string, std::string> overrides_; // vol path -> host path
     std::map<std::string, std::string> override_source_; // vol path -> mod id
     std::shared_ptr<const texture_pack::Pack> textures_;
+    std::vector<ModWheelDef> wheels_;
+    // Mod wheels' rims that are not a file to read as it is (a disc rim, or one reshaped): vol path -> where it comes
+    // from (a host path, else a vol path of the disc's) and its shape. Read wraps them (formats/model/wheel_model.h).
+    struct ModRim {
+        std::string host, vol;
+        RimShape shape;
+    };
+    std::map<std::string, ModRim> rims_;
 };
 
 std::string normalize_vfs_path(std::string_view path);

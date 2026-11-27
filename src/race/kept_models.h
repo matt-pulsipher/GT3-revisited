@@ -16,7 +16,8 @@ namespace gt3r::race {
 template <class Model>
 class KeptModels {
 public:
-    // The model (a mod car's: its base car) and the paint, as load_opponent_cars tells its models apart.
+    // The model (a mod car's: its base car; "/<wheel>" after it on a fitted wheel) and the paint, as load_opponent_cars
+    // tells its models apart.
     using Key = std::pair<std::string, int>;
     using Map = std::map<Key, std::shared_ptr<Model>>;
 

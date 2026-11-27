@@ -216,6 +216,10 @@ public:
     // Our car descriptor (game::OnlineCar, opaque here; at most 1 KB), sent to everyone.
     void set_car_info(const Bytes& info);
     const Bytes* car_info(u8 id) const; // nullptr until that player sent one
+    // What our car's descriptor does not carry (game::OnlineCarExtra, opaque here; at most 512 bytes): Msg::CarExtra,
+    // which older games ignore. Its arrival is a CarInfo event too.
+    void set_car_extra(const Bytes& extra);
+    const Bytes* car_extra(u8 id) const; // nullptr until that player sent one
     void set_car(const std::string& car, u8 paint);
     void set_ready(bool ready);
     void set_settings(const Settings& s); // host
@@ -381,6 +385,7 @@ private:
     std::vector<Player> players_;
     std::map<u8, Remote> remotes_;
     std::map<u8, Bytes> car_info_; // per player (survives roster updates)
+    std::map<u8, Bytes> car_extra_; // per player, as car_info_
     std::vector<FlagRecord> flag_log_;
     void log_flag(const Event& e);
     struct Incoming {
@@ -397,6 +402,8 @@ private:
     void package_finished(const std::string& hash, bool ok, const std::string& why);
     void pump_transfers(Conn& c);
     Bytes my_car_info_;
+    Bytes my_car_extra_;
+    void send_car_extra(Conn* to, u8 id, const Bytes& extra);
     void send_car_info(Conn* to, u8 id, const Bytes& info); // host: to one client, or everyone (nullptr)
     std::map<u8, Punch> punches_;         // client: per other client
     std::set<std::pair<u8, u8>> links_;   // host: (reporter, peer) own links (direct or a relay server channel)

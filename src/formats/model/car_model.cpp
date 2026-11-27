@@ -262,14 +262,15 @@ scene::Model car_lod(const CarFile& f, const gtm1::Gtm1& g, const CarModelOption
             }
         }
         if (no_rim && wheel.meshes.empty() && opt.stand_in_rim)
-            if (std::optional<Bytes> other = opt.stand_in_rim(); other && WheelFile::is_wheel(*other)) {
+            if (std::optional<Bytes> other = opt.stand_in_rim(); other && is_rim(*other)) {
                 gtm1::Options so = wo;
                 so.run.lod = 0;
                 wheel = load_wheel_model(*other, so, "wheel");
                 from_menus = opt.even_menu_rim_light; // (races stand the menus' rim in, the menus the race's)
             }
         if (wheel.meshes.empty() && !rim_error.empty()) throw FormatError(rim_error);
-        if (opt.even_menu_rim_light && from_menus) even_rim_light(wheel);
+        // (A glTF rim, a mod wheel's, is lit by its materials, not by light painted into its images.)
+        if (opt.even_menu_rim_light && from_menus && !is_glb_rim(unwrap_rim(rim))) even_rim_light(wheel);
         int tyre_tex = -1;
         TyreShape tyre;
         if (!tyre_set(src.tire).empty()) {

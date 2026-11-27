@@ -47,6 +47,7 @@
 #include "game/gt_setting.h"
 #include "game/gt_state.h"
 #include "game/livery_package.h"
+#include "game/wheel_package.h"
 #include "game/net_car.h"
 #include "race/custom_paints.h"
 #include "game/mod_package.h"
@@ -578,6 +579,41 @@ private:
         if (oc.kind != game::OnlineCar::Kind::Garage && app_ && app_->vfs() && !cars_.empty()) offer_own_livery(oc, paint_);
         ns.set_car(oc.car, oc.paint);
         ns.set_car_info(game::encode_online_car(oc));
+        ns.set_car_extra(game::encode_online_car_extra(app_ && app_->vfs() ? own_wheel(oc) : game::OnlineCarExtra{}));
+    }
+
+    // --- mod wheels (docs/dev/ONLINE.md "Mod wheels") ---
+
+    // The mod wheel our car wears (a garage car's fitted one, a mod car's own) with its package, built once per wheel and
+    // offered to the session; none when it wears a disc wheel (or its wheel cannot be shared: others see the car's own).
+    game::OnlineCarExtra own_wheel(const game::OnlineCar& oc) {
+        game::OnlineCarExtra e;
+        std::string wheel = oc.kind == game::OnlineCar::Kind::Garage ? oc.wheel : std::string();
+        if (wheel.empty())
+            if (const data::ModCar* m = db_.mod_car(oc.car)) wheel = m->wheel;
+        const Vfs& vfs = *app_->vfs();
+        if (wheel.empty() || vfs.source_of("wheel/" + wheel) == "disc" || vfs.source_of("wheel/" + wheel).empty()) return e;
+        auto it = own_packages_.find("wheel:" + wheel);
+        if (it == own_packages_.end()) {
+            std::string err;
+            std::optional<Bytes> blob = game::build_wheel_package(vfs, wheel, &err);
+            std::optional<game::ModPackage> pkg = blob ? game::parse_wheel_package(*blob, &err) : std::nullopt;
+            if (!pkg || !game::validate_wheel_package(*pkg, vfs, wheel, &err)) { // others would refuse it too
+                LOG_WARN("Online: wheel %s cannot be shared: %s", wheel.c_str(), err.c_str());
+                status("Your wheel " + wheel + " cannot be shared (" + err + "); others see the car's own", true);
+                own_packages_["wheel:" + wheel] = {};
+                return e;
+            }
+            OwnPackage op{sha256_hex(*blob), u32(blob->size())};
+            LOG_INFO("Online: wheel %s shared (%u bytes)", wheel.c_str(), op.size);
+            net::online().offer_package(op.hash, std::move(*blob));
+            it = own_packages_.emplace("wheel:" + wheel, op).first;
+        }
+        if (it->second.hash.empty()) return e;
+        e.wheel = wheel;
+        e.wheel_package = it->second.hash;
+        e.wheel_package_size = it->second.size;
+        return e;
     }
 
     // --- mod car downloads (docs/dev/ONLINE.md "Mod cars") ---
@@ -661,12 +697,26 @@ private:
             if (!oc->livery.empty() && liveries != "off" && !downloading_.count(oc->livery) && !livery_installed(*oc) &&
                 asked_.insert(oc->livery).second) {
                 if (liveries == "show") start_download(p.id, p.name, *oc, true);
-                else prompts_.push_back({p.id, p.name, *oc, true});
+                else prompts_.push_back({p.id, p.name, *oc, true, std::nullopt});
             }
-            if (!ns.settings().allow_mods || !game::mod_download_offered(db_, *oc)) continue;
+            if (!ns.settings().allow_mods) continue;
+            // Their mod wheel, when we lack it (a mod car's own wheel too: it comes with the car's).
+            if (const Bytes* ex = ns.car_extra(p.id))
+                if (std::optional<game::OnlineCarExtra> w = game::decode_online_car_extra(*ex);
+                    w && !w->wheel_package.empty() && app_ && !app_->vfs()->exists("wheel/" + w->wheel) &&
+                    !downloading_.count(w->wheel_package) && asked_.insert(w->wheel_package).second)
+                    prompts_.push_back({p.id, p.name, *oc, false, w});
+            if (!game::mod_download_offered(db_, *oc)) continue;
             if (!asked_.insert(oc->package).second) continue;
-            prompts_.push_back({p.id, p.name, *oc});
+            prompts_.push_back({p.id, p.name, *oc, false, std::nullopt});
         }
+    }
+
+    void start_download(u8 player, const std::string& from, const game::OnlineCarExtra& wheel) {
+        Download& d = downloading_[wheel.wheel_package];
+        d.name = from + "'s wheel " + wheel.wheel, d.label = wheel.wheel, d.from = from, d.wheel = true;
+        net::online().request_package(wheel.wheel_package, player);
+        status("Downloading " + d.name + "...", false);
     }
 
     void start_download(u8 player, const std::string& from, const game::OnlineCar& car, bool livery) {
@@ -691,10 +741,12 @@ private:
         Prompt p = prompts_.front();
         if (yes) {
             prompts_.pop_front();
-            start_download(p.player, p.name, p.car, p.livery);
+            if (p.wheel) start_download(p.player, p.name, *p.wheel);
+            else start_download(p.player, p.name, p.car, p.livery);
         } else if (no) {
             prompts_.pop_front();
-            status(p.livery ? p.name + "'s car will show in the livery's paint" : p.name + "'s car will show as a stand-in", false);
+            if (p.wheel) status(p.name + "'s car will show on its own wheels", false);
+            else status(p.livery ? p.name + "'s car will show in the livery's paint" : p.name + "'s car will show as a stand-in", false);
         }
     }
 
@@ -704,19 +756,22 @@ private:
         ui.fill(0, 20, Ui::kWidth, Ui::kHeight - 36, Color{0, 0, 0, 120}); // modal
         ui.fill_round(x, y, w, h, 8, colors::kPanel);
         ui.frame_round(x, y, w, h, 8, 1, colors::kOutline);
-        std::string car = p.car.name.empty() ? p.car.car : p.car.name;
+        std::string car = p.wheel ? p.wheel->wheel : p.car.name.empty() ? p.car.car : p.car.name;
         char size[32];
-        const double bytes = double(p.livery ? p.car.livery_size : p.car.package_size);
+        const double bytes = double(p.wheel    ? p.wheel->wheel_package_size
+                                    : p.livery ? p.car.livery_size
+                                               : p.car.package_size);
         if (bytes < 1024.0 * 1024.0) std::snprintf(size, sizeof size, "%.0f KB", std::max(1.0, bytes / 1024.0));
         else std::snprintf(size, sizeof size, "%.1f MB", bytes / (1024.0 * 1024.0));
-        ui.text_center_in(x, w, y + 14, p.livery ? p.name + "'s car wears a livery you don't have:"
-                                                 : p.name + " is racing a mod car you don't have:", colors::kText);
+        ui.text_center_in(x, w, y + 14, p.wheel    ? p.name + "'s car is on mod wheels you don't have:"
+                                        : p.livery ? p.name + "'s car wears a livery you don't have:"
+                                                   : p.name + " is racing a mod car you don't have:", colors::kText);
         ui.text_center_in(x, w, y + 32, Ui::clip(car, w - 40) + "  (" + size + ")", colors::kAccent);
         ui.text_center_in(x, w, y + 50, p.livery ? "Download it? It is checked, then kept with your liveries."
-                                                 : "Download it? It is checked, then added to your mods.", colors::kDim);
+                                                 : "Download them? They are checked, then added to your mods.", colors::kDim);
         const UiRect yes{x + w / 2 - 170, y + 74, 160, 24}, no{x + w / 2 + 10, y + 74, 160, 24};
         ui.button(yes, "{Cross}: download", hovering(pointer_, yes), false, true);
-        ui.button(no, p.livery ? "{Circle}: skip" : "{Circle}: no (a stand-in)", hovering(pointer_, no), false);
+        ui.button(no, p.livery || p.wheel ? "{Circle}: skip" : "{Circle}: no (a stand-in)", hovering(pointer_, no), false);
         hits_.add({0, 0, Ui::kWidth, Ui::kHeight}, -1); // nothing behind the prompt
         hits_.add(yes, kHitPromptYes);
         hits_.add(no, kHitPromptNo);
@@ -729,6 +784,23 @@ private:
         Download d = it->second;
         downloading_.erase(it);
         std::string err;
+        if (d.wheel) {
+            std::optional<game::ModPackage> pkg = game::parse_wheel_package(*blob, &err);
+            if (!pkg || !game::validate_wheel_package(*pkg, *app.vfs(), d.label, &err)) {
+                LOG_WARN("Online: refused %s: %s", d.name.c_str(), err.c_str());
+                status("Refused " + d.name + ": " + err, true);
+                return;
+            }
+            std::optional<std::string> dir = game::install_mod_package(*pkg, hash, app.mods_dir(), "Wheel " + d.label, d.from, &err);
+            if (!dir) {
+                status("Could not install " + d.name + ": " + err, true);
+                return;
+            }
+            LOG_INFO("Online: installed %s in %s", d.name.c_str(), dir->c_str());
+            app.rescan_mods(); // (the race reads wheel/<label> through the mods)
+            status("Installed " + d.name, false);
+            return;
+        }
         if (d.livery) {
             std::optional<game::LiveryPackage> lp = game::parse_livery_package(*blob, &err);
             if (!lp || !game::validate_livery_package(*lp, *app.vfs(), d.model, &err, &db_)) {
@@ -2636,6 +2708,7 @@ private:
         std::string name;
         game::OnlineCar car;
         bool livery = false; // its livery, not a mod car
+        std::optional<game::OnlineCarExtra> wheel; // its mod wheel, not a mod car
     };
     std::deque<Prompt> prompts_;
     std::set<std::string> asked_; // package hashes already offered to the user
@@ -2643,6 +2716,7 @@ private:
         std::string name, label, from;
         bool livery = false;
         std::string model; // a livery's: the body it must be for
+        bool wheel = false; // a mod wheel (label: the wheel's)
     };
     std::map<std::string, Download> downloading_; // by package hash
     game::CarRules rules_; // the host's rules (as set here; without dirt_course)

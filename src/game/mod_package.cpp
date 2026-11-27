@@ -247,7 +247,10 @@ bool validate_mod_package(const ModPackage& p, const data::CarDatabase& db, cons
         if (!b.empty() && ext_of(b) != "glb") return fail(error, "the body must be a .glb file");
     for (const std::string* s : {&def->picture, &def->thumb, &def->logo})
         if (!s->empty() && ext_of(*s) != "png") return fail(error, "pictures must be .png files");
-    // Contents.
+    return check_package_contents(p, error);
+}
+
+bool check_package_contents(const ModPackage& p, std::string* error) {
     for (const ModPackage::File& f : p.files) {
         std::string e = ext_of(f.path);
         try {

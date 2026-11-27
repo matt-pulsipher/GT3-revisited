@@ -137,13 +137,14 @@ std::string lower(std::string s) {
     return s;
 }
 
-enum class Role { Plain, Paint, Glass, BrakeLamp, Lamp };
+enum class Role { Plain, Paint, Glass, Metal, BrakeLamp, Lamp };
 
 Role role_of(const std::string& name) {
     std::string n = lower(name);
     auto has = [&](const char* k) { return n.find(k) != std::string::npos; };
     if (has("paint") || has("body")) return Role::Paint;
     if (has("glass") || has("window")) return Role::Glass;
+    if (has("chrome") || has("metal")) return Role::Metal;
     if (has("brake") || has("tail")) return Role::BrakeLamp;
     if (has("head") || has("lamp") || has("light")) return Role::Lamp;
     return Role::Plain;
@@ -308,6 +309,9 @@ scene::Model load(ByteSpan d, const GlbOptions& opt, const std::string& name, st
             if (mat["emissiveFactor"].size() == 3) emissive[k] = float(mat["emissiveFactor"][size_t(k)].number());
         float metallic = float(pbr["metallicFactor"].number(1)), rough = float(pbr["roughnessFactor"].number(1));
         bool blend = mat["alphaMode"].string() == "BLEND" || (role == Role::Glass && base[3] < 0.999f);
+        // MASK: cut out where the alpha is under the cutoff (alpha-cut spokes, grilles).
+        const bool mask = !blend && mat["alphaMode"].string() == "MASK";
+        const float cutoff = float(mat["alphaCutoff"].number(0.5));
 
         // Normal matrix: inverse transpose of the upper 3x3 (uniform scale: the matrix itself).
         Mat4 nm = world;
@@ -367,12 +371,16 @@ scene::Model load(ByteSpan d, const GlbOptions& opt, const std::string& name, st
         p.index_count = u32(body.indices.size()) - p.first_index;
         p.texture = tex;
         if (blend) p.flags |= scene::kAlphaBlend | scene::kNoDepthWrite;
+        if (mask) p.flags |= scene::kAlphaTest, p.alpha_ref = std::clamp(cutoff, 0.0f, 1.0f);
         if (mat["doubleSided"].boolean()) p.flags |= scene::kDoubleSided;
         if (role == Role::Paint) p.flags |= scene::kTintable;
         if (role == Role::Glass) p.flags |= scene::kGlass;
         // GT3-style fixed-function material: the base colour is in the vertex colours.
         p.material.valid = true;
-        float spec = role == Role::Paint ? 0.55f : role == Role::Glass ? 0.8f : 0.15f + 0.4f * metallic * (1 - rough);
+        float spec = role == Role::Paint   ? 0.55f
+                     : role == Role::Glass ? 0.8f
+                     : role == Role::Metal ? 0.7f
+                                           : 0.15f + 0.4f * metallic * (1 - rough);
         for (int k = 0; k < 3; ++k) {
             p.material.ambient[k] = 0.42f;
             p.material.diffuse[k] = 0.72f;
@@ -380,7 +388,7 @@ scene::Model load(ByteSpan d, const GlbOptions& opt, const std::string& name, st
             p.material.emission[k] = role == Role::Lamp ? 0.6f : emissive[k];
         }
         if (role == Role::BrakeLamp) p.material.lamp_emission[0] = 1.2f, p.material.lamp_emission[1] = 0.25f;
-        p.material.shininess = role == Role::Paint ? 24 : role == Role::Glass ? 48 : 8 + 40 * (1 - rough);
+        p.material.shininess = role == Role::Paint ? 24 : role == Role::Glass || role == Role::Metal ? 48 : 8 + 40 * (1 - rough);
         if (p.index_count) body.primitives.push_back(p);
         if (parts && p.index_count) {
             part.primitive = body.primitives.size() - 1;
@@ -392,10 +400,12 @@ scene::Model load(ByteSpan d, const GlbOptions& opt, const std::string& name, st
             parts->push_back(std::move(part));
         }
 
-        // Reflection pass (paint and glass), like GT3's car env-map packets.
-        if (opt.reflections && (role == Role::Paint || role == Role::Glass) && p.index_count) {
+        // Reflection pass (paint, glass and metal), like GT3's car env-map packets.
+        // (Not over a cut-out: the pass would fill its holes.)
+        if (opt.reflections && (role == Role::Paint || role == Role::Glass || role == Role::Metal) && !mask &&
+            p.index_count) {
             u32 efirst = u32(env.vertices.size());
-            float w = role == Role::Glass ? 0.55f : 0.32f;
+            float w = role == Role::Glass ? 0.55f : role == Role::Metal ? 0.45f : 0.32f;
             for (u32 i = first; i < body.vertices.size(); ++i) {
                 scene::Vertex v = body.vertices[i];
                 v.color = rgba8(w, w, w, 1);
