@@ -92,7 +92,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         // ... and its fitted wheels (issue 347: the theater's launch has no garage car, so its stock rims were drawn).
         if (replay && !replay->wheel.empty()) launch_.request.car_wheel = replay->wheel;
         std::string model = launch_model_.empty() ? ca.model : launch_model_;
-        std::optional<Bytes> car_file = read_car(app, model);
+        read_files_.clear(); // (nothing from a build that stopped before its end)
+        const std::shared_ptr<const Bytes> car_file = read_car(app, model);
         if (!car_file || car_file->empty()) throw FormatError("car model cars/day/" + model + " is missing or empty");
 
         course_scene_.reset();
@@ -621,6 +622,11 @@ ExactFieldOptions RaceScreen::exact_options(App& app) {
 // The run's race: a race with opponents (or a battle), else a solo run (screen_race_solo.cpp). False with error_ set when
 // it cannot be set up from the disc's data.
 bool RaceScreen::build_vehicle(App& app) {
+    // The car files read for this build are let go with it.
+    struct LetGo {
+        std::map<std::string, std::shared_ptr<const Bytes>>& files;
+        ~LetGo() { files.clear(); }
+    } let_go{read_files_};
     drop_vehicle();
     if (!load_program_data(app)) {
         kept_opponents_.clear(); // (no race to build them for)
@@ -735,12 +741,12 @@ bool RaceScreen::build_vehicle(App& app) {
                 (car2 != car_.label || paint2 != preset_.paint || !model2.empty() || !wheel2.empty())) {
                 if (const data::Car* c2 = db_.car(car2)) {
                     std::string m2 = model2.empty() ? db_.model_of(*c2) : model2;
-                    std::optional<Bytes> f2 = read_car(app, m2);
+                    const std::shared_ptr<const Bytes> f2 = read_car(app, m2);
                     WheelSpec ws2;
                     if (auto w = wheel_spec_for_car(db_, car2)) ws2 = *w;
                     CarBodyMod bm2 = body_mod_for_car(db_, car2, paint2, car_scene());
                     if (!wheel2.empty()) bm2.wheel = wheel2;
-                    std::optional<Bytes> w2 = bm2.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm2.wheel);
+                    const std::shared_ptr<const Bytes> w2 = bm2.wheel.empty() ? nullptr : read_once(app, "wheel/" + bm2.wheel);
                     // The last build's model, when it was of the same car, paint and wheels (as the opponents').
                     const auto custom = race::custom_paints();
                     const auto pack = texture_pack::current_pack();
@@ -773,17 +779,17 @@ bool RaceScreen::build_vehicle(App& app) {
 // rim.
 void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpan car_file) {
     // GT mode: the garage car's bought wheels.
-    std::optional<Bytes> wheel_file;
+    std::shared_ptr<const Bytes> wheel_file;
     std::string wheel_label;
     if (from_menu_ || online_)
         [&](const auto& rq) {
             if constexpr (requires { rq.car_wheel; })
                 if (!rq.car_wheel.empty())
-                    wheel_file = app.vfs()->read("wheel/" + rq.car_wheel), wheel_label = rq.car_wheel;
+                    wheel_file = read_once(app, "wheel/" + rq.car_wheel), wheel_label = rq.car_wheel;
         }(launch_.request);
     CarBodyMod body_mod = body_mod_for_car(db_, car_.label, preset_.paint, car_scene());
     if (!wheel_file && !body_mod.wheel.empty())
-        wheel_file = app.vfs()->read("wheel/" + body_mod.wheel), wheel_label = body_mod.wheel;
+        wheel_file = read_once(app, "wheel/" + body_mod.wheel), wheel_label = body_mod.wheel;
     const ShowroomFiles showroom = read_showroom(app, model, wheel_file ? wheel_label : "");
     car_visual_ = std::make_unique<CarVisual>(*app.gpu(), car_file, model, car_.wheels, preset_.paint,
                                               wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod,
@@ -875,7 +881,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         LOG_INFO("Race: the demo's own car %s in paint %d", player_model.c_str(), paints[0]);
         if (paints[0] >= 0 && paints[0] != preset_.paint) { // (the car was built in paint 0 before the draw)
             preset_.paint = paints[0];
-            if (std::optional<Bytes> cf = read_car(app, player_model); cf && !cf->empty())
+            if (const std::shared_ptr<const Bytes> cf = read_car(app, player_model); cf && !cf->empty())
                 build_player_visual(app, player_model, *cf);
         }
     }
@@ -940,11 +946,11 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     auto build = [&](size_t k) {
         const Opponent& o = *todo[k];
         render::DeferredUploads::Scope scope(uploads[k]);
-        std::optional<Bytes> f, wf;
+        std::shared_ptr<const Bytes> f, wf;
         try {
             std::lock_guard lock(disc);
             f = read_car(app, o.model);
-            if (!o.bm.wheel.empty()) wf = app.vfs()->read("wheel/" + o.bm.wheel);
+            if (!o.bm.wheel.empty()) wf = read_once(app, "wheel/" + o.bm.wheel);
         } catch (...) {
             std::lock_guard lock(disc);
             failed = std::current_exception();
@@ -1097,32 +1103,42 @@ void RaceScreen::reset_run_state() {
     reset_lap_events();
 }
 
-std::optional<Bytes> RaceScreen::read_car(App& app, const std::string& model) const {
+std::shared_ptr<const Bytes> RaceScreen::read_once(App& app, const std::string& path) const {
+    const auto [it, fresh] = read_files_.try_emplace(path);
+    if (fresh)
+        if (std::optional<Bytes> f = app.vfs()->read(path)) it->second = std::make_shared<const Bytes>(std::move(*f));
+    return it->second;
+}
+
+std::shared_ptr<const Bytes> RaceScreen::read_car(App& app, const std::string& model) const {
     if (car_folder_ != "cars/day/")
-        if (std::optional<Bytes> f = app.vfs()->read(car_folder_ + model); f && !f->empty()) return f;
-    return app.vfs()->read("cars/day/" + model);
+        if (std::shared_ptr<const Bytes> f = read_once(app, car_folder_ + model); f && !f->empty()) return f;
+    return read_once(app, "cars/day/" + model);
 }
 
 RaceScreen::ShowroomFiles RaceScreen::read_showroom(App& app, const std::string& model, const std::string& wheel) const {
     ShowroomFiles s;
-    s.stand_in = [&app, model, wheel] {
-        return menu_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model, wheel);
+    // (The menus' rim and tyre: asked for only when a build needs them, as a copy of their own.)
+    const auto read = [this, &app](const std::string& p) {
+        const std::shared_ptr<const Bytes> f = read_once(app, p);
+        return f ? std::optional<Bytes>(*f) : std::nullopt;
     };
+    s.stand_in = [read, model, wheel] { return menu_rim(read, model, wheel); };
     // The menus' tyre (each LOD may ask: read once).
-    s.tyre = [&app, model, tyre = std::make_shared<std::optional<std::optional<Bytes>>>()] {
-        if (!*tyre) *tyre = menu_tyre([&app](const std::string& p) { return app.vfs()->read(p); }, model);
+    s.tyre = [read, model, tyre = std::make_shared<std::optional<std::optional<Bytes>>>()] {
+        if (!*tyre) *tyre = menu_tyre(read, model);
         return **tyre;
     };
     if (!showroom_wheels_) return s;
-    s.car = app.vfs()->read("menu/cars/" + model);
-    if (s.car && !wheel.empty()) s.wheel = app.vfs()->read("menu/wheel/" + wheel);
+    s.car = read_once(app, "menu/cars/" + model);
+    if (s.car && !wheel.empty()) s.wheel = read_once(app, "menu/wheel/" + wheel);
     return s;
 }
 
 std::vector<sim::exact::SparkPoint> RaceScreen::car_spark_points(App& app, const std::string& model) const {
     const auto [it, made] = spark_points_.try_emplace(car_folder_ + model);
     if (!made) return it->second;
-    std::optional<Bytes> f = read_car(app, model);
+    const std::shared_ptr<const Bytes> f = read_car(app, model);
     if (!f || !CarFile::is_car(*f)) return {};
     for (const std::array<u32, 3>& p : gt3r::car_spark_points(CarFile::parse(*f).info))
         it->second.push_back({sim::exact::F::raw(p[0]), sim::exact::F::raw(p[1]), sim::exact::F::raw(p[2])});

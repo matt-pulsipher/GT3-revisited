@@ -1599,7 +1599,8 @@ The models follow the paints: `load_opponent_cars` builds one per model and pain
 them for the next build (`race::KeptModels`, `RaceScreen::kept_opponents_`; player 2's car the
 same way, `kept_second_`). `start()` builds the field once, and the `restart(true)` that ends it
 runs on that build (a replay opened at the start builds the replay's field only,
-`start_playback`); every retry builds it again, and each build
+`start_playback`); every retry builds it again. A car file read during a build, for its spark
+points first, is the one its model is made from (`RaceScreen::read_files_`). Each build
 takes the last one's models it still has (their looks, the morphs and CLUT animations, start
 again as a new model's would) and lets the others go before it builds the rest. They are built
 again at the next start (its settings and course), or when the custom paints or the texture

@@ -295,13 +295,13 @@ private:
     void take_live_condition();
     void seed_vehicle_condition(const sim::EngineCondition& c, bool live);
     sim::EngineCondition live_condition() const;
-    std::optional<Bytes> read_car(App& app, const std::string& model) const;
+    std::shared_ptr<const Bytes> read_car(App& app, const std::string& model) const;
     // [video] showroom_wheels: the model's menu/cars file and a fitted wheel's
     // menu/wheel/<label> (CarVisual's showroom_car, showroom_wheel); none when off. `stand_in`: the
     // menus' rim, read only for a race rim with nothing to draw, whatever the setting
     // (CarModelOptions::stand_in_rim).
     struct ShowroomFiles {
-        std::optional<Bytes> car, wheel;
+        std::shared_ptr<const Bytes> car, wheel;
         std::function<std::optional<Bytes>()> stand_in;
         std::function<std::optional<Bytes>()> tyre; // CarModelOptions::other_tyre
         ByteSpan car_span() const { return car ? ByteSpan(*car) : ByteSpan{}; }
@@ -312,6 +312,9 @@ private:
     // and model (every restart builds the race again).
     std::vector<sim::exact::SparkPoint> car_spark_points(App& app, const std::string& model) const;
     mutable std::map<std::string, std::vector<sim::exact::SparkPoint>> spark_points_;
+    // The cars' files read for the build in hand, each once (two cars of one model; the menus' files); null: not there.
+    std::shared_ptr<const Bytes> read_once(App& app, const std::string& path) const;
+    mutable std::map<std::string, std::shared_ptr<const Bytes>> read_files_;
     // Flying start (physics §9.1, 9.4: licence tests and time trials with the event's
     // distance and speed): the race's AI drives the player's car until the first line crossing.
     bool flying_runup() const { return !race_mode_ && tt_start_.flying() && track_ && !track_->lap_started(); }
