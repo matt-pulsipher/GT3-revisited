@@ -183,6 +183,45 @@ TEST(sound_mixer_bus_gains) {
     CHECK(m.bus_gain(VoiceBus::Music) == 1.0f && m.bus_gain(VoiceBus::Effects) == 1.0f);
 }
 
+TEST(sound_mixer_volume_at_once_and_spare_voices) {
+    // A constant looping sample, hard left.
+    Bytes loop;
+    put_frame(loop, 1, 0x06);
+    put_frame(loop, 1, 0x03);
+    VoiceParams p;
+    p.data = std::make_shared<const Bytes>(loop);
+    p.vol_l = 0x3FFF;
+    p.vol_r = 0;
+    // Eased (the default): half the level 20 samples after the change is still on its way down.
+    // At once: the next sample has it.
+    for (bool ramp : {true, false}) {
+        VoiceMixer m;
+        m.set_master_volume(1.0f);
+        m.set_volume_ramp(ramp);
+        CHECK(m.volume_ramp() == ramp);
+        const VoiceId v = m.key_on(p);
+        std::vector<s16> out(2 * 2000);
+        m.mix(out.data(), 2000);
+        const int full = out[2 * 1999];
+        m.set_volume(v, 0x2000, 0);
+        m.mix(out.data(), 20);
+        const int after = out[2 * 19];
+        if (ramp) CHECK(after > full * 3 / 4);
+        else CHECK(std::abs(after - full / 2) <= 2);
+    }
+    // key_on hands out 46 voices; the two spares are keyed only by key_on_spare.
+    VoiceMixer m;
+    for (int i = 0; i < VoiceMixer::kVoices; ++i) CHECK(m.key_on(p).valid());
+    CHECK(m.key_on(p).valid()); // (a 47th steals one of the 46, never a spare)
+    CHECK(m.active_voices() == VoiceMixer::kVoices);
+    const VoiceId s0 = m.key_on_spare(0, p), s1 = m.key_on_spare(1, p);
+    CHECK(s0.valid() && s1.valid() && m.playing(s0) && m.playing(s1));
+    CHECK(!m.key_on_spare(2, p).valid());
+    CHECK(m.active_voices() == VoiceMixer::kAllVoices);
+    const VoiceId again = m.key_on_spare(0, p); // cuts what spare 0 played
+    CHECK(again.valid() && !m.playing(s0) && m.playing(again));
+}
+
 TEST(sound_mixer_pitch) {
     // A repeating 4-frame square wave (2 frames high, 2 low): period 112
     // samples at unity pitch. Game pitch 0x2000 is 88.2 kHz, i.e. SPU2 pitch

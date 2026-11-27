@@ -9,8 +9,8 @@ namespace {
 
 constexpr s32 kEnvMax = 0x7FFF;
 // Volume changes are slewed so register-style updates at frame rate do not
-// produce zipper noise: full scale in ~5 ms. (The SPU2 applies register
-// writes at once; the game limits its own steps for engine notes.)
+// produce zipper noise: full scale in ~5 ms (unless set_volume_ramp(false)). (The SPU2
+// applies register writes at once; the game limits its own steps for engine notes.)
 constexpr s32 kVolSlew = 0x3FFF / 256 + 1;
 constexpr u8 kFlagEnd = 1, kFlagRepeat = 2, kFlagLoopStart = 4;
 
@@ -93,7 +93,7 @@ VoiceMixer::VoiceMixer() {
 
 VoiceMixer::Voice* VoiceMixer::find(VoiceId id) {
     u32 idx = id.value & 0xFF;
-    if (!id.valid() || idx >= u32(kVoices)) return nullptr;
+    if (!id.valid() || idx >= u32(kAllVoices)) return nullptr;
     Voice& v = voices_[idx];
     return (v.gen == (id.value >> 8) && v.phase != Phase::Off) ? &v : nullptr;
 }
@@ -120,6 +120,16 @@ VoiceId VoiceMixer::key_on(const VoiceParams& p) {
         }
     }
     if (pick < 0) return {};
+    return key_on_at(pick, p);
+}
+
+VoiceId VoiceMixer::key_on_spare(int spare, const VoiceParams& p) {
+    if (spare < 0 || spare >= kSpareVoices || !p.data || p.start + PsAdpcmDecoder::kFrameBytes > p.data->size()) return {};
+    std::lock_guard lock(mutex_);
+    return key_on_at(kVoices + spare, p);
+}
+
+VoiceId VoiceMixer::key_on_at(int pick, const VoiceParams& p) {
     Voice& v = voices_[pick];
     u32 gen = (v.gen + 1) & 0xFFFFFF;
     v = Voice{};
@@ -418,6 +428,7 @@ void VoiceMixer::render_block(s16* out, size_t frames) {
         p.master = s32(master_ * 4096.0f);
         p.gauss = interp_ == Interpolation::Gaussian;
         p.bus_gain = bus_gain_;
+        p.ramp = volume_ramp_;
         rendering_ = true;
     }
     render(out, frames, p);
@@ -477,9 +488,13 @@ void VoiceMixer::render(s16* out, size_t frames, const BlockParams& p) {
             step_envelope(v);
             s32 e = s32((s64(sample) * v.env) >> 15);
 
-            // Slew volume towards the target.
-            v.vol_l += std::clamp(v.target_l - v.vol_l, -kVolSlew, kVolSlew);
-            v.vol_r += std::clamp(v.target_r - v.vol_r, -kVolSlew, kVolSlew);
+            // Slew volume towards the target (or take it at once).
+            if (p.ramp) {
+                v.vol_l += std::clamp(v.target_l - v.vol_l, -kVolSlew, kVolSlew);
+                v.vol_r += std::clamp(v.target_r - v.vol_r, -kVolSlew, kVolSlew);
+            } else {
+                v.vol_l = v.target_l, v.vol_r = v.target_r;
+            }
             s32 l = (e * v.vol_l) >> 14, r = (e * v.vol_r) >> 14;
             bus_l[v.bus] += l;
             bus_r[v.bus] += r;
