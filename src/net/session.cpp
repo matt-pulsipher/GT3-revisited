@@ -318,6 +318,7 @@ void Session::close() {
     punches_.clear();
     links_.clear();
     car_info_.clear();
+    car_extra_.clear();
     flag_log_.clear();
     offers_.clear();
     downloads_.clear();
@@ -1141,6 +1142,7 @@ void Session::drop(Conn& c, const std::string& reason) {
                    players_.end());
     remotes_.erase(u8(pid));
     car_info_.erase(u8(pid));
+    car_extra_.erase(u8(pid));
     for (auto it = links_.begin(); it != links_.end();)
         it = it->first == pid || it->second == pid ? links_.erase(it) : std::next(it);
     for (auto it = relayed_.begin(); it != relayed_.end();)
@@ -1304,6 +1306,7 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
             send_reliable(c, w);
             send_reliable(c, settings_msg());
             for (const auto& [pid, info] : car_info_) send_car_info(&c, pid, info);
+            for (const auto& [pid, extra] : car_extra_) send_car_extra(&c, pid, extra);
             roster_dirty_ = true;
             LOG_INFO("Online: %s joined from %s as player %u", p.name.c_str(), c.addr.to_string().c_str(), unsigned(id));
             return;
@@ -1373,6 +1376,18 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
             Bytes b(info.begin(), info.end());
             car_info_[u8(c.player)] = b;
             send_car_info(nullptr, u8(c.player), b);
+            Event e;
+            e.kind = Event::Kind::CarInfo;
+            e.player = u8(c.player);
+            push(std::move(e));
+            break;
+        }
+        case Msg::CarExtra: {
+            ByteSpan extra = r.bytes(r.remaining());
+            if (extra.size() > 512) break;
+            Bytes b(extra.begin(), extra.end());
+            car_extra_[u8(c.player)] = b;
+            send_car_extra(nullptr, u8(c.player), b);
             Event e;
             e.kind = Event::Kind::CarInfo;
             e.player = u8(c.player);
@@ -1452,6 +1467,7 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
             return;
         }
         if (!my_car_info_.empty()) set_car_info(my_car_info_);
+        if (!my_car_extra_.empty()) set_car_extra(my_car_extra_);
         push(kind_event(Event::Kind::Joined));
         LOG_INFO("Online: joined as player %d", my_id_);
         break;
@@ -1509,6 +1525,7 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
         for (auto it = punches_.begin(); it != punches_.end();) it = player(it->first) ? std::next(it) : punches_.erase(it);
         for (auto it = car_info_.begin(); it != car_info_.end();)
             it = player(it->first) || is_cpu_id(it->first) ? std::next(it) : car_info_.erase(it); // (CPU cars stay)
+        for (auto it = car_extra_.begin(); it != car_extra_.end();) it = player(it->first) ? std::next(it) : car_extra_.erase(it);
         push(kind_event(Event::Kind::Roster));
         break;
     }
@@ -1517,6 +1534,17 @@ void Session::handle(Conn& c, ByteSpan msg, double arrived) {
         ByteSpan info = r.bytes(r.remaining());
         if (!r.ok() || info.size() > 1024) break;
         car_info_[id] = Bytes(info.begin(), info.end());
+        Event e;
+        e.kind = Event::Kind::CarInfo;
+        e.player = id;
+        push(std::move(e));
+        break;
+    }
+    case Msg::CarExtra: {
+        u8 id = r.u8_();
+        ByteSpan extra = r.bytes(r.remaining());
+        if (!r.ok() || extra.size() > 512) break;
+        car_extra_[id] = Bytes(extra.begin(), extra.end());
         Event e;
         e.kind = Event::Kind::CarInfo;
         e.player = id;
@@ -1689,6 +1717,37 @@ void Session::set_car_info(const Bytes& info) {
         w.bytes(info);
         send_reliable(*h, w);
     }
+}
+
+void Session::send_car_extra(Conn* to, u8 id, const Bytes& extra) {
+    Writer w;
+    w.u8_(u8(Msg::CarExtra));
+    w.u8_(id);
+    w.bytes(extra);
+    if (to) send_reliable(*to, w);
+    else broadcast_reliable(w);
+}
+
+void Session::set_car_extra(const Bytes& extra) {
+    if (extra.size() > 512) return;
+    my_car_extra_ = extra;
+    if (my_id_ >= 0) car_extra_[u8(my_id_)] = extra;
+    if (host_) {
+        send_car_extra(nullptr, 0, extra);
+        push([] { Event e; e.kind = Event::Kind::CarInfo; e.player = 0; return e; }());
+        return;
+    }
+    if (Conn* h = host_conn(); h && my_id_ >= 0) {
+        Writer w;
+        w.u8_(u8(Msg::CarExtra));
+        w.bytes(extra);
+        send_reliable(*h, w);
+    }
+}
+
+const Bytes* Session::car_extra(u8 id) const {
+    auto it = car_extra_.find(id);
+    return it == car_extra_.end() ? nullptr : &it->second;
 }
 
 const Bytes* Session::car_info(u8 id) const {

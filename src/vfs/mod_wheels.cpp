@@ -47,14 +47,24 @@ std::string wheel_brand_key(const std::string& brand, bool first_word) {
 }
 
 ModWheelDef load_mod_wheel(const std::string& file, const std::string& mod_id, const std::string& root) {
-    ModWheelDef d;
-    d.file = file;
-    d.mod_id = mod_id;
-    std::optional<IniDocument> ini = IniDocument::load(file);
-    if (!ini) {
+    std::optional<Bytes> text = read_host_file(file);
+    if (!text) {
+        ModWheelDef d;
+        d.file = file;
+        d.mod_id = mod_id;
         d.error = "cannot be read";
         return d;
     }
+    return parse_mod_wheel(std::string_view(reinterpret_cast<const char*>(text->data()), text->size()), file, mod_id, root);
+}
+
+ModWheelDef parse_mod_wheel(std::string_view text, const std::string& file, const std::string& mod_id,
+                            const std::string& root, bool check_files) {
+    ModWheelDef d;
+    d.file = file;
+    d.mod_id = mod_id;
+    const IniDocument parsed = IniDocument::parse(text);
+    const IniDocument* ini = &parsed;
     d.label = to_lower(value_of(*ini, "wheel", "label"));
     if (d.label.empty()) d.label = to_lower(stem_of(file));
     d.brand = value_of(*ini, "wheel", "brand");
@@ -75,7 +85,7 @@ ModWheelDef load_mod_wheel(const std::string& file, const std::string& mod_id, c
         d.error = "no model (model = <file>.glb)";
     else if (d.for_sale && wheel_brand_key(d.brand).empty())
         d.error = "no brand (brand = <the wheel shop maker>)";
-    else
+    else if (check_files)
         for (const std::string* p : {&d.model, &d.menu, &d.race})
             if (!p->empty() && !host_path_exists(*p)) {
                 d.error = "missing " + p->substr(root.size() + 1);

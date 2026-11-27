@@ -83,6 +83,19 @@ struct OnlineCar {
 
 constexpr size_t kMaxOnlineCarBytes = 1024;
 
+// What travels beside a car's descriptor in its own message (net::Msg::CarExtra; docs/dev/ONLINE.md "Mod wheels"),
+// which older games ignore: the car's mod wheel and its package (game/wheel_package.h), so a player who lacks the wheel
+// can download it. The wheel is the one the car wears (a garage car's fitted wheel, a mod car's own); none: no mod
+// wheel.
+struct OnlineCarExtra {
+    std::string wheel;         // the mod wheel's label (vfs/mod_wheels.h)
+    std::string wheel_package; // lower-case hex SHA-256 of its package
+    u32 wheel_package_size = 0;
+    bool operator==(const OnlineCarExtra&) const = default;
+};
+Bytes encode_online_car_extra(const OnlineCarExtra& e);
+std::optional<OnlineCarExtra> decode_online_car_extra(ByteSpan data); // nullopt on malformed input
+
 // A mod car another player can download: one from the lobby's car list, or a garage mod car with its package.
 inline bool online_car_is_mod(const OnlineCar& c) {
     return c.kind == OnlineCar::Kind::Mod || (c.kind == OnlineCar::Kind::Garage && !c.package.empty());

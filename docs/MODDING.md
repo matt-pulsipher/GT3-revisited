@@ -610,8 +610,10 @@ picture = pictures/mesh_racer.png ; its 52 x 52 tile in the shop and the garage
 Bought mod wheels go to the garage's wheel list like the disc's, and the car
 wears them in the menus, in races and in its replays. When the mod is off or
 removed, the cars on its wheels show their own wheels again (a saved car keeps
-the label, so turning the mod back on brings the wheel back). In online races,
-players who do not have the wheel's mod see the car on its own wheels.
+the label, so turning the mod back on brings the wheel back). In online races
+(when the lobby allows mods), players who do not have the wheel are offered it, as
+a mod car is: it is checked, then added to their mods. Players who skip it, or
+whose game is older, see the car on its own wheels.
 
 ### The rim model
 

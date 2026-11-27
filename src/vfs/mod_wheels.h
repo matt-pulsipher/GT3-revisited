@@ -24,6 +24,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gt3r {
@@ -47,6 +48,9 @@ struct ModWheelDef {
 // Reads one definition (`root`: the mod folder its paths are relative to). A definition that
 // cannot load keeps its label (when it has one) and says why in `error`.
 ModWheelDef load_mod_wheel(const std::string& file, const std::string& mod_id, const std::string& root);
+// The same from the file's text (`file` only names it); `check_files`: whether its models must exist.
+ModWheelDef parse_mod_wheel(std::string_view text, const std::string& file, const std::string& mod_id,
+                            const std::string& root, bool check_files = true);
 
 // Whether `label` can name a mod wheel: 1-32 lower case letters, digits and '_'.
 bool valid_wheel_label(const std::string& label);

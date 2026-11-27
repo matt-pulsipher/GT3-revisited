@@ -32,7 +32,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
     cfg.made_grid = true; // (up to net::kMaxRaceCars cars: the places past the course's grid made along its main line)
     cfg.event.clear();
     cfg.battle_wear = ns.settings().tire_wear; // the host's (the lobby refuses the start while a player's game lacks it)
-    net_.player.clear(), net_.paint.clear(), net_.names.clear(), net_.top_speed.clear();
+    net_.player.clear(), net_.paint.clear(), net_.names.clear(), net_.top_speed.clear(), net_.wheel.clear();
     net_.cpu.clear(), net_.local.clear(), net_.cpu_tick.clear(), net_.cpu_finish_sent.clear();
     // The field's opponents: the CPU cars we run (the host's), then the other cars (players' and, for everyone but the host,
     // the host's CPU cars), each on its grid slot (pole first).
@@ -56,6 +56,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
         float top_speed = 150.0f; // (m/s: unknown gearing, a generous bound)
         std::string name;         // the car's name (a CPU car's name)
         int paint = -1;           // a custom colour's paint index here (-1: the paint the roster gives)
+        std::string wheel;        // a garage car's fitted wheel (a mod wheel's when it is installed here)
     };
     auto car_of = [&](u8 id, const std::string& fallback, const std::string& who) {
         Car c;
@@ -68,6 +69,7 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
                 std::string base = game::online_car_base(db_, *oc); // an arcade car's twin on this disc
                 c.label = base.empty() ? oc->car : base;
                 c.name = oc->name.empty() ? c.label : oc->name;
+                if (oc->kind == game::OnlineCar::Kind::Garage) c.wheel = oc->wheel;
                 if (oc->color || !oc->livery.empty()) c.paint = game::online_car_local_paint(db_, *oc, who);
                 std::string err;
                 if (std::optional<sim::CarSpec> sp = game::online_car_spec(db_, *oc, &err, preset_.course))
@@ -81,8 +83,10 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
         const size_t k = size_t(id - net::kCpuId);
         return net::is_cpu_id(id) && k < st.cpu.size() ? &st.cpu[k] : nullptr;
     };
-    auto add = [&](u8 id, int paint, const std::string& name, float top_speed, bool cpu, bool local) {
+    auto add = [&](u8 id, int paint, const std::string& name, float top_speed, bool cpu, bool local,
+                   const std::string& wheel = {}) {
         net_.player.push_back(id);
+        net_.wheel.push_back(wheel);
         net_.paint.push_back(paint);
         net_.names.push_back(name);
         net_.top_speed.push_back(top_speed);
@@ -120,7 +124,8 @@ void RaceScreen::configure_online_field(FieldConfig& cfg) {
         FieldConfig::Remote rm{c.label, s.slot, c.source, c.condition, std::nullopt};
         if (cc) rm.driver = cc->driver; // (the host's CPU car: its prediction's AI drives with the same skill)
         cfg.remote.push_back(rm);
-        add(s.id, c.paint >= 0 ? c.paint : p ? p->paint : cc->paint, cc ? c.name : who, c.top_speed, cc != nullptr, false);
+        add(s.id, c.paint >= 0 ? c.paint : p ? p->paint : cc->paint, cc ? c.name : who, c.top_speed, cc != nullptr, false,
+            c.wheel);
     }
     net_.cpu_tick.assign(net_.player.size(), 0);
     net_.reported_contact.assign(net_.player.size(), -1e18);

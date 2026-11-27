@@ -27,6 +27,7 @@
 #include "game/livery_package.h"
 #include "game/mod_package.h"
 #include "game/net_car.h"
+#include "game/wheel_package.h"
 #include "net/protocol.h"
 #include "net/relay_server.h"
 #include "net/rendezvous.h"
@@ -333,6 +334,27 @@ std::vector<Target> targets() {
              p.files.push_back({"cars/fuzz_car.ini", text(kIni)});
              p.files.push_back({"models/body.glb", tiny_glb()});
              return std::vector<Bytes>{game::serialize_mod_package(p)};
+         }},
+        {"wheel_package", // a mod wheel from another player (game/wheel_package.h): the structure checks
+         [](ByteSpan d) {
+             std::string err;
+             game::parse_wheel_package(d, &err);
+         },
+         [] {
+             game::ModPackage p;
+             p.label = "fuzz_rim";
+             p.files.push_back({"wheels/fuzz_rim.ini", text("[wheel]\nlabel = fuzz_rim\nbrand = BBS\nmodel = models/rim.glb\n")});
+             p.files.push_back({"models/rim.glb", tiny_glb()});
+             return std::vector<Bytes>{game::serialize_wheel_package(p)};
+         }},
+        {"online_car_extra", // a car's extras (game::OnlineCarExtra, net::Msg::CarExtra)
+         [](ByteSpan d) { game::decode_online_car_extra(d); },
+         [] {
+             game::OnlineCarExtra e;
+             e.wheel = "fuzz_rim";
+             e.wheel_package = std::string(64, 'd');
+             e.wheel_package_size = 5000;
+             return std::vector<Bytes>{game::encode_online_car_extra(e), game::encode_online_car_extra({})};
          }},
         {"snapshot",
          [](ByteSpan d) {

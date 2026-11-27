@@ -12,6 +12,8 @@
 #include "net/protocol.h"
 #include "race/arcade_car.h"
 #include "game/livery_package.h"
+#include "game/mod_package.h"
+#include "vfs/mod_wheels.h"
 #include "race/custom_paints.h"
 #include "race/exact_car.h"
 #include "race/exact_setup.h"
@@ -125,6 +127,31 @@ Bytes encode_online_car(const OnlineCar& c) {
         }
     }
     return w.data;
+}
+
+Bytes encode_online_car_extra(const OnlineCarExtra& e) {
+    net::Writer w;
+    w.u8_(1); // (its version)
+    w.str(e.wheel);
+    w.str(e.wheel_package);
+    w.u32_(e.wheel_package_size);
+    return w.data;
+}
+
+std::optional<OnlineCarExtra> decode_online_car_extra(ByteSpan data) {
+    if (data.size() > 512) return std::nullopt;
+    net::Reader r(data);
+    if (r.u8_() != 1) return std::nullopt;
+    OnlineCarExtra e;
+    e.wheel = r.str();
+    e.wheel_package = r.str();
+    e.wheel_package_size = r.u32_();
+    if (!r.ok()) return std::nullopt;
+    if (!e.wheel.empty() && !valid_wheel_label(e.wheel)) return std::nullopt;
+    if (!e.wheel_package.empty() &&
+        (e.wheel.empty() || !package_hash(e.wheel_package) || e.wheel_package_size == 0 || e.wheel_package_size > kMaxPackageBytes))
+        return std::nullopt;
+    return e; // (anything after it: a later game's, ignored)
 }
 
 std::optional<OnlineCar> decode_online_car(ByteSpan data) {

@@ -67,6 +67,10 @@ std::optional<ModPackage> parse_mod_package(ByteSpan blob, std::string* error = 
 bool validate_mod_package(const ModPackage& p, const data::CarDatabase& db, const std::string& expected_label,
                           std::string* error = nullptr);
 
+// A package's pictures and models (car or wheel packages): PNGs of at most 2048 x 2048 that decode, GLBs that load with
+// textures of at most 2048 x 2048 and at most 500,000 vertices.
+bool check_package_contents(const ModPackage& p, std::string* error = nullptr);
+
 // A path a package may contain (exposed for tests).
 bool safe_package_path(const std::string& path);
 

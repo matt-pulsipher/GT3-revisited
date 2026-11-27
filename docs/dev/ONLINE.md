@@ -596,6 +596,36 @@ sends a garage mod car without its package: a player without the mod sees
   `net_mod_packages_of_installed_mods` test, which builds and validates every
   installed mod car. The EV pack: all 5 pass, 0.3–4.5 MB each.
 
+## Mod wheels
+
+A car on a mod wheel (docs/MODDING.md "Adding wheels": a garage car's fitted wheel, or a mod
+car's own `[model] wheel`) shares the wheel as a mod car is shared: a **package**
+(`src/game/wheel_package.*`) whose SHA-256 is its identity, offered, requested and served
+through the host with the same calls (`offer_package` / `request_package` / `take_package`).
+
+- **What travels.** The car descriptor's garage layout cannot grow without older games refusing
+  the car, so the wheel goes in its own message, `CarExtra` (`game::OnlineCarExtra`: the wheel's
+  label, its package's hash and size), relayed and kept as `CarInfo` is. Older games ignore the
+  message: their players see the car on its own wheels, as before.
+- **The package:** `wheels/<label>.ini` written afresh (label, brand, rims, tile, sale, the
+  maker's logo) and the files it names: at most two `.glb` rims and two `.png` pictures, 5 files
+  and 32 MB in all.
+- **Validation** (before anything is written): the structure as a car package's
+  (`safe_package_path`, per-type caps, exactly one definition); the definition parses and names
+  the advertised label, which is no wheel of this disc; the files it names are exactly the
+  package's others; rims and pictures pass `check_package_contents` (the car packages' checks:
+  PNGs and GLB textures at most 2048 × 2048, at most 500,000 vertices).
+- **Download.** When the lobby allows mods, a player whose car is on a mod wheel this machine
+  lacks is asked about once per package ("…'s car is on mod wheels you don't have"; Circle
+  skips, and the car shows its own wheels). It installs as a car package does
+  (`install_mod_package`: `mods/dl-<12 hash digits>/`, priority −100, every rim and picture our
+  own encoding), so the wheel is then at this machine's wheel shop too.
+- **In the race** every other player's garage car wears its fitted wheel (`net_.wheel`; before,
+  others' cars always showed their own wheels), a mod wheel's when it is installed here.
+- Tests: `mod_wheel_package`, `net_online_car_extra_wire`, `net_car_extra_reaches_everyone`.
+  Measured on localhost: a garage R34 on a mod wheel (an 87 KB package) hosted, the joiner
+  without the mod accepted it, installed it and raced the R34 on it.
+
 ## Fuzzing
 
 `tests/fuzz/fuzz.cpp` has a fuzz target for every reader that sees untrusted

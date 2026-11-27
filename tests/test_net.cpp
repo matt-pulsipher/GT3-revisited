@@ -1278,6 +1278,53 @@ TEST(net_car_info_reaches_everyone) {
     CHECK(pump({&host, &c1, &c2}, [&] { return c2.car_info(1) && *c2.car_info(1) == (Bytes{7, 7}); }));
 }
 
+// The car extras (game::OnlineCarExtra, net::Msg::CarExtra) travel as car descriptors do; a game that does not send
+// them leaves none.
+TEST(net_car_extra_reaches_everyone) {
+    FakeClock clock;
+    net::Session host, c1, c2;
+    if (!host.host(0, "Host", "a", 0)) SKIP("no UDP sockets here");
+    std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    host.set_car_extra(Bytes{1, 2});
+    c1.join(addr, "One", "b", 0);
+    c1.set_car_extra(Bytes{4}); // before the Welcome: sent once joined
+    bool swapped = pump({&host, &c1}, [&] { return host.car_extra(1) && c1.car_extra(0); });
+    CHECK(swapped);
+    if (!swapped) return;
+    CHECK(*host.car_extra(1) == (Bytes{4}) && *c1.car_extra(0) == (Bytes{1, 2}));
+    c2.join(addr, "Two", "c", 0); // (sends none, as an older game)
+    CHECK(pump({&host, &c1, &c2}, [&] { return c2.car_extra(0) && c2.car_extra(1); }));
+    CHECK(c1.car_extra(2) == nullptr && host.car_extra(2) == nullptr);
+    c1.set_car_extra(Bytes{7, 7});
+    CHECK(pump({&host, &c1, &c2}, [&] { return c2.car_extra(1) && *c2.car_extra(1) == (Bytes{7, 7}); }));
+}
+
+TEST(net_online_car_extra_wire) {
+    game::OnlineCarExtra e;
+    std::optional<game::OnlineCarExtra> d = game::decode_online_car_extra(game::encode_online_car_extra(e));
+    CHECK(d && *d == e);
+    e.wheel = "mesh_racer";
+    e.wheel_package = std::string(64, 'b');
+    e.wheel_package_size = 123456;
+    d = game::decode_online_car_extra(game::encode_online_car_extra(e));
+    CHECK(d && *d == e);
+    Bytes later = game::encode_online_car_extra(e);
+    later.push_back(42); // a later game's additions
+    CHECK(game::decode_online_car_extra(later).has_value());
+    // Malformed: truncated, another version, a bad label or hash, a package without a wheel or size.
+    const Bytes b = game::encode_online_car_extra(e);
+    CHECK(!game::decode_online_car_extra(ByteSpan(b.data(), b.size() - 2)));
+    Bytes v = b;
+    v[0] = 2;
+    CHECK(!game::decode_online_car_extra(v));
+    for (auto bad : {+[](game::OnlineCarExtra& x) { x.wheel = "../x"; }, +[](game::OnlineCarExtra& x) { x.wheel_package = "zz"; },
+                     +[](game::OnlineCarExtra& x) { x.wheel.clear(); }, +[](game::OnlineCarExtra& x) { x.wheel_package_size = 0; }}) {
+        game::OnlineCarExtra x = e;
+        bad(x);
+        CHECK(!game::decode_online_car_extra(game::encode_online_car_extra(x)));
+    }
+}
+
 TEST(net_garage_car_spec_disc) {
     // A garage car rebuilt from its descriptor on "another machine" is GT Mode's own spec.
     Disc* disc = test::test_disc();

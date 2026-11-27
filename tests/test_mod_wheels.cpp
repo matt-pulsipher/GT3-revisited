@@ -13,6 +13,8 @@
 #include "formats/model/wheel_model.h"
 #include "formats/png_writer.h"
 #include "game/gt_mode_mods.h"
+#include "game/mod_package.h"
+#include "game/wheel_package.h"
 #include "menu/flow/menu_set.h"
 #include "formats/text/mltx.h"
 #include "vfs/mod_wheels.h"
@@ -172,6 +174,63 @@ TEST(mod_wheel_glb_rim_loads) {
         }
     }
     CHECK(cut && tris == 16);
+}
+
+// A mod wheel's package (online): what it holds, that it checks out, what it refuses, and that it installs as a mod
+// whose wheel is served again.
+TEST(mod_wheel_package) {
+    const std::filesystem::path base = temp_dir("mod_wheel_package");
+    const std::filesystem::path mod = base / "mods" / "my_wheels";
+    write_bytes(mod / "models" / "race.glb", export_glb(synthetic_rim()));
+    write_bytes(mod / "models" / "menu.glb", export_glb(synthetic_rim()));
+    write_bytes(mod / "pictures" / "tile.png", encode_png(52, 52, std::vector<u32>(52 * 52, 0xFF0000FFu)));
+    write_bytes(mod / "pictures" / "logo.png", encode_png(48, 14, std::vector<u32>(48 * 14, 0xFF00FFFFu)));
+    write_bytes(mod / "pictures" / "unused.png", encode_png(4, 4, std::vector<u32>(16, 0xFFFFFFFFu)));
+    write_text(mod / "wheels" / "mesh.ini", "[wheel]\nbrand = Claude Forge ; [x]\nrace = models/race.glb\nmenu = models/menu.glb\n"
+                                            "picture = pictures/tile.png\n[brand]\nlogo = pictures/logo.png\n");
+    Vfs vfs(nullptr);
+    vfs.scan_mods((base / "mods").generic_string(), nullptr);
+    std::string err;
+    std::optional<Bytes> blob = game::build_wheel_package(vfs, "mesh", &err);
+    CHECK(blob.has_value());
+    if (!blob) return;
+    CHECK(game::build_wheel_package(vfs, "mesh") == blob); // (the same bytes every time: its hash is its name)
+    CHECK(!game::build_wheel_package(vfs, "nope", &err));
+    std::optional<game::ModPackage> p = game::parse_wheel_package(*blob, &err);
+    CHECK(p && p->label == "mesh" && p->files.size() == 5); // (the definition, two rims, two pictures; not the unused one)
+    if (!p) return;
+    CHECK(game::validate_wheel_package(*p, vfs, "mesh", &err));
+    CHECK(!game::validate_wheel_package(*p, vfs, "other", &err));
+    // Refused: a file it does not reference, one it lacks, a car's definition, another package kind.
+    game::ModPackage extra = *p;
+    extra.files.push_back({"pictures/unused.png", encode_png(4, 4, std::vector<u32>(16, 0xFFFFFFFFu))});
+    CHECK(!game::validate_wheel_package(extra, vfs, "mesh", &err));
+    game::ModPackage less = *p;
+    for (size_t i = 0; i < less.files.size(); ++i)
+        if (less.files[i].path == "pictures/logo.png") less.files.erase(less.files.begin() + ptrdiff_t(i));
+    CHECK(!game::validate_wheel_package(less, vfs, "mesh", &err));
+    game::ModPackage car = *p;
+    for (game::ModPackage::File& f : car.files)
+        if (f.path == "wheels/mesh.ini") f.path = "cars/mesh.ini";
+    CHECK(!game::parse_wheel_package(game::serialize_mod_package(car), &err));
+    Bytes bad = *blob;
+    bad[5] = 'X';
+    CHECK(!game::parse_wheel_package(bad, &err));
+    CHECK(!game::parse_wheel_package(ByteSpan(blob->data(), blob->size() - 3), &err));
+    // Installed elsewhere, it is the same wheel.
+    const std::filesystem::path other = base / "other_mods";
+    std::filesystem::create_directories(other);
+    std::optional<std::string> dir = game::install_mod_package(*p, std::string(64, 'c'), other.generic_string(), "Wheel mesh", "One", &err);
+    CHECK(dir.has_value());
+    Vfs there(nullptr);
+    there.scan_mods(other.generic_string(), nullptr);
+    CHECK(there.mod_wheels().size() == 1);
+    if (there.mod_wheels().size() == 1) {
+        const ModWheelDef& d = there.mod_wheels()[0];
+        CHECK(d.error.empty() && d.label == "mesh" && d.brand == "Claude Forge" && d.for_sale && !d.brand_logo.empty());
+    }
+    std::optional<Bytes> rim = there.read("wheel/mesh");
+    CHECK(rim && !load_wheel_model(*rim, {}, "w").meshes.empty());
 }
 
 namespace {

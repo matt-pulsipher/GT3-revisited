@@ -883,7 +883,14 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
         if (base.empty())
             if (const data::CarVariant* cv = db_.variant(l)) base = cv->car;
         if (db_.mod_car(base)) o.bm = body_mod_for_car(db_, base, o.paint, car_scene());
-        o.key = {o.bm.paint_key.empty() ? o.model : base, o.paint};
+        // Online: another player's garage car on its fitted wheels (a mod wheel's when installed here; else its own).
+        if (online_ && size_t(i) < net_.wheel.size() && !net_.wheel[size_t(i)].empty()) {
+            const bool here = app.vfs()->exists("wheel/" + net_.wheel[size_t(i)]);
+            if (here) o.bm.wheel = net_.wheel[size_t(i)];
+            LOG_INFO("Online: %s's car on wheels %s%s", net_.names[size_t(i)].c_str(), net_.wheel[size_t(i)].c_str(),
+                     here ? "" : " (not here: its own)");
+        }
+        o.key = {(o.bm.paint_key.empty() ? o.model : base) + (o.bm.wheel.empty() ? "" : "/" + o.bm.wheel), o.paint};
         keys.insert(o.key);
     }
     // The last build's models this field draws again (the others let go before any is built), each starting its looks
