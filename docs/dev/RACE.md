@@ -389,7 +389,8 @@ SDL's trigger rumble does nothing there.
   "PLAYER n WIN!" (the original's 2P battle has neither: the clock runs from the start); a
   finished player's half shows AUTO DRIVE, then the RACE RESULTS panel over that half while the
   other player races on: the full-screen panel from the top of the half, car names only, a car
-  picture per row (the car model rendered on the panel's blue, like GT3's car icon maker) and
+  picture per row (the car model rendered on the panel's blue from GT3's car icon maker's
+  camera, race::car_icon_camera; the gaps' and P.P. pictures use it too) and
   "Running..." for a car still racing. The race's end (both finished, or pause EXIT): the exit
   transition, the split-screen replay (always; only Start opens its pause), then the 2P RESULTS
   menu (see "After a run").

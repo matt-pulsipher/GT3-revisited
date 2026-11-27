@@ -5,6 +5,7 @@
 
 #include "app/screen_race_impl.h"
 #include "base/frame_clock.h"
+#include "race/car_icon_camera.h"
 
 namespace gt3r::race_screen {
 
@@ -172,8 +173,23 @@ CarShadowParams RaceScreen::shadow_params() const {
     return p;
 }
 
-// A car picture for the 2P results panel (GT3: the car icon maker renders the car model):
-// the car's model from the front left on the panel's blue.
+// A car's chassis height (mm, table 3 +0x16), which the car icon maker centres the car by; 0 when unknown.
+float RaceScreen::icon_chassis_height(int car) {
+    const std::string& label = car == -1 ? car_.label
+                               : car == -2 ? (preset_.car2.empty() ? car_.label : preset_.car2) // (as the race built it)
+                               : exact_field() && car >= 0 && car < exact_field()->opponents() ? exact_field()->opponent_label(car)
+                                                                                               : std::string();
+    auto it = icon_heights_.find(label);
+    if (it != icon_heights_.end()) return it->second;
+    float h = 0;
+    if (const data::Car* c = db_.car(label))
+        if (auto ch = db_.chassis(c->parts[3])) h = float(ch->height_mm);
+    icon_heights_.emplace(label, h);
+    return h;
+}
+
+// A car picture (GT3: the car icon maker renders the car model, race::car_icon_camera): the event
+// display's gaps, the P.P. line and the results panel; on the 2P panel's blue, else on the bar.
 void RaceScreen::draw_car_icon(App& app, int car, const SDL_FRect& rc, size_t slot, bool on_bar) {
     if (rc.w <= 1 || rc.h <= 1 || !app.gpu()) return;
     const CarVisual* v = car == -1 ? car_visual_.get()
@@ -194,8 +210,12 @@ void RaceScreen::draw_car_icon(App& app, int car, const SDL_FRect& rc, size_t sl
         st.wheels[i].suspension = w.static_suspension;
         st.wheels[i].grounded = true;
     }
+    // The icon maker's level view from the front left, the car's middle on the axis; a car without a
+    // chassis record (none on the discs) by its wheel centres.
+    const float height_mm = icon_chassis_height(car);
+    race::CarIconCamera cam = race::car_icon_camera(height_mm > 0 ? height_mm : su->wheels[0].rest_center.y * 2000.0f);
     std::vector<render::DrawItem> items;
-    render::Vec3 eye{-3.6f, 1.4f, -4.4f};
+    const render::Vec3 eye = cam.eye;
     v->add_items(items, st, *su, eye);
     render::DrawOptions o;
     o.gt3_lighting = true;
@@ -204,8 +224,8 @@ void RaceScreen::draw_car_icon(App& app, int car, const SDL_FRect& rc, size_t sl
     for (int i = 0; i < 3; ++i) o.env_sky[i] = o.env_horizon[i] = o.env_ground[i] = 0.08f;
     o.clear[0] = 0.20f, o.clear[1] = 0.20f, o.clear[2] = 0.42f, o.clear[3] = 1.0f;
     if (on_bar) o.clear[3] = 0.0f; // 1P results: the car straight on the bar (the capture)
-    render::Mat4 view = render::look_at(eye, {0, 0.55f, 0}, {0, 1, 0});
-    render::Mat4 proj = render::perspective(0.42f, rc.w / rc.h, 0.1f, 50.0f);
+    render::Mat4 view = render::look_at(eye, cam.target, {0, 1, 0});
+    render::Mat4 proj = render::perspective(cam.fovy, cam.aspect, 0.1f, 50.0f);
     icon_views_[slot]->draw(app.renderer(), rc, view, proj, eye, items, o);
 }
 

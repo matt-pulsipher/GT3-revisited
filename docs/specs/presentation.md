@@ -2333,6 +2333,14 @@ becomes the loading object (`RacePS2Base::vf42` 0x17D3D8: `vf9` start, `vf44` ca
 - **During `vf44`** the car icon maker is the loading object (it renders the 64 x 32 icons
   of every car, then clears the loading object and wakes the race thread): nothing new is
   drawn on the picture.
+- **The icon** (`CarIconMaker`, its draw `0x1ADCB8`, one car per frame): a 128 x 64 picture
+  shown at 64 x 32. Projection in the picture's pixels with distance d = 64 / tan(0.157)
+  (`0x34FFAC`; about 404 px, a field 2 atan(32 / d) = 9.05 degrees tall); then the car
+  translated d in front, scaled x35, lifted to put the middle of its chassis height (table 3
+  +0x16 mm x 0.001, halved) on the axis, and turned 158 degrees about y (degrees, the
+  program's sincos). No pitch: the eye is level with the car's middle, d / 35 = 11.55 m out,
+  22 degrees round from straight ahead of the nose on the car's left, so the picture is the
+  nose and the left flank in a 3.66 x 1.83 m window. Ours: `race::car_icon_camera` (issue 520).
 - **Retry inside a run** (pause RETRY, exit reason 4: `vf42` loops): the DelayFadeout (type 1)
   over the last race frame (nothing for 10 frames, then the 0.1 grey wash) while the run
   restarts, then the cut. **Start / retry from a quick menu**: the quick-menu loop ends with

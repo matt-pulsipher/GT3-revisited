@@ -178,7 +178,7 @@ struct Chassis {
     PartInfo part;
     u8 front_weight_pct = 0; // +0x10 (confirmed copied to spec)
     u16 length_mm = 0;       // +0x14
-    u16 height_mm = 0;       // +0x16 (display only)
+    u16 height_mm = 0;       // +0x16 (display, and the car icon maker's centring: race::car_icon_camera)
     u16 wheelbase_mm = 0;    // +0x18
     u16 weight_kg = 0;       // +0x1A
     u8 unknown_1c = 0;       // scaled by lightweight parts (percent) -> probably an inertia term
