@@ -12,6 +12,7 @@
 #include "menu/flow/concept_hooks.h"
 #include "menu/flow/game_flow.h"
 #include "menu/flow/gt_mode_hooks.h"
+#include "menu/flow/options.h"
 #include "vfs/vfs.h"
 
 #include <algorithm>
@@ -519,3 +520,48 @@ TEST(concept_disc_presents) {
     game::reset_gt_mode_menu_for_tests();
 }
 
+
+// Options → Race on the discs (issue 484): the Driving Assist Type row is one three-choice item, kept in
+// [options] assist_asm / assist_tcs; leaving the page and coming back shows the choice made.
+TEST(concept_disc_option_assist) {
+    const std::vector<std::string> discs = test::concept_discs();
+    if (discs.empty()) SKIP("needs GT3R_DISC_CONCEPT");
+    for (const std::string& path : discs) {
+        std::unique_ptr<Disc> disc = Disc::open(path);
+        std::printf("  %s\n", disc->info().serial.c_str());
+        set_env("GT3R_GTMODE_SAVE", (test::temp_dir("concept-option") / "game.sav").string().c_str());
+        set_env("GT3R_GTMODE_NOSAVE", "1");
+        game::reset_gt_mode_menu_for_tests();
+        game::install_gt_mode_menu();
+        Vfs vfs(&disc->volume());
+        GameFlow f(vfs_reader(vfs), text::language_code(vfs.language()));
+        IniDocument cfg;
+        int changed = 0;
+        f.set_options(&cfg, [&] { ++changed; });
+        f.start();
+        settle(f);
+        CHECK(focus_item(f, "go_option"));
+        press(f, MenuKey::Confirm);
+        CHECK(f.control() == "option" && page(f) == "option");
+        CHECK(focus_item(f, "", "item6"));
+        press(f, MenuKey::Confirm);
+        CHECK(page(f) == "race/race" && f.controller()->choice("multi_assist") == 0);
+        CHECK(focus_item(f, "", "multi_assist"));
+        press(f, MenuKey::Right);
+        CHECK(f.controller()->choice("multi_assist") == 1 && changed >= 1);
+        CHECK(option_value(&cfg, "assist_asm") == "off" && option_value(&cfg, "assist_tcs") == "on");
+        press(f, MenuKey::Right);
+        CHECK(option_value(&cfg, "assist_asm") == "off" && option_value(&cfg, "assist_tcs") == "off");
+        press(f, MenuKey::Cancel);
+        CHECK(page(f) == "option");
+        CHECK(focus_item(f, "", "item6"));
+        press(f, MenuKey::Confirm);
+        CHECK(page(f) == "race/race" && f.controller()->choice("multi_assist") == 2);
+        press(f, MenuKey::Cancel);
+        press(f, MenuKey::Cancel);
+        CHECK(f.control() == "concept");
+        game::reset_gt_mode_menu_for_tests();
+    }
+    unset_env("GT3R_GTMODE_SAVE");
+    unset_env("GT3R_GTMODE_NOSAVE");
+}

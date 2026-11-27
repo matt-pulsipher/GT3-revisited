@@ -2638,6 +2638,21 @@ TEST(options_values_and_previews) {
     CHECK(option_value(&cfg, "wide_mode") == "on" && option_preview_visible(&cfg, "wide_mode_on_on"));
     cfg.set("options", "menu_se", "garbage");
     CHECK(option_value(&cfg, "menu_se") == "on"); // invalid -> default
+    // GT Concept's one assist row (issue 484): ASM and TCS, TCS only, neither; kept in the two GT3 rows.
+    const GameOption* a = find_game_option_by_item("race/race", "multi_assist");
+    CHECK(a != nullptr);
+    if (a) {
+        CHECK(option_index(&cfg, *a) == 0 && option_preview_visible(&cfg, "assist_0_on"));
+        set_option(cfg, *a, 1);
+        CHECK(option_value(&cfg, "assist_asm") == "off" && option_value(&cfg, "assist_tcs") == "on");
+        CHECK(option_index(&cfg, *a) == 1 && option_preview_visible(&cfg, "assist_1_on") &&
+              !option_preview_visible(&cfg, "assist_0_on"));
+        set_option(cfg, *a, 2);
+        CHECK(option_value(&cfg, "assist_asm") == "off" && option_value(&cfg, "assist_tcs") == "off");
+        CHECK(option_index(&cfg, *a) == 2 && option_value(&cfg, "assist") == "2");
+        set_option(cfg, *a, 0);
+        CHECK(option_on(&cfg, "assist_asm") && option_on(&cfg, "assist_tcs"));
+    }
 }
 
 // The save page in the real menus (title File Operation, the disc's art) over a fake library

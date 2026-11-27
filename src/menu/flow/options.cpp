@@ -22,6 +22,9 @@ const std::vector<GameOption>& game_options() {
         {"gear_auto", "race/race", "multi_gear_type", {"on", "off"}, 0},
         {"assist_asm", "race/race", "multi_assist_asm", {"on", "off"}, 0},
         {"assist_tcs", "race/race", "multi_assist_tcs", {"on", "off"}, 0},
+        // GT Concept's race page has one assist row instead of the two above: ASM and TCS, TCS only,
+        // neither (children assist_0..2). Kept in assist_asm / assist_tcs, so the race reads it the same.
+        {"assist", "race/race", "multi_assist", {"0", "1", "2"}, 0},
         {"split_tire_damage", "split/split", "multi_split_tire_damage", {"on", "off"}, 1},
         {"split_boost", "split/split", "multi_split_boost", {"none", "low", "high"}, 1},
         {"ghost", "ghost/ghost", "multi_ghost_type", {"on", "off"}, 0},
@@ -45,7 +48,16 @@ const GameOption* find_game_option_by_item(const std::string& page, const std::s
     return nullptr;
 }
 
+namespace {
+bool raw_off(const IniDocument* cfg, const char* key) {
+    if (!cfg) return false;
+    std::optional<std::string> v = cfg->get("options", key);
+    return v && to_lower(trim(*v)) == "off";
+}
+} // namespace
+
 int option_index(const IniDocument* cfg, const GameOption& o) {
+    if (o.key == "assist") return raw_off(cfg, "assist_tcs") ? 2 : raw_off(cfg, "assist_asm") ? 1 : 0;
     if (cfg)
         if (std::optional<std::string> v = cfg->get("options", o.key)) {
             std::string l = to_lower(trim(*v));
@@ -62,6 +74,11 @@ std::string option_value(const IniDocument* cfg, const std::string& key) {
 
 void set_option(IniDocument& cfg, const GameOption& o, int index) {
     index = std::clamp(index, 0, int(o.values.size()) - 1);
+    if (o.key == "assist") {
+        cfg.set("options", "assist_asm", index == 0 ? "on" : "off");
+        cfg.set("options", "assist_tcs", index == 2 ? "off" : "on");
+        return;
+    }
     cfg.set("options", o.key, o.values[size_t(index)]);
 }
 

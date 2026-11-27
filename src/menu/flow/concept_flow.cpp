@@ -199,7 +199,7 @@ void GameFlow::handle_concept(const MenuEvent& e) {
             title_focus_ = title_focus_for(a);
             transmission_ = option_value(options_, "gear_auto") == "off" ? 1 : 0; // the Options menu's AT / MT
             // ... and its driving aids: ASM and TCS, TCS only, neither (the assist step's three buttons).
-            assist_ = option_value(options_, "assist_tcs") == "off" ? 2 : option_value(options_, "assist_asm") == "off" ? 1 : 0;
+            assist_ = option_index(options_, *find_game_option("assist"));
             open_control("concept", "ar/top", -1);
         } else if (a == "go_save_game" || a == "go_load_game") {
             const Target t = to_title(a.c_str());
