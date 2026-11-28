@@ -1302,6 +1302,7 @@ private:
         std::vector<ClutPlayer> wet, billboards;
     };
     std::optional<CourseAnimations> photo_anims_;
+    bool photo_haze_ = false; // the replay's shot photo mode opened on had the heat haze (CameraRig::replay_haze)
     void photo_animate(float seconds); // the moment's animations, then `seconds` on, uploaded
     void photo_anims_back();           // the moment's again (uploaded with the next frame)
     std::unique_ptr<CarVisual> car_visual_;

@@ -527,8 +527,9 @@ SDL's trigger rumble does nothing there.
   from the field of view across the frame's diagonal) and its aperture that over the camera menu's
   f-number (Aperture: f/1.4 to f/22, f/5.6 at first; `photo_aperture_radius`). The replays' post
   process depth of field (`apply_depth_of_field`) is off in photo mode. The heat haze is on in
-  photo mode wherever the course (Env0 flag 0x20) and [video] heat_haze allow it, whatever the
-  replay's shot was (`add_screen_passes`; the free view has no shot to ask). Each render draws the
+  photo mode when the course (Env0 flag 0x20) and [video] heat_haze allow it and the replay's
+  camera shot photo mode was opened on had it (its GTRC record's haze flag: `photo_haze_`, taken
+  from `CameraRig::replay_haze` as photo mode opens; `add_screen_passes`). Each render draws the
   particles at its own time across the shutter (`HeatHaze::lenses`' `ticks`: each moved by its
   drift that many steps from the last one stepped, fractions too), so a long shutter blurs the
   ripple and a short one freezes it. The course's animations (moving nodes and CLUT animations: flags,

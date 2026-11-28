@@ -141,6 +141,7 @@ void RaceScreen::open_photo(App& app) {
     photo_menu_row_ = 0; // (the aspect and grid stay as last chosen)
     photo_buttons_ = app.input().pad(0).buttons; // (a button held on the way in is no press)
     photo_triangle_rolled_ = true;               // (nor its release a back)
+    photo_haze_ = camera_.replay_haze(); // (the replay's shot as paused: does it have the heat haze)
     photo_->begin(camera_.eye(), camera_.view(), camera_.fovy(), photo_anchor());
     photo_->set_ground([this](float x, float z, float y) -> std::optional<float> {
         if (!track_) return std::nullopt;
