@@ -61,9 +61,11 @@ laps = 2
 course = midfield
 laps = 3
 skill = hard
+catch_up = off
 [race3]
 course = rome
 laps = 4
+catch_up = on
 )";
 
 const char* kSingles = R"(
@@ -124,6 +126,7 @@ TEST(mod_event_parse) {
     CHECK(d->field[1].color == 0xFFFFFFFFu && d->field[2].color == 0);
     CHECK(d->races.size() == 3 && d->races[2].course == "rome" && d->races[2].laps == 4);
     CHECK(d->races[0].skill == -1 && d->races[1].skill == 2);
+    CHECK(d->races[0].catch_up == -1 && d->races[1].catch_up == 0 && d->races[2].catch_up == 1);
     CHECK(warns.empty());
     // What the creator writes reads back the same.
     auto again = data::parse_mod_event(data::format_mod_event(*d), "hatch", &err);
@@ -138,6 +141,7 @@ TEST(mod_event_parse) {
         CHECK(again->field.size() == 3 && again->field[2].label == "demio_glx_00" && again->field[0].color == 1234 &&
               again->field[1].color == 0xFFFFFFFFu);
         CHECK(again->races.size() == 3 && again->races[1].laps == 3 && again->races[1].skill == 2 && again->races[0].skill == -1);
+        CHECK(again->races[0].catch_up == -1 && again->races[1].catch_up == 0 && again->races[2].catch_up == 1);
     }
     // A race of its own lineup, its place "last" by default.
     auto s = data::parse_mod_event(singles, "sprint", &err);
@@ -294,6 +298,22 @@ TEST(mod_event_disc_records) {
                     from_base = true;
             CHECK(from_base);
         }
+    }
+    // A race's catch-up (the rubber band, event +0x1B7 .. +0x1BC): none, the arcade Normal race's, else the base race's.
+    const data::Event* normal = db.event("ANST0001");
+    const data::Event* r3 = db.event("Xmy_events_hatch_0503");
+    CHECK(normal && r3);
+    if (normal && r1 && r2 && r3) {
+        CHECK(std::all_of(r2->bytes.begin() + 0x1B7, r2->bytes.begin() + 0x1BD, [](u8 v) { return v == 0; }));
+        CHECK(std::equal(r3->bytes.begin() + 0x1B7, r3->bytes.begin() + 0x1BD, normal->bytes.begin() + 0x1B7));
+        bool from_base = false; // (race 1: the base race's driving and rubber band, both)
+        for (const data::Event& e : db.events())
+            if (!e.label.empty() && e.label[0] == 'G' && e.bytes.size() >= 0x1BD &&
+                std::equal(e.bytes.begin() + 0x19C, e.bytes.begin() + 0x1B4, r1->bytes.begin() + 0x19C) &&
+                std::equal(e.bytes.begin() + 0x1B7, e.bytes.begin() + 0x1BD, r1->bytes.begin() + 0x1B7))
+                from_base = true;
+        CHECK(from_base);
+        CHECK(std::any_of(r3->bytes.begin() + 0x1B7, r3->bytes.begin() + 0x1BD, [](u8 v) { return v != 0; }));
     }
     // Its own lineup: race 2 of the sprint has two cars racing (the player and the R34).
     CHECK(gt.rules("Xmy_events_sprint_0002")->cars == 2);

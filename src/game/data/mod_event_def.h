@@ -52,6 +52,10 @@ struct ModEventRace {
     // Tire wear: the record's wear bytes (+0x1BD .. +0x1C3; GT3 has one wear curve, physics §8.1), copied from a disc
     // race: -1 the base race's, 0 off (a race without wear), 1 on (an endurance race's). Never on dirt courses (GT3).
     int wear = -1;
+    // Catch-up: the record's rubber band (+0x1B7 .. +0x1BC: how far ahead of the player cars slow down and how far behind
+    // they speed up): -1 the base race's, 0 off (none, as Quick race's custom race without catch-up), 1 on (the arcade
+    // Normal race's, ANST0001, on dirt ANAD0001: Quick race's custom race with catch-up).
+    int catch_up = -1;
 };
 
 // A prize car: a car label and its paint (a carcolor id, -1 = a random paint).

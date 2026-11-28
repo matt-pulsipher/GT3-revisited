@@ -802,6 +802,7 @@ skill = league         ; league, easy, normal, hard, professional
 cars = 3               ; opponents it draws, 1 to 31, repeating the pool's cars when it has fewer (default: as many as the pool has, at most 5)
 start = rolling        ; league, standing, rolling (default: league, the base race's)
 tire_wear = on         ; league, off, on (default: league, the base race's)
+catch_up = off         ; league, off, on (default: league, the base race's)
 
 [race2]
 course = midfield
@@ -839,6 +840,10 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
   after 5 seconds), `standing` a series race's; `on` an endurance race's tire
   wear (GT3 has one wear curve), `off` a race without wear. Races on dirt never
   wear their tires, as in GT3.
+- `catch_up` is the race's rubber band (cars far ahead of you slow down, cars
+  far behind you speed up): `off` clears it, `on` copies the arcade Normal
+  race's (`ANST0001`, on dirt `ANAD0001`, as Quick race's custom race with
+  catch-up on), `league` keeps the base race's.
 - `prize_cars` is a prize set as the disc's: a car listed twice comes up twice
   as often in the roulette. An older file's `prize_car` and `prize_paint` still
   read as one prize car.
@@ -850,8 +855,8 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
 - League pages are the disc's own names: `r/beginner/beginner`, `r/amateur/amateur`,
   `r/pro/pro`, `r/dirt/dirt`, `r/end/endurance` on the GT3 discs.
 - Each race is a copy of a disc race (`base`, or a GT Mode race of the disc)
-  with the file's values over it: its catch-up (and, with `league`, its start,
-  tire wear and its opponents' driving) come from that race. A course with a dirt surface needs dirt tyres.
+  with the file's values over it: with `league`, its start, tire wear, catch-up
+  and its opponents' driving come from that race. A course with a dirt surface needs dirt tyres.
 - A course or a car the open disc lacks: a car is left out of its lineup; an
   event whose course is missing, or with no opponents left, isn't listed.
 - The race codes are `X<mod>_<name>_0001`... (a championship `..._0500`, its rounds

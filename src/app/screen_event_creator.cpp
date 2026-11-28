@@ -9,7 +9,7 @@
 //
 // Pages: the list of the player's events; an event (title, description, picture, icon, league, single
 // races or a championship, entry rules, prizes, its opponents and its races); a race (course,
-// laps, how it starts, its tire wear, the event's opponents or a lineup of its own); the opponents of
+// laps, how it starts, its tire wear, its catch-up, the event's opponents or a lineup of its own); the opponents of
 // the event (the lineup every race without its own runs, and every championship round); the prizes
 // (per place, the championship bonus, up to four prize cars, each in a colour or a random one: two or
 // more go to GT3's roulette); a championship's points per place. A race draws up to 31 opponents from
@@ -785,6 +785,11 @@ private:
                                  dirt ? "GT3 races on dirt have no tire wear"
                                       : "On: tires wear, as in the endurance races and many of the later leagues' races; pit for fresh ones",
                                  [this, &r](int h) { r.wear = (r.wear + 1 + (h < 0 ? -1 : 1) + 3) % 3 - 1, dirty_ = true; }, x, y, w));
+        static const char* const kCatchUps[] = {"Off", "On"};
+        const bool league_band = league_rule(0x1B7) != 0 || league_rule(0x1B8) != 0 || league_rule(0x1BA) != 0 || league_rule(0x1BB) != 0;
+        rows.push_back(value_row("Catch-up", r.catch_up < 0 ? std::string(kCatchUps[league_band]) + " (league's)" : kCatchUps[r.catch_up],
+                                 "Catch-up: cars far ahead of you slow down, cars far behind you speed up",
+                                 [this, &r](int h) { r.catch_up = (r.catch_up + 1 + (h < 0 ? -1 : 1) + 3) % 3 - 1, dirty_ = true; }, x, y, w));
         rows.push_back(button(armed_ ? "Press again" : "Remove race", {kLeftX, kButtonY, 120, kButtonH}, [this, &app] { remove_race(app); },
                               false, "Takes the race out of the event (press twice)"));
         editing_buttons(rows);
@@ -1183,7 +1188,8 @@ private:
             if (c.label == course) return c.surface == 2;
         return false;
     }
-    // A byte of the race its league's races are built on (data::ModEventDef::base): its start (+0x1F3) or tire wear (+0x1BD).
+    // A byte of the race its league's races are built on (data::ModEventDef::base): its start (+0x1F3), tire wear (+0x1BD) or
+    // rubber band (+0x1B7 ..).
     int league_rule(size_t at) const {
         const data::Event* ev = db_.event(base_for(ed_.league));
         return ev && ev->bytes.size() > at ? int(ev->bytes[at]) : 0;

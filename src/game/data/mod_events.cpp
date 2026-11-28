@@ -25,6 +25,7 @@ constexpr size_t kMinSize = 0x1F8;
 constexpr size_t kDriving = 0x19C, kDrivingEnd = 0x1B4; // CPU cars' grip and driver percentages per driveline class (ai §9.2)
 constexpr size_t kStartSpeed = 0x198, kCountdown = 0x1F2, kStartType = 0x1F3; // the start (docs/formats/database.md)
 constexpr size_t kWear = 0x1BD, kWearEnd = 0x1C4;                           // tire wear (physics §8.1)
+constexpr size_t kBand = 0x1B7, kBandEnd = 0x1BD; // the rubber band: slow-down, speed-up (sim::exact race_config +0x24 .. +0x2A)
 constexpr u8 kRollingStart = 3;
 constexpr size_t kPoolSize = 32;
 constexpr u8 kDirtTires = 9; // +0x1D2: dirt tyres required
@@ -79,6 +80,7 @@ const char* const kClasses[] = {"any", "race", "tuned", "stock"};
 const char* const kSkills[] = {"league", "easy", "normal", "hard", "professional"};
 const char* const kStarts[] = {"league", "standing", "rolling"};
 const char* const kWears[] = {"league", "off", "on"};
+const char* const kCatchUps[] = {"league", "off", "on"};
 
 // "car:color, car, tune:<name>:color" (a carcolor id; none = drawn at the race start).
 std::vector<ModEventCar> parse_lineup(const std::string& text) {
@@ -266,6 +268,7 @@ std::optional<ModEventDef> parse_mod_event(std::string_view text, const std::str
         r.skill = keyword(get(sec.c_str(), "skill"), kSkills, "skill", "[" + sec + "] skill", warnings) - 1;
         r.start = keyword(get(sec.c_str(), "start"), kStarts, "start", "[" + sec + "] start", warnings) - 1;
         r.wear = keyword(get(sec.c_str(), "tire_wear"), kWears, "tire wear", "[" + sec + "] tire_wear", warnings) - 1;
+        r.catch_up = keyword(get(sec.c_str(), "catch_up"), kCatchUps, "catch-up", "[" + sec + "] catch_up", warnings) - 1;
         d.races.push_back(std::move(r));
     }
     for (const IniDocument::Section& sec : ini.sections()) {
@@ -337,6 +340,7 @@ std::string format_mod_event(const ModEventDef& d) {
         ini.set(sec, "skill", kSkills[std::clamp(r.skill, -1, 3) + 1]);
         if (r.start >= 0) ini.set(sec, "start", kStarts[std::clamp(r.start, -1, 1) + 1]);
         if (r.wear >= 0) ini.set(sec, "tire_wear", kWears[std::clamp(r.wear, -1, 1) + 1]);
+        if (r.catch_up >= 0) ini.set(sec, "catch_up", kCatchUps[std::clamp(r.catch_up, -1, 1) + 1]);
         if (r.cars > 0) ini.set(sec, "cars", std::to_string(r.cars));
         if (!r.opponents.empty() && !d.championship) ini.set(sec, "opponents", format_lineup(r.opponents));
     }
@@ -524,6 +528,13 @@ bool add_mod_event(CarDatabase& db, const ModEventDef& def, std::string* error) 
         if (r.wear == 1) copy_bytes(b, worn, kWear, kWearEnd);
         else if (r.wear == 0 && unworn) copy_bytes(b, unworn, kWear, kWearEnd);
         else if (r.wear == 0) put8(b, kWear, 0); // (a disc whose races all wear, a mod's: a maximum wear of 0 is off, physics §8.1)
+        // Its catch-up: none, or the arcade Normal race's (Quick race's custom race with catch-up on); else the base race's.
+        if (r.catch_up == 0) std::fill(b.begin() + std::ptrdiff_t(kBand), b.begin() + std::ptrdiff_t(kBandEnd), u8(0));
+        else if (r.catch_up == 1) {
+            const Event* src = db.event(mod_event_skill_event(db, 1, course->surface == kSurfaceDirt));
+            if (!src || src->bytes.size() < kMinSize) LOG_WARN("Mod event %s: race %zu: this disc has no arcade Normal race to copy its catch-up from", def.id.c_str(), k + 1);
+            else copy_bytes(b, src, kBand, kBandEnd);
+        }
         db.add_label(code);
         db.put_record(TableId::Event, std::move(b));
         ev.races.push_back(code);
