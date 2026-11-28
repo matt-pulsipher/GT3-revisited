@@ -185,6 +185,9 @@ bool GpuContext::init(SDL_Window* window, const GpuOptions& options) {
             depth_format_ = f;
             break;
         }
+    if (SDL_GPUTextureSupportsFormat(device_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, SDL_GPU_TEXTURETYPE_2D,
+                                     SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER))
+        accum_format_ = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
     set_msaa(options.msaa);
     set_render_scale(options.render_scale);
     aniso_level_ = std::clamp(options.anisotropy, 1, 16);
@@ -587,7 +590,7 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     if (key.clipped) attrs[12] = {12, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, u32(offsetof(ClipVertex, b))};
 
     SDL_GPUColorTargetDescription color{};
-    color.format = kColorFormat;
+    color.format = key.accum ? accum_format_ : kColorFormat;
     SDL_GPUColorTargetBlendState& b = color.blend_state;
     // Never write alpha: the target is cleared to opaque and must stay opaque, otherwise
     // translucent texels (e.g. car paint layers, alpha-tested foliage) leak into the

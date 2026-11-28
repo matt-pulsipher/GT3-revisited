@@ -2036,3 +2036,99 @@ TEST(touch_placement_groups_and_hidden) {
     CHECK(!t.finger_down(1, sel.x + sel.w / 2, sel.y + sel.h / 2, 1.0f));
     CHECK(t.key_at(320, 200).empty());
 }
+
+// Photo mode's layout: the left stick, UP / DOWN, SAVE / BACK, no D-pad; the open screen's drag
+// and pinch (TouchGesture).
+TEST(touch_photo_layout) {
+    TouchControls t;
+    t.set_layout(TouchLayout::Photo);
+    CHECK(!find_widget(t, Widget::Kind::DPad));
+    const Widget stick = *find_widget(t, Widget::Kind::Stick);
+    CHECK(find_widget(t, Widget::Kind::Button, PadButton::L2) && find_widget(t, Widget::Kind::Button, PadButton::R2));
+    CHECK(find_widget(t, Widget::Kind::Button, PadButton::Cross) && find_widget(t, Widget::Kind::Button, PadButton::Circle));
+    // The stick: as far as the knob is pushed, out to the rim (up = the stick's up).
+    CHECK(t.finger_down(1, stick.x, stick.y, 1.0f));
+    t.finger_move(1, stick.x + stick.w * 0.5f, stick.y, 1.0f);
+    t.update(0.016, 0);
+    CHECK(std::fabs(t.pad().axis_fine(PadAxis::LX) - 0.5f) < 0.02f);
+    CHECK(std::fabs(t.pad().axis_fine(PadAxis::LY)) < 0.02f);
+    t.finger_move(1, stick.x, stick.y - stick.w * 3, 1.0f); // past the rim, and sliding off it
+    t.update(0.016, 0);
+    CHECK(std::fabs(t.pad().axis_fine(PadAxis::LY) + 1.0f) < 0.02f);
+    CHECK(t.widgets()[0].active);
+    t.finger_up(1);
+    t.update(0.016, 0);
+    CHECK(std::fabs(t.pad().axis_fine(PadAxis::LY)) < 0.02f);
+    // DOWN holds L2.
+    const Widget down = *find_widget(t, Widget::Kind::Button, PadButton::L2);
+    t.finger_down(2, down.x, down.y, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.pad().down(PadButton::L2) && !t.pad().down(PadButton::R2));
+    t.finger_up(2);
+    t.update(0.016, 0);
+    // One finger on the open screen drags, and takes the touch (nothing reaches the screen).
+    const float cx = 320, cy = 150;
+    CHECK(t.finger_down(3, cx, cy, 1.0f));
+    CHECK(t.hit(cx, cy));
+    t.finger_move(3, cx + 30, cy - 10, 1.0f);
+    t.update(0.016, 0);
+    TouchGesture g = t.take_gesture();
+    CHECK(std::fabs(g.drag_x - 30) < 1e-3f && std::fabs(g.drag_y + 10) < 1e-3f && g.pinch == 1);
+    CHECK(!t.take_gesture().any()); // (taken)
+    CHECK(std::fabs(t.pad().axis_fine(PadAxis::LX)) < 0.02f); // (no stick)
+    // A second finger: the pair pinches instead (spread to twice the distance).
+    CHECK(t.finger_down(4, cx + 30 + 40, cy - 10, 1.0f));
+    t.update(0.016, 0);
+    t.finger_move(4, cx + 30 + 80, cy - 10, 1.0f);
+    g = t.take_gesture();
+    CHECK(std::fabs(g.pinch - 2.0f) < 1e-3f && g.drag_x == 0);
+    t.finger_up(4);
+    t.update(0.016, 0);
+    t.finger_move(3, cx + 40, cy - 10, 1.0f); // one again: a drag
+    g = t.take_gesture();
+    CHECK(std::fabs(g.drag_x - 10) < 1e-3f && g.pinch == 1);
+}
+
+// Photo mode's touch: the crosshair's focus button in the game area's centre, the roll buttons
+// (held), MENU and the camera menu's rows (< and >) while it is shown.
+TEST(touch_photo_menu_focus_roll) {
+    TouchControls t;
+    t.set_game_area(640, 360);
+    t.set_layout(TouchLayout::Photo);
+    auto action = [&](TouchAction a) -> const Widget* {
+        for (const Widget& w : t.widgets())
+            if (w.kind == Widget::Kind::Action && w.action == a) return &w;
+        return nullptr;
+    };
+    const Widget* focus = action(TouchAction::Focus);
+    CHECK(focus && std::fabs(focus->x - 320) < 1e-3f && std::fabs(focus->y - 180) < 1e-3f);
+    t.finger_down(1, 320, 180, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.action_pressed(TouchAction::Focus));
+    CHECK(!t.take_gesture().any()); // (a tap on the crosshair is no aim)
+    t.finger_up(1);
+    t.update(0.016, 0);
+    const Widget roll = *action(TouchAction::RollLeft);
+    t.finger_down(2, roll.x, roll.y, 1.0f);
+    t.update(0.016, 0);
+    t.update(0.016, 0);
+    CHECK(t.action_held(TouchAction::RollLeft) && !t.action_pressed(TouchAction::RollLeft)); // (held: pressed once)
+    t.finger_up(2);
+    t.update(0.016, 0);
+    CHECK(!action(TouchAction::FollowNext)); // the menu hidden
+    t.set_photo_menu(true, {"Roadside", "1/60 s", "f/5.6", "16:9", "Landscape", "Off"});
+    const Widget* next = action(TouchAction::ShutterNext);
+    CHECK(next && action(TouchAction::FollowPrev) && action(TouchAction::ShutterPrev));
+    CHECK(action(TouchAction::AspectNext) && action(TouchAction::GridPrev) && action(TouchAction::ApertureNext) &&
+          action(TouchAction::OrientationPrev));
+    t.finger_down(3, next->x + next->w / 2, next->y + next->h / 2, 1.0f);
+    t.update(0.016, 0);
+    CHECK(t.action_pressed(TouchAction::ShutterNext));
+    t.set_photo_menu(true, {"Roadside", "1/30 s", "f/5.6", "16:9", "Landscape", "Off"}); // (a new value, the finger still on it)
+    t.update(0.016, 0);
+    CHECK(t.action_held(TouchAction::ShutterNext) && !t.action_pressed(TouchAction::ShutterNext));
+    t.set_photo_menu(false, {"Roadside", "1/30 s", "f/5.6", "16:9", "Landscape", "Off"}); // hidden under the finger: it lets go
+    t.update(0.016, 0);
+    CHECK(!t.action_held(TouchAction::ShutterNext));
+    CHECK(!action(TouchAction::ShutterNext));
+}

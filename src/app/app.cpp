@@ -1001,7 +1001,7 @@ SDL_AppResult App::iterate() {
                                      window_);
         return SDL_APP_FAILURE;
     }
-    if (dyn_on_) {
+    if (dyn_on_ && !hold_scale_) {
         float s = dyn_.frame(frame_s * 1000.0, present_ms);
         if (const double c = dyn_cycle_s(); c > 0) { // testing: down to 50% and back up every c seconds
             const double t = std::fmod(double(SDL_GetTicksNS()) / 1e9 / c, 1.0);

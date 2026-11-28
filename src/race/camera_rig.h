@@ -141,6 +141,12 @@ public:
     void snap(const sim::VehicleState& s);
     // Advance smoothing and orbit controls; `s` is the interpolated render state.
     void update(const sim::VehicleState& s, const sim::VehicleSetup& setup, const PadState& pad, double dt);
+    // Photo mode (race/photo_camera.h): the eye, view, zoom and focus distance set from outside;
+    // update() keeps them and the eye counts as off every car (no on-board views, no haze). The
+    // first call keeps the view it replaces; clear_free_view() puts it back.
+    void set_free_view(const render::Vec3& eye, const render::Mat4& view, float fovy, float focus);
+    void clear_free_view();
+    bool free_view() const { return free_.has_value(); }
     bool handle_event(const SDL_Event& e);
 
     render::Vec3 eye() const { return eye_; }
@@ -174,20 +180,20 @@ public:
     int replay_record() const { return director_record_; }
     // The camera is a course shot whose record has the heat haze flag (ReplayDirector::Shot::haze;
     // never the live views, the procedural cameras or a turn on board).
-    bool replay_haze() const { return mode_ == CameraMode::Tv && director_haze_; }
+    bool replay_haze() const { return !free_ && mode_ == CameraMode::Tv && director_haze_; }
     int tv_index() const { return tv_active_; }
     // The eye is in the car: own car hidden, mirror, in-car HUD and sounds. Not during the
     // pre-race shot, which looks at the car from outside (GT3 draws it with the chase HUD). A
     // custom camera is when it hides the car.
     bool onboard() const {
-        if (intro_) return false;
+        if (intro_ || free_) return false;
         if (mode_ == CameraMode::Custom) return custom() && custom()->car == CustomCamera::OwnCar::Hidden;
         return mode_ == CameraMode::Bumper || mode_ == CameraMode::Roof;
     }
     // The player's own car body is not drawn now: the in-car views and a custom camera whose car
     // is hidden.
     bool hides_car() const {
-        if (intro_) return false;
+        if (intro_ || free_) return false;
         if (mode_ == CameraMode::Custom) {
             const CustomCamera* c = custom();
             return c && c->car == CustomCamera::OwnCar::Hidden; // (none left: the chase fallback draws the car)
@@ -236,7 +242,7 @@ public:
     // The replay camera is on board a car: one of view mode 1's on-board car mounts (in-car, a
     // bumper, the driver's head) or mode 2's on-board cut. The car it rides is not drawn: the
     // followed car, or for mode 2's cut its battle partner (replay_on_partner).
-    bool replay_on_board() const { return mode_ == CameraMode::Tv && replay_on_board_; }
+    bool replay_on_board() const { return !free_ && mode_ == CameraMode::Tv && replay_on_board_; }
     bool replay_on_partner() const { return replay_on_board() && replay_on_partner_; }
     // The camera's kind for the race sounds (GT3's camera manager type over the camera's own
     // kind): the in-car views, the replay's car mounts (on board or outside: view mode 1's mounts,
@@ -272,6 +278,13 @@ private:
 
     CameraMode mode_ = CameraMode::Bumper; // GT3's default view: in-car (both halves in 2P)
     render::Vec3 eye_{0, 2, 5};
+    // Photo mode: the view the free one replaced (eye, view, zoom, focus), put back by clear_free_view().
+    struct Kept {
+        render::Vec3 eye;
+        render::Mat4 view;
+        float fovy, focus;
+    };
+    std::optional<Kept> free_;
     render::Mat4 view_;
     float fovy_ = 0.8f;
     bool snapped_ = false;

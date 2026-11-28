@@ -93,6 +93,8 @@ struct PipelineKey {
     // A small depth bias towards the eye (scene::kCoplanarOverlay): wins over the earlier face it
     // lies on, as GT3's Z buffer lets it.
     bool depth_bias = false;
+    // The colour target is GpuContext::accum_format() (View3D's accumulation pass).
+    bool accum = false;
     auto operator<=>(const PipelineKey&) const = default;
 };
 
@@ -151,6 +153,10 @@ public:
     // Offscreen 3D formats.
     static constexpr SDL_GPUTextureFormat kColorFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     SDL_GPUTextureFormat depth_format() const { return depth_format_; }
+    // Photo mode's running mean of pictures (View3D, DrawOptions::accumulate): half floats where
+    // the device renders to and blends them, else the colour format (the mean then rounds to 8
+    // bits at every picture).
+    SDL_GPUTextureFormat accum_format() const { return accum_format_; }
     SDL_GPUSampleCount sample_count() const { return samples_; }
     // The SPIN_COPIES shader variants were created (PipelineKey::spin_copy).
     bool spin_copies() const { return vs_copy_ && fs_copy_; }
@@ -256,6 +262,7 @@ private:
     SDL_GPUSampler* samplers_[8] = {};
     SDL_GPUTexture* white_ = nullptr;
     SDL_GPUTextureFormat depth_format_ = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
+    SDL_GPUTextureFormat accum_format_ = kColorFormat;
     SDL_GPUSampleCount samples_ = SDL_GPU_SAMPLECOUNT_1;
     bool msaa_supported(SDL_GPUSampleCount c) const; // both the color and the depth target
     std::map<PipelineKey, SDL_GPUGraphicsPipeline*> pipelines_;

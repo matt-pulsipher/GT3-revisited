@@ -19,6 +19,20 @@ void ClutAnimations::animate(float seconds) {
         for (gtm1::ClutSet& s : m.sets) s.textures.player().update(seconds);
 }
 
+std::vector<ClutPlayer> ClutAnimations::state() const {
+    std::vector<ClutPlayer> s;
+    for (const Model& m : models_)
+        for (const gtm1::ClutSet& c : m.sets) s.push_back(c.textures.player());
+    return s;
+}
+
+void ClutAnimations::set_state(const std::vector<ClutPlayer>& s) {
+    size_t i = 0;
+    for (Model& m : models_)
+        for (gtm1::ClutSet& c : m.sets)
+            if (i < s.size()) c.textures.player() = s[i++];
+}
+
 void ClutAnimations::upload() {
     for (Model& m : models_) {
         std::vector<render::GpuModel::TextureUpdate> updates;

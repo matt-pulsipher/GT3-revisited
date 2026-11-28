@@ -129,7 +129,21 @@ void CameraRig::snap(const sim::VehicleState& s) {
     last_cut_.reset(); // (the eye jumps)
 }
 
+void CameraRig::set_free_view(const render::Vec3& eye, const render::Mat4& view, float fovy, float focus) {
+    if (!free_) free_ = Kept{eye_, view_, fovy_, focus_};
+    eye_ = eye, view_ = view, fovy_ = fovy, focus_ = focus;
+    eye_velocity_ = {}, last_eye_ = eye_;
+}
+
+void CameraRig::clear_free_view() {
+    if (!free_) return;
+    eye_ = free_->eye, view_ = free_->view, fovy_ = free_->fovy, focus_ = free_->focus;
+    last_eye_ = eye_;
+    free_.reset();
+}
+
 void CameraRig::update(const sim::VehicleState& s, const sim::VehicleSetup& setup, const PadState& pad, double dt) {
+    if (free_) return; // (photo mode: the view is set_free_view's)
     place(s, setup, pad, dt);
     // The listener's motion for the sounds' Doppler: the eye's displacement, restarted at a cut.
     const std::pair<Shot, int> cut{shot(), director_ ? director_->cut_serial() : -1};

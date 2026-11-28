@@ -208,3 +208,36 @@ TEST(race_haze_course_data_disc) {
         CHECK(p.haze_count == 400);
     }
 }
+
+// Photo mode: the lenses `ticks` steps on (or back) are the stepped field's, fractions between.
+TEST(race_haze_lenses_at_a_time) {
+    HeatHaze h;
+    h.setup(SunParams::from_env0(synth_env0(0x20)));
+    const float fovy = 2.0f * std::atan(0.7f / 19.0f);
+    const render::Mat4 proj = render::perspective(fovy, 640.0f / 448.0f, 0.1f, 6000.0f), view = view_towards({0, 0, -1});
+    std::vector<HazeLens> now, back, later;
+    h.lenses(view, proj, now);
+    h.lenses(view, proj, back, -3);
+    for (int i = 0; i < 3; ++i) h.step();
+    h.lenses(view, proj, later);
+    // Three steps back from the stepped field is the field as it was: the same lenses.
+    std::vector<HazeLens> again;
+    h.lenses(view, proj, again, -3);
+    // (The steps round as the EE's floats do: a lens at the box's edge may wrap the other way.)
+    auto matched = [](const std::vector<HazeLens>& a, const std::vector<HazeLens>& b) {
+        size_t n = 0;
+        for (const HazeLens& l : a)
+            for (const HazeLens& k : b)
+                if (near(l.x, k.x, 1e-2f) && near(l.y, k.y, 1e-2f)) {
+                    ++n;
+                    break;
+                }
+        return n;
+    };
+    CHECK(now.size() > 100);
+    CHECK(matched(now, again) * 100 >= now.size() * 95);
+    // Asked before stepping, the same: three steps back then is the field three steps before.
+    CHECK(back.size() > 100);
+    // And it moves: three steps on is not the field it was.
+    CHECK(matched(now, later) * 100 < now.size() * 50);
+}

@@ -443,6 +443,8 @@ void RaceScreen::replay_pad(const MenuInput& m) {
 // player's car (alone), the interest scores from the target, the replay cameras (not the
 // driver's view).
 void RaceScreen::begin_replay_focus() {
+    close_photo(); // (a new replay starts with its own cameras)
+    photo_history_.clear();
     focus_.begin();
     replay_focus_ = -1;
     replay_partner_ = onboard_partner_ = -1;
@@ -677,6 +679,8 @@ void RaceScreen::apply_post_pass(render::DrawOptions& o) const {
 void RaceScreen::apply_depth_of_field(render::DrawOptions& o) const {
     const SunParams& e = sun_.params();
     const bool replay = replaying_ || attract_ || demo_ || backdrop_;
+    // Photo mode: none (its renders' lens makes the photo's depth of field, race::photo_lens).
+    if (photo_) return;
     if (!replay || !e.has_env || !e.dof || dof_off_) return;
     render::DrawOptions::DepthOfField& d = o.dof;
     d.on = true;

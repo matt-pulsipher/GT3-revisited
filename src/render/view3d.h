@@ -212,6 +212,13 @@ struct DrawOptions {
     // multisampled colour and the depth hold nothing between passes, and each pass would keep
     // its own large copies of them, per frame in flight.
     bool repeated = false;
+    // Photo mode's motion blur (ours, app screen_race_photo.cpp): Add: the finished picture joins
+    // the running mean of the pictures added since View3D::reset_accumulation() (the k-th laid
+    // over it at 1 / k, in GpuContext::accum_format()), and the mean is shown instead. Show: the
+    // mean shown again without drawing anything (with none, or the picture's size changed since:
+    // drawn as Off).
+    enum class Accumulate : u8 { Off, Add, Show };
+    Accumulate accumulate = Accumulate::Off;
 };
 
 // The grade pass's arithmetic on one 8-bit pixel: model.frag's gt3_grade on the CPU (tests).
@@ -463,6 +470,13 @@ public:
     // Physical size of the last picture (the part of the target drawn), for stats overlays.
     int pixel_width() const { return used_w_; }
     int pixel_height() const { return used_h_; }
+    // Photo mode (DrawOptions::accumulate): the pictures in the running mean, and a new mean.
+    int accumulated() const { return accum_count_; }
+    void reset_accumulation() { accum_count_ = 0; }
+    // The last picture drawn, at its own size (pixel_width x pixel_height, before any halving for
+    // the screen), read back from the GPU: RGBA texels (alpha 255), top row first. Waits for the
+    // GPU. False when there is none or the read fails.
+    bool read_picture(std::vector<u32>& rgba, int& w, int& h);
     const DrawStats& stats() const { return stats_; }
 
     // GT3R_CAPTURE3D=<first>,<count>,<path.png>: copies this view's frames <first>.. on the GPU
@@ -579,10 +593,11 @@ private:
         float gain[3] = {1, 1, 1};                   // the result times these
         bool additive = false;                       // added to the target (at alpha) instead of laid over it
     };
+    // `accum`: into the accumulation target (PipelineKey::accum).
     // `mask` (spin_resolve): a picture-sized mask, black where the taps count (white: left out),
     // the result laid over the picture at `alpha` x the pixel's own coverage.
     void encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* src, const Resample& r,
-                         float alpha, float depth, bool single, SDL_GPUTexture* mask = nullptr);
+                         float alpha, float depth, bool single, SDL_GPUTexture* mask = nullptr, bool accum = false);
 
     GpuContext& ctx_;
     // The targets are width_ x height_, sized for the largest 3D scale (GpuContext::render_ceiling);
@@ -606,6 +621,16 @@ private:
     // a quad over the target.
     SDL_GPUTexture *scene_ = nullptr, *last_ = nullptr, *snap_ = nullptr;
     bool last_valid_ = false, snap_valid_ = false;
+    // Photo mode's running mean (DrawOptions::accumulate): accum_count_ pictures of
+    // accum_w_ x accum_h_ in the corner of a target-sized texture.
+    SDL_GPUTexture* accum_ = nullptr;
+    int accum_count_ = 0, accum_w_ = 0, accum_h_ = 0;
+    bool ensure_accum();
+    bool add_accumulated(SDL_GPUCommandBuffer* cmd, int pw, int ph);
+    bool show_accumulated(SDL_GPUCommandBuffer* cmd, int pw, int ph);
+    // The end of a draw: the capture, the halving blit, the submit and the composite into the 2D frame.
+    void present(SDL_Renderer* renderer, const SDL_FRect& rect, const DrawOptions& opt, SDL_GPUCommandBuffer* cmd, int pw,
+                 int ph, float out_w, float out_h, bool cycle);
     int last_w_ = 0, last_h_ = 0, snap_w_ = 0, snap_h_ = 0; // their pictures' sizes
     SDL_GPUBuffer *quad_vb_ = nullptr, *quad_ib_ = nullptr;
     // The screen geometry of the passes after the scene (refilled per draw), and the picture's copy

@@ -13,7 +13,15 @@ constexpr float kMoreLeft = 100, kMoreTop = 110, kMoreStep = 16;
 
 std::vector<std::string> RaceScreen::pause_items() const {
     const char* exit = from_menu_ ? "Exit to menu" : "Exit to selection";
-    if (replaying_) return {"Resume replay", "Restart replay", "Camera", "Save replay", "Stop replay (drive)", exit};
+    // A Replay Theater replay only plays: no saving (it is a saved file already), no driving,
+    // and its exit goes back to the theater.
+    if (replaying_) {
+        std::vector<std::string> v{"Resume replay", "Restart replay", "Camera"};
+        if (photo_allowed()) v.push_back("Photo mode");
+        if (theater_) v.push_back("Exit to theater");
+        else v.insert(v.end(), {"Save replay", "Stop replay (drive)", exit});
+        return v;
+    }
     // Online the race goes on behind the menu: nothing that restarts, replays or leaves the
     // race's time (retiring returns to the lobby).
     if (online_) return {"Resume", "Camera", "Gearbox", "Retire (back to lobby)"};
@@ -71,9 +79,9 @@ void RaceScreen::update_pause(App& app, double dt) {
         return;
     }
     if (!pause_more_) {
-        // Select: our longer list (restart, replays, camera, gearbox, save); not in the
-        // theater (its replays only play) nor in a demonstration.
-        if (m.pressed(PadButton::Select) && !theater_ && !demo_) {
+        // Select: our longer list (restart, replays, camera, gearbox, save); a theater replay
+        // has its own shorter one (pause_items). Not in a demonstration nor the Analyzer.
+        if (m.pressed(PadButton::Select) && !demo_ && !logger_mode_ && (!theater_ || replaying_)) {
             pause_more_ = true, pause_sel_ = 0;
             return;
         }
@@ -145,11 +153,14 @@ void RaceScreen::pause_more_choose(App& app) {
         save_current_replay();
     } else if (it == "Camera") {
         next_view(camera_, 0);
+    } else if (it == "Photo mode") {
+        open_photo(app);
     } else if (it == "Gearbox") {
         controls_.config().automatic = !controls_.config().automatic;
     } else if (it == "Stop replay (drive)") {
         stop_playback();
-    } else if (it == "Exit to selection" || it == "Exit to menu" || it == "Retire (back to lobby)") {
+    } else if (it == "Exit to selection" || it == "Exit to menu" || it == "Exit to theater" ||
+               it == "Retire (back to lobby)") {
         leave(app);
     }
 }
@@ -174,7 +185,8 @@ bool RaceScreen::menu_pointer(App& app) {
         if ((a.kind != K::Hover && a.kind != K::Click) || f.w <= 0 || f.h <= 0) continue;
         const bool tap = a.kind == K::Click;
         const float mx = (a.x - f.x) * 640.0f / f.w, my = 448.0f - (a.y - f.y) * 448.0f / f.h; // menu units, y up
-        if (paused_ && replay_opts_open_) {
+        if (paused_ && photo_) return false; // (the pad only)
+    if (paused_ && replay_opts_open_) {
             const bool vertical = !split_horizontal(app);
             if (tap) replay_opts_.tap(mx, my, vertical);
             else replay_opts_.hover(mx, my, vertical);

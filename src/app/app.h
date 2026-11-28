@@ -148,6 +148,9 @@ public:
     void set_dynamic_resolution(bool on);
     // The dynamic scale now in use, or null when off.
     const render::DynamicScale* dynamic_scale() const { return dyn_on_ ? &dyn_ : nullptr; }
+    // The dynamic resolution keeps its scale while on (photo mode's accumulation: every picture of
+    // its mean the same size).
+    void hold_render_scale(bool on) { hold_scale_ = on; }
     // Races: the dynamic scale a race reaches is where the next launch starts ([video]
     // dynamic_start), so a phone that holds full resolution starts there and a slow one does
     // not start too high. Only with 3D resolution on Auto (a manual setting starts at its own
@@ -334,6 +337,7 @@ private:
     bool render_scale_arg_ = false;
     render::DynamicScale dyn_;
     bool dyn_on_ = false;
+    bool hold_scale_ = false; // hold_render_scale
     void reset_dynamic_scale();
     float race_scale_ = 0; // note_race_scale: the dynamic scale in the last race frame (0: none)
     static double dyn_cycle_s();

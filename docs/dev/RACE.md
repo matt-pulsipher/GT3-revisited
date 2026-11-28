@@ -32,6 +32,8 @@ Code: `src/race/` (engine side) and `src/app/screen_race*.cpp` (the screen; see
 | `race/replay_options.h/.cpp` | REPLAY OPTIONS: replay view mode, target, HUD items, sound; the panel |
 | `race/analyzer.h/.cpp` | The Analyzer (data logger): the logger's sectors, keys and graph from the race's data logger tables, GRAPH / REPLAY screens |
 | `race/ghost.h` | `GhostLap`: the Analyzer's logger ghost (a recorded lap as poses); race ghosts are cars of the exact race (see "Ghost") |
+| `race/photo_camera.h/.cpp` | Photo mode's free camera (ours): the pad's moves, turns and zoom, its range and the road under it, the still time; the motion blur's modes, shutter and samples (`photo_view`, `photo_shutter`, `photo_sample`) |
+| `race/photo_history.h/.cpp` | Photo mode's past: every car's state after each of a replay's last ticks, for shutters longer than one |
 | `race/replay_cameras.h/.cpp` | GT3's replay camera script (GTRC) and the replay director |
 | `race/replay_focus.h/.cpp` | The car the replay cameras follow: battles, TOP / AUTO interest scores |
 | `race/procedural_cameras.h/.cpp`, `race/music_markers.h/.cpp` | View mode 1's procedural cameras; the race music's markers its cuts follow |
@@ -83,6 +85,7 @@ them, then the state.
 | `screen_race_online.cpp` | Online battle glue (field from the grid, events, synchronised start, prediction, ghosting); its state is `RaceScreen::net_` |
 | `screen_race_license.cpp` | Licence tests (the race's judging, medals) and the disc's demonstration runs (DEMO, preview box) |
 | `screen_race_events.cpp` | The pop-ups in the middle of the screen: lap times, split times, gaps, "+N Laps", "Pitting in..." (`lap_events`, `reset_lap_events`) |
+| `screen_race_photo.cpp` | Photo mode (ours, `race/photo_camera.h`): from a paused replay's Select list, a free camera round the frozen moment; once it is still, the picture built from 64 renders across the paused tick (motion blur) |
 | `screen_race_camera_editor.cpp` | The camera editor (Settings → Cameras, `app/camera_editor.h`): a race frozen 5 s past its start, drawn through the camera being edited; saving it (`make_camera_editor_screen`); the car and course of the last race for it (`remember_editor_scene`) |
 | `screen_race_vr.cpp` | VR builds only: the stereo race (`vr_stereo`, `vr_base`, `render_vr_eyes`); see [VR](VR.md) |
 
@@ -486,6 +489,81 @@ SDL's trigger rumble does nothing there.
   part) greys TRY AGAIN out (`retry_locked_`, applied in `open_pause`) until `restart()`.
   Licence and machine-test times join the session best (`best_splits_`) after the check.
   Select opens our longer list (restart, replays, camera, gearbox); Start also continues (ours).
+  A replay's list (not 2P, online or the Analyzer) has Photo mode (ours, `race/photo_camera.h`,
+  screen_race_photo.cpp): the camera leaves the replay's shots (`CameraRig::set_free_view`) and
+  flies round the paused moment, within 200 m of the followed car and 0.3 m over the road. The pad
+  (its own buttons for the D-pad, L3 and Select: the menus' directions count the left stick too):
+  the left stick moves level (L3 toggles a faster move), the right stick turns, L2 / R2 down / up,
+  L1 / R1 zoom, Triangle held with L1 / R1 rolls (a quarter turn at most), Square focuses at the
+  crosshair, Select shows / hides the camera menu, Cross saves, Circle (or Triangle pressed alone,
+  Android's back) goes back to the list with the replay's view as it was. On a touch screen the
+  Photo touch layout (docs/INPUT.md: a left stick, UP / DOWN with ROLL L / ROLL R beside them,
+  BACK / MENU / SAVE, the crosshair a focus button, a drag on the open screen aiming the view and a
+  pinch zooming it, `PhotoCamera::aim`). No HUD, mark or Select list: the crosshair in the
+  picture's centre (gone once the photo is finished; on touch it fades with the controls), the
+  camera menu when shown and the legend while the camera moves. The crosshair is a viewfinder in
+  single-point focus: thin rounded brackets round the frame's middle quarter (half its width and
+  half its height) and a circle with a cross at its centre; it and
+  the grid (thinner, no outline either) fade together. With a controller the camera menu hides by itself once the photo is
+  finished and nothing has been pressed or moved for 5 s (`kMenuIdleHide`). The camera menu also has Aperture (above) and Aspect (`race::PhotoAspect`: 16:9 at first, or 4:3): photo mode
+  renders the picture at that shape, the largest that fits, centred with black round it (in the
+  original resolution, its 640 x 448 cut to it), and saves it so; Orientation
+  (`race::PhotoOrientation`: Landscape at first, or Portrait, the frame turned upright: 9:16 or
+  3:4, `photo_frame_ratio`); and Grid (`race::PhotoGrid`,
+  `photo_grid_lines`: off at first, the rule of thirds, the square diagonals or the golden
+  triangle, fitted to the frame and drawn over it, never into the photo).
+  The crosshair's ray (`photo_hit`: `Occluder::nearest` on the course, then on each car's body in
+  its own frame) is checked only when the user focuses, as a camera's autofocus does: Square held
+  (touch: a finger held on the crosshair) for half a second (`kFocusHold`) focuses where the ray
+  hits, once per hold, and the car it hit, or none, decides what the camera does while the shutter
+  is open (`resolve_photo_follow`, `photo_follow_mode`, `photo_view`; shown above the progress line;
+  before any focus Roadside stays put and Fixed to car rides the followed car). Moving the camera
+  checks nothing: the focus and the follow stay until the next focus (`focus_photo`; the focus
+  point flashes red three times; none yet: the followed car's distance). The depth of field is made by the
+  accumulation (`race::photo_lens`): each render looks through its own point of a thin lens
+  (`PhotoSample::lens_x` / `lens_y`, Halton bases 7 and 11 mapped onto the disc) at the focus
+  distance, the eye moved there and the projection sheared so the plane of focus stays put; the
+  lens is a full-frame camera's, its focal length the view's 35 mm equivalent (`photo_focal_mm`,
+  from the field of view across the frame's diagonal) and its aperture that over the camera menu's
+  f-number (Aperture: f/1.4 to f/22, f/5.6 at first; `photo_aperture_radius`). The replays' post
+  process depth of field (`apply_depth_of_field`) is off in photo mode. The heat haze is on in
+  photo mode when the course (Env0 flag 0x20) and [video] heat_haze allow it and the replay's
+  camera shot photo mode was opened on had it (its GTRC record's haze flag: `photo_haze_`, taken
+  from `CameraRig::replay_haze` as photo mode opens; `add_screen_passes`). Each render draws the
+  particles at its own time across the shutter (`HeatHaze::lenses`' `ticks`: each moved by its
+  drift that many steps from the last one stepped, fractions too), so a long shutter blurs the
+  ripple and a short one freezes it. The course's animations (moving nodes and CLUT animations: flags,
+  spinning parts, flip-book crowds and screens, flashing lights; the wet road's and billboards'
+  too) run across the shutter as well: their state at the paused moment is kept as photo mode opens
+  (`CourseScene::animation_state`, `ClutAnimations::state`, `AnimatedNodes::state`), and each render
+  sets it back, advances it by its time past the shutter's opening and uploads it (`photo_animate`;
+  they only run forward, so their window is the shutter's length later than the cars', alike to
+  the eye), then puts the moment's back.
+  Photo mode draws every car at full detail whatever [video] full_car_detail says
+  (`photo_car_models`: each model's `set_full_detail`, nothing built again); the wheels stay as
+  [video] showroom_wheels has them. Leaving it puts back the detail as set and the replays' depth
+  of field. The camera menu's rows: the follow setting (`race::PhotoFollow`, Roadside at
+  first) and the shutter (1/1000 s to 1/8 s, 1/60 s at first). Roadside pans
+  with that car (the car sharp, the world streaked) or, with none hit, stays put (the moving cars
+  blur); Fixed to car moves and turns with that car, or the followed car, as if bolted on.
+  After 1 s without input it is still: the wheels' spin blur (tread, rims, the showroom rims'
+  copies; `WheelView::blur`) is off and the picture is built: `race::kPhotoSamples` (64) renders,
+  one a frame, each at its own time while the shutter is open (`photo_shutter`: closing at the
+  moment shown, opening the shutter speed before it) and nudged by its own fraction of a pixel
+  (`photo_sample`: the times' strata bit-reversed, so the mean has the whole blur while it builds;
+  the offsets a Halton sequence), into View3D's running mean (`DrawOptions::accumulate`, see
+  RENDERING.md), shown as it builds, then kept without drawing the scene again. The cars at a
+  render's time come from `race::PhotoHistory` (`photo_car_at`, `opponent_view_state`): every car's
+  state after each of the replay's last 11 ticks (`record_photo_history`; a new replay starts it
+  again), interpolated between them as between frames; a shutter reaching past them is cut short.
+  The sparks and the ghost are drawn within the paused tick only (`frame_alpha`). A line along the
+  bottom shows the photo's progress; the dynamic resolution holds its scale meanwhile
+  (`App::hold_render_scale`). Any input, a new focus or a menu change starts again.
+  Cross saves the photo (`save_photo`; at once when finished, else when it is, a move first
+  cancelling that): the 3D picture alone, read back at the size it was rendered
+  (`View3D::read_picture`: supersampled pictures at their full size, the original resolution's
+  640 x 448), as `screenshots/gt3r-photo-<date>-<time>.png` in the save folder, where F12's
+  screenshots go. "Photo saved" shows as a toast; the crosshair, menu and hints are not in the file.
   `GT3R_RACE="...,pause_sel=2"` opens it with the cursor on a button.
 - Quick menus (`QuickMenu`, results.*) run on menu::flow::MenuController (menus §11): the
   icon row with the scroll, focus pulse, help layer, confirm blink and the menu SE, the race
@@ -997,7 +1075,7 @@ original's pages: theater, DEMONSTRATION list, Analyzer top, REPLAY OPTIONS):
   memory-card file page (slots, confirm, "working"); ours is deliberately native storage
   (`race/replay_library.*`, app backend `game/replay_theater.*`). The replay plays once
   (`GameRequest` mode `theater_replay`; Start = the replay pause with REPLAY OPTIONS, EXIT or
-  its end) and the theater page comes back with focus on its first item (as the original).
+  its end; Select there opens our list: Resume replay, Restart replay, Camera, Photo mode, Exit to theater) and the theater page comes back with focus on its first item (as the original).
 - **Demonstration**: the disc's demonstration runs (`demo/<event>`, 48 licence tests then 10
   arcade time trials, the original's order, names and info) on the same page; one plays as its
   licence test / time trial driven by the demo's inputs, TV cameras (the REPLAY OPTIONS view

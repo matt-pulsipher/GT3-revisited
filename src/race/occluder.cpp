@@ -203,4 +203,48 @@ bool Occluder::blocked(const Vec3& o, const Vec3& d, float max_dist) const {
     }
 }
 
+float Occluder::nearest(const Vec3& o, const Vec3& d, float max_dist) const {
+    if (nodes_.empty()) return max_dist;
+    float best = max_dist;
+    const float id[3] = {1.0f / (d.x != 0 ? d.x : 1e-30f), 1.0f / (d.y != 0 ? d.y : 1e-30f), 1.0f / (d.z != 0 ? d.z : 1e-30f)};
+    const float org[3] = {o.x, o.y, o.z};
+    auto enters = [&](const Node& n) { // (within the nearest hit so far)
+        float t0 = 0, t1 = best;
+        for (int k = 0; k < 3; ++k) {
+            float a = (n.lo[k] - org[k]) * id[k], b = (n.hi[k] - org[k]) * id[k];
+            if (a > b) std::swap(a, b);
+            t0 = std::max(t0, a), t1 = std::min(t1, b);
+        }
+        return t0 <= t1;
+    };
+    u32 stack[kStack];
+    int top = 0;
+    if (!enters(nodes_[0])) return max_dist;
+    stack[top++] = 0;
+    while (top > 0) {
+        const Node& n = nodes_[stack[--top]];
+        if (!enters(n)) continue;
+        if (n.count == 0) {
+            if (top + 2 <= kStack) stack[top++] = n.first + 1, stack[top++] = n.first;
+            continue;
+        }
+        for (u32 i = n.first; i < n.first + n.count; ++i) {
+            const Tri& t = tris_[i];
+            Vec3 pv = cross(d, t.e2);
+            float det = dot(t.e1, pv);
+            if (std::fabs(det) < 1e-8f) continue;
+            float inv = 1.0f / det;
+            Vec3 tv = o - t.a;
+            float u = dot(tv, pv) * inv;
+            if (u < 0 || u > 1) continue;
+            Vec3 qv = cross(tv, t.e1);
+            float v = dot(d, qv) * inv;
+            if (v < 0 || u + v > 1) continue;
+            float dist = dot(t.e2, qv) * inv;
+            if (dist > 0.05f && dist < best) best = dist;
+        }
+    }
+    return best;
+}
+
 } // namespace gt3r::race

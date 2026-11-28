@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace gt3r {
@@ -36,11 +37,40 @@ class IniDocument;
 //   drive.gas  = right 40 bottom 66 size 1.2 ; a control moved / resized / hidden in the
 //   menu.dpad  = hidden                      ; layout editor (TouchPlacement)
 //   drive.music = shown                      ; the song buttons, shown though hidden by default
-enum class TouchLayout : u8 { None, Menu, Driving };
+//
+// The Photo layout (ours, a paused replay's photo mode, app/screen_race_photo.cpp): a left stick
+// (the pad's left stick: the camera's moves), UP / DOWN (R2 / L2: its height) with the roll
+// buttons beside them, SAVE (Cross), BACK (Circle) and MENU (the camera menu: its rows, follow and
+// shutter, each between < and >, while set_photo_menu shows it), and the crosshair in the game
+// area's centre, a focus button the screen draws itself; a finger on the open screen aims the view
+// and two pinch its zoom (take_gesture).
+enum class TouchLayout : u8 { None, Menu, Driving, Photo };
+
+// Ours: the Photo layout's gestures since the last take_gesture(), UI units. One finger on the
+// open screen drags (`drag_x`, `drag_y`: how far it moved); two pinch (`pinch`: their distance now
+// over before, > 1 spreading them).
+struct TouchGesture {
+    float drag_x = 0, drag_y = 0;
+    float pinch = 1;
+    bool any() const { return drag_x != 0 || drag_y != 0 || pinch != 1; }
+};
 
 // Ours: what a touch control does besides pressing the pad: the driving layout's song buttons
 // (the race's Previous / Next song, as the controls' chords do).
-enum class TouchAction : u8 { None, PreviousSong, NextSong };
+// The Photo layout's (photo mode's): focus at the crosshair, the camera menu shown / hidden, its
+// rows' < and >, and the roll left / right (held).
+enum class TouchAction : u8 {
+    None, PreviousSong, NextSong,
+    Focus, PhotoMenu, FollowPrev, FollowNext, ShutterPrev, ShutterNext, RollLeft, RollRight,
+    AspectPrev, AspectNext, GridPrev, GridNext, AperturePrev, ApertureNext, OrientationPrev, OrientationNext
+};
+// The camera menu's rows (TouchControls::set_photo_menu, in this order): each row's < and >.
+constexpr TouchAction kPhotoMenuActions[][2] = {{TouchAction::FollowPrev, TouchAction::FollowNext},
+                                                 {TouchAction::ShutterPrev, TouchAction::ShutterNext},
+                                                 {TouchAction::AperturePrev, TouchAction::ApertureNext},
+                                                 {TouchAction::AspectPrev, TouchAction::AspectNext},
+                                                 {TouchAction::OrientationPrev, TouchAction::OrientationNext},
+                                                 {TouchAction::GridPrev, TouchAction::GridNext}};
 
 // Rectangle in UI units (Ui::kWidth x Ui::kHeight space).
 struct TouchRect {
@@ -116,7 +146,7 @@ public:
     // What the overlay draws. Coordinates are UI units; circles use (x, y) as
     // the centre and w as the radius.
     struct Widget {
-        enum class Kind : u8 { Button, DPad, Pedal, Steering, Action };
+        enum class Kind : u8 { Button, DPad, Pedal, Steering, Action, Stick };
         enum class Shape : u8 { Rect, Circle };
         Kind kind = Kind::Button;
         Shape shape = Shape::Circle;
@@ -126,13 +156,15 @@ public:
         const char* key = "";
         bool hidden = false; // hidden in the layout editor: not drawn, takes no touches
         bool no_slide = false; // takes only a finger put down on it, never one sliding onto it (reverse)
+        bool keep_shown = false; // never fades (photo mode's SAVE): drawn and pressed while the rest is faded out
         PadButton button = PadButton::Cross; // Button / Pedal
         TouchAction action = TouchAction::None; // Action
         std::string label;                   // short text; empty for face-button symbols
         bool active = false;                 // currently held
         float value = 0.0f;                  // pedal pressure / steering -1..1
-        // Steering: where the finger went down (knob origin), valid while active.
-        float origin_x = 0, origin_y = 0, knob_x = 0;
+        // Steering: where the finger went down (knob origin), valid while active. Stick: its
+        // knob (knob_x, knob_y; at its centre unless active).
+        float origin_x = 0, origin_y = 0, knob_x = 0, knob_y = 0;
     };
 
     void configure(const TouchConfig& cfg);
@@ -217,10 +249,16 @@ public:
     // Contribution to player 1's pad; neutral when hidden.
     const PadState& pad() const { return pad_; }
     // An action control pressed down in the last update() (one frame per press).
-    bool action_pressed(TouchAction a) const { return a != TouchAction::None && (pressed_actions_ & (1u << unsigned(a))); }
+    bool action_pressed(TouchAction a) const { return a != TouchAction::None && (pressed_actions_ & (1u << unsigned(a))) != 0; }
     // An action control held down (a finger on it).
-    bool action_held(TouchAction a) const { return a != TouchAction::None && (held_actions_ & (1u << unsigned(a))); }
+    bool action_held(TouchAction a) const { return a != TouchAction::None && (held_actions_ & (1u << unsigned(a))) != 0; }
     const std::vector<Widget>& widgets() const { return widgets_; }
+    // The Photo layout's gestures since the last call (then none again).
+    TouchGesture take_gesture() { return std::exchange(gesture_, TouchGesture{}); }
+    // The Photo layout's camera menu: shown or not, and its rows' values (kPhotoMenuActions' rows:
+    // follow, shutter, aperture, aspect, orientation, grid).
+    void set_photo_menu(bool shown, const std::vector<std::string>& values);
+    bool photo_menu() const { return photo_menu_; }
 
 private:
     struct Finger {
@@ -229,6 +267,7 @@ private:
         float x = 0, y = 0, pressure = 1.0f;
         float origin_x = 0, origin_y = 0; // steering: touch-down point
         bool look = false;     // on the open screen: looks around (opens_look), no widget
+        bool gesture = false;  // the Photo layout's open screen: drags and pinches (TouchGesture)
         bool seen = false;     // reported by at least one update()
         bool released = false; // lifted before any update() saw it: report once, then drop
     };
@@ -259,7 +298,10 @@ private:
     std::vector<Widget> widgets_;
     std::vector<Finger> fingers_;
     PadState pad_;
-    u8 held_actions_ = 0, pressed_actions_ = 0; // bit (1 << TouchAction)
+    u32 held_actions_ = 0, pressed_actions_ = 0; // bit (1 << TouchAction)
+    TouchGesture gesture_;
+    bool photo_menu_ = false;
+    std::vector<std::string> photo_values_;
 };
 
 } // namespace gt3r

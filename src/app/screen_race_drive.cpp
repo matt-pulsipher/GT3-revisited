@@ -646,7 +646,7 @@ void RaceScreen::update_drive(App& app, double dt) {
         }
         open_pause(app);
         return;
-    } else if (paused_ && !replay_opts_open_ && (m.pressed(PadButton::Start) || rpressed(PadButton::Start))) {
+    } else if (paused_ && !replay_opts_open_ && !photo_ && (m.pressed(PadButton::Start) || rpressed(PadButton::Start))) {
         paused_ = false; // (ours: Start also continues)
         return;
     }
@@ -663,7 +663,8 @@ void RaceScreen::update_drive(App& app, double dt) {
             bind_camera_car(camera_, camera_car_, car_visual_.get());
             camera_.update(render_state_, vehicle_->setup(), PadState{}, dt);
         }
-        update_pause(app, dt);
+        if (photo_) update_photo(app, dt);
+        else update_pause(app, dt);
         return;
     }
     // GT3's buttons: R1 change view, L1 look back (held), R3 our performance overlay; see
@@ -695,7 +696,7 @@ void RaceScreen::update_drive(App& app, double dt) {
     int n = step_.advance(dt);
     if (online_) n = online_ticks(n);
     Uint64 h_t0 = SDL_GetTicksNS();
-    for (int i = 0; i < n; ++i) tick(app, pad);
+    for (int i = 0; i < n; ++i) tick(app, pad), record_photo_history();
     hitch::ticks = n, hitch::ticks_ms = double(SDL_GetTicksNS() - h_t0) / 1e6;
     hitch::smoke = int(smoke_.live()), hitch::x = render_state_.position.x, hitch::z = render_state_.position.z;
     hitch::race_t = float(race_time_);

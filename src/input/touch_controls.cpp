@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <cstdio>
 #include <cstdlib>
 #include <numbers>
@@ -42,7 +43,10 @@ constexpr const char* kDriveKeys[] = {"drive.gas",     "drive.brake", "drive.up"
 constexpr const char* kMenuKeys[] = {"menu.dpad", "menu.buttons", "menu.l1", "menu.r1", "menu.select", "menu.start"};
 
 std::string_view layout_prefix(TouchLayout layout) {
-    return layout == TouchLayout::Driving ? "drive." : layout == TouchLayout::Menu ? "menu." : "";
+    return layout == TouchLayout::Driving ? "drive."
+           : layout == TouchLayout::Menu  ? "menu."
+           : layout == TouchLayout::Photo ? "photo."
+                                          : "";
 }
 
 std::string format_units(float v) {
@@ -238,6 +242,16 @@ void TouchControls::configure(const TouchConfig& cfg) {
     build_layout();
 }
 
+void TouchControls::set_photo_menu(bool shown, const std::vector<std::string>& values) {
+    if (shown == photo_menu_ && values == photo_values_) return;
+    photo_menu_ = shown, photo_values_ = values;
+    if (layout_ != TouchLayout::Photo) return;
+    // The widgets again (the rows and MENU's label); the menu's are last, so a finger on another
+    // keeps its widget (one on a row that went keeps none).
+    build_layout();
+    std::erase_if(fingers_, [&](const Finger& f) { return f.widget >= int(widgets_.size()); });
+}
+
 void TouchControls::set_layout(TouchLayout layout) {
     if (layout == layout_) return;
     layout_ = layout;
@@ -345,6 +359,49 @@ void TouchControls::build_layout() {
             w.action = act;
             add(w, "drive.music");
         }
+    } else if (layout_ == TouchLayout::Photo) {
+        // The left stick where the menus' D-pad sits, UP / DOWN where the driving layout's shift
+        // buttons do (the right thumb), SAVE and BACK along the top.
+        const float sr = 56 * s;
+        Widget stick;
+        stick.kind = Widget::Kind::Stick;
+        stick.shape = Widget::Shape::Circle;
+        stick.x = stick.knob_x = mL + sr, stick.y = stick.knob_y = mB - sr, stick.w = stick.h = sr;
+        add(stick, "photo.stick");
+        const float r = 24 * s;
+        add(button(mR - r, mB - r, r, PadButton::L2, "DOWN"), "photo.down");
+        add(button(mR - r, mB - 3 * r - kGap, r, PadButton::R2, "UP"), "photo.up");
+        auto action = [&](Widget w, TouchAction act) {
+            w.kind = Widget::Kind::Action;
+            w.action = act;
+            return w;
+        };
+        // The roll beside the height: left of DOWN and of UP, as the thumb reaches them.
+        const float rx = mR - 3 * r - kGap;
+        add(action(button(rx, mB - r, r, PadButton::Start, "ROLL L"), TouchAction::RollLeft), "photo.roll");
+        add(action(button(rx, mB - 3 * r - kGap, r, PadButton::Start, "ROLL R"), TouchAction::RollRight), "photo.roll");
+        const float bw = 48 * s, bh = 20 * s;
+        add(rect_button(mL, mT, bw, bh, PadButton::Circle, "BACK"), "photo.back");
+        Widget save = rect_button(mR - bw, mT, bw, bh, PadButton::Cross, "SAVE");
+        save.keep_shown = true; // (shown over the finished photo, when the rest has faded)
+        add(save, "photo.save");
+        add(action(rect_button(cx_mid - bw / 2, mT, bw, bh, PadButton::Start, photo_menu_ ? "MENU -" : "MENU +"),
+                   TouchAction::PhotoMenu),
+            "photo.menu");
+        // The crosshair (the screen draws it): a tap focuses there.
+        add(action(button(game_w_ / 2, game_h_ / 2, 20 * s, PadButton::Start, ""), TouchAction::Focus), "photo.focus");
+        if (photo_menu_) { // the camera menu's rows under MENU: < value >
+            const float aw = 26 * s, vw = 112 * s, rh = 16 * s, x0 = cx_mid - aw - kGap / 2 - vw / 2;
+            const int rows = std::min(int(photo_values_.size()), int(std::size(kPhotoMenuActions)));
+            for (int i = 0; i < rows; ++i) {
+                const float y = mT + bh + kGap / 2 + float(i) * (rh + kGap / 3);
+                const TouchAction* acts = kPhotoMenuActions[i];
+                add(action(rect_button(x0, y, aw, rh, PadButton::Start, "<"), acts[0]), "photo.menu");
+                add(action(rect_button(x0 + aw + kGap / 4, y, vw, rh, PadButton::Start, photo_values_[size_t(i)]), acts[1]),
+                    "photo.menu");
+                add(action(rect_button(x0 + aw + vw + kGap / 2, y, aw, rh, PadButton::Start, ">"), acts[1]), "photo.menu");
+            }
+        }
     } else if (layout_ == TouchLayout::Menu) {
         const float half = 54 * s;
         Widget pad;
@@ -380,7 +437,8 @@ void TouchControls::build_layout() {
         Widget* prev = nullptr;
         Widget* next = nullptr;
         for (Widget& w : widgets_)
-            if (w.kind == Widget::Kind::Action) (w.action == TouchAction::PreviousSong ? prev : next) = &w;
+            if (w.action == TouchAction::PreviousSong || w.action == TouchAction::NextSong)
+                (w.action == TouchAction::PreviousSong ? prev : next) = &w;
         if (prev && next) std::swap(prev->x, next->x);
     }
 }
@@ -540,7 +598,7 @@ int TouchControls::widget_at(float x, float y, bool hidden) const {
 }
 
 bool TouchControls::hit(float x, float y) const {
-    return faded_out() || (visible() && (widget_at(x, y) >= 0 || opens_look(x, y)));
+    return faded_out() || (visible() && (widget_at(x, y) >= 0 || opens_look(x, y) || layout_ == TouchLayout::Photo));
 }
 
 bool TouchControls::opens_look(float x, float y) const {
@@ -594,18 +652,24 @@ TouchControls::Finger* TouchControls::find(u64 id) {
 bool TouchControls::finger_down(u64 id, float x, float y, float pressure) {
     note_touch();
     if (!visible()) return false;
-    const bool wake = faded_out();
-    idle_ = 0; // (fading) shown again, or kept shown
+    // A control that never fades takes its touch as it is, and wakes nothing.
+    const int kept = widget_at(x, y);
+    const bool keep = kept >= 0 && widgets_[size_t(kept)].keep_shown;
+    const bool wake = faded_out() && !keep;
+    if (!keep) idle_ = 0; // (fading) shown again, or kept shown
     if (wake) return true; // only brings them back
     std::erase_if(fingers_, [&](const Finger& f) { return f.id == id; });
     int w = widget_at(x, y);
-    // On the open screen it looks around (with tilt steering the steering zone is open screen).
-    const bool look = (w < 0 || widgets_[size_t(w)].kind == Widget::Kind::Steering) && opens_look(x, y);
-    if (w < 0 && !look) return false;
+    // On the open screen it looks around (with tilt steering the steering zone is open screen); in
+    // the Photo layout it aims and pinches.
+    const bool gesture = w < 0 && layout_ == TouchLayout::Photo;
+    const bool look = !gesture && (w < 0 || widgets_[size_t(w)].kind == Widget::Kind::Steering) && opens_look(x, y);
+    if (w < 0 && !look && !gesture) return false;
     Finger f;
     f.id = id;
-    f.widget = look ? -1 : w;
+    f.widget = look || gesture ? -1 : w;
     f.look = look;
+    f.gesture = gesture;
     f.x = f.origin_x = x;
     f.y = f.origin_y = y;
     f.pressure = pressure;
@@ -616,13 +680,34 @@ bool TouchControls::finger_down(u64 id, float x, float y, float pressure) {
 void TouchControls::finger_move(u64 id, float x, float y, float pressure) {
     Finger* f = find(id);
     if (!f) return;
+    if (f->gesture) {
+        // One finger on the open screen drags; with two, the pair's spread pinches (the first two).
+        Finger* other = nullptr;
+        int n = 0;
+        for (Finger& g : fingers_)
+            if (g.gesture && !g.released) {
+                if (n < 2 && &g != f) other = &g;
+                ++n;
+            }
+        if (n == 1) {
+            gesture_.drag_x += x - f->x, gesture_.drag_y += y - f->y;
+        } else if (other) {
+            const float before = std::hypot(f->x - other->x, f->y - other->y);
+            const float after = std::hypot(x - other->x, y - other->y);
+            if (before > 1.0f && after > 1.0f) gesture_.pinch *= after / before;
+        }
+        f->x = x, f->y = y, f->pressure = pressure;
+        return;
+    }
     f->x = x, f->y = y, f->pressure = pressure;
     if (f->look) return; // looking around until it lifts
     // Buttons and pedals follow a sliding finger (brake -> gas, D-pad -> face
     // buttons); the steering zone and the song buttons keep theirs, and a sliding finger
     // never skips a song or selects reverse (it can slide off reverse onto the pedals).
     using K = Widget::Kind;
-    if (widgets_[size_t(f->widget)].kind == K::Steering || widgets_[size_t(f->widget)].kind == K::Action) return;
+    if (widgets_[size_t(f->widget)].kind == K::Steering || widgets_[size_t(f->widget)].kind == K::Action ||
+        widgets_[size_t(f->widget)].kind == K::Stick)
+        return;
     int w = widget_at(x, y);
     if (w < 0) return;
     const Widget& to = widgets_[size_t(w)];
@@ -669,7 +754,11 @@ bool TouchControls::visible() const {
 void TouchControls::update(double dt, float roll) {
     if (fade_) {
         // A finger held down keeps them shown; kFadeDelay after the last one they fade out.
-        idle_ = fingers_.empty() ? idle_ + dt : 0.0;
+        // (A finger on a control that never fades holds nothing up.)
+        const bool held = std::any_of(fingers_.begin(), fingers_.end(), [&](const Finger& f) {
+            return f.widget < 0 || f.widget >= int(widgets_.size()) || !widgets_[size_t(f.widget)].keep_shown;
+        });
+        idle_ = held ? 0.0 : idle_ + dt;
         const float step = idle_ < kFadeDelay ? float(dt / kFadeIn) : -float(dt / kFadeOut);
         alpha_ = std::clamp(alpha_ + step, 0.0f, 1.0f);
     }
@@ -677,17 +766,19 @@ void TouchControls::update(double dt, float roll) {
     for (Widget& w : widgets_) {
         w.active = false;
         w.value = 0.0f;
+        w.knob_x = w.kind == Widget::Kind::Stick ? w.x : w.knob_x, w.knob_y = w.kind == Widget::Kind::Stick ? w.y : w.knob_y;
     }
-    const u8 was_held = held_actions_;
+    const u32 was_held = held_actions_;
     held_actions_ = pressed_actions_ = 0;
     if (!visible()) {
         fingers_.clear();
         return;
     }
     pad_.connected = true;
-    float lx = 0.0f;
+    float lx = 0.0f, ly = 0.0f;
     std::optional<float> look; // the first looking finger's turn (radians, + right)
     for (const Finger& f : fingers_) {
+        if (f.gesture) continue; // (take_gesture)
         if (f.look) {
             if (!look) look = std::clamp((f.x - f.origin_x) / kLookRange, -2.0f, 2.0f) * 1.5707964f;
             continue;
@@ -699,7 +790,7 @@ void TouchControls::update(double dt, float roll) {
             w.active = true;
             break;
         case Widget::Kind::Action:
-            held_actions_ = u8(held_actions_ | (1u << unsigned(w.action)));
+            held_actions_ |= 1u << unsigned(w.action);
             w.active = true;
             break;
         case Widget::Kind::Pedal: {
@@ -716,6 +807,15 @@ void TouchControls::update(double dt, float roll) {
                 w.button = PadButton(d);
             }
             break;
+        case Widget::Kind::Stick: { // the knob follows the finger out to the rim: the stick that far
+            float dx = f.x - w.x, dy = f.y - w.y;
+            const float d = std::hypot(dx, dy);
+            if (d > w.w) dx *= w.w / d, dy *= w.w / d;
+            lx = dx / w.w, ly = dy / w.w;
+            w.active = true;
+            w.knob_x = w.x + dx, w.knob_y = w.y + dy;
+            break;
+        }
         case Widget::Kind::Steering:
             if (cfg_.steering != TouchConfig::Steering::Drag) break;
             {
@@ -741,9 +841,10 @@ void TouchControls::update(double dt, float roll) {
             if (w.kind == Widget::Kind::Steering) w.value = lx;
     }
     pad_.set_axis(PadAxis::LX, lx);
+    if (layout_ == TouchLayout::Photo) pad_.set_axis(PadAxis::LY, ly);
     // The look as the right stick pushed fully that way (up = ahead; CameraRig::set_look).
     if (look) pad_.set_axis(PadAxis::RX, std::sin(*look)), pad_.set_axis(PadAxis::RY, -std::cos(*look));
-    pressed_actions_ = u8(held_actions_ & ~was_held);
+    pressed_actions_ = held_actions_ & ~was_held;
     std::erase_if(fingers_, [](const Finger& f) { return f.released; });
     for (Finger& f : fingers_) f.seen = true;
 }

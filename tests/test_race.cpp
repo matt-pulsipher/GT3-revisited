@@ -2777,6 +2777,38 @@ TEST(race_occluder_matches_every_triangle) {
     CHECK(mismatches == 0);
     CHECK(hits > 1000);
     CHECK(!o.blocked({0, 500, 0}, {0, 1, 0}, 6000)); // straight up from over the heap
+    // nearest (photo mode's crosshair): the first hit along the ray, as every triangle's test finds it.
+    auto brute_nearest = [&](const render::Vec3& a, const render::Vec3& d, float max_dist) {
+        float best = max_dist;
+        for (size_t i = 0; i < tri.size(); i += 3) {
+            const render::Vec3 e1 = tri[i + 1] - tri[i], e2 = tri[i + 2] - tri[i];
+            const render::Vec3 pv = cross(d, e2);
+            const float det = dot(e1, pv);
+            if (std::fabs(det) < 1e-8f) continue;
+            const float inv = 1.0f / det;
+            const render::Vec3 tv = a - tri[i];
+            const float u = dot(tv, pv) * inv;
+            if (u < 0 || u > 1) continue;
+            const render::Vec3 qv = cross(tv, e1);
+            const float v = dot(d, qv) * inv;
+            if (v < 0 || u + v > 1) continue;
+            const float dist = dot(e2, qv) * inv;
+            if (dist > 0.05f && dist < best) best = dist;
+        }
+        return best;
+    };
+    int near_off = 0, near_hits = 0;
+    for (int i = 0; i < 2000; ++i) {
+        const render::Vec3 a{rnd() * 500 - 250, rnd() * 80 - 10, rnd() * 500 - 250};
+        render::Vec3 d{rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f};
+        d = d * (1.0f / std::sqrt(dot(d, d)));
+        const float want = brute_nearest(a, d, 600), got = o.nearest(a, d, 600);
+        near_hits += want < 600;
+        near_off += std::fabs(want - got) > 1e-3f;
+    }
+    CHECK(near_off == 0);
+    CHECK(near_hits > 200);
+    CHECK(o.nearest({0, 500, 0}, {0, 1, 0}, 6000) == 6000); // (none)
 }
 
 // The sun disc (presentation §I6): its colours from Env0, 10 m out along the sun in the

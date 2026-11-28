@@ -458,11 +458,12 @@ void View3D::release_target() {
         *w = nullptr;
     }
     SDL_GPUDevice* dev = ctx_.device();
-    for (SDL_GPUTexture** t : {&color_, &msaa_, &depth_, &scene_, &last_, &snap_, &half_, &haze_src_, &dof_, &spin_mask_}) {
+    for (SDL_GPUTexture** t : {&color_, &msaa_, &depth_, &scene_, &last_, &snap_, &half_, &haze_src_, &dof_, &spin_mask_, &accum_}) {
         if (*t) SDL_ReleaseGPUTexture(dev, *t);
         *t = nullptr;
     }
     last_valid_ = snap_valid_ = false;
+    accum_count_ = 0;
     width_ = height_ = 0;
 }
 
@@ -581,6 +582,15 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(ctx_.device());
     if (!cmd) return;
 
+    // Photo mode: the mean of the pictures added so far, shown again without drawing the scene.
+    // With none, or another size since (the window changed), drawn as usual and a new mean begun.
+    if (opt.accumulate == DrawOptions::Accumulate::Show) {
+        if (accum_count_ > 0 && accum_w_ == pw && accum_h_ == ph && show_accumulated(cmd, pw, ph)) {
+            present(renderer, rect, opt, cmd, pw, ph, out_w, out_h, cycle);
+            return;
+        }
+        accum_count_ = 0;
+    }
     // The dissolve's frozen picture: the last one shown.
     if (opt.snapshot) {
         snap_valid_ = last_valid_ && ensure_post(&snap_);
@@ -794,6 +804,7 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
             encode_post(cmd, pass, last_, last_w_, last_h_, std::min(opt.trail, 1.0f), nullptr);
         SDL_EndGPURenderPass(pass);
     }
+    if (opt.accumulate == DrawOptions::Accumulate::Add) add_accumulated(cmd, pw, ph); // (color_ then holds the mean)
     if (opt.keep_last && ensure_post(&last_)) {
         copy_picture(cmd, color_, last_, pw, ph, cycle);
         last_valid_ = true;
@@ -801,6 +812,11 @@ void View3D::draw(SDL_Renderer* renderer, const SDL_FRect& rect, const Mat4& vie
     } else if (!opt.keep_last) {
         last_valid_ = false;
     }
+    present(renderer, rect, opt, cmd, pw, ph, out_w, out_h, cycle);
+}
+
+void View3D::present(SDL_Renderer* renderer, const SDL_FRect& rect, const DrawOptions& opt, SDL_GPUCommandBuffer* cmd,
+                     int pw, int ph, float out_w, float out_h, bool cycle) {
     if (capture_.count > 0) capture_frame(cmd);
     // Supersampled past twice the on-screen size: halved first by a linear blit (each pixel the
     // mean of 2 x 2), so the 2D renderer's linear scaling, which reads 2 x 2 texels per pixel,
@@ -871,6 +887,72 @@ bool View3D::ensure_post(SDL_GPUTexture** t) {
     *t = SDL_CreateGPUTexture(ctx_.device(), &ti);
     if (!*t) LOG_WARN("3D post-process target %dx%d: %s", width_, height_, SDL_GetError());
     return *t != nullptr;
+}
+
+// Photo mode's running mean (DrawOptions::accumulate), target-sized as the post-process pictures.
+bool View3D::ensure_accum() {
+    if (accum_) return true;
+    if (width_ <= 0 || height_ <= 0) return false;
+    SDL_GPUTextureCreateInfo ti{};
+    ti.type = SDL_GPU_TEXTURETYPE_2D;
+    ti.width = u32(width_), ti.height = u32(height_);
+    ti.layer_count_or_depth = 1;
+    ti.num_levels = 1;
+    ti.format = ctx_.accum_format();
+    ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    ti.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    accum_ = SDL_CreateGPUTexture(ctx_.device(), &ti);
+    if (!accum_) LOG_WARN("3D accumulation target %dx%d: %s", width_, height_, SDL_GetError());
+    return accum_ != nullptr;
+}
+
+// The finished picture (color_) into the running mean: the k-th at weight 1 / k over the mean of
+// the k - 1 before it (the first replaces what was there), then the mean back into color_ to be
+// shown. The mean is never cycled: each picture reads the last one's.
+bool View3D::add_accumulated(SDL_GPUCommandBuffer* cmd, int pw, int ph) {
+    if (!ensure_accum() || !ensure_quad()) return false;
+    if (accum_w_ != pw || accum_h_ != ph) accum_count_ = 0; // (another size: a new mean)
+    accum_w_ = pw, accum_h_ = ph;
+    const float W = float(width_), H = float(height_);
+    Resample r; // one bilinear tap at each texel's centre: the texel itself
+    r.scale[0] = float(pw) / W, r.scale[1] = float(ph) / H;
+    r.clamp[0] = 0.5f / W, r.clamp[1] = 0.5f / H;
+    r.clamp[2] = (float(pw) - 0.5f) / W, r.clamp[3] = (float(ph) - 0.5f) / H;
+    const SDL_GPUViewport vp{0, 0, float(pw), float(ph), 0, 1};
+    const SDL_Rect sc{0, 0, pw, ph};
+    SDL_GPUColorTargetInfo at{};
+    at.texture = accum_;
+    at.load_op = accum_count_ == 0 ? SDL_GPU_LOADOP_DONT_CARE : SDL_GPU_LOADOP_LOAD;
+    at.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &at, 1, nullptr);
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_SetGPUScissor(pass, &sc);
+    encode_resample(cmd, pass, color_, r, 1.0f / float(accum_count_ + 1), 0.0f, true, nullptr, true);
+    SDL_EndGPURenderPass(pass);
+    ++accum_count_;
+    return show_accumulated(cmd, pw, ph);
+}
+
+// The running mean into color_ (to the colour format), for the composite.
+bool View3D::show_accumulated(SDL_GPUCommandBuffer* cmd, int pw, int ph) {
+    if (!accum_ || !ensure_quad()) return false;
+    const float W = float(width_), H = float(height_);
+    Resample r;
+    r.scale[0] = float(pw) / W, r.scale[1] = float(ph) / H;
+    r.clamp[0] = 0.5f / W, r.clamp[1] = 0.5f / H;
+    r.clamp[2] = (float(pw) - 0.5f) / W, r.clamp[3] = (float(ph) - 0.5f) / H;
+    const SDL_GPUViewport vp{0, 0, float(pw), float(ph), 0, 1};
+    const SDL_Rect sc{0, 0, pw, ph};
+    SDL_GPUColorTargetInfo ct{};
+    ct.texture = color_;
+    ct.load_op = SDL_GPU_LOADOP_LOAD; // (its alpha: the frame alpha the composite may keep)
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_SetGPUScissor(pass, &sc);
+    encode_resample(cmd, pass, accum_, r, 1.0f, 0.0f, true);
+    SDL_EndGPURenderPass(pass);
+    return true;
 }
 
 void View3D::copy_picture(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* from, SDL_GPUTexture* to, int w, int h,
@@ -1236,8 +1318,9 @@ bool View3D::ensure_dof_levels(float aspect, int pw, int ph, bool pyramid) {
 }
 
 void View3D::encode_resample(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* pass, SDL_GPUTexture* src,
-                             const Resample& r, float alpha, float depth, bool single, SDL_GPUTexture* mask) {
+                             const Resample& r, float alpha, float depth, bool single, SDL_GPUTexture* mask, bool accum) {
     PipelineKey key;
+    key.accum = accum;
     key.blend = r.additive ? BlendMode::Additive : alpha >= 1.0f && !mask ? BlendMode::Opaque : BlendMode::Alpha;
     key.cull = CullMode::None;
     key.depth_write = false;
@@ -2204,6 +2287,43 @@ void View3D::capture_frame(SDL_GPUCommandBuffer* cmd) {
     dst.texture = t;
     SDL_CopyGPUTextureToTexture(cp, &src, &dst, u32(used_w_), u32(used_h_), 1, false);
     SDL_EndGPUCopyPass(cp);
+}
+
+bool View3D::read_picture(std::vector<u32>& rgba, int& w, int& h) {
+    if (!color_ || used_w_ <= 0 || used_h_ <= 0) return false;
+    SDL_GPUDevice* dev = ctx_.device();
+    const u32 pw = u32(used_w_), ph = u32(used_h_);
+    SDL_GPUTransferBufferCreateInfo bi{};
+    bi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+    bi.size = pw * ph * 4;
+    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &bi);
+    if (!tb) return false;
+    bool ok = false;
+    if (SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev)) {
+        SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUTextureRegion src{};
+        src.texture = color_; // (the picture's corner of the target)
+        src.w = pw, src.h = ph, src.d = 1;
+        SDL_GPUTextureTransferInfo dst{};
+        dst.transfer_buffer = tb;
+        SDL_DownloadFromGPUTexture(cp, &src, &dst);
+        SDL_EndGPUCopyPass(cp);
+        if (SDL_GPUFence* f = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd)) {
+            SDL_WaitForGPUFences(dev, true, &f, 1);
+            SDL_ReleaseGPUFence(dev, f);
+            if (void* p = SDL_MapGPUTransferBuffer(dev, tb, false)) {
+                rgba.resize(size_t(pw) * ph);
+                std::memcpy(rgba.data(), p, rgba.size() * 4);
+                SDL_UnmapGPUTransferBuffer(dev, tb);
+                for (u32& c : rgba) c |= 0xFF000000u; // texel alpha is reflectivity
+                w = int(pw), h = int(ph);
+                ok = true;
+            }
+        }
+    }
+    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    if (!ok) LOG_WARN("3D picture read back failed: %s", SDL_GetError());
+    return ok;
 }
 
 void View3D::write_capture() {

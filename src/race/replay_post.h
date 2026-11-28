@@ -68,7 +68,9 @@ public:
     // kept when inside every clip plane; m = proj(0, 0) (read from the projection alone), the lens
     // size S = S0 sqrt(m). So the field is in front of the camera whatever its heading.
     // `view` the camera's view matrix (its rotation only is used), `proj` its projection.
-    void lenses(const render::Mat4& view, const render::Mat4& proj, std::vector<HazeLens>& out) const;
+    // `ticks` (ours, photo mode): the particles that many steps on from now (negative: back), each
+    // by its drift times that, fractions too (its renders across the shutter).
+    void lenses(const render::Mat4& view, const render::Mat4& proj, std::vector<HazeLens>& out, float ticks = 0) const;
 
     const std::vector<Particle>& particles() const { return particles_; }
     float size() const { return size_; }
