@@ -409,8 +409,8 @@ box filter; SDL's Vulkan mipmap blits go zero-sized on non-square textures,
 which loses the device on Mali GPUs) and linear/trilinear filtering with
 `[video] anisotropy` (default 4×; Settings → Display → Anisotropic filtering
 recreates the samplers). Models share textures with identical texels
-(`GpuContext::acquire_texture`: a race asks for ~3,700, ~840 distinct, and a
-Mali driver spends ~185 KB on each texture object); a CLUT-animated texture
+(`GpuContext::acquire_texture`; a Mali driver spends ~185 KB on each texture
+object); a CLUT-animated texture
 becomes its model's own before its first update. Each `Uploader` batch goes
 through one transfer buffer. A `GpuModel`'s per-frame updates
 (`update_vertices`, `update_geometry`) go through a transfer buffer the model

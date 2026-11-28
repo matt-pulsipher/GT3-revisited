@@ -6,6 +6,7 @@
 // Keep it plain data so tools (OBJ/glTF export) and tests can use it too.
 
 #include "base/bytes.h"
+#include "scene/texels.h"
 
 #include <array>
 #include <string>
@@ -99,6 +100,7 @@ struct Material {
     bool specular_local = false;
 };
 
+// (race_scene.cpp's same_drawing compares every field: a new one goes there too.)
 struct Primitive {
     u32 first_index = 0;
     u32 index_count = 0; // triangle list
@@ -154,7 +156,7 @@ struct Mesh {
 struct Texture {
     std::string name;
     u32 width = 0, height = 0;
-    std::vector<u32> rgba; // RGBA8 row-major
+    Texels rgba; // RGBA8 row-major (copies share the texels: scene/texels.h)
     bool clamp_u = false, clamp_v = false;
     bool no_mips = false; // sampled from the full-size image only (GS MXL 0): tyres, car bodies
     // The game samples it point-filtered (its Tex1 record's TEX1: MMAG NEAREST): no texel's colour

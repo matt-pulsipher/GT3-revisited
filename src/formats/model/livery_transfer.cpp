@@ -233,11 +233,11 @@ int apply(scene::Model& model, const scene::Model& reference) {
             for (u32 x = 0; x < w; ++x) {
                 const float fx = (float(x) + 0.5f) / float(kScale) - 0.5f, fy = (float(y) + 0.5f) / float(kScale) - 0.5f;
                 const u32 nx = std::min(t.width - 1, x / kScale), ny = std::min(t.height - 1, y / kScale);
-                u32 base = t.rgba[size_t(ny) * t.width + nx];
+                u32 base = t.rgba.vec()[size_t(ny) * t.width + nx];
                 if (!t.nearest) {
                     const float x0f = std::floor(fx), y0f = std::floor(fy), ax = fx - x0f, ay = fy - y0f;
                     auto at = [&](float xx, float yy) {
-                        return t.rgba[size_t(std::clamp(int(yy), 0, int(t.height) - 1)) * t.width +
+                        return t.rgba.vec()[size_t(std::clamp(int(yy), 0, int(t.height) - 1)) * t.width +
                                       size_t(std::clamp(int(xx), 0, int(t.width) - 1))];
                     };
                     const u32 c00 = at(x0f, y0f), c10 = at(x0f + 1, y0f), c01 = at(x0f, y0f + 1), c11 = at(x0f + 1, y0f + 1);

@@ -32,10 +32,7 @@ void RaceScreen::start_free_run(App& app) {
     free_run_ = true;
     quick_ = prerace_ = false;
     race_mode_ = false;
-    int laps = race_laps_;
-    build_vehicle(app);
     race_laps_ = 0;
-    free_run_laps_ = laps;
     restart();
 }
 
@@ -58,9 +55,6 @@ void RaceScreen::end_free_run(App& app) {
     }
     free_run_ = false;
     race_mode_ = true;
-    build_vehicle(app);
-    race_laps_ = free_run_laps_;
-    if (field_) field_->set_laps(race_laps_);
     restart();
     open_prerace_menu(app);
 }

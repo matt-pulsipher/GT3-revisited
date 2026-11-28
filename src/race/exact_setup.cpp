@@ -10,6 +10,7 @@
 #include "race/arcade_car.h"
 #include "vfs/vfs.h"
 
+#include <map>
 #include <cmath>
 #include <cstring>
 #include <future>
@@ -20,11 +21,7 @@ namespace gt3r::race {
 
 namespace {
 
-u64 hash_bytes(ByteSpan b) {
-    u64 h = 1469598103934665603ull;
-    for (u8 c : b) h = (h ^ c) * 1099511628211ull;
-    return h;
-}
+u64 hash_bytes(ByteSpan b) { return record_hash(b); } // (RaceCourse::file_hash is the same hash)
 
 // 8 bytes a step, for the course cache's check that a file is the one it holds. Never stored, so free to differ from
 // hash_bytes (which the race records' data fingerprint keeps).
@@ -268,11 +265,18 @@ namespace {
 constexpr u64 kElectricDriveVersion = 0xE1EC7D01;
 } // namespace
 
-u64 exact_data_fingerprint(const data::CarDatabase& db, std::span<const ex::StartEntry> entries, ByteSpan course_file) {
-    u64 h = hash_bytes(course_file);
+u64 exact_data_fingerprint(const data::CarDatabase& db, std::span<const ex::StartEntry> entries, ByteSpan course_file,
+                           const std::shared_ptr<const ex::RaceCourse>& course) {
+    u64 h = course ? course->file_hash : hash_bytes(course_file);
+    std::map<const ByteSpan*, u64> hashed; // (cars share most of their parts' records)
     auto mix = [&](data::TableId t, u64 id) {
         const ByteSpan* r = id ? db.record(t, id) : nullptr;
-        const u64 v = r ? hash_bytes(*r) : 0;
+        u64 v = 0;
+        if (r) {
+            const auto [it, fresh] = hashed.try_emplace(r);
+            if (fresh) it->second = hash_bytes(*r);
+            v = it->second;
+        }
         h = (h ^ v) * 1099511628211ull;
         return r;
     };

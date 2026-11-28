@@ -19,10 +19,6 @@
 #include <memory>
 #include <vector>
 
-namespace gt3r {
-class Vfs;
-}
-
 namespace gt3r::race {
 
 // 0x19EDA0 / 0x19ED48: a particle's colour from its life remaining L (s): the first key whose time is below L (key 0 itself;
@@ -35,7 +31,7 @@ public:
     SparkDraw();
     ~SparkDraw();
     // race/particle.img; false when the file is missing or unreadable (no sparks drawn).
-    bool load(render::GpuContext& ctx, const Vfs& vfs);
+    bool load(render::GpuContext& ctx, const std::optional<Bytes>& img);
     bool loaded() const { return gpu_ != nullptr; }
     // Every earlier position dropped (a new race, a camera cut).
     void clear();

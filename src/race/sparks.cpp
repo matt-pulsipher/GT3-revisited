@@ -5,7 +5,6 @@
 #include "formats/tex1.h"
 #include "formats/texture_pack.h"
 #include "render/gpu_model.h"
-#include "vfs/vfs.h"
 
 #include <algorithm>
 #include <cmath>
@@ -55,10 +54,9 @@ u32 spark_colour(float life) {
 SparkDraw::SparkDraw() = default;
 SparkDraw::~SparkDraw() = default;
 
-bool SparkDraw::load(render::GpuContext& ctx, const Vfs& vfs) {
+bool SparkDraw::load(render::GpuContext& ctx, const std::optional<Bytes>& img) {
     gpu_.reset();
     clear();
-    std::optional<Bytes> img = vfs.read("race/particle.img");
     if (!img) return false;
     scene::Model m;
     m.name = "sparks";

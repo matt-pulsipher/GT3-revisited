@@ -6,6 +6,7 @@
 // are in screen_race.h and screen_online.h.
 
 #include "app/app.h"
+#include "formats/model/build_cache.h"
 #include "app/camera_editor.h"
 #include "app/screen_gtmode.h"
 #include "app/screen_touch_overlay.h"
@@ -284,7 +285,7 @@ private:
     bool whole_run_ghost() const;
     bool lap_ghost() const;
     double ghost_run_time() const; // the time the whole-run ghost rules compare (s), < 0 = none
-    void restart();
+    void restart(bool built = false); // built: build_vehicle has just made this run's race
     void drop_vehicle();
     bool build_vehicle(App& app);
     ReplayBattle live_battle(App& app) const;
@@ -295,13 +296,13 @@ private:
     void take_live_condition();
     void seed_vehicle_condition(const sim::EngineCondition& c, bool live);
     sim::EngineCondition live_condition() const;
-    std::optional<Bytes> read_car(App& app, const std::string& model) const;
+    std::shared_ptr<const Bytes> read_car(App& app, const std::string& model) const;
     // [video] showroom_wheels: the model's menu/cars file and a fitted wheel's
     // menu/wheel/<label> (CarVisual's showroom_car, showroom_wheel); none when off. `stand_in`: the
     // menus' rim, read only for a race rim with nothing to draw, whatever the setting
     // (CarModelOptions::stand_in_rim).
     struct ShowroomFiles {
-        std::optional<Bytes> car, wheel;
+        std::shared_ptr<const Bytes> car, wheel;
         std::function<std::optional<Bytes>()> stand_in;
         std::function<std::optional<Bytes>()> tyre; // CarModelOptions::other_tyre
         ByteSpan car_span() const { return car ? ByteSpan(*car) : ByteSpan{}; }
@@ -312,6 +313,10 @@ private:
     // and model (every restart builds the race again).
     std::vector<sim::exact::SparkPoint> car_spark_points(App& app, const std::string& model) const;
     mutable std::map<std::string, std::vector<sim::exact::SparkPoint>> spark_points_;
+    // The cars' files read for the build in hand, each once (two cars of one model; the menus' files); null: not there.
+    std::shared_ptr<const Bytes> read_once(App& app, const std::string& path) const;
+    mutable std::map<std::string, std::shared_ptr<const Bytes>> read_files_;
+    gtm1::SharedBuilds shared_builds_; // what the cars of the build in hand share (race::CarBuild::shared)
     // Flying start (physics §9.1, 9.4: licence tests and time trials with the event's
     // distance and speed): the race's AI drives the player's car until the first line crossing.
     bool flying_runup() const { return !race_mode_ && tt_start_.flying() && track_ && !track_->lap_started(); }
@@ -951,7 +956,6 @@ private:
     static constexpr int kExitHold = 10, kExitWash = 8;
     bool prerace_ = false;
     bool free_run_ = false;              // free run before a GT race (back to the pre-race menu)
-    int free_run_laps_ = 0;               // the pre-race quick menu (before the race starts)
     // The last free practice of the visit: each entry's best lap (0 the player, k opponent k - 1; empty before the first),
     // and the grid it left (race::practice_grid; empty: the event's), which the race and later practices start from.
     std::vector<u32> practice_best_;
@@ -1049,6 +1053,7 @@ private:
     std::unique_ptr<RaceField> solo_field_; // a solo run on the exact core (exact_solo)
     std::vector<std::shared_ptr<CarVisual>> opp_visuals_;
     race::KeptModels<CarVisual> kept_opponents_; // the last build's opponent models, for the next (race/kept_models.h)
+    race::KeptModels<CarVisual> kept_second_;    // and its player 2's
     bool race_mode_ = false;
     // --- online battle (docs/dev/ONLINE.md) ---
     bool online_ = false;
@@ -1122,7 +1127,7 @@ private:
     int driver_side_ = 0; // the seat the player's car has its driver in: -1 left, 1 right, 0 unknown (build_player_visual; [vr] seat_side = car)
     std::vector<std::unique_ptr<render::View3D>> icon_views_; // car pictures (draw_car_icon), one per slot
     std::map<std::string, float> icon_heights_;              // car label -> chassis height (mm) for its picture
-    std::unique_ptr<CarVisual> car2_visual_;
+    std::shared_ptr<CarVisual> car2_visual_;
     bool finished2_ = false;
     int finish_position2_ = 0;
     u16 pad2_prev_ = 0;

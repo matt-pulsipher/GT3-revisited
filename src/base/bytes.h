@@ -47,4 +47,13 @@ inline bool has_magic(ByteSpan d, const char* magic) {
     return d.size() >= n && std::memcmp(d.data(), magic, n) == 0;
 }
 
+// The race records' data hash (race/exact_setup.h's fingerprint, sim::exact::RaceCourse::file_hash): FNV-1a's 64-bit step
+// from an offset basis of 1469598103934665603 (the standard basis with its last digit missing). Saved replays keep its
+// values: never change it.
+inline u64 record_hash(ByteSpan b) {
+    u64 h = 1469598103934665603ull;
+    for (u8 c : b) h = (h ^ c) * 1099511628211ull;
+    return h;
+}
+
 } // namespace gt3r

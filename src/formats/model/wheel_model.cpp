@@ -1,4 +1,5 @@
 #include "formats/model/wheel_model.h"
+#include "formats/model/build_cache.h"
 
 #include "formats/model/gltf.h"
 
@@ -114,7 +115,14 @@ scene::Model load_wheel_model(ByteSpan whole, const gtm1::Options& opt, const st
         for (scene::Mesh& mesh : m.meshes) mesh.name = name;
         return m;
     }
-    return gtm1::decode_gtm1(WheelFile::parse(data).gtm1, opt, name);
+    const ByteSpan g = WheelFile::parse(data).gtm1;
+    if (!opt.cache) return gtm1::decode_gtm1(g, opt, name);
+    // (The wheels of a car, and of the cars sharing a build, differ only in their LOD and reflections: car_model.cpp
+    // asks with the same other options for every car.)
+    scene::Model m = opt.cache->wheel(g, opt.run.lod, opt.reflection,
+                                      [&] { return gtm1::build_model(opt.cache->model(g), opt, name); });
+    m.name = name;
+    return m;
 }
 
 } // namespace gt3r

@@ -28,6 +28,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
     qm_items_ = {};       // ... and its quick menus' item switches (menus §11)
     practice_best_.clear(), practice_grid_.clear(), practice_entry_best_.clear(); // ... and its free practices' times and grid
     kept_opponents_.clear(); // ... and its opponents' models (built with its settings and course: race/kept_models.h)
+    kept_second_.clear();    // (and player 2's)
     // Speed unit: the game language's (language_units: mph in US English, else km/h, like the
     // menus) unless the player picked one ([race] units, speed_unit()).
     imperial_ = !app.vfs() || language_units(app.vfs()->language()).mph;
@@ -91,7 +92,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         // ... and its fitted wheels (issue 347: the theater's launch has no garage car, so its stock rims were drawn).
         if (replay && !replay->wheel.empty()) launch_.request.car_wheel = replay->wheel;
         std::string model = launch_model_.empty() ? ca.model : launch_model_;
-        std::optional<Bytes> car_file = read_car(app, model);
+        read_files_.clear(), shared_builds_.clear(); // (nothing from a build that stopped before its end)
+        const std::shared_ptr<const Bytes> car_file = read_car(app, model);
         if (!car_file || car_file->empty()) throw FormatError("car model cars/day/" + model + " is missing or empty");
 
         course_scene_.reset();
@@ -126,7 +128,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         }
         if (event_paint_id_ != 0xFFFFFFFFu)
             if (int k = colors_.index_of(paint_key(db_, ca.label, model), event_paint_id_); k >= 0) preset_.paint = k;
-        build_player_visual(app, model, *car_file);
+        // (An attract demo's own car is built once its colour is drawn: load_opponent_cars.)
+        if (!draw_player_paint_) build_player_visual(app, model, *car_file);
         course_name_ = ce.name;
         // The start title shows the course table's name as it is: licence sections have their
         // own ("Grand Valley Test Section"), and a course without one shows no title.
@@ -143,7 +146,20 @@ void RaceScreen::start(App& app, const Replay* replay) {
         }
         // (The pace-car test is a licence run, a solo mode with one computer car.)
         race_mode_ = two_player_ || !race_event_.empty() || (!race_opponents_.empty() && !pace_car_) || online_;
-        if (!build_vehicle(app)) throw FormatError(error_);
+        // The run starts afresh before its race is built: restart() runs on this build.
+        replaying_ = false;
+        ghost_record_.reset(), best_run_record_.reset(); // (a new visit has no best run and no ghost)
+        ghost_time_ = -1;
+        best_run_time_ = -1;
+        best_run_replay_.reset();
+        best_lap_in_run_ = ghost_ask_ = false;
+        ghost_shown_ = true;
+        const bool plays = replay && can_play(*replay, nullptr); // (a replay's race is built from its record: start_playback)
+        if (!plays && !build_vehicle(app)) throw FormatError(error_);
+        if (!car_visual_) { // (a demo whose build drew no colour)
+            build_player_visual(app, model, *car_file);
+            read_files_.clear(), shared_builds_.clear(); // (as a build lets them go)
+        }
         build_tv_cameras();
         gtrc_.reset();
         director_ = ReplayDirector(); // (not left pointing at the old script)
@@ -177,8 +193,12 @@ void RaceScreen::start(App& app, const Replay* replay) {
             }
             point_lights_.load(cf.section(*course, course::kSlotRoad)); // night lamp list (point-light courses)
             if (app.gpu()) smoke_.load(*app.gpu(), cf.section(*course, 32), cf.section(*course, 26)); // tyre smoke / dust
-            if (app.gpu() && !sparks_.loaded()) sparks_.load(*app.gpu(), *app.vfs()); // the sparks' glow (race/particle.img)
-            if (app.gpu() && !leaves_.loaded()) leaves_.load(*app.gpu(), *app.vfs()); // a later build's leaves (the same image)
+            // The sparks' glow and a later build's leaves: pictures of one file (race/particle.img).
+            if (app.gpu() && (!sparks_.loaded() || !leaves_.loaded())) {
+                const std::optional<Bytes> particles = app.vfs()->read("race/particle.img");
+                if (!sparks_.loaded()) sparks_.load(*app.gpu(), particles);
+                if (!leaves_.loaded()) leaves_.load(*app.gpu(), particles);
+            }
             spark_shot_.reset();
             pylons_.load(app.gpu(), *course); // pylons / cones (GTRW list + slot 36 types)
             if (sun_.params().has_shadow) pylons_.set_shadow(sun_.params().shadow_rgb, sun_.params().shadow_alpha);
@@ -219,9 +239,8 @@ void RaceScreen::start(App& app, const Replay* replay) {
         } catch (const std::exception& e) {
             LOG_WARN("Race: replay cameras: %s", e.what());
         }
-        LOG_INFO("Race: %s with %s (%s); track %s, vehicle %s, %zu scenery meshes, %zu triangles", ce.label.c_str(),
-                 ca.label.c_str(), ca.model.c_str(), track_->backend_name(), vehicle_->backend_name(),
-                 course_scene_->stats().meshes, course_scene_->stats().triangles);
+        LOG_INFO("Race: %s with %s (%s); track %s, %zu scenery meshes, %zu triangles", ce.label.c_str(), ca.label.c_str(),
+                 ca.model.c_str(), track_->backend_name(), course_scene_->stats().meshes, course_scene_->stats().triangles);
     } catch (const std::exception& e) {
         error_ = e.what();
         LOG_WARN("Race: could not start: %s", e.what());
@@ -229,6 +248,7 @@ void RaceScreen::start(App& app, const Replay* replay) {
         car_visual_.reset();
         drop_vehicle();
         kept_opponents_.clear();
+        kept_second_.clear();
         track_.reset();
         return;
     }
@@ -282,15 +302,10 @@ void RaceScreen::start(App& app, const Replay* replay) {
     if (engine_.loaded()) LOG_INFO("Race: engine sound %05u variant %u (%s)", car_.sound_id, car_.sound_variant,
                                    EngineSound::variant_dir(car_.sound_variant).c_str());
     stage_ = Stage::Drive;
-    ghost_record_.reset(), best_run_record_.reset(); // (a new visit has no best run and no ghost)
-    ghost_time_ = -1;
-    best_run_time_ = -1;
-    best_run_replay_.reset();
-    best_lap_in_run_ = ghost_ask_ = false;
-    ghost_shown_ = true;
     // (No ghost to start with: a visit's first comes from its runs or LOAD GHOST, as the original.)
     if (replay) start_playback(*replay);
-    else restart();
+    else restart(true);
+    if (!vehicle_) return; // (no race could be built: error_)
     if (attract_) pick_attract_view(); // the demo's own view mode and target (presentation §G13)
     music_.reset(); // the race music starts with the first music_cues()
     // GT races, machine tests, licence tests, time trials and free runs open with their
@@ -485,7 +500,7 @@ void RaceScreen::take_best_run_ghost() {
     LOG_INFO("Race: ghost updated, the best run %.3f s (%u steps)", ghost_time_, ghost_record_->frames);
 }
 
-void RaceScreen::restart() {
+void RaceScreen::restart(bool built) {
     take_live_condition(); // the previous live run hands its engine condition on
     replaying_ = false;
     // A live run follows the player's car: a replay that ended on an opponent would otherwise
@@ -497,7 +512,9 @@ void RaceScreen::restart() {
     result_latch_.reset(); // a new live run
     latched_rows_.reset();
     run_replay_.reset();
-    if (app_) build_vehicle(*app_); // a new race: every car back on its start
+    // A new race: every car back on its start (`built`: build_vehicle has just made it).
+    if (app_ && !built) build_vehicle(*app_);
+    if (!vehicle_) return; // (it cannot be built: error_)
     const RaceField* f = exact_field();
     const TrackPose p = f ? f->player_grid() : track_->grid_pose(0);
     // The start speed (the title clock's form, the replay's start): a rolling start's 80 km/h (GT endurance), a demo race's
@@ -614,9 +631,16 @@ ExactFieldOptions RaceScreen::exact_options(App& app) {
 // The run's race: a race with opponents (or a battle), else a solo run (screen_race_solo.cpp). False with error_ set when
 // it cannot be set up from the disc's data.
 bool RaceScreen::build_vehicle(App& app) {
+    // The car files read for this build, and what its cars shared, are let go with it.
+    struct LetGo {
+        std::map<std::string, std::shared_ptr<const Bytes>>& files;
+        gtm1::SharedBuilds& shared;
+        ~LetGo() { files.clear(), shared.clear(); }
+    } let_go{read_files_, shared_builds_};
     drop_vehicle();
     if (!load_program_data(app)) {
         kept_opponents_.clear(); // (no race to build them for)
+        kept_second_.clear();
         return false;
     }
     if (race_mode_) {
@@ -710,6 +734,7 @@ bool RaceScreen::build_vehicle(App& app) {
             error_ = (online_ ? "Online race: " : "This race cannot be set up: ") + err;
             LOG_WARN("Race: %s", error_.c_str());
             kept_opponents_.clear(); // (no race to build them for)
+            kept_second_.clear();
             return false;
         }
         {
@@ -727,20 +752,29 @@ bool RaceScreen::build_vehicle(App& app) {
                 (car2 != car_.label || paint2 != preset_.paint || !model2.empty() || !wheel2.empty())) {
                 if (const data::Car* c2 = db_.car(car2)) {
                     std::string m2 = model2.empty() ? db_.model_of(*c2) : model2;
-                    std::optional<Bytes> f2 = read_car(app, m2);
+                    const std::shared_ptr<const Bytes> f2 = read_car(app, m2);
                     WheelSpec ws2;
                     if (auto w = wheel_spec_for_car(db_, car2)) ws2 = *w;
                     CarBodyMod bm2 = body_mod_for_car(db_, car2, paint2, car_scene());
                     if (!wheel2.empty()) bm2.wheel = wheel2;
-                    std::optional<Bytes> w2 = bm2.wheel.empty() ? std::nullopt : app.vfs()->read("wheel/" + bm2.wheel);
-                    if (f2 && !f2->empty()) {
+                    const std::shared_ptr<const Bytes> w2 = bm2.wheel.empty() ? nullptr : read_once(app, "wheel/" + bm2.wheel);
+                    // The last build's model, when it was of the same car, paint and wheels (as the opponents').
+                    const auto custom = race::custom_paints();
+                    const auto pack = texture_pack::current_pack();
+                    const race::KeptModels<CarVisual>::Key key{car2 + "/" + m2 + "/" + bm2.wheel, paint2};
+                    car2_visual_ = kept_second_.take(custom, pack, {key})[key];
+                    if (car2_visual_) {
+                        car2_visual_->reset_looks();
+                    } else if (f2 && !f2->empty()) {
                         const ShowroomFiles sh2 = read_showroom(app, m2, w2 ? bm2.wheel : "");
-                        car2_visual_ = std::make_unique<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
+                        car2_visual_ = std::make_shared<CarVisual>(*app.gpu(), *f2, m2, ws2, paint2,
                                                                    w2 ? ByteSpan(*w2) : ByteSpan{}, bm2,
-                                                                   sh2.car_span(), sh2.wheel_span(), sh2.stand_in, sh2.tyre);
+                                                                   sh2.car_span(), sh2.wheel_span(), sh2.stand_in, sh2.tyre,
+                                                                   race::CarBuild{&shared_builds_, false});
                         car2_visual_->set_full_detail(full_car_detail_);
                         if (brake_parts_) car2_visual_->set_brake_parts(*brake_parts_);
                     }
+                    if (car2_visual_) kept_second_.keep({{key, car2_visual_}}, custom, pack);
                 }
             }
             field_->set_laps(race_laps_);
@@ -757,21 +791,22 @@ bool RaceScreen::build_vehicle(App& app) {
 // rim.
 void RaceScreen::build_player_visual(App& app, const std::string& model, ByteSpan car_file) {
     // GT mode: the garage car's bought wheels.
-    std::optional<Bytes> wheel_file;
+    std::shared_ptr<const Bytes> wheel_file;
     std::string wheel_label;
     if (from_menu_ || online_)
         [&](const auto& rq) {
             if constexpr (requires { rq.car_wheel; })
                 if (!rq.car_wheel.empty())
-                    wheel_file = app.vfs()->read("wheel/" + rq.car_wheel), wheel_label = rq.car_wheel;
+                    wheel_file = read_once(app, "wheel/" + rq.car_wheel), wheel_label = rq.car_wheel;
         }(launch_.request);
     CarBodyMod body_mod = body_mod_for_car(db_, car_.label, preset_.paint, car_scene());
     if (!wheel_file && !body_mod.wheel.empty())
-        wheel_file = app.vfs()->read("wheel/" + body_mod.wheel), wheel_label = body_mod.wheel;
+        wheel_file = read_once(app, "wheel/" + body_mod.wheel), wheel_label = body_mod.wheel;
     const ShowroomFiles showroom = read_showroom(app, model, wheel_file ? wheel_label : "");
     car_visual_ = std::make_unique<CarVisual>(*app.gpu(), car_file, model, car_.wheels, preset_.paint,
                                               wheel_file ? ByteSpan(*wheel_file) : ByteSpan{}, body_mod,
-                                              showroom.car_span(), showroom.wheel_span(), showroom.stand_in, showroom.tyre);
+                                              showroom.car_span(), showroom.wheel_span(), showroom.stand_in, showroom.tyre,
+                                              race::CarBuild{&shared_builds_});
     car_visual_->set_full_detail(full_car_detail_);
     if (brake_parts_) car_visual_->set_brake_parts(*brake_parts_);
     camera_car_.reset();
@@ -857,11 +892,13 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     paint_seed_override_.reset();
     if (draw_player_paint_) {
         LOG_INFO("Race: the demo's own car %s in paint %d", player_model.c_str(), paints[0]);
-        if (paints[0] >= 0 && paints[0] != preset_.paint) { // (the car was built in paint 0 before the draw)
+        if (paints[0] >= 0 && paints[0] != preset_.paint) {
             preset_.paint = paints[0];
-            if (std::optional<Bytes> cf = read_car(app, player_model); cf && !cf->empty())
-                build_player_visual(app, player_model, *cf);
+            car_visual_.reset(); // (a run before drew another)
         }
+        if (!car_visual_)
+            if (const std::shared_ptr<const Bytes> cf = read_car(app, player_model); cf && !cf->empty())
+                build_player_visual(app, player_model, *cf);
     }
     // Each opponent's model and paint, its mod body and the key its model is shared and kept by.
     struct Opponent {
@@ -924,11 +961,11 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
     auto build = [&](size_t k) {
         const Opponent& o = *todo[k];
         render::DeferredUploads::Scope scope(uploads[k]);
-        std::optional<Bytes> f, wf;
+        std::shared_ptr<const Bytes> f, wf;
         try {
             std::lock_guard lock(disc);
             f = read_car(app, o.model);
-            if (!o.bm.wheel.empty()) wf = app.vfs()->read("wheel/" + o.bm.wheel);
+            if (!o.bm.wheel.empty()) wf = read_once(app, "wheel/" + o.bm.wheel);
         } catch (...) {
             std::lock_guard lock(disc);
             failed = std::current_exception();
@@ -943,7 +980,7 @@ void RaceScreen::load_opponent_cars(App& app, const RaceField& f) {
             lock.unlock();
             built[k] = std::make_shared<CarVisual>(*app.gpu(), *f, o.model, ws, o.paint, wf ? ByteSpan(*wf) : ByteSpan{},
                                                    o.bm, sh.car_span(), sh.wheel_span(), in_turn(sh.stand_in),
-                                                   in_turn(sh.tyre));
+                                                   in_turn(sh.tyre), race::CarBuild{&shared_builds_, false});
         } catch (const std::exception& e) {
             LOG_WARN("Race: opponent model %s: %s", o.model.c_str(), e.what());
         } catch (...) { // (parallel_for's work must not throw)
@@ -1081,32 +1118,42 @@ void RaceScreen::reset_run_state() {
     reset_lap_events();
 }
 
-std::optional<Bytes> RaceScreen::read_car(App& app, const std::string& model) const {
+std::shared_ptr<const Bytes> RaceScreen::read_once(App& app, const std::string& path) const {
+    const auto [it, fresh] = read_files_.try_emplace(path);
+    if (fresh)
+        if (std::optional<Bytes> f = app.vfs()->read(path)) it->second = std::make_shared<const Bytes>(std::move(*f));
+    return it->second;
+}
+
+std::shared_ptr<const Bytes> RaceScreen::read_car(App& app, const std::string& model) const {
     if (car_folder_ != "cars/day/")
-        if (std::optional<Bytes> f = app.vfs()->read(car_folder_ + model); f && !f->empty()) return f;
-    return app.vfs()->read("cars/day/" + model);
+        if (std::shared_ptr<const Bytes> f = read_once(app, car_folder_ + model); f && !f->empty()) return f;
+    return read_once(app, "cars/day/" + model);
 }
 
 RaceScreen::ShowroomFiles RaceScreen::read_showroom(App& app, const std::string& model, const std::string& wheel) const {
     ShowroomFiles s;
-    s.stand_in = [&app, model, wheel] {
-        return menu_rim([&app](const std::string& p) { return app.vfs()->read(p); }, model, wheel);
+    // (The menus' rim and tyre: asked for only when a build needs them, as a copy of their own.)
+    const auto read = [this, &app](const std::string& p) {
+        const std::shared_ptr<const Bytes> f = read_once(app, p);
+        return f ? std::optional<Bytes>(*f) : std::nullopt;
     };
+    s.stand_in = [read, model, wheel] { return menu_rim(read, model, wheel); };
     // The menus' tyre (each LOD may ask: read once).
-    s.tyre = [&app, model, tyre = std::make_shared<std::optional<std::optional<Bytes>>>()] {
-        if (!*tyre) *tyre = menu_tyre([&app](const std::string& p) { return app.vfs()->read(p); }, model);
+    s.tyre = [read, model, tyre = std::make_shared<std::optional<std::optional<Bytes>>>()] {
+        if (!*tyre) *tyre = menu_tyre(read, model);
         return **tyre;
     };
     if (!showroom_wheels_) return s;
-    s.car = app.vfs()->read("menu/cars/" + model);
-    if (s.car && !wheel.empty()) s.wheel = app.vfs()->read("menu/wheel/" + wheel);
+    s.car = read_once(app, "menu/cars/" + model);
+    if (s.car && !wheel.empty()) s.wheel = read_once(app, "menu/wheel/" + wheel);
     return s;
 }
 
 std::vector<sim::exact::SparkPoint> RaceScreen::car_spark_points(App& app, const std::string& model) const {
     const auto [it, made] = spark_points_.try_emplace(car_folder_ + model);
     if (!made) return it->second;
-    std::optional<Bytes> f = read_car(app, model);
+    const std::shared_ptr<const Bytes> f = read_car(app, model);
     if (!f || !CarFile::is_car(*f)) return {};
     for (const std::array<u32, 3>& p : gt3r::car_spark_points(CarFile::parse(*f).info))
         it->second.push_back({sim::exact::F::raw(p[0]), sim::exact::F::raw(p[1]), sim::exact::F::raw(p[2])});

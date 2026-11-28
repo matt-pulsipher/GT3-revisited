@@ -1,4 +1,5 @@
 #include "render/gpu_context.h"
+#include "base/texel_hash.h"
 
 #include "base/log.h"
 #include "platform/render_scale.h"
@@ -761,15 +762,11 @@ SDL_GPUGraphicsPipeline* GpuContext::create_pipeline(const PipelineKey& key) {
     return p;
 }
 
-SDL_GPUTexture* GpuContext::acquire_texture(Uploader& up, u32 w, u32 h, const u32* rgba) {
+SDL_GPUTexture* GpuContext::acquire_texture(Uploader& up, u32 w, u32 h, const u32* rgba, const std::array<u64, 2>* known) {
     if (w == 0 || h == 0) return nullptr;
-    // FNV-1a and a multiply-rotate mix over the texels: a 128-bit content key.
-    TextureKey key{w, h, {14695981039346656037ull, 0x9E3779B97F4A7C15ull}};
-    for (size_t i = 0, n = size_t(w) * h; i < n; ++i) {
-        key.hash[0] = (key.hash[0] ^ rgba[i]) * 1099511628211ull;
-        u64 x = key.hash[1] + rgba[i] * 0xBF58476D1CE4E5B9ull;
-        key.hash[1] = ((x << 31) | (x >> 33)) * 0x94D049BB133111EBull;
-    }
+    // A 128-bit content key over the texels.
+    const std::array<u64, 2> hash = known ? *known : texel_hash(rgba, size_t(w) * h);
+    TextureKey key{w, h, {hash[0], hash[1]}};
     if (auto it = textures_by_key_.find(key); it != textures_by_key_.end()) {
         ++shared_textures_[it->second].holders;
         return it->second;

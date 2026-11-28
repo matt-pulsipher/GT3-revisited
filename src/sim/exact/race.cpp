@@ -98,6 +98,7 @@ RaceCourse::~RaceCourse() = default;
 
 std::shared_ptr<const RaceCourse> RaceCourse::load(ByteSpan file, const ProgramData& d) {
     auto c = std::make_shared<RaceCourse>();
+    c->file_hash = record_hash(file);
     const course::CourseFile cf = course::CourseFile::parse(file);
     const ByteSpan road = cf.section(file, 28);
     if (road.empty()) throw std::runtime_error("course: no road block (slot 28)");

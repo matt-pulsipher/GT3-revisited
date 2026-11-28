@@ -170,6 +170,12 @@ struct CarLook {
     bool focus = false;
 };
 
+// A car's build among the ones made with it.
+struct CarBuild {
+    gtm1::SharedBuilds* shared = nullptr; // what the field's cars share (none: this car's own)
+    bool driver_seat = true;              // find the body's driver seat (driver_seat(): the player's car's is asked for)
+};
+
 class CarVisual {
 public:
     // `car_file` is cars/day/<model>; wheels are placed from `wheels`.
@@ -181,7 +187,7 @@ public:
     CarVisual(render::GpuContext& ctx, ByteSpan car_file, const std::string& model, const WheelSpec& wheels,
               int paint = 0, ByteSpan wheel_file = {}, const CarBodyMod& body_mod = {}, ByteSpan showroom_car = {},
               ByteSpan showroom_wheel = {}, std::function<std::optional<Bytes>()> stand_in_rim = {},
-              std::function<std::optional<Bytes>()> other_tyre = {});
+              std::function<std::optional<Bytes>()> other_tyre = {}, const CarBuild& build = {});
 
     // Car draw items for the (interpolated) state. LOD is picked from the
     // camera distance (car_lod).
@@ -269,12 +275,13 @@ private:
     // Each wheel: the tyre (with its black faces) and the rim, drawn spinning; the band, the tyres'
     // arch shade, turned by the camber only; the brake parts (rotor and caliper, steered, not
     // spinning) and the rotor's glow (spinning).
-    std::array<std::unique_ptr<render::GpuModel>, 4> tyres_, rims_;
-    std::array<std::unique_ptr<render::GpuModel>, 4> bands_;
-    std::array<std::unique_ptr<render::GpuModel>, 4> brakes_, glows_;
+    // (Wheels whose parts draw the same share a model.)
+    std::array<std::shared_ptr<render::GpuModel>, 4> tyres_, rims_;
+    std::array<std::shared_ptr<render::GpuModel>, 4> bands_;
+    std::array<std::shared_ptr<render::GpuModel>, 4> brakes_, glows_;
     // Showroom wheels: LOD 0's brake parts, moved in behind the menus' rim (brake_record_behind_rim;
     // empty where the GTCI place already clears it), and that rim and LOD 0's race rim in the hub frame.
-    std::array<std::unique_ptr<render::GpuModel>, 4> showroom_brakes_, showroom_glows_;
+    std::array<std::shared_ptr<render::GpuModel>, 4> showroom_brakes_, showroom_glows_;
     std::array<scene::Model, 4> showroom_rim_, race_rim_;
     std::array<render::Vec3, 4> wheel_center_{}; // where the decoder placed each wheel (car frame)
     std::array<BrakeRecord, 2> brake_records_{}; // GTCI +0x14 / +0x28

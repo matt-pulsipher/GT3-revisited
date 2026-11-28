@@ -1,4 +1,5 @@
 #include "formats/model/gtm1.h"
+#include "formats/model/build_cache.h"
 
 #include "formats/clut_animation.h"
 #include "formats/gs_memory.h"
@@ -856,7 +857,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
         // The livery's key: the texture in the livery's paint (the computed colour's finish).
         if (livery) {
             const std::vector<u32>& in_paint =
-                !computed ? st.rgba
+                !computed ? st.rgba.vec()
                           : by_paint[i][by_paint[i].size() == 1 ? 0 : size_t(std::clamp(computed->finish, 0, int(by_paint[i].size()) - 1))];
             livery_keys.push_back(texture_pack::key_of(st.width, st.height, in_paint.data()));
             livery_templates.push_back(in_paint);
@@ -882,7 +883,7 @@ int decode_texture_set(ByteSpan tex1, std::vector<scene::Texture>& out, const st
     if (use_pack && texture_pack::current_pack())
         for (size_t i = size_t(first); i < out.size(); ++i) {
             scene::Texture& st = out[i];
-            std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(st.width, st.height, st.rgba.data());
+            std::shared_ptr<const texture_pack::Image> r = texture_pack::replacement(st.width, st.height, st.rgba.vec().data());
             if (!r) continue;
             st.width = r->width, st.height = r->height, st.rgba = r->rgba, st.nearest = false, st.no_mips = false;
             c.erase(u32(i - size_t(first)));
@@ -908,7 +909,7 @@ void colour_cut_texels(scene::Texture& t, bool wrap_u, bool wrap_v) {
     std::vector<u8> done(t.rgba.size());
     std::vector<size_t> todo;
     for (size_t i = 0; i < t.rgba.size(); ++i)
-        if (t.rgba[i] >> 24) done[i] = 1;
+        if (t.rgba.vec()[i] >> 24) done[i] = 1;
         else todo.push_back(i);
     if (todo.size() == t.rgba.size()) return;
     std::vector<std::pair<size_t, u32>> ring;
@@ -1088,12 +1089,30 @@ void place_vertex(const Matrix& m, scene::Vertex& v) {
 } // namespace
 
 scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& name) {
-    scene::Model model;
+    // What the emitted draws build up besides their mesh: one object, so that the brake variant branches off a copy.
+    struct Built {
+        scene::Model model;
+        std::map<u32, int> set_first; // texset -> first model texture index (-1 = failed)
+        std::map<u32, u32> set_size;
+        // Texture -> smallest texel alpha (alpha tests): over every frame of a CLUT animation.
+        std::map<int, u32> min_alpha;
+        // Alpha-tested copies of textures: (texture, method, ref) -> texture with binary alpha.
+        std::map<std::array<int, 3>, int> cutouts;
+        // The copies of point-filtered textures: their cut texels are coloured once every face is made
+        // (colour_cut_texels), across an edge only where some face repeats the texture (`repeats`: per
+        // texture, whether a face samples it repeating on U / V).
+        std::vector<int> nearest_cuts;
+        std::map<int, std::array<bool, 2>> repeats;
+        // Per cut-out texture a summed-area table of its holes (has_holes).
+        std::map<int, std::vector<u32>> hole_sums;
+        int gs_texture = -1; // the texture the GS holds (TEX0 stays set from packet to packet)
+    } built;
+    scene::Model& model = built.model;
     model.name = name;
-    std::map<u32, int> set_first; // texset -> first model texture index (-1 = failed)
-    std::map<u32, u32> set_size;
-    // Texture -> smallest texel alpha (alpha tests): over every frame of a CLUT animation.
-    std::map<int, u32> min_alpha;
+    auto& set_first = built.set_first;
+    auto& set_size = built.set_size;
+    auto& min_alpha = built.min_alpha;
+    bool branched = false; // emitting the brake variant (its CLUT animations are not the caller's)
     auto set_without_textures = [&](u32 texset) {
         return texset < g.texsets.size() && !Tex1::is_tex1(g.data.subspan(g.texsets[texset]));
     };
@@ -1107,13 +1126,16 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             // A set that is not a Tex1 has no textures. The game then binds none (0x24CF40 skips TEX0
             // without a texture table) and the GS keeps an earlier draw's texture.
             const std::string prefix = "set" + std::to_string(texset) + "_";
-            int first = set_without_textures(texset) ? -1 : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint, opt.livery,
-                                                                                                    opt.gs_mip_levels);
+            int first = set_without_textures(texset) ? -1
+                        : opt.cache ? opt.cache->texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint,
+                                                             opt.livery, opt.gs_mip_levels)
+                                    : decode_texture_set(sub, model.textures, prefix, opt.paint, &clut, true, opt.computed_paint,
+                                                         opt.livery, opt.gs_mip_levels);
             it = set_first.emplace(texset, first).first;
             set_size[texset] = u32(model.textures.size() - before);
             if (!clut.empty()) {
                 for (u32 r : clut.records()) min_alpha[first + int(r)] = clut.min_alpha(r);
-                if (opt.clut_sets) opt.clut_sets->push_back({first, std::move(clut)});
+                if (opt.clut_sets && !branched) opt.clut_sets->push_back({first, std::move(clut)});
             }
         }
         return index < set_size[texset] ? it->second + int(index) : -1;
@@ -1132,18 +1154,14 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         auto mt = min_alpha.find(tex);
         if (mt == min_alpha.end()) {
             u32 lo = 255;
-            for (u32 c : model.textures[size_t(tex)].rgba) lo = std::min(lo, c >> 24);
+            for (u32 c : model.textures[size_t(tex)].rgba.vec()) lo = std::min(lo, c >> 24);
             mt = min_alpha.emplace(tex, lo).first;
         }
         return mt->second;
     };
-    // Alpha-tested copies of textures: (texture, method, ref) -> texture with binary alpha.
-    std::map<std::array<int, 3>, int> cutouts;
-    // The copies of point-filtered textures: their cut texels are coloured once every face is made
-    // (colour_cut_texels), across an edge only where some face repeats the texture (`repeats`: per
-    // texture, whether a face samples it repeating on U / V).
-    std::vector<int> nearest_cuts;
-    std::map<int, std::array<bool, 2>> repeats;
+    auto& cutouts = built.cutouts;
+    auto& nearest_cuts = built.nearest_cuts;
+    auto& repeats = built.repeats;
     auto cutout_for = [&](int tex, u8 method, u8 ref) -> int {
         std::array<int, 3> key{tex, method, ref};
         auto it = cutouts.find(key);
@@ -1167,7 +1185,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
     };
     // Whether cut-out texture `cut` (cutout_for) has a hole in the texels the UVs `uv` x 3 span (their
     // box; true when it wraps): a summed-area table of the holes per texture.
-    std::map<int, std::vector<u32>> hole_sums;
+    auto& hole_sums = built.hole_sums;
     auto has_holes = [&](int cut, const std::array<std::array<float, 2>, 3>& uv) {
         const scene::Texture& t = model.textures[size_t(cut)];
         if (t.width == 0 || t.height == 0) return false;
@@ -1286,7 +1304,26 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         }
     };
 
-    int gs_texture = -1; // the texture the GS holds (TEX0 stays set from packet to packet)
+    int& gs_texture = built.gs_texture;
+    // static_env_maps: the last alpha-only textured pass (a destination-alpha mask) as a
+    // white texture carrying the mask alpha plus one triangle of its geometry for the
+    // planar position -> UV mapping.
+    struct AlphaMask {
+        int texture = -1;
+        float pos[3][3] = {};
+        float uv[3][2] = {};
+    };
+    // The brake variant of a node's draws: the same up to draw `shared`, then its own. emit() fills the rest.
+    struct Branch {
+        const std::vector<Draw>& draws;
+        size_t shared = 0;
+        scene::Mesh mesh;
+        Built built;
+    };
+    // Each packet is decoded once: passes draw the same chunks again (reflections, alpha, the brake variant).
+    BuildCache own_packets;
+    BuildCache& packets = opt.cache ? *opt.cache : own_packets;
+    auto decode = [&](const Packet& pk, bool prelit = false) -> const DecodedPacket& { return packets.packet(g, pk, prelit); };
     // Emits one node's draws into `mesh`, vertices placed by the draws' matrices. `ranges` (when
     // given) receives where each draw's vertices, indices and primitives start, `key1` every
     // vertex's key frame 1 (its key frame 0 where the packet has no second key).
@@ -1294,12 +1331,27 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         size_t vertex = 0, index = 0, primitive = 0;
     };
     auto emit = [&](const std::vector<Draw>& draws, scene::Mesh& mesh, std::vector<Range>* ranges,
-                    std::vector<scene::Vertex>* key1) {
-        // What earlier passes left in the frame buffer's alpha, by vertex position: the
-        // reflectivity that later Cs*Ad+Cd reflection passes are weighted with.
-        std::map<std::array<float, 3>, Written> written_alpha;
-        std::map<Corners, TriWritten> written_tris;
-        float box_lo[3] = {1e30f, 1e30f, 1e30f}, box_hi[3] = {-1e30f, -1e30f, -1e30f}; // of written_tris
+                    std::vector<scene::Vertex>* key1, Branch* branch = nullptr) {
+        // What the draws so far leave for the later ones (a branch takes a copy of it).
+        struct Frame {
+            // What earlier passes left in the frame buffer's alpha, by vertex position: the
+            // reflectivity that later Cs*Ad+Cd reflection passes are weighted with.
+            std::map<std::array<float, 3>, Written> written_alpha;
+            std::map<Corners, TriWritten> written_tris;
+            float box_lo[3] = {1e30f, 1e30f, 1e30f}, box_hi[3] = {-1e30f, -1e30f, -1e30f}; // of written_tris
+            std::set<Corners> reflected; // the triangles reflection passes drew (frame alpha 0x80)
+            int pass = -1;               // the draw being emitted (Written::pass)
+            // Base-pass vertex alpha by position, for the road sheen mask. Made from these draws the first time a pass
+            // needs it: most nodes have no sheen, and making it decodes each of their packets once more.
+            std::map<std::array<float, 3>, u32> base_alpha;
+            bool base_alpha_made = false;
+            AlphaMask mask;
+        } frame;
+        auto& written_alpha = frame.written_alpha;
+        auto& written_tris = frame.written_tris;
+        auto& box_lo = frame.box_lo;
+        auto& box_hi = frame.box_hi;
+        const std::vector<Draw>* list = &draws; // the draws being emitted
         // The frame alpha an earlier pass left at point q of triangle k (as the renderer weights it).
         auto alpha_at = [&](const TriWritten& k, const float* bary) {
             float va = 0, uv[2] = {0, 0};
@@ -1426,19 +1478,17 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             if (keep) written_tris.emplace(c, tw);
             else written_tris[c] = tw;
         };
-        std::set<Corners> reflected; // the triangles reflection passes drew (frame alpha 0x80)
-        int pass = -1;               // the draw being emitted (Written::pass)
-        // Base-pass vertex alpha by position, for the road sheen mask. Made from these draws the first time a pass
-        // needs it: most nodes have no sheen, and making it decodes each of their packets once more.
-        std::map<std::array<float, 3>, u32> base_alpha;
-        bool base_alpha_made = false;
+        auto& reflected = frame.reflected;
+        int& pass = frame.pass;
+        auto& base_alpha = frame.base_alpha;
+        bool& base_alpha_made = frame.base_alpha_made;
         auto make_base_alpha = [&] {
             if (base_alpha_made) return;
             base_alpha_made = true;
-            for (const Draw& d : draws) {
+            for (const Draw& d : *list) {
                 if ((g.chunks[d.chunk].flags & 0x1F) == 4 || d.fb_mask) continue; // not the sheen itself
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
-                    DecodedPacket bp = g.decode_packet(pk);
+                    const DecodedPacket& bp = decode(pk);
                     // ALPHA 0x58 only matters with blending on (PRIM.ABE): an opaque packet drawn
                     // while the register still holds 0x58 is an ordinary base pass.
                     if (d.alpha_mode == 0x58 && bp.prim.abe) continue;
@@ -1446,14 +1496,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 }
             }
         };
-        // static_env_maps: the last alpha-only textured pass (a destination-alpha mask) as a
-        // white texture carrying the mask alpha plus one triangle of its geometry for the
-        // planar position -> UV mapping.
-        struct AlphaMask {
-            int texture = -1;
-            float pos[3][3] = {};
-            float uv[3][2] = {};
-        } mask;
+        AlphaMask& mask = frame.mask;
         auto mask_uv = [&](const float* p, float* uv) {
             float e1[3], e2[3], d[3];
             for (int k = 0; k < 3; ++k)
@@ -1472,7 +1515,9 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             for (int j = 0; j < 3; ++j) q[j] = p[0] * m[j] + p[1] * m[4 + j] + p[2] * m[8 + j] + m[12 + j];
             for (int j = 0; j < 3; ++j) p[j] = q[j];
         };
-        for (const Draw& d : draws) {
+        auto emit_draws = [&](size_t from, size_t to) {
+        for (size_t di = from; di < to; ++di) {
+            const Draw& d = (*list)[di];
             ++pass;
             if (ranges) ranges->push_back({mesh.vertices.size(), mesh.indices.size(), mesh.primitives.size()});
             // Cars: FBMSK 0xFFFFFFFF writes only the depth (glass drawn without depth writes leaves
@@ -1487,7 +1532,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             if (alpha_only && opt.weighted_reflection) {
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
                     u32 tex = pk.mat & 0x1FF;
-                    DecodedPacket dp = g.decode_packet(pk);
+                    const DecodedPacket& dp = decode(pk);
                     int t = dp.prim.tme && dp.has_uv && tex != 0 && tex != 0x1FF ? texture_for(d.texset, tex - 1) : -1;
                     std::vector<scene::Vertex> placed;
                     std::vector<Written> ws;
@@ -1519,7 +1564,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             if (alpha_only && !opt.frame_alpha) {
                 for (const Packet& pk : g.chunks[d.chunk].packets) {
                     u32 tex = pk.mat & 0x1FF;
-                    DecodedPacket dp = g.decode_packet(pk);
+                    const DecodedPacket& dp = decode(pk);
                     if (!dp.prim.tme || !dp.has_uv || tex == 0 || tex == 0x1FF || dp.vertices.size() < 3) continue;
                     int src = texture_for(d.texset, tex - 1);
                     if (src < 0) continue;
@@ -1544,7 +1589,7 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 // passed through), 4 = the road sheen's specular-only lighting
                 // (scene::Material::specular_local).
                 const u32 kind = g.chunks[d.chunk].flags & 0x1F;
-                DecodedPacket dp = g.decode_packet(pk, kind == 0);
+                const DecodedPacket& dp = decode(pk, kind == 0);
                 // Course passes blended with ALPHA 0x58 (Cs*Ad + Cd): the road sheen (kind 4) and
                 // other blended packets drawn with it, added weighted by the frame-buffer alpha the
                 // base pass left. Opaque packets drawn while ALPHA still holds 0x58 (e.g. the
@@ -1810,12 +1855,39 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
                 if (prim.index_count) mesh.primitives.push_back(prim);
             }
         }
-        mark_inside_uvs(mesh, key1, &model.textures);
-        for (const scene::Primitive& p : mesh.primitives)
-            if (p.texture >= 0 && p.env_kind == 0 && !(p.flags & scene::kEnvironmentMap)) { // (reflections: alpha only)
-                std::array<bool, 2>& r = repeats[p.texture];
-                r[0] |= !(p.flags & scene::kClampU), r[1] |= !(p.flags & scene::kClampV);
-            }
+        };
+        auto finish = [&] {
+            mark_inside_uvs(mesh, key1, &model.textures);
+            for (const scene::Primitive& p : mesh.primitives)
+                if (p.texture >= 0 && p.env_kind == 0 && !(p.flags & scene::kEnvironmentMap)) { // (reflections: alpha only)
+                    std::array<bool, 2>& r = repeats[p.texture];
+                    r[0] |= !(p.flags & scene::kClampU), r[1] |= !(p.flags & scene::kClampV);
+                }
+        };
+        if (!branch) {
+            emit_draws(0, draws.size());
+            finish();
+            return;
+        }
+        emit_draws(0, branch->shared);
+        branch->mesh = mesh;
+        branch->built = built;
+        Frame at_branch = frame;
+        emit_draws(branch->shared, draws.size());
+        finish();
+        // The variant's own draws on the copy, in these same variables; then the first build's back.
+        auto swap_over = [&] {
+            std::swap(mesh, branch->mesh);
+            std::swap(built, branch->built);
+            std::swap(frame, at_branch);
+            behind_pass = -1; // (behind_list points into written_tris)
+            branched = !branched;
+        };
+        swap_over();
+        list = &branch->draws;
+        emit_draws(branch->shared, branch->draws.size());
+        finish();
+        swap_over();
     };
 
     // A part: one draw's vertices, indices and primitives of an emit() into `mesh` / `key1`,
@@ -1843,6 +1915,14 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         return opt.morphs && (morphed(d) || std::any_of(d.when.begin(), d.when.end(), [](s8 b) { return b >= 0; }));
     };
     Draw carried; // Options::carry_state: the render state the previous node left
+    std::optional<Built> lit; // Options::brake_variant: what its node 0 built
+    // Moves the draws the morphs take (moving) from `draws` to `to`.
+    auto take_moving = [&](std::vector<Draw>& draws, std::vector<Draw>& to) {
+        if (!opt.morphs) return;
+        for (const Draw& d : draws)
+            if (moving(d)) to.push_back(d);
+        draws.erase(std::remove_if(draws.begin(), draws.end(), moving), draws.end());
+    };
     for (u32 node = 0; node < g.nodes.size(); ++node) {
         // With carry_state, nodes left out here (another opt.node, the animated ones) still run for
         // the state they leave. (The animated nodes' own parts start from the default state: the
@@ -1852,17 +1932,29 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
         if (skip && !opt.carry_state) continue;
         std::vector<Draw> draws = g.run(node, opt.run, opt.carry_state ? &carried : nullptr);
         if (skip) continue;
-        if (opt.morphs) {
-            for (const Draw& d : draws)
-                if (moving(d)) morph_draws.push_back(d);
-            draws.erase(std::remove_if(draws.begin(), draws.end(), moving), draws.end());
-        }
-        if (draws.empty()) continue;
+        take_moving(draws, morph_draws);
+        const bool variant = opt.brake_variant && node == 0;
+        if (draws.empty() && !variant) continue;
         scene::Mesh mesh;
         mesh.name = "node" + std::to_string(node);
         mesh.node = int(node);
         mesh.lod = opt.run.lod;
-        emit(draws, mesh, nullptr, nullptr);
+        if (variant) {
+            RunParams pressed = opt.run;
+            pressed.brake = true;
+            std::vector<Draw> lit_draws = g.run(node, pressed);
+            std::vector<Draw> lit_moving; // (the morphs drawn from the first build's)
+            take_moving(lit_draws, lit_moving);
+            Branch branch{lit_draws, 0, {}, {}};
+            while (branch.shared < draws.size() && branch.shared < lit_draws.size() &&
+                   draws[branch.shared] == lit_draws[branch.shared])
+                ++branch.shared;
+            emit(draws, mesh, nullptr, nullptr, &branch);
+            if (!branch.mesh.primitives.empty()) branch.built.model.meshes.push_back(std::move(branch.mesh));
+            lit = std::move(branch.built);
+        } else {
+            emit(draws, mesh, nullptr, nullptr);
+        }
         if (!mesh.primitives.empty()) model.meshes.push_back(std::move(mesh));
     }
 
@@ -1965,13 +2057,25 @@ scene::Model build_model(const Gtm1& g, const Options& opt, const std::string& n
             md.draws_.push_back(std::move(e));
         }
     }
-    for (int i : nearest_cuts) {
-        scene::Texture& t = model.textures[size_t(i)];
-        const std::array<bool, 2> r = repeats.count(i) ? repeats[i] : std::array<bool, 2>{false, false};
-        colour_cut_texels(t, r[0] && !t.clamp_u, r[1] && !t.clamp_v);
+    auto colour_cuts = [&] {
+        for (int i : nearest_cuts) {
+            scene::Texture& t = model.textures[size_t(i)];
+            const std::array<bool, 2> r = repeats.count(i) ? repeats[i] : std::array<bool, 2>{false, false};
+            if (opt.cache) opt.cache->colour_cut(t, r[0] && !t.clamp_u, r[1] && !t.clamp_v);
+            else colour_cut_texels(t, r[0] && !t.clamp_u, r[1] && !t.clamp_v);
+        }
+        model.compute_bounds();
+    };
+    colour_cuts();
+    if (opt.brake_variant) {
+        if (!lit) lit.emplace().model.name = name; // (no node 0)
+        std::swap(built, *lit);
+        branched = true;
+        colour_cuts();
+        *opt.brake_variant = std::move(model);
+        std::swap(built, *lit);
     }
-    model.compute_bounds();
-    return model;
+    return std::move(model);
 }
 
 namespace {
