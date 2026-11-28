@@ -802,6 +802,9 @@ skill = league         ; league, easy, normal, hard, professional
 cars = 3               ; opponents it draws, 1 to 31, repeating the pool's cars when it has fewer (default: as many as the pool has, at most 5)
 start = rolling        ; league, standing, rolling (default: league, the base race's)
 tire_wear = on         ; league, off, on (default: league, the base race's)
+catch_up = off         ; league, off, on (default: league, the base race's)
+grid = listed          ; drawn, listed (default: drawn, as GT3)
+place = 1              ; your place on the grid, 1 = pole, or last (default: last, as GT3)
 
 [race2]
 course = midfield
@@ -839,6 +842,17 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
   after 5 seconds), `standing` a series race's; `on` an endurance race's tire
   wear (GT3 has one wear curve), `off` a race without wear. Races on dirt never
   wear their tires, as in GT3.
+- `catch_up` is the race's rubber band (cars far ahead of you slow down, cars
+  far behind you speed up): `off` clears it, `on` copies the arcade Normal
+  race's (`ANST0001`, on dirt `ANAD0001`, as Quick race's custom race with
+  catch-up on), `league` keeps the base race's.
+- `grid` and `place` are ours, as `points` is: GT3's records have no field for
+  them. GT3 draws a race's opponents from its pool at random, lines them up by
+  weight per power (the best on pole) and starts you last. `grid = listed`
+  takes the pool's cars in its order instead, from pole (its cars again from the
+  top when it races more than the pool has); `place` puts you anywhere on the
+  grid. A championship draws its field once, for round 1, so a listed grid's
+  order is round 1's pool order.
 - `prize_cars` is a prize set as the disc's: a car listed twice comes up twice
   as often in the roulette. An older file's `prize_car` and `prize_paint` still
   read as one prize car.
@@ -850,8 +864,8 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
 - League pages are the disc's own names: `r/beginner/beginner`, `r/amateur/amateur`,
   `r/pro/pro`, `r/dirt/dirt`, `r/end/endurance` on the GT3 discs.
 - Each race is a copy of a disc race (`base`, or a GT Mode race of the disc)
-  with the file's values over it: its catch-up (and, with `league`, its start,
-  tire wear and its opponents' driving) come from that race. A course with a dirt surface needs dirt tyres.
+  with the file's values over it: with `league`, its start, tire wear, catch-up
+  and its opponents' driving come from that race. A course with a dirt surface needs dirt tyres.
 - A course or a car the open disc lacks: a car is left out of its lineup; an
   event whose course is missing, or with no opponents left, isn't listed.
 - The race codes are `X<mod>_<name>_0001`... (a championship `..._0500`, its rounds

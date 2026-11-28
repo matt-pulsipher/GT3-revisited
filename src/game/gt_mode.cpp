@@ -1406,7 +1406,24 @@ std::vector<std::string> GtMode::pick_opponents(const std::string& code, GameRan
     if (!r || !ev) return {};
     // Slots 1 .. cars-1 (slot 0 is the player), gt_mode §20.4.
     std::vector<u32> ids;
-    std::vector<std::string> out = race::draw_opponents(db(), *ev, std::max(r->cars, 1) - 1, rng, &ids);
+    std::vector<std::string> out;
+    const data::ModEvent* me = db().mod_event(code);
+    const data::ModEventRace* mr = me ? me->race_of(code) : nullptr;
+    if (mr && mr->grid == 1) {
+        // A mod event race with its grid as listed (not GT3's): the pool's cars in its order, from its start again past its end
+        // (the entries this region has).
+        const std::vector<std::string> pool = race::event_pool(db(), *ev);
+        std::vector<int> avail;
+        for (size_t k = 0; k < pool.size(); ++k)
+            if (race::pool_entry_available(db(), pool[k])) avail.push_back(int(k));
+        for (int i = 0; !avail.empty() && i < std::max(r->cars, 1) - 1; ++i) {
+            const int k = avail[size_t(i) % avail.size()];
+            out.push_back(pool[size_t(k)]);
+            ids.push_back(race::pool_color_id(*ev, k));
+        }
+    } else {
+        out = race::draw_opponents(db(), *ev, std::max(r->cars, 1) - 1, rng, &ids);
+    }
     if (paints) {
         for (size_t i = 0; i < out.size(); ++i) paints->push_back(pool_paint(out[i], i < ids.size() ? ids[i] : 0xFFFFFFFFu));
         if (std::none_of(paints->begin(), paints->end(), [](int p) { return p >= 0; })) paints->clear(); // (none fixed)

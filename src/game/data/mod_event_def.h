@@ -52,6 +52,15 @@ struct ModEventRace {
     // Tire wear: the record's wear bytes (+0x1BD .. +0x1C3; GT3 has one wear curve, physics §8.1), copied from a disc
     // race: -1 the base race's, 0 off (a race without wear), 1 on (an endurance race's). Never on dirt courses (GT3).
     int wear = -1;
+    // Catch-up: the record's rubber band (+0x1B7 .. +0x1BC: how far ahead of the player cars slow down and how far behind
+    // they speed up): -1 the base race's, 0 off (none, as Quick race's custom race without catch-up), 1 on (the arcade
+    // Normal race's, ANST0001, on dirt ANAD0001: Quick race's custom race with catch-up).
+    int catch_up = -1;
+    // The grid (ours: GT3's records have no field for it). 0: GT3's, the opponents drawn from the pool at random and lined up
+    // by weight per power, the best on pole; 1: the pool's cars in its order from pole (repeating them past its end).
+    int grid = 0;
+    // The player's place on the grid: 1 pole; 0 behind the opponents (GT3's).
+    int place = 0;
 };
 
 // A prize car: a car label and its paint (a carcolor id, -1 = a random paint).
@@ -121,6 +130,12 @@ struct ModEvent {
     std::string series;             // the codes' common stem, "Xmy_events_sunday_morning_cup"
     std::vector<std::string> races; // race codes in order: "<series>_0001".. or, a championship, "<series>_0501"..
     std::string champ;              // a championship's own code ("<series>_0500"), else ""
+    // The race a code is (nullptr: not one of this event's).
+    const ModEventRace* race_of(const std::string& code) const {
+        for (size_t k = 0; k < races.size() && k < def.races.size(); ++k)
+            if (races[k] == code) return &def.races[k];
+        return nullptr;
+    }
     // The code a league page item is named by: the championship's, else the first race's.
     const std::string& item() const { return champ.empty() ? races.front() : champ; }
     // The lineup race `k` runs: its own, else the field.

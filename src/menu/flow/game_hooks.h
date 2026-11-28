@@ -96,6 +96,7 @@ struct GameRequest {
     std::vector<std::string> opponent_skills;
     bool no_rubber_band = false;
     bool grid_by_power = false; // the opponents' grid as GT mode orders it (race::FieldConfig::grid_by_power), not `opponents` order
+    bool listed_grid = false;   // GT mode: a mod event race's grid in `opponents` order, not GT mode's by weight per power
     int laps = 0;
     int player_slot = -1;
     // Not GT3's: a field of our own (Quick race's custom race, a mod event) of up to 32 cars, the grid places past the course's
