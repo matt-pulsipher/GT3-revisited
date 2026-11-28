@@ -26,7 +26,8 @@ endif()
 include(cmake/Dependencies.cmake)
 
 if(MSVC)
-  add_compile_options(/W4 /permissive- /utf-8)
+  # /MP: Visual Studio's MSBuild compiles a project's files one at a time without it.
+  add_compile_options(/W4 /permissive- /utf-8 /MP)
   # fopen/getenv/localtime/sscanf are used portably; silence MSVC's "_s" suggestions.
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
