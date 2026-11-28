@@ -118,3 +118,12 @@ TEST(content_hash_tells_contents_apart) {
     CHECK(hash_of(kTexels) ==
           bytes_hash(ByteSpan(reinterpret_cast<const u8*>(kTexels.data()), kTexels.size() * sizeof(u32))));
 }
+
+// The race records' data hash (base/bytes.h): saved replays keep its values, so they never change.
+TEST(record_hash_keeps_its_values) {
+    CHECK(record_hash({}) == 0x14650FB0739D0383ull);
+    const u8 a[] = {'a'};
+    CHECK(record_hash(a) == 0x44BD8AD473CD9906ull);
+    const u8 foobar[] = {'f', 'o', 'o', 'b', 'a', 'r'};
+    CHECK(record_hash(foobar) == 0x88FAD7C0A8FF07F2ull);
+}

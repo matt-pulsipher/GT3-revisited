@@ -21,11 +21,7 @@ namespace gt3r::race {
 
 namespace {
 
-u64 hash_bytes(ByteSpan b) {
-    u64 h = 1469598103934665603ull;
-    for (u8 c : b) h = (h ^ c) * 1099511628211ull;
-    return h;
-}
+u64 hash_bytes(ByteSpan b) { return record_hash(b); } // (RaceCourse::file_hash is the same hash)
 
 // 8 bytes a step, for the course cache's check that a file is the one it holds. Never stored, so free to differ from
 // hash_bytes (which the race records' data fingerprint keeps).

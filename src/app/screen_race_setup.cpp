@@ -156,7 +156,10 @@ void RaceScreen::start(App& app, const Replay* replay) {
         ghost_shown_ = true;
         const bool plays = replay && can_play(*replay, nullptr); // (a replay's race is built from its record: start_playback)
         if (!plays && !build_vehicle(app)) throw FormatError(error_);
-        if (!car_visual_) build_player_visual(app, model, *car_file); // (a demo whose build drew no colour)
+        if (!car_visual_) { // (a demo whose build drew no colour)
+            build_player_visual(app, model, *car_file);
+            read_files_.clear(), shared_builds_.clear(); // (as a build lets them go)
+        }
         build_tv_cameras();
         gtrc_.reset();
         director_ = ReplayDirector(); // (not left pointing at the old script)
