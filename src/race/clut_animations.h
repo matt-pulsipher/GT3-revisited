@@ -24,6 +24,10 @@ public:
     void animate(float seconds);
     // Uploads the textures recoloured since the last call.
     void upload();
+    // Every animation's state (ours: photo mode puts it back after drawing other times; the next
+    // upload() recolours what differs).
+    std::vector<ClutPlayer> state() const;
+    void set_state(const std::vector<ClutPlayer>& s);
 
 private:
     struct Model {

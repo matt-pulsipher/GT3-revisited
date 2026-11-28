@@ -394,6 +394,13 @@ public:
     void reset();
     // Advances the animators by `seconds` (the game: 1/60 s per frame).
     void update(float seconds);
+    // The animators' state (ours: photo mode puts it back after drawing other times).
+    struct State {
+        std::vector<float> values;
+        std::map<u32, u32> operands;
+    };
+    State state() const { return {values_, operands_}; }
+    void set_state(const State& s) { values_ = s.values, operands_ = s.operands; }
     // The operand values the animators write now, by operand offset in the block.
     const std::map<u32, u32>& operands() const { return operands_; }
 

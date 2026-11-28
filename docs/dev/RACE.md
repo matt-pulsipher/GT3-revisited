@@ -526,7 +526,18 @@ SDL's trigger rumble does nothing there.
   lens is a full-frame camera's, its focal length the view's 35 mm equivalent (`photo_focal_mm`,
   from the field of view across the frame's diagonal) and its aperture that over the camera menu's
   f-number (Aperture: f/1.4 to f/22, f/5.6 at first; `photo_aperture_radius`). The replays' post
-  process depth of field (`apply_depth_of_field`) is off in photo mode.
+  process depth of field (`apply_depth_of_field`) is off in photo mode. The heat haze is on in
+  photo mode wherever the course (Env0 flag 0x20) and [video] heat_haze allow it, whatever the
+  replay's shot was (`add_screen_passes`; the free view has no shot to ask). Each render draws the
+  particles at its own time across the shutter (`HeatHaze::lenses`' `ticks`: each moved by its
+  drift that many steps from the last one stepped, fractions too), so a long shutter blurs the
+  ripple and a short one freezes it. The course's animations (moving nodes and CLUT animations: flags,
+  spinning parts, flip-book crowds and screens, flashing lights; the wet road's and billboards'
+  too) run across the shutter as well: their state at the paused moment is kept as photo mode opens
+  (`CourseScene::animation_state`, `ClutAnimations::state`, `AnimatedNodes::state`), and each render
+  sets it back, advances it by its time past the shutter's opening and uploads it (`photo_animate`;
+  they only run forward, so their window is the shutter's length later than the cars', alike to
+  the eye), then puts the moment's back.
   Photo mode draws every car at full detail whatever [video] full_car_detail says
   (`photo_car_models`: each model's `set_full_detail`, nothing built again); the wheels stay as
   [video] showroom_wheels has them. Leaving it puts back the detail as set and the replays' depth

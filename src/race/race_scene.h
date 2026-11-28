@@ -86,6 +86,13 @@ public:
     void animate(float seconds);
     // Uploads what changed since the last call (once per drawn frame).
     void upload_animations();
+    // Their state (ours: photo mode draws them at other times, then puts this back).
+    struct AnimationState {
+        std::vector<ClutPlayer> cluts;
+        std::vector<gtm1::AnimatedNodes::State> nodes;
+    };
+    AnimationState animation_state() const;
+    void set_animation_state(const AnimationState& s);
 
 private:
     // Moving nodes, rebuilt every frame into a model sharing `textures`' textures.

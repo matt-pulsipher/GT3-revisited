@@ -31,6 +31,10 @@
 // Photo mode draws every car at full detail whatever the settings say (photo_car_models); leaving
 // it puts back the cars' detail, and the replays' own depth of field, as the settings have them.
 //
+// The course's animations (moving nodes, CLUT animations: flags, spinning parts, flip-book screens,
+// flashing lights) run in each render too: from the paused moment's state, kept as photo mode
+// opens (photo_anims_), on by that render's time past the shutter's opening, then put back.
+//
 // The depth of field is the accumulation's too (race::photo_lens): each render looks through its
 // own point of a thin lens (the sample's, over the aperture's radius: the 35 mm equivalent focal
 // length of the view over the menu's f-number) at the focus distance, so the mean is sharp there
@@ -128,6 +132,8 @@ void RaceScreen::open_photo(App& app) {
     (void)app;
 #endif
     photo_car_models(true); // (every car at full detail)
+    photo_anims_ = CourseAnimations{course_scene_ ? course_scene_->animation_state() : CourseScene::AnimationState{},
+                                    wet_.clut_animations().state(), billboards_.clut_animations().state()};
     photo_.emplace();
     photo_alpha_ = step_.alpha(), photo_state_ = render_state_;
     photo_focus_.reset(), photo_fast_ = false;
@@ -152,6 +158,7 @@ void RaceScreen::close_photo() {
     photo_save_ = false;
     if (!photo_) return;
     photo_car_models(false); // (the cars' detail as set again)
+    photo_anims_.reset(); // (each render put the moment's back already; a new replay has its own)
     camera_.clear_free_view();
     photo_.reset();
     if (app_) app_->hold_render_scale(false);
@@ -366,6 +373,12 @@ float RaceScreen::photo_focal_mm() const {
 void RaceScreen::begin_photo_render(const race::PhotoSample& sample) {
     const float t = sample.t;
     photo_time_ = t;
+    // The course's animations (flags, spinning parts, screens, flashing lights) at the render's
+    // time: they only run forward, so from the moment shown on by the render's time past the
+    // shutter's opening (the shutter's length later than the cars', alike to the eye).
+    const float length = photo_->shutter_seconds() / float(step_.step());
+    const race::PhotoShutter sh = race::photo_shutter(photo_moment(), length, photo_earliest());
+    photo_animate(std::max(0.0f, t - sh.open) * float(step_.step()));
     alpha_at_ = std::clamp(t + 1.0f, 0.0f, 1.0f); // (the sparks and the ghost: within the paused tick only)
     render_state_ = photo_car_at(0, t);
     // The camera at the render's time by the mode, then through the render's point of the lens.
@@ -380,7 +393,21 @@ void RaceScreen::begin_photo_render(const race::PhotoSample& sample) {
     photo_shear_ = lens.shear;
 }
 
+void RaceScreen::photo_animate(float seconds) {
+    photo_anims_back();
+    if (seconds > 0) animate_course(seconds);
+    upload_course_animations();
+}
+
+void RaceScreen::photo_anims_back() {
+    if (!photo_anims_) return;
+    if (course_scene_) course_scene_->set_animation_state(photo_anims_->course);
+    wet_.clut_animations().set_state(photo_anims_->wet);
+    billboards_.clut_animations().set_state(photo_anims_->billboards);
+}
+
 void RaceScreen::end_photo_render() {
+    photo_anims_back(); // (the next frame uploads the moment's again)
     photo_time_.reset(), alpha_at_.reset();
     photo_shear_ = {};
     render_state_ = photo_state_;

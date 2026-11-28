@@ -210,6 +210,23 @@ void CourseScene::animate(float seconds) {
     moving_changed_ = moving_changed_ || seconds != 0;
 }
 
+CourseScene::AnimationState CourseScene::animation_state() const {
+    AnimationState s;
+    s.cluts = cluts_.state();
+    for (const Moving* m : {&scenery_moving_, &backdrop_moving_})
+        for (const gtm1::AnimatedNodes& a : m->nodes) s.nodes.push_back(a.state());
+    return s;
+}
+
+void CourseScene::set_animation_state(const AnimationState& s) {
+    cluts_.set_state(s.cluts);
+    size_t i = 0;
+    for (Moving* m : {&scenery_moving_, &backdrop_moving_})
+        for (gtm1::AnimatedNodes& a : m->nodes)
+            if (i < s.nodes.size()) a.set_state(s.nodes[i++]);
+    moving_changed_ = true; // (the moving nodes' geometry built again at the next upload)
+}
+
 void CourseScene::upload_animations() {
     cluts_.upload();
     if (!moving_changed_) return;

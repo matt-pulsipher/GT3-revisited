@@ -88,7 +88,7 @@ void HeatHaze::step() {
     }
 }
 
-void HeatHaze::lenses(const render::Mat4& view, const render::Mat4& proj, std::vector<HazeLens>& out) const {
+void HeatHaze::lenses(const render::Mat4& view, const render::Mat4& proj, std::vector<HazeLens>& out, float ticks) const {
     out.clear();
     if (particles_.empty()) return;
     // m: the projection's x scale (the original reads it from its projection-only matrix).
@@ -107,7 +107,8 @@ void HeatHaze::lenses(const render::Mat4& view, const render::Mat4& proj, std::v
     rot.at(0, 3) = rot.at(1, 3) = rot.at(2, 3) = 0;
     const render::Mat4 M = proj * rot;
     for (size_t i = particles_.size(); i-- > 0;) {
-        const Particle& q = particles_[i];
+        Particle q = particles_[i];
+        if (ticks != 0) q.x += q.vx * ticks, q.y += q.vy * ticks, q.z += q.vz * ticks; // (photo mode's time)
         const float x = c.x + haze_wrap(q.x - c.x, B);
         const float z = c.z + haze_wrap(q.z - c.z, B);
         const float y = c.y + haze_wrap(q.y - c.y, Ly);

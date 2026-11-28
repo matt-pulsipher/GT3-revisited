@@ -765,10 +765,14 @@ void RaceScreen::add_screen_passes(render::DrawOptions& o, const SDL_FRect& rect
     // only replays, demonstrations and the attract demo); over everything, the cars included.
     // Off unless the player turns it on ([video] heat_haze): in our sharp picture its lenses,
     // sliding across panning shots, read as jitter rather than the original's soft shimmer.
+    // Photo mode (ours) has no course shot to ask: on wherever the course and the setting allow
+    // it. Each of its renders draws the particles at its own time across the shutter (photo_time_,
+    // ticks from the last one stepped: each moved by its drift that far), so the photo's mean
+    // blurs the ripple as the shutter is long.
     haze_batch_.clear();
-    if (heat_haze_ && haze_.active() && cam.replay_haze()) {
+    if (heat_haze_ && haze_.active() && (cam.replay_haze() || (photo_ && cam.free_view()))) {
         const render::Mat4 proj = cam.projection(rect.w / rect.h);
-        haze_.lenses(cam.view(), proj, haze_lenses_);
+        haze_.lenses(cam.view(), proj, haze_lenses_, photo_time_.value_or(0.0f));
         add_haze_lenses(haze_batch_, haze_lenses_);
         o.haze = &haze_batch_;
         if (debug_ && !haze_lenses_.empty() && haze_log_++ % 10 == 0)
@@ -786,7 +790,9 @@ void RaceScreen::add_screen_passes(render::DrawOptions& o, const SDL_FRect& rect
 
 void RaceScreen::render_drive(App& app, Ui& ui) {
     app.note_race_scale();
-    upload_course_animations(); // once per frame
+    // Once per frame; photo mode's renders upload their own times' (photo_animate), and its
+    // finished photo draws nothing.
+    if (!(photo_ && photo_->still())) upload_course_animations();
     // The game area (App::aspect): 640 x 360 at 16:9, 480 x 360 at 4:3 (GT3's 4:3 picture),
     // the window's shape with fill.
     const float W = ui.width(), H = ui.height();

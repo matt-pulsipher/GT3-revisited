@@ -1295,6 +1295,15 @@ private:
         wet_.clut_animations().upload();
         billboards_.clut_animations().upload();
     }
+    // Photo mode: the course's animations as they stand at the paused moment, which each of its
+    // renders starts from (screen_race_photo.cpp: photo_animate) and leaves them as again.
+    struct CourseAnimations {
+        CourseScene::AnimationState course;
+        std::vector<ClutPlayer> wet, billboards;
+    };
+    std::optional<CourseAnimations> photo_anims_;
+    void photo_animate(float seconds); // the moment's animations, then `seconds` on, uploaded
+    void photo_anims_back();           // the moment's again (uploaded with the next frame)
     std::unique_ptr<CarVisual> car_visual_;
     std::unique_ptr<render::View3D> view_;
     std::vector<render::DrawItem> items_;
