@@ -803,6 +803,8 @@ cars = 3               ; opponents it draws, 1 to 31, repeating the pool's cars 
 start = rolling        ; league, standing, rolling (default: league, the base race's)
 tire_wear = on         ; league, off, on (default: league, the base race's)
 catch_up = off         ; league, off, on (default: league, the base race's)
+grid = listed          ; drawn, listed (default: drawn, as GT3)
+place = 1              ; your place on the grid, 1 = pole, or last (default: last, as GT3)
 
 [race2]
 course = midfield
@@ -844,6 +846,13 @@ opponents = r34_gtr_v_99   ; a lineup of its own (single races only)
   far behind you speed up): `off` clears it, `on` copies the arcade Normal
   race's (`ANST0001`, on dirt `ANAD0001`, as Quick race's custom race with
   catch-up on), `league` keeps the base race's.
+- `grid` and `place` are ours, as `points` is: GT3's records have no field for
+  them. GT3 draws a race's opponents from its pool at random, lines them up by
+  weight per power (the best on pole) and starts you last. `grid = listed`
+  takes the pool's cars in its order instead, from pole (its cars again from the
+  top when it races more than the pool has); `place` puts you anywhere on the
+  grid. A championship draws its field once, for round 1, so a listed grid's
+  order is round 1's pool order.
 - `prize_cars` is a prize set as the disc's: a car listed twice comes up twice
   as often in the roulette. An older file's `prize_car` and `prize_paint` still
   read as one prize car.

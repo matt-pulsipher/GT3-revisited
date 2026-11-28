@@ -66,6 +66,8 @@ catch_up = off
 course = rome
 laps = 4
 catch_up = on
+grid = listed
+place = 2
 )";
 
 const char* kSingles = R"(
@@ -127,6 +129,7 @@ TEST(mod_event_parse) {
     CHECK(d->races.size() == 3 && d->races[2].course == "rome" && d->races[2].laps == 4);
     CHECK(d->races[0].skill == -1 && d->races[1].skill == 2);
     CHECK(d->races[0].catch_up == -1 && d->races[1].catch_up == 0 && d->races[2].catch_up == 1);
+    CHECK(d->races[0].grid == 0 && d->races[0].place == 0 && d->races[2].grid == 1 && d->races[2].place == 2);
     CHECK(warns.empty());
     // What the creator writes reads back the same.
     auto again = data::parse_mod_event(data::format_mod_event(*d), "hatch", &err);
@@ -142,6 +145,7 @@ TEST(mod_event_parse) {
               again->field[1].color == 0xFFFFFFFFu);
         CHECK(again->races.size() == 3 && again->races[1].laps == 3 && again->races[1].skill == 2 && again->races[0].skill == -1);
         CHECK(again->races[0].catch_up == -1 && again->races[1].catch_up == 0 && again->races[2].catch_up == 1);
+        CHECK(again->races[0].grid == 0 && again->races[0].place == 0 && again->races[2].grid == 1 && again->races[2].place == 2);
     }
     // A race of its own lineup, its place "last" by default.
     auto s = data::parse_mod_event(singles, "sprint", &err);
@@ -578,6 +582,39 @@ TEST(mod_event_disc_one_make) {
         CHECK(std::set<std::string>(drawn.begin(), drawn.begin() + 2) == std::set<std::string>({"vitz_euro_00", "r34_gtr_v_99"}));
         for (const std::string& d : drawn) CHECK(d == "vitz_euro_00" || d == "r34_gtr_v_99");
     }
+}
+
+// A race with its grid as listed: the pool's cars in its order, from its top again past its end, each in its entry's paint.
+TEST(mod_event_disc_listed_grid) {
+    Disc* disc = test_disc();
+    if (!disc) SKIP("needs GT3R_DISC");
+    EventWorld w = event_world(*disc);
+    CHECK(w.error.empty());
+    data::ModEventDef def;
+    def.id = "listed", def.mod = "my_events", def.title = "Listed";
+    def.field = {{"r34_gtr_v_99", g_r34_1}, {"vitz_euro_00", 0xFFFFFFFFu}, {"no_such_car_here", 0xFFFFFFFFu}, {"demio_glx_00", 0xFFFFFFFFu}};
+    data::ModEventRace listed;
+    listed.course = "midfield", listed.laps = 1, listed.cars = 5, listed.grid = 1, listed.place = 2;
+    data::ModEventRace drawn = listed;
+    drawn.grid = 0;
+    def.races = {listed, drawn};
+    std::string err;
+    CHECK(data::add_mod_event(w.data->db, def, &err));
+    w.data->db.rebuild();
+    game::GtMode gt(w.data);
+    const data::ModEvent* me = w.data->db.mod_event("Xmy_events_listed_0001");
+    CHECK(me && me->race_of("Xmy_events_listed_0001") && me->race_of("Xmy_events_listed_0001")->place == 2);
+    CHECK(me && me->race_of("Xmy_events_listed_0002") && me->race_of("Xmy_events_listed_0002")->grid == 0 && !me->race_of("Xother_0001"));
+    const std::vector<std::string> order = {"r34_gtr_v_99", "vitz_euro_00", "demio_glx_00", "r34_gtr_v_99", "vitz_euro_00"};
+    bool drawn_differs = false;
+    for (u32 seed = 1; seed < 20; ++seed) {
+        GameRandom rng{seed};
+        std::vector<int> paints;
+        CHECK(gt.pick_opponents("Xmy_events_listed_0001", rng, &paints) == order);
+        CHECK(paints.size() == 5 && paints[0] == 1 && paints[3] == 1 && paints[1] == -1);
+        drawn_differs = drawn_differs || gt.pick_opponents("Xmy_events_listed_0002", rng) != order;
+    }
+    CHECK(drawn_differs); // (GT3's draw: in its own order)
 }
 
 // The prize cars (public issues 473 / 474), the points (472), the start (483) and the tire wear (503): the file's

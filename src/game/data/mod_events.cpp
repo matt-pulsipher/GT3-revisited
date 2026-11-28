@@ -81,6 +81,7 @@ const char* const kSkills[] = {"league", "easy", "normal", "hard", "professional
 const char* const kStarts[] = {"league", "standing", "rolling"};
 const char* const kWears[] = {"league", "off", "on"};
 const char* const kCatchUps[] = {"league", "off", "on"};
+const char* const kGrids[] = {"drawn", "listed"};
 
 // "car:color, car, tune:<name>:color" (a carcolor id; none = drawn at the race start).
 std::vector<ModEventCar> parse_lineup(const std::string& text) {
@@ -269,6 +270,12 @@ std::optional<ModEventDef> parse_mod_event(std::string_view text, const std::str
         r.start = keyword(get(sec.c_str(), "start"), kStarts, "start", "[" + sec + "] start", warnings) - 1;
         r.wear = keyword(get(sec.c_str(), "tire_wear"), kWears, "tire wear", "[" + sec + "] tire_wear", warnings) - 1;
         r.catch_up = keyword(get(sec.c_str(), "catch_up"), kCatchUps, "catch-up", "[" + sec + "] catch_up", warnings) - 1;
+        r.grid = keyword(get(sec.c_str(), "grid"), kGrids, "grid", "[" + sec + "] grid", warnings);
+        if (const std::string place = get(sec.c_str(), "place"); !place.empty() && to_lower(place) != "last") {
+            const std::optional<long> n = integer(place);
+            if (n && *n >= 1) r.place = int(std::min<long>(*n, ModEventDef::kMaxOpponents + 1));
+            else if (warnings) warnings->push_back("[" + sec + "] place: last or a place from 1 (pole), not '" + place + "'");
+        }
         d.races.push_back(std::move(r));
     }
     for (const IniDocument::Section& sec : ini.sections()) {
@@ -341,6 +348,8 @@ std::string format_mod_event(const ModEventDef& d) {
         if (r.start >= 0) ini.set(sec, "start", kStarts[std::clamp(r.start, -1, 1) + 1]);
         if (r.wear >= 0) ini.set(sec, "tire_wear", kWears[std::clamp(r.wear, -1, 1) + 1]);
         if (r.catch_up >= 0) ini.set(sec, "catch_up", kCatchUps[std::clamp(r.catch_up, -1, 1) + 1]);
+        if (r.grid > 0) ini.set(sec, "grid", kGrids[std::clamp(r.grid, 0, 1)]);
+        if (r.place > 0) ini.set(sec, "place", std::to_string(r.place));
         if (r.cars > 0) ini.set(sec, "cars", std::to_string(r.cars));
         if (!r.opponents.empty() && !d.championship) ini.set(sec, "opponents", format_lineup(r.opponents));
     }

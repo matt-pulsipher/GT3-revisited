@@ -154,6 +154,7 @@ void RaceScreen::resolve_launch() {
         race_opponent_skills_ = rq.opponent_skills;
         race_no_rubber_band_ = rq.no_rubber_band;
         race_grid_by_power_ = rq.grid_by_power;
+        race_listed_grid_ = rq.listed_grid;
         race_chosen_laps_ = rq.laps;
         race_player_slot_ = rq.player_slot;
         race_big_field_ = rq.big_field;

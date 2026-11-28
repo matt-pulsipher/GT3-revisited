@@ -87,6 +87,12 @@ void prepare_request(GameRequest& r) {
             r.opponents = gt.pick_opponents(r.race_code, race_info_random(), &r.opponent_paints);
         }
         r.event = r.race_code;
+        // A mod event race's own grid (data::ModEventRace::grid, place): its cars as listed, the player on its place.
+        if (const data::ModEvent* me = gt.db().mod_event(r.race_code))
+            if (const data::ModEventRace* mr = me->race_of(r.race_code)) {
+                r.listed_grid = mr->grid == 1;
+                r.player_slot = mr->place > 0 ? std::min(mr->place - 1, int(r.opponents.size())) : -1;
+            }
         fill_car(r, gt);
         fill_condition(r, gt, gt.state().ride_car());
     } else if (r.mode == "go_license") {

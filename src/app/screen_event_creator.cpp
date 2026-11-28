@@ -9,7 +9,7 @@
 //
 // Pages: the list of the player's events; an event (title, description, picture, icon, league, single
 // races or a championship, entry rules, prizes, its opponents and its races); a race (course,
-// laps, how it starts, its tire wear, its catch-up, the event's opponents or a lineup of its own); the opponents of
+// laps, how it starts, its tire wear, its catch-up, its grid and your place on it, the event's opponents or a lineup of its own); the opponents of
 // the event (the lineup every race without its own runs, and every championship round); the prizes
 // (per place, the championship bonus, up to four prize cars, each in a colour or a random one: two or
 // more go to GT3's roulette); a championship's points per place. A race draws up to 31 opponents from
@@ -790,6 +790,16 @@ private:
         rows.push_back(value_row("Catch-up", r.catch_up < 0 ? std::string(kCatchUps[league_band]) + " (league's)" : kCatchUps[r.catch_up],
                                  "Catch-up: cars far ahead of you slow down, cars far behind you speed up",
                                  [this, &r](int h) { r.catch_up = (r.catch_up + 1 + (h < 0 ? -1 : 1) + 3) % 3 - 1, dirty_ = true; }, x, y, w));
+        // The grid (ours, not GT3's: see data::ModEventRace::grid) and the player's place on it.
+        rows.push_back(value_row("Grid", r.grid == 1 ? "As listed" : "By power (GT3's)",
+                                 ed_.championship ? "By power: lightest per power on pole, as GT3. As listed: the opponents in the order the first round lined them up"
+                                                  : "By power: drawn from its cars, lightest per power on pole, as GT3. As listed: its cars in their list's order from pole",
+                                 [this, &r](int) { r.grid = r.grid == 1 ? 0 : 1, dirty_ = true; }, x, y, w));
+        const int places = n + 1, place = r.place > 0 && r.place < places ? r.place : 0;
+        rows.push_back(value_row("Your place", place == 0 ? "Last (GT3's)" : ordinal(place) + (place == 1 ? " (pole)" : ""),
+                                 "Where you start: behind the opponents, as GT3, or any place on the grid",
+                                 [this, &r, place, places](int h) { r.place = (place + (h < 0 ? -1 : 1) + places) % places, dirty_ = true; },
+                                 x, y, w));
         rows.push_back(button(armed_ ? "Press again" : "Remove race", {kLeftX, kButtonY, 120, kButtonH}, [this, &app] { remove_race(app); },
                               false, "Takes the race out of the event (press twice)"));
         editing_buttons(rows);
@@ -822,7 +832,8 @@ private:
         const float colw = kRightW / 2;
         for (size_t i = 0; i < p.size(); ++i) {
             float ly = 0;
-            Row r = action_row("", entry_name(p[i]), "{Cross}: its version, color and parts", [this, i] { open_entry(int(i)); },
+            Row r = action_row("", std::to_string(i + 1) + ". " + entry_name(p[i]), "{Cross}: its version, color, parts and place in the list",
+                               [this, i] { open_entry(int(i)); },
                                kRightX + float(i % 2) * colw, ly, colw);
             r.r.y = kTopY + 16 + float(i / 2) * 14, r.r.h = 14;
             r.dim = true;
@@ -860,6 +871,17 @@ private:
                                      c.color = k < 0 ? 0xFFFFFFFFu : data_->color_id(car, k);
                                      dirty_ = true;
                                  }, kLeftX, y));
+        // Its place in the list: a race with its grid as listed starts its cars in this order.
+        if (p.size() > 1)
+            rows.push_back(value_row("In the list", std::to_string(entry_ + 1) + " of " + std::to_string(p.size()),
+                                     "{Left/Right}: earlier or later in the list (a grid as listed starts the cars in its order)",
+                                     [this](int h) {
+                                         std::vector<data::ModEventCar>& q = pool();
+                                         const int to = entry_ + (h < 0 ? -1 : 1);
+                                         if (to < 0 || to >= int(q.size())) return;
+                                         std::swap(q[size_t(entry_)], q[size_t(to)]);
+                                         entry_ = to, dirty_ = true;
+                                     }, kLeftX, y));
         // A tune's parts: every category the shops have parts for this car in (the right column, then the left).
         if (is_tune(c))
             if (data::ModEventTune* t = tune(c.label.substr(5))) {
