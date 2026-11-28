@@ -49,6 +49,19 @@ elseif(TARGET gt3r AND APPLE)
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
 elseif(TARGET gt3r AND WIN32)
   target_sources(gt3r PRIVATE ${GT3R_PACKAGING_DIR}/gt3r.rc)
+elseif(TARGET gt3r)
+  # Linux and other desktops: the window's own icon (set_window_icon in src/app/app.cpp), compiled in. An extracted
+  # archive registers no .desktop file, so without it the window and taskbar show a generic icon.
+  set(_window_icon_src ${CMAKE_BINARY_DIR}/generated/window_icon_data.cpp)
+  add_custom_command(OUTPUT ${_window_icon_src}
+    COMMAND ${CMAKE_COMMAND} -DOUT=${_window_icon_src} -DNAMESPACE=gt3r::icon_data
+            -DNAMES=kWindowIcon -DFILES=${GT3R_PACKAGING_DIR}/icon_256.png
+            -P ${CMAKE_SOURCE_DIR}/cmake/EmbedFiles.cmake
+    DEPENDS ${GT3R_PACKAGING_DIR}/icon_256.png ${CMAKE_SOURCE_DIR}/cmake/EmbedFiles.cmake
+    COMMENT "Embedding the window icon"
+    VERBATIM)
+  target_sources(gt3r PRIVATE ${_window_icon_src})
+  target_compile_definitions(gt3r PRIVATE GT3R_WINDOW_ICON=1)
 endif()
 
 if(ANDROID OR IOS) # (packaged by Gradle, or installed from Xcode by each builder)
