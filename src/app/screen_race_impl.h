@@ -54,6 +54,8 @@
 #include "race/sun_disc.h"
 #include "race/results.h"
 #include "race/pause_menu.h"
+#include "race/photo_camera.h"
+#include "race/photo_history.h"
 #include "race/paint.h"
 #include "race/pool_draw.h"
 #include "race/hud.h"
@@ -558,6 +560,57 @@ private:
     void pause_result(App& app, PauseMenu::Result r);
     void pause_more_choose(App& app); // Select's list: the cursor's item, as Cross
     int pause_more_row(const Ui& ui, float x, float y) const;
+    // Photo mode (screen_race_photo.cpp): a free camera round a paused replay's moment.
+    bool photo_allowed() const;
+    render::Vec3 photo_anchor() const; // the followed car (the camera's range is round it)
+    void open_photo(App& app);
+    void close_photo();
+    void apply_photo_view();
+    // The crosshair's ray from the photo's eye: how far it hits the course or a car (none past
+    // kMax m), and which car (0 the player's, i + 1 opponent i; -1 none).
+    struct PhotoHit {
+        static constexpr float kMax = 3000.0f;
+        std::optional<float> distance;
+        int car = -1;
+    };
+    PhotoHit photo_hit() const;
+    int photo_followed() const;         // the replay's followed car (photo_car_at's numbering)
+    void resolve_photo_follow();        // the camera's mode and car while the shutter is open, from the last focus's car
+    void focus_photo();                 // the focus at the crosshair's hit
+    float photo_focus_distance() const; // the depth of field's focus: the set one, else the followed car's
+    void update_photo(App& app, double dt);
+    void render_photo(Ui& ui);
+    void save_photo(App& app); // the finished picture as a PNG in the screenshots folder
+    std::string photo_status() const; // its follow setting, shutter, aspect ("Roadside, 1/60 s, 16:9")
+    static constexpr int kPhotoMenuRows = 6; // the camera menu: follow, shutter, aperture, aspect, orientation, grid (kPhotoMenuActions)
+    std::vector<std::string> photo_menu_values() const; // its rows' values
+    // The wheels' spin blur in the main view: off while photo mode is still (its accumulation
+    // blurs the turning wheels itself).
+    bool spin_blur_on() const;
+    // This frame's part in the photo's accumulation (none, a render at a sample's time, or the
+    // finished mean shown again).
+    struct PhotoRender {
+        render::DrawOptions::Accumulate mode = render::DrawOptions::Accumulate::Off;
+        race::PhotoSample sample;
+    };
+    PhotoRender photo_render();
+    // A photo render's time (PhotoHistory's ticks): the cars there and the camera by the mode;
+    // end_photo_render puts the paused moment back.
+    void begin_photo_render(const race::PhotoSample& sample);
+    float photo_focal_mm() const; // the view's 35 mm equivalent focal length (race::photo_focal_mm)
+    void end_photo_render();
+    float photo_moment() const { return photo_alpha_ - 1.0f; } // the moment shown, in those ticks
+    float photo_earliest() const { return photo_history_.span() >= 1 ? -float(photo_history_.span()) : -1.0f; }
+    // Car `car` (0 the player's, i + 1 opponent i) at time `t`: from the past kept, else between
+    // the paused tick's two states.
+    sim::VehicleState photo_car_at(int car, float t) const;
+    void record_photo_history(); // after each tick of a replay
+    // Opponent i as the views draw it: between the last two ticks at frame_alpha, or at a photo
+    // render's time.
+    sim::VehicleState opponent_view_state(int i) const;
+    // The interpolation between the last two ticks the views draw at: the frame's, or a photo
+    // render's own (alpha_at_).
+    float frame_alpha() const { return alpha_at_ ? *alpha_at_ : step_.alpha(); }
     // The quick menus' and the pause window's pointer (menu_pointer_): true when it closed or
     // changed the menu (the caller's update stops there).
     bool menu_pointer(App& app);
@@ -757,6 +810,9 @@ private:
     bool build_exact_solo(App& app);
     void load_opponent_cars(App& app, const RaceField& f);
     void build_player_visual(App& app, const std::string& model, ByteSpan car_file);
+    // Photo mode's cars (screen_race_photo.cpp): every car at full detail while it is open, then
+    // the detail as set again.
+    void photo_car_models(bool on);
     // The rig's car: its bonnet-camera mounts (race/hood_camera.h) and its camera points (the
     // in-car eye, the chase point: CameraRig::set_car_mounts), from the car the camera is on:
     // bound when the car visual behind camera_ / camera2_ changes (player 2, a replay's or the
@@ -1030,6 +1086,35 @@ private:
     std::vector<CarEntry> cars_;
     int course_sel_ = 0, car_sel_ = 0, column_ = 0, pause_sel_ = 0;
     bool pause_more_ = false;
+    std::optional<race::PhotoCamera> photo_; // photo mode is on (paused, over the Select list)
+    float photo_alpha_ = 0;           // the paused moment: its place in the tick and the player's car there
+    sim::VehicleState photo_state_;
+    std::optional<float> alpha_at_;   // frame_alpha's override while a photo render draws
+    bool photo_save_ = false;         // Cross pressed: the photo is saved once it is finished
+    race::PhotoHistory photo_history_; // the replay's last ticks (a shutter longer than one)
+    u32 photo_ticks_ = 0;             // ticks pushed into it
+    std::optional<float> photo_time_; // the photo render drawing now: its time
+    u16 photo_buttons_ = 0;           // the pad's buttons last frame (the D-pad's presses)
+    bool photo_menu_ = false;         // the camera menu shown
+    int photo_menu_row_ = 0;          // its row (kPhotoMenuRows)
+    race::PhotoAspect photo_aspect_ = race::PhotoAspect::Wide; // the frame's shape (kept between photos)
+    race::PhotoGrid photo_grid_ = race::PhotoGrid::Off;
+    race::PhotoOrientation photo_orientation_ = race::PhotoOrientation::Landscape; // (kept between photos)
+    int photo_fstop_ = race::kDefaultFStop;  // into race::kFStops (kept between photos)
+    render::Mat4 photo_shear_;               // the photo render's lens shear (race::PhotoLens), identity else
+    bool photo_fast_ = false;         // L3's faster move
+    bool photo_triangle_rolled_ = false; // Triangle held this time rolled (so its release is no back)
+    std::optional<float> photo_focus_; // the focus set at the crosshair (m)
+    static constexpr double kFocusHold = 0.5;      // s Square / the crosshair is held before it focuses
+    static constexpr int kFocusFlashes = 3;        // the focus point's red flashes once focused
+    static constexpr double kFocusFlashTime = 0.6; // s for all of them
+    double photo_focus_hold_ = 0;  // how long the focus is held now (s)
+    double photo_focus_flash_ = 0; // the flashes' time left (s)
+    static constexpr double kMenuIdleHide = 5.0; // s: the camera menu hides after the photo, with no input (controller)
+    double photo_input_idle_ = 0;  // s since the pad last pressed or moved anything
+    race::PhotoMode photo_mode_ = race::PhotoMode::Free; // resolve_photo_follow's
+    int photo_target_ = 0;
+    int photo_focus_car_ = -1;     // the car the last focus hit (-1 none: resolve_photo_follow)
     race::TitleClock title_clock_;
     race::ReplayMarkTimer mark_timer_;
     int last_shot_ = -2; // the director's cut the shot filter was rolled for

@@ -65,6 +65,13 @@ renderer then composites the view as an ordinary texture
   target for every frame in flight); with the fixed size, 15 steps in one race
   had a worst frame of 29 ms. `GT3R_DYN_CYCLE=<seconds>` sweeps the scale from
   its ceiling to 50% and back (also in `--shot` runs) for checking.
+- Photo mode's motion blur (ours; RACE.md "Pause"): `DrawOptions::accumulate` = Add lays the
+  finished picture over a running mean at 1 / k (the k-th since `View3D::reset_accumulation`;
+  `encode_resample` into a target-sized texture of `GpuContext::accum_format`: RGBA16F where the
+  device renders to it, the colour format otherwise, and on OpenGL ES only with
+  `EXT_color_buffer_half_float` or `EXT_color_buffer_float`), then copies the mean into the
+  picture that is shown. Show copies the kept mean again without drawing the scene (a new size
+  starts a new mean). The mean is never cycled; its passes are single-sample, without depth.
 
 **SDL version:** this needs SDL ≥ 3.4 (`SDL_CreateGPURenderer`, wrapping GPU
 textures). The code compiles against 3.2 (guarded by

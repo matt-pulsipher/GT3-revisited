@@ -162,6 +162,7 @@ struct TexFormat {
 bool tex_format(SDL_GPUTextureFormat f, TexFormat* out) {
     switch (f) {
     case SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM: *out = {GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE}; return true;
+    case SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT: *out = {GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT}; return true;
     case SDL_GPU_TEXTUREFORMAT_D16_UNORM: *out = {GL_DEPTH_COMPONENT16, 0, 0, true}; return true;
     case SDL_GPU_TEXTUREFORMAT_D24_UNORM: *out = {GL_DEPTH_COMPONENT24, 0, 0, true}; return true;
     case SDL_GPU_TEXTUREFORMAT_D32_FLOAT: *out = {GL_DEPTH_COMPONENT32F, 0, 0, true}; return true;
@@ -325,6 +326,7 @@ struct SDL_GPUDevice {
     std::string description;          // gles::description()
     GLint ubo_align = 256;
     bool aniso = false;
+    bool half_float_target = false; // RGBA16F renders and blends (EXT_color_buffer_half_float / _float)
     float max_aniso = 1;
     // glDrawElementsInstancedBaseVertex (OpenGL ES 3.2, or OES / EXT_draw_elements_base_vertex):
     // draws keep their attribute pointers. Without it (OpenGL ES 3.0) they move the attribute
@@ -866,6 +868,7 @@ SDL_Renderer* gt3r_gl_CreateGPURenderer(SDL_GPUDevice* device, SDL_Window* windo
     SDL_FlushRenderer(r);
     glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &device->ubo_align);
     device->aniso = has_extension("GL_EXT_texture_filter_anisotropic");
+    device->half_float_target = has_extension("GL_EXT_color_buffer_half_float") || has_extension("GL_EXT_color_buffer_float");
     GLint major = 0, minor = 0;
     glGetIntegerv(GL_MAJOR_VERSION, &major);
     glGetIntegerv(GL_MINOR_VERSION, &minor);
@@ -911,6 +914,10 @@ bool gt3r_gl_GPUTextureSupportsFormat(SDL_GPUDevice* device, SDL_GPUTextureForma
                                       SDL_GPUTextureUsageFlags usage) {
     if (!g_device) return SDL_GPUTextureSupportsFormat(device, format, type, usage);
     TexFormat f;
+    // Half floats are sampled by any OpenGL ES 3.0, drawn into only with an extension.
+    if (format == SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT && (usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) &&
+        !(device && device->half_float_target))
+        return false;
     return tex_format(format, &f) && (type == SDL_GPU_TEXTURETYPE_2D || type == SDL_GPU_TEXTURETYPE_CUBE);
 }
 

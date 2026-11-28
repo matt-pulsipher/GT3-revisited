@@ -16,7 +16,7 @@ RaceScreen::MapCar RaceScreen::env_map_car(bool p2) const {
     if (p2) return {render_state2_, 1};
     const RaceField* f = exact_field();
     if (f && field_ && replay_focus_ >= 0 && replay_focus_ < f->opponents())
-        return {interpolate(f->opponent_prev_state(replay_focus_), f->opponent_state(replay_focus_), step_.alpha()),
+        return {opponent_view_state(replay_focus_),
                 2 + size_t(replay_focus_)};
     return {render_state_, 0};
 }
@@ -370,7 +370,7 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
         for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
             if (opp_visuals_[size_t(i)] && i != hidden_opponent_)
             {
-                sim::VehicleState os = interpolate(f->opponent_prev_state(i), f->opponent_state(i), step_.alpha());
+                sim::VehicleState os = opponent_view_state(i);
                 CarLook look = car_look(os, false, 2 + size_t(i));
                 look.lamp = brake_lamps_.factor(2 + size_t(i)); look.brake_now = brake_lamps_.now(2 + size_t(i));
                 size_t first = items_.size();
@@ -394,12 +394,12 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
         for (size_t i = first; i < items_.size(); ++i) items_[i].alpha = 0.4f;
     };
     if (live_ghost && exact_field() && (whole_run_ghost() || (lap_ghost() && track_->lap_started())) &&
-        exact_ghost(*exact_field(), step_.alpha(), gs, &ghost_setup)) {
+        exact_ghost(*exact_field(), frame_alpha(), gs, &ghost_setup)) {
         add_ghost(*ghost_setup);
-    } else if (logger_ghost && analysis_ && exact_field() && exact_ghost(*exact_field(), step_.alpha(), gs, &ghost_setup)) {
+    } else if (logger_ghost && analysis_ && exact_field() && exact_ghost(*exact_field(), frame_alpha(), gs, &ghost_setup)) {
         add_ghost(*ghost_setup); // the Analyzer's race: track B's car, car 1 of the race
     } else if (logger_ghost && !logger_ghost_.empty()) {
-        const double ghost_t = (double(player_.tick()) - double(logger_begin_) + step_.alpha() - 1.0) * step_.step();
+        const double ghost_t = (double(player_.tick()) - double(logger_begin_) + frame_alpha() - 1.0) * step_.step();
         if (logger_ghost_.state_at(ghost_t, 1.0 / step_.step(), gs)) add_ghost(vehicle_->setup());
     }
     // The sparks after the cars, before the tyre smoke (presentation §L7): in the one-player view only.
@@ -407,7 +407,7 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
         if (const RaceField* f = exact_field())
             if (const sim::exact::ExactRace* r = exact_race_of(*f); r && r->has_sparks()) {
                 const CameraRig::Shot shot = camera_.shot();
-                sparks_.add_items(items_, r->sparks(), spark_view_, step_.alpha(), spark_shot_ && !(*spark_shot_ == shot));
+                sparks_.add_items(items_, r->sparks(), spark_view_, frame_alpha(), spark_shot_ && !(*spark_shot_ == shot));
                 spark_shot_ = shot;
             }
     // A later build's leaves, drawn in the sparks' pass (the particle manager draws both) with the sparks' view, lit by
@@ -418,7 +418,7 @@ void RaceScreen::collect_items(const render::Vec3& eye, const sim::Vec3& right, 
                 LeafLight light;
                 if (const SunParams& e = sun_.params(); e.has_env)
                     light.dir = e.light_dir, light.ambient = e.light_ambient, light.diffuse = e.light_diffuse;
-                leaves_.add_items(items_, r->sparks(), step_.alpha(), spark_view_, light);
+                leaves_.add_items(items_, r->sparks(), frame_alpha(), spark_view_, light);
             }
     if (smoke_.loaded()) {
         render::Vec3 r = render::normalize(cam_r);
@@ -866,6 +866,21 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         o.fixed_width = 640, o.fixed_height = 448;
         o.nearest = original_nearest_;
     }
+    if (photo_ && !split) {
+        // Photo mode's frame: the camera menu's aspect and orientation, the largest that fits, centred, black round
+        // it (the original resolution's 640 x 448 cut to it in the same proportion).
+        const float want = race::photo_frame_ratio(photo_aspect_, photo_orientation_);
+        SDL_FRect f = rect;
+        if (rect.w > rect.h * want) f.w = rect.h * want, f.x = rect.x + (rect.w - f.w) / 2;
+        else f.h = rect.w / want, f.y = rect.y + (rect.h - f.h) / 2;
+        if (original_res_) {
+            o.fixed_width = std::max(1, int(std::lround(640.0f * f.w / rect.w)));
+            o.fixed_height = std::max(1, int(std::lround(448.0f * f.h / rect.h)));
+        } else {
+            ui.fill(0, 0, W, H, Color{0, 0, 0, 255});
+        }
+        rect = f;
+    }
     frame_rect_ = rect;
     Uint64 t0 = SDL_GetPerformanceCounter();
 #if GT3R_XR
@@ -880,6 +895,12 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     if (update_env_cube()) o.env_cube = view_->env_cube(), o.env_gt3_lookup = env_gt3_scene_;
     Uint64 h_e1 = SDL_GetTicksNS();
     hitch::env_ms = double(h_e1 - h_e0) / 1e6;
+    // Photo mode's accumulation: this frame's render at its own time while the shutter is open (the
+    // cars from photo_car_at, the sparks and ghost by frame_alpha), its view by the photo's mode, its
+    // projection nudged by its fraction of a pixel.
+    const PhotoRender photo = photo_render();
+    const bool photo_add = photo.mode == render::DrawOptions::Accumulate::Add;
+    if (photo_add) begin_photo_render(photo.sample);
     render::Vec3 eye = camera_.eye();
     // In-car view: own car not drawn; a replay's on-board car mount: the car it rides not drawn
     // (the followed car, or the partner's for mode 2's on-board cut). Ours: a custom camera whose
@@ -897,7 +918,7 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     hidden_opponent_ = hidden;
     // The wheels: GT3 blurs them in the 1P frame, not in the 2P halves (docs/formats/car_model.md
     // "Wheel spin blur").
-    const WheelView wv{camera_.view(), camera_.projection(rect.w / rect.h), eye, !split, wheel_env_};
+    const WheelView wv{camera_.view(), camera_.projection(rect.w / rect.h), eye, !split && spin_blur_on(), wheel_env_};
     wheel_view_ = &wv;
     spark_pass_ = !split, spark_view_ = camera_.view(); // (the split-screen halves draw none)
     collect_items(eye, cam_right(camera_), own_car, true,
@@ -926,7 +947,15 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
     const GlowCars glow = has_glows() ? glow_cars(own_car, true, hidden) : GlowCars{};
     add_screen_passes(ov, rect, camera_, sun_v, false, split, &glow);
     ov.guard_near = camera_.gt3_near();
-    view_->draw(ui.renderer(), rect, camera_.view(), camera_.projection(rect.w / rect.h), eye, items_, ov);
+    ov.accumulate = photo.mode;
+    render::Mat4 proj = camera_.projection(rect.w / rect.h);
+    if (photo_add) proj = proj * photo_shear_; // (the lens: its plane of focus kept in place)
+    if (photo_add && view_->pixel_width() > 0 && view_->pixel_height() > 0) // (clip space: 2 across the picture)
+        proj = render::translate({2.0f * photo.sample.dx / float(view_->pixel_width()),
+                                  2.0f * photo.sample.dy / float(view_->pixel_height()), 0}) * proj;
+    view_->draw(ui.renderer(), rect, camera_.view(), proj, eye, items_, ov);
+    if (photo_add) end_photo_render(); // (the paused moment again)
+    if (photo_save_ && photo_ && view_->accumulated() >= race::kPhotoSamples) save_photo(app); // (the mean just drawn)
     remove_wet_road(wet_items); // (the wet road's frame items belong to this view only)
     hitch::draw_ms = double(SDL_GetTicksNS() - h_c1) / 1e6;
     hitch::meshes = view_->stats().meshes_drawn;
@@ -975,7 +1004,9 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         analyzer_.draw(ui.renderer(), dst);
         return;
     }
-    if (replaying_ && split) {
+    if (photo_) {
+        // Photo mode: the picture alone (render_photo's legend below).
+    } else if (replaying_ && split) {
         // 2P replays: both halves, no HUD and no mark (the captures).
     } else if (((replaying_ && preset_.hud) || attract_ || demo_replay()) && !split) {
         // Replays and the attract demo (presentation §G): the mark on its timer, in replays only
@@ -1106,12 +1137,13 @@ void RaceScreen::render_drive(App& app, Ui& ui) {
         const u8 g = u8(std::lround(255.0f * w.r));
         ui.fill(0, 0, W, H, Color{g, g, g, u8(255 * w.a)});
     }
-    if (toast_time_ > 0) {
+    if (toast_time_ > 0) { // (photo mode's too: its file is the 3D picture alone)
         float w = std::ceil(Ui::text_width(toast_)) + 16;
         ui.fill(W / 2 - w / 2, 80, w, 18, Color{0, 0, 0, 170});
         ui.text(W / 2 - w / 2 + 8, 85, toast_, colors::kText);
     }
-    if (paused_) render_pause(ui);
+    if (photo_) render_photo(ui);
+    else if (paused_) render_pause(ui);
     else if (song_shown_ > 0) draw_song(ui, false);
     if (editor_) editor_->draw(ui, editor_scene());
 }
@@ -1135,7 +1167,7 @@ size_t RaceScreen::add_wet_road(const render::Vec3& eye, const render::Mat4& vie
     if (const RaceField* f = exact_field())
         for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
             if (opp_visuals_[size_t(i)])
-                add(opp_visuals_[size_t(i)].get(), interpolate(f->opponent_prev_state(i), f->opponent_state(i), step_.alpha()),
+                add(opp_visuals_[size_t(i)].get(), opponent_view_state(i),
                     f->opponent_setup(i), 2 + size_t(i));
     wet_.add_buffer_items(wet_items_, view, eye, cars);
     SDL_GPUTexture* t = wet_.render(*view_, view, proj, eye, wet_items_, o);
@@ -1162,7 +1194,7 @@ RaceScreen::GlowCars RaceScreen::glow_cars(bool player, bool second, int hidden_
     if (const RaceField* f = exact_field())
         for (int i = 0; i < f->opponents() && size_t(i) < opp_visuals_.size(); ++i)
             if (opp_visuals_[size_t(i)] && i != hidden_opponent)
-                add(opp_visuals_[size_t(i)].get(), interpolate(f->opponent_prev_state(i), f->opponent_state(i), step_.alpha()),
+                add(opp_visuals_[size_t(i)].get(), opponent_view_state(i),
                     f->opponent_setup(i), 2 + size_t(i));
     return out;
 }
@@ -1188,7 +1220,7 @@ void RaceScreen::draw_logger_display(App& app, Ui& ui) {
         d.hint_gear = -1;
         race::CarDisplay c;
         const RaceField* f = exact_field();
-        if (f && race::exact_car_display(*f, car, step_.alpha(), c)) {
+        if (f && race::exact_car_display(*f, car, frame_alpha(), c)) {
             d.speed_kmh = c.speed_kmh, d.rpm = c.rpm, d.gear = c.gear;
             d.rev_limit_rpm = c.rev_limit_rpm, d.shift_rpm = c.shift_rpm;
             d.steer = c.steer, d.throttle = c.throttle, d.brake = c.brake;

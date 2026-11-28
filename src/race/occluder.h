@@ -25,6 +25,9 @@ public:
     bool empty() const { return tris_.empty(); }
     // True if the ray from `o` along unit `d` hits a triangle within `max_dist`.
     bool blocked(const render::Vec3& o, const render::Vec3& d, float max_dist) const;
+    // The nearest hit along the ray from `o` along unit `d` within `max_dist` (its distance), or
+    // `max_dist` when none (photo mode's crosshair).
+    float nearest(const render::Vec3& o, const render::Vec3& d, float max_dist) const;
     bool segment_blocked(const render::Vec3& a, const render::Vec3& b) const {
         render::Vec3 d = b - a;
         float len = std::sqrt(dot(d, d));

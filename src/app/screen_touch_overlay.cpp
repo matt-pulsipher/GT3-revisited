@@ -106,11 +106,12 @@ void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
     SDL_Renderer* r = ui.renderer();
     const TouchConfig& cfg = controls.config();
     const float fade = controls.alpha(); // (fading out while a replay plays)
-    const float a = cfg.opacity * fade, ink = std::min(1.0f, cfg.opacity * 1.7f) * fade;
 
     for (Widget w : controls.widgets()) {
         if (w.hidden) continue;
-        w.x += ox, w.y += oy, w.origin_x += ox, w.origin_y += oy, w.knob_x += ox;
+        const float f = w.keep_shown ? 1.0f : fade; // (photo mode's SAVE never fades)
+        const float a = cfg.opacity * f, ink = std::min(1.0f, cfg.opacity * 1.7f) * f;
+        w.x += ox, w.y += oy, w.origin_x += ox, w.origin_y += oy, w.knob_x += ox, w.knob_y += oy;
         const Color fg = with_alpha(w.active ? kHot : Color{240, 242, 246}, ink);
         switch (w.kind) {
         case Widget::Kind::Button: {
@@ -138,6 +139,15 @@ void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
             break;
         }
         case Widget::Kind::Action: {
+            if (w.action != TouchAction::PreviousSong && w.action != TouchAction::NextSong) {
+                // Photo mode's: the roll, MENU and the camera menu's rows labelled; the crosshair's
+                // focus button is the screen's own drawing.
+                if (w.label.empty()) break;
+                body(ui, w, a, w.shape == Widget::Shape::Rect ? std::min(6.0f, w.h / 2) : std::min(w.w, w.h) / 2);
+                if (w.shape == Widget::Shape::Rect) label(ui, w.x + w.w / 2, w.y + w.h / 2, w.label, fg);
+                else label(ui, w.x, w.y, w.label, fg);
+                break;
+            }
             // Ours: the song buttons, |<< and >>|.
             body(ui, w, a, std::min(w.w, w.h) / 2);
             const bool next = w.action == TouchAction::NextSong;
@@ -205,6 +215,15 @@ void draw_controls(Ui& ui, const TouchControls& controls, float ox, float oy) {
                 triangle(r, tx, ty, bx + ar.dy * s, by - ar.dx * s, bx - ar.dy * s, by + ar.dx * s,
                          with_alpha(on ? kHot : kRim, on ? ink : a * 1.1f));
             }
+            break;
+        }
+        case Widget::Kind::Stick: { // (photo mode) the base, a ring round its reach and the knob
+            ui.fill_circle(w.x, w.y, w.w, with_alpha(kBody, a * 0.45f));
+            ui.frame_round(w.x - w.w, w.y - w.h, 2 * w.w, 2 * w.h, w.w, 1.2f, with_alpha(w.active ? kHot : kRim, a * 0.7f));
+            const float kr = w.w * 0.42f;
+            ui.fill_circle(w.knob_x, w.knob_y, kr, with_alpha(w.active ? Color{110, 86, 20} : kBody, a * 0.85f));
+            ui.frame_round(w.knob_x - kr, w.knob_y - kr, 2 * kr, 2 * kr, kr, 1.6f, with_alpha(w.active ? kHot : kRim, ink));
+            if (!w.active) label(ui, w.x, w.y + w.w + 8, "MOVE", with_alpha(kRim, ink));
             break;
         }
         case Widget::Kind::Steering: {

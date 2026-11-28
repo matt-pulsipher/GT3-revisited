@@ -192,13 +192,16 @@ void RaceScreen::on_event(App& app, const SDL_Event& e) {
 // run over the race stage: a GT race's field behind them is not a replay).
 TouchLayout RaceScreen::touch_layout() const {
     if (editor_) return TouchLayout::None; // (the editor is tapped and dragged directly)
+    if (photo_) return TouchLayout::Photo; // (photo mode: its stick, height buttons and gestures)
     // (A demonstration plays like a replay, the Preview is the computer's: the menu buttons end them.)
     return stage_ == Stage::Drive && !paused_ && !replaying_ && !demo_ && !race_preview_ && !quick_ ? TouchLayout::Driving
                                                                                                      : TouchLayout::Menu;
 }
 
 bool RaceScreen::touch_fades() const {
-    // (Not the pause menu over a replay, nor the quick menus: they are used, not watched.)
+    // (Not the pause menu over a replay, nor the quick menus: they are used, not watched. Photo
+    // mode's controls fade off the picture while it is left alone, as a replay's.)
+    if (photo_) return true;
     return touch_layout() == TouchLayout::Menu && stage_ == Stage::Drive && !paused_ && !quick_;
 }
 
